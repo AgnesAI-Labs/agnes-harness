@@ -813,6 +813,20 @@
           }
         }
       }
+    },
+    "DeclaredAgent": {
+      "description": "Static projection of a Bundle launch declaration; not an author-owned execution object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "launch"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "launch": {
+          "$ref": "#/$defs/BundleLaunch"
+        }
+      }
     }
   }
 }

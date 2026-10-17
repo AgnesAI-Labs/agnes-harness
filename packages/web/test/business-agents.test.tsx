@@ -22,7 +22,14 @@ const agent = (name: string, metadata?: Record<string, unknown>, scope = '@agnes
   ({
     id: `${scope}/${name}`,
     ...(scope !== '@agnes-example'
-      ? { agents: { work: { title: { en: name }, description: { en: name }, preset: 'safe' } } }
+      ? {
+          agents: [
+            {
+              ref: 'acme/kit#work',
+              launch: { title: { en: name }, description: { en: name }, preset: 'safe' },
+            },
+          ],
+        }
       : {}),
     version: '1.0.0',
     ...(metadata ? { metadata: { displayName: name, summary: `${name} summary`, ...metadata } } : {}),

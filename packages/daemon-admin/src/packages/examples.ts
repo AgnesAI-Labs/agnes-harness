@@ -222,7 +222,8 @@ export function createExamplePackages(options: {
               deny('E_PACKAGE_STATE')
             review.launch = (() => {
               const launchId = field(request.launchId)
-              const launch = entry.agents?.[launchId] ?? deny()
+              const launch =
+                entry.agents?.find((agent) => agent.ref === `${entry.id}#${launchId}`)?.launch ?? deny()
               // The legacy example facade submits automatically. Draft launch support belongs to
               // the reviewed launch facade; fail closed until that protocol is available.
               if (launch.prompt) deny('E_PACKAGE_BLOCKED')

@@ -226,9 +226,10 @@
                       "maxItems": 8
                     },
                     "agents": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
                       }
                     },
                     "application": {
@@ -280,9 +281,10 @@
               "maxItems": 8
             },
             "agents": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
               }
             },
             "application": {
@@ -509,9 +511,10 @@
                       "maxItems": 8
                     },
                     "agents": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
                       }
                     },
                     "application": {
@@ -563,9 +566,10 @@
               "maxItems": 8
             },
             "agents": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
               }
             },
             "application": {

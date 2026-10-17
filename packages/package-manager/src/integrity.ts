@@ -51,7 +51,7 @@ export function capabilityHash(entry: {
   contributions?: PackageContributionSummary[]
   declaredCapabilities?: PluginCapabilities
   metadata?: import('@agnes/protocol').PluginMetadata
-  agents?: Readonly<Record<string, import('@agnes/protocol').BundleLaunch>>
+  agents?: readonly import('@agnes/protocol').DeclaredAgent[]
   application?: import('@agnes/protocol').ApplicationTemplate
   dependencies: Record<string, string>
 }): string {
@@ -60,7 +60,7 @@ export function capabilityHash(entry: {
       c.kind === 'extension' ? { ...c, runtimeSupports: c.runtimeSupports ?? ['in-process'] } : c,
     ),
     dependencies: entry.dependencies,
-    ...(entry.agents && Object.keys(entry.agents).length ? { agents: entry.agents } : {}),
+    ...(entry.agents && entry.agents.length ? { agents: entry.agents } : {}),
     ...(entry.application ? { application: entry.application } : {}),
     ...(entry.metadata?.exampleOf !== undefined
       ? {

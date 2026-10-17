@@ -230,7 +230,7 @@ describe('local example catalog', () => {
     expect(fde).toHaveLength(12)
     expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
     // The gallery finds business agents by category and offers each one's own prompt in both languages.
-    expect(result.entries.filter((entry) => Object.keys(entry.agents ?? {}).length > 0)).toEqual(fde)
+    expect(result.entries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
     for (const entry of fde) {
       const prompt = entry.metadata?.samplePrompt
       expect(prompt?.en).toBeTruthy()

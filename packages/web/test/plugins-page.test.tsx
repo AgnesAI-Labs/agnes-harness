@@ -180,7 +180,12 @@ describe('plugin grouping', () => {
     expect(
       isBusinessAgent({
         ...item('@acme/report'),
-        agents: { work: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
+        agents: [
+          {
+            ref: 'acme/kit#work',
+            launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+          },
+        ],
       }),
     ).toBe(true)
     expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(false)
@@ -192,7 +197,7 @@ describe('plugin grouping', () => {
       ({
         id,
         desired,
-        ...(category === 'business-agent' ? { agents: { work: {} } } : {}),
+        ...(category === 'business-agent' ? { agents: [{ ref: 'acme/kit#work', launch: {} }] } : {}),
       }) as unknown as Parameters<typeof orderInstalled>[0][number]
     const rows = [
       row('zeta', 'enabled', 'tools'),
@@ -430,7 +435,7 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
   const row = (id: string, category: string, exampleOf?: string) => ({
     id,
     version: '1.0.0',
-    ...(category === 'business-agent' ? { agents: { work: {} } } : {}),
+    ...(category === 'business-agent' ? { agents: [{ ref: 'acme/kit#work', launch: {} }] } : {}),
     source: {
       type: 'file',
       ref: `file:./${id === '@agnes/plugin-helper' ? 'bundled-plugins/plugin-helper' : 'examples/plugin'}`,

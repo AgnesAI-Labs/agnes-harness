@@ -36,7 +36,12 @@ const entry = (extra: Record<string, unknown> = {}, id = ID) =>
     sourceId: 'official-examples',
     retrievedAt: '2026-10-14T00:00:00.000Z',
     provides: ['bundle', 'loop', 'tool'],
-    agents: { work: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
+    agents: [
+      {
+        ref: 'acme/kit#work',
+        launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      },
+    ],
     metadata: {
       displayName: 'Data report example',
       summary: 'Turns a sample CSV into a report.',

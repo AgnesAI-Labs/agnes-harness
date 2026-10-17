@@ -8,8 +8,8 @@ import {
   validatePluginMetadata,
 } from '@agnes/protocol'
 import {
+  DeclaredAgent as AgentSchema,
   ApplicationTemplate as ApplicationSchema,
-  BundleLaunch as LaunchSchema,
 } from '@agnes/protocol/gen/extension-manifest'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
@@ -161,11 +161,9 @@ function validateRecord(raw: unknown): SnapshotRecord {
     integrityFailure('snapshot-application')
   if (
     value.agents !== undefined &&
-    (!value.agents ||
-      typeof value.agents !== 'object' ||
-      Array.isArray(value.agents) ||
-      Object.keys(value.agents).length > 64 ||
-      Object.values(value.agents).some((launch) => !validateAgainst(LaunchSchema, launch).ok))
+    (!Array.isArray(value.agents) ||
+      value.agents.length > 64 ||
+      value.agents.some((agent) => !validateAgainst(AgentSchema, agent).ok))
   )
     integrityFailure('snapshot-agents')
   const record = value as unknown as SnapshotRecord

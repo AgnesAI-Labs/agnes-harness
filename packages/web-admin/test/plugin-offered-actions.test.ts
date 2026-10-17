@@ -47,7 +47,12 @@ it('offers no ordinary management actions for any parent-owned example', () => {
     offeredActions(page)({
       ...example,
       metadata: { displayName: 'FDE', summary: 'FDE', description: 'FDE' },
-      agents: { work: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' } },
+      agents: [
+        {
+          ref: 'acme/kit#work',
+          launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+        },
+      ],
     }),
   ).toHaveLength(3)
 })

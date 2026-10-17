@@ -6016,6 +6016,14 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { title: { en: 'Work' }, description: { en: 'Work' } }],
     note: 'Complete explicit launch block',
   },
+  DeclaredAgent: {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    },
+    invalid: [{}, { ref: 'work', launch: {} }],
+    note: 'Static Bundle launch projection',
+  },
   ApplicationTemplate: {
     valid: { id: 'acme' },
     invalid: [{}, { id: 'acme', brand: {} }],
@@ -6242,6 +6250,7 @@ const ExtensionManifestDefs: Record<string, TSchema> = {
   PluginLocalizedText: ExtensionManifestGen.PluginLocalizedText,
   AgentRef: ExtensionManifestGen.AgentRef,
   BundleLaunch: ExtensionManifestGen.BundleLaunch,
+  DeclaredAgent: ExtensionManifestGen.DeclaredAgent,
   ApplicationTemplate: ExtensionManifestGen.ApplicationTemplate,
   PluginMetadata: ExtensionManifestGen.PluginMetadata,
   PluginMetadataLocale: ExtensionManifestGen.PluginMetadataLocale,

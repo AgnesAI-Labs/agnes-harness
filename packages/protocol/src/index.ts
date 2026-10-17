@@ -254,6 +254,7 @@ export type {
   BundleLaunch,
   Capabilities,
   ClientContribution,
+  DeclaredAgent,
   ExampleLaunchDeclaration,
   ExtensionManifest,
   HomeContributionDeclaration,

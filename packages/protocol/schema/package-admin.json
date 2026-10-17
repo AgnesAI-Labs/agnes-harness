@@ -6,7 +6,10 @@
     "PluginConfigGetParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "id"],
+      "required": [
+        "profile",
+        "id"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -23,7 +26,12 @@
     "PluginConfigValidateParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "id", "rowId", "value"],
+      "required": [
+        "profile",
+        "id",
+        "rowId",
+        "value"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -48,7 +56,15 @@
     "PluginConfigSaveParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "id", "rowId", "value", "expectedRevision", "clientId", "commandId"],
+      "required": [
+        "profile",
+        "id",
+        "rowId",
+        "value",
+        "expectedRevision",
+        "clientId",
+        "commandId"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -88,7 +104,12 @@
     "PluginConfigEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rowId", "schema", "value", "reload"],
+      "required": [
+        "rowId",
+        "schema",
+        "value",
+        "reload"
+      ],
       "properties": {
         "rowId": {
           "type": "string",
@@ -102,14 +123,24 @@
           "$ref": "session-v1.json#/$defs/JsonValue"
         },
         "reload": {
-          "enum": ["live", "next-session"]
+          "enum": [
+            "live",
+            "next-session"
+          ]
         }
       }
     },
     "PluginConfigAudit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["who", "when", "rowId", "revision", "before", "after"],
+      "required": [
+        "who",
+        "when",
+        "rowId",
+        "revision",
+        "before",
+        "after"
+      ],
       "properties": {
         "who": {
           "type": "string",
@@ -142,7 +173,11 @@
     "PluginConfigSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "entries", "audit"],
+      "required": [
+        "revision",
+        "entries",
+        "audit"
+      ],
       "properties": {
         "revision": {
           "type": "string",
@@ -166,14 +201,19 @@
     "PluginConfigValidation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issues"],
+      "required": [
+        "issues"
+      ],
       "properties": {
         "issues": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "code"],
+            "required": [
+              "path",
+              "code"
+            ],
             "properties": {
               "path": {
                 "type": "string"
@@ -191,7 +231,13 @@
     "PluginConfigSaveResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "revision", "reason", "issues", "reload"],
+      "required": [
+        "ok",
+        "revision",
+        "reason",
+        "issues",
+        "reload"
+      ],
       "properties": {
         "ok": {
           "type": "boolean"
@@ -202,7 +248,13 @@
           "maxLength": 512
         },
         "reason": {
-          "enum": ["saved", "invalid", "conflict", "refused", "pending"]
+          "enum": [
+            "saved",
+            "invalid",
+            "conflict",
+            "refused",
+            "pending"
+          ]
         },
         "refusalReason": {
           "description": "Sanitized plugin apply refusal; never contains configuration values or secret references.",
@@ -214,7 +266,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "code"],
+            "required": [
+              "path",
+              "code"
+            ],
             "properties": {
               "path": {
                 "type": "string"
@@ -228,17 +283,30 @@
           }
         },
         "reload": {
-          "enum": ["live", "next-session"]
+          "enum": [
+            "live",
+            "next-session"
+          ]
         }
       }
     },
     "PluginPublicationReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["operation", "ok", "recovery", "containers"],
+      "required": [
+        "operation",
+        "ok",
+        "recovery",
+        "containers"
+      ],
       "properties": {
         "operation": {
-          "enum": ["runtime-target", "skills", "models", "extension-rows"]
+          "enum": [
+            "runtime-target",
+            "skills",
+            "models",
+            "extension-rows"
+          ]
         },
         "ok": {
           "type": "boolean"
@@ -252,7 +320,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["compositionHash", "status"],
+            "required": [
+              "compositionHash",
+              "status"
+            ],
             "properties": {
               "compositionHash": {
                 "type": "string",
@@ -260,7 +331,10 @@
                 "maxLength": 256
               },
               "status": {
-                "enum": ["applied", "failed"]
+                "enum": [
+                  "applied",
+                  "failed"
+                ]
               },
               "error": {
                 "type": "string",
@@ -274,7 +348,9 @@
     "PluginPublicationStatusResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["publication"],
+      "required": [
+        "publication"
+      ],
       "properties": {
         "publication": {
           "anyOf": [
@@ -291,7 +367,12 @@
     "SessionGenerationMigrationParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "clientId", "commandId", "sessionId"],
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "sessionId"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -330,7 +411,11 @@
     "SessionGenerationMigrationResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["previousGenerationId", "generationId", "changed"],
+      "required": [
+        "previousGenerationId",
+        "generationId",
+        "changed"
+      ],
       "properties": {
         "previousGenerationId": {
           "type": "string",
@@ -357,7 +442,10 @@
       "description": "Selectable skins derived from the enabled, trusted package inventory.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "skins"],
+      "required": [
+        "revision",
+        "skins"
+      ],
       "properties": {
         "revision": {
           "type": "string",
@@ -370,7 +458,12 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "name", "packageName", "cssUrl"],
+            "required": [
+              "id",
+              "name",
+              "packageName",
+              "cssUrl"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -407,7 +500,10 @@
                 "additionalProperties": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["light", "dark"],
+                  "required": [
+                    "light",
+                    "dark"
+                  ],
                   "properties": {
                     "light": {
                       "type": "string",
@@ -466,7 +562,10 @@
               "pattern": "^local:(home|workspace)/[a-z0-9][a-z0-9._-]*$"
             }
           },
-          "required": ["type", "ref"]
+          "required": [
+            "type",
+            "ref"
+          ]
         },
         {
           "type": "object",
@@ -482,7 +581,10 @@
               "pattern": "^npm:(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@(?=.{1,64}$)(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
             }
           },
-          "required": ["type", "ref"]
+          "required": [
+            "type",
+            "ref"
+          ]
         },
         {
           "type": "object",
@@ -498,7 +600,10 @@
               "pattern": "^file:[^\\x00\\\\]+$"
             }
           },
-          "required": ["type", "ref"]
+          "required": [
+            "type",
+            "ref"
+          ]
         },
         {
           "type": "object",
@@ -514,7 +619,10 @@
               "pattern": "^workspace:extensions/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
             }
           },
-          "required": ["type", "ref"]
+          "required": [
+            "type",
+            "ref"
+          ]
         },
         {
           "type": "object",
@@ -531,12 +639,18 @@
               "format": "agnes-git-source"
             }
           },
-          "required": ["type", "ref"]
+          "required": [
+            "type",
+            "ref"
+          ]
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "ref"],
+          "required": [
+            "type",
+            "ref"
+          ],
           "properties": {
             "type": {
               "const": "path"
@@ -552,7 +666,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "ref"],
+          "required": [
+            "type",
+            "ref"
+          ],
           "properties": {
             "type": {
               "const": "url"
@@ -603,7 +720,13 @@
               }
             }
           },
-          "required": ["kind", "id", "rowId", "path", "client"]
+          "required": [
+            "kind",
+            "id",
+            "rowId",
+            "path",
+            "client"
+          ]
         },
         {
           "type": "object",
@@ -636,7 +759,13 @@
               }
             }
           },
-          "required": ["kind", "id", "rowId", "path", "skins"]
+          "required": [
+            "kind",
+            "id",
+            "rowId",
+            "path",
+            "skins"
+          ]
         },
         {
           "type": "object",
@@ -671,14 +800,23 @@
             "runtimeSupports": {
               "type": "array",
               "items": {
-                "enum": ["in-process", "isolated"]
+                "enum": [
+                  "in-process",
+                  "isolated"
+                ]
               },
               "maxItems": 2,
               "minItems": 1,
               "uniqueItems": true
             }
           },
-          "required": ["kind", "id", "path", "apiRange", "capabilities"]
+          "required": [
+            "kind",
+            "id",
+            "path",
+            "apiRange",
+            "capabilities"
+          ]
         },
         {
           "type": "object",
@@ -714,7 +852,13 @@
               "uniqueItems": true
             }
           },
-          "required": ["kind", "id", "path", "apiRange", "provides"]
+          "required": [
+            "kind",
+            "id",
+            "path",
+            "apiRange",
+            "provides"
+          ]
         },
         {
           "type": "object",
@@ -741,7 +885,12 @@
               "maxLength": 64
             }
           },
-          "required": ["kind", "id", "path", "apiRange"]
+          "required": [
+            "kind",
+            "id",
+            "path",
+            "apiRange"
+          ]
         },
         {
           "type": "object",
@@ -768,7 +917,12 @@
               "maxLength": 64
             }
           },
-          "required": ["kind", "id", "path", "apiRange"]
+          "required": [
+            "kind",
+            "id",
+            "path",
+            "apiRange"
+          ]
         },
         {
           "type": "object",
@@ -790,7 +944,11 @@
               "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
             }
           },
-          "required": ["kind", "id", "path"]
+          "required": [
+            "kind",
+            "id",
+            "path"
+          ]
         },
         {
           "type": "object",
@@ -812,7 +970,11 @@
               "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
             }
           },
-          "required": ["kind", "id", "path"]
+          "required": [
+            "kind",
+            "id",
+            "path"
+          ]
         },
         {
           "type": "object",
@@ -831,7 +993,11 @@
               "$ref": "surface.json#/$defs/SurfaceDescriptor"
             }
           },
-          "required": ["kind", "id", "descriptor"]
+          "required": [
+            "kind",
+            "id",
+            "descriptor"
+          ]
         }
       ]
     },
@@ -884,7 +1050,13 @@
           "maxItems": 128
         }
       },
-      "required": ["added", "removed", "runtimeSupportRemoved", "dependenciesAdded", "serviceGrantsAdded"]
+      "required": [
+        "added",
+        "removed",
+        "runtimeSupportRemoved",
+        "dependenciesAdded",
+        "serviceGrantsAdded"
+      ]
     },
     "PackageBlocker": {
       "type": "object",
@@ -911,7 +1083,10 @@
           "maxItems": 128
         }
       },
-      "required": ["code", "references"]
+      "required": [
+        "code",
+        "references"
+      ]
     },
     "PackageWarning": {
       "type": "object",
@@ -933,7 +1108,10 @@
           "maxLength": 512
         }
       },
-      "required": ["code", "safeMessage"]
+      "required": [
+        "code",
+        "safeMessage"
+      ]
     },
     "PackageProvenance": {
       "type": "object",
@@ -956,7 +1134,13 @@
           "type": "boolean"
         },
         "sourceKind": {
-          "enum": ["official-catalog", "npm", "git", "local-folder", "tarball"]
+          "enum": [
+            "official-catalog",
+            "npm",
+            "git",
+            "local-folder",
+            "tarball"
+          ]
         },
         "resolvedLocation": {
           "type": "string",
@@ -975,23 +1159,38 @@
           "maxLength": 2048
         },
         "verification": {
-          "enum": ["unverified", "official-ed25519", "npm-sigstore"]
+          "enum": [
+            "unverified",
+            "official-ed25519",
+            "npm-sigstore"
+          ]
         },
         "installedAt": {
           "type": "string",
           "format": "date-time"
         },
         "installer": {
-          "enum": ["user", "agent"]
+          "enum": [
+            "user",
+            "agent"
+          ]
         },
         "trustDecision": {
-          "enum": ["pending", "confirmed", "revoked"]
+          "enum": [
+            "pending",
+            "confirmed",
+            "revoked"
+          ]
         },
         "authoring": {
           "$ref": "#/$defs/AuthoringProvenance"
         }
       },
-      "required": ["source", "integrity", "signatureVerified"]
+      "required": [
+        "source",
+        "integrity",
+        "signatureVerified"
+      ]
     },
     "PackagePreview": {
       "type": "object",
@@ -1089,18 +1288,28 @@
           "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
         },
         "agents": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
           }
         },
         "preflight": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["level", "reasons", "next"],
+          "required": [
+            "level",
+            "reasons",
+            "next"
+          ],
           "properties": {
             "level": {
-              "enum": ["structural", "static-references", "deployment-dependent", "refused"]
+              "enum": [
+                "structural",
+                "static-references",
+                "deployment-dependent",
+                "refused"
+              ]
             },
             "reasons": {
               "type": "array",
@@ -1111,7 +1320,12 @@
               }
             },
             "next": {
-              "enum": ["resolve-static-references", "validate-deployment", "review-trust", "fix-declaration"]
+              "enum": [
+                "resolve-static-references",
+                "validate-deployment",
+                "review-trust",
+                "fix-declaration"
+              ]
             }
           }
         }
@@ -1151,7 +1365,11 @@
           "format": "date-time"
         }
       },
-      "required": ["integrity", "capabilityHash", "decidedAt"]
+      "required": [
+        "integrity",
+        "capabilityHash",
+        "decidedAt"
+      ]
     },
     "PackageActivationTrust": {
       "type": "object",
@@ -1170,7 +1388,10 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": ["integrity", "capabilityHash"]
+      "required": [
+        "integrity",
+        "capabilityHash"
+      ]
     },
     "PackageActivationRequest": {
       "type": "object",
@@ -1199,7 +1420,11 @@
           "$ref": "#/$defs/PackageActivationTrust"
         }
       },
-      "required": ["expectedInstalledIntegrity", "expectedActiveIntegrity", "trust"]
+      "required": [
+        "expectedInstalledIntegrity",
+        "expectedActiveIntegrity",
+        "trust"
+      ]
     },
     "PackageRollbackTarget": {
       "type": "object",
@@ -1224,7 +1449,11 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": ["version", "integrity", "capabilityHash"]
+      "required": [
+        "version",
+        "integrity",
+        "capabilityHash"
+      ]
     },
     "PackageAdminContext": {
       "type": "object",
@@ -1271,7 +1500,12 @@
           "uniqueItems": true
         }
       },
-      "required": ["profile", "clientId", "permissions", "readOnly"]
+      "required": [
+        "profile",
+        "clientId",
+        "permissions",
+        "readOnly"
+      ]
     },
     "PackageInstalledDescriptor": {
       "type": "object",
@@ -1283,7 +1517,14 @@
           "description": "Read-only primary plugin status. Underlying desired, trust, actual and generation facts keep their existing meanings; readiness never means a tool is executing.",
           "properties": {
             "state": {
-              "enum": ["ready", "blocked", "restart-required", "historical-only", "disabled", "untrusted"]
+              "enum": [
+                "ready",
+                "blocked",
+                "restart-required",
+                "historical-only",
+                "disabled",
+                "untrusted"
+              ]
             },
             "reasonCode": {
               "enum": [
@@ -1318,7 +1559,10 @@
                   "maxLength": 256
                 }
               },
-              "required": ["en", "zh-CN"]
+              "required": [
+                "en",
+                "zh-CN"
+              ]
             },
             "nextAction": {
               "enum": [
@@ -1332,15 +1576,12 @@
               ]
             }
           },
-          "required": ["state", "reasonCode", "reason", "nextAction"]
-        },
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
+          "required": [
+            "state",
+            "reasonCode",
+            "reason",
+            "nextAction"
+          ]
         },
         "draining": {
           "type": "boolean"
@@ -1378,10 +1619,20 @@
           "type": "boolean"
         },
         "desired": {
-          "enum": ["installed-disabled", "enabled"]
+          "enum": [
+            "installed-disabled",
+            "enabled"
+          ]
         },
         "actual": {
-          "enum": ["not-running", "starting", "running", "failed", "restart-required", "unavailable"]
+          "enum": [
+            "not-running",
+            "starting",
+            "running",
+            "failed",
+            "restart-required",
+            "unavailable"
+          ]
         },
         "contributions": {
           "type": "array",
@@ -1465,9 +1716,10 @@
           "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
         },
         "agents": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
           }
         }
       },
@@ -1521,7 +1773,12 @@
           "maxItems": 128
         },
         "compatibility": {
-          "enum": ["supported", "adapted", "generation-only", "unsupported"]
+          "enum": [
+            "supported",
+            "adapted",
+            "generation-only",
+            "unsupported"
+          ]
         },
         "sourceId": {
           "type": "string",
@@ -1551,9 +1808,10 @@
           "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
         },
         "agents": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "extension-manifest.json#/$defs/BundleLaunch"
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
           }
         }
       },
@@ -1608,7 +1866,11 @@
           "maxLength": 1024
         }
       },
-      "required": ["code", "safeMessage", "blockers"]
+      "required": [
+        "code",
+        "safeMessage",
+        "blockers"
+      ]
     },
     "PackageOperationReceipt": {
       "type": "object",
@@ -1627,7 +1889,10 @@
           "pattern": "^[a-z][a-z0-9.-]{0,63}$"
         }
       },
-      "required": ["operationId", "profile"]
+      "required": [
+        "operationId",
+        "profile"
+      ]
     },
     "PackageOperation": {
       "type": "object",
@@ -1708,7 +1973,15 @@
           "type": "boolean"
         }
       },
-      "required": ["operationId", "profile", "operation", "state", "progress", "startedAt", "updatedAt"]
+      "required": [
+        "operationId",
+        "profile",
+        "operation",
+        "state",
+        "progress",
+        "startedAt",
+        "updatedAt"
+      ]
     },
     "PackageCatalogPage": {
       "type": "object",
@@ -1734,7 +2007,10 @@
           ]
         }
       },
-      "required": ["items", "nextCursor"]
+      "required": [
+        "items",
+        "nextCursor"
+      ]
     },
     "PluginGenerationStatus": {
       "type": "object",
@@ -1755,7 +2031,12 @@
                 "pattern": "^[a-f0-9-]{36}$"
               },
               "state": {
-                "enum": ["active", "draining", "historical", "failed"]
+                "enum": [
+                  "active",
+                  "draining",
+                  "historical",
+                  "failed"
+                ]
               },
               "boundSessions": {
                 "type": "integer",
@@ -1785,7 +2066,10 @@
                       "maxLength": 64
                     }
                   },
-                  "required": ["id", "version"]
+                  "required": [
+                    "id",
+                    "version"
+                  ]
                 }
               },
               "sessions": {
@@ -1810,11 +2094,17 @@
                       "description": "The session's title, when it has one."
                     },
                     "run": {
-                      "enum": ["idle", "running"],
+                      "enum": [
+                        "idle",
+                        "running"
+                      ],
                       "description": "Whether a turn is in progress. A session that is not open is idle."
                     }
                   },
-                  "required": ["key", "open"]
+                  "required": [
+                    "key",
+                    "open"
+                  ]
                 }
               },
               "error": {
@@ -1822,7 +2112,14 @@
                 "maxLength": 512
               }
             },
-            "required": ["id", "state", "boundSessions", "openSessions", "live", "packages"]
+            "required": [
+              "id",
+              "state",
+              "boundSessions",
+              "openSessions",
+              "live",
+              "packages"
+            ]
           }
         },
         "plugins": {
@@ -1837,7 +2134,13 @@
                 "maxLength": 256
               },
               "state": {
-                "enum": ["active", "draining", "historical", "restart-required", "failed"]
+                "enum": [
+                  "active",
+                  "draining",
+                  "historical",
+                  "restart-required",
+                  "failed"
+                ]
               },
               "boundSessions": {
                 "type": "integer",
@@ -1856,7 +2159,13 @@
                 "maxLength": 512
               }
             },
-            "required": ["id", "state", "boundSessions", "drainingSessions", "historicalSessions"]
+            "required": [
+              "id",
+              "state",
+              "boundSessions",
+              "drainingSessions",
+              "historicalSessions"
+            ]
           }
         },
         "blocked": {
@@ -1878,11 +2187,17 @@
                 "maxLength": 512
               }
             },
-            "required": ["file", "reason"]
+            "required": [
+              "file",
+              "reason"
+            ]
           }
         }
       },
-      "required": ["generations", "plugins"]
+      "required": [
+        "generations",
+        "plugins"
+      ]
     },
     "PackageListResult": {
       "type": "object",
@@ -1899,7 +2214,9 @@
           "maxItems": 1024
         }
       },
-      "required": ["packages"]
+      "required": [
+        "packages"
+      ]
     },
     "PackageCatalogListParams": {
       "type": "object",
@@ -1927,7 +2244,9 @@
           "maximum": 100
         }
       },
-      "required": ["profile"]
+      "required": [
+        "profile"
+      ]
     },
     "PackageCatalogGetParams": {
       "type": "object",
@@ -1952,7 +2271,10 @@
           "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*))(?:\\.(?:(?:0|[1-9]\\d*)|(?:\\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
         }
       },
-      "required": ["profile", "id"]
+      "required": [
+        "profile",
+        "id"
+      ]
     },
     "PackageListParams": {
       "type": "object",
@@ -1965,7 +2287,9 @@
           "pattern": "^[a-z][a-z0-9.-]{0,63}$"
         }
       },
-      "required": ["profile"]
+      "required": [
+        "profile"
+      ]
     },
     "PackageInspectParams": {
       "type": "object",
@@ -1993,7 +2317,12 @@
           "$ref": "#/$defs/PackageSource"
         }
       },
-      "required": ["profile", "clientId", "commandId", "source"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "source"
+      ]
     },
     "PackageInstallParams": {
       "type": "object",
@@ -2027,7 +2356,13 @@
           "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "source", "expectedIntegrity"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "source",
+        "expectedIntegrity"
+      ]
     },
     "PackageTrustParams": {
       "type": "object",
@@ -2070,7 +2405,14 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "id", "expectedIntegrity", "capabilityHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id",
+        "expectedIntegrity",
+        "capabilityHash"
+      ]
     },
     "PackageUntrustParams": {
       "type": "object",
@@ -2113,7 +2455,14 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "id", "expectedIntegrity", "capabilityHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id",
+        "expectedIntegrity",
+        "capabilityHash"
+      ]
     },
     "PackageEnableParams": {
       "type": "object",
@@ -2163,7 +2512,12 @@
           ]
         }
       },
-      "required": ["profile", "clientId", "commandId", "id"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id"
+      ]
     },
     "PackageDisableParams": {
       "type": "object",
@@ -2194,7 +2548,12 @@
           "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "id"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id"
+      ]
     },
     "PackageRollbackParams": {
       "type": "object",
@@ -2234,7 +2593,12 @@
           "$ref": "#/$defs/PackageActivationRequest"
         }
       },
-      "required": ["profile", "clientId", "commandId", "id"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id"
+      ]
     },
     "PackageRemoveParams": {
       "type": "object",
@@ -2265,7 +2629,12 @@
           "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "id"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id"
+      ]
     },
     "PackageUpdateParams": {
       "type": "object",
@@ -2334,11 +2703,23 @@
                 "$ref": "#/$defs/PackageActivationRequest"
               }
             },
-            "required": ["id", "source", "expectedIntegrity", "activation"]
+            "required": [
+              "id",
+              "source",
+              "expectedIntegrity",
+              "activation"
+            ]
           }
         }
       },
-      "required": ["profile", "clientId", "commandId", "id", "source", "expectedIntegrity"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "id",
+        "source",
+        "expectedIntegrity"
+      ]
     },
     "PackageOperationGetParams": {
       "type": "object",
@@ -2357,7 +2738,10 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
         }
       },
-      "required": ["profile", "operationId"]
+      "required": [
+        "profile",
+        "operationId"
+      ]
     },
     "PackageOperationCancelParams": {
       "type": "object",
@@ -2388,7 +2772,12 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "operationId"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "operationId"
+      ]
     },
     "RuntimePinDescriptor": {
       "type": "object",
@@ -2400,7 +2789,13 @@
           "maxLength": 256
         },
         "purpose": {
-          "enum": ["active", "candidate", "recovery", "rollback", "turn"]
+          "enum": [
+            "active",
+            "candidate",
+            "recovery",
+            "rollback",
+            "turn"
+          ]
         },
         "packageId": {
           "type": "string",
@@ -2424,7 +2819,14 @@
           "maxLength": 128
         }
       },
-      "required": ["pinId", "purpose", "packageId", "version", "snapshotId", "operationId"]
+      "required": [
+        "pinId",
+        "purpose",
+        "packageId",
+        "version",
+        "snapshotId",
+        "operationId"
+      ]
     },
     "RuntimePinReleaseResult": {
       "type": "object",
@@ -2436,13 +2838,20 @@
           "maxLength": 256
         },
         "outcome": {
-          "enum": ["released", "skipped-no-longer-orphaned", "failed"]
+          "enum": [
+            "released",
+            "skipped-no-longer-orphaned",
+            "failed"
+          ]
         },
         "error": {
           "$ref": "#/$defs/PackageAdminError"
         }
       },
-      "required": ["pinId", "outcome"]
+      "required": [
+        "pinId",
+        "outcome"
+      ]
     },
     "PackagePinsInspectParams": {
       "type": "object",
@@ -2455,7 +2864,9 @@
           "pattern": "^[a-z][a-z0-9.-]{0,63}$"
         }
       },
-      "required": ["profile"]
+      "required": [
+        "profile"
+      ]
     },
     "PackagePinsInspectResult": {
       "type": "object",
@@ -2469,7 +2880,9 @@
           "maxItems": 4096
         }
       },
-      "required": ["orphans"]
+      "required": [
+        "orphans"
+      ]
     },
     "PackagePinsReleaseParams": {
       "type": "object",
@@ -2504,7 +2917,12 @@
           "maxItems": 64
         }
       },
-      "required": ["profile", "clientId", "commandId", "pinIds"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "pinIds"
+      ]
     },
     "PackagePinsReleaseResult": {
       "type": "object",
@@ -2518,7 +2936,9 @@
           "maxItems": 64
         }
       },
-      "required": ["results"]
+      "required": [
+        "results"
+      ]
     },
     "PackageTrustWorkspaceParams": {
       "type": "object",
@@ -2553,7 +2973,12 @@
           "description": "Required for repository local-plugin trust; binds confirmation to the offered package and hooks snapshot."
         }
       },
-      "required": ["profile", "clientId", "commandId", "deployDir"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "deployDir"
+      ]
     },
     "PackageTrustWorkspaceResult": {
       "type": "object",
@@ -2566,13 +2991,18 @@
           "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
         }
       },
-      "required": ["hash"]
+      "required": [
+        "hash"
+      ]
     },
     "SkinReadParams": {
       "description": "One same-origin skin route path to read bytes for. The path is a URL path, never a filesystem path.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "path"],
+      "required": [
+        "profile",
+        "path"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -2595,7 +3025,9 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["found"],
+          "required": [
+            "found"
+          ],
           "properties": {
             "found": {
               "const": false
@@ -2605,7 +3037,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["found", "base64"],
+          "required": [
+            "found",
+            "base64"
+          ],
           "properties": {
             "found": {
               "const": true
@@ -2624,7 +3059,12 @@
       "description": "Web client module roster for one profile. `rows` is the row-level browser projection (rowId/moduleName/enabled/phase plus optional asset metadata); it never carries runtime row config, credentials, or artifact data. The legacy modules/statuses arrays remain during the compatibility window so older callers can continue reading ready assets and package status.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "modules", "statuses", "serverTime"],
+      "required": [
+        "revision",
+        "modules",
+        "statuses",
+        "serverTime"
+      ],
       "properties": {
         "revision": {
           "description": "Opaque roster revision; changes whenever the roster content changes. Unrelated to package integrity.",
@@ -2665,7 +3105,14 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["packageId", "revision", "entryUrl", "styleUrls", "slots", "extIds"],
+            "required": [
+              "packageId",
+              "revision",
+              "entryUrl",
+              "styleUrls",
+              "slots",
+              "extIds"
+            ],
             "properties": {
               "rowId": {
                 "description": "Stable browser lifecycle row id. Omitted only by legacy producers; packageId remains the authorization subject.",
@@ -2754,7 +3201,12 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["packageId", "installedRevision", "backendRevision", "state"],
+            "required": [
+              "packageId",
+              "installedRevision",
+              "backendRevision",
+              "state"
+            ],
             "properties": {
               "packageId": {
                 "type": "string",
@@ -2768,11 +3220,18 @@
               },
               "backendRevision": {
                 "description": "Revision the backend extensions actually run at; null for pure-frontend packages or when unknown.",
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "maxLength": 128
               },
               "state": {
-                "enum": ["ready", "pending-activation", "blocked"]
+                "enum": [
+                  "ready",
+                  "pending-activation",
+                  "blocked"
+                ]
               },
               "reason": {
                 "description": "Fixed-enum reason text; never leaks internal paths.",
@@ -2792,7 +3251,10 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["revision", "expiresAt"],
+                  "required": [
+                    "revision",
+                    "expiresAt"
+                  ],
                   "properties": {
                     "revision": {
                       "type": "string",
@@ -2816,7 +3278,12 @@
       "description": "Safe browser projection of one runtime client row. Asset metadata is optional for non-ready phases. publicConfig is immutable manifest metadata; runtime config, credentials and secret references are intentionally absent.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["rowId", "moduleName", "enabled", "phase"],
+      "required": [
+        "rowId",
+        "moduleName",
+        "enabled",
+        "phase"
+      ],
       "properties": {
         "rowId": {
           "description": "Stable browser row id, normally web:<package-id>.",
@@ -2843,7 +3310,12 @@
         },
         "phase": {
           "description": "Safe lifecycle phase; this is not a worker convergence report and does not expose internal failure text.",
-          "enum": ["ready", "pending-activation", "blocked", "disabled"]
+          "enum": [
+            "ready",
+            "pending-activation",
+            "blocked",
+            "disabled"
+          ]
         },
         "revision": {
           "description": "Immutable client asset revision when one is available.",
@@ -2981,13 +3453,18 @@
           "maxLength": 512
         }
       },
-      "required": ["profile"]
+      "required": [
+        "profile"
+      ]
     },
     "ClientModuleReadParams": {
       "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "path"],
+      "required": [
+        "profile",
+        "path"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3010,7 +3487,9 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["found"],
+          "required": [
+            "found"
+          ],
           "properties": {
             "found": {
               "const": false
@@ -3020,7 +3499,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["found", "base64"],
+          "required": [
+            "found",
+            "base64"
+          ],
           "properties": {
             "found": {
               "const": true
@@ -3039,7 +3521,13 @@
       "description": "Private launcher-to-daemon request for one ready browser row's declared query service. Browser identity, extension identity and credentials are deliberately not parameters.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "rowId", "sessionId", "service", "input"],
+      "required": [
+        "profile",
+        "rowId",
+        "sessionId",
+        "service",
+        "input"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3080,7 +3568,14 @@
       "description": "Private launcher-to-daemon request for one explicitly authorized effect command owned by a ready browser row. Identity and credentials are supplied by the server, never by browser input.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "rowId", "sessionId", "service", "commandId", "input"],
+      "required": [
+        "profile",
+        "rowId",
+        "sessionId",
+        "service",
+        "commandId",
+        "input"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3127,7 +3622,12 @@
       "description": "Canonical RuntimeTarget artifact accepted by plugins.tree.apply. Same envelope as worker RuntimeTargetArtifact.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["encoding", "canonicalBase64", "digest", "identity"],
+      "required": [
+        "encoding",
+        "canonicalBase64",
+        "digest",
+        "identity"
+      ],
       "properties": {
         "encoding": {
           "const": "base64"
@@ -3145,7 +3645,11 @@
         "identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["treeHash", "resourceRevision", "compositeRevision"],
+          "required": [
+            "treeHash",
+            "resourceRevision",
+            "compositeRevision"
+          ],
           "properties": {
             "treeHash": {
               "type": "string",
@@ -3172,7 +3676,12 @@
     "PluginTreeApplyParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "clientId", "commandId", "artifact"],
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "artifact"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3200,7 +3709,11 @@
     "PluginTreeRollbackParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "clientId", "commandId"],
+      "required": [
+        "profile",
+        "clientId",
+        "commandId"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3225,7 +3738,10 @@
     "PluginTreeView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actual", "pending"],
+      "required": [
+        "actual",
+        "pending"
+      ],
       "properties": {
         "actual": {
           "type": "boolean"
@@ -3253,7 +3769,11 @@
         "identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["treeHash", "resourceRevision", "compositeRevision"],
+          "required": [
+            "treeHash",
+            "resourceRevision",
+            "compositeRevision"
+          ],
           "properties": {
             "treeHash": {
               "type": "string",
@@ -3277,7 +3797,10 @@
     "PluginTreeApplyResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["desiredDigest", "pending"],
+      "required": [
+        "desiredDigest",
+        "pending"
+      ],
       "properties": {
         "desiredDigest": {
           "type": "string",
@@ -3291,7 +3814,9 @@
     "PluginTreeRollbackResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rolledBack"],
+      "required": [
+        "rolledBack"
+      ],
       "properties": {
         "rolledBack": {
           "type": "boolean"
@@ -3308,7 +3833,10 @@
     "PackageProvenanceParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "id"],
+      "required": [
+        "profile",
+        "id"
+      ],
       "properties": {
         "profile": {
           "type": "string",
@@ -3326,10 +3854,16 @@
     "PackageSourcePolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowedSources"],
+      "required": [
+        "allowedSources"
+      ],
       "properties": {
         "allowedSources": {
-          "enum": ["official-only", "official+npm-with-provenance", "any-with-confirmation"]
+          "enum": [
+            "official-only",
+            "official+npm-with-provenance",
+            "any-with-confirmation"
+          ]
         }
       }
     },
@@ -3347,7 +3881,10 @@
           "maxLength": 131072
         }
       },
-      "required": ["path", "content"]
+      "required": [
+        "path",
+        "content"
+      ]
     },
     "AuthoringOrigin": {
       "type": "object",
@@ -3394,7 +3931,14 @@
           "maximum": 9007199254740991
         }
       },
-      "required": ["sessionKey", "toolUseId", "packageId", "snapshotId", "rowId", "turn"]
+      "required": [
+        "sessionKey",
+        "toolUseId",
+        "packageId",
+        "snapshotId",
+        "rowId",
+        "turn"
+      ]
     },
     "AuthoringTests": {
       "type": "object",
@@ -3405,7 +3949,10 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         },
         "state": {
-          "enum": ["passed", "failed"]
+          "enum": [
+            "passed",
+            "failed"
+          ]
         },
         "count": {
           "type": "integer",
@@ -3424,7 +3971,14 @@
           "maxLength": 64
         }
       },
-      "required": ["hash", "state", "count", "runner", "output", "completedAt"]
+      "required": [
+        "hash",
+        "state",
+        "count",
+        "runner",
+        "output",
+        "completedAt"
+      ]
     },
     "AuthoringCandidate": {
       "type": "object",
@@ -3510,7 +4064,11 @@
                 ]
               }
             },
-            "required": ["path", "before", "after"]
+            "required": [
+              "path",
+              "before",
+              "after"
+            ]
           }
         },
         "preview": {
@@ -3591,7 +4149,9 @@
           }
         }
       },
-      "required": ["candidates"]
+      "required": [
+        "candidates"
+      ]
     },
     "AuthoringCreateParams": {
       "type": "object",
@@ -3633,11 +4193,19 @@
                 "maxLength": 131072
               }
             },
-            "required": ["path", "content"]
+            "required": [
+              "path",
+              "content"
+            ]
           }
         }
       },
-      "required": ["profile", "clientId", "commandId", "files"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "files"
+      ]
     },
     "AuthoringWriteParams": {
       "type": "object",
@@ -3687,11 +4255,21 @@
                 "maxLength": 131072
               }
             },
-            "required": ["path", "content"]
+            "required": [
+              "path",
+              "content"
+            ]
           }
         }
       },
-      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "files"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "files"
+      ]
     },
     "AuthoringTestParams": {
       "type": "object",
@@ -3724,7 +4302,13 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash"
+      ]
     },
     "AuthoringSubmitParams": {
       "type": "object",
@@ -3757,7 +4341,13 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash"
+      ]
     },
     "AuthoringApproveParams": {
       "type": "object",
@@ -3794,7 +4384,14 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "reviewHash"
+      ]
     },
     "AuthoringRejectParams": {
       "type": "object",
@@ -3831,7 +4428,14 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
+      "required": [
+        "profile",
+        "clientId",
+        "commandId",
+        "candidateId",
+        "expectedHash",
+        "reviewHash"
+      ]
     },
     "AuthoringShowParams": {
       "type": "object",
@@ -3848,7 +4452,10 @@
           "pattern": "^candidate-[a-f0-9]{32}$"
         }
       },
-      "required": ["profile", "candidateId"]
+      "required": [
+        "profile",
+        "candidateId"
+      ]
     },
     "AuthoringProvenance": {
       "type": "object",
@@ -3885,7 +4492,14 @@
           "maxLength": 512
         }
       },
-      "required": ["candidateId", "candidateHash", "reviewHash", "baseHash", "origin", "reviewer"]
+      "required": [
+        "candidateId",
+        "candidateHash",
+        "reviewHash",
+        "baseHash",
+        "origin",
+        "reviewer"
+      ]
     },
     "AuthoringCandidateSummary": {
       "type": "object",
@@ -3916,22 +4530,38 @@
           ]
         }
       },
-      "required": ["candidateId", "packageId", "candidateHash", "state"]
+      "required": [
+        "candidateId",
+        "packageId",
+        "candidateHash",
+        "state"
+      ]
     },
     "PackagePresentation": {
       "description": "Read-only display data derived from the installed public author contract; it grants no capabilities.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["rows"],
+      "required": [
+        "rows"
+      ],
       "properties": {
         "origin": {
-          "enum": ["official", "example", "local", "local-source", "third-party"]
+          "enum": [
+            "official",
+            "example",
+            "local",
+            "local-source",
+            "third-party"
+          ]
         },
         "includes": {
           "description": "Static package facts without executing plugin code. provides combines author labels with explicit contribution evidence, independently of runtime registrations. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["provides", "counts"],
+          "required": [
+            "provides",
+            "counts"
+          ],
           "properties": {
             "counts": {
               "type": "object",
@@ -3981,7 +4611,14 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["bundle", "id", "toolPolicy", "readOnly", "confirmBeforeActions", "network"],
+            "required": [
+              "bundle",
+              "id",
+              "toolPolicy",
+              "readOnly",
+              "confirmBeforeActions",
+              "network"
+            ],
             "properties": {
               "bundle": {
                 "type": "string",
@@ -3999,13 +4636,25 @@
                 "maxLength": 512
               },
               "readOnly": {
-                "enum": ["yes", "no", "unknown"]
+                "enum": [
+                  "yes",
+                  "no",
+                  "unknown"
+                ]
               },
               "confirmBeforeActions": {
-                "enum": ["yes", "no", "unknown"]
+                "enum": [
+                  "yes",
+                  "no",
+                  "unknown"
+                ]
               },
               "network": {
-                "enum": ["none", "allowed", "unknown"]
+                "enum": [
+                  "none",
+                  "allowed",
+                  "unknown"
+                ]
               }
             }
           }
@@ -4016,7 +4665,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "settings"],
+            "required": [
+              "id",
+              "settings"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -4053,7 +4705,10 @@
       ],
       "properties": {
         "lifetime": {
-          "enum": ["profile", "session"]
+          "enum": [
+            "profile",
+            "session"
+          ]
         },
         "owner": {
           "type": "string",
@@ -4081,7 +4736,13 @@
           "maxLength": 256
         },
         "availability": {
-          "enum": ["active", "draining", "history-only", "disabled", "failed"]
+          "enum": [
+            "active",
+            "draining",
+            "history-only",
+            "disabled",
+            "failed"
+          ]
         }
       }
     }

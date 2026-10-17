@@ -540,15 +540,14 @@ describe('resolveProfile, the fields finalize decides', () => {
       },
     },
   }
-  it('stamps a builtin package as builtin whatever the lockfile claims', async () => {
+  it('never promotes a familiar package name above its verified source trust', async () => {
     const p = await resolveProfile({ builtin: 'local-dev', lock: trusted }, env)
     expect(p.packages.map((x) => [x.id, x.trust])).toEqual([
-      ['@agnes/ai', 'builtin'],
-      ['@agnes/base', 'builtin'],
-      ['@agnes/code', 'builtin'],
+      ['@agnes/ai', 'trusted'],
+      ['@agnes/base', 'trusted'],
+      ['@agnes/code', 'trusted'],
     ])
-    // And a package that is not builtin keeps the lockfile's answer, so the stamp is a decision
-    // about the builtin set rather than a blanket upgrade.
+    // The closed release-id set cannot change the trust attached to an external source.
     const q = await resolveProfile({ builtin: 'local-dev', lock: trusted, builtinPackages: [] }, env)
     expect(q.packages.map((x) => x.trust)).toEqual(['trusted', 'trusted', 'trusted'])
   })

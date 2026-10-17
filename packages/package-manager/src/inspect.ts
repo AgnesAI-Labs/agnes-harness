@@ -355,11 +355,10 @@ export function inspectVerifiedTree(
     runtime: plugins,
   })
   if (preflight.level === 'refused') invalid(preflight.reasons.join('; '))
-  const agents = Object.fromEntries(
-    Object.values(parsePackageBundleContract(String(pkg.name), bundles))
-      .filter((entry) => entry.document.launch)
-      .map((entry) => [entry.id.split('#')[1], entry.document.launch!]),
-  )
+  const agents = Object.values(parsePackageBundleContract(String(pkg.name), bundles))
+    .flatMap((entry) => (entry.document.launch ? [{ ref: entry.id, launch: entry.document.launch }] : []))
+    .sort((a, b) => compare(a.ref, b.ref))
+
   let application: import('@agnes/protocol').ApplicationTemplate | undefined
   try {
     const parsed = parseApplicationContract(
@@ -436,7 +435,7 @@ export function inspectVerifiedTree(
     },
     preflight,
     ...(application ? { application } : {}),
-    ...(Object.keys(agents).length ? { agents } : {}),
+    ...(agents.length ? { agents } : {}),
     contributions,
     presentation: presentPluginRows(plugins, {
       packageId: String(pkg.name),

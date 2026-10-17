@@ -452,9 +452,11 @@ describe('client capability hash integration', () => {
   })
   it('binds launch content independently of example metadata to the reviewed capability digest', () => {
     const launch = { title: { en: 'Work' }, description: { en: 'Read sample data' }, preset: 'safe' }
-    const base = { contributions: [], dependencies: {}, agents: { work: launch } }
+    const base = { contributions: [], dependencies: {}, agents: [{ ref: 'acme/kit#work', launch }] }
     const first = capabilityHash(base)
-    expect(capabilityHash({ ...base, agents: { work: { ...launch, preset: 'write' } } })).not.toBe(first)
+    expect(
+      capabilityHash({ ...base, agents: [{ ref: 'acme/kit#work', launch: { ...launch, preset: 'write' } }] }),
+    ).not.toBe(first)
     expect(capabilityHash({ ...base, application: { id: 'acme', defaultAgent: 'acme/demo#work' } })).not.toBe(
       first,
     )
