@@ -1,5 +1,7 @@
+import type { OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
+import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
+import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 
 export const targetRows = (target: RuntimeTarget) => [
   ...new Map(
@@ -33,3 +35,24 @@ export const registryCodeRevision = (target: RuntimeTarget) =>
       resources: { mcp: [], skills: {} },
     }).target,
   )
+
+/** Apply the selected snapshot's config before its schema is checked during assembly. */
+export function pluginWorkspaceLayers(
+  rows: readonly PluginRow[],
+  layers?: OrdinaryPluginLayers,
+): OrdinaryPluginLayers {
+  return {
+    ...layers,
+    workspace: {
+      ...layers?.workspace,
+      ...Object.fromEntries(
+        rows
+          .filter((row) => pluginSnapshotIdentity(row.plugin))
+          .map((row) => [
+            row.id,
+            { enabled: !row.disabled, ...(row.config === undefined ? {} : { config: row.config }) },
+          ]),
+      ),
+    },
+  }
+}

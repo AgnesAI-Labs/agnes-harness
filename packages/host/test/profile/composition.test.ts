@@ -15,6 +15,7 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   SessionCapabilitySet,
   validateAgainst,
@@ -27,7 +28,9 @@ import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/p
 import {
   compositionAllowsTool,
   profileForComposition,
+  projectCompositionRows,
 } from '../../src/runtime/profile/composition-selection.js'
+import { sessionBundleCatalog } from '../../src/runtime/profile/session-bundle-presets.js'
 import {
   capabilityEnabled,
   resolveSessionCapabilities,
@@ -214,6 +217,16 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     },
     env,
   )
+  expect(sessionBundleCatalog(profile, {})).toEqual(catalog)
+  const installed = {
+    ...profile,
+    packages: [
+      ...profile.packages,
+      { ...profile.packages[0]!, id: 'acme/research', trust: 'trusted' as const },
+    ],
+  }
+  expect(sessionBundleCatalog(installed, {})).toEqual({})
+  expect(sessionBundleCatalog(installed, catalog)).toEqual(catalog)
   expect(
     resolveComposition({
       ...profile,
@@ -372,6 +385,37 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
       session: { packages: [{ id: 'acme/unknown', source: 'runtime-snapshot', enabled: true }] },
     }),
   ).toThrow('unknown package acme/unknown')
+  const privateRow = (id: string, revision: string) =>
+    createPluginRow({
+      id,
+      plugin: 'builtin:host/private',
+      snapshotDigest: 'host-private',
+      exportName: id,
+      entryRevision: revision,
+      extrasRevision: 'none',
+      mountRevision: revision,
+      config: { revision },
+      inject: [],
+      provides: [],
+    })
+  const previousSeam = privateRow('seam:approval', 'previous')
+  const localSeam = privateRow('seam:approval', 'local')
+  const forgedSeam = privateRow('seam:approval', 'forged')
+  expect(projectCompositionRows([previousSeam], baseline, undefined, [localSeam], [previousSeam])).toEqual([])
+  expect(
+    projectCompositionRows([forgedSeam], baseline, undefined, [localSeam], [previousSeam]),
+  ).toMatchObject([forgedSeam])
+  const previousExtension = privateRow('ext:host/private', 'previous')
+  const localExtension = privateRow('ext:host/private', 'local')
+  expect(
+    projectCompositionRows(
+      [{ ...previousExtension, disabled: true }],
+      baseline,
+      undefined,
+      [localExtension],
+      [previousExtension],
+    ),
+  ).toMatchObject([{ ...localExtension, disabled: true }])
   const next = resolveComposition(profile, {
     preset: { name: 'research', providers: { compaction: { provider: 'sliding-window' } } },
   })

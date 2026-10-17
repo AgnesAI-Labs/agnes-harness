@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { HostError } from '@agnes/host-common/errors'
 import { capabilityHash, lockPath, type RuntimePluginSnapshot, readLock } from '@agnes/package-manager'
+import type { HostOptions } from '../lifecycle/host.js'
 
 /** Code pins preserve an approved snapshot, never a revoked package grant. Enablement is independent. */
 export async function assertGenerationTrust(
@@ -46,5 +47,26 @@ export async function assertGenerationTrust(
         `E_GENERATION_UNTRUSTED: package ${snapshot.packageId} has no current bound trust decision`,
         { detail: { packageId: snapshot.packageId, generationRestore: true } },
       )
+  }
+}
+
+/** Let each publisher resolve explicit development reloads as well as installed source identities. */
+export function generationSourceReader(
+  options: Pick<HostOptions, 'runtimePluginSources' | 'runtimePluginCatalogue' | 'runtimePluginSnapshots'>,
+  development: ReadonlyMap<string, RuntimePluginSnapshot>,
+) {
+  return async () => {
+    const available =
+      (await options.runtimePluginSources?.()) ??
+      options.runtimePluginCatalogue ??
+      options.runtimePluginSnapshots ??
+      []
+    return [
+      ...new Map(
+        [...available, ...development.values()].map(
+          (source) => [`${source.snapshot.packageId}@${source.snapshot.snapshotId}`, source] as const,
+        ),
+      ).values(),
+    ]
   }
 }

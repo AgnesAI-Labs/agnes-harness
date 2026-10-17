@@ -91,7 +91,7 @@ export async function sessionAdmission(
   profile: ResolvedProfile,
   modelProfile: ResolvedProfile,
   options: HostOptions,
-  activePackages: ReadonlySet<string> | undefined,
+  activePackages: ReadonlyMap<string, string> | undefined,
 ) {
   const available =
     (await options.runtimePluginSources?.()) ??
@@ -102,7 +102,9 @@ export async function sessionAdmission(
     (source) =>
       source.trusted &&
       source.enabled !== false &&
-      (source.enabled === true || !activePackages || activePackages.has(source.snapshot.packageId)),
+      (!activePackages ||
+        activePackages.get(source.snapshot.packageId) === source.snapshot.snapshotId ||
+        (!activePackages.has(source.snapshot.packageId) && source.enabled === true)),
   )
   const sourceIds = new Set(sources.map((source) => source.snapshot.packageId))
   if (sourceIds.size !== sources.length)
@@ -275,11 +277,15 @@ export async function verifyAgentPin(
 /** The publisher owns row enablement; data admission consumes only its active package identities. */
 export function activeAgentPackages(
   rows: readonly { plugin: string; disabled?: boolean }[],
-): ReadonlySet<string> {
-  return new Set(
-    rows.flatMap((row) => {
-      const identity = !row.disabled && pluginSnapshotIdentity(row.plugin)
-      return identity ? [identity.packageId] : []
-    }),
-  )
+): ReadonlyMap<string, string> {
+  const selected = new Map<string, string>()
+  for (const row of rows) {
+    const identity = !row.disabled && pluginSnapshotIdentity(row.plugin)
+    if (!identity) continue
+    const previous = selected.get(identity.packageId)
+    if (previous && previous !== identity.snapshotId)
+      throw new HostError('E_PRESET_UNSUPPORTED', 'ambiguous active package sources')
+    selected.set(identity.packageId, identity.snapshotId)
+  }
+  return selected
 }

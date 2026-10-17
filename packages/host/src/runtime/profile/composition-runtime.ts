@@ -26,6 +26,7 @@ import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
+import { pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -50,9 +51,13 @@ import {
   verifyAgentPin,
 } from './agent-plan.js'
 import { compositionPresets } from './composition-presets.js'
-import { type CompositionContainer as Container, profileForComposition } from './composition-selection.js'
+import {
+  type CompositionContainer as Container,
+  profileForComposition,
+  projectCompositionRows,
+} from './composition-selection.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
-import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
+import { resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
@@ -74,6 +79,7 @@ export async function createCompositionHost(
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
   store.sweepOrphans((digest) => generations.pinFileState(digest))
   const containers = new Map<string, Container>()
+  const builtinRows = new WeakMap<Host, readonly PluginRow[]>()
   const opening = new Map<string, Promise<Container>>()
   const idleSince = new Map<Container, number>()
   const idleMs = generationIdleMs(profile.limits)
@@ -103,6 +109,7 @@ export async function createCompositionHost(
   let closed = false
   let closing: Promise<void> | undefined
   const calls = createHostCallQueue(() => closed)
+  let bootTarget: NonNullable<Host['runtimeTargetSnapshot']> = () => undefined
   let latestTarget: RuntimeTarget | undefined
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
@@ -110,44 +117,14 @@ export async function createCompositionHost(
     rows: readonly T[],
     tree: ResolvedComposition,
     host?: Host,
-  ): T[] => {
-    // Skills are live resources. A replayed target can carry a row from an earlier worker boot.
-    // Use this container's prepared row so its mount identity matches its current importer.
-    const consumers = new Map(
-      host?.extensionRows
-        .current()
-        .filter((row) => row.liveResources?.length)
-        .map((row) => [row.id, row]),
+  ): T[] =>
+    projectCompositionRows(
+      rows,
+      tree,
+      host,
+      host ? (builtinRows.get(host) ?? []) : [],
+      [...containers.values()].flatMap((container) => builtinRows.get(container.host) ?? []),
     )
-    const candidates = rows.map((row) => {
-      const live = consumers.get(row.id)
-      return live && live.plugin === row.plugin && live.entryRevision === row.entryRevision
-        ? (live as T)
-        : row
-    })
-    const plugins = resolveSessionCapabilities({
-      composition: tree,
-      installed: {
-        plugins: candidates.map((row) => ({
-          id: row.id,
-          enabled: !row.disabled,
-          packageId:
-            pluginSnapshotIdentity(row.plugin)?.packageId ??
-            (row.plugin.startsWith('builtin:')
-              ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
-              : undefined),
-        })),
-      },
-    }).plugins
-    return candidates.map((row) => {
-      const override = tree.selection.plugins?.[row.id]
-      return Object.freeze({
-        ...row,
-        ...(override?.config === undefined ? {} : { config: override.config }),
-        disabled: !capabilityEnabled(plugins, row.id),
-      })
-    })
-  }
   const draining = (rows: readonly PluginRow[], tree: ResolvedComposition, host?: Host) => {
     const loop = tree.selection.loop
     const source =
@@ -201,22 +178,21 @@ export async function createCompositionHost(
     const pending = opening.get(identity)
     if (pending) return pending
     const started = (async () => {
+      const target = latestTarget ?? bootTarget()
       const pinned = generations.session(binding.sessionKey)
       const skills = currentSkills
       // A newly opened composition must not import boot-time pins retired by a later update.
       // Existing sessions bootstrap from their own durable code snapshot instead.
       const sources = pinned
         ? generations.read(pinned.generationId).sources
-        : latestTarget
+        : target
           ? new RuntimePluginCatalogue(
               (await options.runtimePluginSources?.()) ??
                 options.runtimePluginCatalogue ??
                 options.runtimePluginSnapshots ??
                 [],
-            ).select(project(latestTarget, binding.tree))
-          : ((await options.runtimePluginSources?.())?.filter(
-              (source) => source.trusted && source.enabled !== false,
-            ) ?? options.runtimePluginSnapshots)
+            ).select(project(target, binding.tree))
+          : options.runtimePluginSnapshots
       if (sources)
         await assertGenerationTrust(
           sources,
@@ -253,25 +229,12 @@ export async function createCompositionHost(
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
           ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
-          ...(latestTarget && !pinned
+          ...(target && !pinned
             ? {
-                ordinaryPluginLayers: {
-                  ...options.ordinaryPluginLayers,
-                  workspace: {
-                    ...options.ordinaryPluginLayers?.workspace,
-                    ...Object.fromEntries(
-                      projectRows(latestTarget.tree.rows, binding.tree)
-                        .filter((row) => pluginSnapshotIdentity(row.plugin))
-                        .map((row) => [
-                          row.id,
-                          {
-                            enabled: !row.disabled,
-                            ...(row.config === undefined ? {} : { config: row.config }),
-                          },
-                        ]),
-                    ),
-                  },
-                },
+                ordinaryPluginLayers: pluginWorkspaceLayers(
+                  projectRows(target.tree.rows, binding.tree),
+                  options.ordinaryPluginLayers,
+                ),
               }
             : {}),
           ...(sources
@@ -295,6 +258,12 @@ export async function createCompositionHost(
             },
           }),
       )
+      builtinRows.set(
+        host,
+        [...(host.runtimeTargetSnapshot?.()?.tree.rows ?? []), ...host.extensionRows.current()].filter(
+          (row) => row.plugin.startsWith('builtin:'),
+        ),
+      )
       try {
         const rows = new Map(host.extensionRows.current().map((row) => [row.id, row]))
         for (const input of prepared.values()) {
@@ -306,8 +275,8 @@ export async function createCompositionHost(
           const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
-        if (latestTarget) {
-          const report = await host.applyRuntimeTarget(project(latestTarget, binding.tree, host))
+        if (target) {
+          const report = await host.applyRuntimeTarget(project(target, binding.tree, host))
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
         }
@@ -320,7 +289,7 @@ export async function createCompositionHost(
         const container = {
           host,
           tree: binding.tree,
-          draining: latestTarget ? draining(latestTarget.tree.rows, binding.tree, host) : false,
+          draining: target ? draining(target.tree.rows, binding.tree, host) : false,
         }
         containers.set(identity, container)
         return container
@@ -336,17 +305,24 @@ export async function createCompositionHost(
       opening.delete(identity)
     }
   }
-  const initialTree = resolveComposition(profile, {
+  const { current: bootProfile } = await sessionAdmission(
+    profile,
+    modelProfile,
+    { ...options, runtimePluginSources: async () => options.runtimePluginSnapshots ?? [] },
+    undefined,
+  )
+  const initialTree = resolveComposition(bootProfile, {
     preset: resolvePreset(profile.presets.default, presets, { limits: profile.limits }).doc,
   })
   const initial = await open({
     sessionKey: '',
     tree: initialTree,
-    profile: profileForComposition(profile, initialTree),
+    profile: profileForComposition(bootProfile, initialTree),
   }).catch((error) => {
     writer.close()
     throw error
   })
+  bootTarget = () => initial.host.runtimeTargetSnapshot?.()
   const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
     const active = binding
@@ -458,7 +434,7 @@ export async function createCompositionHost(
       profile,
       modelProfile,
       options,
-      latestTarget ? activeAgentPackages(latestTarget.tree.rows) : undefined,
+      activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
     )
   const prepareAgent = createAgentResolver({
     profile,
@@ -709,15 +685,17 @@ export async function createCompositionHost(
     applyRuntimeTarget: (target) =>
       calls.enqueue(async () => {
         await refreshTrust()
-        latestTarget = target
-        latestRows = undefined
-        await broadcast('runtime-target', async (container) => {
+        const publication = await broadcast('runtime-target', async (container) => {
           const report = await container.host.applyRuntimeTarget(
             project(target, container.tree, container.host),
           )
           container.draining = draining(target.tree.rows, container.tree, container.host)
           return report
         })
+        if (publication.ok) {
+          latestTarget = target
+          latestRows = undefined
+        }
         return convergence(target)
       }),
     refreshSkillRow: (fresh) =>

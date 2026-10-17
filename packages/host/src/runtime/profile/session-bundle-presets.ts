@@ -5,13 +5,16 @@ import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { type BundleCatalog, sessionBundlePresets } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
-/** A published catalog replaces installed boot-time bundles; only builtin bundles stay static. */
+/** Replace installed boot-time bundles while retaining builtin and explicit transient bundle data. */
 export function sessionBundleCatalog(profile: ResolvedProfile, published?: BundleCatalog): BundleCatalog {
   if (!published) return profile.bundleCatalog ?? {}
-  const builtin = new Set(profile.packages.filter((pkg) => pkg.trust === 'builtin').map((pkg) => pkg.id))
+  const installed = new Map(profile.packages.map((pkg) => [pkg.id, pkg.trust]))
   return {
     ...Object.fromEntries(
-      Object.entries(profile.bundleCatalog ?? {}).filter(([, entry]) => builtin.has(entry.sourcePackage)),
+      Object.entries(profile.bundleCatalog ?? {}).filter(
+        ([, entry]) =>
+          !installed.has(entry.sourcePackage) || installed.get(entry.sourcePackage) === 'builtin',
+      ),
     ),
     ...published,
   }
