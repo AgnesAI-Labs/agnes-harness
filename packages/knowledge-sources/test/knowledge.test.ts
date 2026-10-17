@@ -2,6 +2,7 @@ import type {
   OwnedStore,
   PluginContextFacets,
   ProfileManagedInit,
+  ProjectionEvent,
   ServiceContext,
   ServiceDef,
   ToolContext,
@@ -57,6 +58,18 @@ function required<T>(entries: ReadonlyMap<string, T>, name: string): T {
   const value = entries.get(name)
   if (!value) throw new Error(`Missing fixture registration: ${name}`)
   return value
+}
+function citationEvent(data: JsonValue, seq = 1): ProjectionEvent {
+  return {
+    seq,
+    ts: '2026-01-01T00:00:00Z',
+    id: '0'.repeat(26),
+    type: 'x/fixture/knowledge/cited',
+    data,
+    actor: { id: 'synthetic', org: 'test', role: 'operator', deptPath: [], attrs: {} },
+    origin: 'ext:fixture/knowledge',
+    trust: 'trusted',
+  }
 }
 async function fixture() {
   const values = new Map<string, JsonValue>()
@@ -123,10 +136,7 @@ async function fixture() {
     eventLog: {
       async append(_name: string, data: JsonValue) {
         events.push(data)
-        state = citationProjection.apply(state, {
-          type: 'x/fixture/knowledge/cited',
-          data,
-        } as Parameters<typeof citationProjection.apply>[1])
+        state = citationProjection.apply(state, citationEvent(data, events.length))
         return events.length
       },
     },
@@ -220,10 +230,17 @@ describe('knowledge connectors', () => {
     expect(f.state().citations).toHaveLength(2)
     let bounded = f.state()
     for (let index = 0; index < 40; index++) {
-      bounded = citationProjection.apply(bounded, {
-        type: 'x/fixture/knowledge/cited',
-        data: { ...api.citation, id: hash(String(index)), locator: '文'.repeat(512) },
-      } as Parameters<typeof citationProjection.apply>[1])
+      bounded = citationProjection.apply(
+        bounded,
+        citationEvent(
+          {
+            ...api.citation,
+            id: hash(String(index)),
+            locator: '文'.repeat(512),
+          },
+          index + 1,
+        ),
+      )
     }
     expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(65536)
     expect(bounded.citations.length).toBeLessThanOrEqual(32)
