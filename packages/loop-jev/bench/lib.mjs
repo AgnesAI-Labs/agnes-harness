@@ -314,6 +314,26 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
 }
 
 /**
+ * The events of one turn: from the first main-lane `turn/start` after `fromSeq` to the first
+ * main-lane `turn/end` after that start and before the next turn/start. Rows written between turns belong to no turn. Without an
+ * end the window runs to `fallbackSeq` when given, else to the event before the next turn/start,
+ * else to the last event. `upper` is where the next turn's search starts.
+ */
+export function turnWindow(events, fromSeq, fallbackSeq) {
+  const main = (e) => !e.lane || e.lane === 'main'
+  const start = events.find((e) => e.seq > fromSeq && e.type === 'turn/start' && main(e))
+  const after = start?.seq ?? fromSeq
+  const next = events.find((e) => e.seq > after && e.type === 'turn/start' && main(e))
+  // An end after the next turn/start is that turn's end, not this one's.
+  const end = events.find(
+    (e) => e.seq > after && (!next || e.seq < next.seq) && e.type === 'turn/end' && main(e),
+  )
+  const lower = start ? start.seq - 1 : fromSeq
+  const upper = end ? end.seq : (fallbackSeq ?? (next ? next.seq - 1 : (events.at(-1)?.seq ?? fromSeq)))
+  return { start, end, lower, upper, events: events.filter((e) => e.seq > lower && e.seq <= upper) }
+}
+
+/**
  * The turns of one session must add up to its ledger: inference rows, and side-call rows on the Jev
  * route, counted over all the session's events against the sum of the per-turn counts in `records`.
  * `jevRoute: null` means no Jev route, so only inference is compared.

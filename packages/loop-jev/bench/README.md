@@ -134,6 +134,15 @@ model attempts or whose side-call rows on the Jev route do not match its Jev cal
 other routes, dropped Jev telemetry, turns that ended at the no-progress limit, ledger rows whose
 model has no catalogue price, and timeouts.
 
+## Rescoring a finished run
+
+`--rescore <out dir> --out <new dir>` recomputes a finished run from its own `events/` and
+`records.jsonl`: every per-turn metric with the current turn windows, the session checks, the
+pilot's k or the gates (with `--k`/`--k-from`, or the k the original report used). Probe results,
+answers and checks are kept. It needs no home, key, network or Python and never writes into the
+original directory. Rows without a billed cost count as 0 there, since no catalogue prices are at
+hand; the cache-read check is carried over from the original report.
+
 ## Without the Web UI
 
 In a home whose Settings hold no account, the runner reads the routes from

@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -30,6 +31,7 @@ import {
   sessionBalance,
   toolSchemaCheck,
   turnMetrics,
+  turnWindow,
   verdict,
 } from './lib.mjs'
 import {
@@ -80,6 +82,8 @@ Options:
   --step-cap <n>          the Jev loop's step cap (default: 20)
   --turn-timeout-ms <n>   watchdog per turn (default: 600000)
   --dry-run               print the plan and write bundle.json without starting a host
+  --rescore <out dir>     recompute the report of a finished run from its events and records
+                          into --out (a new directory); needs no home, key, network or Python
   --help                  this text
 
 Workspaces are made in the system temp directory (TMPDIR) and copied to <out>/workspaces.
@@ -107,6 +111,7 @@ const VALUE_FLAGS = new Set([
   '--base-preset',
   '--step-cap',
   '--turn-timeout-ms',
+  '--rescore',
 ])
 const BOOL_FLAGS = new Set(['--pilot', '--dry-run', '--fake', '--help'])
 
@@ -152,6 +157,18 @@ export function parseCli(argv) {
     } else throw new SetupError(`unknown option ${flag}`)
   }
   if (raw['--help']) return { help: true }
+  if (raw['--rescore'] !== undefined) {
+    if (!raw['--out']) throw new SetupError('--out is required')
+    if (raw['--k'] !== undefined && raw['--k-from'] !== undefined)
+      throw new SetupError('pass at most one of --k and --k-from')
+    const given = raw['--k'] !== undefined || raw['--k-from'] !== undefined
+    return {
+      help: false,
+      rescore: resolve(raw['--rescore']),
+      out: resolve(raw['--out']),
+      ...(given ? readK(raw) : {}),
+    }
+  }
   if (!raw['--suite']) throw new SetupError('--suite is required')
   if (!raw['--out']) throw new SetupError('--out is required')
   if (!raw['--fake'] === !raw['--home']) throw new SetupError('pass exactly one of --home and --fake')
@@ -462,11 +479,11 @@ async function runCellIn(ctx, cell, workspace, kept) {
     )
     // This turn's window: from its own turn/start to its own turn/end. Rows the host writes between
     // turns (a session title, a reply suggestion) belong to no turn.
-    const start = stream.events.find((e) => e.seq > fromSeq && e.type === 'turn/start' && mainLane(e))
-    const end = stream.events.find((e) => isEnd(e) && e.seq > (start?.seq ?? fromSeq))
-    const lower = start ? start.seq - 1 : fromSeq
-    const upper = end ? end.seq : Math.max(target, stream.events.at(-1)?.seq ?? fromSeq)
-    const events = stream.events.filter((e) => e.seq > lower && e.seq <= upper)
+    const { start, end, lower, upper, events } = turnWindow(
+      stream.events,
+      fromSeq,
+      Math.max(target, stream.events.at(-1)?.seq ?? fromSeq),
+    )
     cursor = Math.max(cursor, upper)
     const endReason = timedOut ? 'timeout' : (end?.data?.reason ?? turnResult?.reason ?? 'failed')
     const probes = []
@@ -694,6 +711,7 @@ function writeOutputs(ctx, cells, results) {
     ...cellChecks(cells, results),
     ...turnFlags(records),
     ...[...ctx.missingPrices].map((m) => `cost missing catalogue price: ${m} (counted as 0)`),
+    ...(ctx.extraFlags ?? []),
   ]
   const pilot = ctx.o.pilot
     ? {
@@ -718,6 +736,7 @@ function writeOutputs(ctx, cells, results) {
     ...(pilot ? { pilot } : { k: ctx.o.k, kSource: ctx.o.kSource, verdict: gates ?? null }),
     ...(ctx.stopped ? { stopped: ctx.stopped } : {}),
     totals,
+    ...(ctx.rescoredFrom ? { rescoredFrom: ctx.rescoredFrom } : {}),
     otherSideCalls: other,
     sessionChecks,
     countsAddUp: unbalanced.length === 0,
@@ -736,6 +755,7 @@ function writeOutputs(ctx, cells, results) {
     `- lanes ${ctx.o.lanes.join(', ')}; repetitions ${ctx.o.reps}${ctx.state.interrupted ? '; INTERRUPTED' : ''}`,
     ...(pilot ? [] : [`- k = ${ctx.o.k} (${ctx.o.kSource})`]),
     ...(ctx.stopped ? [`- stopped early: ${ctx.stopped}`] : []),
+    ...(ctx.rescoredFrom ? [`- rescored from the events of ${ctx.rescoredFrom}`] : []),
     '',
     ...jevSection(records),
     ...cacheSection(results, cells),
@@ -787,12 +807,125 @@ function loadPlan(o) {
   return suite
 }
 
+// ---- rescore ------------------------------------------------------------------------------
+
+const readLines = (path) =>
+  readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line))
+
+/**
+ * Recomputes a finished run from its own files: every per-turn metric from the saved session events
+ * with the turn windows of this version, the session checks, the pilot's k or the gates. Probe results,
+ * answers and checks are kept from `records.jsonl`; only whether a turn completed is read again from
+ * its own `turn/end`. Needs no home, key, network or Python, and writes only into `--out`.
+ */
+async function rescore(o) {
+  const src = o.rescore
+  if (resolve(o.out) === src)
+    throw new SetupError('--out must be a new directory, not the one being rescored')
+  if (existsSync(join(o.out, 'report.json'))) throw new SetupError(`${o.out} already holds a report`)
+  for (const name of ['report.json', 'records.jsonl', 'events'])
+    if (!existsSync(join(src, name))) throw new SetupError(`${src} has no ${name}; it is not a bench output`)
+  const original = JSON.parse(readFileSync(join(src, 'report.json'), 'utf8'))
+  const routes = original.routes
+  const jevRoute = routes?.jev?.route ?? null
+  const pilot = original.pilot !== undefined
+  const k = o.k ?? original.k ?? 1
+  const kSource =
+    o.kSource ??
+    (original.kSource ? `${original.kSource}, as in the original report` : 'default (no pilot k given)')
+  const missingPrices = new Set()
+  const price = (row) => {
+    missingPrices.add(`${row.route ?? '?'}/${row.model ?? '?'}`)
+    return 0
+  }
+  const byCell = new Map()
+  for (const record of readLines(join(src, 'records.jsonl'))) {
+    const key = `${record.scenario}.${record.lane}.r${record.rep + 1}`
+    byCell.set(key, [...(byCell.get(key) ?? []), record])
+  }
+  const cells = []
+  const results = []
+  for (const [key, list] of byCell) {
+    const first = list[0]
+    const cell = {
+      scenario: { id: first.scenario, category: first.category },
+      lane: first.lane,
+      rep: first.rep,
+    }
+    const file = join(src, 'events', `${key}.jsonl`)
+    const events = existsSync(file) ? readLines(file) : []
+    const result = { records: [], turnEvents: [], error: undefined, problems: [], toolTokens: Infinity }
+    if (!existsSync(file)) result.error = `no events file ${key}.jsonl`
+    let cursor = 0
+    for (const r of [...list].sort((a, b) => a.turn - b.turn)) {
+      if (r.endReason === 'not-run') {
+        result.records.push(r)
+        result.turnEvents.push([])
+        if (r.error && r.error !== 'interrupted') result.error ??= r.error
+        continue
+      }
+      const w = turnWindow(events, cursor)
+      cursor = w.upper
+      const endReason = r.endReason === 'timeout' ? 'timeout' : (w.end?.data?.reason ?? r.endReason)
+      const completed = endReason === 'completed'
+      result.records.push({
+        ...r,
+        endReason,
+        ...(w.end?.data ? { end: w.end.data } : {}),
+        score: { ...r.score, completed, pass: r.score.probesPass && r.score.answerPass && completed },
+        metrics: metricsOf(w.events, price, jevRoute),
+        ...(r.lane === 'jev' ? { jevDecide: decideStats(w.events) } : {}),
+        wallMs: w.start && w.end ? Date.parse(w.end.ts) - Date.parse(w.start.ts) : null,
+        steps: w.events.filter((e) => e.type === 'step/start' && mainLane(e)).length,
+      })
+      result.turnEvents.push(w.events)
+      if (endReason === 'timeout') result.problems.push(`timeout in turn ${r.turn + 1}`)
+    }
+    result.otherSideCalls = metricsOf(events, price, jevRoute).otherSideCalls
+    result.sessionCheck = { cell: key, ...sessionBalance(events, result.records, jevRoute) }
+    cells.push(cell)
+    results.push(result)
+  }
+  mkdirSync(o.out, { recursive: true })
+  const ctx = {
+    o: {
+      out: o.out,
+      lanes: original.lanes,
+      reps: original.reps,
+      pilot,
+      fake: original.fake === true,
+      k,
+      kSource,
+    },
+    suite: { suite: original.suite },
+    routes,
+    missingPrices,
+    state: { interrupted: original.interrupted === true },
+    stopped: original.stopped,
+    rescoredFrom: src,
+    // The tool definitions are not saved, so the cache-read check is carried over: the first turn's
+    // window, which it reads, did not depend on the window logic.
+    extraFlags: (original.flags ?? []).filter((f) => f.includes('cached tokens')),
+  }
+  const report = writeOutputs(ctx, cells, results)
+  process.stdout.write(
+    `rescored ${cells.length} sessions from ${src}; report ${join(o.out, 'report.md')}; ${report.flags.length} flags\n`,
+  )
+  if (!report.countsAddUp) return 1
+  if (report.verdict && !report.verdict.valid) return 1
+  return 0
+}
+
 export async function main(argv) {
   const o = parseCli(argv)
   if (o.help) {
     process.stdout.write(`${USAGE}\n`)
     return 0
   }
+  if (o.rescore) return rescore(o)
   const suite = loadPlan(o)
   const python = checkPython(suite, o)
   // Workspaces and the startup directory live under the system temp directory, never under --out:

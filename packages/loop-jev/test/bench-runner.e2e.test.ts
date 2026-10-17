@@ -450,6 +450,41 @@ describe('bench runner', () => {
       toolInferences: 3,
       callsPerInference: { '0 mutable + 1 read-only': 3 },
     })
+
+    // A rescore from the saved files, with no home and no network, gives the live numbers back.
+    const again = join(out, 'window', 'rescored')
+    const rescored = runSync(['--rescore', dir, '--out', again], { AGH_HOME: join(out, 'window', 'no-home') })
+    expect(rescored.status, rescored.stderr).toBe(0)
+    const live = readJson(join(dir, 'report.json'))
+    const redo = readJson(join(again, 'report.json'))
+    expect(redo.rescoredFrom).toBe(dir)
+    expect(redo.totals).toEqual(live.totals)
+    expect(redo.sessionChecks).toEqual(live.sessionChecks)
+    expect(redo.verdict).toEqual(live.verdict)
+    type Rec = ReturnType<typeof readRecords>[number]
+    const pick = (x: Rec) => ({
+      key: `${x.lane}.${x.turn}`,
+      inference: x.metrics.inference,
+      sideCall: x.metrics.sideCall,
+      usdMicros: x.metrics.usdMicros,
+      reconciled: x.metrics.reconciled,
+      wallMs: x.wallMs,
+      steps: x.steps,
+      endReason: x.endReason,
+      score: x.score,
+    })
+    const sorted = (rows: Rec[]) => rows.map(pick).sort((a, b) => a.key.localeCompare(b.key))
+    expect(sorted(readRecords(again))).toEqual(sorted(records))
+    const pilotAgain = join(out, 'window', 'pilot-rescored')
+    expect(runSync(['--rescore', pilotDir, '--out', pilotAgain]).status).toBe(0)
+    expect(readJson(join(pilotAgain, 'report.json')).pilot).toEqual(
+      readJson(join(pilotDir, 'report.json')).pilot,
+    )
+    // The original is never overwritten.
+    const same = runSync(['--rescore', dir, '--out', dir])
+    expect(same.status).toBe(2)
+    expect(same.stderr).toContain('must be a new directory')
+    expect(runSync(['--rescore', dir, '--out', again]).stderr).toContain('already holds a report')
   }, 300_000)
 
   it('names what is missing or ambiguous in the saved accounts', async () => {
