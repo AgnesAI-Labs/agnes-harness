@@ -49,3 +49,50 @@ export function checkNoProgress(
   }
   return null
 }
+
+export const UNAVAILABLE_MESSAGE = 'Selected operation is no longer available.'
+export function duplicateMessage(op: string): string {
+  return `${op} repeated twice with the same arguments and observation; refusing a third execution without new information.`
+}
+export type GuardRefusal = { code: 'UNAVAILABLE' | 'DUPLICATE_NO_PROGRESS'; message: string }
+
+/** A step's calls may only name tools that are still offered this turn. */
+export function checkAvailable(names: readonly string[], toolNames: readonly string[]): GuardRefusal | null {
+  const offered = new Set(toolNames)
+  return names.every((name) => offered.has(name))
+    ? null
+    : { code: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE }
+}
+
+/** Whether the world may differ after this entry ran, whatever the call was. */
+function changedWorld(entry: HistoryEntry): boolean {
+  return (
+    !!entry.changed_files?.length ||
+    entry.files_may_have_changed === true ||
+    (entry.dispatched && entry.disposition === 'UNKNOWN')
+  )
+}
+
+/**
+ * Refuse a third execution of the same intent when its last two runs observed the same thing.
+ * `turn` is this turn's history; the window starts after the last change made by another intent,
+ * and only dispatched runs count.
+ */
+export function checkDuplicate(
+  turn: readonly HistoryEntry[],
+  intentFp: string,
+  op: string,
+): GuardRefusal | null {
+  let start = 0
+  for (let i = turn.length - 1; i >= 0; i--) {
+    const entry = turn[i]
+    if (entry !== undefined && entry.intentFp !== intentFp && changedWorld(entry)) {
+      start = i + 1
+      break
+    }
+  }
+  const runs = turn.slice(start).filter((entry) => entry.dispatched && entry.intentFp === intentFp)
+  const [prev, last] = runs.slice(-2)
+  if (prev === undefined || last === undefined || prev.observationFp !== last.observationFp) return null
+  return { code: 'DUPLICATE_NO_PROGRESS', message: duplicateMessage(op) }
+}
