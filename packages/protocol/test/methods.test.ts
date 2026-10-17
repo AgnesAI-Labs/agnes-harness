@@ -42,6 +42,29 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
+  it('accepts profile decision invalidation and refuses decision payloads on that notice', () => {
+    const notice = {
+      kind: 'decisions_changed',
+      at: '2026-10-17T00:00:00Z',
+      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+    }
+    expect(validateMethod('_agnes/v1/daemon.notice', 'params', notice).ok).toBe(true)
+    for (const field of ['decisions', 'id', 'prompt', 'subject', 'response', 'count'])
+      expect(
+        validateMethod('_agnes/v1/daemon.notice', 'params', {
+          ...notice,
+          detail: { ...notice.detail, [field]: 'private' },
+        }).ok,
+        field,
+      ).toBe(false)
+    expect(
+      validateMethod('_agnes/v1/daemon.notice', 'params', {
+        ...notice,
+        detail: { profile: 'default' },
+      }).ok,
+    ).toBe(false)
+  })
+
   it('accepts optional runtime diagnostics without changing the legacy request', () => {
     for (const params of [{}, { runtimeLog: true }, { runtimeLog: false }])
       expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', params)?.ok).toBe(true)

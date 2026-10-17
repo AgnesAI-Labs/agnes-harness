@@ -2913,6 +2913,38 @@
     "DaemonNotice": {
       "oneOf": [
         {
+          "description": "Profile approval invalidation only. Re-read profile.decisions.list through its authorized ingress; no decision content or identifier is carried.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": { "const": "decisions_changed" },
+            "detail": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["profile", "principal"],
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+                },
+                "principal": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "org"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+                    "org": { "type": "string", "maxLength": 256 }
+                  }
+                }
+              }
+            },
+            "at": { "type": "string" }
+          }
+        },
+        {
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "detail", "at"],

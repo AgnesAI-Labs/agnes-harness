@@ -18,6 +18,8 @@ A client offering `clientCapabilities._meta["ai.agnes.harness"].capabilities.per
 
 Workspace admission uses `_agnes/v1/workspace.add`; a caller's `cwd` alone grants no authority. The same session and plugin generation are visible from every transport.
 
+`_agnes/v1/profile.decisions.list` lists the authenticated local human's pending profile operations; `_agnes/v1/profile.decisions.answer` submits a revision-checked answer. After an authorized list call, that connection receives `_agnes/v1/daemon.notice` with `kind: "decisions_changed"` for its server-bound profile and resolved principal (`detail: { profile, principal: { id, org } }`). Creation, answers, expiry and withdrawal invalidate the list after their durable commit. Notices contain no decision IDs, prompts, subjects, answers or counts and grant no data access. Re-read the authorized list on a notice, focus/visibility return and reconnect; notices are best-effort and have no replay cursor. This is an additive v1 notice kind.
+
 ## Authentication and management
 
 Local IPC authenticates the OS owner on the daemon's private Unix socket or verified Windows pipe. `agh app-server --stdio` supplies the local credential at initialization; it never puts credentials on stdout. Treat the child process as a trusted local administrator. EOF and signals close its connection, leaving the shared daemon running.

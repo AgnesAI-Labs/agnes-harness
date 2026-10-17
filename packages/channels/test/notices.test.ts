@@ -39,8 +39,16 @@ describe('noticeText', () => {
     expect(noticeText({ kind: 'overloaded', detail: {}, at: 't' })).toBe('消息太多，正在追赶')
   })
 
-  it.each(['job_dispatched', 'job_dead'] as const)('suppresses noisy %s notices', (kind) => {
-    expect(noticeText({ kind, detail: {}, at: 't' } as DaemonNotice)).toBeNull()
+  it.each([
+    { kind: 'job_dispatched', detail: {}, at: 't' },
+    { kind: 'job_dead', detail: {}, at: 't' },
+    {
+      kind: 'decisions_changed',
+      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+      at: 't',
+    },
+  ] satisfies DaemonNotice[])('suppresses noisy $kind notices', (notice) => {
+    expect(noticeText(notice)).toBeNull()
   })
 })
 
