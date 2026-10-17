@@ -36,12 +36,12 @@ const INCLUDE_COUNTS = { tool: 'tools', skills: 'skills', mcp: 'mcp', bundle: 'b
 /**
  * What a plugin brings, in a few words. The package says which kinds it includes and, where its
  * data states one, how many; a kind without a number is counted by the plugin's code, not zero.
- * A package that says nothing falls back to the kinds its author declared, then to what it has
- * registered while running. Explicit launch declarations identify agents.
+ * Author declarations stay separate from observed registrations. Explicit launch declarations
+ * identify agents.
  */
 export function pluginIncludes(
   item: PluginPurposeItem,
-  value: PluginPresentation | undefined,
+  _value: PluginPresentation | undefined,
   t: (key: string, vars?: Readonly<Record<string, string | number>>) => string,
 ): string {
   const label = (kind: string) => {
@@ -49,7 +49,7 @@ export function pluginIncludes(
     return t(key) === key ? kind : t(key)
   }
   const includes = item.presentation?.includes
-  const kinds: readonly string[] = includes?.provides ?? item.provides ?? []
+  const kinds: readonly string[] = item.provides ?? []
   if (kinds.length)
     return kinds
       .flatMap((kind) => {
@@ -64,9 +64,7 @@ export function pluginIncludes(
         return count ? t('includesItem', { count, name: label(kind) }) : label(kind)
       })
       .join(' · ')
-  const counts = new Map<string, number>()
-  for (const entry of value?.provides ?? []) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1)
-  return [...counts].map(([kind, count]) => t('includesItem', { count, name: label(kind) })).join(' · ')
+  return ''
 }
 
 /** The row's small line describes the package's declared capabilities and static counts. */
@@ -79,10 +77,28 @@ export function PluginPurposeBadges({
 }) {
   const { t } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const includes = pluginIncludes(item, value, t)
-  if (!item.metadata && !includes) return null
+  if (!item.metadata && !includes && !value?.provides.length) return null
+  const registered = new Map<string, number>()
+  for (const entry of value?.provides ?? []) registered.set(entry.kind, (registered.get(entry.kind) ?? 0) + 1)
   return (
     <MetaText data-testid="plugin-purpose-badges">
-      {includes && <span data-testid="plugin-provides">{t('includes', { items: includes })}</span>}
+      {includes && (
+        <span data-testid="plugin-declared-provides">
+          {t('declared')}: {includes}
+        </span>
+      )}
+      <span data-testid="plugin-registered-provides">
+        {includes ? ' · ' : ''}
+        {t('registered')}:{' '}
+        {registered.size
+          ? [...registered]
+              .map(([kind, count]) => {
+                const key = `provide.${kind}`
+                return t('includesItem', { count, name: t(key) === key ? kind : t(key) })
+              })
+              .join(' · ')
+          : t('registrationUnavailable')}
+      </span>
     </MetaText>
   )
 }

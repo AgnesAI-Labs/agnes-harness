@@ -4,7 +4,7 @@ import type { LocaleCatalog } from './index.js'
 export const sidebarLocaleCatalog: LocaleCatalog = {
   en: {
     'sidebar.closeNav': 'Close navigation',
-    'sidebar.newSession': 'New session',
+    'sidebar.newSession': 'New conversation',
     'sidebar.sectionHeading': 'Workspaces',
     'sidebar.addWorkspace': 'Add workspace',
     'sidebar.sessionsNav': 'Task list',
@@ -13,7 +13,7 @@ export const sidebarLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'sidebar.closeNav': '关闭导航',
-    'sidebar.newSession': '新会话',
+    'sidebar.newSession': '新对话',
     'sidebar.sectionHeading': '工作区',
     'sidebar.addWorkspace': '添加工作区',
     'sidebar.sessionsNav': '任务列表',

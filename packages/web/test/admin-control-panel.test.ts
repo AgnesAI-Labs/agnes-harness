@@ -291,7 +291,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   )
   expect(builtins.textContent).toBe('')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
-  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by capability')
+  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Capability')
   expect(sessionLoopSelection({})).toBeUndefined()
   expect(sessionLoopSelection({ loop: { id: 'old-session-loop', version: '1.0.0' } })).toEqual({
     id: 'old-session-loop',
@@ -372,7 +372,7 @@ it('loads catalog choices and saves their exact identities and revision', async 
     [...host.querySelectorAll('[data-testid="session-defaults"] .agnes-settings-item-label')].map(
       (label) => label.textContent,
     ),
-  ).toEqual(['How the agent works', 'Model', 'Model adapter'])
+  ).toEqual(['Running mode', 'Model', 'Model adapter'])
   expect(host.textContent).not.toContain('Permissions')
   // Nothing to press: there is no save button.
   expect(host.querySelector('[data-testid="session-defaults-save"]')).toBeNull()

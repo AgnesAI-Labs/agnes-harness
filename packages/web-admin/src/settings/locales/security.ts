@@ -48,7 +48,7 @@ export const securityCatalog: LocaleCatalog = {
     fullAccess: 'Full access',
     notAllowed: 'Not allowed by this profile',
     sandbox: 'Isolation method (sandbox)',
-    securityStart: 'Use this permission preset',
+    securityStart: 'Use this permission profile',
   },
   'zh-CN': {
     'platform.darwin': 'macOS',

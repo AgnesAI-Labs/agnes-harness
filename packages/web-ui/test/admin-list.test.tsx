@@ -8,6 +8,7 @@ import {
   isBuiltinPlugin,
   mountRegion,
   PluginList,
+  PluginPurposeBadges,
   PluginPurposeSections,
   pluginIncludes,
   pluginOrigin,
@@ -225,9 +226,9 @@ it.each(['en', 'zh-CN'] as const)(
     expect(host.querySelector('[data-testid=plugin-source-badge]')?.textContent).toBe(
       locale === 'en' ? 'Community' : '社区',
     )
-    // The small line names what the plugin includes, next to its category.
-    expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toBe(
-      locale === 'en' ? 'Includes: 1 Tools' : '包含：1 个工具',
+    // Observed registrations are labelled separately from absent author declarations.
+    expect(host.querySelector('[data-testid=plugin-registered-provides]')?.textContent).toBe(
+      locale === 'en' ? 'Registered: 1 Tools' : '已登记: 1 个工具',
     )
     expect(host.textContent).not.toMatch(/category\./)
     // The source is the row's only badge.
@@ -364,10 +365,10 @@ describe('where a plugin comes from and what it includes', () => {
         includes: { provides: ['tool', 'loop', 'skills', 'bundle'], counts: { bundles: 1, skills: 2 } },
       },
     } as PackageCatalogDescriptor
-    expect(pluginIncludes(stated, undefined, t)).toBe('tool · loop · 2 skill · 1 bundle')
+    expect(pluginIncludes(stated, undefined, t)).toBe('tool')
   })
 
-  it('falls back to the declared kinds, then to what a running plugin registered', () => {
+  it('keeps declared capabilities separate from observed registrations', () => {
     const declared = { ...purposeRow, provides: ['tool', 'skills'] } as PackageCatalogDescriptor
     expect(pluginIncludes(declared, undefined, t)).toBe('tool · skill')
     const running = {
@@ -379,13 +380,22 @@ describe('where a plugin comes from and what it includes', () => {
       appearsIn: [],
       available: true,
     }
-    expect(pluginIncludes(purposeRow, running, t)).toBe('2 tool · 1 skill')
+    expect(pluginIncludes(purposeRow, running, t)).toBe('')
+    const host = document.createElement('div')
+    const dispose = mountRegion(host, createElement(PluginPurposeBadges, { item: declared, value: running }))
+    expect(host.querySelector('[data-testid="plugin-declared-provides"]')?.textContent).toContain('Declared')
+    expect(host.querySelector('[data-testid="plugin-registered-provides"]')?.textContent).toContain(
+      'Registered',
+    )
+    expect(host.querySelector('[data-testid="plugin-registered-provides"]')?.textContent).toContain('2 Tools')
+    dispose()
     expect(pluginIncludes(purposeRow, undefined, t)).toBe('')
   })
 
-  it('labels reusable Bundles without guessing an agent from a category', () => {
+  it('labels reusable combinations without guessing an agent from a category', () => {
     const agent = {
       ...purposeRow,
+      provides: ['bundle'],
       presentation: {
         origin: 'example',
         rows: [],

@@ -51,7 +51,17 @@ function TurnView({
   const processActive = turn.status === 'running' || turn.status === 'waiting'
   const response = useRef<HTMLDivElement>(null)
   const shownProcessActive = useInteractionSnapshot(response, processActive)
-  const [processOpen, setProcessOpen] = useState(processActive)
+  // Workflow Loops may finish with process records and no final assistant answer. Keep
+  // that content reachable on history open and when the live turn settles.
+  const hasAnswer = members.some(
+    (node) =>
+      node.id === turn.finalAssistantId &&
+      node.kind === 'assistant' &&
+      node.text.trim() &&
+      !props.processStep?.(node),
+  )
+  const defaultProcessOpen = processActive || (turn.status === 'completed' && !hasAnswer)
+  const [processOpen, setProcessOpen] = useState(defaultProcessOpen)
   const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set())
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -62,10 +72,10 @@ function TurnView({
     return () => clearInterval(clock)
   }, [active])
   useLayoutEffect(() => {
-    if (wasActive.current && !shownProcessActive) preference.current = false
+    if (wasActive.current && !shownProcessActive) preference.current = undefined
     wasActive.current = shownProcessActive
-    setProcessOpen(preference.current ?? shownProcessActive)
-  }, [shownProcessActive])
+    setProcessOpen(preference.current ?? (shownProcessActive || (turn.status === 'completed' && !hasAnswer)))
+  }, [shownProcessActive, hasAnswer, turn.status])
 
   const t = props.t
   const users = members.filter((node) => node.kind === 'user')

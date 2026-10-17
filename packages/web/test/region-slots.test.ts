@@ -178,7 +178,7 @@ describe('migrated sidebar region', () => {
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelectorAll('#new')).toHaveLength(1)
     expect(sidebar.querySelectorAll('#settings')).toHaveLength(1)
-    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新会话')
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话')
     locale.setLocale('en')
     expect(locale.getSnapshot()).toBe('en')
     expect(locale.t('sidebar.settings')).toBe('Settings')
@@ -186,11 +186,11 @@ describe('migrated sidebar region', () => {
       () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
       committed,
     )
-    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New session')
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
     expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
     locale.setLocale('zh-CN')
     await vi.waitFor(
-      () => expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新会话'),
+      () => expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话'),
       committed,
     )
     const remove = slots.register(

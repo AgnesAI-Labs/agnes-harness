@@ -121,6 +121,13 @@ export function mountHomePages(
   }
 }
 
+const LEGACY_PAGES: Readonly<Record<string, string>> = {
+  'business-agents': 'agents',
+  'business-agent': 'agents',
+  'agent-fde': 'agents',
+  fde: 'agents',
+}
+
 const PAGE_ID = /^[a-z][a-z0-9.-]*$/
 
 /**
@@ -137,8 +144,14 @@ export function bindHomeRouting(): () => void {
       if (page && PAGE_ID.test(page)) {
         const tab = params.get('tab')
         const owner = params.get('pagePackage')
-        if (owner) homeNavigation.openRef(`${owner}#${page}`, tab ? { tab } : undefined)
-        else homeNavigation.open(page, tab ? { tab } : undefined)
+        const destination = !owner && Object.hasOwn(LEGACY_PAGES, page) ? (LEGACY_PAGES[page] ?? page) : page
+        if (destination !== page) {
+          const url = new URL(location.href)
+          url.searchParams.set('page', destination)
+          history.replaceState(history.state, '', preserveRouteParams(url))
+        }
+        if (owner) homeNavigation.openRef(`${owner}#${destination}`, tab ? { tab } : undefined)
+        else homeNavigation.open(destination, tab ? { tab } : undefined)
       } else homeNavigation.close()
     } finally {
       restoring = false

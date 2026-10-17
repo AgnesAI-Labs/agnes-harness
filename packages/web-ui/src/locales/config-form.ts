@@ -50,7 +50,7 @@ export const configFormCatalog: LocaleCatalog = {
     'option.compaction.enabled': '启用上下文压缩',
     'option.compaction.reserve_tokens': '预留上下文 token 数',
     'option.compaction.keep_recent_tokens': '保留的近期上下文 token 数',
-    'option.compaction.agent_callable': '允许 Agent 主动压缩上下文',
+    'option.compaction.agent_callable': '允许智能体主动压缩上下文',
     'option.persistence.provider': '持久化插件',
     'level.L0': '不使用操作系统隔离',
     'level.L1': '操作系统隔离',

@@ -23,7 +23,7 @@ const TINTS = 8
 
 /** Catalogue availability comes from explicit launch declarations, independently of package names. */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  return (row.agents?.length ?? 0) > 0 && !row.metadata?.exampleOf
+  return (row.agents?.length ?? 0) > 0
 }
 
 export function samplePromptOf(row: PackageCatalogDescriptor, locale: Locale): string | undefined {

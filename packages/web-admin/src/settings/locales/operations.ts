@@ -41,7 +41,7 @@ export const operationsCatalog: LocaleCatalog = {
     'schedulesDay.5': 'Fri',
     'schedulesDay.6': 'Sat',
     examplesHelp:
-      'Inspect and install a bundle, review capabilities, trust and enable it, then select its composition and preset. These are demonstration workflows; no real business systems are contacted.',
+      'Inspect and install a combination, review capabilities, trust and enable it, then select its composition and permission profile. These are demonstration workflows; no real business systems are contacted.',
     exampleReady: 'Installed and enabled',
   },
   'zh-CN': {

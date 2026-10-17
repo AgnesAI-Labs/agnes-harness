@@ -49,6 +49,24 @@ it('restores pages and tabs on history traversal without adding entries and pres
   expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
 })
 
+it.each(['business-agents', 'business-agent', 'agent-fde', 'fde'])(
+  'redirects legacy page %s without losing deep-link context',
+  (page) => {
+    history.replaceState({ scope: 1 }, '', `/?page=${page}&tab=all&view=agent-acme&session=s`)
+    const count = history.length
+    const stop = bindHomeRouting()
+    try {
+      expect(homeNavigation.getSnapshot()).toEqual({ id: 'agents', selection: { tab: 'all' } })
+      expect(new URLSearchParams(location.search).get('page')).toBe('agents')
+      expect(new URLSearchParams(location.search).get('session')).toBe('s')
+      expect(new URLSearchParams(location.search).get('view')).toBe('agent-acme')
+      expect(history.length).toBe(count)
+    } finally {
+      stop()
+    }
+  },
+)
+
 it('replaces the selected registration lifetime on batched plugin reload, and unmounts on removal', async () => {
   const { Context } = await import('@agnes/cordis')
   const { homeEntries, LocaleService } = await import('@agnes/web-client')

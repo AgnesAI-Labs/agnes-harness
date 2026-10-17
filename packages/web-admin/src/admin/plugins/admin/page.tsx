@@ -1474,16 +1474,14 @@ export class PluginAdminPage {
   }
 
   filteredInstalled(): readonly PackageInstalledDescriptor[] {
-    return this.#state.installed.filter(
-      (item) =>
-        !item.metadata?.exampleOf &&
-        matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
-          createUiTranslator(
-            this.#locale,
-            PLUGIN_PRESENTATION_NAMESPACE,
-            pluginPresentationCatalog,
-          )(`provide.${kind}`),
-        ),
+    return this.#state.installed.filter((item) =>
+      matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
+        createUiTranslator(
+          this.#locale,
+          PLUGIN_PRESENTATION_NAMESPACE,
+          pluginPresentationCatalog,
+        )(`provide.${kind}`),
+      ),
     )
   }
 

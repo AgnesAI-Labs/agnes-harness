@@ -227,7 +227,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings-shell.page.discover': '发现插件',
     'settings-shell.page.providers': '插件类型',
     'settings.pluginKinds.title': '插件类型',
-    'resources.skillsDescription': '管理为 Agent 提供可复用指令和工作指南的技能。',
+    'resources.skillsDescription': '管理为智能体提供可复用指令和工作指南的技能。',
     'resources.mcpDescription': '通过 MCP 服务连接外部工具。',
     'settings.config.authFailed': '登录未完成，请重试或使用设备码登录。',
     'settings.config.authExpired': '登录操作已过期，请重新登录。',

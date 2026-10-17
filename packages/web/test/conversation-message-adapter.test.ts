@@ -851,3 +851,52 @@ it('marks the asking answer «answered» before copy and drops the answer node a
   expect(item('answer')).not.toBeNull()
   expect(item('submit')).not.toBeNull()
 })
+
+it('keeps completed workflow stage text and tool receipts readable without a final answer', async () => {
+  const nodes: UINode[] = [
+    user,
+    { ...tool('completed'), name: 'acme_inspect', resultPreview: 'ACME-001 inspection-due' },
+    {
+      kind: 'assistant',
+      id: 'stage',
+      seq: 3,
+      text: 'inspection:\n{"asset":"ACME-001","recommendation":"Inspect filter"}',
+    },
+  ]
+  const turn: UITurn = {
+    id: 'workflow-turn',
+    turn: 1,
+    startSeq: 1,
+    startedAt: '2026-10-01T00:00:00Z',
+    status: 'completed',
+    endedAt: '2026-10-01T00:00:01Z',
+    nodeIds: nodes.map((node) => node.id),
+    inherited: false,
+    forkable: true,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: true,
+      billingComplete: true,
+      calls: [],
+    },
+  }
+  await act(async () =>
+    root.render(
+      createElement(WebConversationMessages, { nodes, turns: [turn], registry, locale: zhLocaleService() }),
+    ),
+  )
+  expect(host.querySelector('[data-testid="turn-process-toggle"]')?.getAttribute('aria-expanded')).toBe(
+    'true',
+  )
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-activity-toggle"]')?.click())
+  const stage = host.querySelector<HTMLElement>('[data-node-kind="process-step"]')
+  expect(stage?.closest<HTMLElement>('.turn-step')?.hidden).toBe(false)
+  expect(stage?.textContent).toContain('ACME-001')
+  const receipt = host.querySelector<HTMLElement>('[data-node-kind="tool"]')
+  expect(receipt?.closest<HTMLElement>('.turn-step')?.hidden).toBe(false)
+  await act(async () => receipt?.querySelector<HTMLElement>('[data-testid="tool-detail-toggle"]')?.click())
+  expect(receipt?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+    'ACME-001 inspection-due',
+  )
+  expect(receipt?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
+})

@@ -3,6 +3,7 @@ import {
   Badge,
   Banner,
   Button,
+  CopyButton,
   MetaText,
   reportSuccess,
   resolveFeedback,
@@ -97,7 +98,8 @@ export function ProvidersPanel({
                     <dl>
                       <dt>{t('providerName')}</dt>
                       <dd>
-                        <code>{entry.id}</code>
+                        <code>{entry.id}</code>{' '}
+                        <CopyButton text={entry.id} label={t('copyId')} copiedLabel={t('copiedId')} />
                       </dd>
                       <dt>{t('providerKind')}</dt>
                       <dd>

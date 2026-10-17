@@ -55,7 +55,6 @@ export function registerBuiltinHomeEntries(): () => void {
       placement: 'primary',
       icon: 'bot',
       titleKey: 'home.entry.agents',
-      subtitleKey: 'home.entry.agents.sub',
       component: AgentsPage,
     }),
     homeEntries.register({

@@ -22,6 +22,15 @@ export const isBuiltinPlugin = (item: PluginPurposeItem): boolean =>
 /** Where a plugin comes from, as the row's source badge names it. */
 export function pluginOrigin(item: PluginPurposeItem): string {
   if (isBuiltinPlugin(item)) return 'builtin'
+  const provenance = 'provenance' in item ? item.provenance : undefined
+  if (provenance) {
+    if (provenance.signatureVerified && provenance.verification === 'official-ed25519') return 'official'
+    if (provenance.authoring) return 'local'
+    return ['file', 'local', 'workspace', 'path'].includes(provenance.source.type)
+      ? 'local-source'
+      : 'third-party'
+  }
+  // Catalogs have no installed provenance yet; the backend projects their source identity.
   return (
     item.presentation?.origin ??
     (['file', 'local', 'workspace', 'path'].includes(item.source.type) ? 'local-source' : 'third-party')

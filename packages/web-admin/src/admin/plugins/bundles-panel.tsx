@@ -2,6 +2,7 @@ import { type PackageInstalledDescriptor, resolvePluginMetadata } from '@agnes/p
 import {
   Banner,
   Button,
+  CopyButton,
   fallbackT,
   IconButton,
   reportSuccess,
@@ -219,7 +220,7 @@ export function BundlesPanel({
           <SettingsBlock state={busy && !snapshot ? 'loading' : undefined}>
             {snapshot && rows.length === 0 && (
               <SettingsItem label={t('bundles.empty')} data-testid="bundles-empty">
-                <Button size="small" href="/?page=agents">
+                <Button size="small" href="/?page=plugins">
                   {t('bundles.install')}
                 </Button>
               </SettingsItem>
@@ -280,7 +281,16 @@ export function BundlesPanel({
                       {!entry && <SettingsTag tone="warn">{t('bundles.missing')}</SettingsTag>}
                     </>
                   }
-                  description={entry ? version : t('bundles.missing-help')}
+                  description={
+                    <>
+                      {entry ? version : t('bundles.missing-help')}{' '}
+                      <CopyButton
+                        text={id}
+                        label={settingsText('copyId')}
+                        copiedLabel={settingsText('copiedId')}
+                      />
+                    </>
+                  }
                 >
                   <StateSwitch
                     id={`bundle-default-${encodeURIComponent(id)}`}

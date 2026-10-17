@@ -12,14 +12,9 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
-import { MarketTab, marketTypes } from '../src/pages/plugins/market-tab.js'
+import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
-import {
-  isBusinessAgent,
-  isExperimental,
-  orderInstalled,
-  PluginsTab,
-} from '../src/pages/plugins/plugins-tab.js'
+import { isBusinessAgent, orderInstalled, PluginsTab } from '../src/pages/plugins/plugins-tab.js'
 import {
   CAPABILITIES,
   PLUGIN_TABS,
@@ -214,42 +209,6 @@ describe('plugin grouping', () => {
       'beta',
     ])
   })
-
-  it('files a catalog package under every marketplace type it says it includes', () => {
-    const entry = (id: string, provides: readonly string[], declared?: readonly string[]) =>
-      ({
-        id,
-        ...(declared ? { provides: declared } : {}),
-        presentation: { rows: [], ...(provides.length ? { includes: { provides } } : {}) },
-      }) as unknown as Parameters<typeof marketTypes>[0]
-    expect(marketTypes(entry('@acme/desk', ['tool', 'skills']))).toEqual(['tool', 'skills'])
-    expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
-    expect(marketTypes(entry('@acme/adapter', ['model-adapter', 'ui']))).toEqual(['ui', 'runtime'])
-    expect(marketTypes(entry('@acme/jira', ['mcp']))).toEqual(['mcp'])
-    const reusable = entry('@acme/review', ['tool', 'bundle'])
-    expect(marketTypes(reusable)).toEqual(['tool'])
-    expect(
-      marketTypes({
-        ...reusable,
-        agents: [
-          {
-            ref: '@acme/review#work',
-            launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
-          },
-        ],
-      }),
-    ).toEqual(['agent', 'tool'])
-    // What the package says wins over what its author declared; an older source has only the latter.
-    expect(marketTypes(entry('@acme/both', ['skills'], ['tool']))).toEqual(['skills'])
-    expect(marketTypes(entry('@acme/older', [], ['tool']))).toEqual(['tool'])
-    expect(marketTypes(entry('@acme/plain', []))).toEqual([])
-  })
-
-  it('treats a plugin as experimental only when its metadata says so', () => {
-    expect(isExperimental(item('a', { experimental: true }))).toBe(true)
-    expect(isExperimental(item('a', { experimental: 'yes' }))).toBe(false)
-    expect(isExperimental(item('a'))).toBe(false)
-  })
 })
 
 it('groups marketplace releases and opens or installs the selected release', async () => {
@@ -443,7 +402,7 @@ describe('skill detail', () => {
   })
 })
 
-it('keeps the bundled helper under built-ins with an enable toggle and excludes parent-owned examples while retaining FDE agents', () => {
+it('keeps all plugins in a single list with the bundled helper enable toggle', () => {
   const row = (id: string, category: string, exampleOf?: string) => ({
     id,
     version: '1.0.0',
@@ -497,12 +456,32 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
   const root = createRoot(host)
   try {
     flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
-    const builtin = host.querySelector('[data-testid="plugin-builtin"]')!
+    const builtin = host.querySelector('[data-testid="plugin-browser"]')!
+    expect(host.querySelector('[data-testid="plugin-builtin"]')).toBeNull()
     expect(builtin.textContent).toContain('@agnes/plugin-helper')
     expect(host.querySelector('[data-testid="plugin-browser"]')?.textContent).toContain(
       '@agnes-fde/support-triage',
     )
-    expect(host.querySelector('[data-plugin-id="acme/example"]')).toBeNull()
+    expect(host.querySelector('[data-plugin-id="acme/example"]')).not.toBeNull()
+    const sourceFilter = host.querySelector<HTMLSelectElement>('select[aria-label="source.label"]')
+    if (!sourceFilter) throw new Error('source filter missing')
+    flushSync(() => {
+      sourceFilter.value = 'official'
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(
+      [...host.querySelectorAll('[data-plugin-id]')].map((row) => row.getAttribute('data-plugin-id')),
+    ).toEqual(['@agnes/plugin-helper'])
+    flushSync(() => {
+      sourceFilter.value = 'local'
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(host.querySelectorAll('[data-plugin-id]')).toHaveLength(2)
+    flushSync(() => {
+      sourceFilter.value = ''
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
     const enable = builtin.querySelector<HTMLButtonElement>(
       '[data-plugin-id="@agnes/plugin-helper"] button[role="switch"]',
     )!
@@ -513,4 +492,39 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
   } finally {
     flushSync(() => root.unmount())
   }
+})
+
+it('filters a single inventory by provenance source and declared capabilities independently of registered evidence', async () => {
+  const { matchesPluginFilters, pluginSource } = await import('../src/pages/plugins/plugins-tab.js')
+  const base = {
+    id: '@agnes-fde/misleading-name',
+    source: { type: 'npm', ref: 'npm:community-kit' },
+    provides: ['tool'],
+    contributions: [],
+    provenance: {
+      source: { type: 'npm', ref: 'npm:community-kit' },
+      integrity: 'sha256-test',
+      signatureVerified: false,
+      verification: 'unverified',
+    },
+  } as unknown as import('@agnes/protocol').PackageInstalledDescriptor
+  const provenance = base.provenance
+  if (!provenance) throw new Error('provenance fixture missing')
+  expect(pluginSource(base)).toBe('community')
+  expect(pluginSource({ ...base, presentation: { origin: 'official', rows: [] } })).toBe('community')
+  expect(
+    pluginSource({
+      ...base,
+      provenance: { ...provenance, source: { type: 'file', ref: 'file:./local' } },
+    }),
+  ).toBe('local')
+  expect(
+    pluginSource({
+      ...base,
+      provenance: { ...provenance, verification: 'official-ed25519', signatureVerified: true },
+    }),
+  ).toBe('official')
+  expect(matchesPluginFilters(base, 'community', 'tool')).toBe(true)
+  expect(matchesPluginFilters(base, 'official', 'tool')).toBe(false)
+  expect(matchesPluginFilters(base, 'community', 'loop')).toBe(false)
 })

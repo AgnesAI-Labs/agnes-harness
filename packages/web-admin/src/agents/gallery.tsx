@@ -35,6 +35,7 @@ type Loaded = {
   rows: readonly PackageCatalogDescriptor[]
   installed: readonly PackageInstalledDescriptor[]
   readyAgents: readonly string[]
+  catalogError?: unknown
 }
 export type BusinessAgentsSource = {
   /** Injected by tests and by hosts that already hold an admin session. */
@@ -91,13 +92,15 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
   // One cached read: a return visit shows the cards at once and refreshes them behind.
   const read = useResource<Loaded>(key, async () => {
     const { api, context } = await connect.current()
-    const [rows, list] = await Promise.all([readBusinessAgents(api), api.list()])
-    return {
-      api,
-      context,
-      rows,
-      installed: list.packages,
-      readyAgents: await readyAgentRefs(api, rows, list.packages),
+    const [catalog, list] = await Promise.all([
+      readBusinessAgents(api).then(
+        (rows) => ({ rows, error: undefined as unknown }),
+        (error: unknown) => ({ rows: [], error }),
+      ),
+      api.list(),
+    ])
+    return { api, context, rows: catalog.rows, installed: list.packages, catalogError: catalog.error,
+      readyAgents: await readyAgentRefs(api, catalog.rows, list.packages),
     }
   })
   const loaded = read.data
@@ -141,6 +144,7 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     busy: read.loading,
     failed: read.error !== undefined,
     error: read.error,
+    catalogError: loaded?.catalogError,
     /** The list has been read once (it may be refreshing). */
     loaded: loaded !== undefined,
     reload: read.reload,

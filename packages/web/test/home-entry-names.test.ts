@@ -33,16 +33,11 @@ describe('home entry names', () => {
     dispose = undefined
   })
 
-  it('names the FDE entry and its page "Agent FDE" in both languages', () => {
-    for (const t of [enT, zhT]) {
-      expect(t('home.entry.agents')).toBe('Agent')
-      expect(t('home.entry.agents.sub')).toBe('FDE')
-    }
+  it('names the agents page in both languages without a secondary category', () => {
+    expect(enT('home.entry.agents')).toBe('Agents')
+    expect(zhT('home.entry.agents')).toBe('智能体')
     dispose = registerBuiltinHomeEntries()
-    const agents = homeEntries.get('agents')
-    // The sidebar entry and the page title read the same two keys: the name, then FDE in the quiet note.
-    expect(agents?.titleKey).toBe('home.entry.agents')
-    expect(agents?.subtitleKey).toBe('home.entry.agents.sub')
+    expect(homeEntries.get('agents')?.subtitleKey).toBeUndefined()
   })
   it('loads a selected page and forwards the current context after it becomes available', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -120,11 +115,12 @@ describe('home entry names', () => {
           await reconciler.reconcileNow()
           root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) }))
         })
-        for (const id of ['agents', 'plugins', 'automation', 'console'])
+        for (const id of ['agents', 'automation', 'console'])
           expect(host.querySelector(`[data-testid="home-entry-${id}"]`)).toBeTruthy()
         expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
           language === 'zh-CN' ? '控制台' : 'Console',
         )
+        expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
         expect(importer).not.toHaveBeenCalled()
         await act(async () => {
           applicationIdentity.set({

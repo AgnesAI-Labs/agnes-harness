@@ -278,7 +278,7 @@ it('pushes the review page when the check is done, with the hashes under collaps
   const page = review() as HTMLElement
   // Up front: who it is, what it gets, and whether its source is verified, in short words.
   expect(page.querySelector('[data-testid="install-review-meta"]')?.textContent).toBe(
-    '执行方式（Agent Loop） · 1.0.0 · 示例',
+    '运行方式 · 1.0.0 · 示例',
   )
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain(
     '未声明（运行中的未声明活动会被记录）',

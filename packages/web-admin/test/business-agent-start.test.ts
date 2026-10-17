@@ -171,7 +171,7 @@ const record = () => {
 describe('business agent catalog', () => {
   it('recognises only declared launchable Bundles independently from a package name', () => {
     expect(isBusinessAgent(entry())).toBe(true)
-    expect(isBusinessAgent(entry({ metadata: { ...entry().metadata, exampleOf: 'acme/host' } }))).toBe(false)
+    expect(isBusinessAgent(entry({ metadata: { ...entry().metadata, exampleOf: 'acme/host' } }))).toBe(true)
     expect(isBusinessAgent(entry({ agents: undefined }, '@agnes-fde/legacy'))).toBe(false)
     expect(isBusinessAgent(entry({}, '@acme/billing'))).toBe(true)
   })

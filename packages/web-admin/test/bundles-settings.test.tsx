@@ -134,15 +134,15 @@ it('keeps a confirmed save distinct from a failed refresh', async () => {
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="bundles-save"]')?.click())
   expect(feedbackResults).toHaveLength(1)
   expect(feedbackResults[0]).toMatchObject({ outcome: 'success', effect: { kind: 'restart-required' } })
-  expect(host.textContent).toContain('Bundles saved. The latest view could not be loaded.')
-  expect(host.textContent).not.toContain('Bundles were not saved.')
+  expect(host.textContent).toContain('Combinations saved. The latest view could not be loaded.')
+  expect(host.textContent).not.toContain('Combinations were not saved.')
 })
 
-it('sends an empty list to the Agent FDE home page', async () => {
+it('sends an empty list to plugin management', async () => {
   const host = await mount(api([], []).api)
   const empty = host.querySelector('[data-testid="bundles-empty"]')
-  expect(empty?.textContent).toContain('No business agents yet')
-  expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/?page=agents')
+  expect(empty?.textContent).toContain('No agents yet')
+  expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/?page=plugins')
 })
 
 const feedbackResults: OperationFeedback[] = []

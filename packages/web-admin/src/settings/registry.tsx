@@ -11,6 +11,7 @@ import {
   SettingsDrill,
   SettingsExpand,
   SettingsPageDescription,
+  SettingsState,
   scopedResourceKey,
   useResource,
 } from '@agnes/web-ui'
@@ -200,6 +201,14 @@ const definitions: readonly [
           <CredentialsPage section />
         </div>
       </>
+    ),
+  ],
+  [
+    'application',
+    'application',
+    30,
+    (_c, t) => (
+      <SettingsState data-testid="application-placeholder">{t('applicationPlaceholder')}</SettingsState>
     ),
   ],
   [

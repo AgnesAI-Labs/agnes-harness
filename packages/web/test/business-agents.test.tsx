@@ -47,7 +47,7 @@ it('recognises a business agent by its explicit launch declaration', () => {
   expect(isBusinessAgent(agent('dag-loop', {}, '@agnes-example'))).toBe(false)
 })
 
-it('reads every catalog page and suggests three different kinds of work first', async () => {
+it('reads every catalog page and suggests explicit agents in catalog order', async () => {
   const catalog = vi
     .fn()
     .mockResolvedValueOnce({
@@ -68,9 +68,9 @@ it('reads every catalog page and suggests three different kinds of work first', 
     '@agnes-fde/crm-assistant',
   ])
   expect(featuredBusinessAgents(rows).map((row) => row.id)).toEqual([
-    '@agnes-fde/code-review',
-    '@agnes-fde/data-report',
     '@agnes-fde/compliance-audit',
+    '@agnes-fde/data-report',
+    '@agnes-fde/code-review',
   ])
   const ready = rows[0]!
   const unavailable = {
@@ -118,4 +118,40 @@ it('keeps the hero free of cards even when the business-agent catalog is availab
     await act(async () => root.unmount())
     await ctx.fiber.dispose()
   }
+})
+
+it('projects one card per explicit declaration, including several agents in one plugin and no prefix fallback', async () => {
+  const { declaredAgentCards } = await import('../src/pages/agents-model.js')
+  const base = agent('support', { displayName: 'Plugin name' }, '@acme')
+  const rows = [
+    {
+      ...base,
+      agents: [
+        {
+          ref: '@acme/support#triage',
+          launch: {
+            title: { en: 'Triage', 'zh-CN': '分诊' },
+            description: { en: 'Sort incoming work' },
+            preset: 'safe',
+          },
+        },
+        {
+          ref: '@acme/support#reply',
+          launch: {
+            title: { en: 'Reply' },
+            description: { en: 'Prepare a reply' },
+            preset: 'review',
+            prompt: { mode: 'draft' as const, text: { en: 'Draft a response' } },
+          },
+        },
+      ],
+    },
+    { ...base, id: '@agnes-fde/legacy', agents: [] },
+  ]
+  const cards = declaredAgentCards(rows, 'zh-CN')
+  expect(cards.map((card) => [card.declaration.ref, card.name, card.summary, card.samplePrompt])).toEqual([
+    ['@acme/support#triage', '分诊', 'Sort incoming work', undefined],
+    ['@acme/support#reply', 'Reply', 'Prepare a reply', 'Draft a response'],
+  ])
+  expect(new Set(cards.map((card) => card.slug)).size).toBe(2)
 })

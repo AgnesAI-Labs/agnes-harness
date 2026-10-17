@@ -147,7 +147,7 @@ const en = {
   'trace.provenance.attempt': 'Attempt',
   'trace.provenance.attemptValue': 'Attempt {n} of {total} · {status}',
   'trace.provenance.composition': 'Session configuration',
-  'trace.provenance.bundles': '{n} bundles',
+  'trace.provenance.bundles': '{n} combinations',
   'trace.provenance.packages': 'Plugin versions at request time',
   'trace.provenance.packageCount': '{n} plugins',
   'trace.provenance.sent': 'Sent',
@@ -174,7 +174,7 @@ const en = {
   'trace.controls.child-stop': 'Stop child',
   'trace.controls.child-continue': 'Continue child',
 
-  'trace.sessionLoop': 'Agent Loop: {id} · {version}',
+  'trace.sessionLoop': 'Running mode: {id} · {version}',
   'trace.review.model': 'Reviewer: {model}',
   'trace.review.decision': 'Review decision: {decision} · {risk}',
   'trace.badge.user': 'User',
@@ -509,7 +509,7 @@ const zh: Record<keyof typeof en, string> = {
   'trace.controls.child-stop': '停止子代理',
   'trace.controls.child-continue': '继续子代理',
 
-  'trace.sessionLoop': 'Agent Loop：{id} · {version}',
+  'trace.sessionLoop': 'Running mode：{id} · {version}',
   'trace.review.model': '审查模型：{model}',
   'trace.review.decision': '审查决定：{decision} · {risk}',
   'trace.badge.user': '用户',

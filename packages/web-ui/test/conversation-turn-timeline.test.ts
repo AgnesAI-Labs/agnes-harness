@@ -169,6 +169,25 @@ describe('turn timeline', () => {
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
 
+  it.each([false, true])(
+    'shows workflow prose and tool results without a final assistant reference (live=%s)',
+    async (live) => {
+      const nodes = [
+        user,
+        tool('inspection', 'acme_inspect', {}, { resultPreview: 'ACME-001 inspection-due' }),
+        say('report', 'Inspect the filter on ACME-001.'),
+      ]
+      if (live) await render(nodes, turn(nodes))
+      await render(nodes, turn(nodes, { status: 'completed', endedAt: '2026-10-01T00:00:01.000Z' }))
+      expect(wrapper('report')?.hidden).toBe(false)
+      expect(wrapper('inspection')?.hidden).toBe(false)
+      expect(host.textContent).toContain('ACME-001 inspection-due')
+      expect(host.querySelector('[data-testid="turn-process-toggle"]')?.getAttribute('aria-expanded')).toBe(
+        'true',
+      )
+    },
+  )
+
   it('interleaves unboxed prose with one row per run of steps, and opens a run into its steps', async () => {
     const nodes: UINode[] = [
       user,

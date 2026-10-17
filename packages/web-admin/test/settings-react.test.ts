@@ -576,3 +576,37 @@ it('re-reads the runtime details after a local plugin rescan, not only the page 
     host.remove()
   }
 })
+
+it('provides an application group placeholder independently of the runtime catalog', async () => {
+  const form = document.createElement('div')
+  form.id = 'config-form'
+  form.dataset.runtimePage = 'application'
+  const host = document.createElement('div')
+  document.body.append(form, host)
+  const root = createRoot(host)
+  const runtime = vi.fn(async () => {
+    throw new Error('must not load runtime')
+  })
+  try {
+    await act(async () => root.render(createElement(SettingsPages, { admin: adminOf({ runtime }) })))
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="application-placeholder"]')).not.toBeNull(),
+    )
+    expect(settingsSections.get('application')?.group).toBe('application')
+    expect(runtime).not.toHaveBeenCalled()
+    const { settingsRoute, settingsGroup } = await import('@agnes/web-units/shell')
+    expect(settingsGroup('application')).toBe('application')
+    for (const [old, anchor] of [
+      ['agent-fde', 'bundles'],
+      ['runtime-config', 'models'],
+      ['system-prompt', 'system-prompt'],
+      ['execution', 'session-loop'],
+      ['context', 'context'],
+    ] as const)
+      expect(settingsRoute(old)).toEqual({ id: 'models', anchor: `settings-subsection-${anchor}` })
+    expect(settingsSections.get('models')?.group).toBe('advanced')
+    expect(settingsSections.get('diagnostics')?.group).toBe('advanced')
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
