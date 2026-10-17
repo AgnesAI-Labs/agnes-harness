@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { authoringSandbox } from '@agnes/daemon-admin/packages/index'
+import { resolveToolCallPolicy, type ToolDef } from '@agnes/extension-api'
 import { createPackageManager, emptyLock, writeLock } from '@agnes/package-manager'
 import type { AuthoringCandidate } from '@agnes/protocol'
 import { createPrivateDirectorySync } from '@agnes/system-node'
@@ -452,9 +453,7 @@ it.each(['workspace-write', 'standard'])(
   async () => {
     const s = await setup('ask')
     const p = await s.request({ action: 'prepare', files })
-    const definitions: { name: string; meta: unknown; classify?: (args: unknown) => unknown }[] = [
-      ...pluginCreatorTools,
-    ] as never
+    const definitions: ToolDef[] = [...pluginCreatorTools]
     const { pluginHelper } = await import(
       new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
     )
@@ -478,7 +477,7 @@ it.each(['workspace-write', 'standard'])(
             workspaceRoot: s.root,
             actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
             call: { id: 'tool', name, args },
-            policy: (tool.classify?.(args) ?? tool.meta) as never,
+            policy: resolveToolCallPolicy(tool, args),
             tainted,
             fullAccess: false,
             approvalMode: 'manual',
