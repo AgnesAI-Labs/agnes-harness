@@ -6,6 +6,7 @@ import type {
   LoopStepOutcome,
 } from '@agnes/extension-api'
 import { stageOneToolNames } from './profile.js'
+import { recoverStep, resumeParkedStage } from './recover.js'
 import { finishTurn, type Scope, save, snapshot } from './scope.js'
 import { emptyCounters, initialState } from './state.js'
 import { decideStep } from './step.js'
@@ -14,16 +15,6 @@ import { clip, errorCode } from './util.js'
 import { addNote, goalText, newTurn } from './workspace.js'
 
 const FAILURE_MESSAGE_CHARS = 500
-
-// Restart recovery and the approval continuation are not part of this driver yet: a step that would
-// need them ends the turn with JEV_LOOP_FAILED.
-async function resumeParkedStage(_s: Scope, _signal: AbortSignal): Promise<LoopStepOutcome> {
-  throw new Error('Jev loop restart recovery is not supported yet')
-}
-
-async function recoverStep(_s: Scope, _signal: AbortSignal): Promise<LoopStepOutcome> {
-  throw new Error('Jev loop restart recovery is not supported yet')
-}
 
 /** A new user turn: a fresh goal, step 0 and counters, and the tool names for the whole turn. */
 async function beginTurn(s: Scope, input: LoopInput): Promise<void> {

@@ -48,7 +48,7 @@ const LLM_REFUSAL: Readonly<Record<Extract<Adoption, { kind: 'refuse' }>['code']
 
 const idPrefix = (s: Scope) => `jev:${s.state.idTurn}:${s.state.step}`
 
-function routeEvent(route: Route): StepEvent {
+export function routeEvent(route: Route): StepEvent {
   return {
     route: route.kind,
     reason: route.reason,
@@ -322,7 +322,10 @@ function argKeys(args: JsonValue): string[] {
   return args !== null && typeof args === 'object' && !Array.isArray(args) ? Object.keys(args).sort() : []
 }
 
-function dispatchEvent(calls: readonly PendingCall[], results: readonly (ToolResult | null)[]): JsonObject {
+export function dispatchEvent(
+  calls: readonly PendingCall[],
+  results: readonly (ToolResult | null)[],
+): JsonObject {
   return {
     invocationIds: calls.map((call) => call.invocationId),
     names: calls.map((call) => call.name),
