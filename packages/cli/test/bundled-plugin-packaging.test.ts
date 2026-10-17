@@ -105,7 +105,8 @@ it('ships all official example payloads with runnable community entries and no c
   roots.push(root)
   await copyBundledExamples(root)
   const families = await readdir(join(root, 'bundled-examples'))
-  expect(families.sort()).toEqual(['community', 'fde', 'loops'])
+  expect(families.sort()).toEqual(['community', 'fde', 'loops', 'recipes'])
+  expect(await readdir(join(root, 'bundled-examples/recipes'))).toHaveLength(3)
   expect(await readdir(join(root, 'bundled-examples/fde'))).toHaveLength(12)
   expect(await readdir(join(root, 'bundled-examples/loops'))).toHaveLength(2)
   for (const name of ['tool-panel', 'mcp-skills', 'dag-loop-adapter']) {

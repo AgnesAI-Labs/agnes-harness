@@ -1,0 +1,143 @@
+{
+  "name": "@agnes-recipe/invoice-review",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "fixtures",
+    "skills",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@agnes/business-recipes": "0.1.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "agnes": {
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0"
+    },
+    "kinds": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@agnes-recipe/invoice-review/main",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "capabilities": {
+          "model": true,
+          "tools": {
+            "names": [
+              "recipe_invoice_review"
+            ],
+            "prefix": "recipe_"
+          }
+        }
+      }
+    ],
+    "bundles": {
+      "recipe-invoice-review-en": {
+        "profile": {
+          "skills": [
+            "recipe-invoice-review"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "recipe.invoice-review"
+            }
+          },
+          "toolPolicy": {
+            "readOnly": true
+          }
+        },
+        "presets": {
+          "recipe-invoice-review-en": {
+            "name": "recipe-invoice-review-en",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "recipe.invoice-review"
+              }
+            }
+          }
+        }
+      },
+      "recipe-invoice-review-zh-CN": {
+        "profile": {
+          "skills": [
+            "recipe-invoice-review"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "recipe.invoice-review"
+            }
+          },
+          "toolPolicy": {
+            "readOnly": true
+          }
+        },
+        "presets": {
+          "recipe-invoice-review-zh-CN": {
+            "name": "recipe-invoice-review-zh-CN",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "recipe.invoice-review"
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Invoice review",
+      "summary": "Synthetic invoice review with a review draft.",
+      "description": "Input: invoice-207. Output example: Invoice total 120; ledger total 100; discrepancy 20. Model: selected standard preset primary route. Tools: one read-only recipe tool. No network, filesystem writes or external actions.",
+      "category": "example",
+      "exampleOf": "@agnes/business-recipes",
+      "launches": [
+        {
+          "id": "invoice-207-en",
+          "kind": "business-agent",
+          "title": "Invoice review · en",
+          "bundle": "@agnes-recipe/invoice-review#recipe-invoice-review-en",
+          "preset": "recipe-invoice-review-en",
+          "prompt": "{\"recipe\":\"invoice-review\",\"fixture\":\"invoice-207\",\"language\":\"en\"}"
+        },
+        {
+          "id": "invoice-207-zh-cn",
+          "kind": "business-agent",
+          "title": "Invoice review · zh-CN",
+          "bundle": "@agnes-recipe/invoice-review#recipe-invoice-review-zh-CN",
+          "preset": "recipe-invoice-review-zh-CN",
+          "prompt": "{\"recipe\":\"invoice-review\",\"fixture\":\"invoice-207\",\"language\":\"zh-CN\"}"
+        }
+      ],
+      "locales": {
+        "zh-CN": {
+          "displayName": "发票审查",
+          "summary": "合成发票审查，生成审查草稿。",
+          "description": "输入：invoice-207。产出样例：发票合计 120；账本合计 100；差额 20。 模型：standard 预设的主模型路由。工具：一个只读配方工具；无网络、文件写入或外部操作。"
+        }
+      }
+    }
+  }
+}

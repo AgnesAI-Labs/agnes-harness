@@ -185,6 +185,7 @@ export function createExamplePackages(options: {
                 version: entry.version,
                 integrity: entry.integrity,
                 metadata: entry.metadata,
+                trusted: item?.trusted === true,
                 bundled: entry.source.ref.startsWith('file:./bundled-examples/'),
                 runtime: item?.desired === 'enabled' ? await backend.runtime(entry.id) : { state: 'stopped' },
                 installation: !item

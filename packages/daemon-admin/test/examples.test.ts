@@ -14,19 +14,19 @@ const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-function fixture(parentVersion = '1.0.0') {
+function fixture(parentVersion = '1.0.0', parentId = 'acme/parent') {
   const directory = mkdtempSync(join(tmpdir(), 'agh-example-'))
   roots.push(directory)
   const row: ClientModuleRosterRow = {
     rowId: 'web:acme/parent',
     moduleName: 'parent',
-    packageId: 'acme/parent',
+    packageId: parentId,
     enabled: true,
     phase: 'ready',
     binding: {
       lifetime: 'profile',
       owner: 'web:acme/parent',
-      packageId: 'acme/parent',
+      packageId: parentId,
       integrity: 'p1',
       profileId: 'test',
       activationId: 'activation-1',
@@ -55,14 +55,14 @@ function fixture(parentVersion = '1.0.0') {
       summary: 'Demo',
       description: 'Demo',
       category: 'example',
-      exampleOf: 'acme/parent',
+      exampleOf: parentId,
       launches: [launch],
     },
   } as unknown as PackageCatalogDescriptor
   const preview = {
     ...entry,
     capabilityHash: 'cap-1',
-    dependencies: { 'acme/parent': parentVersion },
+    dependencies: { [parentId]: parentVersion },
     blockers: [],
     warnings: [],
   } as unknown as PackagePreview
@@ -112,12 +112,12 @@ it.each(['1.0.0', '0.1.0-alpha.0'])(
   async (version) => {
     const f = fixture(version)
     expect(await f.call({ action: 'list' })).toMatchObject([
-      { id: f.entry.id, installation: 'not-installed' },
+      { id: f.entry.id, installation: 'not-installed', trusted: false },
     ])
     const review = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
     await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-1' })
     expect(await f.call({ action: 'list' })).toMatchObject([
-      { installation: 'enabled', runtime: { state: 'running' } },
+      { installation: 'enabled', trusted: true, runtime: { state: 'running' } },
     ])
     const ticket = (await f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })) as {
       launchTicket: string
@@ -202,3 +202,53 @@ it('retains an unknown dispatch result and does not replay it', async () => {
     code: 'E_PACKAGE_STATE',
   })
 })
+
+it.each(['support-intake', 'invoice-review', 'meeting-brief'])(
+  'runs the reviewed %s recipe through the existing facade with refusal and durable deduplication',
+  async (slug) => {
+    const manifest = JSON.parse(
+      readFileSync(new URL(`../../../examples/recipes/${slug}/package.json`, import.meta.url), 'utf8'),
+    )
+    const f = fixture('0.1.0', '@agnes/business-recipes')
+    Object.assign(f.entry, { id: manifest.name, metadata: manifest.agnes.metadata })
+    Object.assign(f.preview, { id: manifest.name, metadata: manifest.agnes.metadata })
+    const launch = manifest.agnes.metadata.launches[0]
+    f.backend.validateLaunch = async (_example, selected) => {
+      const bundle = selected.bundle.split('#')[1]
+      if (
+        !selected.bundle.startsWith(`${manifest.name}#`) ||
+        !manifest.agnes.bundles[bundle ?? '']?.presets[selected.preset]
+      )
+        throw new Error('E_PACKAGE_BLOCKED')
+    }
+    expect(f.sessions.size).toBe(0)
+    const review = (await f.call({ action: 'inspect', exampleId: manifest.name })) as { reviewId: string }
+    expect(f.sessions.size).toBe(0)
+    await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-recipe' })
+    const installed = (await f.backend.installed())[0]
+    if (!installed) throw new Error('Missing installed recipe')
+    installed.trusted = false
+    expect(await f.call({ action: 'list' })).toMatchObject([{ trusted: false }])
+    await expect(
+      f.call({ action: 'prepare', exampleId: manifest.name, launchId: launch.id }),
+    ).rejects.toThrow('E_PACKAGE_STATE')
+    installed.trusted = true
+    await expect(
+      f.call({ action: 'prepare', exampleId: manifest.name, launchId: '../foreign' }),
+    ).rejects.toThrow('DENIED')
+    const ticket = (await f.call({ action: 'prepare', exampleId: manifest.name, launchId: launch.id })) as {
+      launchTicket: string
+    }
+    expect(f.sessions.size).toBe(0)
+    const request = { action: 'start', launchTicket: ticket.launchTicket, operationId: 'run-recipe' }
+    expect(await Promise.all([f.call(request), f.call(request)])).toEqual([
+      { sessionId: 'session-1' },
+      { sessionId: 'session-1' },
+    ])
+    expect(f.sessions.size).toBe(1)
+    expect(f.inputs.size).toBe(1)
+    f.row.enabled = false
+    await expect(f.call({ ...request, operationId: 'disabled-parent' })).rejects.toThrow('DENIED')
+    expect(f.sessions.size).toBe(1)
+  },
+)

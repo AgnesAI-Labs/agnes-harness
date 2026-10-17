@@ -1,0 +1,88 @@
+export const copy = {
+  en: {
+    title: 'Business recipes',
+    intro:
+      'Three synthetic FDE scenarios. Previewing reads metadata only. Review each package and launch explicitly; normal model policy and charges apply.',
+    refresh: 'Refresh availability',
+    filter: 'Show recipes',
+    all: 'All',
+    ready: 'Ready',
+    language: 'Output language',
+    fixture: 'Synthetic input',
+    inspect: 'Review package',
+    prepare: 'Review launch',
+    enable: 'Confirm install, trust and enable',
+    start: 'Start this reviewed run',
+    cancel: 'Close review',
+    read: 'Check operation receipt',
+    review: 'Package permissions',
+    launch: 'Review exact launch',
+    requirements:
+      'Requires a configured standard primary model route. Adds one read-only fixture tool and Skill to the selected bundle. No external business actions or file writes.',
+    empty: 'No recipes available. Enable Business recipes in Plugins, then refresh.',
+    error:
+      'The request did not complete. Refresh availability. If a run was submitted, check its receipt before retrying.',
+    config:
+      'Check the standard primary model route in Models & accounts and the recipe bundle in Plugins, then review a fresh launch.',
+    stale: 'The package, trust or activation changed. Refresh and review the current package again.',
+    invalid: 'Choose a listed synthetic input and output language.',
+    unknown: 'The outcome is unknown. Check the operation receipt; do not create another run automatically.',
+    completed: 'Run submitted. Open its session to inspect the draft and execution evidence.',
+    session: 'Open session',
+    'not-installed': 'Not installed',
+    untrusted: 'Installed · not trusted',
+    'review-required': 'Trust unknown · review required',
+    disabled: 'Trusted · disabled',
+    enabling: 'Enabling',
+    enabled: 'Enabled',
+    failed: 'Needs attention',
+    running: 'Operation running',
+    unknownReceipt: 'Outcome unknown',
+    readOnly: 'Read-only fixture tool; model access; no network or external actions.',
+  },
+  'zh-CN': {
+    title: '业务配方',
+    intro: '三个合成 FDE 场景。预览只读取元数据；请明确审查插件并启动，适用通常的模型策略与费用。',
+    refresh: '刷新可用状态',
+    filter: '筛选配方',
+    all: '全部',
+    ready: '可启动',
+    language: '产出语言',
+    fixture: '合成输入',
+    inspect: '审查插件',
+    prepare: '审查启动',
+    enable: '确认安装、信任并启用',
+    start: '启动此审查后的运行',
+    cancel: '关闭审查',
+    read: '查询操作回执',
+    review: '插件权限',
+    launch: '核对本次启动',
+    requirements:
+      '需要已配置的 standard 主模型路由。仅在所选 bundle 中增加一个只读样例工具和 Skill；无外部业务动作或文件写入。',
+    empty: '暂无配方。请在插件中启用业务配方，然后刷新。',
+    error: '请求未完成。请刷新可用状态；如果已提交启动，请先查询回执再重试。',
+    config: '请在模型与账户中检查 standard 主模型路由，并在插件中检查配方 bundle，再重新审查启动。',
+    stale: '插件、信任或启用状态已变化。请刷新并重新审查当前插件。',
+    invalid: '请选择列表中的合成输入和产出语言。',
+    unknown: '结果未知。请查询操作回执，不要自动创建另一运行。',
+    completed: '运行已提交。请打开会话查看草稿和执行证据。',
+    session: '打开会话',
+    'not-installed': '未安装',
+    untrusted: '已安装 · 未信任',
+    'review-required': '信任未知 · 需要审查',
+    disabled: '已信任 · 未启用',
+    enabling: '启用中',
+    enabled: '已启用',
+    failed: '需要处理',
+    running: '操作进行中',
+    unknownReceipt: '结果未知',
+    readOnly: '只读样例工具；模型访问；无网络或外部动作。',
+  },
+}
+export function errorText(code, text) {
+  if (code === 'INVALID_REQUEST') return text.invalid
+  if (code === 'OUTCOME_UNKNOWN') return text.unknown
+  if (/STALE|DENIED|E_PACKAGE_STATE|BLOCKED/.test(code)) return text.stale
+  if (/MODEL|CONFIG|PRESET|BUNDLE|ROUTE/.test(code)) return text.config
+  return `${text.error} ${text.config}`
+}

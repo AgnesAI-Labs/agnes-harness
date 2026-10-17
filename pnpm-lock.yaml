@@ -136,6 +136,42 @@ importers:
         specifier: workspace:*
         version: link:../../packages/extension-api
 
+  examples/recipes/invoice-review:
+    dependencies:
+      '@agnes/business-recipes':
+        specifier: 0.1.0
+        version: link:../../../packages/package-manager/bundled-plugins/business-recipes
+      '@agnes/plugin-runtime':
+        specifier: 0.0.0
+        version: link:../../../packages/plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
+  examples/recipes/meeting-brief:
+    dependencies:
+      '@agnes/business-recipes':
+        specifier: 0.1.0
+        version: link:../../../packages/package-manager/bundled-plugins/business-recipes
+      '@agnes/plugin-runtime':
+        specifier: 0.0.0
+        version: link:../../../packages/plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
+  examples/recipes/support-intake:
+    dependencies:
+      '@agnes/business-recipes':
+        specifier: 0.1.0
+        version: link:../../../packages/package-manager/bundled-plugins/business-recipes
+      '@agnes/plugin-runtime':
+        specifier: 0.0.0
+        version: link:../../../packages/plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+
   examples/sandbox/docker:
     dependencies:
       '@agnes/extension-api':
@@ -1240,6 +1276,21 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
+
+  packages/package-manager/bundled-plugins/business-recipes:
+    devDependencies:
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../plugin-runtime
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
 
   packages/package-manager/bundled-plugins/deliverables-ui:
     devDependencies:

@@ -315,6 +315,9 @@
     },
     {
       "path": "packages/package-manager/bundled-plugins/usage-cockpit"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/business-recipes"
     }
   ]
 }

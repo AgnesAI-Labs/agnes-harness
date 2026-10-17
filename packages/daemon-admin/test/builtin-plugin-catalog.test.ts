@@ -18,9 +18,15 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
   if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
   const catalog = await discoverLocalExamples(root)
   const result = await catalog.read({ offline: true })
-  expect(result.entries).toHaveLength(26)
+  expect(new Set(result.entries.map((entry) => entry.id)).size).toBe(result.entries.length)
   const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
-  expect(examples).toHaveLength(17)
+  expect(examples.map((entry) => entry.id)).toEqual(
+    expect.arrayContaining([
+      '@agnes-recipe/support-intake',
+      '@agnes-recipe/invoice-review',
+      '@agnes-recipe/meeting-brief',
+    ]),
+  )
   expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
   expect(examples.map((entry) => entry.id)).toEqual(
     expect.arrayContaining(['@agnes-example/dag-loop', '@agnes-example/react-loop', '@community/tool-panel']),
@@ -58,6 +64,16 @@ it.each([false, true])('discovers optional pinned helper even with broken exampl
     id: '@agnes/document-reader',
     version: '0.1.2',
     source: { ref: 'file:./bundled-plugins/document-reader' },
+  })
+  for (const entry of examples.filter((entry) => entry.id.startsWith('@agnes-recipe/'))) {
+    expect(entry.metadata?.exampleOf).toBe('@agnes/business-recipes')
+    expect(entry.presentation?.presets).toHaveLength(2)
+    expect(entry.presentation?.presets?.every((preset) => preset.readOnly === 'yes')).toBe(true)
+    expect(entry.metadata?.launches?.every((launch) => launch.bundle.startsWith(`${entry.id}#`))).toBe(true)
+  }
+  expect(result.entries.find((entry) => entry.id === '@agnes/business-recipes')).toMatchObject({
+    sourceId: 'builtin-plugins',
+    source: { ref: 'file:./bundled-plugins/business-recipes' },
   })
   expect(result.entries.find((entry) => entry.id === '@agnes/eval-studio')).toMatchObject({
     sourceId: 'builtin-plugins',

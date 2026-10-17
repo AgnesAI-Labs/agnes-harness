@@ -54,6 +54,14 @@ export const BUNDLED_HELPERS = Object.freeze([
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */
 export const OPTIONAL_BUNDLED_PACKAGES = Object.freeze([
   {
+    name: 'business-recipes',
+    id: '@agnes/business-recipes',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/business-recipes',
+    sourcePath: 'package-manager/bundled-plugins/business-recipes',
+  },
+  {
     name: 'eval-studio',
     id: '@agnes/eval-studio',
     version: '0.1.0',
@@ -125,6 +133,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
       'recruiting-screen',
       'support-triage',
     ].map((name) => ({ family: 'fde', name })),
+    ...['support-intake', 'invoice-review', 'meeting-brief'].map((name) => ({ family: 'recipes', name })),
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )

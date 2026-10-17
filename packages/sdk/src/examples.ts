@@ -7,6 +7,8 @@ export type ExampleView = Readonly<{
   metadata: PluginMetadata
   bundled: boolean
   runtime?: { state: 'starting' | 'running' | 'failed' | 'stopped' | 'unavailable'; code?: string }
+  /** Absent on older daemons; unknown is never treated as trusted. */
+  trusted?: boolean
   installation: 'not-installed' | 'disabled' | 'enabling' | 'enabled' | 'failed'
 }>
 export type ExampleReview = Readonly<{

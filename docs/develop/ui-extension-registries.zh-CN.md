@@ -116,3 +116,5 @@ profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }
 `ctx.presentation` 提供可选的呈现导航 `revealConversation`、`focusApproval`，以及经过
 宿主认证的自定义组件名册读取、订阅 `listComponents`、`subscribeComponents`。
 问题和表单继续使用已有 SDK 的授权 UI 协议；回答不能作为执行许可。
+
+示例列表行提供可选的 `trusted` 字段：`false` 可区分已安装但未信任与已信任但停用的包。旧后台可能省略此字段，客户端必须显示为未知；该事实不授予权限。

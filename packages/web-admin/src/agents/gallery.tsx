@@ -1,4 +1,5 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import { homeEntries, homeNavigation } from '@agnes/web-client'
 import {
   Button,
   EmptyState,
@@ -16,7 +17,7 @@ import {
   useResource,
   useUiText,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import type { AdminContext } from '../admin/plugins/types.js'
 import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
@@ -203,6 +204,8 @@ export function BusinessAgentGallery({
   onOpenPlugins?: (agent: BusinessAgent) => void
 }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
+  useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
+  const recipes = homeEntries.get('business-recipes')
   const [query, setQuery] = useState('')
   const [readyOnly, setReadyOnly] = useState(false)
   const starter = useBusinessAgentStart({
@@ -263,6 +266,7 @@ export function BusinessAgentGallery({
   }, [focus, focused, data.busy])
   return (
     <div className="agent-gallery-page" data-testid="business-agents" aria-busy={data.busy}>
+      {recipes && <Button onClick={() => homeNavigation.open('business-recipes')}>{t('recipes')}</Button>}
       {
         <SearchBar
           label={t('search')}

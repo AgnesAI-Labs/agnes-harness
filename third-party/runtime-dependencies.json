@@ -54,6 +54,7 @@
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
         "examples/community/deliverables-gallery",
+        "packages/package-manager/bundled-plugins/business-recipes",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/eval-studio",
         "packages/package-manager/bundled-plugins/usage-cockpit",
@@ -113,6 +114,9 @@
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
       "consumers": [
+        "examples/recipes/invoice-review",
+        "examples/recipes/meeting-brief",
+        "examples/recipes/support-intake",
         "packages/ai",
         "packages/base",
         "packages/cli",

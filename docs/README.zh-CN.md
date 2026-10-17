@@ -36,6 +36,7 @@
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [用量驾驶舱](guide/usage-cockpit.zh-CN.md) | 使用可选插件查看选中会话费用与覆盖缺口 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
+| [业务配方](guide/business-recipes.zh-CN.md) | 发现、审查并运行可选合成业务工作流 |
 | [通用凭据](guide/credentials.zh-CN.md) | 保存只写 API key 并管理配置引用 |
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
 | [评测工作室](guide/eval-studio.zh-CN.md) | 可选离线数据集、回放证据和逐案例对照 |

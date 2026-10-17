@@ -1,0 +1,22 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "homeEntries": [
+      {
+        "id": "business-recipes",
+        "placement": "secondary",
+        "navigation": {
+          "title": "Business recipes",
+          "titles": {
+            "zh-CN": "业务配方"
+          },
+          "icon": "book-open",
+          "order": 110
+        }
+      }
+    ]
+  }
+}

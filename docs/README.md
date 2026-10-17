@@ -42,6 +42,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Usage cockpit](guide/usage-cockpit.md) | Inspect selected-session costs and unknown coverage with an optional plugin |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
+| [Business recipes](guide/business-recipes.md) | Discover, review and run optional synthetic business workflows |
 | [Generic credentials](guide/credentials.md) | Save write-only API keys and manage their references |
 | [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
 | [Evaluation Studio](guide/eval-studio.md) | Optional offline datasets, replay evidence and case comparison |

@@ -344,6 +344,7 @@
     "@agnes/system-node"
   ],
   "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
+  "@agnes/business-recipes": ["@agnes/plugin-runtime", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
   "@agnes/eval-studio": ["@agnes/model-adapters", "@agnes/sdk", "@agnes/web-client", "@agnes/web-ui"],

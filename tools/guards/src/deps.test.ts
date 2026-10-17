@@ -141,6 +141,7 @@ const LAYER: Record<string, number> = {
   '@agnes/web-admin': 9.2,
   '@agnes/web-conversation': 9.2,
   // Independently installed bundled plugins consume public Host/UI contracts.
+  '@agnes/business-recipes': 10,
   '@agnes/deliverables-ui': 10,
   '@agnes/document-reader': 10,
   '@agnes/eval-studio': 10,
@@ -350,6 +351,7 @@ describe('browser packages do not depend on backend capability packages', () => 
     '@agnes/web-conversation',
     '@agnes/resource-control-web',
     '@agnes/usage-cockpit',
+    '@agnes/business-recipes',
   ])
   const BACKEND = new Set(['@agnes/base', '@agnes/core', '@agnes/host', '@agnes/daemon', '@agnes/code'])
   for (const pkg of packages.filter((p) => BROWSER_PACKAGES.has(p.name))) {

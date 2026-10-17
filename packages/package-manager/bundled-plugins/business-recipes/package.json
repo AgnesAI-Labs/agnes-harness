@@ -1,0 +1,76 @@
+{
+  "name": "@agnes/business-recipes",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "kinds": [
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:business-recipes/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Business recipes",
+          "summary": "Review and run three synthetic business workflows with explicit inputs and permissions.",
+          "description": "Optional recipe discovery through the existing FDE examples and launch paths. No automatic installation or network uploads.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "业务配方",
+              "summary": "审查并运行三个具有明确输入和权限的合成业务工作流。",
+              "description": "通过现有 FDE 示例和启动路径发现配方；不会自动安装或上传数据。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:business-recipes/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Business recipes",
+      "summary": "Review and run three synthetic business workflows with explicit inputs and permissions.",
+      "description": "Optional recipe discovery through the existing FDE examples and launch paths. No automatic installation or network uploads.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "业务配方",
+          "summary": "审查并运行三个具有明确输入和权限的合成业务工作流。",
+          "description": "通过现有 FDE 示例和启动路径发现配方；不会自动安装或上传数据。"
+        }
+      }
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/plugin-runtime": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  }
+}
