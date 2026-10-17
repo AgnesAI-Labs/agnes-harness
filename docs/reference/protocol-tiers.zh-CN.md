@@ -13,6 +13,7 @@
 - `initialize`
 - `authenticate`
 - `_agnes/v1/auth.claim`
+- `_agnes/v1/agents.resolve`
 - `session/new`
 - `session/load`
 - `session/set_mode`

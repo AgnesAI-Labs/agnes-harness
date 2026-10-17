@@ -13,17 +13,18 @@ const schemaDefNames = (file: string): string[] =>
       }
     ).$defs,
   )
-// Pull the names out of the two `export type { … } from '../gen/ts/<doc>.js'` blocks in index.ts.
-// Types are erased at runtime and never appear on the module object, so the source file is the only
-// place to read them — which is exactly the side this guard exists to watch.
+// A schema can have several export blocks; value schemas also export their same-named type.
 const reexportedTypesFrom = (genModule: string): string[] => {
-  const re = new RegExp(String.raw`export type \{([^}]*)\} from '\.\./gen/ts/${genModule}\.js'`)
-  const m = re.exec(indexSrc)
-  if (!m) throw new Error(`no type re-export block from ../gen/ts/${genModule}.js found in index.ts`)
-  return (m[1] as string)
-    .split(',')
-    .map((x) => x.trim())
-    .filter(Boolean)
+  const re = new RegExp(String.raw`export(?: type)? \{([^}]*)\} from '\.\./gen/ts/${genModule}\.js'`, 'g')
+  const blocks = [...indexSrc.matchAll(re)]
+  if (!blocks.length) throw new Error(`no re-export block from ../gen/ts/${genModule}.js found in index.ts`)
+  return blocks
+    .flatMap((match) =>
+      match[1]!
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean),
+    )
     .sort()
 }
 
@@ -120,6 +121,16 @@ describe('protocol src boundary', () => {
         'RuntimePublicationReport',
         'RuntimeSecurityStatus',
         'parseSessionBundles',
+        'parseAgentRef',
+        'AgentPlan',
+        'AgentResolveParams',
+        'ApplicationAdoptParams',
+        'ApplicationClearParams',
+        'ApplicationConfigSnapshot',
+        'ApplicationPreview',
+        'ApplicationPreviewParams',
+        'ApplicationSelection',
+        'ApplicationState',
         'isAdminLoop',
         'isAdminModelAdapter',
         'isSessionDefaults',
