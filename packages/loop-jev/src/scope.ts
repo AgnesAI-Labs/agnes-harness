@@ -210,6 +210,18 @@ function latestText(data: JsonValue | undefined): string {
   return JSON.stringify(data)
 }
 
+/** Reports the turn's counters, best effort: a failed emit is counted, never thrown. */
+export async function emitMetrics(s: Scope, reason: LoopEndReason): Promise<void> {
+  const st = s.state
+  await emitEvent(s.ctx.events, st.counters, 'jev.metrics', {
+    ...st.counters,
+    turn: st.idTurn,
+    steps: st.step,
+    toolNamesChanges: st.toolNamesChanges,
+    endReason: reason,
+  })
+}
+
 /**
  * Reports the turn's counters, checkpoints the ending and asks Core to end the turn. When the stop
  * gate keeps the turn open, the hold is recorded and the loop takes another step.
@@ -220,13 +232,7 @@ export async function finishTurn(
   error?: { code: string; message: string },
 ): Promise<LoopStepOutcome> {
   const st = s.state
-  await emitEvent(s.ctx.events, st.counters, 'jev.metrics', {
-    ...st.counters,
-    turn: st.idTurn,
-    steps: st.step,
-    toolNamesChanges: st.toolNamesChanges,
-    endReason: reason,
-  })
+  await emitMetrics(s, reason)
   st.stage = 'finish'
   st.endReason = reason
   if (error) st.endError = error

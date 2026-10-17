@@ -33,9 +33,42 @@ export type LlmOutcome =
   | { kind: 'aborted'; ids: string[] }
   | { kind: 'outcome'; outcome: LoopStepOutcome; ids: string[] }
 
-type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
+export type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
 
 const BASE_DELAY_MS = 1000
+
+type RetryPorts = Pick<GenericLoopPorts, 'turn' | 'compaction' | 'wait'>
+
+/** Compacts the turn; returns the outcome when compaction ended it, otherwise null. */
+async function compactTurn(deps: RetryPorts, signal: AbortSignal): Promise<LoopStepOutcome | null> {
+  if (!deps.compaction) return null
+  await deps.turn.endStep()
+  const outcome = await deps.compaction.run(signal)
+  return outcome.outcome === 'running' ? null : outcome
+}
+
+/**
+ * What follows the error of attempt `k`: an overflow compacts and retries, a retryable error backs
+ * off and retries, both only while an attempt is left; anything else stops.
+ */
+export async function afterError(
+  error: ErrorEvent,
+  k: number,
+  maxAttempts: number,
+  deps: RetryPorts,
+  signal: AbortSignal,
+): Promise<{ kind: 'retry' } | { kind: 'stop' } | { kind: 'outcome'; outcome: LoopStepOutcome }> {
+  const more = k + 1 < maxAttempts
+  if (error.code === 'OVERFLOW' && deps.compaction && more) {
+    const ended = await compactTurn(deps, signal)
+    return ended ? { kind: 'outcome', outcome: ended } : { kind: 'retry' }
+  }
+  if (error.retryable && more) {
+    await deps.wait.delay(error.retryAfterMs ?? BASE_DELAY_MS * 2 ** k, signal)
+    return { kind: 'retry' }
+  }
+  return { kind: 'stop' }
+}
 
 /**
  * Sends one main-model request with the same tools on every attempt. Retries retryable errors under
@@ -61,13 +94,6 @@ export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: Abort
     }
   }
 
-  const compact = async (): Promise<LoopStepOutcome | null> => {
-    if (!deps.compaction) return null
-    await deps.turn.endStep()
-    const outcome = await deps.compaction.run(signal)
-    return outcome.outcome === 'running' ? null : outcome
-  }
-
   for (let k = req.firstAttempt; k < req.maxAttempts; k++) {
     const id = `${req.idPrefix}:m${k}`
     const note = k === 0 && req.note ? req.note : undefined
@@ -78,7 +104,7 @@ export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: Abort
     let request = await prepare(id, note)
     const estimate = await deps.estimateRequest(request)
     if (estimate.shouldCompact === true && deps.compaction) {
-      const ended = await compact()
+      const ended = await compactTurn(deps, signal)
       if (ended) return { kind: 'outcome', outcome: ended, ids }
       // Not sent yet, so the same id and the same note are still safe.
       request = await prepare(id, note)
@@ -88,16 +114,9 @@ export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: Abort
     const error = events.find((event): event is ErrorEvent => event.type === 'error')
     if (!error) return { kind: 'reply', events, attempts: ids.length, ids, toolNames }
     if (error.reason === 'aborted' || signal.aborted) return { kind: 'aborted', ids }
-    const more = k + 1 < req.maxAttempts
-    if (error.code === 'OVERFLOW' && deps.compaction && more) {
-      const ended = await compact()
-      if (ended) return { kind: 'outcome', outcome: ended, ids }
-      continue
-    }
-    if (error.retryable && more) {
-      await deps.wait.delay(error.retryAfterMs ?? BASE_DELAY_MS * 2 ** k, signal)
-      continue
-    }
+    const next = await afterError(error, k, req.maxAttempts, deps, signal)
+    if (next.kind === 'outcome') return { kind: 'outcome', outcome: next.outcome, ids }
+    if (next.kind === 'retry') continue
     return { kind: 'failed', code: error.code, message: clip(error.message, 200), attempts: ids.length, ids }
   }
   return {

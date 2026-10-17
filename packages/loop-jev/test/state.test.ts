@@ -98,6 +98,19 @@ describe('checkpoint codec v1', () => {
     expect(() => parseJevState({ ...s, endReason: 'nope' } as never)).toThrow(/at endReason$/)
     expect(() => parseJevState({ ...s, endError: { code: 1 } } as never)).toThrow(/at endError\.code$/)
   })
+  it('keeps the counted model attempts of a step, accepts their absence and rejects unknown keys', () => {
+    const s = initialState()
+    s.stage = 'llm'
+    s.cur = { jevAttempts: [], level: 0, llm: { kind: 'answer', attempt: 2, counted: 2 } }
+    expect(parseJevState(codec.decode(codec.encode(s as never)))).toEqual(s)
+    s.cur.llm = { kind: 'answer', attempt: 2 }
+    expect(parseJevState(codec.decode(codec.encode(s as never)))).toEqual(s)
+    const odd = structuredClone(s) as never as { cur: { llm: Record<string, unknown> } }
+    odd.cur.llm.extra = 1
+    expect(() => parseJevState(odd as never)).toThrow('cur.llm')
+    odd.cur.llm = { kind: 'answer', attempt: 2, counted: -1 }
+    expect(() => parseJevState(odd as never)).toThrow('cur.llm.counted')
+  })
   it('round-trips a populated mid-step state and rejects incomplete calls', () => {
     const s = initialState()
     s.stage = 'dispatch'

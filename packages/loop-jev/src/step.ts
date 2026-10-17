@@ -205,12 +205,13 @@ export async function llmStep(
     st.pendingNotes = []
   }
   const ctx = s.ctx
+  const first = firstAttempt ?? st.cur.llm?.attempt ?? 0
   const r = await requestLlm(
     {
       idPrefix: idPrefix(s),
       kind,
       note: text,
-      firstAttempt: firstAttempt ?? st.cur.llm?.attempt ?? 0,
+      firstAttempt: first,
       maxAttempts: s.cfg.llmMaxAttempts,
       toolNames: st.toolNames,
     },
@@ -222,7 +223,9 @@ export async function llmStep(
       wait: ctx.wait,
       ...(ctx.compaction ? { compaction: ctx.compaction } : {}),
       async save(llm, id) {
-        st.cur.llm = llm
+        // Attempts a restart already counted stay counted.
+        const counted = st.cur.llm?.counted
+        st.cur.llm = counted === undefined ? llm : { ...llm, counted }
         st.stage = 'llm'
         await save(s, [id])
       },
@@ -241,7 +244,8 @@ export async function llmStep(
   if (st.cur.llm) delete st.cur.llm.note
   const attempts = r.kind === 'reply' || r.kind === 'failed' ? r.attempts : r.ids.length
   st.counters.llm[kind] += attempts
-  st.counters.llm.retries += Math.max(0, attempts - 1)
+  // Every attempt after the step's first is a retry, including the first one sent after a restart.
+  st.counters.llm.retries += Math.max(0, attempts - (first === 0 ? 1 : 0))
   const llmEvent: JsonObject = { kind, attempts, invocationIds: [...r.ids], droppedCalls: 0 }
   if (r.kind === 'outcome') {
     // Compaction ended the turn; the attempts already sent are still reported.

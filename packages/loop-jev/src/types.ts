@@ -143,7 +143,8 @@ export type CurrentStep = {
   level: number
   decision?: Decision
   route?: { kind: RouteKind; reason: RouteReason }
-  llm?: { kind: LlmKind; attempt: number; note?: string }
+  /** `counted`: the attempts of this step a restart has already added to the counters. */
+  llm?: { kind: LlmKind; attempt: number; note?: string; counted?: number }
   calls?: PendingCall[]
 }
 export type Counters = {

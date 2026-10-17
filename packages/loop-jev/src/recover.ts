@@ -1,8 +1,18 @@
-import type { LoopStepOutcome, ToolResult } from '@agnes/extension-api'
+import type { LoopStepOutcome, LoopTurnView, ToolResult } from '@agnes/extension-api'
 import { observeDispatch } from './dispatch.js'
 import { type JevOutcome, resumeJev } from './jev.js'
 import { parseReply } from './llm.js'
-import { emitStep, endStep, finishTurn, recordRefusal, refusalOf, type Scope, save } from './scope.js'
+import { afterError, type ErrorEvent } from './model.js'
+import {
+  emitMetrics,
+  emitStep,
+  endStep,
+  finishTurn,
+  recordRefusal,
+  refusalOf,
+  type Scope,
+  save,
+} from './scope.js'
 import {
   countJev,
   decodeAndRoute,
@@ -14,10 +24,8 @@ import {
   routeEvent,
   stepTools,
 } from './step.js'
-import type { InferenceEvent, JsonObject, LlmKind, PendingCall, Route } from './types.js'
+import type { CurrentStep, InferenceEvent, JsonObject, PendingCall, Route } from './types.js'
 import { clip, errorCode } from './util.js'
-
-type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
 
 const idPrefix = (s: Scope) => `jev:${s.state.idTurn}:${s.state.step}`
 
@@ -43,10 +51,24 @@ function recordedLlm(s: Scope): { llm?: JsonObject } {
   }
 }
 
-/** Counts model attempts the interrupted process sent but never counted. */
-function countSent(s: Scope, kind: LlmKind, attempts: number, retries: number): void {
-  s.state.counters.llm[kind] += attempts
-  s.state.counters.llm.retries += retries
+/**
+ * Counts the step's model attempts below `upTo` that the counters do not hold yet, and records them
+ * as counted so a second restart in the same step does not count them again. Every attempt after
+ * the step's first is a retry.
+ */
+function countSent(s: Scope, llm: NonNullable<CurrentStep['llm']>, upTo: number): void {
+  const from = llm.counted ?? 0
+  if (upTo <= from) return
+  s.state.counters.llm[llm.kind] += upTo - from
+  s.state.counters.llm.retries += Math.max(0, upTo - Math.max(from, 1))
+  llm.counted = upTo
+}
+
+/** The turn was cancelled, possibly while the process was down. */
+async function turnCancelled(s: Scope, signal: AbortSignal, view?: LoopTurnView | null): Promise<boolean> {
+  if (signal.aborted || s.ctx.turn.cancelled()) return true
+  const current = view === undefined ? await s.ctx.turn.view() : view
+  return current?.cancelled === true
 }
 
 const notRun = (call: PendingCall): ToolResult => ({
@@ -64,23 +86,26 @@ async function recoverDispatch(s: Scope, signal: AbortSignal): Promise<LoopStepO
 /**
  * Reads the receipt of the recorded model attempt: a recorded reply is used without a new request,
  * an unsent attempt is sent again with the same id, and one that may have been sent is not resent.
+ * A recorded error follows the same retry policy as a live request.
  */
 async function recoverLlm(s: Scope, signal: AbortSignal): Promise<LoopStepOutcome> {
   const llm = s.state.cur.llm
   if (!llm) throw new Error('The interrupted Jev loop model request has no record')
   const route = savedRoute(s)
   const { kind, attempt: k } = llm
-  const ids = llmIds(s, k)
+  // An attempt is only retried after it was sent.
+  countSent(s, llm, k)
+  if (await turnCancelled(s, signal)) return finishTurn(s, 'aborted')
   const receipt = await s.ctx.effects.status(`${idPrefix(s)}:m${k}`)
   if (receipt.status === 'not-sent') {
     // Only the first attempt carries the note; a later one finds it already committed.
-    countSent(s, kind, k, k)
     return llmStep(s, route, signal, k, k === 0 ? (llm.note ?? '') : '')
   }
   delete llm.note
+  countSent(s, llm, k + 1)
+  const ids = llmIds(s, k)
   const llmEvent: JsonObject = { kind, attempts: ids.length, invocationIds: ids, droppedCalls: 0 }
   if (receipt.status === 'may-have-sent') {
-    countSent(s, kind, k + 1, k)
     const obs = recordRefusal(s, {
       phase: route.decision.phase,
       op: route.decision.op,
@@ -98,14 +123,17 @@ async function recoverLlm(s: Scope, signal: AbortSignal): Promise<LoopStepOutcom
   if (!Array.isArray(receipt.result)) throw new Error('The Jev loop model receipt holds no model events')
   const events = receipt.result as readonly InferenceEvent[]
   const error = events.find((event): event is ErrorEvent => event.type === 'error')
-  if (error?.retryable && error.reason !== 'aborted' && k + 1 < s.cfg.llmMaxAttempts) {
-    countSent(s, kind, k + 1, k + 1)
-    return llmStep(s, route, signal, k + 1, '')
-  }
-  countSent(s, kind, k + 1, k)
   if (!error) return handleReply(s, route, parseReply(events), llmEvent, signal)
-  await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } })
-  if (error.reason === 'aborted') return finishTurn(s, 'aborted')
+  const errorEvent = { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } }
+  if (error.reason === 'aborted') {
+    await emitStep(s, errorEvent)
+    return finishTurn(s, 'aborted')
+  }
+  const next = await afterError(error, k, s.cfg.llmMaxAttempts, s.ctx, signal)
+  if (next.kind === 'retry') return llmStep(s, route, signal, k + 1, '')
+  await emitStep(s, errorEvent)
+  // Compaction ended the turn.
+  if (next.kind === 'outcome') return next.outcome
   return finishTurn(s, 'error', {
     code: 'JEV_LOOP_MODEL_FAILED',
     message: `${error.code}: ${clip(error.message, 200)}`,
@@ -119,6 +147,7 @@ async function recoverDecide(s: Scope, signal: AbortSignal): Promise<LoopStepOut
   if (lastId === undefined) throw new Error('The interrupted Jev loop decision has no recorded call')
   const view = await s.ctx.turn.view()
   if (!view) throw new Error('The claimed Jev loop turn has no public view')
+  if (await turnCancelled(s, signal, view)) return finishTurn(s, 'aborted')
   const { tools, compiled, build } = stepTools(s, view)
   const { deps, sent } = jevDeps(s)
   let outcome: JevOutcome
@@ -192,7 +221,8 @@ async function continueApproval(s: Scope, signal: AbortSignal): Promise<LoopStep
       s,
       calls.map((call) => call.invocationId),
     )
-    return s.ctx.events.finish('parked')
+    await s.ctx.events.finish('parked')
+    return { outcome: 'parked', reason: 'parked' }
   }
   const route = savedRoute(s)
   const { decision } = route
@@ -223,7 +253,8 @@ export async function resumeParkedStage(s: Scope, signal: AbortSignal): Promise<
   const resumed = view ? 'opened' : await s.ctx.input.resumeParked()
   if (resumed === 'opened') return continueApproval(s, signal)
   if (resumed === 'waiting') return { outcome: 'parked', reason: 'parked' }
-  // Blocked, or nothing parked: no call of this turn may run again.
+  // Blocked, or nothing parked: the turn is over and no call of it may run again.
+  await emitMetrics(s, resumed === 'blocked' ? 'blocked' : 'interrupted')
   st.stage = 'done'
   delete st.cur.calls
   await save(s)

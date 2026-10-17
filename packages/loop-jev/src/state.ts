@@ -220,9 +220,11 @@ function checkCurrent(value: unknown, path: string): void {
     'llm',
     (v, p) => {
       const l = obj(v, p)
+      only(l, ['kind', 'attempt', 'note', 'counted'], p)
       oneOf(l.kind, LLM_KINDS, `${p}.kind`)
       int(l.attempt, `${p}.attempt`)
       optional(l, 'note', str, p)
+      optional(l, 'counted', int, p)
     },
     path,
   )

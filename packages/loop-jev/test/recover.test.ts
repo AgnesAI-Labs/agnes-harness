@@ -1,3 +1,4 @@
+import type { LoopContext, LoopFactory, LoopRequestOptions } from '@agnes/extension-api'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
 import { describe, expect, it } from 'vitest'
 import { createJevLoopFactory } from '../src/index.js'
@@ -60,17 +61,22 @@ async function resume(
     jev?: ReturnType<typeof fakeJev>
     turnId?: number
     noView?: boolean
+    cancelled?: boolean
     resumeTool?: () => unknown
+    /** Ports the test kit does not offer, added on top of its context. */
+    ports?: (ctx: LoopContext) => Record<string, unknown>
   } = {},
 ) {
   const executed: string[] = []
+  const resumed: string[] = []
+  const prepared: LoopRequestOptions[] = []
   const resumeTool = o.resumeTool
   const jev = o.jev ?? fakeJev(() => ({ pick: PICK_RESPOND }))
-  const result = await driveLoop(createJevLoopFactory(), {
+  const result = await driveLoop(spied(createJevLoopFactory(), prepared, o.ports), {
     checkpoint: encodeState(state),
     turnOpen: true,
     sideCall: jev,
-    ...(o.noView ? {} : { turnView: turnView({ turnId: o.turnId ?? 1 }) }),
+    ...(o.noView ? {} : { turnView: turnView({ turnId: o.turnId ?? 1, cancelled: o.cancelled ?? false }) }),
     effects: (o.effects ?? {}) as never,
     replies: (o.replies ?? [textReply('Done.')]) as never,
     ...(o.resumeParked !== undefined ? { resumeParked: o.resumeParked } : {}),
@@ -80,16 +86,75 @@ async function resume(
         return (o.tools?.[c.name] ?? (() => ok('ok')))()
       },
       batch: async () => [],
-      ...(resumeTool ? { resume: async () => resumeTool() } : {}),
+      ...(resumeTool
+        ? {
+            resume: async (id: string) => {
+              resumed.push(id)
+              return resumeTool()
+            },
+          }
+        : {}),
     } as never,
   })
   return {
     ...result,
+    outcomes: result.steps,
     executed,
+    resumed,
+    prepared,
     jev,
+    metrics: result.events.filter((e) => e.type === 'jev.metrics').map((e) => e.data as JsonObject),
     steps: result.events.filter((e) => e.type === 'jev.step').map((e) => e.data as JsonObject),
   }
 }
+/** The factory with its model request options recorded and `ports` laid over the context. */
+function spied(
+  factory: LoopFactory,
+  prepared: LoopRequestOptions[],
+  ports?: (ctx: LoopContext) => Record<string, unknown>,
+): LoopFactory {
+  const wrap = (ctx: LoopContext): LoopContext => {
+    const extra = Object.entries(ports?.(ctx) ?? {}).map(([key, value]) => [key, { value, enumerable: true }])
+    return Object.create(ctx, {
+      prepareRequest: {
+        value: (options: LoopRequestOptions = {}) => {
+          prepared.push(structuredClone(options))
+          return ctx.prepareRequest(options)
+        },
+        enumerable: true,
+      },
+      ...Object.fromEntries(extra),
+    }) as LoopContext
+  }
+  return {
+    ...factory,
+    create: (ctx, stop) => factory.create(wrap(ctx), stop),
+    resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
+  }
+}
+const mayHaveSent = (id: string) => ({
+  [id]: { status: 'may-have-sent', invocationId: id, checkpoint: null },
+})
+const modelError = (code: string, retryable: boolean, retryAfterMs?: number) => [
+  {
+    type: 'error',
+    reason: 'error',
+    code,
+    message: code,
+    retryable,
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+  },
+]
+const answerStep = (llm: JevState['cur']['llm']) =>
+  saved({
+    stage: 'llm',
+    cur: {
+      ...saved({}).cur,
+      route: { kind: 'answer', reason: null },
+      decision: { ...decision, phase: 'RESPOND', op: 'ANSWER' } as never,
+      ...(llm ? { llm } : {}),
+    },
+  })
 const responded = (id: string, result: unknown) => ({
   [id]: { status: 'responded', invocationId: id, checkpoint: null, result },
 })
@@ -127,6 +192,11 @@ describe('recovery after resume', () => {
       }),
     )
     expect(r.requests).toHaveLength(1)
+    expect(r.prepared).toHaveLength(1)
+    expect(r.prepared[0]).toMatchObject({
+      invocationId: 'jev:1:0:m0',
+      tailNote: { text: '[answer request] x', commit: true },
+    })
   })
   it('llm may-have-sent: records LLM_OUTCOME_UNKNOWN and arbitrates next', async () => {
     const r = await resume(
@@ -138,6 +208,79 @@ describe('recovery after resume', () => {
     )
     expect(r.steps[0]).toMatchObject({ refusal: { code: 'LLM_OUTCOME_UNKNOWN' } })
     expect(r.steps[1]).toMatchObject({ route: 'arbitration', reason: 'recoverable_observation' })
+    expect(r.prepared.map((options) => options.invocationId)).not.toContain('jev:1:0:m0')
+    expect(r.prepared.map((options) => options.invocationId)).toEqual(['jev:1:1:m0'])
+  })
+  it('llm restart twice in one step: counts the attempts sent before the restarts once', async () => {
+    const step = answerStep({ kind: 'answer', attempt: 1 })
+    step.counters.llm.answer = 0
+    // The first restart resends m1, then the model port fails before anything is recorded.
+    const first = await resume(step, { replies: [] })
+    const after = first.checkpoint?.state as unknown as JevState
+    expect(after.cur.llm).toMatchObject({ attempt: 1, counted: 1 })
+    expect(after.counters.llm).toMatchObject({ answer: 1, retries: 0 })
+    // A second restart finds m1 possibly sent: m0 is not counted again.
+    const second = await resume({ ...after, stage: 'llm' }, { effects: mayHaveSent('jev:1:0:m1') })
+    // m1 is counted once; the next step's request is an arbitration.
+    expect((second.checkpoint as unknown as { state: JevState }).state.counters.llm).toMatchObject({
+      answer: 2,
+      retries: 1,
+      arbitration: 1,
+    })
+  })
+  it('llm responded with an overflow: compacts and retries like a live request', async () => {
+    const runs: string[] = []
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
+      effects: responded('jev:1:0:m0', modelError('OVERFLOW', false)),
+      ports: () => ({
+        compaction: {
+          run: async () => {
+            runs.push('compact')
+            return { outcome: 'running' }
+          },
+        },
+      }),
+    })
+    expect(runs).toEqual(['compact'])
+    expect(r.prepared).toHaveLength(1)
+    expect(r.prepared[0]?.invocationId).toBe('jev:1:0:m1')
+    expect(r.prepared[0]?.tailNote).toBeUndefined()
+    expect(r.finished?.[0]).toBe('completed')
+  })
+  it('llm responded with an overflow and no compaction: ends like a live request', async () => {
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
+      effects: responded('jev:1:0:m0', modelError('OVERFLOW', false)),
+    })
+    expect(r.prepared).toHaveLength(0)
+    expect(r.finished).toEqual(['error', expect.objectContaining({ code: 'JEV_LOOP_MODEL_FAILED' })])
+  })
+  it('llm responded with a retryable error: backs off, then retries under the next id', async () => {
+    const waits: number[] = []
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
+      effects: responded('jev:1:0:m0', modelError('RATE_LIMIT', true, 1234)),
+      ports: (ctx) => ({
+        wait: {
+          ...ctx.wait,
+          delay: async (ms: number) => {
+            waits.push(ms)
+          },
+        },
+      }),
+    })
+    expect(waits).toEqual([1234])
+    expect(r.prepared.map((options) => options.invocationId)).toEqual(['jev:1:0:m1'])
+    expect(r.finished?.[0]).toBe('completed')
+  })
+  it('llm not-sent in a turn cancelled while down: ends aborted without a request', async () => {
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0, note: 'n' }), { cancelled: true })
+    expect(r.prepared).toHaveLength(0)
+    expect(r.finished?.[0]).toBe('aborted')
+  })
+  it('decide absent in a turn cancelled while down: ends aborted without a side call', async () => {
+    const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
+    const r = await resume(saved({ stage: 'decide' }), { jev, cancelled: true })
+    expect(jev.prepared).toHaveLength(0)
+    expect(r.finished?.[0]).toBe('aborted')
   })
   it('dispatch responded: records the receipt result without running again', async () => {
     const r = await resume(saved({ stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }), {
@@ -226,14 +369,21 @@ describe('recovery after resume', () => {
     expect(state.current_turn_notes).toEqual([{ kind: 'steer', text: 'keep me' }])
     expect(r.jev.invoked[0]).toBe('jev:1:5:d0')
     expect(r.executed).toEqual([])
+    expect(r.resumed).toEqual(['jev:1:0:t0'])
+    expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
   it('parked: waiting stays parked, blocked ends blocked, nothing parked goes idle', async () => {
     const parked = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [call] } })
     expect((await resume(parked, { noView: true, resumeParked: 'waiting' })).steps).toEqual([])
-    expect((await resume(parked, { noView: true, resumeParked: 'blocked' })).finished).toBeUndefined()
-    expect((await resume(parked, { noView: true, resumeParked: false })).checkpoint?.state).toMatchObject({
-      stage: 'done',
-    })
+    const blocked = await resume(parked, { noView: true, resumeParked: 'blocked' })
+    expect(blocked.finished).toBeUndefined()
+    expect(blocked.outcomes).toEqual([{ outcome: 'turn-ended', reason: 'blocked' }])
+    expect(blocked.checkpoint?.state).toMatchObject({ stage: 'done' })
+    expect(blocked.metrics).toEqual([expect.objectContaining({ endReason: 'blocked' })])
+    const idle = await resume(parked, { noView: true, resumeParked: false })
+    expect(idle.outcomes).toEqual([{ outcome: 'idle' }])
+    expect(idle.checkpoint?.state).toMatchObject({ stage: 'done' })
+    expect(idle.metrics).toEqual([expect.objectContaining({ endReason: 'interrupted' })])
   })
   it('parked: E_LANE_BUSY finishes the turn as parked', async () => {
     const r = await resume(saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [call] } }), {
@@ -245,6 +395,7 @@ describe('recovery after resume', () => {
       },
     })
     expect(r.finished?.[0]).toBe('parked')
+    expect(r.outcomes).toEqual([{ outcome: 'parked', reason: 'parked' }])
     expect(r.checkpoint?.state).toMatchObject({
       stage: 'parked',
       coreTurn: 2,
