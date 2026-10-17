@@ -221,9 +221,10 @@ describe('dbh M-14 (second source): daemon composition via runAgnesd with the re
     // Control: the daemon's own scope profile is served.
     const ownProfile = await call({ profile: 'enterprise' })
     expect(ownProfile).toMatchObject({ ok: { packages: expect.any(Array) } })
-    // Fresh-only defaults must respect this profile's ceiling instead of preventing daemon boot.
+    // Default packages must respect this profile's ceiling instead of preventing daemon boot.
     if (!('ok' in ownProfile)) throw new Error('Enterprise package inventory unavailable')
     expect((ownProfile.ok as PackageListResult).packages.map((pkg) => pkg.id)).toEqual([
+      '@agnes/deliverables-ui',
       '@agnes/document-reader',
       '@agnes/mcp-helper',
       '@agnes/plugin-helper',

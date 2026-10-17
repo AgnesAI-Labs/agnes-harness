@@ -61,10 +61,10 @@ export async function initializeDefaultHelpers(options: {
       )
         throw new Error('Bundled helper verification failed')
       if (preview.blockers.length) {
-        // A fresh-only default is optional under the profile's ceiling. Never bypass policy or
+        // Optional defaults may be omitted under the profile's ceiling. Never bypass policy or
         // mistake another verification failure for a policy choice; bind identity and bytes first.
         if (
-          !helper.freshOnly ||
+          !(helper.freshOnly || helper.optionalUnderCeiling) ||
           preview.blockers.some(
             (blocker) => blocker.code !== 'policy' || blocker.references[0] !== 'capability-ceiling',
           )
