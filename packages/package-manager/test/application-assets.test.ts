@@ -36,6 +36,12 @@ it('only reads bounded in-package raster assets matching path, type, length and 
     writeFileSync(join(root, path), encoded)
     expect(await readApplicationAsset(root, path)).toEqual(encoded)
   }
+  const large = await sharp({ create: { width: 1025, height: 1024, channels: 4, background: '#000000' } })
+    .png()
+    .toBuffer()
+  expect(large.length).toBeLessThan(128 * 1024)
+  writeFileSync(join(root, 'assets/large.png'), large)
+  await expect(readApplicationAsset(root, 'assets/large.png')).rejects.toThrow('decode')
   const icon = Buffer.alloc(22 + bytes.length)
   icon.writeUInt16LE(1, 2)
   icon.writeUInt16LE(1, 4)

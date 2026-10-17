@@ -28,6 +28,16 @@ it('restores pages and tabs on history traversal without adding entries and pres
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toBeUndefined()
     expect(history.length).toBe(count + 1)
+    homeNavigation.openRef('a#overview', { tab: 'work' })
+    expect(new URL(location.href).searchParams.get('pagePackage')).toBe('a')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(homeNavigation.getSnapshot()).toEqual({
+      id: 'overview',
+      pageRef: 'a#overview',
+      selection: { tab: 'work' },
+    })
+    homeNavigation.open('overview')
+    expect(new URL(location.href).searchParams.get('pagePackage')).toBeNull()
     history.replaceState(null, '', '/?page=third-party')
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
