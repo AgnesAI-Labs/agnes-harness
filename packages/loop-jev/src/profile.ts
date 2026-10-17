@@ -194,7 +194,7 @@ export function resolveUnprofiled(tool: ToolSchema, meta: LoopToolMeta | undefin
     writeClass: writeClassOf(tool.name, readOnly, meta, 'external'),
     readOnly,
     profiled: false,
-    criteria: tool.description,
+    criteria: tool.description.trim(),
     targetParam: null,
     defaults: null,
     multiTargetMax: 1,

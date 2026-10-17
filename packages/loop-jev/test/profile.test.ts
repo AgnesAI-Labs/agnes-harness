@@ -43,13 +43,12 @@ describe('tool profiles', () => {
     )
   })
   it('computes toolNames: built-ins in the catalog plus discovery tools, sorted, never compact or run_code', () => {
-    const view = turnView({ tools: ['write', 'read', 'tool_search', 'compact', 'run_code', 'todo', 'ls'] })
-    expect(builtinToolNames(view)).toEqual(['ls', 'read', 'tool_search', 'write'])
-    expect(decisionTools(view, ['ls', 'read', 'tool_search', 'write']).map((t) => t.name)).toEqual([
-      'ls',
-      'read',
-      'write',
-    ])
+    const view = turnView({
+      tools: ['write', 'read', 'tool_search', 'compact', 'run_code', 'todo', 'ls', 'grep', 'find'],
+    })
+    const names = builtinToolNames(view)
+    expect(names).toEqual(['find', 'grep', 'ls', 'read', 'tool_search', 'write'])
+    expect(decisionTools(view, names).map((t) => t.name)).toEqual(['ls', 'read', 'grep', 'find', 'write'])
   })
   it('offers DEFAULT_ARGUMENTS only when they are complete for the schema', () => {
     expect(completeArgs(BUILTIN_SCHEMAS.ls, { path: '.' })).toBe(true)
@@ -368,6 +367,23 @@ describe('with platform metadata', () => {
     )
     expect(names).toEqual(['ls', 'read', 'docs_search'])
   })
+  it('puts the built-in tools first in built-in order, then the others by name', () => {
+    const view = turnView({ tools: ['find', 'grep', 'ls', 'read', 'zeta', 'docs_search'], platform: true })
+    const names = decisionTools(view, ['find', 'grep', 'ls', 'read', 'zeta', 'docs_search']).map(
+      (t) => t.name,
+    )
+    expect(names).toEqual(['ls', 'read', 'grep', 'find', 'docs_search', 'zeta'])
+  })
+  it('leaves tools without a profile out of the decision surface when the view has no tool metadata', () => {
+    const view = turnView({ tools: ['ls', 'read', 'docs_search'] })
+    const names = decisionTools(view, ['docs_search', 'ls', 'read']).map((t) => t.name)
+    expect(names).toEqual(['ls', 'read'])
+  })
+  it('uses the trimmed description of a tool without a profile as its criteria', () => {
+    expect(resolveUnprofiled(schema('docs_search', '  Search the docs.\n'), undefined).criteria).toBe(
+      'Search the docs.',
+    )
+  })
   it('classifies a failed read-only call of a tool without a profile as not applied and recoverable', () => {
     const obs = classifyResult({
       phase: 'INSPECT',
@@ -382,6 +398,22 @@ describe('with platform metadata', () => {
     expect(obs.entry).toMatchObject({
       disposition: 'NOT_APPLIED',
       error: { code: 'EXECUTION_FAILED', recoverability: 'recoverable' },
+    })
+  })
+  it('keeps a failed call of a mutable tool without a profile as an unknown effect', () => {
+    const obs = classifyResult({
+      phase: 'ACT',
+      name: 'deploy',
+      args: {},
+      result: { content: [{ type: 'text', text: 'boom' }], isError: true },
+      cwd: '/w',
+      confidence: 0.9,
+      escalated: false,
+      readOnly: false,
+    })
+    expect(obs.entry).toMatchObject({
+      disposition: 'UNKNOWN',
+      error: { code: 'EFFECT_UNKNOWN', recoverability: 'unsafe' },
     })
   })
 })
