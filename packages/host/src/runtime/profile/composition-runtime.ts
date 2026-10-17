@@ -242,6 +242,7 @@ export async function createCompositionHost(
         {
           ...options,
           compositionPin: binding.tree,
+          ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
           ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
           ...(latestTarget && !pinned
             ? {

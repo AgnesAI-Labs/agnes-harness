@@ -4,7 +4,7 @@ export const runtimeCatalog: LocaleCatalog = {
   en: {
     'state.historical': 'Saved sessions use an older version',
     'drain.historicalTooltip':
-      'Saved sessions keep the plugin version they started with so they can resume. New sessions use the current version. This does not mean a task is running.',
+      'Saved sessions keep the plugin version they started with so they can resume. New sessions use only enabled plugins. This does not mean a task is running.',
     'drain.historicalSummary':
       '{sessions} saved sessions use older plugin versions. Use “Migrate session to current plugins” in runtime settings to migrate eligible sessions.',
     'drain.historicalDetails': 'Historical sessions',
@@ -13,9 +13,9 @@ export const runtimeCatalog: LocaleCatalog = {
     'drain.pluginMany': 'plugins',
     'drain.sessionOne': 'session',
     'drain.sessionMany': 'sessions',
-    'drain.tooltip': 'The update is ready. Sessions already open keep their version and are unaffected.',
-    'drain.summary': 'Updated. {sessions} ongoing {sessionNoun} are unaffected.',
-    'drain.summaryUnknown': 'Updated. Ongoing sessions are unaffected.',
+    'drain.tooltip': 'Existing sessions keep their pinned backend tools. Changes apply to new sessions.',
+    'drain.summary': '{sessions} ongoing {sessionNoun} keep their pinned backend tools.',
+    'drain.summaryUnknown': 'Existing sessions keep their pinned backend tools.',
     'drain.details': 'Ongoing sessions',
     'drain.version': 'Version {version} · {sessions} sessions',
     'defaults.stale-short': 'Saved choice unavailable',
@@ -37,12 +37,11 @@ export const runtimeCatalog: LocaleCatalog = {
       'To use one business agent in a single session, choose 「Start」 on the Agent FDE home page.',
     'bundles.title': 'Agent FDE',
     'bundles.description': 'Business agents that are on apply to every new session, in this order.',
-    'bundles.save': 'Apply and restart',
+    'bundles.save': 'Save (restart required)',
     'bundles.install': 'Go to Agent FDE',
     'bundles.empty': 'No business agents yet. Install one from Agent FDE on the home page.',
     'bundles.explain-action': 'View',
-    'bundles.saved':
-      'Applied. The page cannot restart the background service: restart agh, then new sessions use this order.',
+    'bundles.saved': 'Saved. Restart agh for new sessions to use this order.',
     'bundles.failed': 'Bundles were not saved. Reload and check your selection.',
     'bundles.refreshFailed':
       'Bundles saved. The latest view could not be loaded. Reload to check the selection.',
@@ -75,7 +74,7 @@ export const runtimeCatalog: LocaleCatalog = {
   'zh-CN': {
     'state.historical': '历史会话保留旧版',
     'drain.historicalTooltip':
-      '已保存的会话保留其开始时的插件版本，以便继续会话；新会话使用当前版本。这不表示有任务正在运行。',
+      '已保存的会话保留其开始时的插件版本，以便继续会话；新会话仅使用已启用的插件。这不表示有任务正在运行。',
     'drain.historicalSummary':
       '{sessions} 个历史会话保留旧版插件。可在运行时设置中使用“将会话迁移到当前插件”迁移符合条件的会话。',
     'drain.historicalDetails': '历史会话',
@@ -84,9 +83,9 @@ export const runtimeCatalog: LocaleCatalog = {
     'drain.pluginMany': '插件',
     'drain.sessionOne': '会话',
     'drain.sessionMany': '会话',
-    'drain.tooltip': '新版本已就绪，进行中的会话不受影响。已打开的会话继续使用原版本。',
-    'drain.summary': '已更新，{sessions} 个进行中的会话不受影响',
-    'drain.summaryUnknown': '已更新，进行中的会话不受影响',
+    'drain.tooltip': '已有会话保留其固定版本的后端工具，变更对新会话生效。',
+    'drain.summary': '{sessions} 个进行中的会话保留其固定版本的后端工具',
+    'drain.summaryUnknown': '已有会话保留其固定版本的后端工具',
     'drain.details': '进行中的会话',
     'drain.version': '版本 {version} · {sessions} 个会话',
     'defaults.stale-short': '已保存的选择不可用',
@@ -107,11 +106,11 @@ export const runtimeCatalog: LocaleCatalog = {
     'bundles.single': '只对单个会话使用某个业务 Agent，请在首页 Agent FDE 点「一键开始」。',
     'bundles.title': 'Agent FDE',
     'bundles.description': '启用的业务 Agent 会叠加到每个新会话，按顺序生效。',
-    'bundles.save': '应用并重启',
+    'bundles.save': '保存（需重启）',
     'bundles.install': '去 Agent FDE',
     'bundles.empty': '还没有业务 Agent，去首页 Agent FDE 安装。',
     'bundles.explain-action': '查看',
-    'bundles.saved': '已应用。网页还不能重启后台：请重启 agh，之后新会话按此顺序生效。',
+    'bundles.saved': '已保存。请重启 agh，之后新会话按此顺序生效。',
     'bundles.failed': '未保存组合包。请重新加载并检查选择。',
     'bundles.refreshFailed': '组合包已保存。最新视图读取失败，请重新加载并检查选择。',
     'bundles.unavailable': '组合包配置不可用。',

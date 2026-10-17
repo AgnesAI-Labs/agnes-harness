@@ -9,4 +9,12 @@ it('keeps plugin admin keys paired and both translations non-empty', () => {
     expect(pluginAdminLocaleCatalog.en[key], `en ${key}`).toBeTruthy()
     expect(pluginAdminLocaleCatalog['zh-CN'][key], `zh-CN ${key}`).toBeTruthy()
   }
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const catalog = pluginAdminLocaleCatalog[locale]
+    expect(catalog['confirm.disable.description']).toContain(
+      locale === 'en' ? 'Existing sessions keep its tools and panels' : '已有会话保留它的工具和面板',
+    )
+    for (const key of ['drain.tooltip', 'drain.summary', 'drain.summaryUnknown'])
+      expect(catalog[key]).not.toMatch(/Updated|update is ready|新版本已就绪|已更新/)
+  }
 })

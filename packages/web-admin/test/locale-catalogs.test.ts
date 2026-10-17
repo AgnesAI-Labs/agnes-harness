@@ -39,6 +39,10 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
           expect(catalog.en['facts.toolLink']).toBe('View in trace')
           expect(catalog['zh-CN']?.['facts.toolLink']).toBe('在轨迹中查看')
         }
+        if (name === 'settingsShellLocaleCatalog') {
+          expect(catalog.en['settings-shell.jobs']).toBe('Jobs')
+          expect(catalog['zh-CN']?.['settings-shell.jobs']).toBe('作业')
+        }
         count += 1
         discovered.add(name)
         expect(Object.keys(catalog.en), `${pkg}/${name}: nonempty English keys`).not.toHaveLength(0)
