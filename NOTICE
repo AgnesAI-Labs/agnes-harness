@@ -16,8 +16,8 @@ following material retains its original notices and license terms:
   provenance, changes, and the full license text.
 - Jev agent loop in packages/loop-jev:
   portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, commit 61e7994).
-  Apache License 2.0. See packages/loop-jev/NOTICE for provenance and changes; packaged builds
-  include it as THIRD-PARTY-NOTICES/jevloop.txt.
+  Copyright 2026 JevLoop contributors. Apache License 2.0. See packages/loop-jev/NOTICE for
+  provenance and changes; packaged builds include it as THIRD-PARTY-NOTICES/jevloop.txt.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
 - Bundled Document Reader in packages/package-manager/bundled-plugins/document-reader:

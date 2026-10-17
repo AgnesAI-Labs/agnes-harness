@@ -82,7 +82,7 @@ An explicit choice wins over the admin default, which wins over the profile, whi
 
 - The admin loop list and the new-session loop picker show `agnes.jev@0.1.0` next to the default loop. The picker appears once two or more loops are available.
 - Settings → Plugins lists the row and its configuration page. The providers panel lists `typesafe-systemone` as **Payload requests only, no chat**.
-- The conversation looks like one run by the default loop, with two differences: the notes the loop adds to a conversation-model request appear as runtime context, and a tool call that Jev chose directly follows an assistant message with no text.
+- The conversation looks like one run by the default loop, with two differences: the notes the loop adds to a conversation-model request appear as runtime context, and a tool call that Jev chose directly follows an assistant message with no text. When the conversation model writes text before a call, the transcript keeps up to 8 KiB of it.
 - The cost breakdown shows one **Side model call** row for each Jev call. A call whose usage was not reported is marked as estimated.
 - The loop's own telemetry events (`jev.decide`, `jev.step`, `jev.metrics`) are kept in the session history and exports. The conversation view does not show them.
 
@@ -98,6 +98,8 @@ This version does not yet:
 
 - offer MCP tools or tools from other plugins to Jev: they are left out of the loop's tool set;
 - support pause or interrupt; steering a running turn is supported;
-- run background jobs or child agents from the loop.
+- run background jobs or child agents from the loop;
+- keep more than 8 KiB of the text and thinking that the conversation model writes together with a call: the transcript cuts them to 8 KiB;
+- give Jev observation views, references or batched reads, or mark earlier file reads as out of date after a file changes.
 
 A session that restarts in the middle of a turn continues from the loop's last checkpoint. A conversation-model request that may already have been sent is not sent again; the next step asks the conversation model to review instead.
