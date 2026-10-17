@@ -1585,6 +1585,9 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
+      '@agnes/daemon-admin':
+        specifier: workspace:*
+        version: link:../daemon-admin
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12

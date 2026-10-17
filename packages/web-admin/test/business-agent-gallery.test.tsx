@@ -1,4 +1,8 @@
 /** @vitest-environment happy-dom */
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createAgentLaunches } from '@agnes/daemon-admin/packages/agent-launches'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageOperation } from '@agnes/protocol'
 import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
@@ -320,3 +324,86 @@ it('opens the start of an agent from a link that names its page', async () => {
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
   expect(kit.calls).toEqual(['inspect'])
 })
+
+it.each(['lost', 'unknown'] as const)(
+  'keeps the original launch operation after a %s response',
+  async (outcome) => {
+    const kit = setup({ ready: true })
+    const { api } = await kit.source.connect()
+    const plan = { ...(await api.prepareAgent(`${ID}#work`)).presentation, digest: 'reviewed-digest' }
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-agent-retry-'))
+    const sessions: string[] = []
+    const operationIds: string[] = []
+    let firstRead = true
+    const facade = createAgentLaunches({
+      directory,
+      backend: {
+        caller: async () => ({
+          principal: 'synthetic',
+          profile: 'default',
+          workspace: directory,
+          activation: 'one',
+        }),
+        resolve: async () => plan,
+        open: async () => {
+          const id = `synthetic-session-${sessions.length + 1}`
+          sessions.push(id)
+          if (outcome === 'unknown') throw new Error('uncertain dispatch')
+          return id
+        },
+      },
+    })
+    api.resolveAgent = async () => plan
+    api.prepareAgent = async (agent) =>
+      (await facade.call({ action: 'prepare', agent })) as Awaited<ReturnType<PluginAdminApi['prepareAgent']>>
+    api.startAgent = async (launchTicket, operationId) => {
+      operationIds.push(operationId)
+      await facade.call({ action: 'start', launchTicket, operationId })
+      throw new Error('lost success response')
+    }
+    api.readAgent = async (operationId) => {
+      if (firstRead) {
+        firstRead = false
+        throw new Error('receipt temporarily unavailable')
+      }
+      return (await facade.call({ action: 'read', operationId })) as Awaited<
+        ReturnType<PluginAdminApi['readAgent']>
+      >
+    }
+    const opened: StartedSession[] = []
+    try {
+      await mount(kit.source, (session) => opened.push(session))
+      await click('[data-testid="business-agent-start-data-report-work"]')
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+      )
+      await click('[data-testid="agent-launch-confirm"]')
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="agent-start-retry"]')).not.toBeNull(),
+      )
+      expect(sessions).toEqual(['synthetic-session-1'])
+      await click('[data-testid="agent-start-retry"]')
+      if (outcome === 'lost') {
+        await vi.waitFor(() =>
+          expect(opened).toEqual([{ sessionId: 'synthetic-session-1', prompt: 'Summarise the sample CSV.' }]),
+        )
+      } else {
+        await vi.waitFor(() =>
+          expect(document.querySelector('[data-testid="agent-start-error"]')?.textContent).toContain(
+            'OUTCOME_UNKNOWN',
+          ),
+        )
+        expect(document.querySelector('[data-testid="agent-start-new-intent"]')?.textContent).toBe(
+          en('launch.another'),
+        )
+        await click('[data-testid="agent-start-retry"]')
+        expect(opened).toEqual([])
+      }
+      expect(sessions).toEqual(['synthetic-session-1'])
+      expect(operationIds).toHaveLength(1)
+    } finally {
+      for (const root of roots.splice(0)) await act(async () => root.unmount())
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)

@@ -4,6 +4,10 @@ export const AGENTS_NAMESPACE = '@agnes/web-admin/agents'
 /** Business agent gallery and one-click start. Keys are identical in both locales. */
 export const agentsCatalog: LocaleCatalog = {
   en: {
+    'launch.check': 'Check start result',
+    'launch.another': 'Start another session (may create a duplicate)',
+    'launch.uncertain':
+      'The earlier start may have created a session. Check its result before starting another.',
     'launch.model': 'Model',
     'launch.permission': 'Effective permissions',
     'launch.sources': 'Reviewed packages',
@@ -112,6 +116,9 @@ export const agentsCatalog: LocaleCatalog = {
     'blocker.unknown-contribution': 'it contains something this version does not recognise',
   },
   'zh-CN': {
+    'launch.check': '查询启动结果',
+    'launch.another': '另建会话（可能重复创建）',
+    'launch.uncertain': '上次启动可能已创建会话。另建会话前，请先查询原操作结果。',
     'launch.model': '模型',
     'launch.permission': '最终权限',
     'launch.sources': '已审阅的插件',

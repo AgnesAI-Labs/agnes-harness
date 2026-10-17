@@ -155,8 +155,16 @@ export class PluginAdminApi {
   ): Promise<{ sessionId: string; draft?: import('@agnes/protocol').BundleLaunch['prompt'] }> {
     return this.agentLaunch({ action: 'start', launchTicket, operationId })
   }
+  async readAgent(operationId: string): Promise<{
+    state: 'running' | 'completed' | 'failed' | 'unknown'
+    code?: string
+    sessionId?: string
+    draft?: import('@agnes/protocol').BundleLaunch['prompt']
+  }> {
+    return this.agentLaunch({ action: 'read', operationId })
+  }
   private async agentLaunch<T>(request: Record<string, unknown>): Promise<T> {
-    const response = await fetch('/api/agents/launch', {
+    const response = await this.#fetch('/api/agents/launch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request }),

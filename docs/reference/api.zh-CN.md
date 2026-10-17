@@ -152,4 +152,6 @@ SDK 支持 `client.session.new({ cwd, agent: '@acme/kit#review' })`，调用方�
 
 宿主启动 facade 使用 prepare → review → start(ticket, operationId)。start 只返回会话 ID 和可选的已审阅草稿。草稿编辑后通过普通 submit、使用独立 commandId 提交；重试 start 不发送任何提示词。不确定或失败的 operation 不会重新派发。普通启动没有安装、信任或移除权限；示例管理仍受经依赖版本校验的 `exampleOf` 限制。
 
+审阅同时绑定包身份和已发布的执行配置，原始 row 配置保留在后台；工具摘要来自实际准入能力。启动响应丢失后，Web 保留原 ticket 和 operationId，查询原操作回执。另建会话使用独立操作，并明确提醒可能重复创建。
+
 创建自动化时，`schedules.upsert` 可在请求顶层传 `agent`，后端将其解析为原有 new-session target（loop、bundle refs、preset、model）。保存内容不包含 AgentRef 或 launch。后续运行不再读取 launch，每次按当前可信的 Bundle/Preset 和部署配置准入，再为该次会话 pin；旧 target 保持原样。

@@ -164,4 +164,6 @@ The SDK accepts `client.session.new({ cwd, agent: '@acme/kit#review' })`; embedd
 
 The host launch facade uses prepare → review → start(ticket, operationId). Start returns only a session ID and an optional reviewed draft. The user's edited draft goes through ordinary submit with its own commandId; retrying start never sends text. Failed or uncertain operations are not redispatched. Ordinary launches grant no install, trust or removal authority; example management remains restricted by a dependency-version-validated `exampleOf` relation.
 
+The review binds the published execution configuration as well as package identities; raw row configuration stays in the backend. Its tool summary reflects admitted capabilities. After a lost start response, Web retains the ticket and operationId and reads the original receipt. A separate action explicitly warns that starting another session may create a duplicate.
+
 At automation creation, `schedules.upsert` can accept a top-level `agent`. The backend lowers it into the existing new-session target (loop, bundle refs, preset, model). The saved target contains neither AgentRef nor launch. Runs never read launch again: each admits the saved selection against current trusted Bundle/Preset definitions and deployment configuration, then pins that session. Existing saved targets remain unchanged.

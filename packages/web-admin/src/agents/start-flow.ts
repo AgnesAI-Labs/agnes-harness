@@ -25,6 +25,7 @@ export type StartApi = Pick<
   | 'resolveAgent'
   | 'prepareAgent'
   | 'startAgent'
+  | 'readAgent'
 >
 
 /** Why a step stopped: a stable code the dialog words, plus what the daemon said when it said anything. */

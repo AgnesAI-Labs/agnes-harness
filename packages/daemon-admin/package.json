@@ -27,7 +27,8 @@
     "./app-server": "./src/app-server.ts",
     "./packages/authoring-tests": "./src/packages/authoring-tests.ts",
     "./runtime-doctor": "./src/runtime-doctor.ts",
-    "./webhooks": "./src/webhooks/service.ts"
+    "./webhooks": "./src/webhooks/service.ts",
+    "./packages/agent-launches": "./src/packages/agent-launches.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
