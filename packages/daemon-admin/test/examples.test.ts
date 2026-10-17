@@ -215,7 +215,9 @@ it('refuses draft launches through the legacy automatic-submit facade', async ()
   const f = fixture()
   const review = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
   await f.call({ action: 'enable', reviewId: review.reviewId, operationId: 'enable-draft' })
-  Object.assign(f.entry.agents[0]!.launch, { prompt: { text: { en: 'Keep editable' }, mode: 'draft' } })
+  const agent = f.entry.agents?.[0]
+  if (!agent) throw new Error('fixture agent is missing')
+  Object.assign(agent.launch, { prompt: { text: { en: 'Keep editable' }, mode: 'draft' } })
   await expect(f.call({ action: 'prepare', exampleId: f.entry.id, launchId: 'work' })).rejects.toThrow(
     'E_PACKAGE_BLOCKED',
   )
