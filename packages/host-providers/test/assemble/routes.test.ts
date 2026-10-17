@@ -304,7 +304,7 @@ describe('pinPresetRoutes', () => {
     )
     expect(effective.model.thinking).toMatchObject({ primary: 'high' })
     expect(effective.model.thinking.fast).toBeUndefined()
-    expect(effective.model.contextWindow.primary).toBe(100000)
+    expect(effective.model.contextWindow?.primary).toBe(100000)
   })
   // core's resolveModel is `route[slot] ?? 'default'` and `model: pinned ?? catalogue ?? route`. The
   // pin is what keeps both halves off the sentinel, so it is asserted against that reading and not
