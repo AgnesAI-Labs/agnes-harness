@@ -184,7 +184,6 @@ import {
   snapshotPolicy,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
-import type { LoopSelection } from '@agnes/protocol'
 import {
   type ClientModuleEffectCallParams,
   type ClientModuleServiceCallParams,
@@ -1321,6 +1320,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           hash: artifact.digest,
         },
       })
+      if (runtimeDelivery?.stageStartup(artifact)) return
       void deliverDesiredToWorkers(pool, artifact).catch((error) => {
         o.audit?.({
           kind: 'worker.log',
@@ -1424,14 +1424,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           }
         }
       }
-      if (runtimeStore && pinCoordinator && runtimeTargetProbe)
+      if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
         await activateDefaultHelpers({
           profileDir: o.profileDir,
           inventory: surfaceInventory,
           previous: runtimeStore.desired(),
           publish: (target) => pinCoordinator.publish(target, runtimeTargetProbe),
         })
-      if (runtimeStore && pinCoordinator && runtimeTargetProbe) {
         o.packageRuntime.bindReferences?.(
           createCompositeReferenceFacts(runtimeStore, () => pool.businessWorker()?.generation),
         )
@@ -1764,6 +1763,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         }),
       }
     }
+    runtimeDelivery?.completeStartup()
     if (effectivePackageAdmin) {
       stopClientModuleNotices = effectivePackageAdmin.service.subscribeClientModules((event) =>
         notices.emit('packages_changed', { detail: event }),

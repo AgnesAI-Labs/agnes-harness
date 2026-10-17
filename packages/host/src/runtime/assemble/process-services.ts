@@ -102,8 +102,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
       })),
     (owner, integrity, revision) => {
       try {
-        profileActivations.require(owner, integrity, undefined, revision)
-        return true
+        return profileActivations.require(owner, integrity, undefined, revision)
       } catch {
         return false
       }

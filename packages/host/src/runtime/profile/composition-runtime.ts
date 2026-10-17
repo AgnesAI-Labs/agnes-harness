@@ -242,6 +242,7 @@ export async function createCompositionHost(
         {
           ...options,
           compositionPin: binding.tree,
+          ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
           ...(latestTarget && !pinned
             ? {
                 ordinaryPluginLayers: {
@@ -328,17 +329,14 @@ export async function createCompositionHost(
   const initialTree = resolveComposition(profile, {
     preset: resolvePreset(profile.presets.default, presets, { limits: profile.limits }).doc,
   })
-  let initial: Container
-  try {
-    initial = await open({
-      sessionKey: '',
-      tree: initialTree,
-      profile: profileForComposition(profile, initialTree),
-    })
-  } catch (error) {
+  const initial = await open({
+    sessionKey: '',
+    tree: initialTree,
+    profile: profileForComposition(profile, initialTree),
+  }).catch((error) => {
     writer.close()
     throw error
-  }
+  })
   const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
     const active = binding

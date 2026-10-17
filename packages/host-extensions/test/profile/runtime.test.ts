@@ -621,6 +621,11 @@ describe('current profile authority', () => {
 it.each([
   'approved',
   'upgraded',
+  'upgraded-running',
+  'upgraded-owner',
+  'upgraded-dead',
+  'upgraded-live',
+  'stale-predecessor',
   'publishing',
   'rejected',
   'stale-marker',
@@ -644,11 +649,25 @@ it.each([
   store.set('managed-shutdown:server', true)
   // Boolean-only records deliberately have no identity.
   if (
-    ['dead', 'alive', 'became-live', 'live-at-dispatch', 'probe-unavailable', 'publishing'].includes(scenario)
+    [
+      'dead',
+      'alive',
+      'became-live',
+      'live-at-dispatch',
+      'probe-unavailable',
+      'publishing',
+      'upgraded-dead',
+      'upgraded-live',
+    ].includes(scenario)
   )
     store.set('managed-process:server', { pid: 42, startId: 'old' })
   store.set('operation:motion', { state: 'unknown' })
-  let identity: 'dead' | 'alive' | 'unknown' = scenario === 'alive' ? 'alive' : 'unknown'
+  let identity: 'dead' | 'alive' | 'unknown' =
+    scenario === 'alive' || scenario === 'upgraded-live'
+      ? 'alive'
+      : scenario === 'upgraded-dead'
+        ? 'dead'
+        : 'unknown'
   let current = true
   const managed = new ProfileManagedResources(
     `native-reconcile-${scenario}`,
@@ -701,22 +720,57 @@ it.each([
     },
   } satisfies Parameters<ProfileManagedResources['register']>[0]
   const handle = managed.register(registration)
-  const previous =
-    scenario === 'upgraded'
-      ? new ProfileManagedResources(`native-reconcile-${scenario}`, () => {
+  const previous = scenario.startsWith('upgraded')
+    ? new ProfileManagedResources(
+        `native-reconcile-${scenario}`,
+        () => {
           throw new Error('unused')
-        })
-      : undefined
+        },
+        undefined,
+        async () => ({ state: 'unknown', reason: 'previous build cannot probe' }),
+      )
+    : undefined
   if (previous) {
+    if (scenario === 'upgraded-running') store.set('managed-shutdown:server', false)
+    const oldOwner = scenario === 'upgraded-owner' ? 'plugin/predecessor' : owner
+    const oldStore =
+      scenario === 'upgraded-owner'
+        ? ownedStore(f.meta.namespace(oldOwner, 'managed:server'), () => {}, true)
+        : store
+    if (scenario === 'upgraded-owner') {
+      store.delete('managed-shutdown:server')
+      oldStore.set('managed-shutdown:server', true)
+      oldStore.set('managed-process:server', { pid: 42, startId: 'old' })
+    }
     const old = previous.register({
       ...registration,
+      owner: oldOwner,
+      store: oldStore,
       integrity: 'previous-snapshot',
       revision: 'previous-generation',
+      ...(scenario === 'upgraded-running'
+        ? {
+            definition: {
+              ...registration.definition,
+              async start(init) {
+                init.onShutdown(async () => {
+                  store.delete('managed-process:server')
+                  return { state: 'unknown' }
+                })
+                init.ready()
+                return 'previous'
+              },
+            },
+          }
+        : {}),
     })
     await previous.publish()
-    await expect(old.get()).rejects.toThrow()
+    if (scenario === 'upgraded-running') expect(await old.get()).toBe('previous')
+    else await expect(old.get()).rejects.toThrow()
     expect(previous.statuses('@acme/server')).toMatchObject([
-      { state: 'failed', code: 'shutdown-unconfirmed' },
+      scenario === 'upgraded-running'
+        ? { state: 'ready' }
+        : { state: 'failed', code: 'shutdown-unconfirmed' },
     ])
   }
   registerManagedServices(
@@ -769,9 +823,15 @@ it.each([
       releaseStartup()
     }
     await publication
+    if (scenario === 'upgraded-dead') {
+      expect(await handle.get()).toBe('recovered')
+      expect(await runtime.listDecisions('human')).toEqual([])
+      expect(store.get('operation:motion')).toEqual({ state: 'unknown' })
+      return
+    }
     await expect(handle.get()).rejects.toThrow()
     if (scenario === 'dead') identity = 'dead'
-    if (scenario === 'alive' || scenario === 'unauthorized') {
+    if (scenario === 'alive' || scenario === 'upgraded-live' || scenario === 'unauthorized') {
       await expect(runtime.call(params, scenario === 'unauthorized' ? 'forged' : 'granted')).rejects.toThrow()
       expect(await runtime.listDecisions('human')).toEqual([])
     } else {
@@ -792,11 +852,23 @@ it.each([
           },
           resourceRevision: expect.any(String),
         })
+        if (scenario.startsWith('upgraded'))
+          expect(snapshot.request.spec.subject).toMatchObject({
+            presentation: {
+              predecessor: {
+                owner: scenario === 'upgraded-owner' ? 'plugin/predecessor' : owner,
+                activation: 'previous-generation',
+                integrity: 'previous-snapshot',
+              },
+            },
+          })
         await approve(runtime, scenario === 'rejected' ? 'rejected' : 'allowed-once')
+        if (scenario === 'stale-predecessor')
+          store.set('managed-predecessor:server', { owner, activation: 'another', integrity: 'changed' })
         if (scenario === 'stale-marker') store.set('managed-marker-revision:server', 'changed')
         if (scenario === 'stale-generation') current = false
         if (scenario === 'became-live') identity = 'alive'
-        if (['stale-marker', 'stale-generation', 'became-live'].includes(scenario))
+        if (['stale-marker', 'stale-predecessor', 'stale-generation', 'became-live'].includes(scenario))
           await expect(runtime.call(params, 'granted')).rejects.toThrow()
         else
           expect(await runtime.call(params, 'granted')).toMatchObject({
@@ -805,7 +877,15 @@ it.each([
           })
       }
     }
-    const recovered = ['approved', 'upgraded', 'dead', 'probe-unavailable', 'publishing'].includes(scenario)
+    const recovered = [
+      'approved',
+      'upgraded',
+      'upgraded-running',
+      'upgraded-owner',
+      'dead',
+      'probe-unavailable',
+      'publishing',
+    ].includes(scenario)
     if (recovered) {
       expect(await handle.get()).toBe('recovered')
       expect(await runtime.call(params, 'granted')).toMatchObject({ state: 'completed' })

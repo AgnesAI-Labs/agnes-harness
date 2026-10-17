@@ -35,62 +35,58 @@ it.skipIf(process.platform === 'win32')(
         for (const variant of process.env.AGH_UPGRADE_VARIANT
           ? [process.env.AGH_UPGRADE_VARIANT]
           : ['clean', 'unclean']) {
-          console.info(`Upgrade case: ${ref}, ${variant}`)
-          const home = join(buildRoot, `${variant}-home`)
-          const workspace = join(buildRoot, `${variant}-workspace`)
-          await mkdir(home, { mode: 0o700 })
-          await mkdir(workspace)
-          const scenario = async (phase: string, source: string) => {
-            try {
-              const result = await run(
-                process.execPath,
-                [
-                  '--import',
-                  'tsx',
-                  'tools/upgrade/scenario.mjs',
-                  phase,
-                  source,
-                  home,
-                  workspace,
-                  fake.baseUrl,
-                ],
-                {
-                  cwd: repository,
-                  env: { PATH: process.env.PATH, HOME: home, AGH_HOME: home },
-                  timeout: 240_000,
-                },
-              )
-              await writeFile(join(buildRoot, `${variant}-${phase}.log`), result.stdout + result.stderr)
-              console.info(result.stdout)
-            } catch (error) {
-              const failure = error as Error & { stdout?: string; stderr?: string }
-              await writeFile(
-                join(buildRoot, `${variant}-${phase}.log`),
-                `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`,
-              )
-              throw new Error(`Upgrade ${variant}/${phase}: ${failure.stderr ?? failure.message}`)
+          for (const marker of ref === ledgerRef ? ['none'] : ['legacy', 'identity']) {
+            console.info(`Upgrade marker: ${marker}`)
+            console.info(`Upgrade case: ${ref}, ${variant}`)
+            const home = join(buildRoot, `${variant}-${marker}-home`)
+            const workspace = join(buildRoot, `${variant}-${marker}-workspace`)
+            await mkdir(home, { mode: 0o700 })
+            await mkdir(workspace)
+            const scenario = async (phase: string, source: string) => {
+              try {
+                const result = await run(
+                  process.execPath,
+                  [
+                    '--import',
+                    'tsx',
+                    'tools/upgrade/scenario.mjs',
+                    phase,
+                    source,
+                    home,
+                    workspace,
+                    fake.baseUrl,
+                    marker,
+                  ],
+                  {
+                    cwd: repository,
+                    env: { PATH: process.env.PATH, HOME: home, AGH_HOME: home },
+                    timeout: 240_000,
+                  },
+                )
+                await writeFile(
+                  join(buildRoot, `${variant}-${marker}-${phase}.log`),
+                  result.stdout + result.stderr,
+                )
+                console.info(result.stdout)
+              } catch (error) {
+                const failure = error as Error & { stdout?: string; stderr?: string }
+                await writeFile(
+                  join(buildRoot, `${variant}-${marker}-${phase}.log`),
+                  `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`,
+                )
+                throw new Error(`Upgrade ${variant}/${phase}: ${failure.stderr ?? failure.message}`)
+              }
             }
-          }
-          daemon = await runtime(builds.previous, home, workspace)
-          await scenario('seed', builds.oldSource)
-          if (variant === 'clean') await daemon.stop()
-          else await daemon.crash()
-          daemon = undefined
-          daemon = await runtime(builds.current, home, workspace)
-          try {
-            await scenario('verify', repository)
-          } catch (error) {
-            // Native recovery can be unavailable on the first startup while defaults refresh.
-            // Exercise bounded cold-start reconciliation; never edit grants or shutdown markers.
-            if (!(error instanceof Error) || !error.message.includes('MANAGED_RESOURCE_NOT_RECOVERABLE'))
-              throw error
-            console.warn('Managed publication recovery: one current-distribution restart required')
-            await daemon.stop()
+            daemon = await runtime(builds.previous, home, workspace)
+            await scenario('seed', builds.oldSource)
+            if (variant === 'clean') await daemon.stop()
+            else await daemon.crash()
+            daemon = undefined
             daemon = await runtime(builds.current, home, workspace)
-            await scenario('managed', repository)
+            await scenario('verify', repository)
+            await daemon.stop()
+            daemon = undefined
           }
-          await daemon.stop()
-          daemon = undefined
         }
       }
       passed = true

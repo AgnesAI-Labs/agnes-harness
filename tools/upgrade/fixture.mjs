@@ -3,7 +3,9 @@ import { join } from 'node:path'
 
 export const packageId = '@sample/upgrade-gate'
 export const extension = 'upgrade-gate/main'
-export async function writePackage(root, managed = true) {
+// The optional probe records the old worker's real OS identity from inside its start hook.
+// Verification never edits markers or grants in the upgraded home.
+export async function writePackage(root, managed = true, identityProbe) {
   const directory = join(root, 'test-package')
   await mkdir(directory)
   await mkdir(join(directory, 'client'))
@@ -101,11 +103,23 @@ export async function writePackage(root, managed = true) {
     join(directory, 'index.mjs'),
     managed
       ? `
+${identityProbe ? "import { execFile } from 'node:child_process';" : ''}
 export const main = { inject: ['services', 'profileRuntime'], apply(ctx) {
   ctx.profileRuntime.register({ id: 'server',
     configSchema: ${JSON.stringify(empty)}, defaultConfig: {},
     async start(init) {
-      init.onShutdown(async () => ({ state: 'settled' })); init.ready(); return { synthetic: true };
+      init.onShutdown(async () => ({ state: 'settled' }));
+      ${
+        identityProbe
+          ? `const { stdout } = await new Promise((resolve, reject) => execFile(process.execPath,
+        ['--import', ${JSON.stringify(identityProbe.loader)}, '--input-type=module', '-e',
+          ${JSON.stringify(`import { defaultProcessIdentity } from ${JSON.stringify(identityProbe.module)}; const pid = Number(process.argv[1]); const identity = await defaultProcessIdentity(pid); if (identity.state !== 'alive') throw new Error('identity unavailable'); process.stdout.write(JSON.stringify({pid, startId: identity.startId}));`)}, String(process.pid)],
+        { signal: init.signal, timeout: 3000, maxBuffer: 4096 },
+        (error, stdout) => error ? reject(error) : resolve({ stdout })));
+      init.store.set('managed-process:server', JSON.parse(stdout));`
+          : ''
+      }
+      init.ready(); return { synthetic: true };
     },
     async check(value) { return value; }
   });

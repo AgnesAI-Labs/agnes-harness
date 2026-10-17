@@ -180,6 +180,39 @@ describe('CompositeRuntimeDelivery', () => {
     expect(store.lastFailure()).toBeUndefined()
   })
 
+  it('boots the final pinned startup publication before registering resources, retaining stale-target fencing', async () => {
+    const tables = sqliteTables()
+    const store = new CompositeTargetStore(tables.table('composite'), 'default')
+    const delivery = new CompositeRuntimeDelivery(store)
+    const old = artifact('ext:old'),
+      intermediate = artifact('ext:intermediate'),
+      refreshed = artifact('ext:refreshed')
+    store.publishDesired(old)
+    store.qualifyConverged(1, old, { hash: old.identity.treeHash, ok: true, rows: [] })
+    const registrations: string[] = []
+    const pool = {
+      businessWorker: () => undefined,
+      acquireSharedWorker: async () => {
+        const boot = delivery.bootFor(2)
+        if (!boot) throw new Error('missing boot target')
+        registrations.push(boot.artifact.digest)
+      },
+    }
+    store.onDesired((next) => {
+      if (!delivery.stageStartup(next)) void deliverDesiredToWorkers(pool, next)
+    })
+    store.publishDesired(intermediate)
+    store.publishDesired(refreshed)
+    expect(registrations).toEqual([])
+    delivery.completeStartup()
+    await deliverDesiredToWorkers(pool, refreshed)
+    expect(registrations).toEqual([refreshed.digest])
+    expect(delivery.bootFor(2)).toEqual({ artifact: refreshed, source: 'bootstrap' })
+    expect(() => delivery.preferBootTarget(intermediate)).toThrow('E_RUNTIME_TARGET_STALE')
+    store.publishDesired(intermediate)
+    expect(delivery.bootFor(3)).toEqual({ artifact: old, source: 'lastGood' })
+  })
+
   it('offers a live Host worker the new desired, otherwise acquires the shared worker', async () => {
     const offered: string[] = []
     const acquired: string[] = []

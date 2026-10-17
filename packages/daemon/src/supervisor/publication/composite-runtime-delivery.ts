@@ -22,6 +22,9 @@ export type CompositeRuntimeDeliveryOptions = Readonly<{
  * Probe-successful artifacts are never rebuilt here.
  */
 export class CompositeRuntimeDelivery {
+  #bootTargetDigest: string | undefined
+  #startupComplete = false
+  #startupPublication: RuntimeTargetArtifact | undefined
   readonly #store: CompositeTargetStore
   readonly #boots = new Map<number, RuntimeAdmission>()
   readonly #onFailureRecorded: (() => unknown) | undefined
@@ -95,10 +98,31 @@ export class CompositeRuntimeDelivery {
     return recorded || this.#store.revertedFrom(boot.artifact.digest) !== undefined
   }
 
+  /** Coalesce pinned/probed boot publications without acquiring a resource-bearing worker. */
+  stageStartup(artifact: RuntimeTargetArtifact): boolean {
+    if (this.#startupComplete) return false
+    this.#startupPublication = artifact
+    return true
+  }
+
+  completeStartup(): void {
+    if (this.#startupPublication) this.preferBootTarget(this.#startupPublication)
+    this.#startupPublication = undefined
+    this.#startupComplete = true
+  }
+
+  /** Only a pinned/probed startup publication may supersede lastGood before the first mount. */
+  preferBootTarget(artifact: RuntimeTargetArtifact): void {
+    if (artifact.digest !== this.#store.desired()?.digest) throw new Error('E_RUNTIME_TARGET_STALE')
+    this.#bootTargetDigest = artifact.digest
+  }
+
   bootFor(_generation: number): RuntimeBootDelivery | undefined {
+    const desired = this.#store.desired()
+    if (desired && desired.digest === this.#bootTargetDigest)
+      return Object.freeze({ artifact: desired, source: 'bootstrap' as const })
     const lastGood = this.#store.lastGood()
     if (lastGood) return Object.freeze({ artifact: lastGood, source: 'lastGood' as const })
-    const desired = this.#store.desired()
     if (desired) return Object.freeze({ artifact: desired, source: 'bootstrap' as const })
     return undefined
   }

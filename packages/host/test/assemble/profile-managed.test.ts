@@ -296,6 +296,9 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
       dataDir,
       packageDirs,
       runtimePluginSources: sources,
+      profileInputs: { user: { name: 'local-dev', composition: {} } },
+      allowed: ['standard', 'observer'],
+      presets: { observer: { name: 'observer', extends: 'standard', composition: { tools: ['read'] } } },
       extensionLoader: { import: async (file) => import(pathToFileURL(file).href) },
       serviceAuthority: {
         resolve: async () => ({
@@ -345,6 +348,8 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
       },
     })
     await host.applyRuntimeTarget(await target())
+    // A session composition may register factories but must not take profile singleton ownership.
+    await host.createSession({ key: 'observer', preset: 'observer', cwd: dataDir })
     const runtime = host.profileServices
     assert(runtime)
     const call = {
@@ -356,7 +361,12 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
     expect(await runtime.call(call, { kind: 'local' })).toMatchObject({ state: 'approval-required' })
     const [decision] = await runtime.listDecisions({ kind: 'local' })
     assert(decision)
-    expect(decision.request.spec.subject).toMatchObject({ presentation: { identityState: 'unknown' } })
+    expect(decision.request.spec.subject).toMatchObject({
+      presentation: {
+        identityState: 'unknown',
+        predecessor: { owner, activation: expect.any(String), integrity: before.entry.integrity },
+      },
+    })
     await runtime.answerDecision(
       {
         handle: decision.handle,

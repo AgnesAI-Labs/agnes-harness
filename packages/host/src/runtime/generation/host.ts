@@ -233,7 +233,7 @@ export async function createRuntimeGenerationHost(
     const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources, undefined, true)
     recordHead(snapshot.id)
     current = { snapshot, host: initial }
-    current.host.profileServices?.publishCurrent()
+    if (options.profileAuthorityPublication !== 'retained') current.host.profileServices?.publishCurrent()
     live.set(snapshot.id, current)
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     const binding = { id: snapshot.id }
@@ -800,7 +800,7 @@ export async function createRuntimeGenerationHost(
     latestSkills = skillInput
     if (!codeChanged) {
       if (!extensionRows && !skills) await head.host.applyRuntimeTarget(target)
-      head.host.profileServices?.publishCurrent()
+      if (options.profileAuthorityPublication !== 'retained') head.host.profileServices?.publishCurrent()
       lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
@@ -856,7 +856,7 @@ export async function createRuntimeGenerationHost(
       }
       throw error
     }
-    current.host.profileServices?.publishCurrent()
+    if (options.profileAuthorityPublication !== 'retained') current.host.profileServices?.publishCurrent()
     recordHead(current.snapshot.id)
     // Publication has committed. Retirement failure belongs to the retired generation, and cannot
     // turn a successful head change into a rejected apply/compensation transaction.

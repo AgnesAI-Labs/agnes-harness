@@ -132,9 +132,11 @@ it('runs only the published resource, drains replacements, and refuses revival a
     expect(one.statuses('@example/server')).toEqual([])
     await expect(first.get()).rejects.toThrow()
     current = true
-    await one.publish()
-    expect((await first.get()).port).toBeGreaterThan(0)
+    const publishing = one.publish()
+    // Replace while the preceding publication is still installing its starting resource slot.
+    await Promise.resolve()
     await two.publish()
+    await publishing
     await expect(first.get()).rejects.toThrow()
     expect((await staged.get()).port).toBeGreaterThan(0)
     expect(peak).toBe(1)

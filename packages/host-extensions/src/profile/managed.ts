@@ -12,6 +12,7 @@ import type {
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { handoverManagedMarker, type ManagedPredecessor, managedMarkerBinding } from './managed-marker.js'
 import {
   managedProcessGone,
   managedProcessOwner,
@@ -21,7 +22,7 @@ import {
 import { managedStore } from './managed-store.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
-type Resource = {
+type Resource = ManagedPredecessor & {
   incarnation: string
   owner: string
   packageId: string
@@ -57,7 +58,7 @@ export class ProfileManagedResources {
   constructor(
     private readonly key: string,
     private readonly wakes: (owner: string, integrity: string) => BoundWakes,
-    private readonly current?: (owner: string, integrity: string, revision: string) => boolean,
+    private readonly current?: (owner: string, integrity: string, revision: string) => boolean | string,
     private readonly processIdentity?: ProcessQuery,
   ) {}
   register<T>(input: {
@@ -96,7 +97,11 @@ export class ProfileManagedResources {
       const current = profiles
         .get(this.key)
         ?.resources.find(
-          (r) => r.owner === input.owner && r.revision === input.revision && r.id === input.definition.id,
+          (r) =>
+            r.owner === input.owner &&
+            r.revision === input.revision &&
+            r.integrity === input.integrity &&
+            r.id === input.definition.id,
         )
       if (!current) throw rpcError('CAPABILITY_DENIED')
       return current
@@ -176,7 +181,12 @@ export class ProfileManagedResources {
       },
     }
   }
-  private async start(input: (typeof this.definitions)[number]): Promise<Resource> {
+  private async start(input: (typeof this.definitions)[number], predecessor?: Resource): Promise<Resource> {
+    const epoch = this.current?.(input.owner, input.integrity, input.revision)
+    input.assert()
+    if (this.current && !epoch) throw rpcError('CAPABILITY_DENIED')
+    const activation = typeof epoch === 'string' ? epoch : input.revision
+    handoverManagedMarker(input.store, input.definition.id, { ...input, activation }, predecessor)
     const lifetime = new AbortController()
     let shutdown: Parameters<ProfileManagedInit['onShutdown']>[0] | undefined
     let ready = false
@@ -193,6 +203,9 @@ export class ProfileManagedResources {
       incarnation: randomUUID(),
       owner: input.owner,
       packageId: input.packageId,
+      integrity: input.integrity,
+      activation,
+      store: input.store,
       revision: input.revision,
       id: input.definition.id,
       lifetime,
@@ -327,7 +340,7 @@ export class ProfileManagedResources {
       (d) => !this.current || this.current(d.owner, d.integrity, d.revision),
     )
     const stamp = definitions
-      .map((d) => `${d.owner}/${d.revision}/${d.definition.id}`)
+      .map((d) => `${d.owner}/${d.revision}/${d.integrity}/${d.definition.id}`)
       .sort()
       .join('\0')
     if (previous?.manager === this && previous.stamp === stamp && !force) return previous.draining
@@ -335,11 +348,15 @@ export class ProfileManagedResources {
       previous?.manager === this && !force
         ? previous.resources.filter((r) =>
             definitions.some(
-              (d) => d.owner === r.owner && d.revision === r.revision && d.definition.id === r.id,
+              (d) =>
+                d.owner === r.owner &&
+                d.revision === r.revision &&
+                d.integrity === r.integrity &&
+                d.definition.id === r.id,
             ),
           )
         : []
-    const retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
+    let retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
     for (const r of retiring) r.lifetime.abort(reason)
     const next = {
       manager: this,
@@ -349,8 +366,22 @@ export class ProfileManagedResources {
     }
     profiles.set(this.key, next)
     next.draining = (async () => {
-      await previous?.draining
-      await Promise.all(retiring.map((r) => r.stop(reason)))
+      await previous?.draining.catch(() => undefined)
+      // A predecessor may have entered start() before this publication but installed its slot
+      // while we joined its drain. Include that late slot before starting any replacement.
+      retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
+      for (const r of retiring) r.lifetime.abort(reason)
+      const stopped = await Promise.allSettled(retiring.map((r) => r.stop(reason)))
+      // An unconfirmed predecessor can be replaced only by a fenced registration of the same
+      // package/service. Removed resources still report their shutdown failure to the caller.
+      for (const [index, result] of stopped.entries())
+        if (
+          result.status === 'rejected' &&
+          !definitions.some(
+            (d) => d.packageId === retiring[index]?.packageId && d.definition.id === retiring[index]?.id,
+          )
+        )
+          throw result.reason
       if (profiles.get(this.key) !== next || this.closed) return
       next.resources = retained
       for (const definition of definitions)
@@ -362,7 +393,12 @@ export class ProfileManagedResources {
               r.id === definition.definition.id,
           )
         )
-          next.resources.push(await this.start(definition))
+          next.resources.push(
+            await this.start(
+              definition,
+              retiring.find((r) => r.packageId === definition.packageId && r.id === definition.definition.id),
+            ),
+          )
     })()
     void next.draining.catch(() => undefined)
     return next.draining
@@ -382,7 +418,11 @@ export class ProfileManagedResources {
           throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_ACTIVATION_CHANGED' })
         const profile = profiles.get(this.key)
         const r = profile?.resources.find(
-          (r) => r.owner === owner && r.id === input.definition.id && r.revision === input.revision,
+          (r) =>
+            r.owner === owner &&
+            r.id === input.definition.id &&
+            r.revision === input.revision &&
+            r.integrity === input.integrity,
         )
         await r?.value.catch(() => undefined)
         input.assert()
@@ -417,6 +457,7 @@ export class ProfileManagedResources {
             ownerPackage: input.packageId,
             generation: input.revision,
             lastKnownIdentity: identity,
+            ...managedMarkerBinding(input.store, r.id),
             identityState,
             confirmation:
               'Confirm and recover / 确认并恢复: I confirm the old process is no longer running / 我确认旧进程已不再运行。 Unknown operation outcomes remain unknown; no device motion is replayed.',
@@ -482,6 +523,7 @@ async function deadline<T>(work: Promise<T>, ms: number): Promise<T> {
 function markShutdown(store: OwnedStore, id: string, unconfirmed: boolean) {
   store.transaction(() => {
     store.set(`managed-shutdown:${id}`, unconfirmed)
+    if (!unconfirmed) store.delete(`managed-predecessor:${id}`)
     store.set(`managed-marker-revision:${id}`, randomUUID())
   })
 }
@@ -503,5 +545,6 @@ function managedRevision(
     shutdown: store.get(`managed-shutdown:${resource.id}`) ?? null,
     marker: store.get(`managed-marker-revision:${resource.id}`) ?? null,
     identity: store.get(`managed-process:${resource.id}`) ?? null,
+    ...managedMarkerBinding(store, resource.id),
   })
 }

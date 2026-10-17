@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { packageId, writePackage } from './fixture.mjs'
 import { connect, eventually, packages } from './runtime.mjs'
 
-const [phase, source, home, workspace, baseUrl] = process.argv.slice(2)
+const [phase, source, home, workspace, baseUrl, marker] = process.argv.slice(2)
 const stateFile = join(workspace, 'upgrade-state.json')
 const sdk = await connect(source, home)
 const admin = await packages(sdk)
@@ -27,12 +27,23 @@ const verifyManaged = async (state) => {
   if (!state.managed) return
   const status = (await scoped('server.status')).output
   console.info('Managed status after upgrade:', JSON.stringify(status))
+  const pending = async () => (await sdk.call('_agnes/v1/profile.decisions.list', {})).decisions
+  assert.equal((await pending()).length, 0, 'unexpected managed approval before recovery')
+  if (state.marker === 'identity')
+    assert.equal(status.state, 'ready', 'dead identity must auto-recover on first start')
+  else
+    assert.deepEqual(
+      status,
+      { state: 'failed', code: 'shutdown-unconfirmed' },
+      'legacy marker must stay fenced on first start',
+    )
   if (status.state !== 'ready') {
     // An unconfirmed shutdown is a native approval boundary, never an automatic replay.
     const operationId = randomUUID()
     const receipt = await scoped('server.reconcile', { operationId })
     assert.equal(receipt.state, 'approval-required', JSON.stringify({ status, receipt }))
     const listed = await sdk.call('_agnes/v1/profile.decisions.list', {})
+    assert.equal(listed.decisions.length, 1, 'legacy recovery must raise exactly one native approval')
     const decision = listed.decisions.find((row) => !row.result && !row.invalidation)
     assert.ok(decision, 'missing native managed recovery decision')
     await sdk.call('_agnes/v1/profile.decisions.answer', {
@@ -46,7 +57,10 @@ const verifyManaged = async (state) => {
   await eventually(async () => (await scoped('server.status')).output.state === 'ready', 'managed recovery')
   assert.equal((await scoped('server.status')).output.state, 'ready')
   assert.deepEqual((await scoped('server.check')).output, { synthetic: true })
-  console.info('Managed recovery: ready with successful health query')
+  assert.equal((await pending()).length, 0, 'managed approval must be consumed')
+  console.info(
+    `Managed recovery: ready on first start; approvals=${state.marker === 'identity' ? 0 : 1}; successful health query`,
+  )
 }
 
 try {
@@ -67,7 +81,16 @@ try {
       config: { personaSuffix: 'Synthetic upgrade persona' },
       expectedRevision: initialPrompt.revision,
     })
-    const directory = await writePackage(workspace, managed)
+    const directory = await writePackage(
+      workspace,
+      managed,
+      marker === 'identity'
+        ? {
+            loader: import.meta.resolve('tsx'),
+            module: import.meta.resolve('@agnes/host-infrastructure/adapters/process-identity-default'),
+          }
+        : undefined,
+    )
     const packageSource = { type: 'file', ref: `file:${directory}` }
     const preview = (
       await admin.complete(await sdk.packages.inspect({ ...(await admin.command()), source: packageSource }))
@@ -91,7 +114,12 @@ try {
       }),
     )
     await admin.complete(await sdk.packages.enable({ ...(await admin.command()), id: packageId }))
-    if (managed) assert.equal((await scoped('server.status')).output.state, 'ready')
+    if (managed)
+      await eventually(async () => {
+        const status = (await scoped('server.status')).output
+        assert.notEqual(status.state, 'failed', `seed managed failure: ${JSON.stringify(status)}`)
+        return status.state === 'ready'
+      }, 'seed managed readiness')
     const sessions = []
     for (const kind of ['plain', 'tool', 'attachment', 'present', 'queue']) {
       const session = await sdk.session.new({ cwd: workspace, sessionKey: `upgrade-${kind}-${randomUUID()}` })
@@ -201,6 +229,7 @@ try {
       stateFile,
       JSON.stringify({
         managed,
+        marker,
         serviceOwner,
         ledger: ledgerRows(),
         sessions,
