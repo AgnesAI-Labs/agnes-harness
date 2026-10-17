@@ -87,7 +87,8 @@
     "unavailableDecisions",
     "unavailableProjections",
     "validSandboxCapabilities",
-    "webhookTriggerKind"
+    "webhookTriggerKind",
+    "workspaceStateKind"
   ],
   "workspaceIdentity": {
     "ToolPolicyInput": "workspaceRoot",
