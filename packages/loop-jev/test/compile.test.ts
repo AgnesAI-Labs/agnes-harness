@@ -7,7 +7,8 @@ import {
   estimateTokens,
   fitBudget,
   LLM_PARAMETERS_TEXT,
-  type META_PROGRESS,
+  META_AMBIGUITY,
+  META_PROGRESS,
   PHASE_CRITERIA,
   PHASE_INSTRUCTIONS,
 } from '../src/compile.js'
@@ -91,6 +92,31 @@ describe('compileQuestions', () => {
       },
     })
     expect((compileQuestions([]).questions.meta_progress as typeof META_PROGRESS).criteria).toHaveLength(4)
+  })
+})
+
+describe('compileQuestions isolation and duplicates', () => {
+  it('does not share mutable objects between compiles', () => {
+    const first = compileQuestions(tools('ls'))
+    ;(first.questions.meta_progress as { criteria: string[] }).criteria.length = 0
+    ;(first.questions.meta_ambiguity as { instructions: string }).instructions = 'changed'
+    ;(first.defaults.ls as { path: string }).path = 'changed'
+    const second = compileQuestions(tools('ls'))
+    expect((second.questions.meta_progress as typeof META_PROGRESS).criteria).toHaveLength(4)
+    expect((second.questions.meta_ambiguity as typeof META_AMBIGUITY).instructions).toBe(
+      META_AMBIGUITY.instructions,
+    )
+    expect(META_PROGRESS.criteria).toHaveLength(4)
+    expect(second.defaults.ls).toEqual({ path: '.' })
+  })
+  it('lists a repeated tool once and ignores a tool named ANSWER', () => {
+    const [ls, read] = tools('ls', 'read') as [ResolvedTool, ResolvedTool]
+    const impostor = { ...read, name: 'ANSWER', criteria: 'impostor' }
+    const c = compileQuestions([ls, ls, impostor, read])
+    expect(c.phaseActions).toEqual({ INSPECT: ['ls', 'read'], VERIFY: ['ls', 'read'], RESPOND: ['ANSWER'] })
+    const head = c.questions.action__verify as { criteria: Record<string, string> }
+    expect(Object.keys(head.criteria)).toEqual(['ls', 'read'])
+    expect(JSON.stringify(c.questions)).not.toContain('impostor')
   })
 })
 

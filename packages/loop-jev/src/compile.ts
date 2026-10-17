@@ -74,7 +74,11 @@ export const DEFAULT_ARGUMENTS_TEXT = "Use the tool's declared safe default argu
 const MAX_DESCRIPTION = 1500
 
 /** Questions for one decision, built from the decision surface: the tools Jev may choose between. */
-export function compileQuestions(tools: readonly ResolvedTool[]): CompiledQuestions {
+export function compileQuestions(allTools: readonly ResolvedTool[]): CompiledQuestions {
+  // The first tool of a name wins; a tool named like the synthetic answer action is never offered.
+  const tools = allTools.filter(
+    (tool, i) => tool.name !== ANSWER && allTools.findIndex((t) => t.name === tool.name) === i,
+  )
   const byName = new Map(tools.map((tool) => [tool.name, tool]))
   const lists: Partial<Record<Phase, string[]>> = {}
   for (const tool of tools) {
@@ -135,7 +139,7 @@ export function compileQuestions(tools: readonly ResolvedTool[]): CompiledQuesti
           binding: tool.targetParam === null ? LLM_PARAMETERS_TEXT.plain : LLM_PARAMETERS_TEXT.target,
         }
         if (tool.defaults !== null && Object.keys(tool.defaults).length > 0) {
-          defaults[op] = tool.defaults
+          defaults[op] = structuredClone(tool.defaults)
           options[DEFAULT_ARGUMENTS] = { binding: DEFAULT_ARGUMENTS_TEXT, arguments: pyJson(tool.defaults) }
         }
       }
@@ -157,8 +161,8 @@ export function compileQuestions(tools: readonly ResolvedTool[]): CompiledQuesti
       }
     }
   }
-  questions.meta_ambiguity = META_AMBIGUITY
-  questions.meta_progress = META_PROGRESS
+  questions.meta_ambiguity = structuredClone(META_AMBIGUITY)
+  questions.meta_progress = structuredClone(META_PROGRESS)
   return {
     questions,
     phaseActions,
@@ -193,6 +197,8 @@ export type Budget = { stateTokens: number; requestTokens: number }
 export const MAX_SHRINK_LEVEL = 7
 
 /** The first shrink level, from `fromLevel` up to 7, whose state and questions fit the budget. */
+// Shrink level 6 (clip non-profiled criteria) cannot change the questions because `c` is fixed; it is a no-op in
+// stage 1, where every built-in tool is profiled.
 export function fitBudget(
   c: CompiledQuestions,
   stateAt: (level: number) => JsonObject,
