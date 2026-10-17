@@ -95,7 +95,7 @@ const latest = (recoverability: 'recoverable' | 'unsafe'): HistoryEntry => ({
   dispatched: true,
 })
 
-describe('routeDecision (spec §4.6)', () => {
+describe('routeDecision', () => {
   it('goes direct for a confident complete binding', () => expect(route(d({}), LS).kind).toBe('direct'))
   it('asks for parameters when Jev chose LLM_PARAMETERS', () =>
     expect(
@@ -131,6 +131,7 @@ describe('routeDecision (spec §4.6)', () => {
   it.each([
     ['ACT write', d({ ...low, phase: 'ACT', op: 'write', ambiguity: 0.1 }), WRITE],
     ['VERIFY shell', d({ ...low, phase: 'VERIFY', op: 'shell', ambiguity: 0.1 }), SHELL],
+    ['INSPECT shell', d({ ...low, phase: 'INSPECT', op: 'shell', ambiguity: 0.1 }), SHELL],
     ['RESPOND ANSWER', d({ ...low, phase: 'RESPOND', op: 'ANSWER', ambiguity: 0.1 }), null],
   ])('keeps the full net for %s', (_n, decision, t) =>
     expect(route(decision, t).reason).toBe('low_confidence'),
@@ -192,5 +193,55 @@ describe('routeDecision (spec §4.6)', () => {
     expect(
       route(d({ confidence: 0.3, operationPathConfidence: 0.8, targetConfidence: 0.3 }), LS),
     ).toMatchObject({ kind: 'parameters', reason: 'weak_binding', decision: { op: 'ls' } })
+  })
+  it('lets the ambiguity gate relax a clear read in VERIFY too', () =>
+    expect(route(d({ ...low, phase: 'VERIFY', ambiguity: 0.2 }), LS)).toMatchObject({
+      kind: 'parameters',
+      reason: 'weak_binding',
+    }))
+  describe('boundaries', () => {
+    const external = (confidence: number) =>
+      d({
+        phase: 'ACT',
+        op: 'deploy',
+        confidence,
+        operationPathConfidence: confidence,
+        bindingMode: 'llm_parameters',
+        target: 'LLM_PARAMETERS',
+        args: {},
+      })
+    it('relaxes when ambiguity is exactly at the gate', () =>
+      expect(route(d({ ...low, ambiguity: 0.4 }), LS)).toMatchObject({
+        kind: 'parameters',
+        reason: 'weak_binding',
+      }))
+    it('arbitrates when ambiguity is just above the gate', () =>
+      expect(route(d({ ...low, ambiguity: 0.41 }), LS).reason).toBe('low_confidence'))
+    it('goes direct when confidence equals the threshold', () =>
+      expect(route(d({ confidence: 0.5, operationPathConfidence: 0.5 }), LS)).toMatchObject({
+        kind: 'direct',
+        reason: null,
+      }))
+    it('answers when progress equals the floor', () => {
+      const a = d({
+        phase: 'RESPOND',
+        op: 'ANSWER',
+        target: 'LLM_PARAMETERS',
+        bindingMode: 'llm_parameters',
+        args: {},
+        progress: 2,
+      })
+      expect(route(a, null, { thresholds: { answerProgressFloor: 2 } })).toMatchObject({
+        kind: 'answer',
+        reason: null,
+      })
+    })
+    it('does not arbitrate an external tool at exactly the external minimum', () =>
+      expect(route(external(0.6), EXT)).toMatchObject({ kind: 'parameters', reason: null }))
+    it('keeps a higher escalate threshold for external tools instead of overriding it', () => {
+      const thresholds = { escalate: 0.7 }
+      expect(route(external(0.65), EXT, { thresholds }).kind).toBe('arbitration')
+      expect(route(external(0.7), EXT, { thresholds }).kind).toBe('parameters')
+    })
   })
 })
