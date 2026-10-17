@@ -72,6 +72,7 @@ export function boundContent(content: AnnouncedContent): AnnouncedContent {
   const bounded: AnnouncedContent = []
   let left = CONTENT_MAX_BYTES
   for (const block of content) {
+    if (block.text === '') continue
     if (left <= 0) break
     const text = clipBytes(block.text, left)
     if (text === '') break

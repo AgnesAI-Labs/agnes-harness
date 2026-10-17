@@ -109,6 +109,9 @@ export function createDriver(ctx: GenericLoopPorts, cfg: JevLoopConfig, saved?: 
         if (signal.aborted || ctx.turn.cancelled()) return finishTurn(s, 'aborted')
         // Core already ended the turn when it refused admission; do not finish it again.
         if (code === 'E_BUDGET') {
+          // The turn is over: no call of it may be replayed, and the next input starts a new turn.
+          s.state.stage = 'done'
+          delete s.state.cur.calls
           const reason = (error as { detail?: { reason?: LoopEndReason } }).detail?.reason
           return { outcome: 'turn-ended', reason: reason ?? 'budget' }
         }

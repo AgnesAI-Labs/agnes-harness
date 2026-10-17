@@ -243,7 +243,11 @@ export async function llmStep(
   st.counters.llm[kind] += attempts
   st.counters.llm.retries += Math.max(0, attempts - 1)
   const llmEvent: JsonObject = { kind, attempts, invocationIds: [...r.ids], droppedCalls: 0 }
-  if (r.kind === 'outcome') return r.outcome
+  if (r.kind === 'outcome') {
+    // Compaction ended the turn; the attempts already sent are still reported.
+    if (r.ids.length > 0) await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } })
+    return r.outcome
+  }
   if (r.kind === 'reply') return handleReply(s, route, parseReply(r.events), llmEvent, signal)
   await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } })
   if (r.kind === 'aborted') return finishTurn(s, 'aborted')
@@ -370,6 +374,7 @@ export async function dispatchStep(
       : {}),
   })
   if (d.kind === 'budget') {
+    delete st.cur.calls
     await emitStep(s, event(0))
     return finishTurn(s, 'budget', { code: 'BUDGET_EXCEEDED', message: d.message })
   }

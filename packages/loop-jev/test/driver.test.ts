@@ -3,6 +3,7 @@ import { driveLoop } from '@agnes/plugin-runtime/testkit'
 import { describe, expect, it } from 'vitest'
 import { estimateTokens } from '../src/compile.js'
 import { createJevLoopFactory } from '../src/index.js'
+import { boundContent } from '../src/scope.js'
 import type { JsonObject } from '../src/types.js'
 import {
   type FakeJev,
@@ -400,5 +401,67 @@ describe('Jev loop driver', () => {
       jevCalls: 2,
       jevRetries: 0,
     })
+  })
+  it('leaves no call to replay when Core ends the turn at dispatch, and starts the next turn cleanly', async () => {
+    const budget = () => {
+      throw Object.assign(new Error('budget'), { code: 'E_BUDGET', detail: { reason: 'max_steps' } })
+    }
+    const first = await run([{ pick: PICK_LS }], { tools: toolPort({ ls: budget }) })
+    expect(first.finished).toBeUndefined()
+    const saved = first.checkpoint?.state as { stage: string; cur: { calls?: unknown[] } }
+    expect(saved.stage).toBe('done')
+    expect(saved.cur.calls).toBeUndefined()
+    const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
+    const next = await driveLoop(createJevLoopFactory(), {
+      ...(first.checkpoint ? { checkpoint: first.checkpoint } : {}),
+      inputs: [{ turnId: 2, content: [{ type: 'text', text: 'two' }] }] as never,
+      turnView: turnView({ turnId: 2 }),
+      replies: [textReply('Second answer.')] as never,
+      tools: toolPort().port,
+      sideCall: jev,
+    })
+    expect(next.finished?.[0]).toBe('completed')
+    expect(jev.invoked).toEqual(['jev:2:0:d0'])
+  })
+  it('drops the pending calls from the checkpoint when a dispatch is over budget', async () => {
+    const r = await run([{ pick: PICK_WRITE }], {
+      replies: [callReply('write', { path: 'a', content: 'x' })],
+      tools: toolPort({
+        write: () => {
+          throw Object.assign(new Error('over budget'), { code: 'BUDGET_EXCEEDED' })
+        },
+      }),
+    })
+    expect(r.finished).toEqual(['budget', { code: 'BUDGET_EXCEEDED', message: 'over budget' }])
+    const saved = r.checkpoint?.state as { cur: { calls?: unknown[] } } | undefined
+    expect(saved?.cur).toBeDefined()
+    expect(saved?.cur.calls).toBeUndefined()
+  })
+  it('reports the attempts of a request whose compaction ended the turn', async () => {
+    const compactionEnds = (factory: LoopFactory): LoopFactory => {
+      const wrap = (ctx: LoopContext): LoopContext =>
+        Object.create(ctx, {
+          compaction: { value: { run: async () => ({ outcome: 'turn-ended', reason: 'budget' }) } },
+        }) as LoopContext
+      return {
+        ...factory,
+        create: (ctx, stop) => factory.create(wrap(ctx), stop),
+        resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
+      }
+    }
+    const r = await run([{ pick: PICK_RESPOND }], {
+      replies: [errorReply('OVERFLOW', false)],
+      wrap: compactionEnds,
+    })
+    expect(r.requests).toHaveLength(1)
+    expect(r.steps).toMatchObject([{ route: 'answer', llm: { attempts: 1, outcome: 'error' } }])
+  })
+  it('keeps the blocks after an empty one in announced content', () => {
+    expect(
+      boundContent([
+        { type: 'thinking', text: '' },
+        { type: 'text', text: 'Writing the file.' },
+      ]),
+    ).toEqual([{ type: 'text', text: 'Writing the file.' }])
   })
 })
