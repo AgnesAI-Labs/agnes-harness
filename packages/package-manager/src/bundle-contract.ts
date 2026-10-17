@@ -124,17 +124,30 @@ export function preflightPackageBundles(input: {
       fail(`unknown bundle ${ref}`)
     }
     const visiting = new Set<string>()
+    const checkOwner = (ref: string, sourcePackage: string) => {
+      const owner = ref.slice(0, ref.indexOf('#'))
+      if (
+        sourcePackage === input.packageId &&
+        owner !== input.packageId &&
+        !Object.hasOwn(input.dependencies ?? {}, owner)
+      )
+        fail(`undeclared bundle dependency ${owner}`)
+    }
     const walk = (ref: string, presets: Set<string>) => {
       if (visiting.size >= 64 || visiting.has(ref))
         fail(`bundle inheritance cycle or excessive depth at ${ref}`)
       const entry = get(ref)
       if (!entry) return
       visiting.add(ref)
-      for (const parent of entry.document.extends ?? []) walk(parent, presets)
+      for (const parent of entry.document.extends ?? []) {
+        checkOwner(parent, entry.sourcePackage)
+        walk(parent, presets)
+      }
       for (const [id, preset] of Object.entries(entry.document.presets ?? {})) {
         presets.add(id)
         for (const selected of preset.bundles ?? []) {
           if (!REF.test(selected)) fail(`invalid bundle reference ${selected}`)
+          checkOwner(selected, entry.sourcePackage)
           get(selected)
         }
       }

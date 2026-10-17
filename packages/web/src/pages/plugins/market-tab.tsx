@@ -36,7 +36,7 @@ export function marketTypes(item: PackageCatalogDescriptor): readonly MarketType
   const kinds: readonly string[] = item.presentation?.includes?.provides ?? item.provides ?? []
   return MARKET_TYPES.filter((type) =>
     type === 'agent'
-      ? kinds.includes('bundle') || isBusinessAgent(item)
+      ? isBusinessAgent(item)
       : type === 'runtime'
         ? kinds.includes('loop') || kinds.includes('model-adapter')
         : kinds.includes(type),

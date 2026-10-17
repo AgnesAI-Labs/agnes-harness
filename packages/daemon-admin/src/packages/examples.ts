@@ -233,7 +233,7 @@ export function createExamplePackages(options: {
                 title: launch.title.en,
                 bundle: `${entry.id}#${launchId}`,
                 preset: launch.preset,
-                prompt: launch.prompt?.text.en ?? '',
+                prompt: '',
               }
             })()
             await backend.validateLaunch(installed, review.launch)

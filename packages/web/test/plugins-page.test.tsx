@@ -226,7 +226,19 @@ describe('plugin grouping', () => {
     expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
     expect(marketTypes(entry('@acme/adapter', ['model-adapter', 'ui']))).toEqual(['ui', 'runtime'])
     expect(marketTypes(entry('@acme/jira', ['mcp']))).toEqual(['mcp'])
-    expect(marketTypes(entry('@acme/review', ['tool', 'bundle']))).toEqual(['agent', 'tool'])
+    const reusable = entry('@acme/review', ['tool', 'bundle'])
+    expect(marketTypes(reusable)).toEqual(['tool'])
+    expect(
+      marketTypes({
+        ...reusable,
+        agents: [
+          {
+            ref: '@acme/review#work',
+            launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+          },
+        ],
+      }),
+    ).toEqual(['agent', 'tool'])
     // What the package says wins over what its author declared; an older source has only the latter.
     expect(marketTypes(entry('@acme/both', ['skills'], ['tool']))).toEqual(['skills'])
     expect(marketTypes(entry('@acme/older', [], ['tool']))).toEqual(['tool'])

@@ -106,7 +106,7 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
   }
 }
 
-/** Search and the category filter shared by the installed list and the marketplace. */
+/** Search and the capability filter shared by the installed list and the marketplace. */
 export function PluginToolbar({
   view,
   t,

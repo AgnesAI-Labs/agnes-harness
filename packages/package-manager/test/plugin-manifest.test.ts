@@ -255,6 +255,26 @@ it('validates explicit launch blocks without inheriting them and reports static 
       dependencies: { 'other/pkg': '^1' },
     }).level,
   ).toBe('deployment-dependent')
+  const dependency = parsePackageBundleContract('other/pkg', { base: bundles.base })
+  for (const dependent of [
+    { extends: ['other/pkg#base'] },
+    { presets: { safe: { name: 'safe', bundles: ['other/pkg#base'] } } },
+  ])
+    expect(
+      preflightPackageBundles({
+        ...input,
+        bundles: { dependent },
+        catalog: dependency,
+      }).level,
+    ).toBe('refused')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { dependent: { extends: ['other/pkg#base'], launch } },
+      catalog: dependency,
+      dependencies: { 'other/pkg': '^1' },
+    }).level,
+  ).toBe('static-references')
 })
 
 it('keeps application schema minimal and validates explicit agent references', () => {

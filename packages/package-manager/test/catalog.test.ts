@@ -80,31 +80,52 @@ it('failed discovery uses only a still-fresh snapshot and reports cache provenan
   fail = true
   expect((await catalog.read()).sources).toEqual([{ sourceId: 'curated', status: 'cached' }])
 })
-it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize', 'duplicate-agent', 'foreign-agent'])(
-  'rejects invalid %s documents without publishing',
-  async (kind) => {
-    const doc = fixture()
-    if (kind === 'ttl') doc.ttlMs = 86400001
-    if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
-    if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
-    if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
-    if (kind === 'unknown') doc.extra = true
-    if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
-    const agent = {
-      ref: `${doc.entries[0].id}#work`,
-      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
-    }
-    if (kind === 'duplicate-agent') doc.entries[0].agents = [agent, agent]
-    if (kind === 'foreign-agent') doc.entries[0].agents = [{ ...agent, ref: 'other/package#work' }]
-    const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
-    expect(await catalog.read()).toEqual({
-      entries: [],
-      conflicts: [],
-      sources: [{ sourceId: 'curated', status: 'unavailable' }],
-    })
-    expect(catalog.snapshots()).toEqual([])
-  },
-)
+it.each([
+  'ttl',
+  'future',
+  'duplicate',
+  'source',
+  'unknown',
+  'oversize',
+  'duplicate-agent',
+  'foreign-agent',
+  'secret-agent',
+  'oversize-agent',
+])('rejects invalid %s documents without publishing', async (kind) => {
+  const doc = fixture()
+  if (kind === 'ttl') doc.ttlMs = 86400001
+  if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
+  if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
+  if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
+  if (kind === 'unknown') doc.extra = true
+  if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
+  const agent = {
+    ref: `${doc.entries[0].id}#work`,
+    launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+  }
+  if (kind === 'duplicate-agent') doc.entries[0].agents = [agent, agent]
+  if (kind === 'foreign-agent') doc.entries[0].agents = [{ ...agent, ref: 'other/package#work' }]
+  if (kind === 'secret-agent' || kind === 'oversize-agent')
+    doc.entries[0].agents = [
+      {
+        ...agent,
+        launch: {
+          ...agent.launch,
+          prompt: {
+            mode: 'draft',
+            text: { en: kind === 'secret-agent' ? 'secret://private' : '😀'.repeat(4097) },
+          },
+        },
+      },
+    ]
+  const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
+  expect(await catalog.read()).toEqual({
+    entries: [],
+    conflicts: [],
+    sources: [{ sourceId: 'curated', status: 'unavailable' }],
+  })
+  expect(catalog.snapshots()).toEqual([])
+})
 it.each([{ priority: ['curated', 'curated'] }, { priority: ['missing'] }, { priority: [] }])(
   'rejects invalid managed priority $priority',
   ({ priority }) => {

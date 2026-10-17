@@ -233,7 +233,7 @@ it('shows declared kinds and observable states without guessing draining or rest
     }),
   )
   expect(removed.querySelector('[data-testid=plugin-drain-summary]')?.textContent).toBe(
-    'Updated. 3 ongoing sessions are unaffected.',
+    '3 ongoing sessions keep their pinned backend tools.',
   )
   expect(removed.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
   expect(removed.textContent).toContain('Friendly plugin')
@@ -268,7 +268,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   )
   expect(historyBadge.textContent).toBe('Saved sessions use an older version')
   expect(historyBadge.querySelector('[role=note]')?.getAttribute('aria-label')).toContain(
-    'New sessions use the current version',
+    'New sessions use only enabled plugins',
   )
   expect(historyBadge.querySelector('[role=note]')?.getAttribute('tabindex')).toBe('0')
   const builtins = await mount(

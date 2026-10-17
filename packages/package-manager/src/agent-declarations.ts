@@ -3,6 +3,7 @@ import {
   DeclaredAgent as AgentSchema,
   ApplicationTemplate as ApplicationSchema,
 } from '@agnes/protocol/gen/extension-manifest'
+import { parsePackageBundleContract } from './bundle-contract.js'
 
 /** Validate static projections from untrusted catalogue and durable snapshot data. */
 export function validAgentDeclarations(value: unknown, packageId: string): boolean {
@@ -13,6 +14,13 @@ export function validAgentDeclarations(value: unknown, packageId: string): boole
     const checked = validateAgainst<DeclaredAgent>(AgentSchema, item)
     if (!checked.ok || !checked.value.ref.startsWith(`${packageId}#`) || refs.has(checked.value.ref))
       return false
+    try {
+      parsePackageBundleContract(packageId, {
+        [checked.value.ref.slice(packageId.length + 1)]: { launch: checked.value.launch },
+      })
+    } catch {
+      return false
+    }
     refs.add(checked.value.ref)
   }
   return true
