@@ -299,7 +299,10 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
       if (deps.profileAuthorityPublication !== 'retained')
         publishProfileActivations(proc, pluginCatalogue, target)
       const root = shared.publisher.get().current().value.current?.ordinary.pluginTree.root
-      if (root) input.seamSet.adopt(root)
+      if (root) {
+        rowServices.publishRoot(root)
+        input.seamSet.adopt(root)
+      }
       syncHotPolicyFromTarget(hotPolicy, target)
     },
   })

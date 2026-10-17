@@ -26,7 +26,7 @@ describe('Cordis row service contribution', () => {
     await expect(unverified).rejects.toThrow(/verified row/)
   })
 
-  it('publishes a service after Host activation and revokes it with its row', async () => {
+  it('publishes only selected root services and revokes exact row identities', async () => {
     const root = new Context()
     const origins = new WeakMap<Fiber, RowOrigin>()
     const bridge = createRowServiceHost(() => ({ version: '1.0.0' }))
@@ -46,10 +46,37 @@ describe('Cordis row service contribution', () => {
     const source = registry.registrations(owner)
     expect(source).toEqual([`service:${owner}/fixture.echo`])
     expect(registry.resolve(owner, def.name)?.version).toBe('1.0.0')
+    const original = registry.resolve(owner, def.name)
+    const candidate = async () => {
+      const next = new Context()
+      bridge.installRoot(next, { lookup: (fiber) => origins.get(fiber) })
+      await next.plugin((ctx) => {
+        origins.set(ctx.fiber, origin)
+        const release = ctx.services.register(def)
+        expect(() => ctx.services.register(def)).toThrow(/already registered/)
+        release()
+        ctx.services.register(def)
+        release()
+      })
+      return next
+    }
+    const rejected = await candidate()
+    expect(registry.resolve(owner, def.name)).toBe(original)
+    await rejected.fiber.dispose()
+    expect(registry.resolve(owner, def.name)).toBe(original)
+    const next = await candidate()
+    expect(registry.resolve(owner, def.name)).toBe(original)
+    bridge.publishRoot(next)
+    const published = registry.resolve(owner, def.name)
+    expect(published).toBeDefined()
+    expect(published).not.toBe(original)
+    expect(registry.registrations(owner)).toEqual(source)
     origins.delete((captured as Context).fiber)
     expect(() => captured?.services.register(def)).toThrow(/verified row/)
-    expect(() => registry.resolve(owner, def.name)?.assertAlive()).toThrow(/closed/)
+    expect(() => original?.assertAlive()).toThrow(/closed/)
     await row.dispose()
+    expect(registry.resolve(owner, def.name)).toBe(published)
+    await next.fiber.dispose()
     expect(registry.registrations(owner)).toEqual([])
     origins.set((captured as Context).fiber, origin)
     expect(() => captured?.services.register(def)).toThrow(/closed/)

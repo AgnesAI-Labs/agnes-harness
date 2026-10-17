@@ -29,6 +29,7 @@ import { mapResult } from './map-result.js'
 import type { KernelPorts } from './ports.js'
 import { adaptProjection } from './projections.js'
 import { pluginRowSource } from './row-extension-host.js'
+import { createRowServicePublication } from './row-service-publication.js'
 
 export type RowServiceContribution = PluginServicesPort
 export type RowResourceContribution = PluginResourcesPort
@@ -78,9 +79,11 @@ export function createRowServiceHost(
   let ports: KernelPorts | undefined
   const pending = new Set<() => void>()
   const projectionNames = new WeakMap<RowOrigin, Set<string>>()
+  const servicePublication = createRowServicePublication()
 
   return Object.freeze({
     installRoot(root: Context, origins: RowOriginLookup): void {
+      const registerService = servicePublication.install(root)
       if (profileRuntime) installProfileRuntime(root, origins, profileRuntime)
       const contribution: RowServiceContribution = {
         register(this: { ctx: Context }, def) {
@@ -100,11 +103,10 @@ export function createRowServiceHost(
           const version = description?.version ?? '0.0.0'
           return fiber.effect(() => {
             const ac = new AbortController()
-            let release: (() => void) | undefined
-            const publish = () => {
+            const release = registerService(`${owner}/${def.name}`, () => {
               alive()
-              if (!ports) return
-              release = ports.services.registerRow(def, {
+              if (!ports) throw new Error('row services are not active')
+              return ports.services.registerRow(def, {
                 owner,
                 ...(origin.rowRevision ? { activationRevision: origin.rowRevision } : {}),
                 packageId: origin.packageId,
@@ -118,13 +120,10 @@ export function createRowServiceHost(
                 assertRunning: alive,
                 consume() {},
               })
-            }
-            if (ports) publish()
-            else pending.add(publish)
+            })
             return () => {
               ac.abort()
-              pending.delete(publish)
-              release?.()
+              release()
             }
           }, `ctx.services.register(${def.name})`)
         },
@@ -325,10 +324,14 @@ export function createRowServiceHost(
     activate(next: KernelPorts): void {
       if (ports) throw new Error('row services already active')
       ports = next
+      servicePublication.activate()
       for (const publish of [...pending]) {
         pending.delete(publish)
         publish()
       }
+    },
+    publishRoot(root: Context): void {
+      servicePublication.select(root)
     },
   })
 }
