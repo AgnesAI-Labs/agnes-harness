@@ -5,7 +5,8 @@ import { clip, digest16, pyJson } from './util.js'
 /*
  * Bounded historical views of tool results. A reference is a shortcut to a whole, safe,
  * workspace-relative path, never an authority: shell output and any other text stay evidence.
- * Every size is the character count of Python's `json.dumps(ensure_ascii=False)`.
+ * Every size is `pyJson(x).length` in UTF-16 units: Python's `json.dumps(ensure_ascii=False)`
+ * text, counted never more loosely than Python counts it.
  */
 
 export const VIEW_CAP = 4
@@ -64,7 +65,7 @@ function invocationOf(args: JsonObject): { invocation: JsonObject; clipped: bool
 /**
  * The bounded view of one tool result. Never throws: over VIEW_CHARS it halves evidence (not
  * below 256), then drops references from the end, then the invocation; if the view is still too
- * large, it keeps no evidence and no references.
+ * large, it keeps only the evidence that still fits, possibly none.
  */
 export function normalizeView(raw: RawObservation): ObservationView {
   const view: ObservationView = {
@@ -118,9 +119,14 @@ export function normalizeView(raw: RawObservation): ObservationView {
     delete view.invocation
     view.truncated = true
   }
-  if (size(view) > VIEW_CHARS) {
-    view.evidence = ''
-    view.references = []
+  // By now no references are left. Escaping can make the overflow larger than the evidence
+  // itself, so cut at most half of it at a time until it fits or is empty.
+  while (size(view) > VIEW_CHARS && view.evidence.length > 0) {
+    const overflow = size(view) - VIEW_CHARS
+    view.evidence = clip(
+      view.evidence,
+      view.evidence.length - Math.min(overflow, Math.ceil(view.evidence.length / 2)),
+    )
   }
   return view
 }
