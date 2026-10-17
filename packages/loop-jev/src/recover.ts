@@ -250,6 +250,15 @@ export async function resumeParkedStage(s: Scope, signal: AbortSignal): Promise<
     st.stage = 'dispatch'
     return recoverStep(s, signal)
   }
+  if (!view && st.stage === 'dispatch') {
+    // Core closed the turn on a park the loop had not saved yet. Save it now: a restart after the
+    // continuation opens must take this path again, not start a new turn.
+    st.stage = 'parked'
+    await save(
+      s,
+      (st.cur.calls ?? []).map((call) => call.invocationId),
+    )
+  }
   const resumed = view ? 'opened' : await s.ctx.input.resumeParked()
   if (resumed === 'opened') return continueApproval(s, signal)
   if (resumed === 'waiting') return { outcome: 'parked', reason: 'parked' }

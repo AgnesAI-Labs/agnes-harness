@@ -402,4 +402,40 @@ describe('recovery after resume', () => {
       cur: { calls: [{ invocationId: 'jev:1:0:t0' }] },
     })
   })
+  it('dispatch with its turn closed: saves the park intent before asking for the approval', async () => {
+    const written: Array<{ state: JsonObject; ids?: readonly string[] }> = []
+    const r = await resume(saved({ stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }), {
+      noView: true,
+      resumeParked: 'waiting',
+      ports: (ctx) => ({
+        checkpoints: {
+          read: () => ctx.checkpoints.read(),
+          write: async (
+            checkpoint: Parameters<LoopContext['checkpoints']['write']>[0],
+            association?: { invocationIds?: readonly string[] },
+          ) => {
+            written.push({
+              state: structuredClone(checkpoint.state) as JsonObject,
+              ...(association?.invocationIds ? { ids: [...association.invocationIds] } : {}),
+            })
+            await ctx.checkpoints.write(checkpoint, association)
+          },
+        },
+      }),
+    })
+    expect(r.outcomes).toEqual([{ outcome: 'parked', reason: 'parked' }])
+    expect(written[0]).toMatchObject({ state: { stage: 'parked' }, ids: ['jev:1:0:t0'] })
+  })
+  it('parked after the continuation resumed the call: records the receipt result once', async () => {
+    const s = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [call] } })
+    const r = await resume(s, {
+      turnId: 2,
+      effects: responded('jev:1:0:t0', ok('wrote a.txt')),
+    })
+    expect(r.executed).toEqual([])
+    expect(r.resumed).toEqual([])
+    expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
+    expect(state.goal).toBe('write a file')
+  })
 })
