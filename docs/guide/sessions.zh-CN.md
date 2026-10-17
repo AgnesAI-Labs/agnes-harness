@@ -47,6 +47,16 @@ node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import
 
 ## 中断与重启
 
+指导、补充或队列控制的结果未确认时，SDK 保留原命令 ID。重连会重放 pending 命令一次；
+未知回执、`UNCERTAIN` 错误或再次重放失败会将命令转为 `needs-confirmation`，停止自动重试，
+继续恢复其余命令与会话订阅。确定拒绝会清除命令。`session.pendingCommands()` 返回 pending 和
+needs-confirmation 两种未决项；`session.checkCommand(commandId)` 使用原内容与身份显式核对。
+成功仍返回数字序列；SDK 持有命令期间，提交错误附带 `submission: { sessionId, commandId, state }`。
+
+Web 显示「结果未确认，请核对」并提供「核对」，不会将 SDK 持有的消息恢复成可重新发送的草稿，
+结果明确前阻止再次发送。浏览器存储可用时，命令日志在本标签页刷新后仍保留。切换会话不会转移
+其他会话的未决命令。队列提升在后端原子地将原条目转为指导，保留附件，不会删除后再补发另一条消息。
+
 停止请求、进程退出、审批到期和一轮完成是不同事实。Core 通过持久事件与状态机恢复；副作用未知时可能需要人工确认，不能保证外部系统操作“恰好一次”，也不能用重新发相同自然语言来代替恢复。
 
 后台故障后：先保留 home 和错误，查看 `daemon status`，用同一 profile 启动后检查历史，再决定继续。不要删除 SQLite、owner 或审计记录强行重开。数据库的备份应在停止对应实例后保存同一 home 中相互关联的数据；单独复制正在写入的数据库文件不构成可靠备份。

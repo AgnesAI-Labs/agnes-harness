@@ -157,6 +157,41 @@ describe('reconnect', () => {
     await it.return?.()
   })
 
+  it('recovers other sessions and emits reconnected when one replay is uncertain', async () => {
+    let replay = false
+    const f = flakyEndpoint({
+      initialize: stockInit,
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+      '_agnes/v1/submit': (params) => {
+        if (!replay)
+          throw Object.assign(new Error('OVERLOADED'), { code: -32001, data: { code: 'OVERLOADED' } })
+        return (params as { payload: { sessionId: string } }).payload.sessionId === 's'
+          ? { replayed: false, status: 'uncertain' }
+          : { seq: 9, replayed: true }
+      },
+      '_agnes/v1/submit.ack': () => ({}),
+    })
+    const journal = memoryJournal('cid')
+    const c = client(f, { journal })
+    const s = await c.session.attach('s')
+    const other = await c.session.attach('other')
+    await expect(s.steer('unknown')).rejects.toMatchObject({ code: -32001 })
+    await expect(other.followUp('recover')).rejects.toMatchObject({ code: -32001 })
+    replay = true
+    const reconnected = new Promise((resolve) => c.on('reconnected', resolve))
+    f.drop()
+    await reconnected
+    expect(await journal.pending('s')).toMatchObject([{ state: 'needs-confirmation' }])
+    expect(await journal.pending('other')).toEqual([])
+    expect(
+      f.calls
+        .filter((call) => call.method === '_agnes/v1/session.attach')
+        .slice(-2)
+        .map((call) => call.params),
+    ).toEqual([expect.objectContaining({ sessionId: 's' }), expect.objectContaining({ sessionId: 'other' })])
+    expect(c.connectionState).toBe('connected')
+  })
+
   it('re-attaches under the new generation on GENERATION_STALE, fromSeq unchanged', async () => {
     const attaches: Array<{ cursor?: { fromSeq: number; generation: number } }> = []
     let serverGen = 1

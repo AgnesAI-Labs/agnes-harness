@@ -1604,7 +1604,7 @@ export function registerAgnes(
         // Control targets the already pinned session. Publication must not block a human stop.
         const seq = await (kind === 'control'
           ? entry.session.controls.apply(
-              payload.action as 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
+              payload.action as SessionControlParams['action'],
               connActor(c.conn),
               admissionId,
               typeof payload.itemId === 'string' ? payload.itemId : undefined,

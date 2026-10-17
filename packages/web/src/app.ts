@@ -41,7 +41,7 @@ import type {
 } from '@agnes/protocol'
 import {
   createClient,
-  memoryJournal,
+  localStorageJournal,
   type PermissionOutcome,
   type PermissionRequest,
   type Session,
@@ -725,7 +725,7 @@ const wsUrl = shellConfig.wsUrl
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
   auth: { kind: 'local' },
-  journal: memoryJournal(),
+  journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
 const stopJobsSessions = bindJobsSessions({
   current: () => current?.id,

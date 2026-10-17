@@ -359,12 +359,14 @@ export async function handleCommand(
       return session.controls.state(typeof p.afterSeq === 'number' ? p.afterSeq : undefined)
     case 'control':
       if (
-        !['pause', 'resume', 'cancel', 'interrupt', 'child-stop', 'child-continue'].includes(String(p.action))
+        !['pause', 'resume', 'cancel', 'interrupt', 'promote', 'child-stop', 'child-continue'].includes(
+          String(p.action),
+        )
       )
         throw new TypeError('invalid session control')
       return session.controls
         .apply(
-          p.action as 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
+          p.action as import('@agnes/protocol/gen/agnes-v1').SessionControlParams['action'],
           p.actor as Actor,
           String(p.admissionId),
           typeof p.itemId === 'string' ? p.itemId : undefined,
