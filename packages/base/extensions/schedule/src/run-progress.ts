@@ -74,7 +74,7 @@ export function observeProgress(state: RunProgress, event: EventEnvelope, now: n
   } else if (event.type === 'turn/start') {
     const data = event.data as { turn: number; trigger: string }
     if (state.turn === undefined || data.trigger === 'approval-resume')
-      next = { ...next, turn: data.turn, outcome: 'running' }
+      next = { ...next, turn: data.turn, outcome: 'running', needsAttention: false }
   } else if (event.type === 'turn/end') {
     const data = event.data as { turn: number; reason: string }
     if (next.turn !== undefined && data.turn !== next.turn) return state

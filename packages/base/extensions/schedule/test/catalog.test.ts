@@ -386,7 +386,19 @@ it.each(['approve', 'expire', 'refuse'] as const)(
         }),
       )
       catalog.observeSession('sess', event('turn/start', { turn: 2, trigger: 'approval-resume' }))
-      catalog.observeSession('sess', event('turn/end', { turn: 2, reason: 'completed' }))
+      // Another question after a human continuation must request another notification.
+      const second = { ...pending, handle: { id: 'd2', sessionId: 'sess' } }
+      catalog.observeSession('sess', event('decision/state', second))
+      expect(catalog.observeSession('sess', event('turn/end', { turn: 2, reason: 'parked' }))).toBe(true)
+      catalog.observeSession(
+        'sess',
+        event('decision/state', {
+          ...second,
+          result: { reason: 'answered', response: { option: 'allowed-once' } },
+        }),
+      )
+      catalog.observeSession('sess', event('turn/start', { turn: 3, trigger: 'approval-resume' }))
+      catalog.observeSession('sess', event('turn/end', { turn: 3, reason: 'completed' }))
       expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('ran')
     } else if (action === 'expire') {
       now += 1000
