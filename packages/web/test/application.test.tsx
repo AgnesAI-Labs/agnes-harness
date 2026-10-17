@@ -4,13 +4,14 @@ import type { ApplicationState } from '@agnes/protocol'
 import {
   applicationBrand,
   applicationIdentity,
+  homeEntries,
   homeNavigation,
   LocaleService,
   presentationDefault,
   reserveHomeEntry,
 } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { projectApplication, updateApplicationTitle } from '../src/application.js'
+import { openApplicationHome, projectApplication, updateApplicationTitle } from '../src/application.js'
 
 afterEach(() => {
   projectApplication(undefined)
@@ -138,6 +139,19 @@ it('never resolves an adopted home against another package with the same page na
       candidates: [],
     })
     expect(homeNavigation.getSnapshot()).toBeUndefined()
+    const stop = homeEntries.subscribe(openApplicationHome)
+    off()
+    const own = reserveHomeEntry(
+      'a-row',
+      { id: 'overview', icon: 'home', titleKey: 'A', order: 0, component: () => null },
+      'a',
+    )
+    try {
+      expect(homeNavigation.getSnapshot()?.pageRef).toBe('a#overview')
+    } finally {
+      stop()
+      own()
+    }
   } finally {
     off()
     homeNavigation.close()
