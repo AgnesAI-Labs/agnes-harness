@@ -106,7 +106,8 @@ One turn per scenario writes a single file under `notes/`. Every probe checks th
 outside `notes/` still holds exactly the seed files with their expected contents, and in the write
 turn that the new file lists exactly the expected names. Answers are checked by exact names and by
 `KEY=value` lines that the goals ask for, so a count cannot pass by a digit that appears by chance.
-The probes need only the Python standard library.
+The probes need only the Python standard library, but the write probes call `str.removesuffix`, so
+the interpreter that `--python`/`BENCH_PYTHON` points at must be Python 3.9 or newer.
 
 ```sh
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
