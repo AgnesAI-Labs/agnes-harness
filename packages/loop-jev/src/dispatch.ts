@@ -184,6 +184,8 @@ function scopeOf(calls: PendingCall[], cwd: string): string {
 /**
  * The one view a dispatch leaves: the first call names it, the results' text is its evidence, and
  * the references come from every call's result (a read batch yields each file that was read).
+ * Takes one call or a read batch (observeDispatch rejects a mixed batch first); `refs.count` is
+ * the number extracted, before the view's caps.
  */
 export function viewForDispatch(input: { calls: PendingCall[]; results: ToolResult[]; cwd: string }): {
   view: ObservationView

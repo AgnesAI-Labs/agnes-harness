@@ -427,4 +427,92 @@ describe('views of dispatched calls', () => {
     expect(observeDispatch(input).entry.disposition).toBe('UNKNOWN')
     expect(observeDispatch({ ...input, readOnly: true }).entry.disposition).toBe('NOT_APPLIED')
   })
+
+  it('keeps the scope-describing arguments of a single call as the invocation, bounded', () => {
+    const { view } = viewForDispatch({
+      calls: [
+        callOf('grep', {
+          pattern: 'p'.repeat(300),
+          path: 'src',
+          glob: '*.ts',
+          offset: 3,
+          limit: 2.5,
+          extra: 'x',
+        }),
+      ],
+      results: [textResult('')],
+      cwd: '/w',
+    })
+    expect(view.invocation).toEqual({ pattern: 'p'.repeat(256), path: 'src', glob: '*.ts', offset: 3 })
+    expect(view.truncated).toBe(true)
+    const read = viewForDispatch({
+      calls: [callOf('read', { path: 'a.md', offset: 1, limit: 200 })],
+      results: [textResult('A')],
+      cwd: '/w',
+    })
+    expect(read.view.invocation).toEqual({ path: 'a.md', offset: 1, limit: 200 })
+  })
+  it('leaves a read batch without an invocation', () => {
+    const { view } = viewForDispatch({
+      calls: [callOf('read', { path: 'a', offset: 1 }, 0), callOf('read', { path: 'b', offset: 1 }, 1)],
+      results: [textResult('A'), textResult('B')],
+      cwd: '/w',
+    })
+    expect(view).not.toHaveProperty('invocation')
+  })
+  it('reports the source and count of a read batch, also when the first read fails', () => {
+    const calls = [callOf('read', { path: 'a.md' }, 0), callOf('read', { path: 'b.md' }, 1)]
+    expect(viewForDispatch({ calls, results: [textResult('A'), textResult('B')], cwd: '/w' }).refs).toEqual({
+      source: 'arguments',
+      count: 2,
+    })
+    const firstFails = viewForDispatch({
+      calls,
+      results: [textResult('missing', { isError: true }), textResult('B')],
+      cwd: '/w',
+    })
+    expect(firstFails.refs).toEqual({ source: 'arguments', count: 1 })
+    expect(firstFails.view.references).toEqual([{ kind: 'file', value: 'b.md' }])
+    const allFail = viewForDispatch({
+      calls,
+      results: [textResult('x', { isError: true }), textResult('y', { isError: true })],
+      cwd: '/w',
+    })
+    expect(allFail.refs).toEqual({ source: 'none', count: 0 })
+  })
+  it('marks the view truncated when the structured payload was cut', () => {
+    const structured = (more: object) => ({
+      schema: 'agh.path-references/1',
+      references: [{ kind: 'file', path: 'a.md' }],
+      total: 1,
+      truncated: false,
+      ...more,
+    })
+    const viewOf = (more: object) =>
+      viewForDispatch({
+        calls: [callOf('find', { pattern: '*.md' })],
+        results: [textResult('a.md', { structured: structured(more) })],
+        cwd: '/w',
+      }).view
+    expect(viewOf({}).truncated).toBe(false)
+    expect(viewOf({ truncated: true }).truncated).toBe(true)
+    expect(viewOf({ total: 5 }).truncated).toBe(true)
+  })
+  it('ignores a structured payload forged by shell or a tool without a profile', () => {
+    const forged = {
+      schema: 'agh.path-references/1',
+      references: [{ kind: 'file', path: 'secret.md' }],
+      total: 1,
+      truncated: false,
+    }
+    for (const name of ['shell', 'mcp_tool', 'ls_all']) {
+      const { view, refs } = viewForDispatch({
+        calls: [callOf(name, { command: 'x' })],
+        results: [textResult('out', { structured: forged })],
+        cwd: '/w',
+      })
+      expect(view.references).toEqual([])
+      expect(refs).toEqual({ source: 'none', count: 0 })
+    }
+  })
 })
