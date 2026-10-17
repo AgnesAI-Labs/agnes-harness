@@ -26,6 +26,7 @@ export function createEcosystemContexts(
   const { publicationDispatch } = ctx.gates
   const { adapters } = proc
   const { baseContext } = seamContexts
+  const sessionTasks: { current?: SeamInitContext['sessionTasks'] } = {}
   const privacyTrajectory: { current?: SeamInitContext['privacyTrajectory'] } = {}
   const hookCommands =
     adapters.platform.os === 'win32'
@@ -43,6 +44,7 @@ export function createEcosystemContexts(
     return {
       ...baseContext(owner),
       sandbox: seams.sandbox,
+      ...(owner === '@agnes/base' && sessionTasks.current ? { sessionTasks: sessionTasks.current } : {}),
       ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
         ? { searchProvider: deps.searchProvider }
         : {}),
@@ -64,5 +66,5 @@ export function createEcosystemContexts(
   }
   const ecosystemContext = (owner: string, extensionId: string): SeamInitContext =>
     buildEcosystemContext(owner, extensionId)
-  return { buildEcosystemContext, ecosystemContext, privacyTrajectory }
+  return { buildEcosystemContext, ecosystemContext, privacyTrajectory, sessionTasks }
 }

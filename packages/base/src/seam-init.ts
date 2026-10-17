@@ -130,7 +130,29 @@ export type SeamProfileView = {
   preset: Record<string, unknown>
 }
 
+export interface SessionTasks {
+  watch(
+    session: SessionRef,
+    listener: (event: {
+      turn: number
+      reason: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    }) => void,
+  ): () => void
+  generate(
+    session: SessionRef,
+    input: {
+      turn: number
+      label: string
+      system: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    },
+    signal: AbortSignal,
+  ): Promise<string | undefined>
+}
+
 export type SeamInitContext = {
+  sessionTasks?: SessionTasks
   searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{

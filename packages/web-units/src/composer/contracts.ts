@@ -68,6 +68,8 @@ export type PermissionPickerProps = {
 
 /** Host adapters: this package has no dependency on the Web application or its pickers. */
 export interface ComposerDependencies {
+  loadHint?: import('./hint.js').HintLoader
+  subscribeHintInvalidation?: (listener: () => void) => () => void
   /** Locale-bound translate (host injects `LocaleService#t`); called during render, never cached. */
   translate: Translate
   /** Trigger plus popover for the session model; the host owns the catalog and the confirmed choice. */
@@ -106,7 +108,12 @@ export interface ComposerView {
   hasSession: boolean
   /** `action` is the one-click way out of the state the hint describes: switch to this model. */
   hint: { kind: 'shortcut' | 'state'; text: string; action?: { label: string; model: ModelPickerOption } }
-  input: { disabled: boolean; placeholder: string; exampleHint?: boolean }
+  input: {
+    disabled: boolean
+    placeholder: string
+    exampleHint?: boolean
+    hintScope?: import('./hint.js').HintScope
+  }
   loading: boolean
   model: ModelPickerState
   modelSettings?: {
