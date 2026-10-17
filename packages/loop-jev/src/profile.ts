@@ -62,6 +62,7 @@ const PROFILES: Readonly<Record<BuiltinTool, Profile>> = {
 }
 
 const isBuiltin = (name: string): name is BuiltinTool => (BUILTIN_TOOLS as readonly string[]).includes(name)
+const isDiscovery = (name: string): boolean => (DISCOVERY_TOOLS as readonly string[]).includes(name)
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -89,7 +90,7 @@ export function completeArgs(schema: unknown, args: JsonObject): boolean {
   return true
 }
 
-/** The profile of a built-in tool, or `null` for any other tool (stage one offers only the built-ins). */
+/** The profile of a built-in tool, or `null` for any other tool (only the built-in tools have a profile). */
 export function resolveTool(tool: ToolSchema): ResolvedTool | null {
   if (!isBuiltin(tool.name)) return null
   const profile = PROFILES[tool.name]
@@ -139,6 +140,8 @@ export function decisionTools(
  */
 export function normalizePath(path: unknown, cwd: string): string | null {
   if (typeof path !== 'string' || path.length === 0 || path.includes(String.fromCharCode(0))) return null
+  // `artifact://`, `session-file://` and the like name things outside the workspace.
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)) return null
   const windows = /^[A-Za-z]:[\\/]/.test(cwd)
   const flat = (text: string) => (windows ? text.replace(/\\/g, '/') : text)
   const full = flat(path)
@@ -225,7 +228,8 @@ function failureOutcome(name: string, text: string): Outcome {
       ? NOT_APPLIED(stepError('EXECUTION_FAILED', 'recoverable', text))
       : { status: 'failed', disposition: 'UNKNOWN', error: stepError('EFFECT_UNKNOWN', 'unsafe', text) }
   }
-  if (isBuiltin(name)) return NOT_APPLIED(stepError('EXECUTION_FAILED', 'recoverable', text))
+  if (isBuiltin(name) || isDiscovery(name))
+    return NOT_APPLIED(stepError('EXECUTION_FAILED', 'recoverable', text))
   return { status: 'failed', disposition: 'UNKNOWN', error: stepError('EFFECT_UNKNOWN', 'unsafe', text) }
 }
 
@@ -243,7 +247,7 @@ function entryOf(
   },
 ): HistoryEntry {
   const { op, target, outcome, text, isError, calls } = fields
-  const exit = exitOf(text)
+  const exit = op === 'shell' ? exitOf(text) : undefined
   const labels = target === null ? [] : Array.isArray(target) ? target : [target]
   const command = op === 'shell' && calls.length === 1 ? commandOf(calls[0]?.args ?? null) : null
   return {

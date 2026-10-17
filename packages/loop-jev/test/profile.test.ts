@@ -39,7 +39,7 @@ describe('tool profiles', () => {
       'List one workspace directory, including file and directory references. Use path for scoped discovery; not recursive.',
     )
   })
-  it('computes stage-one toolNames: built-ins in the catalog plus discovery tools, sorted, never compact or run_code', () => {
+  it('computes toolNames: built-ins in the catalog plus discovery tools, sorted, never compact or run_code', () => {
     const view = turnView({ tools: ['write', 'read', 'tool_search', 'compact', 'run_code', 'todo', 'ls'] })
     expect(stageOneToolNames(view)).toEqual(['ls', 'read', 'tool_search', 'write'])
     expect(decisionTools(view, ['ls', 'read', 'tool_search', 'write']).map((t) => t.name)).toEqual([
@@ -60,6 +60,9 @@ describe('tool profiles', () => {
     expect(normalizePath('src/../a.ts', '/w')).toBeNull()
     expect(normalizePath('/etc/passwd', '/w')).toBeNull()
     expect(normalizePath('./b.md', '/w')).toBe('b.md')
+    expect(normalizePath('artifact://abc?size=1', '/w')).toBeNull()
+    expect(normalizePath('session-file://notes/a.md', '/w')).toBeNull()
+    expect(normalizePath('session-image://x', '/w')).toBeNull()
     expect(normalizePath('/w', '/w')).toBe('.')
     expect(normalizePath('/w/', '/w/')).toBe('.')
     expect(normalizePath('/work/a.ts', '/w')).toBeNull()
@@ -70,7 +73,7 @@ describe('tool profiles', () => {
   })
 })
 
-describe('classifyResult (spec §4.9 table)', () => {
+describe('classifyResult', () => {
   it('success of read records read_files and a file note', () => {
     const o = classifyResult({ ...base, name: 'read', args: { path: '/w/src/a.ts' }, result: ok('abc') })
     expect(o.entry).toMatchObject({
@@ -215,6 +218,51 @@ describe('classifyResult (spec §4.9 table)', () => {
     const first = classifyReadBatch({ ...base, calls: [a, b], results: [ok('A'), ok('B')] })
     const second = classifyReadBatch({ ...base, calls: [b, a], results: [ok('B'), ok('A')] })
     expect(first.entry.intentFp).toBe(second.entry.intentFp)
+  })
+  it.each(['artifact://abc?size=1', 'session-file://notes/a.md', 'session-image://x'])(
+    'a read of %s leaves no target, read_files or note',
+    (path) => {
+      const o = classifyResult({ ...base, name: 'read', args: { path }, result: ok('content') })
+      expect(o.entry).toMatchObject({ status: 'succeeded', target: null })
+      expect(o.entry.read_files).toBeUndefined()
+      expect(o.notes).toEqual([])
+    },
+  )
+  it('records an exit code only for shell', () => {
+    const read = classifyResult({
+      ...base,
+      name: 'read',
+      args: { path: 'run.log' },
+      result: ok('done\n[exit 2]'),
+    })
+    expect(read.entry.exit).toBeUndefined()
+    const calls = [{ name: 'read', args: { path: 'run.log' } }]
+    expect(classifyReadBatch({ ...base, calls, results: [ok('[exit 3]')] }).entry.exit).toBeUndefined()
+  })
+  it.each(['grep', 'find', 'tool_search', 'tool_describe'])(
+    '%s error is EXECUTION_FAILED and recoverable',
+    (name) => {
+      const o = classifyResult({ ...base, name, args: { pattern: 'x' }, result: err('bad pattern') })
+      expect(o.entry).toMatchObject({
+        status: 'failed',
+        disposition: 'NOT_APPLIED',
+        error: { code: 'EXECUTION_FAILED', recoverability: 'recoverable' },
+      })
+    },
+  )
+  it('outcomeUnknown with TOOL_NOT_STARTED is NOT_APPLIED and recoverable', () => {
+    const o = outcomeUnknown({
+      ...base,
+      calls: [{ name: 'write', args: { path: 'a.txt', content: 'x' } }],
+      code: 'TOOL_NOT_STARTED',
+    })
+    expect(o.entry).toMatchObject({
+      status: 'failed',
+      disposition: 'NOT_APPLIED',
+      target: 'a.txt',
+      error: { code: 'TOOL_NOT_STARTED', recoverability: 'recoverable', stage: 'dispatch' },
+    })
+    expect(o.notes).toEqual([])
   })
   it('keeps only bounded excerpts and marks escalated steps', () => {
     const big = 'x'.repeat(200_000)
