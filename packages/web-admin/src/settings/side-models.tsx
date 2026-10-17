@@ -20,7 +20,7 @@ import {
   UiLocaleProvider,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { settingsCatalog } from './locales.js'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.js'
 
@@ -48,6 +48,8 @@ type ModelDraft = {
   name: string
   contextWindow: string
   maxTokens: string
+  /** The pricing fold: collapsed rows carry no cost, whatever the inputs hold. */
+  showCost: boolean
   costInput: string
   costOutput: string
   costCacheRead: string
@@ -57,6 +59,8 @@ type ModelDraft = {
 type EditorDraft = {
   accountId: string
   isNew: boolean
+  /** The generated id a new entry falls back to when its label yields no slug. */
+  fallbackId: string
   label: string
   baseUrl: string
   credentialRef: string
@@ -106,6 +110,7 @@ function blankModel(): ModelDraft {
     name: '',
     contextWindow: '',
     maxTokens: '',
+    showCost: false,
     costInput: '',
     costOutput: '',
     costCacheRead: '',
@@ -120,6 +125,7 @@ function toDraft(model: ConfigModel): ModelDraft {
     name: model.name,
     contextWindow: String(model.contextWindow ?? ''),
     maxTokens: String(model.maxTokens ?? ''),
+    showCost: model.cost !== undefined,
     costInput: model.cost ? String(model.cost.input) : '',
     costOutput: model.cost ? String(model.cost.output) : '',
     costCacheRead: model.cost ? String(model.cost.cacheRead) : '',
@@ -133,7 +139,7 @@ function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefined {
   const models: ConfigModel[] = []
   for (const row of rows) {
     const costs = [row.costInput, row.costOutput, row.costCacheRead, row.costCacheWrite]
-    const priced = costs.some((value) => value.trim() !== '')
+    const priced = row.showCost && costs.some((value) => value.trim() !== '')
     if (
       !MODEL_ID.test(row.id) ||
       row.name.trim() === '' ||
@@ -161,6 +167,49 @@ function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefined {
     })
   }
   return new Set(models.map((model) => model.id)).size === models.length ? models : undefined
+}
+
+/**
+ * What a new entry pre-fills per adapter, so the form asks only for a credential. Every value is a
+ * draft: the user can edit all of it before saving. Keyed by adapter id so the next payload-only
+ * adapter gets its own entry instead of a branch.
+ */
+const ADAPTER_PRESETS: Record<
+  SideProviderId,
+  { labelKey: string; baseUrl: string; models: () => ModelDraft[] }
+> = {
+  'typesafe-systemone': {
+    labelKey: 'side.prefillLabel.typesafe-systemone',
+    baseUrl: DEFAULT_BASE_URL,
+    models: () => [
+      {
+        ...blankModel(),
+        id: 'typesafe/jev-1.13-20260917',
+        name: 'Jev 1.13 (2026-09-17)',
+        contextWindow: '65536',
+        maxTokens: '32768',
+      },
+    ],
+  },
+}
+
+/**
+ * The account id a new entry gets, derived from its label: lowercase kebab, within the account-id
+ * rule, falling back to the generated id when the label has no ASCII letters or digits, and
+ * suffixed when another account already has it.
+ */
+function accountIdFor(label: string, taken: ReadonlySet<string>, fallback: string): string {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .replace(/-+$/g, '')
+  const root = slug || fallback
+  let candidate = root
+  for (let suffix = 2; taken.has(candidate); suffix++)
+    candidate = `${root.slice(0, 44)}-${suffix}`
+  return candidate
 }
 
 export function SideModelsPanel({
@@ -228,6 +277,21 @@ function SideModels({
   )
   const [draft, setDraft] = useState<EditorDraft>()
   const [removing, setRemoving] = useState<string>()
+  const [copied, setCopied] = useState<string>()
+  const copyTimers = useRef<number[]>([])
+  useEffect(() => {
+    const timers = copyTimers.current
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [])
+  const copyRoute = async (accountId: string, route: string) => {
+    const board = navigator.clipboard
+    if (!board) return
+    await board.writeText(route)
+    setCopied(accountId)
+    copyTimers.current.push(
+      window.setTimeout(() => setCopied((current) => (current === accountId ? undefined : current)), 2000),
+    )
+  }
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [testState, setTestState] = useState('')
@@ -248,16 +312,19 @@ function SideModels({
   }, [credentials])
 
   const revision = configuration?.revision ?? 0
+  const takenIds = new Set(accounts.map((row) => row.accountId))
   const openAdd = () => {
     setStatus('')
     setTestState('')
+    const preset = ADAPTER_PRESETS[draftProvider()]
     setDraft({
-      accountId: `jev-${crypto.randomUUID().slice(0, 8)}`,
+      accountId: '',
       isNew: true,
-      label: '',
-      baseUrl: DEFAULT_BASE_URL,
+      fallbackId: `jev-${crypto.randomUUID().slice(0, 8)}`,
+      label: t(preset.labelKey),
+      baseUrl: preset.baseUrl,
       credentialRef: '',
-      models: [blankModel()],
+      models: preset.models(),
     })
   }
   const openEdit = (account: ConfigAccount) => {
@@ -266,6 +333,7 @@ function SideModels({
     setDraft({
       accountId: account.accountId,
       isNew: false,
+      fallbackId: '',
       label: account.label,
       baseUrl: account.baseUrl,
       credentialRef: '',
@@ -310,7 +378,7 @@ function SideModels({
     try {
       const saved = await client.save({
         providerId: draftProvider(),
-        accountId: draft.accountId,
+        accountId: draft.isNew ? accountIdFor(draft.label, takenIds, draft.fallbackId) : draft.accountId,
         label: draft.label.trim(),
         baseUrl: draft.baseUrl,
         ...(draft.credentialRef === '' ? {} : { credentialRef: draft.credentialRef }),
@@ -425,9 +493,23 @@ function SideModels({
                     {t('side.modelCount', { count: account.models.length })} ·{' '}
                     {t(account.credentialConfigured ? 'side.credentialConfigured' : 'side.credentialMissing')}
                   </span>
+                  <br />
+                  <span data-testid="side-model-route-hint">{t('side.routeHint')}</span>
                 </>
               }
             >
+              <Button
+                data-testid={`side-model-copy-${account.accountId}`}
+                disabled={busy}
+                onClick={() => void copyRoute(account.accountId, account.route)}
+              >
+                {t('side.copyRoute')}
+              </Button>
+              {copied === account.accountId && (
+                <span role="status" data-testid={`side-model-copied-${account.accountId}`}>
+                  {t('side.copied')}
+                </span>
+              )}
               <StateSwitch
                 testId={`side-model-toggle-${account.accountId}`}
                 label={t('side.enabled')}
@@ -476,7 +558,18 @@ function SideModels({
                 ))}
               </SettingsSelect>
             </SettingsItem>
-            <SettingsItem label={t('side.label')}>
+            <SettingsItem
+              label={t('side.label')}
+              description={
+                draft.isNew ? (
+                  <span data-testid="side-route-preview">
+                    {t('side.routePreview', {
+                      route: `account-${accountIdFor(draft.label, takenIds, draft.fallbackId)}`,
+                    })}
+                  </span>
+                ) : undefined
+              }
+            >
               <SettingsInput
                 data-testid="side-label"
                 value={draft.label}
@@ -567,38 +660,50 @@ function SideModels({
                       disabled={busy}
                       onChange={(event) => patchModel(index, { maxTokens: event.target.value })}
                     />
-                    <SettingsInput
-                      data-testid={`side-model-cost-input-${index}`}
-                      placeholder={t('side.modelCost')}
-                      inputMode="decimal"
-                      value={row.costInput}
+                    <Button
+                      data-testid={`side-model-cost-toggle-${index}`}
+                      aria-expanded={row.showCost}
                       disabled={busy}
-                      onChange={(event) => patchModel(index, { costInput: event.target.value })}
-                    />
-                    <SettingsInput
-                      data-testid={`side-model-cost-output-${index}`}
-                      placeholder={t('side.costOutput')}
-                      inputMode="decimal"
-                      value={row.costOutput}
-                      disabled={busy}
-                      onChange={(event) => patchModel(index, { costOutput: event.target.value })}
-                    />
-                    <SettingsInput
-                      data-testid={`side-model-cost-cache-read-${index}`}
-                      placeholder={t('side.costCacheRead')}
-                      inputMode="decimal"
-                      value={row.costCacheRead}
-                      disabled={busy}
-                      onChange={(event) => patchModel(index, { costCacheRead: event.target.value })}
-                    />
-                    <SettingsInput
-                      data-testid={`side-model-cost-cache-write-${index}`}
-                      placeholder={t('side.costCacheWrite')}
-                      inputMode="decimal"
-                      value={row.costCacheWrite}
-                      disabled={busy}
-                      onChange={(event) => patchModel(index, { costCacheWrite: event.target.value })}
-                    />
+                      onClick={() => patchModel(index, { showCost: !row.showCost })}
+                    >
+                      {t('side.costToggle')}
+                    </Button>
+                    {row.showCost && (
+                      <>
+                        <SettingsInput
+                          data-testid={`side-model-cost-input-${index}`}
+                          placeholder={t('side.modelCost')}
+                          inputMode="decimal"
+                          value={row.costInput}
+                          disabled={busy}
+                          onChange={(event) => patchModel(index, { costInput: event.target.value })}
+                        />
+                        <SettingsInput
+                          data-testid={`side-model-cost-output-${index}`}
+                          placeholder={t('side.costOutput')}
+                          inputMode="decimal"
+                          value={row.costOutput}
+                          disabled={busy}
+                          onChange={(event) => patchModel(index, { costOutput: event.target.value })}
+                        />
+                        <SettingsInput
+                          data-testid={`side-model-cost-cache-read-${index}`}
+                          placeholder={t('side.costCacheRead')}
+                          inputMode="decimal"
+                          value={row.costCacheRead}
+                          disabled={busy}
+                          onChange={(event) => patchModel(index, { costCacheRead: event.target.value })}
+                        />
+                        <SettingsInput
+                          data-testid={`side-model-cost-cache-write-${index}`}
+                          placeholder={t('side.costCacheWrite')}
+                          inputMode="decimal"
+                          value={row.costCacheWrite}
+                          disabled={busy}
+                          onChange={(event) => patchModel(index, { costCacheWrite: event.target.value })}
+                        />
+                      </>
+                    )}
                     {draft.models.length > 1 && (
                       <Button
                         data-testid={`side-model-row-remove-${index}`}

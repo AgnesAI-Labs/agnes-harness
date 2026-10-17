@@ -15,6 +15,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
   document.documentElement.lang = 'en'
+  delete (navigator as { clipboard?: unknown }).clipboard
 })
 
 const JEV_MODEL = {
@@ -165,6 +166,47 @@ it('lists only payload-only accounts with the badge, summary and fixed group cop
   expect([...(adapter?.options ?? [])].map((item) => item.value)).toEqual(['typesafe-systemone'])
 })
 
+it('prefills the Jev template for a new entry and keeps every prefilled field a draft', async () => {
+  const api = client([chatAccount])
+  const { host } = await mount(api, { accounts: [chatAccount] })
+  await click(host, 'side-model-add')
+  expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
+  expect(input(host, 'side-model-id-0')?.value).toBe('typesafe/jev-1.13-20260917')
+  expect(input(host, 'side-model-name-0')?.value).toBe('Jev 1.13 (2026-09-17)')
+  expect(input(host, 'side-model-context-0')?.value).toBe('65536')
+  expect(input(host, 'side-model-tokens-0')?.value).toBe('32768')
+  // The label is prefilled too; the credential remains the user's to pick.
+  expect(input(host, 'side-label')?.value).toBe('Jev')
+  // Prefill is a draft: an edited id is what gets saved.
+  await type(host, 'side-model-id-0', 'typesafe/jev-1.14-20261020')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await click(host, 'side-save')
+  const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
+  expect(sent).toMatchObject({
+    model: 'typesafe/jev-1.14-20261020',
+    models: [{ id: 'typesafe/jev-1.14-20261020', name: 'Jev 1.13 (2026-09-17)', contextWindow: 65536, maxTokens: 32768 }],
+  })
+})
+
+it('shows the saved route name with a copy button and the loop-plugin hint', async () => {
+  const written: string[] = []
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (text: string) => {
+        written.push(text)
+      },
+    },
+  })
+  const { host } = await mount(client())
+  const row = host.querySelector('[data-testid="side-model-jev"]')
+  expect(row?.textContent).toContain('account-jev')
+  expect(row?.textContent).toContain('jev.route')
+  await click(host, 'side-model-copy-jev')
+  expect(written).toEqual(['account-jev'])
+  expect(host.querySelector('[data-testid="side-model-copied-jev"]')?.textContent).toContain('Copied')
+})
+
 it('shows the group copy in zh-CN when the document is zh-CN', async () => {
   document.documentElement.lang = 'zh-CN'
   const { host } = await mount(client())
@@ -186,6 +228,8 @@ it('adds an account through the editor: adapter fixed, credential picked or crea
   await type(host, 'side-model-name-0', 'Jev 1.13')
   await type(host, 'side-model-context-0', '65536')
   await type(host, 'side-model-tokens-0', '32768')
+  // Pricing is a fold: open it before entering the four prices.
+  await click(host, 'side-model-cost-toggle-0')
   await type(host, 'side-model-cost-input-0', '0.042')
   await type(host, 'side-model-cost-output-0', '0')
   await type(host, 'side-model-cost-cache-read-0', '0')
@@ -307,4 +351,62 @@ it('keeps everything read-only when saving is not allowed', async () => {
   expect(host.querySelector<HTMLButtonElement>('[data-testid="side-model-edit-jev"]')?.disabled).toBe(true)
   expect(host.querySelector<HTMLButtonElement>('[data-testid="side-model-remove-jev"]')?.disabled).toBe(true)
   expect(host.querySelector<HTMLButtonElement>('[data-testid="side-model-toggle-jev"]')?.disabled).toBe(true)
+})
+
+it('derives the route from the label live and disambiguates collisions with existing accounts', async () => {
+  const api = client()
+  const { host } = await mount(api)
+  await click(host, 'side-model-add')
+  expect(input(host, 'side-label')?.value).toBe('Jev')
+  // The label is prefilled, and account-jev is taken: the preview disambiguates with a suffix.
+  expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain(
+    'account-jev-2',
+  )
+  await type(host, 'side-label', 'My Side Model')
+  expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain(
+    'account-my-side-model',
+  )
+  // A label with no ASCII letters or digits falls back to a generated id.
+  await type(host, 'side-label', '纯中文')
+  expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toMatch(
+    /account-jev-[0-9a-f]{8}/,
+  )
+  // The derived id is what gets saved.
+  await type(host, 'side-label', 'My Side Model')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await click(host, 'side-save')
+  expect((api.save.mock.calls[0]?.[0] as Record<string, unknown>).accountId).toBe('my-side-model')
+})
+
+it('keeps pricing collapsed by default and only saves it when expanded with values', async () => {
+  const api = client([chatAccount])
+  const { host } = await mount(api, { accounts: [chatAccount] })
+  await click(host, 'side-model-add')
+  expect(host.querySelector('[data-testid="side-model-cost-input-0"]')).toBeNull()
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await click(host, 'side-save')
+  const first = api.save.mock.calls[0]?.[0] as Record<string, unknown>
+  expect((first.models as { cost?: unknown }[])[0]?.cost).toBeUndefined()
+
+  await click(host, 'side-model-add')
+  await click(host, 'side-model-cost-toggle-0')
+  await type(host, 'side-model-cost-input-0', '0.042')
+  await type(host, 'side-model-cost-output-0', '0')
+  await type(host, 'side-model-cost-cache-read-0', '0')
+  await type(host, 'side-model-cost-cache-write-0', '0')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await click(host, 'side-save')
+  const second = api.save.mock.calls[1]?.[0] as Record<string, unknown>
+  expect((second.models as { cost?: unknown }[])[0]?.cost).toEqual({
+    input: 0.042,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  })
+})
+
+it('opens the pricing fold for a saved model that has one', async () => {
+  const { host } = await mount(client())
+  await click(host, 'side-model-edit-jev')
+  expect(input(host, 'side-model-cost-input-0')?.value).toBe('0.042')
 })
