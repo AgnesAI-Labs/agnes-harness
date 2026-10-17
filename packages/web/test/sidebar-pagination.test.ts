@@ -74,6 +74,12 @@ it('opens only the latest group, pages 5/10/15/17 and collapses without fetching
     [false, 0],
   ])
   const firstRow = s.ui.rows()[0]
+  // Repeated background refreshes keep the loaded page without another page read.
+  await s.ui.refresh()
+  await s.ui.refresh()
+  expect(s.list).toHaveBeenCalledTimes(1)
+  expect(s.ui.rows()[0]).toBe(firstRow)
+  expect(s.ui.snapshot().groups[0]?.loading).toBe(false)
   for (const length of [10, 15, 17]) {
     await s.ui.action('a', 'more')
     expect(s.ui.rows()).toHaveLength(length)
@@ -127,7 +133,7 @@ it.each(['success', 'failure'] as const)('keeps a rename during refresh after a 
   const before = s.ui.rows()
   const late = deferred<PageSessionMeta>()
   s.list.mockImplementationOnce(() => late.promise)
-  const refresh = s.ui.refresh()
+  const refresh = s.ui.refresh(true)
   await vi.waitFor(() => expect(s.list).toHaveBeenCalledTimes(2))
   const renamed = { ...row(0), title: 'Renamed', titleSource: 'user' as const }
   s.ui.patch(renamed)
@@ -226,7 +232,7 @@ it('retries a failed first-page refresh even when already loaded without a next 
   s.list.mockResolvedValue(page)
   await s.ui.refresh()
   s.list.mockRejectedValueOnce(new Error('offline'))
-  await s.ui.refresh()
+  await s.ui.refresh(true)
   expect(s.ui.snapshot().groups[0]).toMatchObject({
     loaded: true,
     stale: false,
@@ -237,6 +243,53 @@ it('retries a failed first-page refresh even when already loaded without a next 
   expect(s.list).toHaveBeenLastCalledWith({ sidebar: { groupId: 'a' }, limit: 5 })
   expect(s.ui.snapshot().groups[0]?.error).toBeUndefined()
   expect(s.ui.rows()).toEqual(page.items)
+})
+
+it('rereads metadata on focus even when the paging revision is unchanged', async () => {
+  const s = setup()
+  await s.ui.refresh()
+  s.list.mockResolvedValueOnce({
+    items: [{ ...row(0), title: 'Renamed elsewhere', titleSource: 'user' }],
+    total: 1,
+    revision: 'v1',
+  })
+  await s.ui.refresh(true)
+  expect(s.ui.rows()[0]?.title).toBe('Renamed elsewhere')
+  expect(s.ui.snapshot()).toMatchObject({
+    loading: false,
+    groups: [expect.objectContaining({ loading: false }), expect.anything()],
+  })
+})
+
+it('waits for changes received during a summary read and preserves a queued metadata refresh', async () => {
+  const s = setup()
+  await s.ui.refresh()
+  const late = deferred<SessionGroupsResult>()
+  s.groups.mockImplementationOnce(() => late.promise)
+  const pending = s.ui.refresh()
+  await Promise.resolve()
+  s.ui.invalidateSession('a0')
+  const metadata = s.ui.refresh(true)
+  s.list.mockResolvedValueOnce({ items: [row(99)], total: 1, revision: 'v2' })
+  s.revision('v2')
+  late.resolve({ items: [], ready: true })
+  await Promise.all([pending, metadata])
+  expect(s.ui.rows()).toEqual([row(99)])
+  expect(s.ui.snapshot().loading).toBe(false)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ loading: false, stale: false, revision: 'v2' })
+})
+
+it('opens the created session group without rereading a freshly loaded first page', async () => {
+  const s = setup()
+  await s.ui.refresh()
+  s.ui.invalidateSession('a99')
+  s.list.mockResolvedValueOnce({ items: [row(99)], total: 1, revision: 'v2' })
+  s.revision('v2')
+  await s.ui.created('a')
+  expect(s.ui.rows()).toEqual([row(99)])
+  expect(s.list).toHaveBeenCalledTimes(2)
+  await s.ui.created('b')
+  expect(s.ui.snapshot().groups[1]).toMatchObject({ opened: true, loaded: true, loading: false })
 })
 
 it('refreshes a first page but keeps multiple pages until an explicit reload after changes', async () => {

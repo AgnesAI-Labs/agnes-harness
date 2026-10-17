@@ -844,7 +844,7 @@ const clientModules = await startClientModules({
         void sidebarPages.action(id, action)
       },
       refreshGroups: () => {
-        void list().catch(showError)
+        void list(undefined, true).catch(showError)
       },
     },
   },
@@ -1544,18 +1544,16 @@ function transcriptMeta(): {
 function searchApproval(limit?: number): void {
   turnController.searchApproval(limit)
 }
-async function list(change?: {
-  sessionId: string
-  cwd?: string
-  created?: boolean
-}): Promise<PageSessionMeta> {
+async function list(
+  change?: { sessionId: string; cwd?: string; created?: boolean },
+  metadata = false,
+): Promise<PageSessionMeta> {
   const epoch = ++listGeneration
   if (change) sidebarPages.invalidateSession(change.sessionId, change.cwd, workspaceRows)
-  await sidebarPages.refresh()
   if (change?.created) {
     const groupId = workspaceRows.find((row) => row.path === change.cwd)?.workspaceId ?? 'unassigned'
     await sidebarPages.created(groupId)
-  }
+  } else await sidebarPages.refresh(metadata)
   const page = { items: sidebarPages.rows() }
   if (epoch !== listGeneration) return page
   const rows = new Map(page.items.map((row) => [row.sessionId, row]))
@@ -2022,7 +2020,7 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
 onWindowFocus(() => {
   if (connected)
     run(async () => {
-      await list()
+      await list(undefined, true)
     })
 })
 const { appearance, skins: skinGroup } = createAppearanceController({
@@ -2094,7 +2092,7 @@ const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
   setConnection,
   async refresh() {
     await modelRefresh.request()
-    await list()
+    await list(undefined, true)
     scheduleClientRosterRead()
   },
   recover(message) {
@@ -2134,7 +2132,7 @@ client.on('notice', (payload) => {
 })
 onPageVisible(() => {
   reconnect.resume()
-  void list().catch(showError)
+  void list(undefined, true).catch(showError)
   void modelRefresh.request().catch(showError)
   scheduleClientRosterRead()
 })
