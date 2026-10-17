@@ -7,7 +7,11 @@ import { loadSuite, type Turn } from '../bench/lib.mjs'
 import { buildSuite } from '../bench/suites/make-read-heavy.mjs'
 
 const path = new URL('../bench/suites/read-heavy.json', import.meta.url).pathname
-const python = ['python3', 'python'].find((name) => spawnSync(name, ['--version']).status === 0)
+// The write probes call `str.removesuffix`, so an interpreter older than Python 3.9 skips the run.
+const python = ['python3', 'python'].find(
+  (name) =>
+    spawnSync(name, ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)']).status === 0,
+)
 const dirs: string[] = []
 afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })

@@ -136,7 +136,10 @@ function listing(
   return { references: out.references, truncated }
 }
 
-/** Text fallback for a search tool whose result has no structured references. `base` is the normalized search root. */
+/**
+ * Text fallback for a search tool whose result has no structured references. `base` is the normalized search root.
+ * Exported for the tests.
+ */
 export function parseListing(
   name: 'ls' | 'find' | 'grep',
   text: string,
