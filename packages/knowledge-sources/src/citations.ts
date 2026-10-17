@@ -1,6 +1,12 @@
 import type { PluginProjectionDef } from '@agnes/extension-api'
 import { Value } from '@sinclair/typebox/value'
-import { type Citation, CitationSchema, HistorySchema, projectionCapability } from './contracts.js'
+import {
+  boundedCitations,
+  type Citation,
+  CitationSchema,
+  HistorySchema,
+  projectionCapability,
+} from './contracts.js'
 
 export const createCitationProjection = (owner: string): PluginProjectionDef<{ citations: Citation[] }> => ({
   ...projectionCapability(owner),
@@ -16,6 +22,8 @@ export const createCitationProjection = (owner: string): PluginProjectionDef<{ c
     if (event.type !== `x/${owner}/cited`) return { citations: [...state.citations] }
     if (!Value.Check(CitationSchema, event.data)) return { citations: [...state.citations] }
     const citation = event.data
-    return { citations: [...state.citations.filter((row) => row.id !== citation.id), citation].slice(-32) }
+    return {
+      citations: boundedCitations([...state.citations.filter((row) => row.id !== citation.id), citation]),
+    }
   },
 })

@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import type { ProfileManagedInit, ServiceContext, ToolContext } from '@agnes/extension-api'
 import { Value } from '@sinclair/typebox/value'
 import {
+  boundedCitations,
   type Citation,
   type Config,
   ConfigSchema,
@@ -142,7 +143,7 @@ export class KnowledgeResource {
     const key = this.key(ctx)
     this.init.store.transaction(() => {
       const rows = this.history(ctx).filter((row) => row.id !== citation.id)
-      this.init.store.set(key, [...rows, citation].slice(-32))
+      this.init.store.set(key, boundedCitations([...rows, citation]))
     })
   }
 }

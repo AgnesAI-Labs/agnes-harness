@@ -218,6 +218,15 @@ describe('knowledge connectors', () => {
     expect(api.untrusted).toBe(true)
     expect(api.citation).toMatchObject({ revision: 'r1', locator: 'synthetic:policy' })
     expect(f.state().citations).toHaveLength(2)
+    let bounded = f.state()
+    for (let index = 0; index < 40; index++) {
+      bounded = citationProjection.apply(bounded, {
+        type: 'x/fixture/knowledge/cited',
+        data: { ...api.citation, id: hash(String(index)), locator: '文'.repeat(512) },
+      } as Parameters<typeof citationProjection.apply>[1])
+    }
+    expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(65536)
+    expect(bounded.citations.length).toBeLessThanOrEqual(32)
     for (const bytes of f.artifacts) {
       const evidence = JSON.parse(Buffer.from(bytes).toString())
       expect(evidence.trust).toBe('untrusted')

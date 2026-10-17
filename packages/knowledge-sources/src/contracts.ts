@@ -65,6 +65,12 @@ export const CitationSchema = Type.Object(
 )
 export const HistorySchema = Type.Array(CitationSchema, { maxItems: 32 })
 export type Citation = Static<typeof CitationSchema>
+/** Keep both the owner store and projection below their 64 KiB state ceilings. */
+export function boundedCitations(rows: readonly Citation[]): Citation[] {
+  const kept = rows.slice(-32)
+  while (new TextEncoder().encode(JSON.stringify({ citations: kept })).byteLength > 60000) kept.shift()
+  return kept
+}
 export type Status = 'current' | 'stale' | 'revoked' | 'unavailable'
 export type Receipt = Citation & { status: Status }
 export const emptyInput = Type.Object({}, { additionalProperties: false })
