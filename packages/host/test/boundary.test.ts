@@ -35,8 +35,11 @@ const read = (f: string): string => readFileSync(f, 'utf8')
 const skillNormalizer = String.raw`function normalized(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/gu, ' ')
 }`
+const installNameNormalizer = "item.name.trim().normalize('NFKC').toLowerCase()"
 const pathGuardInput = (file: string, text: string): string => {
   const source = text.replaceAll('\r\n', '\n')
+  if (file === join(ownerSrc('host-extensions'), 'resources', 'skill-install-content.ts'))
+    return source.replace(installNameNormalizer, '')
   return file === join(ownerSrc('host-extensions'), 'resources', 'skill-preload.ts')
     ? source.replace(skillNormalizer, '')
     : source
@@ -142,6 +145,7 @@ describe('host boundaries', () => {
         file: 'host-computer-use/computer-use/locked-package-receipts-sqlite.ts',
         expression: ".normalize('NFC')",
       },
+      { file: 'host-extensions/resources/skill-install-content.ts', expression: ".normalize('NFKC')" },
       { file: 'host-extensions/resources/skill-preload.ts', expression: ".normalize('NFKC')" },
     ])
     for (const f of files) expect(read(f), f).not.toMatch(/\bdecodeURI(?:Component)?\s*\(/)
@@ -163,6 +167,17 @@ describe('host boundaries', () => {
       forbidden,
     )
     expect(pathGuardInput(file, `${skillNormalizer}\n${skillNormalizer}`)).toMatch(forbidden)
+    // Reviewed install-name collision checks normalize catalog names, never paths.
+    const installFile = join(ownerSrc('host-extensions'), 'resources', 'skill-install-content.ts')
+    expect(read(installFile)).toContain(installNameNormalizer)
+    expect(pathGuardInput(installFile, read(installFile))).not.toMatch(forbidden)
+    expect(pathGuardInput(installFile, installNameNormalizer.replace('item.name', 'item.path'))).toMatch(
+      forbidden,
+    )
+    expect(pathGuardInput(file, installNameNormalizer)).toMatch(forbidden)
+    expect(pathGuardInput(installFile, `${installNameNormalizer}\n${installNameNormalizer}`)).toMatch(
+      forbidden,
+    )
   })
   it('that ban would fire on the spellings it is written to catch', () => {
     // The inverse pin: a guard that matches nothing passes on an empty regex just as happily.
