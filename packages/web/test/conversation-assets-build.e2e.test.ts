@@ -50,7 +50,8 @@ it('resolves the conversation layer from the shared vendor instead of bundling a
   const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'), 'utf8')
   expect(license).toContain('Copyright (c) 2015-present Ant UED')
   const app = await readFile(resolve(output, 'app.js'), 'utf8')
-  expect(/from\s+["']@agnes\/web-ui\/conversation["']/.test(app)).toBe(true)
+  // Production minification may omit whitespace after `from`; the shared import stays external.
+  expect(/\bfrom\s*["']@agnes\/web-ui\/conversation["']/.test(app)).toBe(true)
 
   const appMaps = (await readdir(output)).filter((file) => file.endsWith('.js.map'))
   const duplicated = []
