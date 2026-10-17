@@ -4,14 +4,43 @@ import { Button, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
+type WaitingRun = { sessionId: string; title: string }
+
+/** Read backend-owned automation history; the link opens the ordinary session approval surface. */
+async function waitingAutomation(client: HostAgnesClient): Promise<WaitingRun[] | undefined> {
+  const [scheduled, triggered] = await Promise.allSettled([
+    client.call<{ schedules?: { title: string; runs: { outcome: string; sessionKey?: string }[] }[] }>(
+      '_agnes/v1/schedules.list',
+      { scope: 'all', includeArchived: true },
+    ),
+    client.call<import('@agnes/protocol/gen/app-server').WebhookResult>('_agnes/v1/admin.triggers', {
+      action: 'list',
+    }),
+  ])
+  if (scheduled.status === 'rejected' && triggered.status === 'rejected') return undefined
+  const entries = new Map<string, WaitingRun>()
+  if (scheduled.status === 'fulfilled')
+    for (const task of scheduled.value.schedules ?? [])
+      for (const run of task.runs ?? [])
+        if (run.sessionKey && ['waiting_approval', 'needs_attention'].includes(run.outcome))
+          entries.set(run.sessionKey, { sessionId: run.sessionKey, title: task.title })
+  if (triggered.status === 'fulfilled')
+    for (const run of triggered.value.snapshot?.deliveries ?? [])
+      if (run.sessionId && ['waiting_approval', 'needs_attention'].includes(run.status))
+        entries.set(run.sessionId, { sessionId: run.sessionId, title: run.ruleId ?? '' })
+  return [...entries.values()]
+}
+
 /** Profile approvals belong to the host shell and remain accessible without a selected session. */
 export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; locale: LocaleService }) {
   const language = useSyncExternalStore(locale.subscribe, locale.getSnapshot)
   const zh = language === 'zh-CN'
   const [open, setOpen] = useState(false)
   const [decisions, setDecisions] = useState<DecisionSnapshot[]>([])
+  const [automation, setAutomation] = useState<WaitingRun[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
+  const [readFailed, setReadFailed] = useState(false)
   const refresh = useRef<() => Promise<void>>(async () => {})
   const opened = useRef(open)
   opened.current = open
@@ -24,16 +53,21 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
       if (pending) return pending
       pending = Promise.resolve().then(async () => {
         try {
-          const result = await client.call<{ decisions: DecisionSnapshot[] }>(
-            '_agnes/v1/profile.decisions.list',
-            {},
-          )
+          const [profile, runs] = await Promise.allSettled([
+            client.call<{ decisions: DecisionSnapshot[] }>('_agnes/v1/profile.decisions.list', {}),
+            waitingAutomation(client),
+          ])
           if (alive) {
-            setDecisions(result.decisions)
-            setError(false)
+            if (profile.status === 'fulfilled') setDecisions(profile.value.decisions)
+            if (runs.status === 'fulfilled' && runs.value !== undefined) setAutomation(runs.value)
+            setReadFailed(
+              profile.status === 'rejected' &&
+                (runs.status === 'rejected' || runs.value === undefined) &&
+                opened.current,
+            )
           }
         } catch {
-          if (alive && opened.current) setError(true)
+          if (alive && opened.current) setReadFailed(true)
         } finally {
           pending = undefined
           if (alive && again) {
@@ -92,8 +126,9 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
       setBusy(false)
     }
   }
-  if (!decisions.length) return null
-  const label = `${zh ? '全局操作审批' : 'Profile approvals'} (${decisions.length})`
+  const count = decisions.length + automation.length
+  if (!count) return null
+  const label = `${zh ? '操作审批' : 'Approvals'} (${count})`
   return (
     <>
       <Tooltip title={label}>
@@ -111,20 +146,32 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
           <Icon name="shield-check" />
           <span className="home-entry-label">{zh ? '操作审批' : 'Approvals'}</span>
           <span className="home-entry-badge" aria-hidden="true">
-            {decisions.length}
+            {count}
           </span>
         </Button>
       </Tooltip>
-      <section id="profile-approvals" hidden={!open} aria-label={zh ? '全局操作审批' : 'Profile approvals'}>
+      <section id="profile-approvals" hidden={!open} aria-label={zh ? '操作审批' : 'Approvals'}>
         <p>
           {zh
             ? '批准后返回原操作继续；审批只适用于所示操作。'
             : 'After approving, return to the original operation to continue. Approval applies only to the operation shown.'}
         </p>
-        {error && (
+        {(error || readFailed) && (
           <p role="alert">
             {zh ? '审批不可用，请刷新重试。' : 'Approval unavailable. Refresh and try again.'}
           </p>
+        )}
+        {automation.length > 0 && (
+          <ul data-testid="automation-approval-inbox">
+            {automation.map((run) => (
+              <li key={run.sessionId}>
+                <a href={`/?session=${encodeURIComponent(run.sessionId)}`}>
+                  {run.title || (zh ? '自动化运行' : 'Automation run')} ·{' '}
+                  {zh ? '需要处理：打开会话审批' : 'Needs attention: open session approval'}
+                </a>
+              </li>
+            ))}
+          </ul>
         )}
         {decisions.map((snapshot) => (
           <Approval

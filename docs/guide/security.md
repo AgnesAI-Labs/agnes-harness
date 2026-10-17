@@ -76,7 +76,7 @@ Choose a permission preset in the admin session-default selector, CLI `--preset 
 
 ### Unattended approvals
 
-Schedules and webhook triggers use an explicit unattended policy without selecting Full access or turning approvals off. **When approval is needed → Hand off and notify (default)** parks a run as `waiting_approval` / **Needs attention** when nobody can answer. The Web notice and profile approval inbox reach the owner; an attached bound channel also receives the notice. A human can answer through the normal approval surface later and the run continues. No effect is dispatched while the request is pending.
+Schedules and webhook triggers use an explicit unattended policy without selecting Full access or turning approvals off. **When approval is needed → Hand off and notify (default)** parks a run as `waiting_approval` / **Needs attention** when nobody can answer. The Web notice and approval inbox reach the owner; an attached bound channel also receives the notice. A human can answer through the normal approval surface later and the run continues. No effect is dispatched while the request is pending.
 
 The existing pending TTL applies. Expiry marks the run **Failed / Needs attention**, never **Ran**. The next occurrence can proceed. While a previous occurrence is still waiting, another occurrence is flagged in history rather than silently creating another parked session. The per-schedule/per-trigger alternative **Refuse** ends the unanswered step with `unattended-refused`; it does not manufacture a human rejection or a grant. Missing handlers and disconnected transports do not authorize execution.
 

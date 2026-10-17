@@ -190,10 +190,23 @@ it.each(['en', 'zh-CN'] as const)(
       },
     }
     let pending: (typeof decision)[] = []
+    let automationPending = false
     let refuse = true
     let listUnavailable = false
     let blockedList: Promise<void> | undefined
     const call = vi.fn(async (method: string, input?: { handle: typeof handle }) => {
+      if (method === '_agnes/v1/schedules.list')
+        return {
+          schedules: automationPending
+            ? [
+                {
+                  title: 'Scheduled report',
+                  runs: [{ outcome: 'waiting_approval', sessionKey: 'unattended-run' }],
+                },
+              ]
+            : [],
+        }
+      if (method === '_agnes/v1/admin.triggers') return { snapshot: { deliveries: [] } }
       if (method === '_agnes/v1/profile.decisions.list') {
         const snapshot = [...pending]
         if (blockedList) await blockedList
@@ -204,6 +217,8 @@ it.each(['en', 'zh-CN'] as const)(
       pending = pending.filter((value) => value.handle.id !== input?.handle.id)
       return {}
     })
+    const profileReads = () =>
+      call.mock.calls.filter(([method]) => method === '_agnes/v1/profile.decisions.list').length
     const listeners = new Map<string, (payload: unknown) => void>()
     const on = (event: string, callback: (payload: unknown) => void) => {
       listeners.set(event, callback)
@@ -237,28 +252,28 @@ it.each(['en', 'zh-CN'] as const)(
       await vi.waitFor(() => expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.list', {}))
       expect(row()).toBeNull()
       expect(surface()).toBeNull()
-      const idleReads = call.mock.calls.length
+      const idleReads = profileReads()
       await vi.advanceTimersByTimeAsync(180_000)
-      expect(call).toHaveBeenCalledTimes(idleReads)
+      expect(profileReads()).toBe(idleReads)
       emit('notice', { kind: 'packages_changed' })
       await vi.advanceTimersByTimeAsync(0)
-      expect(call).toHaveBeenCalledTimes(idleReads)
+      expect(profileReads()).toBe(idleReads)
       emit('connectionStateChanged', 'reconnecting')
       emit('connectionStateChanged', 'connected')
       await vi.advanceTimersByTimeAsync(0)
-      expect(call).toHaveBeenCalledTimes(idleReads + 1)
+      expect(profileReads()).toBe(idleReads + 1)
       emit('connectionStateChanged', 'connected')
       await vi.advanceTimersByTimeAsync(0)
-      expect(call).toHaveBeenCalledTimes(idleReads + 1)
+      expect(profileReads()).toBe(idleReads + 1)
       hidden = true
       changed()
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(120_000)
-      expect(call).toHaveBeenCalledTimes(idleReads + 1)
+      expect(profileReads()).toBe(idleReads + 1)
       hidden = false
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(0)
-      expect(call).toHaveBeenCalledTimes(idleReads + 2)
+      expect(profileReads()).toBe(idleReads + 2)
       expect(document.querySelector('.sidebar-footer')?.textContent).not.toMatch(/Approvals|操作审批/)
 
       pending = [decision, { ...decision, handle: { ...handle, id: 'second-decision' } }]
@@ -325,9 +340,9 @@ it.each(['en', 'zh-CN'] as const)(
       window.dispatchEvent(new Event('focus'))
       await Promise.resolve()
       await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
-      const pendingReads = call.mock.calls.length
+      const pendingReads = profileReads()
       await vi.advanceTimersByTimeAsync(180_000)
-      expect(call).toHaveBeenCalledTimes(pendingReads)
+      expect(profileReads()).toBe(pendingReads)
       // A change during an older read must cause one later read, even if more notices arrive.
       let release!: () => void
       blockedList = new Promise<void>((resolve) => {
@@ -335,18 +350,31 @@ it.each(['en', 'zh-CN'] as const)(
       })
       changed()
       await Promise.resolve()
-      const beforeChange = call.mock.calls.length
+      const beforeChange = profileReads()
       pending = []
       changed()
       changed()
       blockedList = undefined
       release()
-      await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(beforeChange + 1))
+      await vi.waitFor(() => expect(profileReads()).toBe(beforeChange + 1))
       await Promise.resolve()
       await vi.waitFor(() => {
         expect(row()).toBeNull()
         expect(surface()).toBeNull()
       })
+      automationPending = true
+      emit('notice', { kind: 'automation_attention', sessionId: 'unattended-run' })
+      await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
+      if (surface()?.hidden) row()?.click()
+      expect(surface()?.hidden).toBe(false)
+      await vi.waitFor(() =>
+        expect(surface()?.querySelector('a[href="/?session=unattended-run"]')?.textContent).toContain(
+          'Scheduled report',
+        ),
+      )
+      automationPending = false
+      window.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(row()).toBeNull())
     } finally {
       await runtime?.dispose()
       expect(listeners.size).toBe(0)

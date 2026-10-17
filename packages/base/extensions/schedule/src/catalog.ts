@@ -323,18 +323,19 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       `SELECT p.run_id AS rid, p.state AS state FROM schedule_run_progress p
      JOIN schedule_runs r ON r.rowid = p.run_id WHERE r.ended_at IS NULL`,
     )
-  const saveProgress = (rid: number, state: RunProgress) => {
-    db.exec('INSERT OR REPLACE INTO schedule_run_progress (run_id, state) VALUES (?, ?)', [
-      rid,
-      JSON.stringify(state),
-    ])
-    db.exec(`UPDATE schedule_runs SET outcome = ?, reason = ?, ended_at = ? WHERE rowid = ?`, [
-      state.outcome,
-      state.reason ?? (state.needsAttention ? 'needs_attention' : null),
-      ['ran', 'failed'].includes(state.outcome) ? clock() : null,
-      rid,
-    ])
-  }
+  const saveProgress = (rid: number, state: RunProgress) =>
+    db.transaction(() => {
+      db.exec('INSERT OR REPLACE INTO schedule_run_progress (run_id, state) VALUES (?, ?)', [
+        rid,
+        JSON.stringify(state),
+      ])
+      db.exec(`UPDATE schedule_runs SET outcome = ?, reason = ?, ended_at = ? WHERE rowid = ?`, [
+        state.outcome,
+        state.reason ?? (state.needsAttention ? 'needs_attention' : null),
+        ['ran', 'failed'].includes(state.outcome) ? clock() : null,
+        rid,
+      ])
+    })
   const expireRuns = () => {
     for (const row of progressRows()) {
       const state = JSON.parse(row.state) as RunProgress
