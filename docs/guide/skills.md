@@ -74,7 +74,7 @@ A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. Th
 
 ## Manage skills in Web
 
-Under the explicit **full-access** permission preset, agent-authored plugin and Skill candidate tests run without a separate test-execution prompt when the effective session policy allows them. Read-only, standard/ask and plan-mode paths retain the explicit test prompt; their other tool restrictions still apply. Tests execute the candidate’s Node author tests on this machine; they do not publish, trust or enable anything. Review the source in **Settings → Plugins → Candidates** first. The decision is audited with the exact candidate hash in the private resource-control `candidate-test-audit.jsonl`; changed candidates still require a fresh hash and test run.
+Candidate tests use the [Host isolation and exact-hash confirmation rules](security.md): workspace-write/standard shows one confirmation; full-access skips it only with enforced OS isolation. Windows always requires confirmation because candidate code runs unisolated on the local machine. Test approval never publishes or enables a package.
 
 Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
 

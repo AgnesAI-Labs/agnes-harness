@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { localPackageAdminAuthority, type PackageAdminService } from '@agnes/daemon-admin/packages/index'
+import {
+  type AuthoringSandboxContext,
+  authoringSandbox,
+  createAuthoringTestRunner,
+  localPackageAdminAuthority,
+  type PackageAdminService,
+} from '@agnes/daemon-admin/packages/index'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { createFileAudit } from '@agnes/host'
@@ -12,6 +20,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 /** Agent lane can draft, test and submit. Only authenticated human administration can publish. */
 export function createPluginManageRequests(options: {
   directory: string
+  home?: string
   profile: string
   service(): PackageAdminService | undefined
   connections?(): ConnectionState[]
@@ -49,6 +58,7 @@ export function createPluginManageRequests(options: {
           ![
             'input',
             'candidateTestPolicy',
+            'candidateTestSandbox',
             'turn',
             'sessionKey',
             'toolUseId',
@@ -69,6 +79,16 @@ export function createPluginManageRequests(options: {
           typeof raw[k] === 'string' && (raw[k] as string).length > 0 && (raw[k] as string).length <= 512,
       ) ||
       !object(raw.input)
+    )
+      throw rpcError('INVALID_PARAMS')
+    const candidateTestSandbox = raw.candidateTestSandbox as AuthoringSandboxContext['session']
+    if (
+      candidateTestSandbox !== undefined &&
+      (!object(candidateTestSandbox) ||
+        !object(candidateTestSandbox.policy) ||
+        !Array.isArray(candidateTestSandbox.policy.rules) ||
+        !['allow', 'deny'].includes(candidateTestSandbox.network) ||
+        typeof candidateTestSandbox.local !== 'boolean')
     )
       throw rpcError('INVALID_PARAMS')
     const input = raw.input,
@@ -97,6 +117,7 @@ export function createPluginManageRequests(options: {
       AbortSignal.timeout(120_000),
       ...(workerSignal ? [workerSignal] : []),
     ])
+    let testContext: AuthoringSandboxContext | undefined
     const call = (suffix: string, params: Record<string, unknown>) => {
       assertActive()
       signal.throwIfAborted()
@@ -115,6 +136,7 @@ export function createPluginManageRequests(options: {
           ...auth,
           installer: 'agent',
           authoringSignal: signal,
+          ...(testContext ? { authoringTestRunner: createAuthoringTestRunner(testContext) } : {}),
           authoringOrigin: {
             sessionKey,
             turn: raw.turn as number,
@@ -143,7 +165,20 @@ export function createPluginManageRequests(options: {
       if (expectedHash !== value.candidateHash)
         throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_CANDIDATE_STALE' })
       if (action === 'test') {
-        if (raw.candidateTestPolicy !== 'allow') {
+        if (!candidateTestSandbox)
+          throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_TEST_SANDBOX_REQUIRED' })
+        testContext = {
+          home: options.home ?? options.directory,
+          ...(candidateTestSandbox ? { session: candidateTestSandbox } : {}),
+        }
+        const probe = mkdtempSync(join(tmpdir(), 'agh-candidate-probe-'))
+        let isolated: boolean
+        try {
+          isolated = (await authoringSandbox(testContext, probe, signal)).isolated
+        } finally {
+          rmSync(probe, { recursive: true, force: true })
+        }
+        if (raw.candidateTestPolicy !== 'allow' || !isolated) {
           const prompt = new PrompterRouter({
             record: (outcome) =>
               createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
@@ -154,6 +189,7 @@ export function createPluginManageRequests(options: {
                   candidateId: id,
                   packageId: value.packageId,
                   bindingHash: value.candidateHash,
+                  isolation: isolated ? 'sandbox' : 'unisolated',
                   ...outcome,
                 },
               }),
@@ -173,10 +209,17 @@ export function createPluginManageRequests(options: {
               sessionKey,
               stepId: 'candidate-test',
               toolUseId: raw.toolUseId as string,
-              summary: `${value.packageId} (${value.candidateHash.slice(7, 19)})`,
+              summary: `${value.packageId} (${value.candidateHash.slice(7, 19)}) — ${isolated ? '在沙箱中运行作者测试 / Run author tests in sandbox' : '此平台未隔离，将在本机直接运行候选代码 / This platform is unisolated; candidate code runs directly on this machine'}. ${isolated ? '风险：候选代码可修改副本；保护路径和 AGH 私有目录拒绝访问 / Risk: candidate code can modify its copy; protected paths and AGH private directories are denied' : '风险：代码可按本机用户权限访问文件和网络 / Risk: code can access files and network with local user privileges'}. 仅此哈希一次 / This hash, once.`,
               tool: {
                 name: 'plugin_candidate_test',
-                args: { packageId: value.packageId, candidateHash: value.candidateHash },
+                args: {
+                  packageId: value.packageId,
+                  candidateHash: value.candidateHash,
+                  execution: isolated ? 'sandbox' : 'unisolated',
+                  runs: 'Node author tests',
+                  scope: isolated ? 'candidate-directory' : 'local-user',
+                  network: isolated ? candidateTestSandbox.network : 'unrestricted',
+                },
                 meta: {
                   isReadOnly: false,
                   isDestructive: false,
@@ -220,6 +263,7 @@ export function createPluginManageRequests(options: {
               bindingHash: value.candidateHash,
               verdict: 'allowed-once',
               via: 'full-access-policy',
+              isolation: 'sandbox',
             },
           })
         }

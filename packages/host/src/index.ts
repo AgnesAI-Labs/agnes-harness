@@ -438,6 +438,7 @@ export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-inf
 export { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
 export { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
+export { prepareSandboxWorkspaceAncestor } from '@agnes/host-infrastructure/sandbox-workspace-ancestor'
 export * from '@agnes/host-infrastructure/session-workspace-runtime'
 export {
   promptConfigRevision,

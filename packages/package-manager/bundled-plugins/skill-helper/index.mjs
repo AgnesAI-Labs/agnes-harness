@@ -108,9 +108,9 @@ function tool(name, description, parameters, readOnly, execute) {
     meta: meta(readOnly),
     ...(['skill_helper_create', 'skill_helper_install'].includes(name)
       ? {
-          policyVersion: 'instruction-install-v1',
+          policyVersion: 'candidate-test-v2',
           classify(args) {
-            // Data installs have their own mandatory Host approval; code keeps its existing tool gate too.
+            // Data installs and candidate tests each have their own mandatory Host confirmation.
             const dataOnly =
               name === 'skill_helper_create'
                 ? instructionFiles(args.files)
@@ -119,7 +119,8 @@ function tool(name, description, parameters, readOnly, execute) {
               isReadOnly: false,
               isDestructive: false,
               replay: 'never',
-              requiresApproval: dataOnly ? 'never' : 'always',
+              requiresApproval:
+                dataOnly || (name === 'skill_helper_install' && args.action === 'test') ? 'never' : 'always',
               approvalScopes: [],
             }
           },

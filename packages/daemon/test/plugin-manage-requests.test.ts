@@ -2,19 +2,27 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { authoringSandbox } from '@agnes/daemon-admin/packages/index'
 import { createPackageManager, emptyLock, writeLock } from '@agnes/package-manager'
 import type { AuthoringCandidate } from '@agnes/protocol'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
+import { toolPolicy } from '../../base/extensions/approval-policy/src/tool-policy.js'
+import { pluginCreatorTools } from '../../base/extensions/plugin-creator/src/index.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createPackageAdminService, FilePackageOperationStore } from '../src/packages/index.js'
 import { pluginProposalSourceAdapter } from '../src/packages/plugin-source.js'
 import { checkedPluginFiles } from '../src/supervisor/plugin-files.js'
 import { createPluginManageRequests } from '../src/supervisor/plugin-manage-requests.js'
 
+vi.mock('@agnes/daemon-admin/packages/index', async (original) => ({
+  ...(await original<typeof import('@agnes/daemon-admin/packages/index')>()),
+  authoringSandbox: vi.fn(async () => ({ isolated: true })),
+}))
 const roots: string[] = []
 const endpoints: LocalEndpoint[] = []
 afterEach(async () => {
+  vi.mocked(authoringSandbox).mockResolvedValue({ isolated: true } as never)
   for (const ep of endpoints.splice(0)) await ep.close()
   for (const dir of roots.splice(0))
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
@@ -131,6 +139,7 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     .mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
   const options = {
     directory: root,
+    home: join(root, 'private-home'),
     profile: 'local-dev',
     service: () => admin,
     current: () => currentEp.conn,
@@ -143,6 +152,11 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     handler('session', requestId, 'plugin-manage', {
       input,
       ...(candidateTestPolicy ? { candidateTestPolicy } : {}),
+      candidateTestSandbox: {
+        policy: { workspaceRoot: root, rules: [], networkAllow: [], digest: 'a'.repeat(64) },
+        network: 'deny',
+        local: true,
+      },
       turn: 2,
       packageId: '@agnes/plugin-helper',
       snapshotId: 'snap',
@@ -222,6 +236,7 @@ it.each(['@agnes/plugin-helper', '@agnes/skill-helper'])(
     )
     expect(tested.tests).toMatchObject({ state: 'passed', hash: p.candidateHash })
     expect(s.ask).not.toHaveBeenCalled()
+    expect(vi.mocked(authoringSandbox).mock.calls.at(-1)?.[0].home).toBe(join(s.root, 'private-home'))
     const audit = JSON.parse(readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8').trim())
     expect(audit.detail).toMatchObject({
       action: 'candidate.test',
@@ -296,6 +311,23 @@ it('denied test execution and cancelled native prompts leave the candidate inact
     vi.useRealTimers()
   }
   expect((await s.request({ action: 'status', proposalId: p.proposalId })).tests).toBeNull()
+  const fresh = await s.request({ action: 'prepare', files })
+  s.testRunner.mockClear()
+  s.ask.mockImplementationOnce(async () => {
+    const record = JSON.parse(
+      readFileSync(join(s.profileDir, '.authoring-candidates', fresh.candidateId, 'record.json'), 'utf8'),
+    )
+    writeFileSync(join(record.tree, 'index.mjs'), 'changed while confirmation was open')
+    return { outcome: { outcome: 'selected', optionId: 'allow_once' } }
+  })
+  await expect(
+    s.request({
+      action: 'candidate.test',
+      candidateId: fresh.candidateId,
+      expectedHash: fresh.candidateHash,
+    }),
+  ).rejects.toThrow()
+  expect(s.testRunner).not.toHaveBeenCalled()
 })
 it('binds authority to the local owner, session and live connection', async () => {
   const s = await setup()
@@ -413,4 +445,105 @@ it('accepts the bundled pure skin candidate template, rejecting arbitrary client
       : f,
   )
   expect(() => checkedPluginFiles(badPath)).toThrow('PLUGIN_FILES_INVALID')
+})
+
+it.each(['workspace-write', 'standard'])(
+  '%s candidate tests have one exact-hash card from every shipped authoring tool',
+  async () => {
+    const s = await setup('ask')
+    const p = await s.request({ action: 'prepare', files })
+    const definitions: { name: string; meta: unknown; classify?: (args: unknown) => unknown }[] = [
+      ...pluginCreatorTools,
+    ] as never
+    const { pluginHelper } = await import(
+      new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+    )
+    const { skillHelper } = await import(
+      new URL('../../package-manager/bundled-plugins/skill-helper/index.mjs', import.meta.url).href
+    )
+    for (const plugin of [pluginHelper, skillHelper])
+      plugin.apply({ tools: { register: (tool: (typeof definitions)[number]) => definitions.push(tool) } })
+    for (const tainted of [false, true])
+      for (const name of ['plugin_test', 'plugin_helper_install', 'skill_helper_install']) {
+        const tool = definitions.find((t) => t.name === name)
+        if (!tool) throw new Error(`Missing shipped tool ${name}`)
+        const args =
+          name === 'plugin_test'
+            ? { candidateId: p.candidateId, expectedHash: p.candidateHash }
+            : { action: 'test', proposalId: p.candidateId }
+        const decision = await toolPolicy.decide(
+          {
+            sessionKey: 'session',
+            cwd: s.root,
+            workspaceRoot: s.root,
+            actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+            call: { id: 'tool', name, args },
+            policy: (tool.classify?.(args) ?? tool.meta) as never,
+            tainted,
+            fullAccess: false,
+            approvalMode: 'manual',
+          },
+          new AbortController().signal,
+        )
+        expect(decision.effect).toBe('allow')
+        s.ask.mockClear()
+        await s.request({
+          action: 'candidate.test',
+          candidateId: p.candidateId,
+          expectedHash: p.candidateHash,
+        })
+        expect(s.ask).toHaveBeenCalledOnce()
+        expect(s.ask.mock.calls[0]?.[1]).toMatchObject({
+          toolCall: {
+            rawInput: {
+              candidateHash: p.candidateHash,
+              packageId: p.packageId,
+              execution: 'sandbox',
+              runs: 'Node author tests',
+              scope: 'candidate-directory',
+            },
+          },
+        })
+      }
+    s.ask.mockClear()
+    s.testRunner.mockClear()
+    await expect(
+      s.request({
+        action: 'candidate.test',
+        candidateId: p.candidateId,
+        expectedHash: `sha256-${'0'.repeat(64)}`,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'PLUGIN_CANDIDATE_STALE' } })
+    expect(s.ask).not.toHaveBeenCalled()
+    expect(s.testRunner).not.toHaveBeenCalled()
+  },
+)
+it('requires the unisolated Windows warning and confirmation even under full-access', async () => {
+  vi.mocked(authoringSandbox).mockResolvedValue({ isolated: false } as never)
+  const s = await setup('allow')
+  const p = await s.request({ action: 'prepare', files })
+  s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'reject_once' } })
+  await expect(s.request({ action: 'test', proposalId: p.candidateId })).rejects.toMatchObject({
+    data: { code: 'PLUGIN_TEST_REJECTED' },
+  })
+  expect(s.ask).toHaveBeenCalledOnce()
+  expect(s.ask.mock.calls[0]?.[1]).toMatchObject({
+    toolCall: {
+      title: expect.stringContaining('此平台未隔离，将在本机直接运行候选代码'),
+      rawInput: { execution: 'unisolated', scope: 'local-user', candidateHash: p.candidateHash },
+    },
+  })
+  expect(s.testRunner).not.toHaveBeenCalled()
+  await s.request({ action: 'test', proposalId: p.candidateId })
+  expect(s.testRunner).toHaveBeenCalledOnce()
+})
+it('fails closed when the sandbox probe fails under full-access', async () => {
+  vi.mocked(authoringSandbox).mockRejectedValue(new Error('SANDBOX_UNAVAILABLE'))
+  const s = await setup('allow')
+  const p = await s.request({ action: 'prepare', files })
+  await expect(s.request({ action: 'test', proposalId: p.candidateId })).rejects.toThrow(
+    'SANDBOX_UNAVAILABLE',
+  )
+  expect(s.testRunner).not.toHaveBeenCalled()
+  expect(s.ask).not.toHaveBeenCalled()
 })

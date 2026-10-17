@@ -70,9 +70,10 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_test',
     description:
-      'Ask permission to run bounded Node author tests against this exact candidate hash, using the public testkit. Tests never publish.',
+      'Run bounded Node author tests for this exact candidate hash using the public testkit. One hash-bound confirmation authorizes execution; full-access skips it only with enforced OS isolation. Tests never publish.',
     parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
-    meta,
+    // The daemon owns the sole exact-hash execution confirmation.
+    meta: { ...meta, isDestructive: false, requiresApproval: 'never' },
     async execute(args, ctx) {
       return request(ctx, { action: 'candidate.test', ...args })
     },

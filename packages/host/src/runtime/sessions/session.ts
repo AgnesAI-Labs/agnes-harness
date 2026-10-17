@@ -547,7 +547,7 @@ export async function createSession(
   }
   Object.assign(session, {
     commandSandboxPolicy: () => ({
-      policy: structuredClone(sandbox.fsPolicy()),
+      policy: structuredClone(guardedSandbox.fsPolicy()),
       network: session.preset.approval.policy === 'full-access' ? 'allow' : 'deny',
       local: !a.adapters.transport && (profile.sandbox?.provider ?? 'local') === 'local',
     }),

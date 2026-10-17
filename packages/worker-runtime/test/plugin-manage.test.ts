@@ -13,6 +13,11 @@ const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+const candidateTestSandbox = {
+  policy: { workspaceRoot: '/synthetic', rules: [], networkAllow: [], digest: 'a'.repeat(64) },
+  network: 'deny' as const,
+  local: true,
+}
 const invocation: PluginManageInvocation = {
   packageId: '@agnes/skill-helper',
   snapshotId: 'snap',
@@ -45,6 +50,7 @@ it.each([
     if (!selected) throw new Error('Missing shipped policy')
     const session = {
       key: 's',
+      commandSandboxPolicy: () => candidateTestSandbox,
       workspaceRoot: root,
       preset: { approval: { policy } },
       yolo: true,
@@ -63,7 +69,11 @@ it.each([
       }),
     ).toBe('ran')
     expect(request.mock.calls).toEqual([
-      ['plugin-manage', { ...invocation, candidateTestPolicy: expected }, expect.any(AbortSignal)],
+      [
+        'plugin-manage',
+        { ...invocation, candidateTestPolicy: expected, candidateTestSandbox },
+        expect.any(AbortSignal),
+      ],
     ])
     // Legacy helpers use exactly the same gate.
     await requestPluginManage(
@@ -110,6 +120,7 @@ it.each(['ask', 'deny', 'human'] as const)(
     const request = vi.fn<SharedSessionChannel['request']>(async () => undefined)
     const session = {
       key: 's',
+      commandSandboxPolicy: () => candidateTestSandbox,
       workspaceRoot: '/synthetic',
       preset: { approval: { policy: 'full-access' } },
       d: { cwd: '/synthetic' },
@@ -129,11 +140,15 @@ it.each(['ask', 'deny', 'human'] as const)(
       currentSessionKey: () => 's',
     })
     expect(request.mock.calls[0]?.[1]).toMatchObject({ candidateTestPolicy: 'ask' })
-    const forged = { ...invocation, candidateTestPolicy: 'allow' }
+    const forged = {
+      ...invocation,
+      candidateTestPolicy: 'allow',
+      candidateTestSandbox: { network: 'allow', local: true },
+    }
     await requestPluginManage(session, forged, new AbortController().signal, {
       request,
       currentSessionKey: () => 's',
     })
-    expect(request.mock.calls[1]?.[1]).toMatchObject({ candidateTestPolicy: 'ask' })
+    expect(request.mock.calls[1]?.[1]).toMatchObject({ candidateTestPolicy: 'ask', candidateTestSandbox })
   },
 )

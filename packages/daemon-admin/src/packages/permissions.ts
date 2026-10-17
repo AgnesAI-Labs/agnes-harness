@@ -17,6 +17,8 @@ export type PackageAdminAuthority = Readonly<{
   installer?: 'agent'
   authoringOrigin?: import('@agnes/protocol').AuthoringOrigin
   authoringSignal?: AbortSignal
+  /** Trusted per-invocation sandbox runner; never accepted from RPC parameters. */
+  authoringTestRunner?: import('@agnes/package-manager').AuthoringTestRunner
   principalId: string
   /** Server-established connection namespace for effect/cancel idempotency. */
   clientId: string

@@ -1160,26 +1160,27 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           }),
         })
       : undefined
+    const managementClients = {
+      connections: () => [...conns].map((entry) => entry.conn),
+      current: (key: string) => inflightConn.get(key),
+      endpoint: (conn: ConnectionState) => [...conns].find((entry) => entry.conn === conn)?.ep,
+      owner: (key: string) => sessionOwnership.resolve(key),
+    }
     const skillInstallRequests = createSkillInstallRequests({
       directory: resourceControlDirectory,
       profile: o.profile.name,
       service: resourceControl.service,
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
       workspace: (key) => workspaces.get(key),
     })
     let effectivePackageAdmin = o.packageAdmin
     const pluginManageRequests = createPluginManageRequests({
       directory: resourceControlDirectory,
+      home: ownerHome,
       profile: o.profile.name,
       service: () => effectivePackageAdmin?.service,
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
     })
     const mcpManageRequests = createMcpManageRequests({
       directory: resourceControlDirectory,
@@ -1187,10 +1188,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       service: resourceControl.service,
       ...(localResourceStore ? { store: localResourceStore } : {}),
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
-      connections: () => [...conns].map((entry) => entry.conn),
-      current: (key) => inflightConn.get(key),
-      endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
-      owner: (key) => sessionOwnership.resolve(key),
+      ...managementClients,
     })
     const permissionRequests = new Map<string, AbortController>()
     startupCleanup.push(() => {
@@ -1738,6 +1736,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       void revertFailedDesired?.()
       effectivePackageAdmin ??= {
         service: createPackageAdminService({
+          authoringHome: ownerHome,
           manager: o.packageRuntime.manager,
           profileDirectory: o.packageRuntime.profileDirectory,
           operations: o.packageRuntime.operations,
@@ -3020,6 +3019,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   if (resourceService) await resourceService.recover()
   const defaultPackageAdmin = {
     service: createPackageAdminService({
+      authoringHome: scope.home,
       manager: packageManager,
       profileDirectory: packageProfileDirectory,
       operations: packageOperations,

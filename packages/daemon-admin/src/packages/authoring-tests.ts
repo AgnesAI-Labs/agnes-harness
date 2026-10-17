@@ -1,16 +1,25 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { collectPackageSkillFiles, discoverPackageSkill, packageSkillLoadError } from '@agnes/base'
 import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
-import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
 import type { build as Build } from 'esbuild'
+import {
+  type AuthoringSandboxContext,
+  authoringSandbox,
+  defaultAuthoringSandboxContext,
+} from './authoring-sandbox.js'
 
 /** Host-run Node tests, never caller-supplied success claims or Markdown-as-shell. */
-export const runAuthoringTests: AuthoringTestRunner = async (directory, files, signal) => {
+async function testCandidate(
+  directory: string,
+  files: Parameters<AuthoringTestRunner>[1],
+  signal: AbortSignal,
+  context: AuthoringSandboxContext,
+): ReturnType<AuthoringTestRunner> {
   directory = realpathSync(directory)
   const insideCandidate = (path: string): boolean => {
     if (!path) return false
@@ -63,6 +72,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
   bindProvidedContractModules()
   const require = createRequire(import.meta.url)
   const sdk = join(dirname(fileURLToPath(import.meta.url)), 'authoring-sdk.mjs')
+  const sdkRequire = existsSync(sdk) ? require : createRequire(require.resolve('@agnes/host/author-testkit'))
   const output = join(directory, 'node_modules', '.authoring-tests')
   mkdirSync(output, { recursive: true })
   const modules: Record<string, readonly string[]> = {
@@ -113,7 +123,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
               return existsSync(sdk)
                 ? { path: args.path, namespace: 'authoring-sdk' }
                 : {
-                    path: require.resolve(
+                    path: sdkRequire.resolve(
                       args.path === '@agnes/host/testkit'
                         ? '@agnes/host/testkit/plugin-registration'
                         : args.path,
@@ -134,6 +144,22 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
                 )
                 .join('\n')}`,
             }))
+            // Compilation is Host work: candidate imports must not make esbuild read private
+            // files before the OS boundary starts. Only the selected public SDK escapes this tree.
+            b.onResolve({ filter: /.*/ }, async (args) => {
+              if (!insideCandidate(args.importer) || args.pluginData?.authoringResolved) return undefined
+              if (isBuiltin(args.path)) return { path: args.path, external: true }
+              const resolved = await b.resolve(args.path, {
+                resolveDir: args.resolveDir,
+                kind: args.kind,
+                pluginData: { authoringResolved: true },
+              })
+              if (resolved.errors.length || !insideCandidate(realpathSync(resolved.path)))
+                throw new Error('Candidate imports must stay inside their source tree')
+              if (!files.some((file) => join(directory, file.path) === resolved.path))
+                throw new Error('Candidate import is not part of the hashed source')
+              return { path: resolved.path }
+            })
             // Preserve source-relative asset URLs when a plugin is bundled into a test entry.
             b.onLoad({ filter: /\.(ts|mjs|js)$/ }, async (args) => {
               if (!insideCandidate(args.path)) return undefined
@@ -152,9 +178,10 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
       ],
     })
     signal.throwIfAborted()
-    const result = await runIsolatedCommand(
-      'node',
+    const { sandbox } = await authoringSandbox(context, directory, signal)
+    const result = await sandbox.exec(
       [
+        process.execPath,
         '--input-type=module',
         '--eval',
         `import {spawn} from 'node:child_process'; const child=spawn(process.execPath,['--test','--test-reporter=tap',...process.argv.slice(1)],{stdio:['ignore','pipe','pipe']}); child.stdout.pipe(process.stdout);child.stderr.pipe(process.stdout);child.once('error',()=>console.log('# authoring-exit spawn-failed'));child.once('close',code=>console.log('# authoring-exit '+code));`,
@@ -166,7 +193,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
         timeoutMs: 60_000,
         maxOutputBytes: 16384,
         env: {
-          PATH: process.env.PATH,
+          PATH: process.env.PATH ?? '',
           HOME: output,
           TMPDIR: output,
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -197,3 +224,11 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
     }
   }
 }
+
+export const createAuthoringTestRunner =
+  (context: AuthoringSandboxContext): AuthoringTestRunner =>
+  (directory, files, signal) =>
+    testCandidate(directory, files, signal, context)
+
+export const runAuthoringTests: AuthoringTestRunner = (directory, files, signal) =>
+  createAuthoringTestRunner(defaultAuthoringSandboxContext())(directory, files, signal)

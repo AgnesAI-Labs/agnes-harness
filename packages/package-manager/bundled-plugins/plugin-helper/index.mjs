@@ -116,7 +116,7 @@ export const pluginHelper = {
           host: 'Agnes Harness',
           apiVersion: '4.0.0',
           guidance:
-            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test asks permission to run Node tests, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
+            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test uses one hash-bound confirmation; full-access skips it only with OS isolation, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
           documentation: 'https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md',
           files: [
             { path: 'package.json', content: JSON.stringify(manifest, null, 2) },
@@ -150,9 +150,13 @@ export const pluginHelper = {
     api.register({
       name: 'plugin_helper_install',
       description:
-        'Run Node tests with explicit permission, submit a passing candidate for human review, or inspect its status. commit never installs/trusts/enables. Only a human can publish the exact reviewed hash in Settings → Plugins. Denial and failure must not be bypassed.',
+        'Run Node author tests with one exact-hash confirmation (full-access skips it only with OS isolation), submit a passing candidate for human review, or inspect its status. commit never installs/trusts/enables. Only a human can publish the exact reviewed hash in Settings → Plugins. Denial and failure must not be bypassed.',
       parameters: object({ action: enumeration('test', 'commit', 'status'), proposalId: string(80) }),
       meta: meta(false, 'always'),
+      policyVersion: 'candidate-test-v2',
+      classify(input) {
+        return { ...meta(false, input.action === 'test' ? 'never' : 'always'), approvalScopes: [] }
+      },
       async execute(input, ctx) {
         return result(await port(ctx).request(input), input.action)
       },

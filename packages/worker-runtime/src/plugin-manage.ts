@@ -42,5 +42,7 @@ export async function requestPluginManage(
     if (decision.effect === 'allow' && !decision.approval) candidateTestPolicy = 'allow'
   }
   signal.throwIfAborted()
-  return channel.request('plugin-manage', { ...input, candidateTestPolicy }, signal)
+  const candidateTestSandbox = session.commandSandboxPolicy?.()
+  if (!candidateTestSandbox) throw new Error('Candidate test sandbox policy is unavailable')
+  return channel.request('plugin-manage', { ...input, candidateTestPolicy, candidateTestSandbox }, signal)
 }
