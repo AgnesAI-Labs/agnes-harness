@@ -1,4 +1,5 @@
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
+import type { CompositeTargetReport } from '@agnes/daemon-foundation/storage/composite-target-store'
 import {
   decodeRuntimeTargetArtifact,
   type PluginRow,
@@ -6,10 +7,46 @@ import {
 } from '@agnes/plugin-runtime/host'
 import type { ClientModuleRegistryOptions } from './client-modules.js'
 
+/** Project only worker-qualified Host observations; a stale worker cannot authorize a dependency. */
+export type RuntimeArtifactsStore = Readonly<{
+  desired(): RuntimeTargetArtifact | undefined
+  previous(): RuntimeTargetArtifact | undefined
+  lastGood(): RuntimeTargetArtifact | undefined
+  acknowledged?(): Readonly<{ generation: number; digest: string }> | undefined
+  report?(): CompositeTargetReport | undefined
+}>
+export function runtimeArtifactsFromStore(
+  store: RuntimeArtifactsStore | undefined,
+  workerGeneration?: number,
+): ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>> {
+  if (!store) return undefined
+  const desired = store.desired()
+  const previous = store.previous()
+  const lastGood = store.lastGood()
+  const acknowledged = store.acknowledged?.()
+  const report = store.report?.()
+  const activeBackendRows = new Set<string>()
+  if (
+    workerGeneration !== undefined &&
+    acknowledged?.generation === workerGeneration &&
+    acknowledged.digest === (lastGood ?? desired)?.digest &&
+    report?.ok
+  )
+    for (const row of report.rows)
+      if (row.state === 'active' && !row.id.startsWith('web:')) activeBackendRows.add(row.id)
+  return {
+    ...(desired ? { desired } : {}),
+    ...(previous ? { previous } : {}),
+    ...(lastGood ? { lastGood } : {}),
+    ...(workerGeneration === undefined ? {} : { activeBackendRows }),
+  }
+}
+
 const REVISION = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
 
 type RuntimeClientTruth = Readonly<{
   useArtifact: boolean
+  activeBackendRows: ReadonlySet<string>
   active: ReadonlyMap<string, Readonly<{ packageId: string; revision: string }>>
   backend: ReadonlyMap<string, Readonly<{ packageId: string; revision: string }>>
   referenced: ReadonlyMap<string, ReadonlySet<string>>
@@ -41,7 +78,14 @@ function webRowRevision(row: PluginRow): Readonly<{ packageId: string; revision:
 export function runtimeClientTruth(
   artifacts: ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>>,
 ): RuntimeClientTruth {
-  if (!artifacts) return { useArtifact: false, active: new Map(), backend: new Map(), referenced: new Map() }
+  if (!artifacts)
+    return {
+      useArtifact: false,
+      activeBackendRows: new Set(),
+      active: new Map(),
+      backend: new Map(),
+      referenced: new Map(),
+    }
   const active = new Map<string, Readonly<{ packageId: string; revision: string }>>()
   const backend = new Map<string, Readonly<{ packageId: string; revision: string }>>()
   const referenced = new Map<string, Set<string>>()
@@ -73,6 +117,7 @@ export function runtimeClientTruth(
   }
   return {
     useArtifact: Boolean(artifacts.lastGood || artifacts.desired || artifacts.previous),
+    activeBackendRows: artifacts.activeBackendRows ?? new Set(),
     active,
     backend,
     referenced,
