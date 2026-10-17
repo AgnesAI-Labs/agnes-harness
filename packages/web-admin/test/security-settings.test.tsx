@@ -114,8 +114,8 @@ it('picks the default permission from three cards, confirms full access, and off
     }),
   )
   expect(host.querySelectorAll('.agnes-settings-modes input[type="radio"]')).toHaveLength(3)
-  expect(host.querySelector('.agnes-settings-modes .appearance-option-hint')?.textContent).toContain(
-    'View files',
+  expect(host.querySelector('.agnes-settings-modes .appearance-option-hint')?.textContent).toBe(
+    'View allowed files and public webpages; changes and command execution are denied.',
   )
   expect(
     host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')?.checked,

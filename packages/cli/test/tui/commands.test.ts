@@ -308,7 +308,7 @@ describe('runSlash', () => {
     }
   })
 
-  it('/new applies the remembered model and full permission before switching', async () => {
+  it('/new applies the remembered model and routine approval bypass before switching', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'agh-composer-')), 'composer-selection.json')
     writeFileSync(
       path,
@@ -326,7 +326,7 @@ describe('runSlash', () => {
     )
     try {
       const created = await runSlash(app, '/new')
-      expect(created.text).toBe('新会话使用 deepseek/deepseek-v4-pro · medium · 完全权限')
+      expect(created.text).toBe('新会话使用 deepseek/deepseek-v4-pro · medium · 跳过普通审批')
       expect(created.switchSession?.id).toBeDefined()
       const modelCall = ep.calls.find((entry) => entry.method === '_agnes/v1/session.setModel')
       expect(modelCall?.params).toMatchObject({
@@ -604,11 +604,15 @@ describe('runSlash', () => {
   })
 
   it('/yolo takes no args and switches through the real setYolo call', async () => {
-    const { app, client } = await unstartedApp()
+    const { app, ep, client } = await unstartedApp()
     try {
       expect((await runSlash(app, '/yolo')).text).toBe(
-        'full access from seq 7: read/write inside and outside the workspace; tool approvals skipped. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.',
+        'routine approvals skipped from seq 7; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.',
       )
+      expect(ep.calls.find((entry) => entry.method === '_agnes/v1/session.setYolo')?.params).toEqual({
+        sessionId: app.session.id,
+        enabled: true,
+      })
     } finally {
       await client.close()
     }

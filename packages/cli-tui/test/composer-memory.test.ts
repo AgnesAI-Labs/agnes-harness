@@ -62,7 +62,7 @@ describe('TUI composer memory', () => {
     expect(session.setYolo).toHaveBeenCalledWith(true)
     expect(inherited).toEqual({
       modelId: 'deepseek-v4-pro',
-      notice: '新会话使用 deepseek/deepseek-v4-pro · medium · 完全权限',
+      notice: '新会话使用 deepseek/deepseek-v4-pro · medium · 跳过普通审批',
     })
   })
 
