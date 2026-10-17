@@ -8,6 +8,7 @@ import type {
 } from './service-contracts.js'
 
 export class SessionService extends Service {
+  private scope = 0
   private currentSessionId: string | undefined
   private readonly client: HostAgnesClient | undefined
   private readonly listeners = new Set<() => void>()
@@ -29,6 +30,7 @@ export class SessionService extends Service {
   /** 仅宿主调用。 */
   setSession(sessionId: string | undefined): void {
     if (sessionId === this.currentSessionId) return
+    this.scope += 1
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
@@ -55,13 +57,15 @@ export class SessionService extends Service {
   readonly projection: SessionProjection = {
     read: async (name = 'session.ui') => {
       const handle = this.currentHandle
-      if (!handle)
-        return {
-          status: 'unavailable' as const,
-          name,
-          error: { code: 'E_PROJECTION_STATE' as const, safeMessage: 'session unavailable' },
-        }
+      const scope = this.scope
+      const unavailable = () => ({
+        status: 'unavailable' as const,
+        name,
+        error: { code: 'E_PROJECTION_STATE' as const, safeMessage: 'session unavailable' },
+      })
+      if (!handle) return unavailable()
       const value = await handle.projectUI()
+      if (scope !== this.scope || handle !== this.currentHandle) return unavailable()
       return { status: 'available' as const, name, asOfSeq: 0, stateVersion: 1, value }
     },
     subscribe: (listener) => {

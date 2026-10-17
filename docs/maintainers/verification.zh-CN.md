@@ -37,6 +37,10 @@ Web 交付构建使用生产 React 并压缩 JavaScript；开发 watcher 保留�
 heavy 层 `packages/cli/test/startup-perf.e2e.test.ts` 通过 `AGNES_LOCAL_CLI` 指向现有本地构建，使用隔离的新 home 和真实 daemon/worker；CLI ready 上限为 8 秒，首次会话为 4 秒，输出测量值并在清理前停止进程。归因仍须在同机配对记录启动 spans 与 CPU profiles；宽松回归预算不能代替配对实测。账本扫描与 append watermark 语句在各自连接内复用查询计划；不缓存行、完整性决定，也不放宽提交顺序或 checkpoint 同步。
 
 
+流式准备只复用来自注册表已分离、冻结定义的工具 schema scrub 结果；每个请求仍独立构造正文，并执行 provider wire 校验与准入。`packages/core/test/derive.test.ts` 覆盖冷/热 stamp 等价、源对象修改、定义替换和披露集合变化。
+
+订阅事件后，SDK 中相同的 controls、完整 UI 投影、UI surface 和 workspace changes 读取，仅在同一会话、generation 与事件水位下共享在途 RPC。读取期间的事件会排队触发新读取，覆盖其所需水位的调用者共享该次新读取。各调用者仍独立持有结果；后续事件发起新读取，拒绝后可重试，detach、断连与 generation 变化会拒绝旧结果。聚焦的 `packages/sdk/test/session.test.ts` 和 `ui-projection-sync.test.ts` 还覆盖流开始与 turn/end 立即投影，并保持单一有序投影队列。插件会话选择由 `packages/web-client/test/web-client.test.ts` 验证。
+
 重型门 `packages/host-infrastructure/test/adapters/table-reads.slow.test.ts` 串行测量 50 行合成数据上的五批 owner 读取，每批 3,000 次，保守上限为 150 ms。它还检查写入、schema 变更和查询计划淘汰后的最新结果，以及非法参数和 SQL 拒绝。查询计划仅在各自隔离连接内复用，不缓存数据行或授权结果。原有账本完整性与包加载门仍须执行。
 
 包加载性能门位于 `tools/plugin-performance.slow.test.ts` 的 **gates real immutable package preparation** 用例。在性能测试机器上使用 Node 24 串行运行：

@@ -54,6 +54,7 @@ import { ToolCall as ToolCallSchema, ToolResult as ToolResultSchema } from '@agn
 import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
 import { notifyListeners } from './events.js'
+import { SessionReads } from './session-reads.js'
 // A handle on one conversation. It owns two things the client cannot own for it:
 // the running position in that session's event stream (cursor, generation), and the
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
@@ -117,11 +118,6 @@ function sameList(a: string[] | undefined, b: string[] | undefined): boolean {
   if (a === b) return true
   if (!a || !b || a.length !== b.length) return false
   return a.every((x, i) => x === b[i])
-}
-
-function eventSeq(params: Record<string, unknown>): number | null {
-  const event = params.event as { seq?: unknown } | undefined
-  return typeof event?.seq === 'number' ? event.seq : null
 }
 
 export type SessionNotificationListener = (
@@ -198,6 +194,7 @@ export class Session {
   // `events()` are how they change. A consumer that sets `attached = false` by hand gets
   // a second subscription racing the first, and one that edits `filter` gets a stream
   // that no longer matches what it says it is.
+  private readonly reads: SessionReads
   private seq = 0
   private gen = 0
   private serverSeq = 0
@@ -256,6 +253,7 @@ export class Session {
     readonly id: string,
     cwd?: string,
   ) {
+    this.reads = new SessionReads(client, () => this)
     this.workspace = cwd || null
   }
 
@@ -297,10 +295,10 @@ export class Session {
   /** Entry point for everything the client routes to this session id. */
   onNotification(method: string, params: Record<string, unknown>): void {
     if (method === EVENT_METHOD) {
-      const seq = eventSeq(params)
+      const seq = (params.event as { seq?: unknown } | undefined)?.seq
       // Deduplicated here rather than per iterator: the wire stream belongs to the
       // session, so two iterators must agree on which rows were already delivered.
-      if (seq === null || seq <= this.lastAdmitted) return
+      if (typeof seq !== 'number' || seq <= this.lastAdmitted) return
       // `METHODS` lists this notification, but `call()`'s validation covers what this
       // client sends, not what it receives, so the row is checked here before anyone can
       // see it as a `LedgerEvent`. Dropped rather than thrown: this runs on the
@@ -334,6 +332,7 @@ export class Session {
           ...(meta.credits ? { credits: meta.credits } : {}),
         }
     }
+    if (method !== PREVIEW_METHOD) this.reads.changed()
     notifyListeners(this.listeners, `session ${this.id}`, method, params, meta)
   }
 
@@ -426,6 +425,7 @@ export class Session {
   }
 
   async detach(): Promise<void> {
+    this.reads.invalidate()
     this.cancelStreamRecovery()
     this.overflowed = false
     while (this.attaching) await this.attaching.catch(() => undefined)
@@ -539,7 +539,7 @@ export class Session {
   workspaceChanges(
     input: Omit<SessionWorkspaceChangesParams, 'sessionId'> = {},
   ): Promise<SessionWorkspaceChangesResult> {
-    return this.client.call('_agnes/v1/session.workspace.changes', { ...input, sessionId: this.id })
+    return this.reads.read('_agnes/v1/session.workspace.changes', { ...input, sessionId: this.id })
   }
 
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
@@ -588,7 +588,7 @@ export class Session {
   }
 
   projectUI(upto?: number, opts: Pick<SessionProjectUIParams, 'surface'> = {}): Promise<UITimeline> {
-    return this.client.call<UITimeline>('_agnes/v1/session.projectUI', {
+    return this.reads.read<UITimeline>('_agnes/v1/session.projectUI', {
       sessionId: this.id,
       ...(upto !== undefined ? { upto } : {}),
       ...(opts.surface !== undefined ? { surface: opts.surface } : {}),
@@ -645,7 +645,7 @@ export class Session {
   uiRead(
     input: Omit<import('@agnes/protocol').UiReadParams, 'sessionId'> = {},
   ): Promise<import('@agnes/protocol').UiReadResult> {
-    return this.client.call('_agnes/v1/ui.read', { ...input, sessionId: this.id })
+    return this.reads.read('_agnes/v1/ui.read', { ...input, sessionId: this.id })
   }
 
   /** Re-queries bound data for one open surface. The stored revision stays the author's. */
@@ -876,7 +876,7 @@ export class Session {
   controls(
     opts: { afterSeq?: number } = {},
   ): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {
-    return this.client.call('_agnes/v1/session.controls', { sessionId: this.id, ...opts })
+    return this.reads.read('_agnes/v1/session.controls', { sessionId: this.id, ...opts })
   }
 
   control(
@@ -1045,6 +1045,7 @@ export class Session {
   // the cursor write this session owes: close() waits for it, so the position a resume
   // reads is the position the consumer actually reached.
   onClosed(): Promise<void> {
+    this.reads.invalidate()
     this.cancelStreamRecovery()
     if (this.isClosed) return Promise.resolve()
     this.isClosed = true

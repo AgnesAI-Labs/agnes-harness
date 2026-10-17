@@ -3,6 +3,7 @@ import { CoreError, type Disposer, type Seq } from '@agnes/core-common/types'
 import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
 import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
 import { sanitize } from '../request/derive.js'
+import { prepareToolSchema } from '../request/tool-schema.js'
 
 export type TrustTier = 'builtin' | 'trusted'
 export type ExecutionDomain = 'workspace' | 'host-computer-use'
@@ -106,6 +107,7 @@ export class ToolRegistry {
       executionDomain,
       definitionFingerprint,
     })
+    prepareToolSchema(entry)
     return this.#table.add(registeredSource.source, registeredDefinition.name, entry)
   }
 

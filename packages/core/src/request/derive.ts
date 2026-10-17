@@ -19,6 +19,7 @@ import type { EnvelopeCache } from './envelope-cache.js'
 import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 import { composeSystemPrompt, type PinnedSystemPrompt } from './system-prompt.js'
+import { modelToolSchema, toolSchemaHash } from './tool-schema.js'
 
 export type ContractRef = { contract_id: string | null; parser_version: string }
 /**
@@ -996,11 +997,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // different call, and it is the canonical tool-poisoning surface. A special token here breaks the
   // provider's own message framing a layer below the envelope, and a forged closer sits in the same
   // request whose envelopes carry that id.
-  const tools = input.disclosed.map((d) => ({
-    name: sanitize(d.name),
-    description: sanitize(d.description),
-    parameters: sanitizeJson(d.parameters),
-  }))
+  const tools = input.disclosed.map(modelToolSchema)
   // Configuration tier, scrubbed anyway and for the same reason the extension sections are: the
   // cost is nothing on a well-formed value, and the alternative is a path into the trusted frame
   // whose safety rests on a tier boundary rather than on this function. The header is stamped from
@@ -1148,7 +1145,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     // Provider stamps normalise the canonical disclosure because Unicode spelling is not visible
     // to the model. Use the same bytes here or an NFD name, description or schema key makes the
     // dispatch receipt disagree with the request header even though both describe the same tools.
-    tool_schema_hash: sha256Hex(canonicalJson(body.tools).normalize('NFC')),
+    tool_schema_hash: toolSchemaHash(body.tools),
     parser_version: input.contract.parser_version,
     contract_id: contractId,
     model: model.model,
