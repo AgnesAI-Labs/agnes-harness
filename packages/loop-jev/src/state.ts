@@ -208,6 +208,12 @@ function checkDecision(value: unknown, path: string): void {
     },
     path,
   )
+  // A batch exists only for two or more observed targets, one call per target.
+  if (Object.hasOwn(d, 'batch') && d.batch !== undefined) {
+    const batch = d.batch as unknown[]
+    if (!Array.isArray(d.target) || batch.length !== d.target.length || batch.length < 2 || batch.length > 4)
+      fail(`${path}.batch`)
+  }
   num(d.confidence, `${path}.confidence`)
   num(d.operationPathConfidence, `${path}.operationPathConfidence`)
   orNull(d.targetConfidence, num, `${path}.targetConfidence`)

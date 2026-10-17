@@ -455,6 +455,25 @@ describe('checkpoints with observations', () => {
         s.cur.decision = { ...decisionOf(), batch: ['x'] }
       },
     ],
+    [
+      'a batch next to a single target',
+      (s: Loose) => {
+        s.cur.decision = { ...decisionOf(), target: 'a.md' }
+      },
+    ],
+    [
+      'a batch whose length differs from the target list',
+      (s: Loose) => {
+        s.cur.decision = { ...decisionOf(), batch: [{ path: 'a.md' }] }
+      },
+    ],
+    [
+      'a batch of more than four calls',
+      (s: Loose) => {
+        const keys = ['a', 'b', 'c', 'd', 'e']
+        s.cur.decision = { ...decisionOf(), target: keys, batch: keys.map((path) => ({ path })) }
+      },
+    ],
   ])('rejects %s', (_name, mutate) => {
     const s = structuredClone(initialState()) as unknown as Loose
     mutate(s)
