@@ -43,7 +43,10 @@ describe('agnes.jev in a real host with a loopback Jev', () => {
       expect(notes.filter((t) => !t.includes('[hook context]'))).toEqual([
         expect.stringContaining('[answer request]'),
       ])
-      expect(new Set(ofType(rows, 'request/header').map((r) => data(r).tool_schema_hash)).size).toBe(1)
+      // One model request in this turn; that every request keeps the same tool bytes and extends the
+      // previous one is pinned by the kernel test "keeps every request a prefix of the next with the
+      // same tool bytes".
+      expect(ofType(rows, 'request/header')).toHaveLength(1)
       expect(ofType(rows, 'x/agnes/code/jev.step').map((r) => data(r).route)).toEqual(['direct', 'answer'])
       expect(violations(rows)).toEqual([])
     } finally {

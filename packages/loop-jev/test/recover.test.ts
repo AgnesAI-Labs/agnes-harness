@@ -364,7 +364,7 @@ describe('recovery after resume', () => {
       effects: { 'jev:1:0:t0': { status: 'may-have-sent', invocationId: 'jev:1:0:t0', checkpoint: null } },
       resumeTool: () => ok('wrote a.txt'),
     })
-    const state = (r.jev.prepared[0] as { payload: { state: JsonObject } }).payload.state
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
     expect(state.goal).toBe('write a file')
     expect(state.current_turn_notes).toEqual([{ kind: 'steer', text: 'keep me' }])
     expect(r.jev.invoked[0]).toBe('jev:1:5:d0')

@@ -29,6 +29,10 @@ describe('agnes.jev when Jev fails', () => {
       expect((await runTurn(session, 'go')).reason).toBe('error')
       expect(fake.seen).toHaveLength(3)
       expect(await endOf(session)).toMatchObject({ error: { code: 'NO_PROGRESS_LIMIT' } })
+      const steps = ofType(await rowsOf(session), 'x/agnes/code/jev.step').map((r) => data(r))
+      expect(steps).toHaveLength(3)
+      for (const step of steps)
+        expect(step).toMatchObject({ route: 'decision_failed', reason: 'MODEL_UNAVAILABLE' })
       expect(costs(await rowsOf(session)).filter((r) => data(r).purpose === 'inference')).toHaveLength(0)
     } finally {
       await kit.host.close()
@@ -59,6 +63,8 @@ describe('agnes.jev when Jev fails', () => {
     try {
       const session = await kit.open('drops')
       expect((await runTurn(session, 'go')).reason).toBe('error')
+      // A dropped connection is not retried within its step: one request per step.
+      expect(fake.seen).toHaveLength(3)
       expect(await endOf(session)).toMatchObject({
         error: { code: 'NO_PROGRESS_LIMIT', message: expect.stringContaining('TRANSPORT') },
       })
@@ -75,6 +81,7 @@ describe('agnes.jev when Jev fails', () => {
       expect((await runTurn(session, 'go')).reason).toBe('completed')
       const steps = ofType(await rowsOf(session), 'x/agnes/code/jev.step').map((r) => data(r))
       expect(steps[0]).toMatchObject({ route: 'decision_failed', reason: 'MODEL_UNAVAILABLE' })
+      expect(steps[1]).toMatchObject({ route: 'arbitration', reason: 'recoverable_observation' })
       expect(
         ofType(await rowsOf(session), 'user/message').some((r) =>
           JSON.stringify(data(r)).includes('[recovery note]'),
