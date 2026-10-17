@@ -78,6 +78,7 @@
     "@agnes/ai",
     "@agnes/system-node",
     "@agnes/loop-default",
+    "@agnes/loop-jev",
     "@agnes/history-index",
     "@agnes/observability",
     "@agnes/memory-file",
@@ -184,6 +185,7 @@
   "@agnes/system-node": [],
   "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
   "@agnes/loop-default": ["@agnes/extension-api", "@agnes/plugin-runtime"],
+  "@agnes/loop-jev": ["@agnes/extension-api", "@agnes/plugin-runtime"],
   "@agnes/core-common": ["@agnes/extension-api", "@agnes/protocol"],
   "@agnes/core-child-control": ["@agnes/core-common", "@agnes/extension-api"],
   "@agnes/core-ledger": [

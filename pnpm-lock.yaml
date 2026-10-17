@@ -184,6 +184,9 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+      '@agnes/loop-jev':
+        specifier: workspace:*
+        version: link:../loop-jev
       '@agnes/memory-file':
         specifier: workspace:*
         version: link:../memory-file
@@ -1134,6 +1137,31 @@ importers:
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
+
+  packages/loop-jev:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+    devDependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/memory-file:
     dependencies:
