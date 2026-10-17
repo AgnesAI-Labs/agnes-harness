@@ -126,6 +126,10 @@ describe('repeat guard', () => {
     expect(checkDuplicate([run('I', 'O'), run('I', 'O'), edit], 'I', 'read')).toBeNull()
     expect(checkDuplicate([run('I', 'O'), edit, run('I', 'O'), run('I', 'O')], 'I', 'read')).not.toBeNull()
   })
+  it('only the latest change by another intent bounds the window', () => {
+    const edit = (fp: string) => run(fp, 'X', { operation: 'edit', phase: 'ACT', changed_files: ['a.ts'] })
+    expect(checkDuplicate([edit('E1'), run('I', 'O'), run('I', 'O'), edit('E2')], 'I', 'read')).toBeNull()
+  })
   it('a call that may have changed files resets the count', () => {
     const shell = run('S', 'X', { operation: 'shell', target: null, files_may_have_changed: true })
     expect(checkDuplicate([run('I', 'O'), run('I', 'O'), shell], 'I', 'read')).toBeNull()
@@ -159,6 +163,7 @@ describe('repeat guard', () => {
 describe('availability', () => {
   it('refuses a call whose tool is no longer among the turn tool names', () => {
     expect(checkAvailable(['read', 'read'], ['ls', 'read'])).toBeNull()
+    expect(UNAVAILABLE_MESSAGE).toBe('Selected operation is no longer available.')
     expect(checkAvailable(['write'], ['ls', 'read'])).toEqual({
       code: 'UNAVAILABLE',
       message: UNAVAILABLE_MESSAGE,

@@ -64,7 +64,11 @@ export function checkAvailable(names: readonly string[], toolNames: readonly str
     : { code: 'UNAVAILABLE', message: UNAVAILABLE_MESSAGE }
 }
 
-/** Whether the world may differ after this entry ran, whatever the call was. */
+/**
+ * Whether the world may differ after this entry ran, whatever the call was. Deliberately counts
+ * any dispatched UNKNOWN effect (even a read) as a change, which is broader than fileActivity in
+ * workspace.ts, so an unclear outcome never lets a stale repeat count stand.
+ */
 function changedWorld(entry: HistoryEntry): boolean {
   return (
     !!entry.changed_files?.length ||
