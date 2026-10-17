@@ -30,9 +30,10 @@ export function noticeText(notice: DaemonNotice): string | null {
       return '消息太多，正在追赶'
     case 'job_dispatched':
     case 'job_dead':
-    // packages_changed / tree_changed 是页面插件名册通知，与渠道机器人无关。
+    // Profile invalidations belong to the Web workbench, not channel conversations.
     case 'packages_changed':
     case 'tree_changed':
+    case 'decisions_changed':
       return null
   }
 }

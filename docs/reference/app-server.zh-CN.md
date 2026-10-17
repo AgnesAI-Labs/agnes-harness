@@ -18,6 +18,8 @@
 
 workspace 必须通过 `_agnes/v1/workspace.add` 登记，客户端提供 `cwd` 不会授予权限。不同传输访问同一个会话及其插件代际。
 
+`_agnes/v1/profile.decisions.list` 列出已认证本地用户的待处理全局操作；`_agnes/v1/profile.decisions.answer` 提交带 revision 校验的回答。连接成功执行授权 list 后，可收到 `_agnes/v1/daemon.notice` 的 `kind: "decisions_changed"`，仅匹配服务端绑定的 profile 和已解析 principal（`detail: { profile, principal: { id, org } }`）。创建、回答、过期和撤回持久提交后会使列表失效。通知不含审批 ID、提示、操作内容、回答或数量，也不授予数据权限。收到通知、页面重新可见/聚焦和重连后重新调用授权 list；通知尽力投递，不提供重放游标。这是 v1 的新增通知类型。
+
 ## 认证与管理
 
 本地 IPC 通过 daemon 的私有 Unix socket 或经过身份验证的 Windows pipe 验证 OS owner。`agh app-server --stdio` 在初始化时补充本地凭据，不把凭据输出到 stdout。此子进程具有可信本地管理员权限。EOF 和信号关闭该连接，共享 daemon 继续运行。

@@ -393,6 +393,11 @@ describe('createRunner', () => {
       detail: {},
       at: '2026-09-12T00:00:01.000Z',
     })
+    client.emitNotice({
+      kind: 'decisions_changed',
+      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+      at: '2026-09-12T00:00:01.000Z',
+    })
     await new Promise((resolve) => setTimeout(resolve, 5))
     expect(adapter.sent).toHaveLength(1)
 
