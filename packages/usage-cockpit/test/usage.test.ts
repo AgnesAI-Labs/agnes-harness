@@ -7,7 +7,7 @@ const cost = (
   id: string,
   purpose: string,
   billing?: { usdMicros: number; source: 'gateway' | 'estimated'; subscription: boolean },
-): UINode => ({
+): Extract<UINode, { kind: 'cost' }> => ({
   kind: 'cost',
   id,
   seq: Number(id.replace(/\D/g, '')) || 1,

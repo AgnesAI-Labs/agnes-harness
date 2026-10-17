@@ -84,7 +84,7 @@ export function apply(ctx: ClientContext) {
             <p>
               {sessionId} · {t('cut')}: {value.upto}
             </p>
-            <Segmented
+            <Segmented<'total' | 'calls'>
               label={t('views')}
               value={view}
               options={[
