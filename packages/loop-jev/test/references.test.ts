@@ -102,6 +102,7 @@ describe('extractReferences', () => {
       result: text('a.ts\nsub/b.ts\n[not searched: .git, node_modules]'),
     })
     expect(r.references.map((x) => x.value)).toEqual(['src/a.ts', 'src/sub/b.ts'])
+    expect(r.truncated).toBe(true)
   })
   it('reads only the match lines of grep, a path with a colon included', () => {
     const r = extractReferences({
@@ -165,6 +166,146 @@ describe('extractReferences', () => {
       extractReferences({ name: 'ls', args: {}, cwd: CWD, result: text('ls failed', { isError: true }) })
         .references,
     ).toEqual([])
+  })
+})
+
+describe('extractReferences, structured payloads', () => {
+  const ls = (result: object) =>
+    extractReferences({ name: 'ls', args: {}, cwd: CWD, result: text('x', result) })
+  it('keeps a complete payload complete', () => {
+    expect(ls(structured([refs('file', 'a.ts'), refs('directory', 'src')]))).toEqual({
+      source: 'structured',
+      references: [
+        { kind: 'file', value: 'a.ts' },
+        { kind: 'directory', value: 'src' },
+      ],
+      truncated: false,
+    })
+  })
+  it('does not believe a payload that counts more paths than it lists', () => {
+    expect(ls(structured([refs('file', 'a.ts')], { total: 3 })).truncated).toBe(true)
+  })
+  it('reads the text of a payload of another schema', () => {
+    const r = extractReferences({
+      name: 'ls',
+      args: {},
+      cwd: CWD,
+      result: text('b.ts', {
+        structured: { schema: 'other/1', references: [refs('file', 'a.ts')], total: 1, truncated: false },
+      }),
+    })
+    expect(r).toEqual({ source: 'text', references: [{ kind: 'file', value: 'b.ts' }], truncated: false })
+  })
+  it('drops malformed entries and keeps well-formed ones with extra keys', () => {
+    const r = ls(
+      structured([
+        'a.ts',
+        null,
+        { kind: 'file', path: 7 },
+        { kind: 'file' },
+        { kind: 'file', path: 'ok.ts', label: 'x', extra: true },
+      ]),
+    )
+    expect(r).toEqual({
+      source: 'structured',
+      references: [{ kind: 'file', value: 'ok.ts' }],
+      truncated: true,
+    })
+  })
+  it('binds a path of 512 characters but not a longer one, nor one with DEL', () => {
+    const long = 'a'.repeat(512)
+    expect(ls(structured([refs('file', long)])).references).toEqual([{ kind: 'file', value: long }])
+    expect(ls(structured([refs('file', `${long}b`)]))).toMatchObject({ references: [], truncated: true })
+    expect(ls(structured([refs('file', 'a\u007fb')]))).toMatchObject({ references: [], truncated: true })
+  })
+})
+
+describe('extractReferences, listing text', () => {
+  const cut =
+    '[truncated: 90000 bytes, 3000 lines; over the 51200-byte limit; full output stored at artifact://x]'
+  it('binds neither line next to the mark of a cut result', () => {
+    expect(
+      extractReferences({
+        name: 'find',
+        args: { pattern: '*' },
+        cwd: CWD,
+        result: text(`a.ts\nsrc/compo\n${cut}\nnents/b.ts\nc.ts`),
+      }),
+    ).toEqual({
+      source: 'text',
+      references: [
+        { kind: 'file', value: 'a.ts' },
+        { kind: 'file', value: 'c.ts' },
+      ],
+      truncated: true,
+    })
+    const grep = extractReferences({
+      name: 'grep',
+      args: { pattern: 'x' },
+      cwd: CWD,
+      result: text(`src/a.ts:1:x\nsrc/b.ts:2:xx.env:1:xx\n${cut}\n.env:1:x.env:1:x\nsrc/c.ts:3:x`),
+    })
+    expect(grep.references.map((x) => x.value)).toEqual(['src/a.ts', 'src/c.ts'])
+    expect(grep.truncated).toBe(true)
+  })
+  it('reads bracketed names as names, not notes', () => {
+    expect(
+      extractReferences({ name: 'ls', args: { path: 'app' }, cwd: CWD, result: text('[id]/\n[slug].tsx') }),
+    ).toEqual({
+      source: 'text',
+      references: [
+        { kind: 'directory', value: 'app/[id]' },
+        { kind: 'file', value: 'app/[slug].tsx' },
+      ],
+      truncated: false,
+    })
+    const r = extractReferences({
+      name: 'grep',
+      args: { pattern: 'x' },
+      cwd: CWD,
+      result: text('app/[slug].tsx:3:x'),
+    })
+    expect(r).toEqual({
+      source: 'text',
+      references: [{ kind: 'file', value: 'app/[slug].tsx' }],
+      truncated: false,
+    })
+  })
+  it('joins grep match paths with a directory root', () => {
+    const r = extractReferences({
+      name: 'grep',
+      args: { pattern: 'x', path: 'src' },
+      cwd: CWD,
+      result: text('a.ts:1:x\nsub/b.ts:2:x'),
+    })
+    expect(r.references.map((x) => x.value)).toEqual(['src/a.ts', 'src/sub/b.ts'])
+  })
+  it('reads a file named like its directory root as a file below it', () => {
+    const r = extractReferences({
+      name: 'grep',
+      args: { pattern: 'x', path: 'src' },
+      cwd: CWD,
+      result: text('src:1:x\na.ts:2:x'),
+    })
+    expect(r.references.map((x) => x.value)).toEqual(['src/src', 'src/a.ts'])
+  })
+  it('names the searched file for a find of one file', () => {
+    const r = extractReferences({
+      name: 'find',
+      args: { pattern: '*', path: 'src/a.ts' },
+      cwd: CWD,
+      result: text('a.ts'),
+    })
+    expect(r.references).toEqual([{ kind: 'file', value: 'src/a.ts' }])
+  })
+  it('skips grep context lines that read like match lines', () => {
+    const r = extractReferences({
+      name: 'grep',
+      args: { pattern: 'x', context: 1 },
+      cwd: CWD,
+      result: text('a.ts-1-see b.ts:12:here\na.ts:2:x\na.ts-3-.env:1:y'),
+    })
+    expect(r.references).toEqual([{ kind: 'file', value: 'a.ts' }])
   })
 })
 

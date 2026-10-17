@@ -37,15 +37,16 @@ export function isPathReferences(value: unknown): value is ToolPathReferences {
   )
 }
 
-/**
- * A path that can be bound, workspace-relative and normalized, or `null`. A name with a backslash or
- * a control character, or longer than the bound, stays evidence: it would not survive a later call.
- */
+/** Whether a normalized name can be bound: a backslash or a control character would not survive a later call. */
+function bindable(value: string): boolean {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  return value.length <= PATH_CHARS && !value.includes('\\') && !/[\u0000-\u001f\u007f]/.test(value)
+}
+
+/** A path that can be bound, workspace-relative and normalized, or `null`; anything else stays evidence. */
 function referencePath(path: unknown, kind: ReferenceKind, cwd: string): string | null {
   const value = normalizePath(path, cwd)
-  if (value === null || value.length > PATH_CHARS || value.includes('\\')) return null
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
-  if (/[\u0000-\u001f\u007f]/.test(value)) return null
+  if (value === null || !bindable(value)) return null
   return kind === 'file' && value === '.' ? null : value
 }
 
@@ -64,15 +65,62 @@ function collector() {
 }
 
 const join = (base: string, line: string) => (base === '.' ? line : `${base}/${line}`)
+// A search tool's notes are whole bracketed lines; a name such as `[id]/` or `[slug].tsx:3:x` is not one.
+const isNote = (line: string) => line.startsWith('[') && line.endsWith(']')
+// The marker the output guard puts where it cut the middle out of a result.
+const CUT_MARKER = /^\[truncated: \d+ bytes, \d+ lines; .*\]$/
+
+type Row = { kind: ReferenceKind; path: string }
+
+/** The names a listing shows, relative to the search root, and whether any line was left unread. */
+function rows(name: SearchTool, text: string): { rows: Row[]; truncated: boolean } {
+  const lines = text.split('\n')
+  // The guard cuts at byte offsets, so the line before its marker and the line after it may be
+  // fragments: a name never shown, or for grep a piece of matched file content.
+  const cut = new Set<number>()
+  lines.forEach((line, index) => {
+    if (CUT_MARKER.test(line)) cut.add(index - 1).add(index + 1)
+  })
+  const out: Row[] = []
+  let truncated = false
+  lines.forEach((line, index) => {
+    if (line === '') return
+    if (isNote(line) || cut.has(index)) {
+      truncated = true
+      return
+    }
+    if (index === 0 && EMPTY_LINES[name].includes(line)) return
+    if (name === 'ls') {
+      if (line.endsWith('@') || line.endsWith('?')) return
+      out.push(
+        line.endsWith('/') ? { kind: 'directory', path: line.slice(0, -1) } : { kind: 'file', path: line },
+      )
+      return
+    }
+    if (name === 'find') {
+      out.push({ kind: 'file', path: line })
+      return
+    }
+    const match = /^(.+?):(\d+):/.exec(line)
+    if (match !== null) out.push({ kind: 'file', path: match[1] as string })
+  })
+  if (name !== 'grep') return { rows: out, truncated }
+  // A context line `<path>-<n>-<text>` whose text holds `:<n>:` reads like a match line; its file is
+  // always one with a match of its own.
+  const matched = new Set(out.map((row) => row.path))
+  const context = (path: string) =>
+    [...path.matchAll(/-(?=\d+-)/g)].some((dash) => matched.has(path.slice(0, dash.index)))
+  return { rows: out.filter((row) => !context(row.path)), truncated }
+}
 
 function listing(
   name: SearchTool,
   text: string,
   base: string | null,
 ): { references: ViewReference[]; truncated: boolean } {
+  const found = rows(name, text)
+  let truncated = found.truncated
   const out = collector()
-  let truncated = false
-  // Lines are relative to the search root; the root is already workspace-relative.
   const take = (kind: ReferenceKind, relative: string) => {
     const absolute = relative.startsWith('/') || relative.startsWith('\\')
     // The root itself (`.`) is not a reference, but neither is it a name that failed to bind.
@@ -80,31 +128,11 @@ function listing(
     if (value === null) truncated = true
     else if (value !== '.') out.add(kind, value)
   }
-  const searched = base === null || base === '.' ? null : base.split('/').pop()
-  text.split('\n').forEach((line, index) => {
-    if (line === '') return
-    if (line.startsWith('[')) {
-      truncated = true
-      return
-    }
-    if (index === 0 && EMPTY_LINES[name].includes(line)) return
-    if (name === 'ls') {
-      if (line.endsWith('@') || line.endsWith('?')) return
-      if (line.endsWith('/')) take('directory', line.slice(0, -1))
-      else take('file', line)
-      return
-    }
-    if (name === 'find') {
-      take('file', line)
-      return
-    }
-    const match = /^(.+?):(\d+):/.exec(line)
-    if (match === null) return
-    const path = match[1] as string
-    // A search of one file names it by its last segment.
-    if (path === searched) take('file', '.')
-    else take('file', path)
-  })
+  // A search of one file names it by its last segment alone.
+  const last = base === null || base === '.' ? null : base.split('/').pop()
+  const oneFile = name !== 'ls' && found.rows.length > 0 && found.rows.every((row) => row.path === last)
+  if (oneFile) take('file', '.')
+  else for (const row of found.rows) take(row.kind, row.path)
   return { references: out.references, truncated }
 }
 
@@ -121,12 +149,20 @@ function fromStructured(payload: ToolPathReferences, cwd: string): Extracted {
   const out = collector()
   let dropped = false
   for (const entry of payload.references as readonly unknown[]) {
-    if (!isRecord(entry) || (entry.kind !== 'file' && entry.kind !== 'directory')) continue
+    if (!isRecord(entry)) {
+      dropped = true
+      continue
+    }
+    if (entry.kind !== 'file' && entry.kind !== 'directory') continue
     const value = referencePath(entry.path, entry.kind, cwd)
     if (value === null) dropped = true
     else out.add(entry.kind, value)
   }
-  return { source: 'structured', references: out.references, truncated: dropped || payload.truncated }
+  return {
+    source: 'structured',
+    references: out.references,
+    truncated: dropped || payload.truncated || payload.total > payload.references.length,
+  }
 }
 
 /** The references of one tool result: structured first, then the call's path argument, then the listing text. */
