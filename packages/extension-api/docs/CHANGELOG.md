@@ -6,6 +6,12 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ### Preview additions
 
+- `schedulingKind` and `SchedulingService` expose the fixed daemon scheduler to admitted plugin
+  callbacks. Declare the six `schedulingServiceCapabilities` and obtain the matching service lease
+  grants before `ctx.providers.bindOwn(schedulingKind)`. Bindings recheck exact declarations,
+  grants and callback lifetime on every operation. This unreleased preview keeps its API number;
+  publish these additions in a minor version before a public package release.
+
 - Experimental `profileRuntime` facet for current-profile managed resources and declared streams,
   with `managedServiceCapabilities` for the static status/configuration/check/retry/configure
   service declarations. Trusted in-process services use an explicit `in-process` artifact kind;

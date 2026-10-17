@@ -53,6 +53,7 @@ export type {
 export type { RemoteTransport } from './remote-transport.js'
 export * from './resources.js'
 export * from './sandbox-provider.js'
+export * from './scheduling.js'
 export * from './search-provider.js'
 export * from './service-provider.js'
 export * from './services.js'

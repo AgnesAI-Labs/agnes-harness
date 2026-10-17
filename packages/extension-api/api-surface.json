@@ -79,6 +79,8 @@
     "sandboxKind",
     "sandboxUnavailable",
     "satisfiesApiRange",
+    "schedulingKind",
+    "schedulingServiceCapabilities",
     "systemPromptKind",
     "toolPolicyKind",
     "toolRuntimeKind",
