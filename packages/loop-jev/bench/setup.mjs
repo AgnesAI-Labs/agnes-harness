@@ -1,13 +1,26 @@
 // Bench setup: which routes the host will serve, the self-contained fake home, the probe
 // interpreter and the headless bundle. Nothing here starts a host or a session.
-import { accessSync, constants, mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { delimiter, isAbsolute, join } from 'node:path'
+import { accessSync, constants, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { buildBundle } from './lib.mjs'
 
 /** A refusal the operator can fix: printed without a stack, exit code 2. */
 export class SetupError extends Error {}
 
 export const DEFAULT_PROFILE = 'local-dev'
+/** The built-in profile templates; the host layers a profile over the template of the same name. */
+export const PROFILES = ['local-dev', 'enterprise']
+
+/**
+ * The nearest directory at or above `path` that holds `.git`, if any. A session workspace inside a
+ * repository picks up that repository's instruction files and exposes it to the agent's tools.
+ */
+export function gitAncestor(path) {
+  for (let dir = path; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, '.git'))) return dir
+    if (dirname(dir) === dir) return undefined
+  }
+}
 const JEV_API = 'typesafe-systemone'
 const JEV_MODEL_ID = 'typesafe/jev-1.13-20260917'
 /** A placeholder: the loopback stand-in accepts any bearer key. */

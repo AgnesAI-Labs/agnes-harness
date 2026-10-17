@@ -2,13 +2,24 @@
 // per-turn records and the report. See bench/README.md for how to prepare a home and run it.
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   aggregate,
   callsPerInference,
   computeK,
+  decideStats,
   finalAnswer,
   LANES,
   loadSuite,
@@ -16,6 +27,7 @@ import {
   presetName,
   renderReport,
   scoreTurn,
+  toolSchemaCheck,
   turnMetrics,
   verdict,
 } from './lib.mjs'
@@ -23,6 +35,8 @@ import {
   benchBundle,
   DEFAULT_PROFILE,
   discoverRoutes,
+  gitAncestor,
+  PROFILES,
   prepareFakeHome,
   probesNeedPython,
   resolvePython,
@@ -54,7 +68,8 @@ Options:
   --scenario <id[,id]>    run only these scenarios
   --pilot                 baseline pilot: default lane only, one repetition; reports k
   --k <n>                 the k found by the pilot, for the inference-count gate (default: 1)
-  --profile <name>        profile in the home (default: local-dev)
+  --k-from <report.json>  take k from a pilot's report.json instead
+  --profile <name>        profile in the home: local-dev or enterprise (default: local-dev)
   --jev-route <route>     the Jev side-model route, when the home has several
   --jev-model <id>        a model on that route (default: the account's selected model)
   --chat-route <route>    the chat model route, when the home has several
@@ -66,8 +81,10 @@ Options:
   --dry-run               print the plan and write bundle.json without starting a host
   --help                  this text
 
-Exit codes: 0 every cell ran, 1 a cell failed to run (error, timeout, dirty workspace), 2 bad
-arguments or setup, 130 interrupted.`
+Workspaces are made in the system temp directory (TMPDIR) and copied to <out>/workspaces.
+
+Exit codes: 0 every cell ran, 1 a cell failed to run (error, timeout, dirty workspace) or the lanes
+sent different tool schemas (not comparable), 2 bad arguments or setup, 130 interrupted.`
 
 // ---- arguments ----------------------------------------------------------------------------
 
@@ -79,6 +96,7 @@ const VALUE_FLAGS = new Set([
   '--reps',
   '--scenario',
   '--k',
+  '--k-from',
   '--profile',
   '--jev-route',
   '--jev-model',
@@ -95,6 +113,30 @@ function positiveInt(value, flag) {
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) throw new SetupError(`${flag} must be a positive integer`)
   return n
+}
+
+/** k for the inference-count gate: `--k`, or the `pilot.k` of a pilot's report.json, else 1. */
+function readK(raw) {
+  if (raw['--k'] !== undefined) {
+    const k = Number(raw['--k'])
+    if (!Number.isFinite(k) || k < 1) throw new SetupError('--k must be a number of at least 1')
+    return { k, kSource: '--k' }
+  }
+  if (raw['--k-from'] !== undefined) {
+    const path = resolve(raw['--k-from'])
+    let k
+    try {
+      k = JSON.parse(readFileSync(path, 'utf8'))?.pilot?.k
+    } catch (error) {
+      throw new SetupError(
+        `--k-from ${path} cannot be read: ${error instanceof Error ? error.message : error}`,
+      )
+    }
+    if (typeof k !== 'number' || !Number.isFinite(k) || k < 1)
+      throw new SetupError(`--k-from ${path} is not a pilot report (no pilot.k of at least 1)`)
+    return { k, kSource: `pilot report ${path}` }
+  }
+  return { k: 1, kSource: 'default (no pilot k given)' }
 }
 
 export function parseCli(argv) {
@@ -115,8 +157,14 @@ export function parseCli(argv) {
   const lanes = (raw['--lanes'] ?? 'default,jev').split(',').filter(Boolean)
   if (lanes.length === 0 || new Set(lanes).size !== lanes.length || lanes.some((l) => !(l in LANES)))
     throw new SetupError('--lanes takes distinct names from: default, jev')
-  const k = raw['--k'] === undefined ? 1 : Number(raw['--k'])
-  if (!Number.isFinite(k) || k < 1) throw new SetupError('--k must be a number of at least 1')
+  if (raw['--k'] !== undefined && raw['--k-from'] !== undefined)
+    throw new SetupError('pass at most one of --k and --k-from')
+  const { k, kSource } = readK(raw)
+  const profile = raw['--profile'] ?? DEFAULT_PROFILE
+  if (!PROFILES.includes(profile))
+    throw new SetupError(
+      `--profile must be one of ${PROFILES.join(', ')}: the host layers a profile over the built-in template of the same name`,
+    )
   const pilot = raw['--pilot'] === true
   return {
     help: false,
@@ -130,7 +178,8 @@ export function parseCli(argv) {
     reps: pilot ? 1 : positiveInt(raw['--reps'] ?? '1', '--reps'),
     scenarios: raw['--scenario']?.split(',').filter(Boolean),
     k,
-    profile: raw['--profile'] ?? DEFAULT_PROFILE,
+    kSource,
+    profile,
     jevRoute: raw['--jev-route'],
     jevModel: raw['--jev-model'],
     chatRoute: raw['--chat-route'],
@@ -288,13 +337,33 @@ const notRun = (cell, index, error, tools = []) => ({
   tools,
 })
 
-/** Runs every turn of one (scenario, lane, repetition) in a fresh session and workspace. */
+/**
+ * Runs every turn of one (scenario, lane, repetition) in a fresh session, in a fresh workspace under
+ * the system temp directory. Afterwards the workspace is copied to `<out>/workspaces/<cell>` for
+ * inspection and the temp one is removed.
+ */
 async function runCell(ctx, cell) {
+  const workspace = realpathSync(mkdtempSync(join(ctx.workBase, 'agnes-bench-')))
+  const kept = join(ctx.out, 'workspaces', cellName(cell))
+  try {
+    const repo = gitAncestor(workspace)
+    if (repo) throw new Error(`workspace ${workspace} is inside the git work tree ${repo}`)
+    return await runCellIn(ctx, cell, workspace, kept)
+  } finally {
+    try {
+      mkdirSync(dirname(kept), { recursive: true })
+      rmSync(kept, { recursive: true, force: true })
+      cpSync(workspace, kept, { recursive: true })
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  }
+}
+
+async function runCellIn(ctx, cell, workspace, kept) {
   const { client, routes, out, probeEnv, price, state } = ctx
   const { scenario, lane, rep } = cell
-  const base = { scenario: scenario.id, category: scenario.category, lane, rep }
-  mkdirSync(join(out, 'workspaces'), { recursive: true })
-  const workspace = mkdtempSync(join(out, 'workspaces', `${cellName(cell)}-`))
+  const base = { scenario: scenario.id, category: scenario.category, lane, rep, workspace, kept }
   const generation = scenario.category === 'generation'
   if (generation) writeFileSync(join(workspace, '.gitkeep'), '')
   await client.workspace.add(workspace)
@@ -390,13 +459,13 @@ async function runCell(ctx, cell) {
       ...base,
       turn: index,
       sessionId: session.id,
-      workspace,
       endReason,
       ...(end?.data && typeof end.data === 'object' ? { end: end.data } : {}),
       answer: clip(answer),
       probes: probes.map((p) => ({ exit: p.exit, output: clip(p.output) })),
       score: scoreTurn({ turn, answer, endReason, probes }),
       metrics: metricsOf(events, price),
+      ...(lane === 'jev' ? { jevDecide: decideStats(events) } : {}),
       wallMs: start && end ? Date.parse(end.ts) - Date.parse(start.ts) : null,
       tools: result.tools,
       ...(promptError
@@ -415,17 +484,42 @@ async function runCell(ctx, cell) {
 const jevName = (jev) => (jev ? `${jev.route}/${jev.model}` : 'not used')
 const firstOf = (events, type, test = () => true) => events.find((e) => e.type === type && test(e))
 
-/** Pre-run checks, reported only: the same tool schema on both lanes, isolated prompt caches. */
+/** The first request's tool schema hash of a cell that ran, for comparing the lanes. */
+const schemaEntry = (cell, r) => ({
+  scenario: cell.scenario.id,
+  lane: cell.lane,
+  rep: cell.rep,
+  hash: firstOf(r.turnEvents.flat(), 'request/header')?.data?.tool_schema_hash ?? null,
+})
+
+/** The tool schema check over the cells that ran, as flags and the verdict's validity. */
+function schemaCheck(cells, results) {
+  const check = toolSchemaCheck(
+    cells.flatMap((cell, i) => (results[i] ? [schemaEntry(cell, results[i])] : [])),
+  )
+  const pair = (p) =>
+    `${p.scenario} rep ${p.rep + 1} (${Object.entries(p.hashes)
+      .map(([l, h]) => `${l} ${h ?? 'none'}`)
+      .join(', ')})`
+  const flags = [
+    ...check.mismatches.map((p) => `tool_schema_hash differs between lanes: ${pair(p)}`),
+    ...check.unchecked.map((p) => `tool_schema_hash not compared, a lane sent no request: ${pair(p)}`),
+  ]
+  const reason = check.mismatches.length
+    ? 'the lanes sent different tool schemas (tool_schema_hash)'
+    : check.compared === 0
+      ? 'no scenario ran on both lanes with a request to compare tool schemas'
+      : undefined
+  return { ...check, flags, reason }
+}
+
+/** Per-cell checks, reported only: isolated prompt caches, cell errors and problems. */
 function cellChecks(cells, results) {
   const flags = []
-  const byKey = new Map()
   cells.forEach((cell, i) => {
     const r = results[i]
     if (!r) return
     const events = r.turnEvents[0] ?? []
-    const hash = firstOf(events, 'request/header')?.data?.tool_schema_hash
-    const key = `${cell.scenario.id}|${cell.rep}`
-    byKey.set(key, [...(byKey.get(key) ?? []), { lane: cell.lane, hash }])
     const first = firstOf(events, 'cost/ledger', (e) => e.data?.purpose === 'inference')
     const cacheRead = first?.data?.tokens?.cacheRead ?? 0
     if (cacheRead > r.toolTokens)
@@ -435,13 +529,6 @@ function cellChecks(cells, results) {
     for (const problem of [...(r.problems ?? []), ...(r.error ? [r.error] : [])])
       flags.push(`${cellName(cell)}: ${problem}`)
   })
-  for (const [key, lanes] of byKey) {
-    const hashes = new Set(lanes.map((l) => l.hash))
-    if (lanes.length > 1 && hashes.size > 1)
-      flags.push(
-        `${key.replace('|', ' rep ')}: tool_schema_hash differs between lanes (${lanes.map((l) => `${l.lane} ${l.hash ?? 'none'}`).join(', ')})`,
-      )
-  }
   return flags
 }
 
@@ -467,6 +554,7 @@ function jevSection(records) {
   const sum = { steps: 0, llmAttempts: 0, noCall: 0, droppedCalls: 0, directSuccess: 0, sideCall: 0 }
   const byRoute = {}
   const failed = {}
+  const decide = { byStatus: {}, latencyMs: 0, maxLatencyMs: 0, failedLatencyMs: 0 }
   for (const r of rows) {
     const j = r.metrics.jev
     sum.steps += j.steps
@@ -477,6 +565,12 @@ function jevSection(records) {
     sum.sideCall += r.metrics.sideCall
     for (const [k, v] of Object.entries(j.byRoute)) byRoute[k] = (byRoute[k] ?? 0) + v
     for (const [k, v] of Object.entries(j.decisionFailed)) failed[k] = (failed[k] ?? 0) + v
+    const d = r.jevDecide
+    if (!d) continue
+    for (const [k, v] of Object.entries(d.byStatus)) decide.byStatus[k] = (decide.byStatus[k] ?? 0) + v
+    decide.latencyMs += d.latencyMs
+    decide.maxLatencyMs = Math.max(decide.maxLatencyMs, d.maxLatencyMs)
+    decide.failedLatencyMs += d.failedLatencyMs
   }
   const fmt = (o) =>
     Object.entries(o)
@@ -490,9 +584,12 @@ function jevSection(records) {
     `- model attempts: ${sum.llmAttempts}; no call: ${sum.noCall}; dropped calls: ${sum.droppedCalls}`,
     `- direct steps that succeeded: ${sum.directSuccess}`,
     `- decision failures: ${fmt(failed)}`,
+    `- Jev calls by status: ${fmt(decide.byStatus)}; latency total ${seconds(decide.latencyMs)}, largest ${seconds(decide.maxLatencyMs)}; time in calls that did not answer ${seconds(decide.failedLatencyMs)}`,
     '',
   ]
 }
+
+const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`
 
 /**
  * Per lane, over the requests of each session in order: how often the tool schema hash changed
@@ -525,7 +622,9 @@ function writeOutputs(ctx, cells, results) {
   const records = results.flatMap((r) => r?.records ?? [])
   const turns = results.flatMap((r) => r?.turnEvents ?? [])
   const totals = aggregate(records)
+  const compare = ctx.o.lanes.length > 1 ? schemaCheck(cells, results) : undefined
   const flags = [
+    ...(compare?.flags ?? []),
     ...cellChecks(cells, results),
     ...turnFlags(records),
     ...[...ctx.missingPrices].map((m) => `cost missing catalogue price: ${m} (counted as 0)`),
@@ -536,7 +635,13 @@ function writeOutputs(ctx, cells, results) {
         callsPerInference: callsPerInference(turns.map((events) => ({ events }))),
       }
     : undefined
-  const gates = pilot ? undefined : verdict(totals, ctx.o.k)
+  // The gates mean something only when both lanes ran with the same tool schema.
+  const gates =
+    pilot || !compare
+      ? undefined
+      : compare.valid
+        ? { ...verdict(totals, ctx.o.k), valid: true }
+        : { passGate: false, callGate: false, costGate: false, valid: false, reason: compare.reason }
   const report = {
     suite: ctx.suite.suite,
     generatedAt: new Date().toISOString(),
@@ -544,7 +649,8 @@ function writeOutputs(ctx, cells, results) {
     lanes: ctx.o.lanes,
     reps: ctx.o.reps,
     routes: { source: ctx.routes.source, jev: ctx.routes.jev, chat: ctx.routes.chat },
-    ...(pilot ? { pilot } : { k: ctx.o.k, verdict: gates }),
+    ...(pilot ? { pilot } : { k: ctx.o.k, kSource: ctx.o.kSource, verdict: gates ?? null }),
+    ...(ctx.stopped ? { stopped: ctx.stopped } : {}),
     totals,
     flags,
     interrupted: ctx.state.interrupted,
@@ -559,6 +665,8 @@ function writeOutputs(ctx, cells, results) {
     '',
     `- chat model: ${ctx.routes.chat.route}/${ctx.routes.chat.model}; Jev: ${jevName(ctx.routes.jev)} (routes from ${ctx.routes.source}${ctx.o.fake ? ', fake endpoints' : ''})`,
     `- lanes ${ctx.o.lanes.join(', ')}; repetitions ${ctx.o.reps}${ctx.state.interrupted ? '; INTERRUPTED' : ''}`,
+    ...(pilot ? [] : [`- k = ${ctx.o.k} (${ctx.o.kSource})`]),
+    ...(ctx.stopped ? [`- stopped early: ${ctx.stopped}`] : []),
     '',
     ...jevSection(records),
     ...cacheSection(results, cells),
@@ -580,10 +688,12 @@ function writeOutputs(ctx, cells, results) {
   const md = renderReport({
     suite: ctx.suite.suite,
     totals,
-    ...(gates ? { verdict: gates, k: ctx.o.k } : {}),
+    ...(gates?.valid ? { verdict: gates, k: ctx.o.k } : {}),
     records,
   })
-  writeFileSync(join(ctx.o.out, 'report.md'), `${md}\n${extra.join('\n')}`)
+  const headline =
+    gates && !gates.valid ? `> **NOT COMPARABLE: ${gates.reason}. No gate is judged; see Checks.**\n\n` : ''
+  writeFileSync(join(ctx.o.out, 'report.md'), `${headline}${md}\n${extra.join('\n')}`)
   return report
 }
 
@@ -607,8 +717,21 @@ export async function main(argv) {
   }
   const suite = loadPlan(o)
   const python = checkPython(suite, o)
-  const root = join(o.out, 'root')
-  mkdirSync(root, { recursive: true })
+  // Workspaces and the startup directory live under the system temp directory, never under --out:
+  // inside a repository, a session would load that repository's instruction files on both lanes
+  // and its auto-approved tools could reach the repository.
+  const workBase = realpathSync(tmpdir())
+  const repo = gitAncestor(workBase)
+  if (repo)
+    throw new SetupError(
+      `the temp directory ${workBase} is inside the git work tree ${repo}; point TMPDIR at a directory outside any repository`,
+    )
+  if (o.lanes.includes('jev') && o.reps > 1 && !o.pilot && o.kSource.startsWith('default'))
+    process.stderr.write(
+      'bench: warning: no --k or --k-from given; the inference-count gate uses k = 1. Run the pilot first and pass --k-from <pilot report.json>.\n',
+    )
+  mkdirSync(o.out, { recursive: true })
+  const root = mkdtempSync(join(workBase, 'agnes-bench-root-'))
   const agnesVersion = JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')).version
   if (o.fake) {
     // The fake endpoints are on loopback; a proxy set on the machine would sit in between.
@@ -616,9 +739,10 @@ export async function main(argv) {
       delete process.env[key]
     process.env.NO_PROXY = '127.0.0.1,localhost'
   }
-  const fake = o.fake ? await prepareFakeHome(o.out) : undefined
-  if (fake) o.profile = fake.profile
+  let fake
   try {
+    fake = o.fake ? await prepareFakeHome(o.out) : undefined
+    if (fake) o.profile = fake.profile
     const home = fake?.home ?? o.home
     const routes = await discoverRoutes({
       ...o,
@@ -647,7 +771,9 @@ export async function main(argv) {
       log(
         `cell ${cellName(c)}: scenario ${c.scenario.id}, lane ${c.lane}, rep ${c.rep + 1}, preset ${c.preset}, ${bundle.presets[c.preset].model.system_prompt.personaPrefix}`,
       )
-    log(`home ${home}; bundle ${bundlePath}; startup directory ${root}`)
+    log(
+      `home ${home}; bundle ${bundlePath}; workspaces under ${workBase}, kept in ${join(o.out, 'workspaces')}`,
+    )
     if (o.dryRun) return 0
 
     const shim = python ? writePythonShim(join(o.out, 'shim'), python.path) : undefined
@@ -681,6 +807,8 @@ export async function main(argv) {
     const { bootHeadless } = await import(join(CLI, 'src', 'boot', 'headless.ts'))
     const { parseArgs } = await import(join(CLI, 'src', 'args.ts'))
     await initializeHomeLocked(home, o.profile)
+    // The host reads user-wide instruction files from AGH_HOME; the bench home holds none.
+    process.env.AGH_HOME = home
     const bootAbort = new AbortController()
     const booted = await bootHeadless(
       {
@@ -696,6 +824,8 @@ export async function main(argv) {
       routes,
       client: booted.client,
       out: o.out,
+      workBase,
+      stopped: undefined,
       probeEnv,
       price,
       missingPrices,
@@ -703,6 +833,7 @@ export async function main(argv) {
       turnTimeoutMs: o.turnTimeoutMs,
     }
     const results = []
+    let report
     try {
       for (const [i, cell] of cells.entries()) {
         if (state.interrupted) break
@@ -724,8 +855,15 @@ export async function main(argv) {
         log(
           `[${i + 1}/${cells.length}] ${cellName(cell)}: ${passed}/${r.records.length} turns passed${r.error ? `; ${r.error}` : ''}`,
         )
+        // Stop as soon as one scenario has run on both lanes with different tool schemas: no
+        // later cell could make the two lanes comparable again.
+        if (o.lanes.length > 1 && schemaCheck(cells, results).mismatches.length) {
+          ctx.stopped = 'the lanes sent different tool schemas; the remaining cells were not run'
+          log(`bench: ${ctx.stopped}`)
+          break
+        }
       }
-      const report = writeOutputs(ctx, cells, results)
+      report = writeOutputs(ctx, cells, results)
       log(`report ${join(o.out, 'report.md')}; ${report.flags.length} flags`)
     } finally {
       process.off('SIGINT', onSignal)
@@ -733,9 +871,11 @@ export async function main(argv) {
       await booted.close()
     }
     if (state.interrupted) return 130
+    if (report.verdict && !report.verdict.valid) return 1
     return results.some((r) => r?.error || r?.problems.length) ? 1 : 0
   } finally {
     await fake?.close()
+    rmSync(root, { recursive: true, force: true })
   }
 }
 

@@ -1,5 +1,15 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -63,8 +73,9 @@ const JEV_MODEL = {
 }
 
 /** An OpenAI-compatible chat endpoint on loopback that lists one model and always answers "ok". */
-async function startChat(model: string): Promise<{ baseUrl: string; systems: string[] }> {
+async function startChat(model: string): Promise<{ baseUrl: string; systems: string[]; bodies: string[] }> {
   const systems: string[] = []
+  const bodies: string[] = []
   const server: Server = createServer(async (req, res) => {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk as Buffer)
@@ -77,6 +88,7 @@ async function startChat(model: string): Promise<{ baseUrl: string; systems: str
       res.writeHead(404).end()
       return
     }
+    bodies.push(Buffer.concat(chunks).toString('utf8'))
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
       messages: Array<{ role: string; content: unknown }>
     }
@@ -99,7 +111,7 @@ async function startChat(model: string): Promise<{ baseUrl: string; systems: str
         server.close(resolve)
       }),
   })
-  return { baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, systems }
+  return { baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`, systems, bodies }
 }
 
 async function startJev(script: Parameters<typeof startFakeSystemOne>[0] = {}): Promise<FakeSystemOne> {
@@ -180,15 +192,65 @@ describe('bench runner', () => {
     expect(profile.adapters.secrets).toEqual({ kind: 'file', path: join(out, 'dry', 'home', 'credentials') })
     expect(r.stdout).toContain('mini')
     expect(readdirSync(join(out, 'dry'))).not.toContain('records.jsonl')
+    expect(r.stderr).not.toContain('warning')
+  })
+
+  it('refuses setups whose numbers would not hold', () => {
+    const plan = (extra: string[], env: Record<string, string> = {}) =>
+      runSync(['--suite', suite, '--out', join(out, 'refuse'), '--fake', '--dry-run', ...extra], env)
+    // Workspaces are made in the temp directory, so a temp directory inside a repository is refused.
+    const repo = join(out, 'tmp-repo')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    mkdirSync(join(repo, 'tmp'), { recursive: true })
+    const inRepo = plan([], { TMPDIR: join(repo, 'tmp') })
+    expect(inRepo.status).toBe(2)
+    expect(inRepo.stderr).toContain(`inside the git work tree ${realpathSync(repo)}`)
+    const profile = plan(['--profile', 'bench'])
+    expect(profile.status).toBe(2)
+    expect(profile.stderr).toContain('--profile must be one of local-dev, enterprise')
+    const notPilot = join(out, 'not-a-pilot.json')
+    writeFileSync(notPilot, JSON.stringify({ verdict: {} }))
+    const kFrom = plan(['--k-from', notPilot])
+    expect(kFrom.status).toBe(2)
+    expect(kFrom.stderr).toContain('is not a pilot report')
+    expect(plan(['--k', '2', '--k-from', notPilot]).stderr).toContain('at most one of --k and --k-from')
+    const noK = plan(['--reps', '2'])
+    expect(noK.status, noK.stderr).toBe(0)
+    expect(noK.stderr).toContain('warning: no --k or --k-from given')
   })
 
   it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', () => {
-    const dir = join(out, 'fake')
-    const r = runSync(['--suite', suite, '--lanes', 'default,jev', '--reps', '1', '--out', dir, '--fake'])
+    // The output directory sits inside a git work tree; the sessions' workspaces must not.
+    const repo = join(out, 'repo')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    const dir = join(repo, 'bench-out')
+    const pilotReport = join(out, 'pilot-report.json')
+    writeFileSync(pilotReport, JSON.stringify({ pilot: { k: 1.5 } }))
+    const r = runSync([
+      '--suite',
+      suite,
+      '--lanes',
+      'default,jev',
+      '--reps',
+      '1',
+      '--out',
+      dir,
+      '--fake',
+      '--k-from',
+      pilotReport,
+    ])
     expect(r.status, r.stderr).toBe(0)
     const report = readJson(join(dir, 'report.json'))
+    expect(report).toMatchObject({ k: 1.5, kSource: `pilot report ${pilotReport}`, verdict: { valid: true } })
     const records = readRecords(dir)
     expect(records.map((x) => x.lane).sort()).toEqual(['default', 'jev'])
+    for (const record of records) {
+      expect(record.workspace.startsWith(realpathSync(repo))).toBe(false)
+      expect(existsSync(record.workspace)).toBe(false)
+      expect(record.kept).toBe(join(dir, 'workspaces', `mini.${record.lane}.r1`))
+      expect(existsSync(record.kept)).toBe(true)
+    }
+    expect(readRecords(dir).find((x) => x.lane === 'jev').jevDecide).toMatchObject({ byStatus: { ok: 2 } })
     const jev = records.find((x) => x.lane === 'jev')
     expect(jev.metrics.sideCall).toBeGreaterThan(0)
     expect(jev.metrics.reconciled).toBe(true)
@@ -215,7 +277,11 @@ describe('bench runner', () => {
     const mini = readJson(suite)
     mini.scenarios[0].turns[0].bash.push({ command: 'python -B -c pass', contains: 'STUB_PY_OK -B -c pass' })
     writeFileSync(pySuite, JSON.stringify(mini))
-    const dir = join(out, 'settings', 'run')
+    // The output directory is inside a git work tree whose instruction file must reach no session.
+    const repo = join(out, 'settings', 'repo')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, 'AGENTS.md'), 'REPO_RULES_MUST_NOT_REACH_THE_BENCH\n')
+    const dir = join(repo, 'run')
     const r = await runAsync(
       ['--suite', pySuite, '--lanes', 'default,jev', '--reps', '1', '--out', dir, '--home', home],
       {
@@ -246,6 +312,8 @@ describe('bench runner', () => {
     )
     expect(scopes).toHaveLength(2)
     for (const scope of scopes) expect(chat.systems.some((s) => s.includes(scope))).toBe(true)
+    expect(chat.bodies.length).toBeGreaterThan(0)
+    expect(chat.bodies.some((b) => b.includes('REPO_RULES_MUST_NOT_REACH_THE_BENCH'))).toBe(false)
     // The plugin row's Jev route from the bundle is the Settings account's route.
     const sideRoutes = readFileSync(join(dir, 'events', 'mini.jev.r1.jsonl'), 'utf8')
       .trim()

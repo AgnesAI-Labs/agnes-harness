@@ -8,12 +8,14 @@ import {
   cacheScope,
   callsPerInference,
   computeK,
+  decideStats,
   finalAnswer,
   loadSuite,
   orderLanes,
   presetName,
   renderReport,
   scoreTurn,
+  toolSchemaCheck,
   turnMetrics,
   verdict,
 } from '../bench/lib.mjs'
@@ -195,6 +197,43 @@ describe('bench metrics', () => {
     })
     const answered = [{ type: 'assistant/message', data: { stopReason: 'end_turn' } }, ...events.slice(6, 8)]
     expect(callsPerInference([{ events: answered }])).toEqual({})
+  })
+  it('sums the Jev calls of a turn by status and latency', () => {
+    const decide = (status: string, latencyMs: number) => ({
+      type: 'x/agnes/base/jev.decide',
+      data: { status, latencyMs },
+    })
+    expect(
+      decideStats([
+        decide('ok', 10),
+        { type: 'cost/ledger', data: {} },
+        decide('failed', 40),
+        decide('ok', 5),
+      ]),
+    ).toEqual({
+      calls: 3,
+      byStatus: { ok: 2, failed: 1 },
+      latencyMs: 55,
+      maxLatencyMs: 40,
+      failedLatencyMs: 40,
+    })
+  })
+  it('compares the lanes only when their tool schemas agree', () => {
+    const e = (scenario: string, lane: string, rep: number, hash?: string) => ({ scenario, lane, rep, hash })
+    expect(toolSchemaCheck([e('a', 'default', 0, 'h1'), e('a', 'jev', 0, 'h1')])).toMatchObject({
+      valid: true,
+      compared: 1,
+    })
+    const differ = toolSchemaCheck([
+      e('a', 'default', 0, 'h1'),
+      e('a', 'jev', 0, 'h2'),
+      e('b', 'jev', 0, 'h1'),
+    ])
+    expect(differ.valid).toBe(false)
+    expect(differ.mismatches).toEqual([{ scenario: 'a', rep: 0, hashes: { default: 'h1', jev: 'h2' } }])
+    const missing = toolSchemaCheck([e('a', 'default', 0, 'h1'), e('a', 'jev', 0)])
+    expect(missing).toMatchObject({ valid: false, compared: 0, unchecked: [{ scenario: 'a' }] })
+    expect(toolSchemaCheck([e('a', 'default', 0, 'h1')]).valid).toBe(false)
   })
   it('judges the three gates on totals', () => {
     const rec = (lane: string, pass: boolean, inference: number, usd: number) => ({

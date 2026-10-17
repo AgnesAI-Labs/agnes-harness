@@ -335,6 +335,55 @@ export function callsPerInference(turns, mutable = DEFAULT_MUTABLE) {
   return histogram
 }
 
+/**
+ * The Jev calls of one turn from its `jev.decide` events: count by status, total and largest
+ * latency, and the time spent in calls that did not answer (status other than `ok`).
+ */
+export function decideStats(events) {
+  const stats = { calls: 0, byStatus: {}, latencyMs: 0, maxLatencyMs: 0, failedLatencyMs: 0 }
+  for (const event of events) {
+    if (!event.type.endsWith('/jev.decide')) continue
+    const data = isObject(event.data) ? event.data : {}
+    const status = typeof data.status === 'string' ? data.status : 'unknown'
+    const latency = num(data.latencyMs)
+    stats.calls++
+    bump(stats.byStatus, status)
+    stats.latencyMs += latency
+    stats.maxLatencyMs = Math.max(stats.maxLatencyMs, latency)
+    if (status !== 'ok') stats.failedLatencyMs += latency
+  }
+  return stats
+}
+
+/**
+ * The lanes compare only when they send the same tool schema. `entries` hold the first request's
+ * `tool_schema_hash` of each (scenario, lane, repetition); entries of one scenario and repetition
+ * must agree. A pair with a missing hash cannot be checked and is listed apart. With no pair
+ * compared at all, nothing shows the lanes comparable, so the result is not valid either.
+ */
+export function toolSchemaCheck(entries) {
+  const groups = new Map()
+  for (const e of entries) {
+    const key = `${e.scenario}|${e.rep}`
+    groups.set(key, [...(groups.get(key) ?? []), e])
+  }
+  const mismatches = []
+  const unchecked = []
+  let compared = 0
+  for (const list of groups.values()) {
+    if (list.length < 2) continue
+    const where = { scenario: list[0].scenario, rep: list[0].rep }
+    const hashes = Object.fromEntries(list.map((e) => [e.lane, e.hash ?? null]))
+    if (list.some((e) => typeof e.hash !== 'string')) {
+      unchecked.push({ ...where, hashes })
+      continue
+    }
+    compared++
+    if (new Set(list.map((e) => e.hash)).size > 1) mismatches.push({ ...where, hashes })
+  }
+  return { valid: compared > 0 && mismatches.length === 0, compared, mismatches, unchecked }
+}
+
 // ---- aggregation and gates ----------------------------------------------------------------
 
 const slot = (map, key, make) => {

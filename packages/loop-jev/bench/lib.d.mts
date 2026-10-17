@@ -115,6 +115,22 @@ export function callsPerInference(
   turns: Array<{ events: MetricEvent[] }>,
   mutable?: string[],
 ): Record<string, number>
+export type DecideStats = {
+  calls: number
+  byStatus: Record<string, number>
+  latencyMs: number
+  maxLatencyMs: number
+  failedLatencyMs: number
+}
+export function decideStats(events: MetricEvent[]): DecideStats
+export type SchemaEntry = { scenario: string; lane: string; rep: number; hash?: string | null | undefined }
+export type SchemaPair = { scenario: string; rep: number; hashes: Record<string, string | null> }
+export function toolSchemaCheck(entries: SchemaEntry[]): {
+  valid: boolean
+  compared: number
+  mismatches: SchemaPair[]
+  unchecked: SchemaPair[]
+}
 export function aggregate(records: BenchRecord[]): Totals
 export function verdict(totals: Totals, k: number): Verdict
 export function renderReport(o: {

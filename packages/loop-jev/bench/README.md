@@ -3,12 +3,28 @@
 `run.mjs` runs a suite from `suites/` on two lanes, the default loop (`agnes.default@1.0.0`) and the
 Jev loop (`agnes.jev@0.1.0`), in one headless host with the same chat model, the same seven tools
 (`ls`, `read`, `grep`, `find`, `write`, `edit`, `shell`) and the same preset. Every
-(scenario, lane, repetition) gets a fresh session, a fresh workspace and its own prompt-cache scope.
+(scenario, lane, repetition) gets a fresh session, a fresh workspace in the system temp directory
+and its own prompt-cache scope.
 After each turn the suite's probes run in the workspace, outside the agent, and the turn is scored:
 every hard probe exits 0 with its marker, every `answer_contains` text is in the final answer, and
 the turn ended `completed`. Failed turns are kept, never re-run.
 
-Run every command from the repository root after `pnpm install`.
+Run every command from the repository root. Build once first (the runner runs from source and
+needs the native modules; `serve` needs the local distribution):
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @agnes/host build:native
+pnpm --filter @agnes/system-node build:native
+pnpm --filter @agnes/cli build:local
+```
+
+Keep `--out` outside any git repository, for example under `$HOME/agh-bench-out`, so the archive
+you send back holds nothing else. The sessions' workspaces never live under `--out`: each one is
+made in the system temp directory and copied to `--out/workspaces` when its cell ends. A workspace
+inside a repository would let the host load that repository's `AGENTS.md`/`CLAUDE.md` into every
+session on both lanes, and let the auto-approved tools reach the repository. The runner refuses to
+start (exit 2) when the temp directory itself is inside a git work tree; point `TMPDIR` elsewhere.
 
 ## Running it with real accounts
 
@@ -20,7 +36,7 @@ UI, which keeps the keys in the home's own credential store.
 ```sh
 export AGH_HOME="$HOME/agh-bench-home"   # any empty directory that is used only for the bench
 export AGNES_PROFILE=local-dev
-node agnes.mjs serve                     # after the source build; `agh serve` with an installed distribution
+node agnes.mjs serve                     # or `agh serve` with an installed distribution
 ```
 
 Open the printed URL, then:
@@ -48,23 +64,26 @@ export BENCH_PYTHON=~/bench-venv/bin/python
 # Plan only: shows the discovered routes and every cell, starts nothing, costs nothing.
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
   --suite packages/loop-jev/bench/suites/smoke.json --lanes default,jev --reps 1 \
-  --out bench-out/smoke --dry-run
+  --out "$HOME/agh-bench-out/smoke" --dry-run
 
 # Smoke run: both lanes, once (6 scenarios, 16 turns per lane). A check before launch, not a measurement.
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
-  --suite packages/loop-jev/bench/suites/smoke.json --lanes default,jev --reps 1 --out bench-out/smoke
+  --suite packages/loop-jev/bench/suites/smoke.json --lanes default,jev --reps 1 \
+  --out "$HOME/agh-bench-out/smoke"
 
 # Baseline pilot: default lane only, once over the three FastAPI families (20 turns). Sets k.
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
-  --suite packages/loop-jev/bench/suites/fastapi-families.json --pilot --out bench-out/pilot
+  --suite packages/loop-jev/bench/suites/fastapi-families.json --pilot --out "$HOME/agh-bench-out/pilot"
 ```
 
-The acceptance run, later, is three repetitions of both lanes with the `k` from the pilot:
+The acceptance run, later, is three repetitions of both lanes with the `k` from the pilot, read
+from the pilot's report (`--k <n>` gives it by hand). Without either, a run of both lanes with more
+than one repetition warns and uses k = 1; the report records where k came from.
 
 ```sh
 pnpm exec tsx packages/loop-jev/bench/run.mjs --home "$AGH_HOME" \
   --suite packages/loop-jev/bench/suites/fastapi-families.json --lanes default,jev --reps 3 \
-  --k <k from the pilot> --out bench-out/acceptance
+  --k-from "$HOME/agh-bench-out/pilot/report.json" --out "$HOME/agh-bench-out/acceptance"
 ```
 
 When the home has more than one chat account or more than one Jev entry, the runner lists them and
@@ -82,7 +101,7 @@ Everything goes under `--out`:
 | `report.json` | The same as data: routes used, totals, verdict or pilot result, flags |
 | `records.jsonl` | One line per turn: score and every check, answer, probe exits and output, ledger counters, wall time, tool list |
 | `events/<scenario>.<lane>.r<n>.jsonl` | Every ledger event of each session, for re-analysis |
-| `workspaces/` | Each session's workspace as the agent left it |
+| `workspaces/<scenario>.<lane>.r<n>/` | A copy of each session's workspace as the agent left it (the record names the temp path the session used) |
 | `bundle.json` | The headless bundle the host was started with |
 
 Send back `report.md`, `report.json`, `records.jsonl` and the `events/` directory (for example as
@@ -90,10 +109,20 @@ one archive of `--out` without `workspaces/`). They contain the suite's goals, t
 and token counts; they contain no key, and the runner writes no key anywhere.
 
 Exit codes: 0 every cell ran; 1 a cell could not run as planned (an error, a dirty workspace, a turn
-that hit its watchdog); 2 bad arguments or setup (the message says what to fix); 130 interrupted.
+that hit its watchdog) or the lanes are not comparable (below); 2 bad arguments or setup (the
+message says what to fix, including a profile other than `local-dev` or `enterprise`); 130
+interrupted.
 
-The checks section flags, without failing anything: lanes whose first request has different
-`tool_schema_hash` values, a first request of a cell that read more cached tokens than the tool
+**Comparable lanes.** The two lanes count only when they send the same tool schema. After each cell
+the runner compares the first request's `tool_schema_hash` of every scenario and repetition that has
+run on both lanes. As soon as one pair differs it stops, without running the remaining cells, and
+the report says NOT COMPARABLE at the top, judges no gate (`verdict.valid: false` with the reason)
+and the exit code is 1. The same happens when no pair could be compared at all. The comparison needs
+one cell of each lane, so at least the first scenario runs on both lanes before a mismatch can be
+seen.
+
+The checks section also flags, without failing anything: a pair whose hash could not be compared
+because a lane sent no request, a first request of a cell that read more cached tokens than the tool
 definitions could account for, turns whose inference rows do not match the Jev loop's own count of
 model attempts, dropped Jev telemetry, turns that ended at the no-progress limit, ledger rows whose
 model has no catalogue price, and timeouts.
@@ -135,3 +164,9 @@ How the runner fits the host as it is in this version:
   as UTF-8 bytes / 3.
 - The pilot also reports how many tool calls each tool-using inference request made (mutable and
   read-only), next to k.
+- Jev calls: each Jev-lane record has `jevDecide` (calls by status, total and largest latency, and
+  the latency of calls whose status is not `ok`), summed in the report's Jev lane section. The time
+  in failed Jev calls is that latency sum; it does not include the rest of a failed step. Anything
+  finer, such as per-step timing, is in the raw `events/` files (`jev.decide`, `jev.step`).
+- The startup directory of the headless host is also a temp directory, and `AGH_HOME` is set to
+  the bench home, so no user-wide instruction file from another home reaches the sessions.
