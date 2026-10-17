@@ -4,6 +4,7 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 import { Context } from '@agnes/cordis'
 import {
   conversationCards,
+  factChainLinks,
   PresentationRoleRegistry,
   SessionService,
   SlotRegistry,
@@ -53,18 +54,26 @@ it('takes over the complete experience, recovers history, opens/downloads throug
   }
   const client = { sessions: { get: () => handle }, on: () => () => {} }
   const context = (owner: string) =>
-    Object.create(
-      null,
-      Object.fromEntries(
-        Object.entries({
-          agnes: client,
-          session,
-          slots,
-          resources,
-          locale: { locale: 'en', t: (key: string) => key },
-          presentationRoles: { register: (provider: never) => roles.register(owner, provider) },
-        }).map(([key, value]) => [key, { value, enumerable: false }]),
+    new Proxy(
+      Object.create(
+        null,
+        Object.fromEntries(
+          Object.entries({
+            agnes: client,
+            session,
+            slots,
+            resources,
+            locale: { locale: 'en', t: (key: string) => key },
+            presentationRoles: { register: (provider: never) => roles.register(owner, provider) },
+          }).map(([key, value]) => [key, { value, enumerable: false }]),
+        ),
       ),
+      {
+        get(target, key) {
+          if (!Reflect.has(target, key)) throw new Error(`Uninjected service: ${String(key)}`)
+          return Reflect.get(target, key)
+        },
+      },
     )
   const host = document.createElement('div'),
     root = createRoot(host)
@@ -80,7 +89,18 @@ it('takes over the complete experience, recovers history, opens/downloads throug
   let stopGallery: (() => void) | undefined
   const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   try {
+    await act(async () =>
+      root.render(
+        createElement(slots.entriesOfSlot('conversation.chat.turnTail')[0]!.component, {
+          value: { turn: { id: 'turn', startSeq: 1, endSeq: 10 } },
+        }),
+      ),
+    )
+    await vi.waitFor(() => expect(host.textContent).toContain('report.txt'))
+    await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
     await renderPanel('deliverables')
+    expect(resources.documents.load).toHaveBeenCalledWith({ laneId: 'main', artifact, kind: 'text' })
+    expect(host.textContent).toContain('saved snapshot')
     expect(slots.entriesOfSlot('conversation.chat.turnTail')).toHaveLength(1)
     await act(async () => {
       stopGallery = gallery.apply(context('gallery'))
@@ -153,6 +173,8 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     root = createRoot(host)
   const release = vi.fn()
   const load = vi.fn(async () => ({ kind: 'text', content: 'older snapshot', release }))
+  const navigate = vi.fn(() => true)
+  const stopNavigation = factChainLinks.register(navigate)
   const ctx = {
     locale: { locale: 'en', t: (key: string) => key },
     resources: { documents: { load } },
@@ -162,7 +184,7 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     id: 'old',
     sessionId: 's',
     laneId: 'main',
-    source: { owner: 'writer' },
+    source: { owner: 'writer', toolUseId: 'old-call' },
     seq: 3,
     name: 'report.txt',
     description: 'draft',
@@ -170,7 +192,13 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     inline: true,
     workbench: false,
   }
-  const latest = { ...old, id: 'new', seq: 6, artifact: { ...artifact, sha256: 'b'.repeat(64) } }
+  const latest = {
+    ...old,
+    id: 'new',
+    seq: 6,
+    source: { owner: 'writer', toolUseId: 'new-call' },
+    artifact: { ...artifact, sha256: 'b'.repeat(64) },
+  }
   try {
     await act(async () => root.render(createElement(official.FileList, { files: [old], ctx, inline: true })))
     await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
@@ -191,6 +219,26 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
       ),
     )
     expect(host.textContent).toContain('older snapshot')
+    // Repeating navigation to an already-open snapshot must keep the preview open.
+    await act(async () =>
+      root.render(
+        createElement(official.FileList, { files: [old, latest], ctx: { ...ctx, selection: { id: 'old' } } }),
+      ),
+    )
+    expect(host.textContent).toContain('older snapshot')
+    // Manual historical selection updates the footer's public ledger anchor.
+    await act(async () =>
+      root.render(
+        createElement(official.FileList, { files: [old, latest], ctx: { ...ctx, selection: { id: 'new' } } }),
+      ),
+    )
+    await act(async () => host.querySelectorAll<HTMLButtonElement>('.agh-list-row-title')[1]!.click())
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=deliverables-source]')!.click())
+    expect(navigate).toHaveBeenLastCalledWith({
+      sessionId: 's',
+      laneId: 'main',
+      anchor: { kind: 'tool', toolUseId: 'old-call' },
+    })
     // A late loader result after provider disposal must be released without reviving the card.
     let complete!: (value: unknown) => void
     load.mockImplementationOnce(
@@ -209,5 +257,6 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
     expect(release).toHaveBeenCalled()
   } finally {
     await act(async () => root.unmount())
+    stopNavigation()
   }
 })

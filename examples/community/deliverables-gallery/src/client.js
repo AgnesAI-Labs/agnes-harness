@@ -1,5 +1,6 @@
 import { conversationCards, DeliverablesStore, workbenchPanels } from '@agnes/web-client'
 import { Button, EmptyState, Icon, ListRow, StatusMessage } from '@agnes/web-ui'
+import { DocumentPreview, HtmlPreviewFrame } from '@agnes/web-ui/conversation'
 import { createElement as h, useEffect, useState, useSyncExternalStore } from 'react'
 
 function GalleryCard({ file, ctx }) {
@@ -57,8 +58,9 @@ function GalleryCard({ file, ctx }) {
     }
   }
   return h(
-    ListRow,
-    {
+    'section',
+    null,
+    h(ListRow, {
       title: file.name,
       description: file.description,
       icon: h(Icon, { name: 'file' }),
@@ -75,11 +77,22 @@ function GalleryCard({ file, ctx }) {
         },
         'Download',
       ),
-    },
+    }),
     error && h(StatusMessage, { kind: 'error' }, error),
-    resource?.kind === 'image'
-      ? h('img', { src: resource.url, alt: file.name })
-      : resource && h('pre', null, resource.content ?? 'Download to view this file.'),
+    resource &&
+      h(
+        'div',
+        { className: 'deliverable-preview' },
+        resource.kind === 'html'
+          ? h(HtmlPreviewFrame, { html: resource.content ?? '', title: file.name })
+          : h(DocumentPreview, {
+              kind: resource.kind,
+              title: file.name,
+              content: resource.content,
+              resourceUrl: resource.url,
+              t: (key) => ctx.locale.t(key),
+            }),
+      ),
   )
 }
 export function apply(ctx) {
