@@ -56,6 +56,8 @@ This excerpt focuses on registration. The complete runnable file and `parameters
 
 Parameters use a schema with TypeBox kind markers. The example writes `Symbol.for('TypeBox.Kind')` directly to avoid an external import. A plain JSON Schema object is not automatically a valid TypeBox value for every tool-definition API. With an installed TypeBox dependency, use `Type.Object` and bundle the dependency before distribution.
 
+`structured` reaches loops, exports and the trace inspector, never the model. Give it a `schema` field of your own when other code may read it: the built-in `ls`, `find` and `grep` mark theirs `agh.path-references/1`, and a reader tells payloads apart by that field. A `run_code` script gets the text of a result whose `structured` has that schema, whichever tool returns it, and any other `structured` as it is.
+
 Metadata declares read-only, nondestructive, concurrency-safe, closed-world behavior, `replay: 'safe'`, and no approval requirement. If you change the tool to write files or call an external system, redefine effects, approvals, and replay semantics instead of retaining these declarations.
 
 <a id="安装和运行"></a>

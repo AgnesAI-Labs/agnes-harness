@@ -286,6 +286,27 @@ it('never leaks UI-only details and turns tool failure into an error frame', asy
     result: { id: 'run-1', status: 'interrupted' },
   })
 })
+it('returns the text of a search tool whose structured result lists only paths', async () => {
+  const { bridge, ctx } = setup()
+  ctx.tools.invoke = async () => ({
+    content: [{ type: 'text', text: 'src/a.ts:1:hit' }],
+    structured: {
+      schema: 'agh.path-references/1',
+      references: [{ kind: 'file', path: 'src/a.ts' }],
+      total: 1,
+      truncated: false,
+    },
+  })
+  expect(
+    await bridge(request('bridge.tools.invoke', { name: 'grep', args: { pattern: 'hit' } })),
+  ).toMatchObject({
+    result: 'src/a.ts:1:hit',
+  })
+  ctx.tools.invoke = async () => ({ content: [{ type: 'text', text: 'x' }], structured: { rows: 2 } })
+  expect(await bridge(request('bridge.tools.invoke', { name: 'harness_propose', args: {} }))).toMatchObject({
+    result: { rows: 2 },
+  })
+})
 it('falls back to public text when a tool has no structured result', async () => {
   const { bridge, ctx } = setup()
   ctx.tools.invoke = async () => ({ content: [{ type: 'text', text: 'plain result' }] })

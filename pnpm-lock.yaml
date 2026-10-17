@@ -239,6 +239,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@agnes/core-effects':
+        specifier: workspace:*
+        version: link:../core-effects
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api

@@ -70,6 +70,7 @@ export {
 } from './system-prompt.js'
 export * from './tool.js'
 export * from './tool-policy.js'
+export * from './tool-references.js'
 export * from './tool-runtime.js'
 export * from './version.js'
 export * from './webhook-trigger.js'

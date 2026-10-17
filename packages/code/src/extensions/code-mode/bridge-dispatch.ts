@@ -1,4 +1,4 @@
-import type { ToolContext } from '@agnes/extension-api'
+import { TOOL_PATH_REFERENCES, type ToolContext } from '@agnes/extension-api'
 import { type BridgeRequest, validateAgainst } from '@agnes/protocol'
 import { ArtifactRef, PlanItems } from '@agnes/protocol/gen/session-v1'
 
@@ -46,7 +46,13 @@ export function bridgeDispatch(ctx: ToolContext, request: BridgeRequest): () => 
             throw Object.assign(new Error('tool execution failed'), typeof code === 'string' ? { code } : {})
         }
         // details is UI-only; structured is the public machine-readable half when present.
-        if (result.structured !== undefined) return result.structured
+        const structured = result.structured
+        // Path references are a side note for the loop; a script wants the tool's text.
+        const pathReferences =
+          typeof structured === 'object' &&
+          structured !== null &&
+          (structured as { schema?: unknown }).schema === TOOL_PATH_REFERENCES
+        if (structured !== undefined && !pathReferences) return structured
         return result.content
           .filter((b) => b.type === 'text')
           .map((b) => b.text)
