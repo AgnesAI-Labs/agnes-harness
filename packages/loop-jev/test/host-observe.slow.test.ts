@@ -98,7 +98,7 @@ describe('agnes.jev with the platform path references', () => {
       for (const f of files) expect(results.some((t) => t.includes(`content of ${f}`))).toBe(true)
       expect(sideCosts(rows)).toHaveLength(3)
       expect(costs(rows).filter((r) => data(r).purpose === 'inference')).toHaveLength(1)
-      expect(ofType(rows, 'x/agnes/code/jev.step').map((r) => [r.data.route, r.data.bindingMode])).toEqual([
+      expect(ofType(rows, 'x/agnes/code/jev.step').map((r) => [data(r).route, data(r).bindingMode])).toEqual([
         ['direct', 'defaults'],
         ['direct', 'observed'],
         ['answer', 'llm_parameters'],

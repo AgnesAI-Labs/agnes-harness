@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dispatchCalls, observeDispatch, replayCalls, viewForDispatch } from '../src/dispatch.js'
-import type { PendingCall } from '../src/types.js'
+import type { JsonValue, PendingCall } from '../src/types.js'
 
 const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] })
 const pc = (i: number, name = 'read', announce: 'true' | 'content' = 'content'): PendingCall => ({
@@ -283,7 +283,7 @@ describe('observeDispatch guards', () => {
 })
 
 describe('views of dispatched calls', () => {
-  const callOf = (name: string, args: object, i = 0) => ({
+  const callOf = (name: string, args: JsonValue, i = 0): PendingCall => ({
     invocationId: `jev:1:0:t${i}`,
     name,
     args,

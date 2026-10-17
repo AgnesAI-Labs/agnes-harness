@@ -135,7 +135,7 @@ function jevKernel(o: JevKernelOptions) {
 }
 
 /** A test `run_code` tool: only its presence in the catalog matters to the disclosure. */
-const runCodeTool = () => ({ ...readTool(), name: 'run_code' })
+const runCodeTool = () => ({ ...(readTool() as object), name: 'run_code' })
 
 const isFake = (jev: LoopSideCallPort): jev is FakeJev => 'records' in jev && 'invoked' in jev
 
