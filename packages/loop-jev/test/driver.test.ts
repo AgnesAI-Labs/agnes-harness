@@ -48,6 +48,33 @@ function jevState(jev: FakeJev, i: number): JsonObject {
   if (!payload) throw new Error(`Jev was prepared fewer than ${i + 1} times`)
   return payload.state
 }
+/** The factory with `ports` laid over the context its drivers see. */
+function withPorts(factory: LoopFactory, ports: (ctx: LoopContext) => Record<string, unknown>): LoopFactory {
+  const wrap = (ctx: LoopContext): LoopContext =>
+    Object.create(
+      ctx,
+      Object.fromEntries(
+        Object.entries(ports(ctx)).map(([key, value]) => [key, { value, enumerable: true }]),
+      ),
+    ) as LoopContext
+  return {
+    ...factory,
+    create: (ctx, stop) => factory.create(wrap(ctx), stop),
+    resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
+  }
+}
+/** Records every checkpoint the driver writes. */
+const recordWrites = (written: JsonObject[]) => (ctx: LoopContext) => ({
+  checkpoints: {
+    read: () => ctx.checkpoints.read(),
+    write: async (checkpoint: Parameters<LoopContext['checkpoints']['write']>[0], association?: never) => {
+      written.push(structuredClone(checkpoint.state) as JsonObject)
+      await ctx.checkpoints.write(checkpoint, association)
+    },
+  },
+})
+const budgetError = () =>
+  Object.assign(new Error('budget'), { code: 'E_BUDGET', detail: { reason: 'max_steps' } })
 /** The stop gate keeps the first completion open, as a verifier asking for more work would. */
 function holdFirstCompletion(factory: LoopFactory): LoopFactory {
   let held = false
@@ -96,7 +123,8 @@ async function run(
     ...(o.until ? { until: o.until } : {}),
   })
   const steps = result.events.filter((e) => e.type === 'jev.step').map((e) => e.data as JsonObject)
-  return { ...result, jev, tools, steps }
+  const metrics = result.events.filter((e) => e.type === 'jev.metrics').map((e) => e.data as JsonObject)
+  return { ...result, jev, tools, steps, metrics }
 }
 
 describe('Jev loop driver', () => {
@@ -463,5 +491,66 @@ describe('Jev loop driver', () => {
         { type: 'text', text: 'Writing the file.' },
       ]),
     ).toEqual([{ type: 'text', text: 'Writing the file.' }])
+  })
+  it('commits the answer before it reports the answer step', async () => {
+    const r = await run([{ pick: PICK_RESPOND }], { replies: [textReply('ok')] })
+    const answer = r.events.findIndex(
+      (e) => e.type === 'assistant/message' && (e.data as JsonObject).stopReason === 'end_turn',
+    )
+    const step = r.events.findIndex((e) => e.type === 'jev.step')
+    expect(answer).toBeGreaterThanOrEqual(0)
+    expect(step).toBeGreaterThan(answer)
+  })
+  it('reports the attempts sent before a model request throws', async () => {
+    const written: JsonObject[] = []
+    const r = await run([{ pick: PICK_RESPOND }], {
+      replies: [errorReply('TRANSPORT', true)],
+      wrap: (factory) =>
+        withPorts(factory, (ctx) => ({
+          ...recordWrites(written)(ctx),
+          // Core refuses admission while the loop backs off before its retry.
+          wait: {
+            ...ctx.wait,
+            delay: async () => {
+              throw budgetError()
+            },
+          },
+        })),
+    })
+    expect(r.finished).toBeUndefined()
+    expect(r.requests).toHaveLength(1)
+    expect(r.steps).toMatchObject([
+      { route: 'answer', llm: { attempts: 1, invocationIds: ['jev:1:0:m0'], outcome: 'error' } },
+    ])
+    expect(r.metrics).toEqual([
+      expect.objectContaining({ endReason: 'max_steps', llm: expect.objectContaining({ answer: 1 }) }),
+    ])
+    expect(written.at(-1)).toMatchObject({ stage: 'done' })
+  })
+  it('reports the model attempts of a step whose dispatch throws', async () => {
+    const r = await run([{ pick: PICK_WRITE }], {
+      replies: [callReply('write', { path: 'a', content: 'x' })],
+      tools: toolPort({
+        write: () => {
+          throw budgetError()
+        },
+      }),
+    })
+    expect(r.steps).toMatchObject([{ route: 'parameters', llm: { attempts: 1, outcome: 'call' } }])
+  })
+  it('reports the counters and saves the ending when Core ends the turn at dispatch', async () => {
+    const written: JsonObject[] = []
+    const r = await run([{ pick: PICK_LS }], {
+      tools: toolPort({
+        ls: () => {
+          throw budgetError()
+        },
+      }),
+      wrap: (factory) => withPorts(factory, recordWrites(written)),
+    })
+    expect(r.finished).toBeUndefined()
+    expect(r.metrics).toEqual([expect.objectContaining({ endReason: 'max_steps', directSteps: 1 })])
+    expect(written.at(-1)).toMatchObject({ stage: 'done' })
+    expect(written.at(-1)?.cur).not.toHaveProperty('calls')
   })
 })

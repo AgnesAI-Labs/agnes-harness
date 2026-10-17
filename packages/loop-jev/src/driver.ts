@@ -7,7 +7,7 @@ import type {
 } from '@agnes/extension-api'
 import { stageOneToolNames } from './profile.js'
 import { recoverStep, resumeParkedStage } from './recover.js'
-import { finishTurn, type Scope, save, snapshot } from './scope.js'
+import { emitMetrics, finishTurn, type Scope, save, snapshot } from './scope.js'
 import { emptyCounters, initialState } from './state.js'
 import { decideStep } from './step.js'
 import type { JevLoopConfig, JevState } from './types.js'
@@ -103,8 +103,10 @@ export function createDriver(ctx: GenericLoopPorts, cfg: JevLoopConfig, saved?: 
           // The turn is over: no call of it may be replayed, and the next input starts a new turn.
           s.state.stage = 'done'
           delete s.state.cur.calls
-          const reason = (error as { detail?: { reason?: LoopEndReason } }).detail?.reason
-          return { outcome: 'turn-ended', reason: reason ?? 'budget' }
+          const reason = (error as { detail?: { reason?: LoopEndReason } }).detail?.reason ?? 'budget'
+          await emitMetrics(s, reason)
+          await save(s)
+          return { outcome: 'turn-ended', reason }
         }
         // A revoked generation must not write; let Core see the refusal.
         if (code === 'E_CLOSED') throw error

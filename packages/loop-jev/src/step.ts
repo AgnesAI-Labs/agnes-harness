@@ -4,7 +4,7 @@ import { decodeAnswers } from './decode.js'
 import { dispatchCalls, observeDispatch, replayCalls } from './dispatch.js'
 import { callJev, type JevDeps, type JevOutcome, type JevPayload } from './jev.js'
 import { type Adoption, adoptCalls, noteFor, parseReply, type Reply } from './llm.js'
-import { requestLlm } from './model.js'
+import { type LlmOutcome, requestLlm } from './model.js'
 import { decisionTools, outcomeUnknown, resultText, stageOneToolNames, targetOf } from './profile.js'
 import { routeDecision } from './route.js'
 import {
@@ -180,6 +180,12 @@ export async function decodeAndRoute(
   return dispatchStep(s, [call], route, signal)
 }
 
+/** Counts a step's model attempts; every attempt after the step's first is a retry, including the first one sent after a restart. */
+function countAttempts(s: Scope, kind: LlmKind, first: number, attempts: number): void {
+  s.state.counters.llm[kind] += attempts
+  s.state.counters.llm.retries += Math.max(0, attempts - (first === 0 ? 1 : 0))
+}
+
 /**
  * Sends the route's model request. `firstAttempt` and `note` resume a request after a restart: the
  * saved note is sent as it was, and the pending notes it already carries are not added again.
@@ -206,54 +212,70 @@ export async function llmStep(
   }
   const ctx = s.ctx
   const first = firstAttempt ?? st.cur.llm?.attempt ?? 0
-  const r = await requestLlm(
-    {
-      idPrefix: idPrefix(s),
-      kind,
-      note: text,
-      firstAttempt: first,
-      maxAttempts: s.cfg.llmMaxAttempts,
-      toolNames: st.toolNames,
-    },
-    {
-      prepareRequest: (options) => ctx.prepareRequest(options),
-      estimateRequest: (request) => ctx.estimateRequest(request),
-      model: ctx.model,
-      turn: ctx.turn,
-      wait: ctx.wait,
-      ...(ctx.compaction ? { compaction: ctx.compaction } : {}),
-      async save(llm, id) {
-        // Attempts a restart already counted stay counted.
-        const counted = st.cur.llm?.counted
-        st.cur.llm = counted === undefined ? llm : { ...llm, counted }
-        st.stage = 'llm'
-        await save(s, [id])
+  const sent: string[] = []
+  const llmEvent = (attempts: number): JsonObject => ({
+    kind,
+    attempts,
+    invocationIds: [...sent],
+    droppedCalls: 0,
+  })
+  let r: LlmOutcome
+  try {
+    r = await requestLlm(
+      {
+        idPrefix: idPrefix(s),
+        kind,
+        note: text,
+        firstAttempt: first,
+        maxAttempts: s.cfg.llmMaxAttempts,
+        toolNames: st.toolNames,
       },
-      async recomputeToolNames() {
-        const view = await ctx.turn.view()
-        if (!view) throw new Error('The Jev loop turn has no public view')
-        const names = stageOneToolNames(view)
-        if (names.join('\n') !== st.toolNames.join('\n')) st.toolNamesChanges++
-        st.toolNames = names
-        return [...names]
+      {
+        prepareRequest: (options) => ctx.prepareRequest(options),
+        estimateRequest: (request) => ctx.estimateRequest(request),
+        model: ctx.model,
+        turn: ctx.turn,
+        wait: ctx.wait,
+        ...(ctx.compaction ? { compaction: ctx.compaction } : {}),
+        async save(llm, id) {
+          // Attempts a restart already counted stay counted.
+          const counted = st.cur.llm?.counted
+          st.cur.llm = counted === undefined ? llm : { ...llm, counted }
+          st.stage = 'llm'
+          await save(s, [id])
+        },
+        async recomputeToolNames() {
+          const view = await ctx.turn.view()
+          if (!view) throw new Error('The Jev loop turn has no public view')
+          const names = stageOneToolNames(view)
+          if (names.join('\n') !== st.toolNames.join('\n')) st.toolNamesChanges++
+          st.toolNames = names
+          return [...names]
+        },
       },
-    },
-    signal,
-  )
+      signal,
+      sent,
+    )
+  } catch (error) {
+    // A cancelled backoff, a revoked scope or a refused admission: the attempts sent are still reported.
+    if (sent.length > 0) {
+      countAttempts(s, kind, first, sent.length)
+      await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent(sent.length), outcome: 'error' } })
+    }
+    throw error
+  }
   // The note was committed with the first request; a restart never needs it again.
   if (st.cur.llm) delete st.cur.llm.note
   const attempts = r.kind === 'reply' || r.kind === 'failed' ? r.attempts : r.ids.length
-  st.counters.llm[kind] += attempts
-  // Every attempt after the step's first is a retry, including the first one sent after a restart.
-  st.counters.llm.retries += Math.max(0, attempts - (first === 0 ? 1 : 0))
-  const llmEvent: JsonObject = { kind, attempts, invocationIds: [...r.ids], droppedCalls: 0 }
+  countAttempts(s, kind, first, attempts)
+  const reported = llmEvent(attempts)
   if (r.kind === 'outcome') {
     // Compaction ended the turn; the attempts already sent are still reported.
-    if (r.ids.length > 0) await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } })
+    if (r.ids.length > 0) await emitStep(s, { ...routeEvent(route), llm: { ...reported, outcome: 'error' } })
     return r.outcome
   }
-  if (r.kind === 'reply') return handleReply(s, route, parseReply(r.events), llmEvent, signal)
-  await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'error' } })
+  if (r.kind === 'reply') return handleReply(s, route, parseReply(r.events), reported, signal)
+  await emitStep(s, { ...routeEvent(route), llm: { ...reported, outcome: 'error' } })
   if (r.kind === 'aborted') return finishTurn(s, 'aborted')
   // NO_ATTEMPTS (a resumed step with no attempt left) ends the turn like any failed request.
   return finishTurn(s, 'error', { code: 'JEV_LOOP_MODEL_FAILED', message: `${r.code}: ${r.message}` })
@@ -271,7 +293,6 @@ export async function handleReply(
   const { decision } = route
   const a = adoptCalls({ route: route.kind as LlmKind, op: decision.op, reply, toolNames: st.toolNames })
   if (a.kind === 'answer') {
-    await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'text' } })
     if (route.kind === 'arbitration') {
       if (decision.op === ANSWER) st.counters.arbitrationAgreed++
       else st.counters.arbitrationOverturned++
@@ -282,6 +303,8 @@ export async function handleReply(
     delete st.endError
     delete st.cur.calls
     await s.ctx.events.assistant({ content: a.content, stopReason: 'end_turn' }, snapshot(s))
+    // Reported once the answer is committed: a restart before the commit replays the step.
+    await emitStep(s, { ...routeEvent(route), llm: { ...llmEvent, outcome: 'text' } })
     return finishTurn(s, 'completed')
   }
   if (a.kind === 'refuse') {
@@ -373,13 +396,20 @@ export async function dispatchStep(
       )
     },
   }
-  const d = await (options.replay ? replayCalls : dispatchCalls)(calls, deps, signal)
   const event = (dropped: number): StepEvent => ({
     ...routeEvent(route),
     ...(options.llm
       ? { llm: { ...options.llm, droppedCalls: Number(options.llm.droppedCalls ?? 0) + dropped } }
       : {}),
   })
+  let d: Awaited<ReturnType<typeof dispatchCalls>>
+  try {
+    d = await (options.replay ? replayCalls : dispatchCalls)(calls, deps, signal)
+  } catch (error) {
+    // A parked step is reported when its approval continues; any other throw ends the step here.
+    if (errorCode(error) !== 'PARKED') await emitStep(s, event(0))
+    throw error
+  }
   if (d.kind === 'budget') {
     delete st.cur.calls
     await emitStep(s, event(0))

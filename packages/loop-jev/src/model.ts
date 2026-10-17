@@ -74,10 +74,16 @@ export async function afterError(
  * Sends one main-model request with the same tools on every attempt. Retries retryable errors under
  * a new id after a backoff, and compacts when the estimate asks for it or the model reports an
  * overflow. The note is committed with the first request actually sent, so a retry never carries it.
+ * `ids` receives each attempt once its request returned, so the caller still knows what was sent
+ * when a later wait or port throws.
  */
-export async function requestLlm(req: LlmRequest, deps: ModelDeps, signal: AbortSignal): Promise<LlmOutcome> {
+export async function requestLlm(
+  req: LlmRequest,
+  deps: ModelDeps,
+  signal: AbortSignal,
+  ids: string[] = [],
+): Promise<LlmOutcome> {
   let toolNames = [...req.toolNames]
-  const ids: string[] = []
 
   const prepare = async (invocationId: string, note: string | undefined): Promise<LoopRequest> => {
     const options = () => ({
