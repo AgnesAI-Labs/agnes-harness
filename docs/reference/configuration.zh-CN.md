@@ -23,7 +23,7 @@
 | `AGNES_PROFILE` / `--profile` | Profile 选择，通常为 `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | 用户 profile 层 |
 | `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型、辅助模型档位默认值与引用，不能当成手工配置模板 |
-| `PROJECT/.agh/profile.local.yaml` | 工作区覆盖，按信任/权限规则使用 |
+| `PROJECT/.agh/profile.local.yaml` | 工作区本地层；本版本只接受 `extensionIsolation`，其他任何键以 `E_DEP_MISSING` 拒绝 |
 | `PROJECT/.agh/skills` / `PROJECT/.agh/hooks.json` | 工作区 Skill 与命令 hook 资源 |
 | `AGH_HOME/data`、`cache`、`secrets`、`auth` | 数据、缓存、凭据与身份状态 |
 | `AGNES_WEB_ORIGIN` | 精确 Web Origin，如 `http://127.0.0.1:4180`，与 serve 端口配对 |

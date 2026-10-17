@@ -21,7 +21,7 @@ Configuration files and model credentials are separate. Prefer CLI `config` or W
 | `AGNES_PROFILE` / `--profile` | Profile selection, usually `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | User profile layer |
 | `AGH_HOME/profiles/NAME/configuration.json` | Accounts, default model, auxiliary slot defaults, and references managed by the Host configuration service; not a manual configuration template |
-| `PROJECT/.agh/profile.local.yaml` | Workspace overrides, subject to trust and permissions |
+| `PROJECT/.agh/profile.local.yaml` | Workspace local layer; in this version it accepts only `extensionIsolation`, and any other key is refused with `E_DEP_MISSING` |
 | `PROJECT/.agh/skills` / `PROJECT/.agh/hooks.json` | Workspace Skill and command-hook resources |
 | `AGH_HOME/data`, `cache`, `secrets`, `auth` | Data, cache, credentials, and identity state |
 | `AGNES_WEB_ORIGIN` | Exact Web Origin, for example `http://127.0.0.1:4180`, matching the serve port |

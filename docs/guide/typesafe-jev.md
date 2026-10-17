@@ -19,11 +19,11 @@ In Settings → Models & accounts, the **Side models** group after the account l
 5. The test button sends one fixed minimal payload `{state: {}, questions: {ping: 'ping'}}`: a success or a rate limit both count as reachable, and a rejected credential is called out. What the probe sends is provisional, and you can skip the test and save.
 6. Saving takes effect for new sessions; an entry can be enabled, disabled or removed. A side model can never become the default account, and it never appears in the fast or verifier slots.
 
-A hand-written `.agh/profile.local.yaml` route (the next section) coexists with a page entry: different route names merge, and the same name is refused as a duplicate route. When migrating from a hand-written route, delete it once the page entry is saved.
+The page names the route it creates `account-<id>`, and the entry's summary line shows that name; a loop plugin targets it by that name. A route declared in the user profile (the next section) is used only while Settings manages no account: once a page entry or any other account is saved, the settings service supplies the whole `provider` block and the profile's routes are no longer used. When moving from a profile route to the page, save the page entry, point the loop at its route name, then remove the profile route. The workspace file `.agh/profile.local.yaml` cannot declare a route: in this version it accepts only `extensionIsolation`, and any other key stops the runtime from starting with `E_DEP_MISSING`.
 
 ## Profile route
 
-Add a route to the profile's provider configuration. The adapter ships with `@agnes/ai`, so there is nothing to install or trust. If the profile lists model adapters explicitly under `providers.model-adapter`, include `typesafe-systemone` (or `@agnes/ai`) in that list.
+Add a route to the provider configuration of the user profile, `AGH_HOME/profiles/<profile>/profile.yaml`. Use this in a home where Settings manages no account, such as a headless or scripted setup; otherwise use the settings page. The adapter ships with `@agnes/ai`, so there is nothing to install or trust. If the profile lists model adapters explicitly under `providers.model-adapter`, include `typesafe-systemone` (or `@agnes/ai`) in that list.
 
 ```yaml
 provider:

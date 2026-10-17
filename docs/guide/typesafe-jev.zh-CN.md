@@ -19,11 +19,11 @@ Jev **不是对话模型**。适配器只接收载荷（payload），不接收 m
 5. 测试按钮向端点发一个固定的最小载荷 `{state: {}, questions: {ping: 'ping'}}`：成功或限流都视为可达，凭据被拒会单独标出。探测发送的内容暂定，可以跳过测试直接保存。
 6. 保存对新会话生效；条目可启用、禁用或删除。旁路模型不能成为默认账户，也不出现在 fast、verifier 槽位里。
 
-手写 `.agh/profile.local.yaml` 路由（下一节）与页面条目并存：路由名不同则共存，同名则按重复路由拒绝。从手写迁移到页面时，页面配好后删掉手写条目。
+页面创建的路由名为 `account-<id>`，条目的摘要行显示这个名字；循环插件按这个名字指定路由。声明在用户 profile 里的路由（下一节）只在设置页面没有管理任何账户时生效：一旦保存了页面条目或其他任何账户，设置服务就会提供整个 `provider` 块，profile 里的路由不再使用。从 profile 路由迁移到页面时，先保存页面条目，把循环指向它的路由名，再删掉 profile 里的路由。工作区文件 `.agh/profile.local.yaml` 不能声明路由：本版本中它只接受 `extensionIsolation`，写了其他键时运行时以 `E_DEP_MISSING` 拒绝启动。
 
 ## 配置档路由
 
-在配置档的 provider 配置里加一条路由。适配器随 `@agnes/ai` 提供，不需要安装或信任任何包。如果配置档在 `providers.model-adapter` 下显式列出了模型适配器，请把 `typesafe-systemone`（或 `@agnes/ai`）加进这个列表。
+在用户 profile `AGH_HOME/profiles/<profile>/profile.yaml` 的 provider 配置里加一条路由。这适用于设置页面没有管理任何账户的 home，例如无界面或脚本化的部署；否则请用设置页面。适配器随 `@agnes/ai` 提供，不需要安装或信任任何包。如果配置档在 `providers.model-adapter` 下显式列出了模型适配器，请把 `typesafe-systemone`（或 `@agnes/ai`）加进这个列表。
 
 ```yaml
 provider:
