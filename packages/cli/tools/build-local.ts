@@ -245,6 +245,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   // Plugin entrypoints resolve these imports through index.html's import map, so the host bundle
   // must leave them external and serve exactly one shared platform instance.
   await buildWithMetadata({
+    define: { ...productionWebOptions.define, __AGNES_WEB_BUNDLE__: 'true' },
     entryPoints: {
       app: join(repoPackages, 'web', 'src', 'app.ts'),
       admin: '@agnes/web-admin/admin/plugins/admin',
@@ -288,6 +289,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     logLevel: 'warning' as const,
     entryNames: '[name]',
     chunkNames: 'chunk-[hash]',
+    define: { ...productionWebOptions.define, __AGNES_WEB_BUNDLE__: 'true' },
   }
   await buildWithMetadata({
     entryPoints: {
@@ -302,7 +304,6 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   await buildWithMetadata({
     entryPoints: {
       antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
-      recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
       'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
       'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
       conversation: join(repoPackages, 'web', 'tools', 'vendor', 'conversation-entry.js'),
@@ -316,6 +317,27 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
     banner: {
       js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+    },
+  })
+  // Optional chart assets stay self-contained so a cache-busted retry cannot retain a failed child module.
+  await buildWithMetadata({
+    ...vendorOptions,
+    entryPoints: {
+      recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
+      'chunk-diagnostics': join(repoPackages, 'web', 'src', 'diagnostics-bundle.ts'),
+    },
+    splitting: false,
+    alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [webRoot] }) },
+    external: [
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom',
+      'react-dom/client',
+      '@agnes/web-ui',
+    ],
+    banner: {
+      js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
     },
   })
   // 首帧主题必须早于第一次绘制，所以这一份单独打成 IIFE 并以阻塞式 <script> 引入。

@@ -1,4 +1,4 @@
-import type { BrowserLog, BrowserLogEntry } from '@agnes/web-units'
+import type { BrowserLog, BrowserLogEntry } from '@agnes/web-units/shell'
 import { redactDiagnosticText } from './diagnostics-redact.js'
 
 const MAX_ENTRIES = 1000

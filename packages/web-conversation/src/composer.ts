@@ -7,4 +7,4 @@ export {
   type ComposerView,
   type ModelPickerOption,
   type PermissionMode,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'

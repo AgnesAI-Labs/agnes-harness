@@ -43,6 +43,7 @@ export async function buildWeb(
     await build({
       ...(options.development ? {} : productionWebOptions),
       absWorkingDir: root,
+      define: { ...(options.development ? {} : productionWebOptions.define), __AGNES_WEB_BUNDLE__: 'true' },
       entryPoints: {
         app: join(root, 'src', 'app.ts'),
         admin: '@agnes/web-admin/admin/plugins/admin',
@@ -86,6 +87,7 @@ export async function buildWeb(
     metafile: true,
     entryNames: '[name]',
     chunkNames: 'chunk-[hash]',
+    define: { ...(options.development ? {} : productionWebOptions.define), __AGNES_WEB_BUNDLE__: 'true' },
   }
   metafiles.push(
     await build({
@@ -104,7 +106,6 @@ export async function buildWeb(
       absWorkingDir: root,
       entryPoints: {
         antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
-        recharts: join(root, 'tools', 'vendor', 'recharts-entry.js'),
         'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
         'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
         conversation: join(root, 'tools', 'vendor', 'conversation-entry.js'),
@@ -120,6 +121,30 @@ export async function buildWeb(
       // call to the import-map singleton in every generated vendor chunk; reject other requires.
       banner: {
         js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+      },
+    }),
+  )
+  // Optional chart assets import only the already-loaded React platform vendors.
+  metafiles.push(
+    await build({
+      absWorkingDir: root,
+      ...vendorOptions,
+      entryPoints: {
+        recharts: join(root, 'tools', 'vendor', 'recharts-entry.js'),
+        'chunk-diagnostics': join(root, 'src', 'diagnostics-bundle.ts'),
+      },
+      splitting: false,
+      alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [root] }) },
+      external: [
+        'react',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'react-dom',
+        'react-dom/client',
+        '@agnes/web-ui',
+      ],
+      banner: {
+        js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
       },
     }),
   )

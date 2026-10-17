@@ -4,7 +4,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import { ConversationMessages, type ConversationMessagesProps } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activitySummary,
   shortenHome,
@@ -307,8 +307,11 @@ describe('turn timeline', () => {
       turn(first, { status: 'completed', finalAssistantId: 'a1', durationMs: 2500 }),
       turn(second, { id: 'turn:2', turn: 2, status: 'completed', finalAssistantId: 'a2', durationMs: 900 }),
     ]
+    const renderMarkdown = vi.fn((text: string) => text)
     await act(async () =>
-      root.render(createElement(ConversationMessages, { t, nodes: [...first, ...second], turns })),
+      root.render(
+        createElement(ConversationMessages, { t, nodes: [...first, ...second], turns, renderMarkdown }),
+      ),
     )
     const shells = [...host.querySelectorAll<HTMLElement>('.conversation-turn')]
     expect(shells.map((shell) => shell.dataset.latest)).toEqual([undefined, 'true'])
@@ -321,5 +324,53 @@ describe('turn timeline', () => {
     expect(
       shells[0]?.querySelector('.turn-user [data-testid="user-message-copy"]')?.getAttribute('aria-label'),
     ).toBe('复制消息')
+    // Render gate: wire snapshots recreate every object; a token must only invalidate its turn.
+    const historicalRenders = () => renderMarkdown.mock.calls.filter(([text]) => text === 'hi').length
+    const before = historicalRenders()
+    for (let token = 0; token < 20; token++) {
+      const next = structuredClone([...first, ...second])
+      const answer = next.find((node) => node.id === 'a2')
+      if (answer?.kind === 'assistant') answer.text = `hello ${token}`
+      await act(async () =>
+        root.render(
+          createElement(ConversationMessages, {
+            t,
+            nodes: next,
+            turns: structuredClone(turns),
+            renderMarkdown,
+          }),
+        ),
+      )
+    }
+    expect(historicalRenders()).toBe(before)
+    expect(host.querySelector('[data-node-id="a2"]')?.textContent).toContain('hello 19')
+    // A same-length edit in the middle of history is still a real change.
+    const edited = structuredClone([...first, ...second])
+    const oldAnswer = edited.find((node) => node.id === 'a1')
+    if (oldAnswer?.kind === 'assistant') oldAnswer.text = 'HI'
+    await act(async () =>
+      root.render(
+        createElement(ConversationMessages, {
+          t,
+          nodes: edited,
+          turns: structuredClone(turns),
+          renderMarkdown,
+        }),
+      ),
+    )
+    expect(host.querySelector('[data-node-id="a1"]')?.textContent).toContain('HI')
+    // A caller reusing its array and editing an object must not mutate the retained snapshot.
+    if (oldAnswer?.kind === 'assistant') oldAnswer.text = 'BY'
+    await act(async () =>
+      root.render(
+        createElement(ConversationMessages, {
+          t,
+          nodes: edited,
+          turns,
+          renderMarkdown,
+        }),
+      ),
+    )
+    expect(host.querySelector('[data-node-id="a1"]')?.textContent).toContain('BY')
   })
 })

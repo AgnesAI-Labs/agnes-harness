@@ -9,12 +9,27 @@ import {
 } from '@agnes/web-ui'
 import { diagnosticsLocale, diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 import { flushSync } from 'react-dom'
-import {
-  type CollectedDiagnostics,
-  type CollectInput,
-  collectDiagnostics,
-  type RpcCall,
-} from './diagnostics-bundle.js'
+import type { CollectedDiagnostics, CollectInput, collectDiagnostics, RpcCall } from './diagnostics-bundle.js'
+
+declare const __AGNES_WEB_BUNDLE__: boolean
+let collector: Promise<typeof import('./diagnostics-bundle.js')> | undefined
+let collectAttempt = 0
+function loadCollector() {
+  collector ??= (
+    typeof __AGNES_WEB_BUNDLE__ !== 'undefined' && __AGNES_WEB_BUNDLE__
+      ? (import(
+          new URL(
+            `./vendor/chunk-diagnostics.js${collectAttempt++ ? `?retry=${collectAttempt}` : ''}`,
+            import.meta.url,
+          ).href
+        ) as Promise<typeof import('./diagnostics-bundle.js')>)
+      : import('./diagnostics-bundle.js')
+  ).catch((error: unknown) => {
+    collector = undefined
+    throw error
+  })
+  return collector
+}
 
 // lib.dom has no File System Access typings; this is the slice saveZip uses.
 type SaveFilePicker = (o: {
@@ -123,7 +138,14 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   open(trigger?: HTMLElement): void
   dispose(): void
 } {
-  const collect = deps.collect ?? collectDiagnostics
+  const collect: typeof collectDiagnostics =
+    deps.collect ??
+    (async (...args) => {
+      args[2].throwIfAborted()
+      const module = await loadCollector()
+      args[2].throwIfAborted()
+      return module.collectDiagnostics(...args)
+    })
   const save = deps.save ?? saveZip
   const host = createRegionHost(document.body, 'div')
   const root = createRegionRenderer(host)

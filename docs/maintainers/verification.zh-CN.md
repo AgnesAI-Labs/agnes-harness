@@ -30,7 +30,7 @@ pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWo
 
 CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗时会写入任务摘要，不作为通过门槛。在稳定的性能测试机器上设置 `AGH_ENFORCE_BOOT_BUDGET=1`，再运行 `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`，即可执行 300 ms 门槛检查。
 
-Web 交付构建使用生产 React 并压缩 JavaScript；开发 watcher 保留开发诊断。聚焦用例 `packages/cli/test/build-local-web.test.ts` 遍历实际产物的静态模块图（含 import map 中的 vendor），将冷启动 JavaScript 限制为 9 MiB，较校准后的约 7 MiB 留出约 30% 余量。内置主页按选择加载。字节门具有确定性，不能代替真实浏览器的绘制、交互和转录测量。
+Web 交付构建使用生产 React 并压缩 JavaScript；开发 watcher 保留开发诊断。聚焦用例 `packages/cli/test/build-local-web.test.ts` 遍历实际产物的静态模块图（含 import map 中的 vendor），将冷启动 JavaScript 限制为 6.75 MiB。内置主页、图表绘图引擎和离线诊断渲染器按需加载；Web 使用声明的 `@agnes/web-units/shell` 入口；包根仍保留诊断导出以兼容现有调用者。绘图加载期间仍可读取源数据表和图例。历史转录按完整值保留记录引用，并按轮次隔离渲染；全局插件贡献仍读取最新投影。聚焦的 turn 与 slot 用例约束 20 次更新期间的历史重复渲染，并保留已有滚动、选区、导航和 slot 生命周期检查。字节门具有确定性，不能代替真实浏览器的绘制、交互和转录测量。
 
 生成的事件、协议与投影 schema 使用不可变定义和符合 CSP 的缓存引用计划。拒绝值仍使用 TypeBox 的完整错误迭代器；策略开关与已注册格式保持实时读取。调用方自建的可变 schema 继续解释式校验。`packages/protocol/test/validate.test.ts` 对结果与完整错误做差分验证，覆盖递归、畸形与策略相关输入。heavy 层 `validation-plan.slow.test.ts` 将 500 节点投影与解释器配对，要求计划校验耗时中位数低于解释器的 70%。
 

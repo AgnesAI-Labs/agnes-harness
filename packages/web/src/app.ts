@@ -9,7 +9,7 @@ import {
   reportSuccess,
   searchParamRoute,
 } from '@agnes/web-ui'
-import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
+import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -66,7 +66,7 @@ import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { attachmentErrorMessage } from '@agnes/web-units'
+import { attachmentErrorMessage } from '@agnes/web-units/shell'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'

@@ -136,6 +136,13 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   expect(text('[data-testid="turn-usage-call-details"]')).toBe('调用细节')
   expect(text('.call-usage .usage-grid')).toContain('输入 Token（不含缓存）1')
   await act(async () => summary.click())
+  let left = 380
+  summary.getBoundingClientRect = () => new DOMRect(left, 100, 120, 20)
+  await act(async () => document.dispatchEvent(new Event('scroll')))
+  expect(list.style.left).toBe('156px')
+  left = 480
+  await act(async () => window.dispatchEvent(new Event('resize')))
+  expect(list.style.left).toBe('256px')
   summary.focus()
   await render({
     turn: { ...current, finalModel: 'final', durationMs: 4000 },
@@ -149,6 +156,11 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   expect(document.activeElement).toBe(summary)
   expect(summary.textContent).toContain('final')
   expect(text('.turn-usage-took')).toBe('用时 4.0 秒')
+  await act(async () => summary.click())
+  const closedPosition = list.style.left
+  left = 580
+  await act(async () => document.dispatchEvent(new Event('scroll')))
+  expect(list.style.left).toBe(closedPosition)
   await render({ turn: turn('one'), finalText: 'answer', settled: true })
   // No cache: two cells.
   expect(rows()).toEqual([

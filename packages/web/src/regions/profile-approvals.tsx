@@ -1,7 +1,7 @@
 import type { DecisionSnapshot } from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { Button, Icon, Tooltip } from '@agnes/web-ui'
-import { Approval } from '@agnes/web-units'
+import { Approval } from '@agnes/web-units/shell'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 type WaitingRun = { sessionId: string; title: string }

@@ -1,6 +1,6 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ReactNode, RefObject } from 'react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { ConversationCost } from '../cost.js'
 import { ActivityIcon, ActivityRow } from './activity-row.js'
@@ -63,7 +63,7 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
 
 export function nativeContent(
   node: UINode,
-  props: ConversationMessagesProps,
+  props: Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>,
   hideThinking = false,
   turnStatus?: UITurn['status'],
   thinkingHost?: RefObject<HTMLDivElement>,
@@ -159,7 +159,7 @@ export function isEmptyStreamingAssistant(node: UINode): boolean {
   )
 }
 
-export function Message({
+function MessageView({
   node,
   props,
   hideThinking = false,
@@ -167,7 +167,7 @@ export function Message({
   thinkingHost,
 }: {
   node: UINode
-  props: ConversationMessagesProps
+  props: Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>
   hideThinking?: boolean
   turnStatus?: UITurn['status'] | undefined
   thinkingHost?: RefObject<HTMLDivElement> | undefined
@@ -202,3 +202,5 @@ export function Message({
     </article>
   )
 }
+
+export const Message = memo(MessageView)

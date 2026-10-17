@@ -1,5 +1,5 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Disclosure } from '../../ui/disclosure.js'
 import { Bubble } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
@@ -31,17 +31,17 @@ type Entry =
   // Prose and cards stand on their own between groups; `quiet` keeps an empty node mounted unseen.
   | { type: 'narration' | 'final' | 'attention' | 'block'; node: UINode; quiet?: boolean }
 
-export function Turn({
+function TurnView({
   turn,
-  nodes,
-  ownerByNodeId,
+  members,
+  attentionIds,
   props,
   latest = false,
 }: {
   turn: UITurn
-  nodes: Map<string, UINode>
-  ownerByNodeId: Map<string, string>
-  props: ConversationMessagesProps
+  members: readonly UINode[]
+  attentionIds: readonly string[]
+  props: Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>
   /** The newest turn keeps its action bar in view; earlier ones show it on hover or focus. */
   latest?: boolean
 }) {
@@ -68,14 +68,10 @@ export function Turn({
   }, [shownProcessActive])
 
   const t = props.t
-  const members = turn.nodeIds.flatMap((id) => {
-    const node = nodes.get(id)
-    return node && ownerByNodeId.get(id) === turn.id ? [node] : []
-  })
   const users = members.filter((node) => node.kind === 'user')
   const others = members.filter((node) => node.kind !== 'user' && node.kind !== 'cost')
   const attention = (node: UINode) =>
-    (node.kind === 'approval' && node.state === 'pending') || props.keepNodeVisible?.(node) === true
+    (node.kind === 'approval' && node.state === 'pending') || attentionIds.includes(node.id)
   const pendingApproval = others.some((node) => node.kind === 'approval' && node.state === 'pending')
   const awaitingToolApproval = others.some(
     (node) => node.kind === 'tool' && node.status === 'awaiting_approval',
@@ -400,3 +396,15 @@ export function Turn({
     </section>
   )
 }
+
+export const Turn = memo(
+  TurnView,
+  (before, after) =>
+    before.turn === after.turn &&
+    before.latest === after.latest &&
+    before.props === after.props &&
+    before.attentionIds.length === after.attentionIds.length &&
+    before.attentionIds.every((id, i) => id === after.attentionIds[i]) &&
+    before.members.length === after.members.length &&
+    before.members.every((node, i) => node === after.members[i]),
+)
