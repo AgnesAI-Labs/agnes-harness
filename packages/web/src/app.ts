@@ -1370,7 +1370,7 @@ onSurfaceEvent(SESSION_SEARCH_EVENT, (event) =>
 clientModules.locale.subscribe(() => sessionSearch.refreshLocale())
 // Top bar entries for the selected session: its title renames it, the info button shows its runtime.
 for (const action of ['rename', 'runtime'] as const)
-  onSurfaceEvent(`agnes:${action}-sessionBinding.session-session`, (event) => {
+  onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
     if (!sessionBinding.session || draftingNew || sessionPending) return
     const trigger = event.target
     if (!(trigger instanceof HTMLElement)) return

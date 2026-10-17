@@ -2448,7 +2448,7 @@ describe('web session selection', () => {
       item.click()
     }
     await interruptFromMenu()
-    expect(running.interrupt).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(running.interrupt).toHaveBeenCalledTimes(1))
     expect(running.interrupt).toHaveBeenCalledWith('C')
     await vi.waitFor(() => expect(queuedButton.disabled).toBe(true))
     expect(queuedButton.getAttribute('aria-busy')).toBe('true')
@@ -3161,6 +3161,7 @@ describe('session action review regressions', () => {
     const { rename, old, on } = await boot({ value: false })
     await act(async () => document.querySelector<HTMLButtonElement>('#task-title')?.click())
     const titleInput = document.getElementById('task-title-input') as HTMLInputElement
+    expect(titleInput).not.toBeNull()
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(titleInput, '改名后')
       titleInput.dispatchEvent(new Event('input', { bubbles: true }))
