@@ -1,5 +1,5 @@
 import type { PageSessionMeta, SessionGroupsResult, SessionSidebarListParams } from '@agnes/protocol'
-import type { SidebarGroupState, SidebarPaging } from '@agnes/web-units'
+import type { SidebarGroupState, SidebarPaging } from '@agnes/web-units/shell'
 
 type Group = SidebarGroupState & {
   generation: number

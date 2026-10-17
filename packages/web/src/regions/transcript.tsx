@@ -7,7 +7,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import type { TranscriptHandle } from '@agnes/web-units'
+import type { TranscriptHandle } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'

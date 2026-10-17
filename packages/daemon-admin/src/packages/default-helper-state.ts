@@ -4,18 +4,19 @@ import { join } from 'node:path'
 import { DEFAULT_ENABLED_BUNDLED_PACKAGES, withLock } from '@agnes/package-manager'
 
 export type DefaultHelperState = {
-  version: 1 | 2 | 3
   phase: 'pending' | 'installed' | 'complete' | 'existing'
   integrity: Record<string, string>
-}
+} & ({ version: 1 | 2 | 3 } | { version: 4; offered: string[] })
 function decode(raw: unknown): DefaultHelperState {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
     throw new Error('Invalid helper initialization record')
   const s = raw as Record<string, unknown>
   if (
-    Object.keys(s).sort().join(',') !== 'integrity,phase,version' ||
-    (s.version !== 1 && s.version !== 2 && s.version !== 3) ||
-    !['pending', 'installed', 'complete', 'existing'].includes(String(s.phase)) ||
+    Object.keys(s).sort().join(',') !==
+      (s.version === 4 ? 'integrity,offered,phase,version' : 'integrity,phase,version') ||
+    (s.version !== 1 && s.version !== 2 && s.version !== 3 && s.version !== 4) ||
+    typeof s.phase !== 'string' ||
+    !['pending', 'installed', 'complete', 'existing'].includes(s.phase) ||
     !s.integrity ||
     typeof s.integrity !== 'object' ||
     Array.isArray(s.integrity)
@@ -31,6 +32,15 @@ function decode(raw: unknown): DefaultHelperState {
     )
   )
     throw new Error('Invalid helper integrity record')
+  if (
+    s.version === 4 &&
+    (s.phase === 'existing' ||
+      !Array.isArray(s.offered) ||
+      s.offered.some((id) => !DEFAULT_ENABLED_BUNDLED_PACKAGES.some((helper) => helper.id === id)) ||
+      new Set(s.offered).size !== s.offered.length ||
+      Object.keys(integrity).some((id) => !(s.offered as unknown[]).includes(id)))
+  )
+    throw new Error('Invalid helper offered record')
   if (s.phase === 'installed' && !Object.keys(integrity).length)
     throw new Error('Empty helper activation record')
   return s as DefaultHelperState

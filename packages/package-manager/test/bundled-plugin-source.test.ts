@@ -26,6 +26,12 @@ const fixture = () => {
   roots.push(root)
   return root
 }
+
+it('keeps an empty optional catalogue without reserving ordinary workspace sources', () => {
+  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+  expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
+  expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
+})
 it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
@@ -94,8 +100,6 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
     expect(exec).not.toHaveBeenCalled()
-    if (OPTIONAL_BUNDLED_PACKAGES.some((item) => item.id === helper.id))
-      expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.id === helper.id)).toBe(false)
   },
 )
 

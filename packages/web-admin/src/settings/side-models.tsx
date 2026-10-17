@@ -21,6 +21,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { configurationField } from './dialog.js'
 import { settingsCatalog } from './locales.js'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.js'
 
@@ -207,8 +208,7 @@ function accountIdFor(label: string, taken: ReadonlySet<string>, fallback: strin
     .replace(/-+$/g, '')
   const root = slug || fallback
   let candidate = root
-  for (let suffix = 2; taken.has(candidate); suffix++)
-    candidate = `${root.slice(0, 44)}-${suffix}`
+  for (let suffix = 2; taken.has(candidate); suffix++) candidate = `${root.slice(0, 44)}-${suffix}`
   return candidate
 }
 
@@ -281,7 +281,9 @@ function SideModels({
   const copyTimers = useRef<number[]>([])
   useEffect(() => {
     const timers = copyTimers.current
-    return () => timers.forEach((timer) => window.clearTimeout(timer))
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer)
+    }
   }, [])
   const copyRoute = async (accountId: string, route: string) => {
     const board = navigator.clipboard
@@ -294,6 +296,12 @@ function SideModels({
   }
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  const [fieldError, setFieldError] = useState<'baseUrl' | 'credentialRef'>()
+  const endpointChanged =
+    !!draft &&
+    !draft.isNew &&
+    accounts.find((row) => row.accountId === draft.accountId)?.baseUrl.replace(/\/$/, '') !==
+      draft.baseUrl.replace(/\/$/, '')
   const [testState, setTestState] = useState('')
   const [options, setOptions] = useState<readonly { id: string; label: string }[]>([])
   const [newLabel, setNewLabel] = useState('')
@@ -315,6 +323,7 @@ function SideModels({
   const takenIds = new Set(accounts.map((row) => row.accountId))
   const openAdd = () => {
     setStatus('')
+    setFieldError(undefined)
     setTestState('')
     const preset = ADAPTER_PRESETS[draftProvider()]
     setDraft({
@@ -329,6 +338,7 @@ function SideModels({
   }
   const openEdit = (account: ConfigAccount) => {
     setStatus('')
+    setFieldError(undefined)
     setTestState('')
     setDraft({
       accountId: account.accountId,
@@ -342,6 +352,7 @@ function SideModels({
   }
   const patch = (next: Partial<EditorDraft>) => {
     setStatus('')
+    setFieldError(undefined)
     setTestState('')
     setDraft((current) => (current ? { ...current, ...next } : current))
   }
@@ -358,8 +369,14 @@ function SideModels({
   }
   const valid = (current: EditorDraft): ConfigModel[] | undefined => {
     if (current.label.trim() === '' || current.label.length > 128) return undefined
-    if (!endpointOk(current.baseUrl)) return undefined
-    if (current.isNew && current.credentialRef === '') return undefined
+    if (!endpointOk(current.baseUrl)) {
+      setFieldError('baseUrl')
+      return undefined
+    }
+    if ((current.isNew || endpointChanged) && current.credentialRef === '') {
+      setFieldError('credentialRef')
+      return undefined
+    }
     return readModels(current.models)
   }
 
@@ -396,6 +413,14 @@ function SideModels({
         setDraft(undefined)
         setStatus('side.conflict')
       } else {
+        const field = configurationField(error)
+        setFieldError(
+          field === 'baseUrl' || field === 'credentialRef'
+            ? field
+            : failureCode(error) === 'CONFIG_CREDENTIAL_REQUIRED'
+              ? 'credentialRef'
+              : undefined,
+        )
         setStatus('side.failed')
       }
     } finally {
@@ -422,6 +447,8 @@ function SideModels({
       })
       setTestState(result.verified ? 'side.testOk' : 'side.testFailed')
     } catch (error) {
+      const field = configurationField(error)
+      setFieldError(field === 'baseUrl' || field === 'credentialRef' ? field : undefined)
       setTestState(
         failureCode(error) === 'CONFIG_CREDENTIAL_REJECTED' ? 'side.testRejected' : 'side.testFailed',
       )
@@ -577,22 +604,48 @@ function SideModels({
                 onChange={(event) => patch({ label: event.target.value })}
               />
             </SettingsItem>
-            <SettingsItem label={t('side.baseUrl')}>
+            <SettingsItem
+              label={t('side.baseUrl')}
+              description={
+                fieldError === 'baseUrl' ? (
+                  <span id="side-base-url-error" role="alert">
+                    {t('side.invalidBaseUrl')}
+                  </span>
+                ) : undefined
+              }
+            >
               <SettingsInput
                 data-testid="side-base-url"
+                aria-invalid={fieldError === 'baseUrl' || undefined}
+                aria-describedby={fieldError === 'baseUrl' ? 'side-base-url-error' : undefined}
                 value={draft.baseUrl}
                 disabled={busy}
                 onChange={(event) => patch({ baseUrl: event.target.value })}
               />
             </SettingsItem>
-            <SettingsItem label={t('side.credential')}>
+            <SettingsItem
+              label={t('side.credential')}
+              description={
+                endpointChanged || fieldError === 'credentialRef' ? (
+                  <span id="side-credential-hint" role={fieldError === 'credentialRef' ? 'alert' : undefined}>
+                    {t(endpointChanged ? 'side.endpointChanged' : 'side.credentialChoose')}
+                  </span>
+                ) : undefined
+              }
+            >
               <SettingsSelect
                 data-testid="side-credential"
+                aria-invalid={fieldError === 'credentialRef' || undefined}
+                aria-describedby={
+                  endpointChanged || fieldError === 'credentialRef' ? 'side-credential-hint' : undefined
+                }
                 value={draft.credentialRef}
                 disabled={busy}
                 onChange={(event) => patch({ credentialRef: event.target.value })}
               >
-                <option value="">{t(draft.isNew ? 'side.credentialChoose' : 'side.credentialKeep')}</option>
+                <option value="">
+                  {t(draft.isNew || endpointChanged ? 'side.credentialChoose' : 'side.credentialKeep')}
+                </option>
                 {options.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}

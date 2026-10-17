@@ -2,7 +2,11 @@ import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, EmptyState, Icon, IconButton, PushCrumbs, renderRegion, SettingsInput } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
-import { type SidebarNavigationOptions, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units'
+import {
+  type SidebarNavigationOptions,
+  sortSessionsByRecency,
+  untitledSessionLabel,
+} from '@agnes/web-units/shell'
 import { useState, useSyncExternalStore } from 'react'
 import { archivedSessions } from './archived-sessions.js'
 import { SessionMenu } from './session-menu.js'

@@ -103,7 +103,7 @@ Failed plugin states carry a short fix hint and a documentation link. In plugin 
 
 ## Built-in helper plugins
 
-AGH includes four official helpers. On a new local configuration, or the first upgrade of an existing configuration to a version with default helpers, missing helpers are automatically installed, trusted, and enabled without a network download:
+AGH includes four official helpers. On each startup, missing release defaults that the profile has never been offered are automatically installed, trusted, enabled and activated without a network download:
 
 | Plugin | Purpose |
 | --- | --- |
@@ -112,13 +112,13 @@ AGH includes four official helpers. On a new local configuration, or the first u
 | `@agnes/plugin-helper` | Create tool or Skill plugins, inspect packages, and install/enable them after confirmation |
 | `@agnes/document-reader` | Read PDF text and page images, scanned PDF, DOC, DOCX, and selected ZIP entries; OCR runs offline |
 
-The distribution also includes `@agnes/deliverables-ui`, `@agnes/goal-ui` and `@agnes/interaction-ui` as the default file, goal and interaction presentations. Initial setup omits each optional UI package when the profile's capability ceiling does not admit it; other verification failures still stop initialization.
+The distribution also includes `@agnes/deliverables-ui`, `@agnes/goal-ui` and `@agnes/interaction-ui` as the default file, goal and interaction presentations. Startup also adds these presentations to existing profiles that have never been offered them. If the profile's capability ceiling blocks an optional UI package, AGH records it as offered and omitted, so later startups do not retry it automatically; other verification failures still stop initialization.
 
 Existing installations keep their pinned plugin snapshots when the application is rebuilt or restarted. To pick up the PDF page images and expanded ZIP handling in `@agnes/document-reader` 0.1.2, select the installed package's **Update from a new source** action in Web Plugin management and use `file:./bundled-plugins/document-reader` from the newly built application. Check the preview and complete the normal update/activation flow.
 
 They appear under Settings → Plugin management → Installed and can be disabled or removed. Later startups and upgrades respect that choice. Removing a helper does not delete plugins, Skills, or MCP services it previously created or integrated. Installing third-party capabilities still requires the relevant confirmation.
 
-When upgrading from a version with only Skill/MCP Helper, AGH adds Plugin Helper and Document Reader without restoring removed older helpers. Upgrading from the three-helper version adds only Document Reader. Existing packages with the same IDs retain their versions and enabled/trusted state. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
+The bootstrap receipt remembers offered defaults, including ones omitted under the capability ceiling. Older receipts preserve offers proven by their recorded integrity hashes or currently installed defaults, then add any remaining missing defaults. Previously offered defaults stay removed or disabled; defaults marked for fresh profiles only are never backfilled. Existing packages with the same IDs retain their enabled/trusted state during initialization. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
 
 <a id="管理其他插件"></a>
 

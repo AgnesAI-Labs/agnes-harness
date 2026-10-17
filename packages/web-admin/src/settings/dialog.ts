@@ -29,7 +29,18 @@ export const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
   CONFIG_INVALID_STATE: 'settings.config.invalidState',
 }
 
+/** Only known form fields from the configuration boundary may direct focus or field copy. */
+export function configurationField(error: unknown): 'baseUrl' | 'apiKey' | 'credentialRef' | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const data = 'data' in error && error.data && typeof error.data === 'object' ? error.data : error
+  const field = 'field' in data ? data.field : undefined
+  return field === 'baseUrl' || field === 'apiKey' || field === 'credentialRef' ? field : undefined
+}
+
 export function configurationReason(error: unknown, t: (key: string) => string = tr): string | undefined {
+  const field = configurationField(error)
+  if (field === 'baseUrl') return t('settings.config.invalidBaseUrl')
+  if (field === 'apiKey') return t('settings.key.endpointChanged')
   const localized = appServerErrorMessage(error, document.documentElement.lang)
   if (localized) return localized
   if (error === null || typeof error !== 'object') return undefined
@@ -146,4 +157,30 @@ export function showSettingsDialog(dialog: HTMLDialogElement, onOpen?: () => voi
   if (dialog.open) return
   setDialogOpen(dialog, true)
   onOpen?.()
+}
+
+/** Explain whether the stored key may still be used for the current destination. */
+export function renderAccountKeyHint(
+  ui: SettingsElements,
+  saved: { id: string; baseUrl: string; credentialConfigured: boolean } | null | undefined,
+  providerId: string,
+  connected: boolean,
+  oauth: boolean,
+): void {
+  if (!ui.keyHint) return
+  const endpointChanged =
+    saved &&
+    ui.baseUrl.value.trim() &&
+    saved.baseUrl.replace(/\/$/, '') !== ui.baseUrl.value.trim().replace(/\/$/, '')
+  ui.keyHint.textContent = tr(
+    oauth
+      ? 'settings.key.oauthHint'
+      : endpointChanged
+        ? 'settings.key.endpointChanged'
+        : connected && saved?.id === providerId && saved.credentialConfigured
+          ? 'settings.key.savedHint'
+          : connected
+            ? 'settings.key.inputHint'
+            : 'settings.key.offlineCleared',
+  )
 }

@@ -352,6 +352,20 @@ try {
       console.info(`Upgrade session ${kind}: history + continuation passed`)
     }
     const inventory = await sdk.packages.list({ profile: 'local-dev' })
+    const presentationRoster = await sdk.clientModules.list('local-dev')
+    for (const name of ['goal-ui', 'interaction-ui', 'deliverables-ui']) {
+      const id = `@agnes/${name}`
+      const current = inventory.packages.find((row) => row.id === id)
+      assert.ok(current, `${id}: missing after previous-build upgrade`)
+      assert.equal(current.trusted, true, `${id}: not trusted`)
+      assert.equal(current.desired, 'enabled', `${id}: not enabled`)
+      assert.equal(current.actual, 'running', `${id}: not published/running`)
+      assert.deepEqual(current.blockers, [], `${id}: blocked`)
+      assert.ok(
+        presentationRoster.rows.some((row) => row.packageId === id && row.phase === 'ready'),
+        `${id}: presentation not available`,
+      )
+    }
     let unchangedGrantDefaults = 0
     for (const old of state.inventory.packages) {
       const current = inventory.packages.find((row) => row.id === old.id)

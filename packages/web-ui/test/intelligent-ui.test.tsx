@@ -121,7 +121,12 @@ describe('preset Intelligent UI catalog', () => {
         expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.getAttribute('title')).toBe(
           'txn-1',
         )
-        expect(host.querySelector('[data-testid="ui-chart-chart"] svg')?.getAttribute('role')).toBe('img')
+        // The source table is immediate; the plotting engine arrives through its own chunk.
+        expect(host.querySelector('[data-testid="ui-chart-chart"] table')).not.toBeNull()
+        await vi.waitFor(async () => {
+          await act(async () => {})
+          expect(host.querySelector('[data-testid="ui-chart-chart"] svg')?.getAttribute('role')).toBe('img')
+        })
         await act(async () =>
           host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
         )

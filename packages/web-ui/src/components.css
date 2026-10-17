@@ -1458,6 +1458,8 @@
   }
   .agh-chart-plot {
     min-width: 0;
+    /* Keep the plot footprint while its on-demand engine loads. */
+    min-height: 210px;
     color: var(--agnes-text-primary);
     font: var(--font-size-xs) var(--font-sans);
   }

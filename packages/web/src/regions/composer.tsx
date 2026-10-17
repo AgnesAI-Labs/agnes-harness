@@ -9,7 +9,7 @@ import {
   type ComposerHandle,
   type ComposerRegionOptions,
   type ComposerView,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { LoopPicker } from '../loop-picker.js'

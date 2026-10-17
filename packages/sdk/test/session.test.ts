@@ -32,6 +32,180 @@ describe('toContentBlocks', () => {
 })
 
 describe('Session', () => {
+  it.each([
+    ['controls', '_agnes/v1/session.controls', { controls: {}, paused: false, pending: [] }],
+    [
+      'projectUI',
+      '_agnes/v1/session.projectUI',
+      { sessionId: 's', generation: 1, upto: 0, opState: null, nodes: [], turns: [] },
+    ],
+    ['uiRead', '_agnes/v1/ui.read', { sessionId: 's', lastSeq: 0, surfaces: [], actions: [] }],
+    [
+      'workspaceChanges',
+      '_agnes/v1/session.workspace.changes',
+      {
+        scope: 'session',
+        revision: 'a'.repeat(64),
+        observedAt: '2026-10-17T00:00:00Z',
+        fromSeq: 0,
+        toSeq: 0,
+        turn: null,
+        truncated: false,
+        unrecorded: false,
+        files: [],
+      },
+    ],
+  ] as const)(
+    'coalesces concurrent %s reads with a fresh follow-up after events',
+    async (read, method, result) => {
+      const finish: Array<(value: unknown) => void> = []
+      const f = fakeEndpoint({
+        initialize: init,
+        '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+        'session/new': () => ({ sessionId: 's' }),
+        [method]: () => new Promise((resolve) => finish.push(resolve)),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
+      const detached = [s[read](), s[read]()]
+      await flush()
+      expect(finish).toHaveLength(2)
+      for (const resolve of finish.splice(0)) resolve(result)
+      await Promise.all(detached)
+      await s.attach()
+      const a = s[read](),
+        b = s[read]()
+      await flush()
+      expect(finish).toHaveLength(1)
+      // Events during a flight queue a fresh read; a burst shares the same follow-up.
+      f.push(update('s', meta(1, 'event')))
+      await flush()
+      const newer = s[read]()
+      f.push(update('s', meta(2, 'event')))
+      await flush()
+      const newest = s[read]()
+      await flush()
+      expect(finish).toHaveLength(1)
+      finish[0]?.(result)
+      const [first, second] = await Promise.all([a, b])
+      expect(first).toEqual(result)
+      expect(second).toEqual(result)
+      expect(first).not.toBe(second)
+      await flush()
+      expect(finish).toHaveLength(2)
+      const updated =
+        read === 'controls'
+          ? { ...result, paused: true }
+          : read === 'projectUI'
+            ? { ...result, upto: 2 }
+            : read === 'uiRead'
+              ? { ...result, lastSeq: 2 }
+              : { ...result, toSeq: 2 }
+      finish[1]?.(updated)
+      const [fresh, latest] = await Promise.all([newer, newest])
+      expect(fresh).toEqual(updated)
+      expect(latest).toEqual(updated)
+      expect(fresh).not.toBe(latest)
+      const again = s[read]()
+      await flush()
+      expect(finish).toHaveLength(3)
+      finish[2]?.(result)
+      await again
+      await c.close()
+    },
+  )
+
+  it.each(['detach', 'disconnect', 'generation'] as const)(
+    'rejects a coalesced read after %s and does not reuse it',
+    async (change) => {
+      const finish: Array<(value: unknown) => void> = []
+      const result = { controls: {}, paused: false, pending: [] }
+      const f = fakeEndpoint({
+        initialize: init,
+        '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+        'session/new': () => ({ sessionId: 's' }),
+        '_agnes/v1/session.detach': () => ({}),
+        '_agnes/v1/session.controls': () => new Promise((resolve) => finish.push(resolve)),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
+      await s.attach()
+      const a = s.controls(),
+        b = s.controls()
+      await flush()
+      expect(finish).toHaveLength(1)
+      f.push(update('s', meta(1, 'event')))
+      await flush()
+      const queued = s.controls()
+      await flush()
+      expect(finish).toHaveLength(1)
+      const stale = expect(Promise.all([a, b, queued])).rejects.toThrow()
+      if (change === 'detach') await s.detach()
+      else if (change === 'disconnect') c.emit('connectionStateChanged', 'reconnecting')
+      else f.push(update('s', meta(2, 'event', { generation: 2 })))
+      await flush()
+      const next = s.controls()
+      await flush()
+      expect(finish).toHaveLength(2)
+      finish[0]?.(result)
+      await stale
+      // A late obsolete completion cannot evict a new read that is still in flight.
+      const joined = s.controls()
+      await flush()
+      expect(finish).toHaveLength(change === 'detach' ? 3 : 2)
+      finish[1]?.(result)
+      if (change === 'detach') finish[2]?.(result)
+      expect(await next).toEqual(result)
+      expect(await joined).toEqual(result)
+      await c.close()
+    },
+  )
+
+  it('keeps read parameters and sessions separate, propagates refusal, and retries after it', async () => {
+    let refused = true
+    const f = fakeEndpoint({
+      initialize: init,
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+      'session/load': () => ({}),
+      '_agnes/v1/session.controls': () => {
+        if (refused) throw rpcError('AUTH_INVALID')
+        return { controls: {}, paused: false, pending: [] }
+      },
+    })
+    const c = createClient({ transport: { kind: 'inproc', endpoint: f.endpoint }, authProviders: providers })
+    const s = await c.session.load('s'),
+      other = await c.session.load('other')
+    await s.attach()
+    await other.attach()
+    const denied = await Promise.allSettled([
+      s.controls(),
+      s.controls(),
+      s.controls({ afterSeq: 1 }),
+      other.controls(),
+    ])
+    expect(denied.every((r) => r.status === 'rejected')).toBe(true)
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(3)
+    await expect(s.controls({ afterSeq: 1n } as never)).rejects.toMatchObject({ kind: 'protocol-violation' })
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(3)
+    refused = false
+    expect(await s.controls()).toEqual({ controls: {}, paused: false, pending: [] })
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(4)
+    const valid = s.controls({ afterSeq: 1 })
+    // A boxed number serializes like the valid scalar but must not bypass parameter validation.
+    await expect(s.controls({ afterSeq: Object(1) } as never)).rejects.toMatchObject({
+      kind: 'protocol-violation',
+    })
+    await valid
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(5)
+    await c.close()
+  })
+
   it('reads capabilities through the authenticated tool catalog and supports older servers', async () => {
     let params: unknown
     const f = fakeEndpoint({

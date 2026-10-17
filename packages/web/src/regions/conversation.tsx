@@ -6,7 +6,11 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import { Conversation, type ConversationChildContainers, type ConversationHandle } from '@agnes/web-units'
+import {
+  Conversation,
+  type ConversationChildContainers,
+  type ConversationHandle,
+} from '@agnes/web-units/shell'
 import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import {

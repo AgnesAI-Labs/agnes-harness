@@ -48,6 +48,10 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.unknownProvider': 'The selected provider is unavailable. Choose another one.',
     'settings.config.endpointUnsupported':
       'This provider does not support a custom base URL; restore the default address.',
+    'settings.config.invalidBaseUrl':
+      'Base URL is invalid for this adapter. Check the scheme, host and path; remove inline credentials and endpoint templates.',
+    'settings.key.endpointChanged':
+      'Endpoint changed. Enter the API key again to authorize sending it to this endpoint.',
     'settings.config.credentialRequired': 'An API key is required. Enter the key and retry.',
     'settings.config.credentialRejected':
       'The provider rejected the API key or its access. Check the key and account permissions, then retry.',
@@ -231,6 +235,9 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.invalidInput': '配置输入无效，请检查服务商、Base URL、密钥和模型。',
     'settings.config.unknownProvider': '所选服务商不可用，请重新选择。',
     'settings.config.endpointUnsupported': '该服务商不支持自定义 Base URL，请恢复默认地址。',
+    'settings.config.invalidBaseUrl':
+      '此适配器不支持该 Base URL。请检查协议、主机和路径，移除内嵌凭据及端点模板。',
+    'settings.key.endpointChanged': '端点已更改。请重新输入 API key，授权将其发送到此端点。',
     'settings.config.credentialRequired': '需要 API key，请输入密钥后重试。',
     'settings.config.credentialRejected': '服务商拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。',
     'settings.config.credentialPermissions':

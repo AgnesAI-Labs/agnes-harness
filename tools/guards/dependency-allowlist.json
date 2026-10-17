@@ -346,11 +346,9 @@
   "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
-  "@agnes/eval-studio": ["@agnes/model-adapters", "@agnes/sdk", "@agnes/web-client", "@agnes/web-ui"],
   "@agnes/goal-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/interaction-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/mcp-helper": [],
   "@agnes/plugin-helper": [],
-  "@agnes/skill-helper": [],
-  "@agnes/usage-cockpit": ["@agnes/protocol", "@agnes/web-client", "@agnes/web-ui"]
+  "@agnes/skill-helper": []
 }

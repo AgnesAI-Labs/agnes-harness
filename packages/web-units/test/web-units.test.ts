@@ -6,11 +6,18 @@ import {
   BUILTIN_WEB_UNITS,
   BuiltinWebUnitRegistry,
   builtinWebUnitRows,
+  escapeBundleJson,
   getBuiltinWebUnit,
+  renderDiagnosticsViewer,
 } from '../src/index.js'
+import * as shell from '../src/shell.js'
 
 describe('built-in web unit contract', () => {
   it('publishes stable web rows with one contributes.client entry per unit', () => {
+    expect(shell.BUILTIN_WEB_UNITS).toBe(BUILTIN_WEB_UNITS)
+    expect(typeof escapeBundleJson).toBe('function')
+    expect(typeof renderDiagnosticsViewer).toBe('function')
+    expect(shell).not.toHaveProperty('renderDiagnosticsViewer')
     expect(BUILTIN_WEB_UNITS.length).toBeGreaterThanOrEqual(12)
     const rowIds = new Set<string>()
     for (const definition of BUILTIN_WEB_UNITS) {

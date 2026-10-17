@@ -301,38 +301,133 @@ it.each([
         packages.some((pkg) => pkg.id === id),
         id,
       ).toBe(!restricted)
-    writeFileSync(join(s.profileDir, 'default-helpers', 'state.json'), '{}')
-    await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper initialization')
+    const file = join(s.profileDir, 'default-helpers', 'state.json')
+    await activateDefaultHelpers({
+      ...s,
+      inventory: await s.manager.inventory(s.profileDir),
+      previous: undefined,
+      publish: async () => {},
+    })
+    const receipt = JSON.parse(readFileSync(file, 'utf8'))
+    expect(receipt).toMatchObject({ version: 4, phase: 'complete' })
+    for (const id of ['@agnes/deliverables-ui', '@agnes/goal-ui', '@agnes/interaction-ui'])
+      expect(receipt.offered).toContain(id)
+    // Even a subsequently wider ceiling does not silently reverse an omitted offer.
+    const lock = readLock(s.profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })
+    writeLock(s.profileDir, {
+      ...lock,
+      policySnapshot: {
+        ...lock.policySnapshot,
+        capabilityCeiling: loadTemplate('local-dev').policy?.capabilityCeiling ?? [],
+        workspacePackages: 'require-project-trust',
+      },
+    })
+    vi.spyOn(s.manager, 'inspect').mockRejectedValue(new Error('Previously offered defaults retried'))
+    await initializeDefaultHelpers({ ...s, initializePolicy: async () => {} })
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(packages.length)
+    for (const invalid of [
+      {},
+      { ...receipt, unexpected: true },
+      { ...receipt, offered: {} },
+      { ...receipt, phase: ['complete'] },
+      { version: 4, phase: 'complete', integrity: {} },
+      { ...receipt, offered: ['@agnes/not-a-default'] },
+      { ...receipt, offered: [...receipt.offered, receipt.offered[0]] },
+      { ...receipt, offered: [] },
+    ]) {
+      writeFileSync(file, JSON.stringify(invalid))
+      await expect(initializeDefaultHelpers(s)).rejects.toThrow('Invalid helper')
+    }
   },
 )
-it('resumes interrupted first initialization without replacing already installed packages', async () => {
-  const s = setup()
-  const trust = s.manager.trust.bind(s.manager)
-  const spy = vi
-    .spyOn(s.manager, 'trust')
-    .mockRejectedValueOnce(new Error('interrupted'))
-    .mockImplementation(trust)
-  await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(1)
-  await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages.every((p) => p.entry.state.enabled)).toBe(true)
-  expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase).toBe(
-    'installed',
-  )
-  spy.mockRestore()
-})
-it('does not trust an interrupted initialization with changed release hashes', async () => {
-  const s = setup()
-  const spy = vi.spyOn(s.manager, 'trust').mockRejectedValueOnce(new Error('interrupted'))
-  await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
-  spy.mockRestore()
-  const file = join(s.profileDir, 'default-helpers', 'state.json')
-  const state = JSON.parse(readFileSync(file, 'utf8'))
-  state.integrity['@agnes/skill-helper'] = `sha256-${'0'.repeat(64)}`
-  writeFileSync(file, JSON.stringify(state))
-  await expect(initializeDefaultHelpers(s)).rejects.toThrow('verification failed')
-  expect((await s.manager.inventory(s.profileDir)).packages.every((p) => !p.entry.state.trusted)).toBe(true)
-})
+it.each([
+  { backfill: false, step: 'policy' },
+  { backfill: false, step: 'trust' },
+  { backfill: true, step: 'policy' },
+  { backfill: true, step: 'trust' },
+])(
+  'resumes interrupted provisioning without replacing installed packages (backfill=$backfill, step=$step)',
+  async ({ backfill, step }) => {
+    const s = setup()
+    if (backfill) {
+      await s.initializePolicy()
+      mkdirSync(join(s.profileDir, 'default-helpers'))
+      writeFileSync(
+        join(s.profileDir, 'default-helpers', 'state.json'),
+        JSON.stringify({
+          version: 3,
+          phase: 'complete',
+          integrity: {},
+        }),
+      )
+    }
+    const trust = s.manager.trust.bind(s.manager)
+    const initializePolicy = s.initializePolicy
+    const spy =
+      step === 'trust'
+        ? vi
+            .spyOn(s.manager, 'trust')
+            .mockRejectedValueOnce(new Error('interrupted'))
+            .mockImplementation(trust)
+        : vi
+            .spyOn(s, 'initializePolicy')
+            .mockRejectedValueOnce(new Error('interrupted'))
+            .mockImplementation(initializePolicy)
+    await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
+    const pending = JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8'))
+    expect(pending).toMatchObject({ version: 4, phase: 'pending' })
+    expect(pending.offered).toContain('@agnes/goal-ui')
+    expect(pending.integrity['@agnes/goal-ui']).toMatch(/^sha256-/)
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(step === 'trust' ? 1 : 0)
+    await initializeDefaultHelpers(s)
+    expect((await s.manager.inventory(s.profileDir)).packages.every((p) => p.entry.state.enabled)).toBe(true)
+    expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase).toBe(
+      'installed',
+    )
+    spy.mockRestore()
+    await activateDefaultHelpers({
+      ...s,
+      inventory: await s.manager.inventory(s.profileDir),
+      previous: undefined,
+      publish: async () => {},
+    })
+    expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase).toBe(
+      'complete',
+    )
+  },
+)
+it.each(['integrity', 'source'])(
+  'refuses an interrupted initialization with changed %s',
+  async (mismatch) => {
+    const s = setup()
+    const spy = vi.spyOn(s.manager, 'trust').mockRejectedValueOnce(new Error('interrupted'))
+    await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
+    spy.mockRestore()
+    const file = join(s.profileDir, 'default-helpers', 'state.json')
+    const state = JSON.parse(readFileSync(file, 'utf8'))
+    if (mismatch === 'integrity') {
+      state.integrity['@agnes/skill-helper'] = `sha256-${'0'.repeat(64)}`
+      writeFileSync(file, JSON.stringify(state))
+    } else {
+      const source = bundledPluginSource('file:./bundled-plugins/skill-helper')
+      if (!source) throw new Error('Missing helper source')
+      const foreign = join(s.root, 'foreign-helper')
+      cpSync(join(source.root, source.path), foreign, { recursive: true })
+      await s.manager.update(
+        s.profileDir,
+        '@agnes/skill-helper',
+        parseSource(`file:${foreign.split(sep).join('/')}`),
+        {
+          expectedIntegrity: state.integrity['@agnes/skill-helper'],
+        },
+      )
+    }
+    await expect(initializeDefaultHelpers(s)).rejects.toThrow(
+      mismatch === 'integrity' ? 'verification failed' : 'differs from initialization intent',
+    )
+    expect((await s.manager.inventory(s.profileDir)).packages.every((p) => !p.entry.state.trusted)).toBe(true)
+  },
+)
 
 it('retries target publication after failure and never reactivates completed defaults', async () => {
   const s = setup()
@@ -407,39 +502,105 @@ it('records completion without activation when all helpers are already installed
   )
 })
 
-it.each([1, 2, 3])(
-  'migrates a completed v%s profile by adding new helpers, preserving prior removals',
+it.each([1, 2, 3, 4])(
+  'backfills never-offered defaults in a completed v%s receipt and preserves prior choices',
   async (version) => {
     const s = setup()
     await s.initializePolicy()
+    const integrity: Record<string, string> = {}
+    for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'document-reader']) {
+      const source = parseSource(`file:./bundled-plugins/${name}`)
+      const preview = await s.manager.inspect(s.profileDir, source)
+      await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
+      if (!preview.capabilityHash) throw new Error('Missing default capability hash')
+      await s.manager.trust(s.profileDir, preview.id, {
+        integrity: preview.integrity,
+        capabilityHash: preview.capabilityHash,
+      })
+      await s.manager.setEnabled(s.profileDir, preview.id, true)
+      // Installed defaults also count as offered even when absent from the legacy integrity map.
+      if (name !== 'document-reader') integrity[preview.id] = preview.integrity
+    }
+    if (version !== 3) {
+      await s.manager.setEnabled(s.profileDir, '@agnes/skill-helper', false)
+      await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
+      await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
+    }
+    const before = await s.manager.inventory(s.profileDir)
+    let target: RuntimeTargetArtifact | undefined
+    for (const pkg of before.packages.filter((pkg) => pkg.enabled))
+      target = rebuildDesiredFromInventory({
+        previous: target,
+        inventory: before,
+        packageId: pkg.id,
+        operation: 'enable',
+      })
     mkdirSync(join(s.profileDir, 'default-helpers'))
+    const file = join(s.profileDir, 'default-helpers', 'state.json')
     writeFileSync(
-      join(s.profileDir, 'default-helpers', 'state.json'),
-      JSON.stringify({ version, phase: 'complete', integrity: {} }),
+      file,
+      JSON.stringify({
+        version,
+        phase: 'complete',
+        integrity,
+        ...(version === 4 ? { offered: [...Object.keys(integrity)] } : {}),
+      }),
     )
     await initializeDefaultHelpers(s)
-    expect((await s.manager.inventory(s.profileDir)).packages.map((p) => p.id)).toEqual(
-      version === 1
-        ? ['@agnes/document-reader', '@agnes/plugin-helper']
-        : version === 2
-          ? ['@agnes/document-reader']
-          : [],
+    const inventory = await s.manager.inventory(s.profileDir)
+    expect(inventory.packages).toHaveLength(version === 3 ? 7 : 6)
+    expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
+    expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
+      version === 3 ? [] : ['@agnes/skill-helper'],
     )
+    expect(inventory.packages.some((pkg) => pkg.id === '@agnes/mcp-helper')).toBe(version === 3)
+    for (const pkg of before.packages)
+      expect(inventory.packages.find((current) => current.id === pkg.id)).toEqual(pkg)
     await activateDefaultHelpers({
       profileDir: s.profileDir,
-      inventory: await s.manager.inventory(s.profileDir),
-      previous: undefined,
-      publish: async () => {},
+      inventory,
+      previous: target,
+      publish: async (next) => {
+        target = next
+      },
     })
-    expect(
-      JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).version,
-    ).toBe(3)
-    for (const pkg of (await s.manager.inventory(s.profileDir)).packages) {
-      await s.manager.setEnabled(s.profileDir, pkg.id, false)
-      await s.manager.remove(s.profileDir, pkg.id)
+    for (const name of ['goal-ui', 'interaction-ui', 'deliverables-ui']) {
+      const pkg = inventory.packages.find((pkg) => pkg.id === `@agnes/${name}`)
+      if (!pkg || !target) throw new Error('Missing presentation or target')
+      expect(pkg.entry.trustDecision).toMatchObject({
+        integrity: pkg.entry.integrity,
+        capabilityHash: pkg.capabilityHash,
+      })
+      expect(decodeRuntimeTargetArtifact(target).tree.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: `web:${pkg.id}`,
+            entryRevision: installedRuntimeSnapshotId(pkg),
+            disabled: false,
+          }),
+        ]),
+      )
     }
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({
+      version: 4,
+      phase: 'complete',
+      offered: expect.arrayContaining(inventory.packages.map((pkg) => pkg.id)),
+    })
+    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(7)
+    await s.manager.setEnabled(s.profileDir, '@agnes/goal-ui', false)
+    await s.manager.remove(s.profileDir, '@agnes/goal-ui')
+    await s.manager.setEnabled(s.profileDir, '@agnes/interaction-ui', false)
     await initializeDefaultHelpers(s)
-    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+    await refreshDefaultHelpers({
+      ...s,
+      previous: () => target,
+      publish: async (next) => {
+        target = next
+      },
+    })
+    const after = (await s.manager.inventory(s.profileDir)).packages
+    expect(after.find((pkg) => pkg.id === '@agnes/goal-ui')).toBeUndefined()
+    expect(after.find((pkg) => pkg.id === '@agnes/interaction-ui')?.enabled).toBe(false)
   },
 )
 

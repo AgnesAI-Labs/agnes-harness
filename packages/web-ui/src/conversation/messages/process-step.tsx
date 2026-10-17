@@ -62,7 +62,7 @@ export function ProcessStep({
 }: {
   nodeId: string
   step: ProcessStepResult
-  props: ConversationMessagesProps
+  props: Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>
 }) {
   const t = props.t
   const [open, setOpen] = useState(false)

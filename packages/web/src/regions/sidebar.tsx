@@ -7,7 +7,7 @@ import {
   type SidebarDependencies,
   type SidebarHandle,
   type SidebarState,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { SessionNavigation } from '../navigation.js'

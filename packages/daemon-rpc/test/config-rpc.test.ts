@@ -80,6 +80,21 @@ it('redacts provider errors and reports persisted-but-not-applied configuration 
     const result = await request(ep, '_agnes/v1/config.test', { providerId: 'p', apiKey: 'secret-key' })
     expect(JSON.stringify(result)).not.toContain('secret-key')
     expect(result).toMatchObject({ error: { data: { reason: 'CONFIG_FAILED' } } })
+    for (const [reason, field] of [
+      ['CONFIG_INVALID_INPUT', 'baseUrl'],
+      ['CONFIG_CREDENTIAL_REQUIRED', 'credentialRef'],
+    ]) {
+      s.test.mockRejectedValueOnce(Object.assign(new Error('private URL'), { code: reason, field }))
+      expect(await request(ep, '_agnes/v1/config.test', { providerId: 'p' })).toMatchObject({
+        error: { data: { reason, field } },
+      })
+    }
+    s.test.mockRejectedValueOnce(
+      Object.assign(new Error('private URL'), { code: 'CONFIG_INVALID_INPUT', field: 'private URL' }),
+    )
+    expect(JSON.stringify(await request(ep, '_agnes/v1/config.test', { providerId: 'p' }))).not.toContain(
+      'private URL',
+    )
   } finally {
     await ep.close()
   }

@@ -42,11 +42,34 @@ it('builds local web assets with the shared platform vendor modules', async () =
       }
     }
     const coldJsBytes = [...cold].reduce((bytes, file) => bytes + (emitted.get(file)?.bytes ?? 0), 0)
-    // Calibrated at 7.0 MiB with production React and deferred home pages; allow ~30% headroom.
-    expect(coldJsBytes).toBeLessThan(9 * 1024 * 1024)
+    // Keep the plot engine and offline diagnostics renderer out of home; allow a small
+    // margin above the measured delivery graph, rather than the old 9 MiB ceiling.
+    expect(coldJsBytes).toBeLessThan(6.75 * 1024 * 1024)
     for (const file of cold)
       for (const input of Object.keys(emitted.get(file)?.inputs ?? {}))
-        expect(input).not.toMatch(/pages\/(agents|plugins|automation)-page/)
+        expect(input).not.toMatch(
+          /pages\/(agents|plugins|automation)-page|chart-plot|diagnostics-(bundle|viewer)|react-dom-server|node_modules\/recharts\//,
+        )
+
+    // Retrying this optional asset must not retain a failed child-module fetch.
+    const chart = builds
+      .flatMap((build) => Object.entries(build.metafile?.outputs ?? {}))
+      .find(([file]) => file.endsWith('/vendor/recharts.js'))
+    expect(chart).toBeDefined()
+    const diagnostics = builds
+      .flatMap((build) => Object.entries(build.metafile?.outputs ?? {}))
+      .find(([file]) => file.endsWith('/vendor/chunk-diagnostics.js'))
+    expect(diagnostics).toBeDefined()
+    expect(diagnostics?.[1].imports.every((dependency) => dependency.external)).toBe(true)
+    expect(
+      chart?.[1].imports.every(
+        (dependency) =>
+          dependency.external &&
+          ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'].includes(
+            dependency.path,
+          ),
+      ),
+    ).toBe(true)
 
     // Check the actual local distribution, including lazy entries and all vendor/shared chunks.
     const assets = (await readdir(output, { recursive: true })).filter((file) => /\.(js|css|map)$/.test(file))

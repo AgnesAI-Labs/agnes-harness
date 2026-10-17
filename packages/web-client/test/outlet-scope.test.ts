@@ -17,7 +17,9 @@ it.each(['single', 'chain'] as const)(
     const root = createRoot(container)
     const stores = { root: vi.fn(), session: vi.fn() }
     const destroyed = vi.fn()
+    const renderEntry = vi.fn()
     function Counter() {
+      renderEntry()
       const [count, setCount] = useState(0)
       return createElement('button', { type: 'button', onClick: () => setCount(count + 1) }, count)
     }
@@ -37,20 +39,21 @@ it.each(['single', 'chain'] as const)(
           Counter,
         )
       }
-      flushSync(() =>
-        root.render(
-          createElement(
-            SlotsProvider,
-            { registry },
-            createElement(SlotOutlet, { name: 'test-root' as never }),
-            createElement(SlotOutlet, { name: 'test-session' as never }),
-          ),
-        ),
-      )
+      const children = [
+        createElement(SlotOutlet, { key: 'root', name: 'test-root' as never }),
+        createElement(SlotOutlet, { key: 'session', name: 'test-session' as never }),
+      ]
+      const render = () => flushSync(() => root.render(createElement(SlotsProvider, { registry }, children)))
+      render()
       const buttons = [...container.querySelectorAll('button')]
       flushSync(() => {
         for (const button of buttons) button.click()
       })
+      expect(buttons.map((button) => button.textContent)).toEqual(['1', '1'])
+      // Context gate: unrelated host renders must not invalidate every mounted slot entry.
+      const before = renderEntry.mock.calls.length
+      for (let token = 0; token < 20; token++) render()
+      expect(renderEntry.mock.calls.length).toBe(before)
       expect(buttons.map((button) => button.textContent)).toEqual(['1', '1'])
       flushSync(() => registry.setSession('two'))
       expect(container.querySelectorAll('button')[0]).toBe(buttons[0])

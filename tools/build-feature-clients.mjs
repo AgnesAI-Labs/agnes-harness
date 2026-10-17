@@ -1,17 +1,20 @@
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { assertClientExternals, clientPlatformExternals } from './web-client-externals.mjs'
 
-const require = createRequire(resolve('packages/web/package.json'))
+const root = fileURLToPath(new URL('../', import.meta.url))
+const require = createRequire(join(root, 'packages/web/package.json'))
 const { build } = require('esbuild')
 const check = process.argv.includes('--check')
 for (const [feature, presentation, suffix] of [
   ['goal-ui', 'goal-presentation', 'tsx'],
   ['interaction-ui', 'intelligent-ui-presentation', 'ts'],
 ]) {
-  const outfile = `packages/package-manager/bundled-plugins/${feature}/src/client.js`
+  const outfile = join(root, `packages/package-manager/bundled-plugins/${feature}/src/client.js`)
   const result = await build({
+    absWorkingDir: root,
     entryPoints: [`packages/web-conversation/src/${presentation}.${suffix}`],
     outfile,
     bundle: true,
@@ -19,7 +22,7 @@ for (const [feature, presentation, suffix] of [
     platform: 'browser',
     target: 'es2023',
     jsx: 'automatic',
-    nodePaths: [resolve('packages/web/node_modules')],
+    nodePaths: [join(root, 'packages/web/node_modules')],
     plugins: [clientPlatformExternals],
     minify: true,
     legalComments: 'eof',
@@ -31,7 +34,7 @@ for (const [feature, presentation, suffix] of [
   if (check) {
     if ((await readFile(outfile, 'utf8')) !== output) throw new Error(`Stale feature bundle: ${outfile}`)
   } else await writeFile(outfile, output)
-  const noticeFile = `packages/package-manager/bundled-plugins/${feature}/NOTICE`
+  const noticeFile = join(root, `packages/package-manager/bundled-plugins/${feature}/NOTICE`)
   const notice = await notices(result.metafile.inputs)
   if (check) {
     if ((await readFile(noticeFile, 'utf8')) !== notice) throw new Error(`Stale notice: ${feature}`)
@@ -43,7 +46,7 @@ async function notices(inputs) {
   const packages = new Map()
   for (const file of Object.keys(inputs)) {
     if (!file.includes('node_modules/')) continue
-    let directory = dirname(resolve(file))
+    let directory = dirname(resolve(root, file))
     while (directory !== dirname(directory)) {
       try {
         const metadata = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))

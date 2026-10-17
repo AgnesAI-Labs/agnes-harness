@@ -30,6 +30,8 @@
 
 builtin 模板是基础，用户 profile 与 Host configuration overlay 合并，再按工作区信任处理 local 层；部署与锁文件也影响最终解析。配置服务负责的键在用户层具有自己的覆盖规则，不是任意 YAML 深合并。只改变 cwd 不选择另一个 daemon。
 
+修改已有账户的端点后，保存或测试时必须显式提供凭据：重新输入 API key，或为旁路模型重新选择凭据引用。否则返回 `CONFIG_CREDENTIAL_REQUIRED`，已保存的修订保持不变。保存和测试均按实际适配器的规则校验有效 Base URL，并将非法 URL 错误定位到 `baseUrl`；已有的非法 URL 会在下次保存或测试时被拒绝。
+
 ## Profile 可配置面
 
 | 字段 | 内容与约束 |

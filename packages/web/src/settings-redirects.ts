@@ -1,5 +1,5 @@
 import { preserveRouteParams, searchParamRoute } from '@agnes/web-ui'
-import { type SettingsMoveTarget, settingsMoved, settingsRoute } from '@agnes/web-units'
+import { type SettingsMoveTarget, settingsMoved, settingsRoute } from '@agnes/web-units/shell'
 
 /** The new home of the page an old `?settings=<id>` link names, when it left the settings dialog. */
 export function movedSettingsTarget(id: string): SettingsMoveTarget | undefined {
