@@ -12,6 +12,10 @@ API additions require a minor version; removals or semantic changes require a ma
   grants and callback lifetime on every operation. This unreleased preview keeps its API number;
   publish these additions in a minor version before a public package release.
 
+- `workspaceStateKind` declares read-only workspace state providers whose queries are selected
+  through the session's backend composition. This unreleased preview retains its API number;
+  publication requires the same minor-version review as the additions below.
+
 - Experimental `profileRuntime` facet for current-profile managed resources and declared streams,
   with `managedServiceCapabilities` for the static status/configuration/check/retry/configure
   service declarations. Trusted in-process services use an explicit `in-process` artifact kind;

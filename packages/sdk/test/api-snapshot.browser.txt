@@ -42,5 +42,7 @@ runHeadless
 snapshotPending
 textFor
 toContentBlocks
+unresolvedSubmission
 uploadAttachment
+upsertPending
 wsTransport
