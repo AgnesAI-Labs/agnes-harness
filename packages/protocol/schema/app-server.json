@@ -830,6 +830,7 @@
     "AdminPlanParams": {
       "type": "object",
       "properties": {
+        "sessionId": { "type": "string", "minLength": 1 },
         "cwd": {
           "type": "string",
           "maxLength": 4096
