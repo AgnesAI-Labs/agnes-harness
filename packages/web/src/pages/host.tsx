@@ -136,6 +136,8 @@ export function bindHomeRouting(): () => void {
   const stop = homeNavigation.subscribe(() => {
     if (restoring) return
     const requested = homeNavigation.getSnapshot()
+    // App defaults are transient presentation, not explicit URL/user choices.
+    if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
     const url = new URL(location.href)
     const before = url.href
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab

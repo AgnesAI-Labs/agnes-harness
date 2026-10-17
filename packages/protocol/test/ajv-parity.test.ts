@@ -6047,6 +6047,11 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     invalid: [{ unknown: true }],
     note: 'Application static presentation contract',
   },
+  ApplicationPageRef: {
+    valid: 'acme/kit#overview.details',
+    invalid: ['home', 'acme/kit#'],
+    note: 'Package-qualified presentation page',
+  },
   ApplicationPresentation: {
     valid: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } },
     invalid: [{ unknown: true }],
@@ -6288,6 +6293,7 @@ const ExtensionManifestDefs: Record<string, TSchema> = {
   ApplicationAsset: ExtensionManifestGen.ApplicationAsset,
   ApplicationBrand: ExtensionManifestGen.ApplicationBrand,
   ApplicationPresentation: ExtensionManifestGen.ApplicationPresentation,
+  ApplicationPageRef: ExtensionManifestGen.ApplicationPageRef,
   ApplicationRoleTarget: ExtensionManifestGen.ApplicationRoleTarget,
   PresentationRole: ExtensionManifestGen.PresentationRole,
 

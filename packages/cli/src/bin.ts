@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import { readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -27,6 +28,7 @@ import { bootLocal, type LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
 import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
+import { recoveryCommand } from './commands/app.js'
 import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
 import {
   BootError,
@@ -406,10 +408,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
   const home = eph?.home ?? resolveHome(io.env)
-  if (p.command === 'home') {
-    const { homeCommand } = await import('./commands/home.js')
-    return await homeCommand(p.rest, io)
-  }
+  const recovery = await recoveryCommand(p, io, home)
+  if (recovery !== undefined) return recovery
   const production = Object.keys(boot).length === 0
   let diagnosticHome = home
   if (production && p.command !== 'doctor') {

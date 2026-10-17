@@ -34,6 +34,7 @@ export {
   applicationIdentity,
   effectiveApplication,
   presentationDefault,
+  resolveApplicationBrand,
 } from './application-identity.js'
 export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'

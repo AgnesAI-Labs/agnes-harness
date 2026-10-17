@@ -927,7 +927,7 @@
           "maxLength": 64
         },
         "home": {
-          "$ref": "#/$defs/AgentRef"
+          "$ref": "#/$defs/ApplicationPageRef"
         },
         "navigation": {
           "type": "object",
@@ -938,7 +938,7 @@
               "maxItems": 64,
               "uniqueItems": true,
               "items": {
-                "$ref": "#/$defs/AgentRef"
+                "$ref": "#/$defs/ApplicationPageRef"
               }
             },
             "hideBuiltin": {
@@ -979,6 +979,12 @@
         }
       },
       "required": []
+    },
+    "ApplicationPageRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9.-]{0,127}$"
     }
   }
 }

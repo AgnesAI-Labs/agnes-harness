@@ -156,7 +156,9 @@ it.each([
     new ThemeService(ctx, 'light')
     const owner = `${role}-actual-fiber`
     const fiber = ctx.plugin(clientModule(official), {
-      packageId: `official-${role}`,
+      packageId: `@agnes/${role}-ui`,
+      clientId: `${role}-ui`,
+      presentationRoles: [role],
       revision: 'fixture',
       rowId: owner,
       allowedSlots: [...allowedSlots],

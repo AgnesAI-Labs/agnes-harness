@@ -273,6 +273,7 @@ export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capab
 export type {
   ApplicationAsset,
   ApplicationBrand,
+  ApplicationPageRef,
   ApplicationPresentation,
   ApplicationRoleTarget,
   PresentationRole,

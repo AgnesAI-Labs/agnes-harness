@@ -40,6 +40,8 @@ import type {
   ModelSettings,
 } from '@agnes/protocol'
 import {
+  type ApplicationConfigSnapshot,
+  ApplicationSelection,
   AuxiliaryModelSlots,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
@@ -90,6 +92,8 @@ export { CONFIGURATION_ERROR_CODES } from './configuration-error.js'
 export { ConfigurationError, type ConfigurationErrorCode }
 
 export interface ConfigurationService {
+  application?(): Promise<ApplicationConfigSnapshot>
+  saveApplication?(input: ApplicationConfigSnapshot): Promise<ApplicationConfigSnapshot>
   modelSlots?(): Promise<ModelSlotsSnapshot>
   saveModelSlots?(input: ModelSlotsSnapshot): Promise<ModelSlotsSnapshot>
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
@@ -152,6 +156,8 @@ type StoredAccount = StoredConfigurationV1['provider'] & {
   networkTimeouts?: import('@agnes/protocol').ConfigSaveInput['networkTimeouts']
 }
 type StoredConfiguration = {
+  executionRevision?: number
+  application?: ApplicationSelection
   modelSlots?: AuxiliaryModelSlots
   version: 2
   profile: string
@@ -209,6 +215,7 @@ function acceptedChildEngines(value: unknown): ChildEngineSettings | undefined {
 
 function retainedConfiguration(current: StoredConfiguration | undefined) {
   return {
+    ...(current?.application === undefined ? {} : { application: current.application }),
     ...(current?.modelSlots === undefined ? {} : { modelSlots: current.modelSlots }),
     ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
     ...(current?.childEngines === undefined ? {} : { childEngines: current.childEngines }),
@@ -420,7 +427,14 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ...(value.inheritProvider === undefined ? [] : ['inheritProvider']),
       ...(value.childEngines === undefined ? [] : ['childEngines']),
       ...(value.modelSlots === undefined ? [] : ['modelSlots']),
+      ...(value.application === undefined ? [] : ['application']),
+      ...(value.executionRevision === undefined ? [] : ['executionRevision']),
     ]) ||
+    (value.executionRevision !== undefined &&
+      (!Number.isSafeInteger(value.executionRevision) ||
+        (value.executionRevision as number) < 0 ||
+        (value.executionRevision as number) > (value.revision as number))) ||
+    (value.application !== undefined && !validateAgainst(ApplicationSelection, value.application).ok) ||
     (value.sessionDefaults !== undefined && !isSessionDefaults(value.sessionDefaults)) ||
     (value.modelSlots !== undefined && !validateAgainst(AuxiliaryModelSlots, value.modelSlots).ok) ||
     (value.inheritProvider !== undefined &&
@@ -545,6 +559,10 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ? {}
       : { sessionDefaults: value.sessionDefaults as SessionDefaults }),
     ...(childEngines === undefined ? {} : { childEngines }),
+    ...(value.executionRevision === undefined
+      ? {}
+      : { executionRevision: value.executionRevision as number }),
+    ...(value.application === undefined ? {} : { application: value.application as ApplicationSelection }),
     ...(value.modelSlots === undefined ? {} : { modelSlots: value.modelSlots as AuxiliaryModelSlots }),
   }
 }
@@ -614,7 +632,7 @@ export function createConfigurationService(
 ): ConfigurationService &
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
-  Required<Pick<ConfigurationService, 'modelSlots' | 'saveModelSlots'>> {
+  Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -769,6 +787,7 @@ export function createConfigurationService(
     return {
       profile,
       revision: state.revision,
+      executionRevision: state.executionRevision ?? state.revision,
       configured: selected?.credentialConfigured ?? false,
       accounts,
       defaultAccountId: state.defaultAccountId,
@@ -934,7 +953,8 @@ export function createConfigurationService(
     return supported.length === 0 ? { models, verified: false } : { models: supported, verified: true }
   }
 
-  const persistState = async (state: StoredConfiguration): Promise<void> => {
+  const persistState = async (state: StoredConfiguration, presentationOnly = false): Promise<void> => {
+    if (!presentationOnly) state.executionRevision = state.revision
     await ensureDirectory(home)
     await ensureDirectory(join(home, 'profiles'))
     await ensureDirectory(profileDir)
@@ -1308,6 +1328,36 @@ export function createConfigurationService(
     test,
     save: (input) => serialized(() => saveInternal(input)),
     account: (input) => serialized(() => changeAccount(input)),
+    async application() {
+      const current = await loadState()
+      return { revision: current?.revision ?? 0, selection: structuredClone(current?.application ?? null) }
+    },
+    saveApplication: (input) =>
+      serialized(async () => {
+        if (
+          !Number.isSafeInteger(input.revision) ||
+          input.revision < 0 ||
+          (input.selection !== null && !validateAgainst(ApplicationSelection, input.selection).ok)
+        )
+          throw new ConfigurationError('CONFIG_INVALID_INPUT')
+        const current = await loadState()
+        if (input.revision !== (current?.revision ?? 0))
+          throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
+        const next: StoredConfiguration = {
+          version: 2,
+          profile,
+          accounts: [],
+          defaultAccountId: null,
+          ...current,
+          ...(!current ? { inheritProvider: true as const } : {}),
+          revision: input.revision + 1,
+          executionRevision: current?.executionRevision ?? current?.revision ?? 0,
+        }
+        if (input.selection === null) delete next.application
+        else next.application = structuredClone(input.selection)
+        await persistState(next, true)
+        return { revision: next.revision, selection: structuredClone(next.application ?? null) }
+      }),
     async modelSlots() {
       return slotsSnapshot(await loadState())
     },

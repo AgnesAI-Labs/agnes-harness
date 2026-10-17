@@ -1,4 +1,6 @@
 import {
+  applicationIdentity,
+  effectiveApplication,
   type HomeEntry,
   type HomeEntryBadge,
   homeEntries,
@@ -38,7 +40,15 @@ export function HomeEntriesNav({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
-  const entries = homeEntries.entries()
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const nav = effectiveApplication()?.presentation?.navigation
+  const entries = homeEntries.entries().filter((entry) => !nav?.hideBuiltin?.some((id) => id === entry.id))
+  const order = nav?.entries?.map((ref) => ref.slice(ref.indexOf('#') + 1)) ?? []
+  entries.sort((a, b) => {
+    const x = order.indexOf(a.id),
+      y = order.indexOf(b.id)
+    return (x < 0 ? 1000 : x) - (y < 0 ? 1000 : y)
+  })
   const { inline, more } = homeEntryGroups(entries)
   const open = (entry: HomeEntry) => {
     homeNavigation.open(entry.id)

@@ -8,6 +8,8 @@ import type { Command } from './types.js'
 export function commandHelp(command?: Command): string {
   const common = 'Use --yes to confirm reviewed mutations without a TTY. Help never starts the backend.'
   switch (command) {
+    case 'app':
+      return 'Usage: agh app clear [--profile NAME] [--json]\nClear the presentation selection without loading plugins. Uses online CAS when the daemon is running, otherwise the shared configuration lock.'
     case 'home':
       return 'Usage: agh home info [--json]\nInspect the versioned home without writes. AGH_HOME selects the home.'
     case 'app-server':

@@ -1,4 +1,5 @@
 import type { LocaleService } from '@agnes/web-client'
+import { applicationIdentity, effectiveApplication } from '@agnes/web-client'
 import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
 import {
   applyDocumentLocale,
@@ -13,8 +14,10 @@ import {
   readSkinCache,
   SKIN_STORAGE_KEY,
   type SkinRosterEntry,
+  skinOverride,
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
+import { updateApplicationTitle } from '../application.js'
 import { broadcast, onBroadcast, onPageHide, onWindowFocus } from './global-events.js'
 
 type SkinRoster = {
@@ -53,6 +56,7 @@ export function createAppearanceController(options: {
         writeLocalePreference(storage, value)
         applyDocumentLocale(document.documentElement, value)
         options.locale.setLocale(value)
+        updateApplicationTitle()
         broadcast('agnes:locale-changed', value)
       },
       text: (key) => options.locale.t(key),
@@ -124,6 +128,28 @@ export function createAppearanceController(options: {
       }))
       // 只有真的拿到清单才能对账：这里的 `[]` 会被读成「皮肤全被卸载」而抹掉用户的选择。
       await reconcile(roster)
+      const application = effectiveApplication()
+      const override = skinOverride(location.search)
+      const selected = roster.find((skin) =>
+        override !== null
+          ? skin.id === override
+          : skin.id === application?.presentation?.skin &&
+            skin.packageName === applicationIdentity.getSnapshot()?.selection?.packageId,
+      )
+      const css = selected ? (selected.css ?? (await fetchSkinCss(selected.cssUrl, cssOptions))) : undefined
+      window.dispatchEvent(
+        new CustomEvent('agnes:application-skin', {
+          detail: selected
+            ? {
+                version: 1,
+                id: selected.id,
+                revision: selected.revision,
+                css: css ?? '',
+                tokens: selected.tokens,
+              }
+            : null,
+        }),
+      )
       return roster
     },
     select: async (id) => {
@@ -137,6 +163,7 @@ export function createAppearanceController(options: {
         // 宿主没内联时先取到文本再写缓存，否则会缓存成一份空样式表——点了等于没点（设计 §8）。
         await cacheSkinEntry(storage, chosen, cssOptions)
       }
+      storage.setItem('agnes-skin-preference', id ?? 'none')
       skinChanged()
     },
   })

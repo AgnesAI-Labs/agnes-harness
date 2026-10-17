@@ -30,6 +30,7 @@ import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
+import { openApplicationHome, projectApplication } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -681,18 +682,23 @@ let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
   identity: () => JSON.stringify([profileName, moduleSessionId, sessionBinding.generation]),
   commit(roster) {
+    projectApplication(roster.application)
     moduleExtIds.clear()
     for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
     for (const listener of customModuleListeners) listener()
   },
   async list() {
     if (!profileName) return { revision: '', modules: [], statuses: [] }
-    const roster = await client.clientModules.list(profileName, moduleSessionId)
+    const [roster, application] = await Promise.all([
+      client.clientModules.list(profileName, moduleSessionId),
+      client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),
+    ])
     // `rows` is the authoritative browser lifecycle surface.  The legacy
     // `modules` compatibility projection deliberately cannot carry every
     // immutable declaration, including the per-module service allow-list.
     const modules = readyRosterModules(roster.rows ?? [])
     return {
+      ...(application ? { application } : {}),
       revision: roster.revision,
       modules,
       statuses: roster.statuses,
@@ -707,6 +713,7 @@ const references = composerReferences(prepareComposerSession, renderControls)
 
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
+homeEntries.subscribe(openApplicationHome)
 const clientModules = await startClientModules({
   agnes: client,
   presentation: {

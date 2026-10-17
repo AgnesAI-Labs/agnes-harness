@@ -1,5 +1,6 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
+import { contract } from './admin-contract.js'
 import { inspectJsonData } from './json-data.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
@@ -340,23 +341,6 @@ export type PackageAdminAccessPolicy = Readonly<{
   permission: P.PackageAdminPermission
   identity: 'none' | 'principal-client-command'
 }>
-const contract = (
-  params: TSchema,
-  result: TSchema,
-  execution: PackageAdminAccessPolicy['execution'],
-  permission: P.PackageAdminPermission,
-) =>
-  Object.freeze({
-    kind: 'request' as const,
-    direction: 'c2s' as const,
-    params,
-    result,
-    administration: Object.freeze({
-      execution,
-      permission,
-      identity: execution === 'read' ? ('none' as const) : ('principal-client-command' as const),
-    }),
-  })
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
   '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
   '_agnes/v1/applications.preview': contract(

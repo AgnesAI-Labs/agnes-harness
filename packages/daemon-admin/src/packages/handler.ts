@@ -58,6 +58,7 @@ import {
 } from '@agnes/protocol'
 import { classifyPackageContributions } from '../package-readiness.js'
 import { pluginTreeList } from '../plugin-tree-surface.js'
+import { type Applications, createApplications } from './applications.js'
 import { createAuthoringTestRunner, runAuthoringTests } from './authoring-tests.js'
 import { callBuiltinClientQuery } from './builtin-client-services.js'
 import {
@@ -455,6 +456,7 @@ function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatal
 }
 
 class Service implements PackageAdminService {
+  private readonly applications: Applications
   private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
   private readonly tails = new Map<string, Promise<void>>()
@@ -492,6 +494,7 @@ class Service implements PackageAdminService {
       clock: () => string
     },
   ) {
+    this.applications = createApplications(options)
     this.configuration = new PluginConfiguration({
       manager: options.manager,
       profileDirectory: options.profileDirectory,
@@ -612,6 +615,13 @@ class Service implements PackageAdminService {
         'packages.trust',
         'packages.activate',
       ])
+    if (method.startsWith('_agnes/v1/applications.')) {
+      if (method !== '_agnes/v1/applications.get' && method !== '_agnes/v1/applications.clear') {
+        await this.boot
+        if (this.recoveryError) operationError(this.recoveryError)
+      }
+      return this.applications.call(method, data, granted)
+    }
     await this.boot
     // `recoveryError` is set only when recoverPending() -- reading the *operations store*'s pending
     // ledger -- fails on boot. `pins.inspect`/`pins.release` never read or write that store (no

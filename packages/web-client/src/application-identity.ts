@@ -21,7 +21,10 @@ export function effectiveApplication(): ApplicationTemplate | undefined {
   return state?.status === 'active' ? (state.effective ?? undefined) : undefined
 }
 export function applicationBrand(locale = 'en') {
-  const brand = effectiveApplication()?.brand
+  return resolveApplicationBrand(effectiveApplication(), locale)
+}
+export function resolveApplicationBrand(application: ApplicationTemplate | undefined, locale = 'en') {
+  const brand = application?.brand
   const text = (value: { en: string; 'zh-CN'?: string } | undefined, fallback: string) =>
     (locale === 'zh-CN' ? value?.['zh-CN'] : undefined) ?? value?.en ?? fallback
   return {

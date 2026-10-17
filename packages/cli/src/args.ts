@@ -5,6 +5,7 @@ import type { Command, ModelSel, ParsedArgs } from './types.js'
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
 const COMMANDS = new Set<string>([
+  'app',
   'home',
   'app-server',
   'run',
@@ -43,6 +44,7 @@ const COMMANDS = new Set<string>([
 
 /** These hand their tail on to another program or another grammar; we do not read it. */
 const FORWARDED = new Set<string>([
+  'app',
   'home',
   'app-server',
   'run',

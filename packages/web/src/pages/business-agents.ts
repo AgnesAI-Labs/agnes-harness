@@ -1,4 +1,5 @@
 import type { AgentPlan, PackageCatalogDescriptor } from '@agnes/protocol'
+import { applicationAgents } from '@agnes/web-client'
 import { homeAdmin } from './admin-api.js'
 
 /** Catalogue availability comes from explicit launch declarations, independently of package names. */
@@ -25,6 +26,7 @@ export async function listBusinessAgents(
     const page = await catalog(undefined, cursor)
     rows.push(
       ...page.items
+        .map((row) => ({ ...row, agents: applicationAgents(row.agents ?? []) }))
         .filter(isBusinessAgent)
         .flatMap((entry) => (entry.agents ?? []).map((agent) => ({ ...entry, agents: [agent] }))),
     )

@@ -3,6 +3,9 @@ import type { LocaleCatalog } from './index.js'
 /** 设置壳模板（S1）：首帧由宿主 applyLocaleText 回填，切换语言走 boot 的全文档回填。 */
 export const settingsShellLocaleCatalog: LocaleCatalog = {
   en: {
+    'settings-shell.group.application': 'Application',
+    'settings-shell.page.application': 'Application',
+    'settings-shell.keywords.application': 'application product brand navigation identity',
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.or': 'Or',
@@ -128,6 +131,9 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.saveAccount': 'Save account',
   },
   'zh-CN': {
+    'settings-shell.group.application': '应用',
+    'settings-shell.page.application': '应用',
+    'settings-shell.keywords.application': '应用 产品 品牌 导航 身份',
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
     'accounts.or': '或者',

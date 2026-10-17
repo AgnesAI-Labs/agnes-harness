@@ -73,7 +73,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     throw new Error('Web origin port does not match Web listener port')
   if (requestedPort === 0 && !expectedOrigin.port)
     throw new Error('Web origin must include the selected Web listener port')
-  const contentSecurityPolicy = `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
+  const contentSecurityPolicy = `default-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
 
   let pickerPending = false
   let activePicker: AbortController | undefined
@@ -588,9 +588,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       }
       // Only the workbench consumes local image/PDF resource URLs; other pages keep the base policy.
       const documentCsp =
-        file === 'index.html'
-          ? `${contentSecurityPolicy}; img-src 'self' blob:; frame-src 'self' blob:`
-          : contentSecurityPolicy
+        file === 'index.html' ? `${contentSecurityPolicy}; frame-src 'self' blob:` : contentSecurityPolicy
       const responseCsp = documentNonce
         ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
         : documentCsp

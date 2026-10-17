@@ -68,6 +68,10 @@ const METHOD_BY_PATH = {
   'pins/inspect': '_agnes/v1/packages.pins.inspect',
   'pins/release': '_agnes/v1/packages.pins.release',
   'trust-workspace': '_agnes/v1/packages.trustWorkspace',
+  'application/get': '_agnes/v1/applications.get',
+  'application/preview': '_agnes/v1/applications.preview',
+  'application/adopt': '_agnes/v1/applications.adopt',
+  'application/clear': '_agnes/v1/applications.clear',
   'config/get': '_agnes/v1/plugins.config.get',
   'config/validate': '_agnes/v1/plugins.config.validate',
   'config/save': '_agnes/v1/plugins.config.save',
@@ -201,6 +205,22 @@ export class PluginAdminApi {
     return body
   }
 
+  application(): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#post('application/get', { profile: this.#context.profile })
+  }
+  previewApplication(packageId: string): Promise<import('@agnes/protocol').ApplicationPreview> {
+    return this.#post('application/preview', { profile: this.#context.profile, packageId })
+  }
+  adoptApplication(
+    packageId: string,
+    expectedRevision: number,
+    consentDigest: string,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/adopt', { packageId, expectedRevision, consentDigest })
+  }
+  clearApplication(expectedRevision: number): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/clear', { expectedRevision })
+  }
   #candidateRead: Promise<import('@agnes/protocol').AuthoringCandidateList> | undefined
 
   candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {

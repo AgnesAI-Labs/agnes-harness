@@ -118,12 +118,13 @@ it('operates the React settings pane and account dialog without losing native fo
   )
   dialog.removeEventListener('agnes:settings-terminal', openTerminal)
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
-  // The dialog lists three pages; everything else moved out and is no longer listed.
+  // The dialog lists everyday pages, including application adoption; everything else moved out and is no longer listed.
   const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
   expect([...everyday].map((item) => item.getAttribute('data-settings-section'))).toEqual([
     'general',
     'model',
     'security',
+    'application',
   ])
   expect(dialog.querySelector('#settings-advanced')).toBeNull()
   expect(dialog.querySelector('#settings-search')).toBeNull()

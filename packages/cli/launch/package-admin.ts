@@ -130,6 +130,26 @@ export function localPackageAdmin(
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
     switch (action) {
+      case 'application/get':
+        return client.request(
+          '_agnes/v1/applications.get',
+          params as import('@agnes/protocol').PackageListParams,
+        )
+      case 'application/preview':
+        return client.request(
+          '_agnes/v1/applications.preview',
+          params as import('@agnes/protocol').ApplicationPreviewParams,
+        )
+      case 'application/adopt':
+        return client.request(
+          '_agnes/v1/applications.adopt',
+          params as import('@agnes/protocol').ApplicationAdoptParams,
+        )
+      case 'application/clear':
+        return client.request(
+          '_agnes/v1/applications.clear',
+          params as import('@agnes/protocol').ApplicationClearParams,
+        )
       case 'candidates/list':
         return client.request(
           '_agnes/v1/plugins.candidates.list',

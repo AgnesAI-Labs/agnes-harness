@@ -413,7 +413,7 @@ it('resolves local application home/navigation and only statically declared prof
       id: 'ui',
       entry: './ui.js',
       lifetime: 'profile' as const,
-      homeEntries: [{ id: 'home', placement: 'primary' as const }],
+      homeEntries: [{ id: 'home.details', placement: 'primary' as const }],
       presentationRoles: ['navigation' as const],
     },
   }
@@ -421,8 +421,8 @@ it('resolves local application home/navigation and only statically declared prof
     id: 'acme',
     brand: { name: { en: 'Acme' } },
     presentation: {
-      home: 'acme/kit#home',
-      navigation: { entries: ['acme/kit#home'] },
+      home: 'acme/kit#home.details',
+      navigation: { entries: ['acme/kit#home.details'] },
       roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } },
     },
   }

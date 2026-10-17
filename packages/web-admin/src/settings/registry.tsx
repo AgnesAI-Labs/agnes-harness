@@ -17,6 +17,7 @@ import {
 import { type ReactNode, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
+import { ApplicationPanel } from './application.js'
 import { AutoReviewPanel } from './auto-review.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
@@ -56,7 +57,7 @@ export type RuntimeSettingsContext = {
 // Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
-  // The dialog lists three pages: General, Models & accounts, Permissions & security.
+  // Native everyday pages share the registry with application adoption.
   ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 0],
   ['model', 'accounts', 'model', 'model-settings', 'modelNav', 10],
 ] as const) {
@@ -178,6 +179,7 @@ const definitions: readonly [
   number,
   (c: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
 ][] = [
+  ['application', 'application', 30, (c) => <ApplicationPanel api={c.api} canSave={c.canSave} />],
   [
     'security',
     'security',
@@ -235,7 +237,14 @@ for (const [group, id, order, render] of definitions) {
     group,
     id,
     order,
-    icon: id === 'models' ? 'agent' : id === 'diagnostics' ? 'diagnostics' : group,
+    icon:
+      id === 'application'
+        ? 'puzzle'
+        : id === 'models'
+          ? 'agent'
+          : id === 'diagnostics'
+            ? 'diagnostics'
+            : group,
     titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
     groupTitleKey: group === 'advanced' ? 'settings-shell.advanced' : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,

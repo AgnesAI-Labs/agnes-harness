@@ -82,7 +82,7 @@ export const localWebSkinReadAuthority: PackageAdminAuthorityResolver = (context
         principalId: context.conn.principalId,
         clientId: context.conn.clientId,
         permissions: ['packages.read'],
-        methods: ['_agnes/v1/skins.list', '_agnes/v1/clientModules.list'],
+        methods: ['_agnes/v1/skins.list', '_agnes/v1/clientModules.list', '_agnes/v1/applications.get'],
       }
     : undefined
 
