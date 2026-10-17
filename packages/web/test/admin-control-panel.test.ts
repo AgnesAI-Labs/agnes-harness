@@ -291,7 +291,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   )
   expect(builtins.textContent).toBe('')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
-  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by kind')
+  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by capability')
   expect(sessionLoopSelection({})).toBeUndefined()
   expect(sessionLoopSelection({ loop: { id: 'old-session-loop', version: '1.0.0' } })).toEqual({
     id: 'old-session-loop',

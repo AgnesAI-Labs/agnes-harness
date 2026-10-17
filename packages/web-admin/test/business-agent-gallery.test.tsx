@@ -37,6 +37,9 @@ const entry = (id: string, name: string, sample?: string) =>
     sourceId: 'official-examples',
     retrievedAt: '',
     provides: ['loop', 'tool'],
+    agents: [
+      { ref: `${id}#work`, launch: { title: { en: name }, description: { en: name }, preset: 'safe' } },
+    ],
     presentation: { origin: 'example', rows: [] },
     metadata: {
       displayName: name,

@@ -181,7 +181,10 @@ describe('business agent catalog', () => {
 
   it('reads every catalog page once and suggests ready agents first', async () => {
     const pages = [
-      { items: [entry({}, '@agnes-fde/a'), entry({}, '@agnes-example/x')], nextCursor: 'next' },
+      {
+        items: [entry({}, '@agnes-fde/a'), entry({ agents: undefined }, '@agnes-example/x')],
+        nextCursor: 'next',
+      },
       { items: [entry({}, '@agnes-fde/b'), entry({}, '@agnes-fde/a')], nextCursor: null },
     ]
     const cursors: (string | undefined)[] = []

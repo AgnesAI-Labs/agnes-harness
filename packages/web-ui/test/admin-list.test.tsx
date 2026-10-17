@@ -394,6 +394,21 @@ describe('where a plugin comes from and what it includes', () => {
       metadata: purposeRow.metadata,
     } as PackageCatalogDescriptor
     expect(pluginIncludes(agent, undefined, t)).toBe('1 bundle')
+    const launch = { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' }
+    expect(pluginIncludes({ ...agent, agents: [{ ref: 'acme/kit#work', launch }] }, undefined, t)).toBe(
+      '1 agent',
+    )
+    expect(
+      pluginIncludes(
+        {
+          ...agent,
+          agents: [{ ref: 'acme/kit#work', launch }],
+          presentation: { rows: [], includes: { provides: ['bundle'], counts: { bundles: 2 } } },
+        },
+        undefined,
+        t,
+      ),
+    ).toBe('1 agent · 1 bundle')
     expect(
       pluginIncludes({ ...purposeRow, provides: ['bundle'] } as PackageCatalogDescriptor, undefined, t),
     ).toBe('bundle')

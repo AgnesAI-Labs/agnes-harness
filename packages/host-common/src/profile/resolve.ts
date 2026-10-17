@@ -526,6 +526,8 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       (!builtin.has(ref.id) ||
         ref.source !== 'builtin' ||
         st.source?.type !== 'builtin' ||
+        st.source.ref !== 'builtin' ||
+        st.version !== env.agnesVersion ||
         st.integrity !== `builtin:${env.agnesVersion}`)
     )
       throw new HostError('E_LOCK_MISMATCH', `package ${ref.id} cannot claim release identity`, {

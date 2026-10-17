@@ -52,8 +52,15 @@ export function pluginIncludes(
   const kinds: readonly string[] = includes?.provides ?? item.provides ?? []
   if (kinds.length)
     return kinds
-      .map((kind) => {
+      .flatMap((kind) => {
         const count = includes?.counts?.[INCLUDE_COUNTS[kind as keyof typeof INCLUDE_COUNTS]]
+        if (kind === 'bundle' && item.agents?.length) {
+          const reusable = Math.max(0, (count ?? item.agents.length) - item.agents.length)
+          return [
+            t('includesItem', { count: item.agents.length, name: t('provide.agent') }),
+            ...(reusable ? [t('includesItem', { count: reusable, name: label(kind) })] : []),
+          ]
+        }
         return count ? t('includesItem', { count, name: label(kind) }) : label(kind)
       })
       .join(' · ')

@@ -80,7 +80,7 @@ it('failed discovery uses only a still-fresh snapshot and reports cache provenan
   fail = true
   expect((await catalog.read()).sources).toEqual([{ sourceId: 'curated', status: 'cached' }])
 })
-it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize'])(
+it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize', 'duplicate-agent', 'foreign-agent'])(
   'rejects invalid %s documents without publishing',
   async (kind) => {
     const doc = fixture()
@@ -90,6 +90,12 @@ it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize'])(
     if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
     if (kind === 'unknown') doc.extra = true
     if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
+    const agent = {
+      ref: `${doc.entries[0].id}#work`,
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    }
+    if (kind === 'duplicate-agent') doc.entries[0].agents = [agent, agent]
+    if (kind === 'foreign-agent') doc.entries[0].agents = [{ ...agent, ref: 'other/package#work' }]
     const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
     expect(await catalog.read()).toEqual({
       entries: [],

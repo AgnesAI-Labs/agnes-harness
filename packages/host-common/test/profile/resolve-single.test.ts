@@ -671,4 +671,22 @@ it('does not promote a familiar package name from file/git/npm to release author
       ),
     ).rejects.toMatchObject({ code: 'E_DEP_MISSING' })
   }
+  for (const identity of [
+    { source: { type: 'builtin', ref: 'file:external' }, integrity: 'builtin:0.1.0', version: '0.1.0' },
+    { source: { type: 'builtin', ref: 'builtin' }, integrity: 'builtin:other', version: '0.1.0' },
+    { source: { type: 'builtin', ref: 'builtin' }, integrity: 'builtin:0.1.0', version: 'other' },
+  ])
+    await expect(
+      resolveProfile(
+        {
+          builtin: 'local-dev',
+          lock: {
+            packages: {
+              '@agnes/base': { ...identity, trust: 'builtin', enabled: true },
+            },
+          },
+        },
+        env,
+      ),
+    ).rejects.toMatchObject({ code: 'E_LOCK_MISMATCH' })
 })

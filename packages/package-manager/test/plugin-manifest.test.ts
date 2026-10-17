@@ -226,13 +226,25 @@ it('validates explicit launch blocks without inheriting them and reports static 
     'deployment-dependent',
   )
   for (const invalid of [
-    { base: { launch: { ...launch, preset: 'missing' } } },
-    { base: { launch: { ...launch, preset: undefined } } },
+    { base: { ...bundles.base, launch: { ...launch, preset: 'missing' } } },
+    { base: { ...bundles.base, launch: { ...launch, preset: undefined } } },
     { base: { extends: ['base'] } },
     { base: { extends: ['acme/kit#missing'] } },
     { base: { extends: ['acme/kit#base'] } },
     { base: { presets: { safe: { name: 'safe', invented: true } } } },
-    { base: { launch: { ...launch, prompt: { text: { en: 'secret://credential' }, mode: 'draft' } } } },
+    { base: { ...bundles.base, launch: { ...launch, pages: ['undeclared'] } } },
+    {
+      base: {
+        ...bundles.base,
+        launch: { ...launch, prompt: { text: { en: 'secret://credential' }, mode: 'draft' } },
+      },
+    },
+    {
+      base: {
+        ...bundles.base,
+        launch: { ...launch, prompt: { text: { en: '😀'.repeat(4097) }, mode: 'draft' } },
+      },
+    },
   ])
     expect(preflightPackageBundles({ ...input, bundles: invalid }).level).toBe('refused')
   expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'isolated' }] }).level).toBe('refused')

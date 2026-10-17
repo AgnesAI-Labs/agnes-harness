@@ -1,17 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import {
-  type PackageBlocker,
-  validateAgainst,
-  validatePackageAdminData,
-  validatePluginMetadata,
-} from '@agnes/protocol'
-import {
-  DeclaredAgent as AgentSchema,
-  ApplicationTemplate as ApplicationSchema,
-} from '@agnes/protocol/gen/extension-manifest'
+import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
+import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
@@ -157,15 +149,11 @@ function validateRecord(raw: unknown): SnapshotRecord {
   for (const contribution of value.contributions)
     if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
       integrityFailure('snapshot-contribution')
-  if (value.application !== undefined && !validateAgainst(ApplicationSchema, value.application).ok)
-    integrityFailure('snapshot-application')
   if (
-    value.agents !== undefined &&
-    (!Array.isArray(value.agents) ||
-      value.agents.length > 64 ||
-      value.agents.some((agent) => !validateAgainst(AgentSchema, agent).ok))
+    !validApplicationDeclaration(value.application) ||
+    !validAgentDeclarations(value.agents, String(value.packageId))
   )
-    integrityFailure('snapshot-agents')
+    integrityFailure('snapshot-launch-declarations')
   const record = value as unknown as SnapshotRecord
   if (
     record.snapshotId !==
