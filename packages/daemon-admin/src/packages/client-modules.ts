@@ -74,6 +74,7 @@ type StoredDeclaration = Readonly<{
   streams?: ClientContribution['streams']
   backendRowId?: string
   intelligentComponents?: ClientContribution['intelligentComponents']
+  requiresBackendRows?: ClientContribution['requiresBackendRows']
   lifetime?: ClientContribution['lifetime']
   homeEntries?: ClientContribution['homeEntries']
   examplePages?: ClientContribution['examplePages']
@@ -282,6 +283,16 @@ function isState(value: unknown, profile: string): value is ProfileState {
             !declaration.extIds.every((id) => typeof id === 'string') ||
             !Array.isArray(declaration.services) ||
             !declaration.services.every((service) => typeof service === 'string') ||
+            (declaration.requiresBackendRows !== undefined &&
+              (!Array.isArray(declaration.requiresBackendRows) ||
+                declaration.requiresBackendRows.length > 32 ||
+                !declaration.requiresBackendRows.every(
+                  (id) =>
+                    typeof id === 'string' &&
+                    id.length > 0 &&
+                    id.length <= 256 &&
+                    ![...id].some((character) => character.charCodeAt(0) < 32),
+                ))) ||
             (declaration.publicConfig !== undefined && !isRecord(declaration.publicConfig)) ||
             (declaration.intelligentComponents !== undefined &&
               (!Array.isArray(declaration.intelligentComponents) ||
@@ -1292,6 +1303,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         (item): item is Readonly<{ revision: string; expiresAt: string }> => item.expiresAt !== undefined,
       )
       for (const item of activeDeclarations) {
+        if (item.client.requiresBackendRows?.some((id) => !truth.backend.has(id))) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-not-running' })
+          continue
+        }
         statuses.push({ ...baseStatus, state: 'ready', ...(visible.length ? { retained: visible } : {}) })
         modules.push({
           ...(activeDeclarations.length === 1 ? {} : { rowId: item.rowId }),

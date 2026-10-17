@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
 import { isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
 
@@ -11,7 +11,7 @@ it('keeps every Web region under the one application root and ConfigProvider', (
   for (const pkg of listPackages(root).filter((pkg) => /web/.test(pkg.name))) {
     for (const file of listSourceFiles(join(pkg.dir, 'src')).filter((file) => !isTestFile(file))) {
       const code = readFileSync(file, 'utf8')
-      const path = relative(root, file)
+      const path = relative(root, file).split(sep).join('/')
       for (const _match of code.matchAll(/\b(?:createRoot|createAntdRoot)\s*\(/g)) calls.push(path)
       if (/from\s*['"]react-dom\/client['"]/.test(code)) imports.push(path)
       for (const _match of code.matchAll(/<ConfigProvider\b/g)) providers.push(path)
@@ -72,7 +72,7 @@ it('keeps collapsible sections on the one Disclosure primitive', () => {
   const offenders: string[] = []
   for (const pkg of listPackages(root).filter((pkg) => /web/.test(pkg.name))) {
     for (const file of listSourceFiles(join(pkg.dir, 'src')).filter((file) => !isTestFile(file))) {
-      if (native.test(readFileSync(file, 'utf8'))) offenders.push(relative(root, file))
+      if (native.test(readFileSync(file, 'utf8'))) offenders.push(relative(root, file).split(sep).join('/'))
     }
   }
   expect(

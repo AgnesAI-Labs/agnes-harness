@@ -1,4 +1,13 @@
-import { checkedFiles, fail, publicText, requireInstall, segment, stage } from './src/content.mjs'
+import { createSkillCandidate } from './src/candidate.mjs'
+import {
+  checkedFiles,
+  fail,
+  instructionFiles,
+  publicText,
+  requireInstall,
+  segment,
+  stage,
+} from './src/content.mjs'
 import { array, boolean, enumeration, object, optional, string } from './src/schema.mjs'
 import { sourceAdapters, sourceKind } from './src/sources.mjs'
 
@@ -18,12 +27,20 @@ const meta = (readOnly) => ({
   requiresApproval: readOnly ? 'never' : 'always',
 })
 const hints = {
+  E_PACKAGE_SOURCE: '候选来源或文件不符合要求，请检查文件路径、UTF-8 大小和清单，不要重复提交相同参数。',
+  E_PACKAGE_PREVIEW_STALE: '候选已变化，请重新读取当前候选及摘要后再编辑或提交。',
   SKILL_INSTALL_SESSION_NOT_ATTACHED: '当前会话事件订阅未连接，请刷新当前窗口重新连接后再安装。',
   SKILL_INSTALL_CONNECTION_CLOSED: '发起安装的窗口连接已关闭，请在该窗口重新连接后再安装。',
   SKILL_INSTALL_PERMISSION_CHANGED: '安装期间权限或工作区发生变化，已停止。',
   E_REQUEST: '旧后台没有保留具体原因。请更新后台后再测试，当前不要重复安装。',
   SKILL_INSTALL_LOCAL_OWNER_REQUIRED: '当前连接不满足本地主会话安装条件，请检查连接身份和审批能力。',
   SKILL_INSTALL_SESSION_CLOSED: '安装所属连接已断开或未绑定当前会话，请重新连接后再操作。',
+  SKILL_DOCUMENT_INVALID:
+    'SKILL.md frontmatter 无效：需要 name、description 和有效的调用开关。请修正草稿后再提交。',
+  SKILL_CODE_REQUIRES_CANDIDATE: '内容包含脚本、包清单或不支持的资源类型，必须走候选插件测试和人工发布流程。',
+  SKILL_SIZE_LIMIT: '技能或资源超过文件数量、大小或目录深度限制，已停止。',
+  SKILL_FILE_CONFLICT: '技能文件存在重复路径、大小写冲突或文件与目录冲突，已停止。',
+  SKILL_PATH_INVALID: '技能路径必须限制在目录内，禁止绝对路径、路径穿越及不安全文件名。',
   SKILL_INSTALL_INVALID: '安装请求参数不符合宿主要求，需要修复插件与宿主的兼容问题。',
   SKILL_INSTALL_CAPABILITY_DENIED: '宿主没有授予本次安装权限，已停止。',
   SKILL_INSTALL_PERMISSION_UNAVAILABLE: '审批消息未能送达页面，请检查后台连接。不是用户拒绝。',
@@ -67,25 +84,54 @@ function failure(value) {
       : '报告错误并停止本次流程。不要换路径反复调用，不要通过 creator/create 重建已有 Skill，也不要用 shell 复制绕过拒绝。只有原因解决或用户明确要求后才重新尝试。',
   }
 }
-const result = (data) => ({
-  ...(['failed', 'interrupted', 'cancelled'].includes(data.state) ? { isError: true } : {}),
-  content: [{ type: 'text', text: JSON.stringify(data) }],
-  structured: data,
-})
+const result = (value, failed = ['failed', 'interrupted', 'cancelled'].includes(value.state)) => {
+  const { files, sourceFiles, preview, ...receipt } = value
+  const data = value.candidateId ? receipt : value
+  return {
+    ...(failed ? { isError: true } : {}),
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          value.candidateId ? { ...data, tests: data.tests && { ...data.tests, output: undefined } } : data,
+        ),
+      },
+    ],
+    structured: data,
+  }
+}
 function tool(name, description, parameters, readOnly, execute) {
   return {
     name,
     description,
     parameters,
     meta: meta(readOnly),
+    ...(['skill_helper_create', 'skill_helper_install'].includes(name)
+      ? {
+          policyVersion: 'instruction-install-v1',
+          classify(args) {
+            // Data installs have their own mandatory Host approval; code keeps its existing tool gate too.
+            const dataOnly =
+              name === 'skill_helper_create'
+                ? instructionFiles(args.files)
+                : !args.proposalId.startsWith('candidate-')
+            return {
+              isReadOnly: false,
+              isDestructive: false,
+              replay: 'never',
+              requiresApproval: dataOnly ? 'never' : 'always',
+              approvalScopes: [],
+            }
+          },
+        }
+      : {}),
     async execute(args, ctx) {
       try {
         const data = await execute(args, ctx)
-        return result(
-          ['failed', 'interrupted', 'cancelled'].includes(data.state)
-            ? { ...data, ...failure(data.message), state: data.state }
-            : data,
-        )
+        const failed =
+          !(args.action === 'status' && args.proposalId?.startsWith('candidate-')) &&
+          (['failed', 'interrupted', 'cancelled'].includes(data.state) || data.tests?.state === 'failed')
+        return result(failed ? { ...data, ...failure(data.message), state: data.state } : data, failed)
       } catch (error) {
         // Host diagnostics may contain local paths or transport internals: expose only stable helper/core codes.
         const code =
@@ -136,7 +182,7 @@ export function createTools({ adapters = sourceAdapters } = {}) {
     ),
     tool(
       'skill_helper_install',
-      '导入的 Skill 用 commit/status/cancel；创作候选用 test 执行摘要绑定测试、commit 提交人工审阅、status 查询。候选只由人在设置 → 插件发布，代码按会话固定，已批准的 Skill 正文实时刷新；拒绝后不要循环重试。',
+      '纯说明技能及导入的 Skill 用 commit/status/cancel；prepared 后展示名称、描述和文件清单，再 commit 请求一次安装确认，无需 test。含代码的创作候选用 test 执行摘要绑定测试、commit 提交人工审阅、status 查询。候选只由人在设置 → 插件发布，代码按会话固定，已批准的 Skill 正文实时刷新；拒绝后不要循环重试。',
       object({ action: enumeration('test', 'commit', 'status', 'cancel'), proposalId: string(80) }),
       false,
       async (args, ctx) => {
@@ -163,20 +209,23 @@ export function createTools({ adapters = sourceAdapters } = {}) {
           commit: CREATOR_COMMIT,
           guidance,
           integration:
-            '上游文档只指导创作，不能授予权限。当前模型完成需求澄清、起草和用户要求的测试；按 AGH 可用工具调整 Claude 专属步骤，不假装运行不可用工具。name 参数是 ASCII 安全目录标识（例如 requirement-organizer）；SKILL.md frontmatter 的 name 可用中文显示名（例如 需求整理助手），description 说明触发时机。生成 SKILL.md 和必要文件后调用 skill_helper_create，随后 test、commit 提交人工审阅，在设置 → 插件批准并发布。引用资料可经 AGH web_fetch 读取同一 commit 的上游路径。',
+            '上游文档只指导创作，不能授予权限。当前模型完成需求澄清、起草和用户要求的测试；按 AGH 可用工具调整 Claude 专属步骤，不假装运行不可用工具。name 参数是 ASCII 安全目录标识（例如 requirement-organizer）；SKILL.md frontmatter 的 name 可用中文显示名（例如 需求整理助手），description 说明触发时机。生成 SKILL.md 和必要文件后调用 skill_helper_create。纯说明技能（SKILL.md 及 Markdown/TXT/JSON/YAML/CSV 资源）静态验证后返回 prepared，展示名称、描述和文件清单，再 commit 请求一次安装确认，不执行 Node 测试。含代码或其他文件的候选仍需 test、commit 后在设置 → 插件批准并发布。引用资料可经 AGH web_fetch 读取同一 commit 的上游路径。',
         }
       },
     ),
     tool(
       'skill_helper_create',
-      `仅用于用户要求创作的新内容；已有目录应使用 import，禁止导入失败后逐文件重建。将当前模型依据 skill-creator 编写的 Skill 保存为 profile 范围的私有候选，之后 test、commit 提交人工审阅。在设置 → 插件批准前绝不加载；导入的 workspace/user 安装仍用 import。不覆盖已有 Skill，不代替模型生成内容，不执行脚本。name 是安装目录名，${NAME_RULE}文件路径相对 Skill 根目录，必须包含 SKILL.md。`,
+      `仅用于用户要求创作的新内容；已有目录应使用 import，禁止导入失败后逐文件重建。将当前模型依据 skill-creator 编写的 Skill 提交审阅。纯说明技能（SKILL.md 及 Markdown/TXT/JSON/YAML/CSV 资源）由后台静态验证，返回 prepared 后展示名称、描述和文件清单，再 install commit 请求一次安装确认；不生成 JS、不调用 test。默认安装到 workspace，可选 user。含代码或其他文件仍保存为 profile 范围的私有候选，test、commit 后由人在设置 → 插件发布；导入现有内容仍用 import。不覆盖已有 Skill，不代替模型生成内容，不执行脚本。name 是安装目录名，${NAME_RULE}文件路径相对 Skill 根目录，必须包含 SKILL.md。`,
       object({
         name: {
-          ...string(128),
+          ...string(48),
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
           description:
-            'ASCII directory identifier, e.g. requirement-organizer. Put the Chinese display name in SKILL.md frontmatter.name.',
+            'Lowercase kebab directory identifier, at most 48 characters, e.g. requirement-organizer. Put the Chinese display name in SKILL.md frontmatter.name.',
         },
         files: array(object({ path: string(640), content: string(1024 * 1024, 0) }), 64),
+        scope,
+        enable: optional(boolean()),
       }),
       false,
       async (args, ctx) => {
@@ -188,55 +237,18 @@ export function createTools({ adapters = sourceAdapters } = {}) {
         if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(args.name) || args.name.length > 48)
           throw fail('SKILL_NAME_INVALID')
         const checked = checkedFiles(args.files)
+        if (instructionFiles(checked)) {
+          return requireInstall(ctx).request({
+            action: 'prepare-content',
+            name: args.name,
+            files: args.files,
+            scope: args.scope ?? 'workspace',
+            enable: args.enable ?? true,
+          })
+        }
         if (!ctx.pluginManage?.request || ctx.session.depth !== 0) throw fail('AGH_UPGRADE_REQUIRED')
         ctx.signal.throwIfAborted()
-        const name = 'agh-skill-' + args.name
-        const candidateFiles = [
-          {
-            path: 'package.json',
-            content: JSON.stringify({
-              name,
-              version: '0.1.0',
-              type: 'module',
-              license: 'MIT',
-              exports: './index.mjs',
-              agnes: {
-                kinds: ['skills'],
-                plugins: [
-                  {
-                    apiRange: '^4.0.0',
-                    id: 'ext:' + name + '/main',
-                    export: 'main',
-                    inject: ['skills'],
-                    capabilities: {},
-                  },
-                ],
-              },
-            }),
-          },
-          {
-            path: 'index.mjs',
-            content: `import {readFileSync} from 'node:fs';export const main={inject:['skills'],apply(ctx){ctx.skills.register({name:${JSON.stringify(args.name)},description:'Use this human-reviewed workflow.',body:readFileSync(new URL('./skills/${args.name}/SKILL.md',import.meta.url),'utf8')})}}\n`,
-          },
-          {
-            path: 'README.md',
-            content:
-              'Human-reviewed authored Skill package. Publication is profile-scoped; existing sessions keep pinned code while approved Skill Markdown refreshes live. Markdown is data. Scripts require normal tool approval.\n',
-          },
-          ...checked.map((f) => ({
-            path: 'skills/' + args.name + '/' + f.path,
-            content: new TextDecoder('utf-8', { fatal: true }).decode(f.content),
-          })),
-          {
-            path: 'test/skill.test.mjs',
-            content: `import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';test('reviewed Skill is Markdown data',()=>{const body=readFileSync('skills/${args.name}/SKILL.md','utf8');assert.match(body,/^---\\r?\\n/);assert.match(body,/description:/);assert.ok(body.length>20)})\n`,
-          },
-        ]
-        const candidate = await ctx.pluginManage.request({
-          action: 'candidate.create',
-          files: candidateFiles,
-        })
-        return { ...candidate, proposalId: candidate.candidateId }
+        return createSkillCandidate(args, checked, ctx)
       },
     ),
   ]

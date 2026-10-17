@@ -89,6 +89,8 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 `@agnes/web-ui` 提供 `Button`、`IconButton`、`Icon`、`Tag`、`MetaText`、`Count`、
 `Menu`、`Tooltip`、`Toast`、`EmptyState`、`Banner`、`ListRow`、`Drawer`、`Skeleton`、`Field`、
 `SettingsPageHeader`、`SettingsSaveBar`，保留既有 props 和钩子。
+
+`ListRow` 的 `variant="file"` 用于紧凑文件卡片，复用现有交付物皮肤钩子与主题 token。预览内容放在行外，保持文件操作相互独立。
 `Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
 `dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
 纯图标动作必带 label 和共享 tooltip。动作菜单用 `role="menu"`，值选择器用 `role="listbox"`。
@@ -133,3 +135,10 @@ Web 主题桥已包含规则，静态按钮可使用相同契约类。
 完成带路由的页面时，始终将当前 URL 替换为父级栈；直接深链进入、没有框架历史状态时也一样。刷新和历史恢复不得重新打开已完成的页面。
 
 更新会话、账户等 URL 元数据时保留 `view` 和 `settings` 路由原有编码，避免把页级分隔符与标识符中的斜杠混为一谈。
+
+已完成的操作通过 shell 持有的反馈出口发布本地化结果。每个操作标识只显示一条持续 3 秒、不改变焦点的 polite `Toast`。字段校验使用 `Field.error`；操作失败在所属区域用 `StatusMessage` 并提供真实恢复动作；重启、扫描、重连、启用等尚未解除的后果，每个资源保留一条 notice。pending、unknown、partial 不得显示为成功。仅作用范围不同的效果放在 toast 第二句和稳定帮助中。`SettingsSaveBar` 只处理未保存编辑。
+
+字段使用 `SettingsInput`、`SettingsTextArea`、`SettingsSelect`、`Select` 和 `SearchBar`，共用 `--agnes-input-surface` 与状态 token，保留已保存但不可用的值。符合固定短标签条件的单选组使用 `Segmented`，其轨道、测量定位的滑块、动画与“对话/轨迹”开关相同，保留单选组方向键和可见焦点。主题预览块和多选标签维持各自语义。显式旧调用清单之外，guard 拒绝 web-ui 外新增裸输入框、下拉框和颜色字面量。
+
+
+`Segmented` **仅用于 2–5 个短标签**：选项数量固定且少，无描述或副文案，中英文均能单行完整显示。`radiogroup` 是单选语义，不代表必须使用分段外观。含描述、来源插件、版本、能力或长标签的选择使用现有 `SettingsChoice` 描述式单选列表；长列表使用 `Select`。运行时或插件驱动的选项使用描述式单选列表或 `Select`，不得使用 Segmented。保留所有选项信息、保存行为和确认流程，不得通过缩短标签或删除描述硬塞进 Segmented。UI guard 允许描述式单选组，拒绝手写分段外观、动态选项数量及数量越界；翻译后的单行适配须同时检查中英文。

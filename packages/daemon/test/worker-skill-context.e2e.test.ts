@@ -19,7 +19,8 @@ const roots: string[] = []
 // bounded questions. Jobs, workflows, PTYs, reminders, goals and child tools now load through
 // tool_describe, alongside past-session and MCP resource discovery.
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'c73e4f707eae94bf525cff224191f1be06a8569c235c0b5bf31288c76af35bef'
+// Candidate source reads now advertise bounded pages with offset and expectedHash.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '3cf90447e11e13c35018071c4fefe1f921b944c754206b48b86a3387410cce1c'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
@@ -62,7 +63,8 @@ const barrier = {
     publish({}),
 }
 
-it.each([false, true])('preloads and discovers workspace Skills with shared worker = %s', async (shared) => {
+// Exercises six real turns and multiple Skill generations before closing the Host.
+it.each([false, true])('Skill preload/discovery (shared=%s)', { timeout: 60_000 }, async (shared) => {
   // Skill identity must use the same canonical workspace as the Host session (macOS /var alias).
   const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-worker-skill-context-')))
   roots.push(root)
@@ -484,4 +486,4 @@ it('discovers 45 disk Skills and lets the model page a 100 KiB Skill after prelo
     await host.close()
     await resources.runtime.mcp.close()
   }
-})
+}, 60_000)

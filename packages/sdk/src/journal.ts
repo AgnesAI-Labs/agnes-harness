@@ -6,7 +6,22 @@
 import { type Cursor, jcs } from '@agnes/protocol'
 import { journalCommandId } from './journal-command-id.js'
 
-export type PendingCommand = { commandId: string; method: string; params: unknown }
+export type PendingCommand = {
+  commandId: string
+  method: string
+  params: unknown
+  /** Absent means replayable. Unknown outcomes require explicit checking with the same identity. */
+  state?: 'needs-confirmation'
+}
+
+export function upsertPending(commands: PendingCommand[], command: PendingCommand): PendingCommand[] {
+  const saved = snapshotPending(command)
+  const existing = commands.find((entry) => entry.commandId === saved.commandId)
+  if (existing && (existing.method !== saved.method || jcs(existing.params) !== jcs(saved.params)))
+    throw new Error('journal command identity conflict')
+  if (existing?.state) saved.state = existing.state
+  return [...commands.filter((entry) => entry.commandId !== saved.commandId), saved]
+}
 
 /** The exact JSON value to resend, without invoking getters/toJSON or silently dropping fields. */
 export function snapshotPending(value: PendingCommand): PendingCommand {
@@ -22,7 +37,8 @@ export function snapshotPending(value: PendingCommand): PendingCommand {
       !('method' in copy) ||
       typeof copy.method !== 'string' ||
       !copy.method ||
-      !Object.hasOwn(copy, 'params')
+      !Object.hasOwn(copy, 'params') ||
+      ('state' in copy && copy.state !== 'needs-confirmation')
     )
       throw new Error('invalid journal state')
     return copy as PendingCommand
@@ -36,7 +52,9 @@ export interface JournalStore {
   nextCommandId(sessionId: string): Promise<string>
   cursor(sessionId: string): Promise<Cursor | null>
   setCursor(sessionId: string, c: Cursor): Promise<void>
+  /** All unresolved commands; automatic replay excludes needs-confirmation entries. */
   pending(sessionId: string): Promise<PendingCommand[]>
+  /** Atomically insert or update the same identity and payload; preserve needs-confirmation. */
   markPending(sessionId: string, cmd: PendingCommand): Promise<void>
   clearPending(sessionId: string, commandId: string): Promise<void>
 }
@@ -74,7 +92,7 @@ export function memoryJournal(clientId: string = randomId()): JournalStore {
       return structuredClone(pending.get(sessionId) ?? [])
     },
     async markPending(sessionId, cmd) {
-      pending.set(sessionId, [...(pending.get(sessionId) ?? []), snapshotPending(cmd)])
+      pending.set(sessionId, upsertPending(pending.get(sessionId) ?? [], cmd))
     },
     async clearPending(sessionId, commandId) {
       pending.set(

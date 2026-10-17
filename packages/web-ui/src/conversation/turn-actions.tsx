@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { reportSuccess, StatusMessage } from '../feedback.js'
 import { fallbackT, type Translate } from '../locales/index.js'
 import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
@@ -197,15 +198,20 @@ export function ConversationTurnActions({
     const valid = () => mounted.current && currentId.current === id && epoch.current === generation
     const fallback = () => {
       const copied = legacyCopy(finalText, doc)
-      if (valid())
+      if (valid()) {
+        if (copied) reportSuccess('clipboard', t('turnactions.copied'))
         report(copied ? t('turnactions.copied') : t('turnactions.copyFailed'), copied ? 1600 : undefined)
+      }
     }
     const clipboard = doc.defaultView?.navigator.clipboard
     if (!clipboard?.writeText) return fallback()
     try {
       void Promise.resolve(clipboard.writeText(finalText)).then(
         () => {
-          if (valid()) report(t('turnactions.copied'), 1600)
+          if (valid()) {
+            reportSuccess('clipboard', t('turnactions.copied'))
+            report(t('turnactions.copied'), 1600)
+          }
         },
         () => {
           if (valid()) fallback()
@@ -342,9 +348,22 @@ export function ConversationTurnActions({
             t={t}
           />
         </Disclosure>
-        <span className="turn-feedback" role="status">
-          {feedback?.id === turn.id ? feedback.message : ''}
-        </span>
+        {feedback?.id === turn.id && !copied ? (
+          <StatusMessage
+            kind="error"
+            action={
+              feedback.message === t('turnactions.copyFailed')
+                ? { label: t('turnactions.copy'), onSelect: copy }
+                : turn.forkable && onFork
+                  ? { label: t('turnactions.fork'), onSelect: fork, busy: pendingId === turn.id }
+                  : undefined
+            }
+          >
+            <span className="turn-feedback">{feedback.message}</span>
+          </StatusMessage>
+        ) : (
+          <span className="turn-feedback" />
+        )}
       </footer>
     </ConversationXScope>
   )

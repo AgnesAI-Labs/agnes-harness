@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
+import { reportSuccess, StatusMessage } from '../feedback.js'
+import { fallbackT } from '../locales/index.js'
 import { IconButton, type IconButtonProps } from './icon-button.js'
 
 export type CopyButtonProps = Omit<IconButtonProps, 'name' | 'label' | 'onClick' | 'onCopy'> & {
@@ -21,6 +23,7 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(functio
   ref,
 ) {
   const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const mounted = useRef(true)
   useEffect(() => {
@@ -31,6 +34,8 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(functio
     }
   }, [])
   const settle = (ok: boolean) => {
+    if (ok) reportSuccess('clipboard', fallbackT('ui.copiedNotice'))
+    setFailed(!ok)
     onCopied?.(ok)
     if (!mounted.current) return
     clearTimeout(timer.current)
@@ -59,9 +64,11 @@ export const CopyButton = forwardRef<HTMLButtonElement, CopyButtonProps>(functio
         data-copied={copied || undefined}
         onClick={() => void copy()}
       />
-      <span className="agh-visually-hidden" role="status">
-        {copied ? copiedLabel : ''}
-      </span>
+      {failed && (
+        <StatusMessage kind="error" action={{ label, onSelect: () => void copy() }}>
+          {fallbackT('ui.copyFailed')}
+        </StatusMessage>
+      )}
     </>
   )
 })

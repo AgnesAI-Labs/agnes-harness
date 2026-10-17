@@ -192,15 +192,30 @@ it.each(['en', 'zh-CN'] as const)(
     let pending: (typeof decision)[] = []
     let refuse = true
     let listUnavailable = false
+    let blockedList: Promise<void> | undefined
     const call = vi.fn(async (method: string, input?: { handle: typeof handle }) => {
       if (method === '_agnes/v1/profile.decisions.list') {
+        const snapshot = [...pending]
+        if (blockedList) await blockedList
         if (listUnavailable) throw new Error('temporarily unavailable')
-        return { decisions: [...pending] }
+        return { decisions: snapshot }
       }
       if (refuse) throw new Error('stale decision refused')
       pending = pending.filter((value) => value.handle.id !== input?.handle.id)
       return {}
     })
+    const listeners = new Map<string, (payload: unknown) => void>()
+    const on = (event: string, callback: (payload: unknown) => void) => {
+      listeners.set(event, callback)
+      return () => listeners.delete(event)
+    }
+    const emit = (event: string, payload: unknown) => listeners.get(event)?.(payload)
+    const changed = () =>
+      emit('notice', {
+        kind: 'decisions_changed',
+        detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+        at: '2026-10-17T00:00:00Z',
+      })
     let hidden = false
     const visibility = vi
       .spyOn(document, 'visibilityState', 'get')
@@ -215,26 +230,39 @@ it.each(['en', 'zh-CN'] as const)(
     const allowLabel = language === 'en' ? 'Allow once' : '允许一次'
     const rejectLabel = language === 'en' ? 'Reject' : '拒绝'
     try {
-      runtime = await mountRenderedIndex({ agnes: { call } as unknown as AgnesClient })
+      runtime = await mountRenderedIndex({
+        agnes: { call, on, connectionState: 'connected' } as unknown as AgnesClient,
+      })
       runtime.locale.setLocale(language)
       await vi.waitFor(() => expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.list', {}))
       expect(row()).toBeNull()
       expect(surface()).toBeNull()
       const idleReads = call.mock.calls.length
-      await vi.advanceTimersByTimeAsync(59_000)
+      await vi.advanceTimersByTimeAsync(180_000)
       expect(call).toHaveBeenCalledTimes(idleReads)
+      emit('notice', { kind: 'packages_changed' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(call).toHaveBeenCalledTimes(idleReads)
+      emit('connectionStateChanged', 'reconnecting')
+      emit('connectionStateChanged', 'connected')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(call).toHaveBeenCalledTimes(idleReads + 1)
+      emit('connectionStateChanged', 'connected')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(call).toHaveBeenCalledTimes(idleReads + 1)
       hidden = true
+      changed()
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(120_000)
-      expect(call).toHaveBeenCalledTimes(idleReads)
+      expect(call).toHaveBeenCalledTimes(idleReads + 1)
       hidden = false
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(0)
-      expect(call).toHaveBeenCalledTimes(idleReads + 1)
+      expect(call).toHaveBeenCalledTimes(idleReads + 2)
       expect(document.querySelector('.sidebar-footer')?.textContent).not.toMatch(/Approvals|操作审批/)
 
       pending = [decision, { ...decision, handle: { ...handle, id: 'second-decision' } }]
-      window.dispatchEvent(new Event('focus'))
+      changed()
       await Promise.resolve()
       await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('2'))
       expect(document.querySelectorAll('button[aria-controls="profile-approvals"]')).toHaveLength(1)
@@ -297,9 +325,23 @@ it.each(['en', 'zh-CN'] as const)(
       window.dispatchEvent(new Event('focus'))
       await Promise.resolve()
       await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
-      // An approval resolved by another client also removes the entry on the next refresh.
+      const pendingReads = call.mock.calls.length
+      await vi.advanceTimersByTimeAsync(180_000)
+      expect(call).toHaveBeenCalledTimes(pendingReads)
+      // A change during an older read must cause one later read, even if more notices arrive.
+      let release!: () => void
+      blockedList = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      changed()
+      await Promise.resolve()
+      const beforeChange = call.mock.calls.length
       pending = []
-      window.dispatchEvent(new Event('focus'))
+      changed()
+      changed()
+      blockedList = undefined
+      release()
+      await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(beforeChange + 1))
       await Promise.resolve()
       await vi.waitFor(() => {
         expect(row()).toBeNull()
@@ -307,6 +349,7 @@ it.each(['en', 'zh-CN'] as const)(
       })
     } finally {
       await runtime?.dispose()
+      expect(listeners.size).toBe(0)
       visibility.mockRestore()
       vi.useRealTimers()
       resetWebDom()

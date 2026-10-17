@@ -140,12 +140,19 @@ describe('Computer Use artifact GC candidate scanner', () => {
 
 it('tracks ordinary originals separately, verifies bytes in windows and never collects through incomplete roots', async () => {
   const { scanStoredObjects } = await import('../src/object-gc.js')
-  const { planArtifactGc } = await import('@agnes/core/artifacts')
+  const { artifactStorePath, planArtifactGc } = await import('@agnes/core/artifacts')
   const bytes = new TextEncoder().encode('ordinary attachment original')
   const row = await fixture(bytes)
   expect(await scanStoredObjects(row.dataDir, Date.now())).toEqual([])
   const candidates = await scanStoredObjects(row.dataDir, Date.now() + 25 * 60 * 60 * 1000)
-  expect(candidates).toMatchObject([{ sha256: row.sha256, contentSha256: row.sha256, size: bytes.length }])
+  expect(candidates).toMatchObject([
+    {
+      sha256: row.sha256,
+      contentSha256: row.sha256,
+      size: bytes.length,
+      path: artifactStorePath(row.dataDir, row.sha256),
+    },
+  ])
   const empty = { complete: true, roots: [] }
   const input = {
     dataDir: row.dataDir,

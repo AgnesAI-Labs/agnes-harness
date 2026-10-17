@@ -2,10 +2,14 @@ import type { AdminObservabilityResult, ObservabilitySettings } from '@agnes/pro
 import {
   Banner,
   Button,
+  Field,
+  fallbackT,
   IconButton,
-  Segmented,
+  reportSuccess,
   SettingsBlock,
+  SettingsChoice,
   SettingsDrill,
+  SettingsGroup,
   SettingsInput,
   SettingsItem,
   SettingsPresetSelect,
@@ -40,6 +44,7 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   const [readFailed, setReadFailed] = useState(false)
   const [notice, setNotice] = useState<'' | 'ok' | 'failed'>('')
   const [header, setHeader] = useState({ name: '', env: '' })
+  const [headerErrors, setHeaderErrors] = useState(false)
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
@@ -57,6 +62,7 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   }, [])
   const settings = useAutosave<ObservabilitySettings>({
     resourceKey: 'settings:observability',
+    onSaved: () => reportSuccess('settings:observability', fallbackT('ui.settingsSaved')),
     stored: snapshot?.settings,
     equal: sameSettings,
     save: async (next) => {
@@ -99,7 +105,18 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   const addHeader = () => {
     const name = header.name.trim().toLowerCase()
     const env = header.env.trim().replace(/^env:/, '')
-    if (!name || !/^[A-Z_][A-Z0-9_]*$/.test(env)) return
+    if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name) || !/^[A-Z_][A-Z0-9_]*$/.test(env)) {
+      setHeaderErrors(true)
+      document
+        .querySelector<HTMLElement>(
+          !/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name)
+            ? '[data-testid="otlp-header-name"]'
+            : '[data-testid="otlp-header-env"]',
+        )
+        ?.focus()
+      return
+    }
+    setHeaderErrors(false)
     edit({ headers: { ...(value.headers ?? {}), [name]: { secretRef: `env:${env}` } } })
     setHeader({ name: '', env: '' })
   }
@@ -154,22 +171,40 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
           data-testid="otlp-headers"
         >
           <span className="agnes-settings-toolbar-row">
-            <SettingsInput
-              aria-label={t('headerName')}
-              placeholder={t('headerName')}
-              data-testid="otlp-header-name"
-              disabled={locked}
-              value={header.name}
-              onChange={(event) => setHeader({ ...header, name: event.target.value })}
-            />
-            <SettingsInput
-              aria-label={t('headerEnv')}
-              placeholder={t('headerEnvExample')}
-              data-testid="otlp-header-env"
-              disabled={locked}
-              value={header.env}
-              onChange={(event) => setHeader({ ...header, env: event.target.value })}
-            />
+            <Field
+              label={t('headerName')}
+              error={
+                headerErrors && !/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(header.name.trim().toLowerCase())
+                  ? t('headerNameError')
+                  : undefined
+              }
+            >
+              <SettingsInput
+                aria-label={t('headerName')}
+                placeholder={t('headerName')}
+                data-testid="otlp-header-name"
+                disabled={locked}
+                value={header.name}
+                onChange={(event) => setHeader({ ...header, name: event.target.value })}
+              />
+            </Field>
+            <Field
+              label={t('headerEnv')}
+              error={
+                headerErrors && !/^[A-Z_][A-Z0-9_]*$/.test(header.env.trim().replace(/^env:/, ''))
+                  ? t('headerEnvError')
+                  : undefined
+              }
+            >
+              <SettingsInput
+                aria-label={t('headerEnv')}
+                placeholder={t('headerEnvExample')}
+                data-testid="otlp-header-env"
+                disabled={locked}
+                value={header.env}
+                onChange={(event) => setHeader({ ...header, env: event.target.value })}
+              />
+            </Field>
             <Button size="small" data-testid="otlp-header-add" disabled={locked} onClick={addHeader}>
               {t('add')}
             </Button>
@@ -195,17 +230,31 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
           </SettingsItem>
         ))}
         <SettingsItem label={t('redaction')}>
-          <Segmented<'metadata' | 'content'>
-            label={t('redaction')}
-            testId="otlp-redaction"
-            value={value.redaction ?? 'metadata'}
-            disabled={locked}
-            options={[
-              { value: 'metadata', label: t('metadata') },
-              { value: 'content', label: t('content') },
-            ]}
-            onChange={(redaction) => edit({ redaction })}
-          />
+          <SettingsGroup
+            role="radiogroup"
+            aria-label={t('redaction')}
+            data-testid="otlp-redaction"
+            className="agnes-settings-choices"
+          >
+            <SettingsChoice
+              type="radio"
+              name="otlp-redaction"
+              value="metadata"
+              label={t('metadata')}
+              checked={(value.redaction ?? 'metadata') === 'metadata'}
+              disabled={locked}
+              onChange={() => edit({ redaction: 'metadata' })}
+            />
+            <SettingsChoice
+              type="radio"
+              name="otlp-redaction"
+              value="content"
+              label={t('content')}
+              checked={(value.redaction ?? 'metadata') === 'content'}
+              disabled={locked}
+              onChange={() => edit({ redaction: 'content' })}
+            />
+          </SettingsGroup>
         </SettingsItem>
         <SettingsItem label={t('scopeLabel')}>
           <span className="agnes-settings-value">{t('scope')}</span>
@@ -264,17 +313,31 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
               </SettingsItem>
             ))}
             <SettingsItem label={t('shutdown')}>
-              <Segmented<'flush' | 'discard'>
-                label={t('shutdown')}
-                testId="otlp-shutdown"
-                value={value.shutdownPolicy ?? 'flush'}
-                disabled={locked}
-                options={[
-                  { value: 'flush', label: t('flush') },
-                  { value: 'discard', label: t('discard') },
-                ]}
-                onChange={(shutdownPolicy) => edit({ shutdownPolicy })}
-              />
+              <SettingsGroup
+                role="radiogroup"
+                aria-label={t('shutdown')}
+                data-testid="otlp-shutdown"
+                className="agnes-settings-choices"
+              >
+                <SettingsChoice
+                  type="radio"
+                  name="otlp-shutdown"
+                  value="flush"
+                  label={t('flush')}
+                  checked={(value.shutdownPolicy ?? 'flush') === 'flush'}
+                  disabled={locked}
+                  onChange={() => edit({ shutdownPolicy: 'flush' })}
+                />
+                <SettingsChoice
+                  type="radio"
+                  name="otlp-shutdown"
+                  value="discard"
+                  label={t('discard')}
+                  checked={(value.shutdownPolicy ?? 'flush') === 'discard'}
+                  disabled={locked}
+                  onChange={() => edit({ shutdownPolicy: 'discard' })}
+                />
+              </SettingsGroup>
             </SettingsItem>
           </SettingsBlock>
         </SettingsDrill>

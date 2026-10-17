@@ -3,6 +3,8 @@ import {
   appServerErrorMessage,
   Banner,
   Button,
+  fallbackT,
+  reportSuccess,
   Segmented,
   SettingsBlock,
   SettingsDrill,
@@ -71,6 +73,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
       const result = await memoryRequest(input, lifetime.current?.signal)
       if (lifetime.current?.signal.aborted) return
       setSnapshot(result)
+      if (kind !== 'read') reportSuccess('memory', fallbackT('ui.settingsSaved'))
       if (result.file) {
         setFile(result.file)
         setContent(result.file.content)

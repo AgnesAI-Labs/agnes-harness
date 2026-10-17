@@ -1,7 +1,7 @@
 import type { PackageInstalledDescriptor, PackageOperation } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
-import { Button, Toast, useUiText } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { publishFeedback, resolveFeedback, useUiText } from '@agnes/web-ui'
+import { useEffect, useRef } from 'react'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 
 export function PluginOperationFeedback({
@@ -11,44 +11,34 @@ export function PluginOperationFeedback({
 }: {
   operation: PackageOperation | undefined
   installed: readonly PackageInstalledDescriptor[]
-  /** Where a fresh install's 「去启用」 leads: the installed plugin's own page. */
   onEnable?: (packageId: string) => void
 }) {
   const { t, locale } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
-  const seen = useRef(operation?.operationId)
-  const [message, setMessage] = useState<{ text: string; enable?: string }>()
-  const operationId = operation?.operationId
-  const operationState = operation?.state
+  const initial = useRef(operation?.operationId)
   useEffect(() => {
-    if (!operation || operationState !== 'completed' || seen.current === operationId) return
-    seen.current = operationId
-    if (!['enable', 'disable', 'install', 'update', 'remove', 'rollback'].includes(operation.operation))
-      return
+    for (const item of installed)
+      if (item.desired === 'enabled' && item.actual === 'running') resolveFeedback(`plugin-enable:${item.id}`)
+    if (operation?.state !== 'completed' || initial.current === operation.operationId) return
+    const kind = operation.operation
+    if (!['enable', 'disable', 'install', 'update', 'remove', 'rollback'].includes(kind)) return
     const item = installed.find((row) => row.id === operation.packageId)
     const name = resolvePluginMetadata(item?.metadata, locale)?.displayName ?? operation.packageId ?? ''
-    if (operation.operation === 'install' && onEnable && operation.packageId)
-      setMessage({ text: t('review.installed', { name }), enable: operation.packageId })
-    else setMessage({ text: t('ux.success.' + operation.operation, { name }) })
-  }, [operationId, operationState, operation, installed, locale, t, onEnable])
-  const enable = message?.enable
-  return (
-    <Toast open={!!message} {...(enable ? { duration: 6000 } : {})} onDismiss={() => setMessage(undefined)}>
-      {message?.text}
-      {enable && onEnable && (
-        <>
-          {' · '}
-          <Button
-            appearance="link"
-            data-testid="install-toast-enable"
-            onClick={() => {
-              setMessage(undefined)
-              onEnable(enable)
-            }}
-          >
-            {t('review.enable')}
-          </Button>
-        </>
-      )}
-    </Toast>
-  )
+    const id = operation.packageId
+    publishFeedback({
+      id: operation.operationId,
+      scope: `plugin-enable:${id}`,
+      outcome: 'success',
+      message: t(`ux.success.${kind}`, { name }),
+      ...(kind === 'install' && id && onEnable && item?.desired !== 'enabled'
+        ? {
+            effect: {
+              kind: 'enable-required' as const,
+              message: t('review.enableRequired'),
+              action: { label: t('review.enable'), onSelect: () => onEnable(id) },
+            },
+          }
+        : {}),
+    })
+  }, [operation, installed, locale, t, onEnable])
+  return null
 }

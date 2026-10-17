@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve, sep } from 'node:path'
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { type FakeToolContextOpts, fakeToolContext } from '../../../testkit/tool-context.js'
@@ -663,6 +666,82 @@ describe('successful file review receipts', () => {
       ),
     ).toContain('ambiguous')
   })
+  it.each(['relative', 'absolute'])(
+    'records actual nested writes and edits for native %s paths',
+    async (spelling) => {
+      const root = await mkdtemp(join(tmpdir(), 'agh-file-receipt-'))
+      try {
+        const cwd = join(root, 'sub')
+        await mkdir(cwd)
+        await writeFile(join(root, 'report.md'), 'other file')
+        const original = ctxOf({ cwd })
+        const ctx = {
+          ...original,
+          session: { ...original.session, workspaceRoot: root },
+          platform: { ...original.platform, fs: { ...original.platform.fs, pathSep: sep } },
+          fs: {
+            ...original.fs,
+            read: async (path: string) => readFile(resolve(cwd, path)),
+            write: async (path: string, content: string | Uint8Array) =>
+              writeFile(resolve(cwd, path), content),
+            stat: async (path: string) => {
+              const value = await stat(resolve(cwd, path))
+              return { kind: 'file' as const, size: value.size, mtimeMs: value.mtimeMs }
+            },
+          },
+        }
+        const receipts: unknown[] = []
+        const record: Parameters<typeof createWriteTool>[0] = async (input, context) => {
+          receipts.push(fileChangeReceipt(input, context))
+        }
+        const path = spelling === 'absolute' ? join(cwd, 'report.md') : join('.', 'report.md')
+        expect((await createWriteTool(record).execute({ path, content: 'one\n' }, ctx)).isError).not.toBe(
+          true,
+        )
+        expect(
+          (await createEditTool(record).execute({ path, edits: [{ oldText: 'one', newText: 'two' }] }, ctx))
+            .isError,
+        ).not.toBe(true)
+        expect(receipts).toMatchObject([
+          { path: 'sub/report.md', before: '', after: 'one\n' },
+          { path: 'sub/report.md', before: 'one\n', after: 'two\n' },
+        ])
+        expect(await readFile(join(cwd, 'report.md'), 'utf8')).toBe('two\n')
+        expect(await readFile(join(root, 'report.md'), 'utf8')).toBe('other file')
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.each(['sub\\report.md', 'D:\\workspace\\sub\\report.md', 'D:/workspace/sub/report.md'])(
+    'keeps the file identity for %s',
+    (path) => {
+      const original = ctxOf({ cwd: 'D:/workspace' })
+      const ctx = {
+        ...original,
+        platform: { ...original.platform, fs: { ...original.platform.fs, pathSep: sep } },
+      }
+      const input = {
+        path,
+        operation: 'write' as const,
+        existed: false,
+        before: new Uint8Array(),
+        after: new TextEncoder().encode('report'),
+      }
+      const receipt = fileChangeReceipt(input, ctx)
+      if (path.includes('\\') && process.platform !== 'win32') expect(receipt).toBeUndefined()
+      else expect(receipt).toMatchObject({ path: 'sub/report.md', after: 'report' })
+      for (const refused of [
+        '\\workspace\\report.md',
+        'D:sub\\report.md',
+        '\\\\server\\share\\report.md',
+        '\\\\?\\D:\\workspace\\report.md',
+        '..\\outside.md',
+      ])
+        expect(fileChangeReceipt({ ...input, path: refused }, ctx)).toBeUndefined()
+    },
+  )
 
   it.each([false, true])(
     'records workspace-relative write/edit receipts with nested cwd: %s',

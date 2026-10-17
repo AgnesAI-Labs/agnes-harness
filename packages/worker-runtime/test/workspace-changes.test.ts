@@ -69,6 +69,7 @@ function ledger(root: string) {
       receipt?: boolean
       transformed?: boolean
       existed?: boolean
+      argument?: string
     } = {},
   ) => {
     const turn = options.turn ?? 1,
@@ -77,7 +78,7 @@ function ledger(root: string) {
     const call = add('tool/call', {
       toolUseId,
       name,
-      args: { path: resolve(root, path) },
+      args: { path: options.argument ?? resolve(root, path) },
       ordinal: 0,
       executionDomain: 'workspace',
       resolvedPolicy: { isReadOnly: false },
@@ -117,7 +118,51 @@ function ledger(root: string) {
 }
 const authority = { stat: async () => ({}) }
 
-it.each(['new\nfile.ts', '设计 review.ts'])(
+it.each(['relative', 'absolute', 'forward'])(
+  'reads the same nested file for %s tool arguments',
+  async (spelling) => {
+    const root = temp(),
+      fixture = ledger(root)
+    mkdirSync(join(root, 'sub'))
+    writeFileSync(join(root, 'report.md'), 'other file')
+    const path = 'sub/report.md'
+    const argument =
+      spelling === 'relative'
+        ? join('sub', 'report.md')
+        : spelling === 'forward'
+          ? resolve(root, path).replaceAll('\\', '/')
+          : resolve(root, path)
+    fixture.effect(path, '', 'actual file', { argument })
+    writeFileSync(join(root, path), 'actual file')
+    const result = await readWorkspaceChanges(fixture.reader, root, authority, { path })
+    expect(result.selected).toMatchObject({ path, freshness: 'current' })
+    expect(result.selected?.diff).toContain('actual file')
+    expect(result.selected?.diff).not.toContain('other file')
+  },
+)
+
+it('refuses final file symlinks where supported', async ({ skip }) => {
+  const root = temp(),
+    outside = temp(),
+    fixture = ledger(root)
+  writeFileSync(join(outside, 'private'), 'private')
+  try {
+    symlinkSync(join(outside, 'private'), join(root, 'escape'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+      skip()
+      return
+    }
+    throw error
+  }
+  fixture.effect('escape', '', 'private')
+  expect((await readWorkspaceChanges(fixture.reader, root, authority, {})).files).toEqual([])
+  await expect(
+    readWorkspaceChanges(fixture.reader, root, authority, { path: 'escape' }),
+  ).rejects.toBeDefined()
+})
+
+it.each([...(process.platform === 'win32' ? ['new file.ts'] : ['new\nfile.ts']), '设计 review.ts'])(
   'aggregates confirmed versions and fresh reads for %j',
   async (path) => {
     const root = temp(),
@@ -216,13 +261,13 @@ it('refuses symlinks, installation home, path escapes and old parent-session eff
   const home = join(root, 'home')
   mkdirSync(home)
   vi.stubEnv('AGH_HOME', home)
-  for (const path of ['escape', 'home/credentials', '../private'])
+  for (const path of ['escape/private', 'home/credentials', '../private'])
     fixture.effect(path, '', 'PRIVATE_SENTINEL')
   writeFileSync(join(outside, 'private'), 'PRIVATE_SENTINEL')
-  symlinkSync(join(outside, 'private'), join(root, 'escape'))
+  symlinkSync(outside, join(root, 'escape'), 'junction')
   writeFileSync(join(home, 'credentials'), 'PRIVATE_SENTINEL')
   expect((await readWorkspaceChanges(fixture.reader, root, authority, {})).files).toEqual([])
-  for (const path of ['escape', 'home/credentials', '../private', '/etc/passwd'])
+  for (const path of ['escape/private', 'home/credentials', '../private', '/etc/passwd'])
     await expect(readWorkspaceChanges(fixture.reader, root, authority, { path })).rejects.toBeDefined()
   await expect(readWorkspaceChanges(fixture.reader, home, authority, {})).rejects.toBeDefined()
   fixture.add('session/start', { key: 'child' })

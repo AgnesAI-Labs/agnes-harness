@@ -1,7 +1,8 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve, sep } from 'node:path'
 import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
 import {
   createClient,
@@ -15,7 +16,7 @@ import {
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
 export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
-  const root = await mkdtemp('/tmp/agh-e2e-')
+  const root = await mkdtemp(join(sep === '\\' ? tmpdir() : '/tmp', 'agh-e2e-'))
   const home = join(root, 'h')
   const workspace = join(root, 'w')
   await mkdir(workspace)
@@ -37,7 +38,17 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
   const env = {
     PATH: process.env.PATH ?? '',
     HOME: root,
-    TMPDIR: '/tmp',
+    TMPDIR: tmpdir(),
+    ...(sep === '\\'
+      ? {
+          SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
+          TEMP: tmpdir(),
+          TMP: tmpdir(),
+          USERPROFILE: root,
+          APPDATA: join(root, 'appdata'),
+          LOCALAPPDATA: join(root, 'localappdata'),
+        }
+      : {}),
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,
@@ -147,7 +158,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
     web.on('error', (error) => {
       log += error.message
     })
-    const deadline = Date.now() + 25_000
+    const deadline = Date.now() + (sep === '\\' ? 120_000 : 25_000)
     while (Date.now() < deadline) {
       if (web.exitCode !== null) throw new Error(`serve exited: ${log}`)
       try {
@@ -168,6 +179,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
     connect: async (transport: 'local' | 'web' = 'local', registerWorkspace = true) => {
       let ws = ''
       let socketPath = ''
+      let serverIdentity: { pid: number; processStartId: string } | undefined
       if (transport === 'web') {
         // Discover only the served document's endpoint; administrative operations use SDK RPC.
         const html = await (await fetch(url)).text()
@@ -176,14 +188,18 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       } else {
         const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
         socketPath = owner.socketPath
+        if (sep === '\\') serverIdentity = { pid: owner.pid, processStartId: owner.processStartId }
       }
       const client = createClient({
+        // Cold Windows Host assembly is measured separately from browser interaction assertions.
+        ...(sep === '\\' ? { timeouts: { request: 120_000 } } : {}),
         transport:
           transport === 'local'
             ? { kind: 'unix', path: socketPath }
             : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
         transportFactories: {
-          unix: () => measured(unixTransport({ path: socketPath })),
+          unix: () =>
+            measured(unixTransport({ path: socketPath, ...(serverIdentity ? { serverIdentity } : {}) })),
           ws: (options) => measured(wsTransport({ ...options, url: ws, headers: { Origin: url } })),
         },
         auth: { kind: 'local' },

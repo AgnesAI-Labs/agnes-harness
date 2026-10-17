@@ -1,8 +1,15 @@
 /** @vitest-environment happy-dom */
-import { SettingsSubpageFrame } from '@agnes/web-ui'
+import { installFeedbackSink, type OperationFeedback, SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  expect,
+  afterEach as feedbackAfterEach,
+  beforeEach as feedbackBeforeEach,
+  it,
+  vi,
+} from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { BundlesPanel, reorder } from '../src/admin/plugins/bundles-panel.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
@@ -110,8 +117,25 @@ it('names business agents from the catalog or their package, falls back to a sma
     },
   ])
   // The page cannot restart the service itself, and says so.
-  expect(host.querySelector('[data-testid="bundles-status"]')?.textContent).toContain('restart agh')
+  expect(feedbackResults.at(-1)).toMatchObject({
+    scope: 'bundles',
+    outcome: 'success',
+    effect: { kind: 'restart-required' },
+  })
+  expect(feedbackResults.at(-1)?.effect?.message).toContain('daemon stop')
   expect(reorder(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b'])
+})
+
+it('keeps a confirmed save distinct from a failed refresh', async () => {
+  const { api: client } = api([], [{ id: '@acme/agent#agent' }])
+  const host = await mount(client)
+  await act(async () => host.querySelector<HTMLElement>('[role="switch"]')?.click())
+  vi.mocked(client.bundles).mockRejectedValueOnce(new Error('refresh unavailable'))
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="bundles-save"]')?.click())
+  expect(feedbackResults).toHaveLength(1)
+  expect(feedbackResults[0]).toMatchObject({ outcome: 'success', effect: { kind: 'restart-required' } })
+  expect(host.textContent).toContain('Bundles saved. The latest view could not be loaded.')
+  expect(host.textContent).not.toContain('Bundles were not saved.')
 })
 
 it('sends an empty list to the Agent FDE home page', async () => {
@@ -120,3 +144,11 @@ it('sends an empty list to the Agent FDE home page', async () => {
   expect(empty?.textContent).toContain('No business agents yet')
   expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/?page=agents')
 })
+
+const feedbackResults: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+feedbackBeforeEach(() => {
+  feedbackResults.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (value) => feedbackResults.push(value), resolve() {} })
+})
+feedbackAfterEach(() => releaseFeedback?.())

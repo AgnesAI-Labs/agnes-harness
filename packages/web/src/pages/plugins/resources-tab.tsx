@@ -1,4 +1,5 @@
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
+import { homeNavigation } from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -14,6 +15,13 @@ import { pluginPage, pluginPageId } from './route.js'
 import { SkillFolders } from './skill-folders.js'
 import { SkillRunPage } from './skill-run.js'
 
+let pendingSkillRescan = false
+/** A persistent notice can bring the owning page back before opening its real scan confirmation. */
+function requestSkillRescan() {
+  pendingSkillRescan = true
+  homeNavigation.open('plugins', { tab: 'skills' })
+  window.dispatchEvent(new Event('agnes:request-skill-rescan'))
+}
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
 /**
@@ -92,6 +100,16 @@ export function ResourcesTab({
     }
   }, [])
   useEffect(() => {
+    const scan = () => {
+      if (!pendingSkillRescan || !loaded || tab !== 'skills' || !refresh.current) return
+      pendingSkillRescan = false
+      refresh.current.click()
+    }
+    window.addEventListener('agnes:request-skill-rescan', scan)
+    scan()
+    return () => window.removeEventListener('agnes:request-skill-rescan', scan)
+  }, [loaded, tab])
+  useEffect(() => {
     let current = true
     // Resource sync renders its regions synchronously; begin after this React commit.
     queueMicrotask(() => {
@@ -166,7 +184,7 @@ export function ResourcesTab({
       <p ref={notice} className="admin-notice" role="status" aria-live="polite" hidden />
       <section ref={list} className="plugin-list" aria-live="polite" />
       {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
-      {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={() => refresh.current?.click()} />}
+      {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={requestSkillRescan} />}
       {pages.stack.map((segment) => {
         const page = pluginPage(segment)
         return page?.kind === 'run' ? <SkillRunPage key={segment} name={page.id} t={t} /> : null

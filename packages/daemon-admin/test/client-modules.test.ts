@@ -45,6 +45,7 @@ function installed(input: {
   publicConfig?: Record<string, unknown>
   services?: string[]
   slotCatalogVersion?: string
+  requiresBackendRows?: string[]
   lifetime?: 'profile' | 'session'
   homeEntries?: import('@agnes/protocol').HomeContributionDeclaration[]
   assets?: string[]
@@ -68,6 +69,7 @@ function installed(input: {
         capabilities: input.backend ? { ui: true, tools: { prefix: 'panel_' } } : { ui: true },
         client: {
           ...(input.intelligentComponents ? { intelligentComponents: input.intelligentComponents } : {}),
+          ...(input.requiresBackendRows ? { requiresBackendRows: input.requiresBackendRows } : {}),
           ...(input.lifetime ? { lifetime: input.lifetime } : {}),
           ...(input.homeEntries ? { homeEntries: input.homeEntries } : {}),
           ...(input.assets ? { assets: input.assets } : {}),
@@ -329,75 +331,101 @@ describe('client module immutable snapshots', () => {
       registry.close()
     }
   })
-  it('binds a row-owned client descriptor to its plugin service identity', async () => {
-    const files = fixture()
-    const base = installed({ directory: files.packageDirectory, backend: true })
-    const owner = 'plugin/0123456789abcdef'
-    const row = {
-      ...base,
-      contributions: [
+  it.each([false, true])(
+    'binds client activation to its declared backend dependency (cross-package: %s)',
+    async (crossPackage) => {
+      const files = fixture()
+      const base = installed({ directory: files.packageDirectory, backend: true })
+      const owner = 'plugin/0123456789abcdef'
+      const row = {
+        ...base,
+        contributions: [
+          {
+            kind: 'client' as const,
+            id: owner,
+            rowId: 'ext:acme/panel',
+            path: './agnes.client.json',
+            client: {
+              entry: './dist/index.js',
+              services: ['panel.search'],
+              streams: ['panel.events'],
+              ...(crossPackage ? { requiresBackendRows: ['ext:community/feature'] } : {}),
+            },
+          },
+        ],
+      } as InstalledPackage
+      const web = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)).tree.rows[0]
+      if (!web) throw new Error('missing web row')
+      const backend = createPluginRow({
+        id: 'ext:acme/panel',
+        plugin: `${row.id}@${row.entry.integrity}/panel`,
+        snapshotDigest: row.entry.integrity,
+        exportName: 'panel',
+        entryRevision: row.entry.integrity,
+        extrasRevision: 'none',
+        mountRevision: 'host-ordinary-row:v1',
+        runtime: 'in-process',
+      })
+      const dependency = {
+        ...backend,
+        id: 'ext:community/feature',
+        plugin: `community/feature@${row.entry.integrity}/main`,
+      }
+      let backendDisabled = false
+      const artifact = () =>
+        encodeRuntimeTargetArtifact(
+          buildRuntimeTarget({
+            rows: [
+              web,
+              { ...backend, disabled: !crossPackage && backendDisabled },
+              ...(crossPackage ? [{ ...dependency, disabled: backendDisabled }] : []),
+            ],
+            resources: { mcp: [], skills: {} },
+            resourceRevision: 'a'.repeat(64),
+            compositeRevision: 'b'.repeat(64),
+          }),
+        )
+      const registry = createClientModuleRegistry({
+        snapshotDirectory: () => files.snapshots,
+        runtimeArtifacts: () => ({ desired: artifact(), lastGood: artifact() }),
+      })
+      const roster = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => running(row.entry.integrity),
+        refreshInventory: async () => inventory(row),
+      })
+      expect(roster.rows).toMatchObject([
         {
-          kind: 'client' as const,
-          id: owner,
-          rowId: 'ext:acme/panel',
-          path: './agnes.client.json',
-          client: { entry: './dist/index.js', services: ['panel.search'], streams: ['panel.events'] },
+          moduleName: owner,
+          extIds: [owner],
+          services: ['panel.search'],
+          streams: ['panel.events'],
+          phase: 'ready',
         },
-      ],
-    } as InstalledPackage
-    const web = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)).tree.rows[0]
-    if (!web) throw new Error('missing web row')
-    const backend = createPluginRow({
-      id: 'ext:acme/panel',
-      plugin: `${row.id}@${row.entry.integrity}/panel`,
-      snapshotDigest: row.entry.integrity,
-      exportName: 'panel',
-      entryRevision: row.entry.integrity,
-      extrasRevision: 'none',
-      mountRevision: 'host-ordinary-row:v1',
-      runtime: 'in-process',
-    })
-    let backendDisabled = false
-    const artifact = () =>
-      encodeRuntimeTargetArtifact(
-        buildRuntimeTarget({
-          rows: [web, { ...backend, disabled: backendDisabled }],
-          resources: { mcp: [], skills: {} },
-          resourceRevision: 'a'.repeat(64),
-          compositeRevision: 'b'.repeat(64),
-        }),
-      )
-    const registry = createClientModuleRegistry({
-      snapshotDirectory: () => files.snapshots,
-      runtimeArtifacts: () => ({ desired: artifact(), lastGood: artifact() }),
-    })
-    const roster = await registry.list({
-      profile: 'local-dev',
-      profileDirectory: files.root,
-      inventory: inventory(row),
-      actual: async () => running(row.entry.integrity),
-      refreshInventory: async () => inventory(row),
-    })
-    expect(roster.rows).toMatchObject([
-      {
-        moduleName: owner,
-        extIds: [owner],
-        services: ['panel.search'],
-        streams: ['panel.events'],
-        phase: 'ready',
-      },
-    ])
-    backendDisabled = true
-    const disabled = await registry.list({
-      profile: 'local-dev',
-      profileDirectory: files.root,
-      inventory: inventory(row),
-      actual: async () => running(row.entry.integrity),
-      refreshInventory: async () => inventory(row),
-    })
-    expect(disabled.rows).toEqual([])
-    registry.close()
-  })
+      ])
+      backendDisabled = true
+      const disabled = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => running(row.entry.integrity),
+        refreshInventory: async () => inventory(row),
+      })
+      expect(disabled.rows).toEqual([])
+      backendDisabled = false
+      const restored = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => running(row.entry.integrity),
+        refreshInventory: async () => inventory(row),
+      })
+      expect(restored.rows).toHaveLength(1)
+      registry.close()
+    },
+  )
 
   it('projects desired, previous, and lastGood runtime artifacts for supervisor wiring', () => {
     const desired = webArtifact('acme/panel', `sha256-${'1'.repeat(64)}`)
@@ -576,56 +604,110 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
-  it('publishes independent browser rows for two client extensions in one package', async () => {
-    const files = fixture()
-    writeFileSync(join(files.packageDirectory, 'dist', 'secondary.js'), 'export const value = "secondary"\n')
-    writeFileSync(join(files.packageDirectory, 'dist', 'secondary.css'), '.secondary { color: blue }\n')
-    const base = installed({ directory: files.packageDirectory })
-    const primary = base.contributions[0]
-    if (primary?.kind !== 'extension') throw new Error('missing fixture extension')
-    const row = {
-      ...base,
-      contributions: [
-        { ...primary, id: 'acme/primary' },
-        {
-          ...primary,
-          id: 'acme/secondary',
-          client: {
-            ...primary.client,
-            entry: 'dist/secondary.js',
-            styles: ['dist/secondary.css'],
-            slots: ['workbench.panel'],
+  it.each([false, true])(
+    'publishes immutable resources for two clients across dependency activation (%s)',
+    async (dependencyMode) => {
+      const files = fixture()
+      writeFileSync(
+        join(files.packageDirectory, 'dist', 'secondary.js'),
+        'export const value = "secondary"\n',
+      )
+      writeFileSync(join(files.packageDirectory, 'dist', 'secondary.css'), '.secondary { color: blue }\n')
+      const base = installed({ directory: files.packageDirectory })
+      const primary = base.contributions[0]
+      if (primary?.kind !== 'extension') throw new Error('missing fixture extension')
+      const row = {
+        ...base,
+        contributions: [
+          { ...primary, id: 'acme/primary' },
+          {
+            ...primary,
+            id: 'acme/secondary',
+            client: {
+              ...primary.client,
+              ...(dependencyMode ? { requiresBackendRows: ['ext:community/feature'] } : {}),
+              entry: 'dist/secondary.js',
+              styles: ['dist/secondary.css'],
+              slots: ['workbench.panel'],
+            },
           },
-        },
-      ],
-    } as unknown as InstalledPackage
-    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
-    const input = {
-      profile: 'local-dev',
-      profileDirectory: files.root,
-      inventory: inventory(row),
-      actual: async () => undefined,
-      refreshInventory: async () => inventory(row),
-    }
-    const roster = await registry.list(input)
-    expect(roster.modules.map((module) => module.rowId).sort()).toEqual([
-      'web:acme/panel:acme/primary',
-      'web:acme/panel:acme/secondary',
-    ])
-    expect(roster.rows?.map((item) => [item.rowId, item.moduleName, item.packageId]).sort()).toEqual([
-      ['web:acme/panel:acme/primary', 'acme/primary', 'acme/panel'],
-      ['web:acme/panel:acme/secondary', 'acme/secondary', 'acme/panel'],
-    ])
-    expect(roster.modules).toHaveLength(2)
-    expect(roster.modules.every((module) => /^sha256-[a-f0-9]{64}$/.test(module.contentDigest ?? ''))).toBe(
-      true,
-    )
-    expect(roster.rows?.every((item) => /^sha256-[a-f0-9]{64}$/.test(item.contentDigest ?? ''))).toBe(true)
-    const second = roster.modules.find((module) => module.rowId?.endsWith('acme/secondary'))
-    expect(second?.entryUrl).toContain('/dist/secondary.js')
-    expect(await registry.read({ ...input, path: second?.entryUrl ?? '' })).toMatchObject({ found: true })
-    registry.close()
-  })
+        ],
+      } as unknown as InstalledPackage
+      let dependencyDisabled = true
+      const web = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)).tree.rows[0]!
+      const artifact = () =>
+        encodeRuntimeTargetArtifact(
+          buildRuntimeTarget({
+            rows: [
+              { ...web, id: 'web:acme/panel:acme/primary' },
+              {
+                ...web,
+                id: 'web:acme/panel:acme/secondary',
+                plugin: `${row.id}@${row.entry.integrity}/client/secondary`,
+              },
+              {
+                ...web,
+                id: 'ext:community/feature',
+                plugin: `community/feature@${row.entry.integrity}/main`,
+                disabled: dependencyDisabled,
+              },
+            ],
+            resources: { mcp: [], skills: {} },
+            resourceRevision: 'a'.repeat(64),
+            compositeRevision: 'b'.repeat(64),
+          }),
+        )
+      const makeRegistry = () =>
+        createClientModuleRegistry({
+          snapshotDirectory: () => files.snapshots,
+          ...(dependencyMode
+            ? { runtimeArtifacts: () => ({ desired: artifact(), lastGood: artifact() }) }
+            : {}),
+        })
+      let registry = makeRegistry()
+      const input = {
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => undefined,
+        refreshInventory: async () => inventory(row),
+      }
+      let roster = await registry.list(input)
+      if (dependencyMode) {
+        expect(roster.rows).toHaveLength(1)
+        dependencyDisabled = false
+        roster = await registry.list(input)
+      }
+      expect(roster.modules.map((module) => module.rowId).sort()).toEqual([
+        'web:acme/panel:acme/primary',
+        'web:acme/panel:acme/secondary',
+      ])
+      expect(roster.rows?.map((item) => [item.rowId, item.moduleName, item.packageId]).sort()).toEqual([
+        ['web:acme/panel:acme/primary', 'acme/primary', 'acme/panel'],
+        ['web:acme/panel:acme/secondary', 'acme/secondary', 'acme/panel'],
+      ])
+      expect(roster.modules).toHaveLength(2)
+      expect(roster.modules.every((module) => /^sha256-[a-f0-9]{64}$/.test(module.contentDigest ?? ''))).toBe(
+        true,
+      )
+      expect(roster.rows?.every((item) => /^sha256-[a-f0-9]{64}$/.test(item.contentDigest ?? ''))).toBe(true)
+      const second = roster.modules.find((module) => module.rowId?.endsWith('acme/secondary'))
+      expect(second?.entryUrl).toContain('/dist/secondary.js')
+      expect(await registry.read({ ...input, path: second?.entryUrl ?? '' })).toMatchObject({ found: true })
+      if (dependencyMode) {
+        dependencyDisabled = true
+        expect((await registry.list(input)).rows).toHaveLength(1)
+        registry.close()
+        registry = makeRegistry()
+        expect((await registry.list(input)).rows).toHaveLength(1)
+        dependencyDisabled = false
+        const restored = await registry.list(input)
+        expect(restored.rows).toHaveLength(2)
+        expect(await registry.read({ ...input, path: second?.entryUrl ?? '' })).toMatchObject({ found: true })
+      }
+      registry.close()
+    },
+  )
 
   it.each([16, 17])('keeps %i client rows of one package readable across lists', async (count) => {
     const files = fixture()
@@ -1460,7 +1542,20 @@ describe('client module immutable snapshots', () => {
         },
         authority,
       ),
-    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', sessionId: 'session-a' } })
+    ).rejects.toMatchObject({ code: -32006 })
+    await expect(
+      service.call(
+        '_agnes/v1/clientModules.callService',
+        {
+          profile: 'local-dev',
+          rowId: 'web:builtin:agnes/reply-suggestions',
+          sessionId: 'session-a',
+          service: 'replies.read',
+          input: { turn: 1 },
+        },
+        authority,
+      ),
+    ).resolves.toMatchObject({ output: { extension: 'agnes/follow-up-hint', sessionId: 'session-a' } })
     await expect(
       service.call(
         '_agnes/v1/clientModules.callEffect',
@@ -1474,7 +1569,7 @@ describe('client module immutable snapshots', () => {
         },
         { ...authority, permissions: ['packages.read', 'extensions.execute'] },
       ),
-    ).resolves.toMatchObject({ output: { extension: 'agnes/jobs-web', commandId: 'terminal-close' } })
+    ).rejects.toMatchObject({ code: -32006 })
     await expect(
       service.call(
         '_agnes/v1/clientModules.callService',
@@ -1523,7 +1618,7 @@ describe('client module immutable snapshots', () => {
         { ...authority, permissions: ['packages.read', 'extensions.execute'] },
       ),
     ).rejects.toMatchObject({ message: 'CAPABILITY_DENIED' })
-    expect(effectDispatch).toHaveBeenCalledTimes(2)
+    expect(effectDispatch).toHaveBeenCalledTimes(1)
     service.closeClientModules()
   })
 

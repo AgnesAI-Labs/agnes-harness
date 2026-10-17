@@ -3,6 +3,8 @@ import {
   Banner,
   Button,
   createDocumentLocaleSource,
+  fallbackT,
+  reportSuccess,
   Segmented,
   SettingsBlock,
   SettingsDrill,
@@ -71,6 +73,7 @@ export function CustomInstructions({
   const canSave = useCanSave(shown, permission)
   const config = useAutosave<SystemPromptConfig>({
     stored: snapshot?.config,
+    onSaved: () => reportSuccess('personalization', fallbackT('ui.settingsSaved')),
     // Only the instructions are written, onto the latest configuration; a replacement stored meanwhile
     // refuses the save and keeps the draft.
     save: (next) => save((latest) => withInstructions(latest, next), false),

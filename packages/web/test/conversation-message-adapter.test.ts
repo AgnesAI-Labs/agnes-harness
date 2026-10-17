@@ -2,7 +2,7 @@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { SessionService, SlotRegistry } from '@agnes/web-client'
+import { LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
@@ -12,14 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   answeredQuestions,
   renderedSurfaceIds,
-  WebConversationMessages,
-} from '../src/conversation-message-adapter.js'
+} from '../../web-conversation/src/intelligent-ui/conversation.js'
+import { mountIntelligentUi } from '../../web-conversation/src/intelligent-ui/mount.js'
+import { WebConversationMessages } from '../src/conversation-message-adapter.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 let host: HTMLDivElement
 let root: Root
 let ctx: Context
 let registry: SlotRegistry
+let stopInteraction: (() => void) | undefined
 
 beforeEach(async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
@@ -36,6 +38,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await act(async () => root.unmount())
+  stopInteraction?.()
+  stopInteraction = undefined
   await ctx.fiber.dispose()
   host.remove()
   vi.unstubAllGlobals()
@@ -666,6 +670,13 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
 })
 
 it('shows a submitted question as «你的回答» and folds the queued line that announced it', async () => {
+  stopInteraction = mountIntelligentUi({
+    registry,
+    client: { sessions: { get: () => undefined } } as never,
+    session: new SessionService(ctx),
+    locale: new LocaleService(ctx, 'zh-CN'),
+    approval() {},
+  })
   const queued: UINode = {
     kind: 'user',
     id: 'queued',
@@ -728,6 +739,13 @@ it('names the views a turn rendered from its persisted ui_render results', () =>
 })
 
 it('marks the asking answer «answered» before copy and drops the answer node and ui_submit row', async () => {
+  stopInteraction = mountIntelligentUi({
+    registry,
+    client: { sessions: { get: () => undefined } } as never,
+    session: new SessionService(ctx),
+    locale: new LocaleService(ctx, 'zh-CN'),
+    approval() {},
+  })
   const usage = {
     totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
     reasoningComplete: true,
@@ -825,4 +843,11 @@ it('marks the asking answer «answered» before copy and drops the answer node a
   expect(badge?.querySelector('[data-testid="question-answer-style"] dd')?.textContent).toMatch(
     /^简洁(、|, )浅色$/,
   )
+  await act(async () => {
+    stopInteraction?.()
+    stopInteraction = undefined
+  })
+  expect(host.querySelector('[data-testid="question-answered"]')).toBeNull()
+  expect(item('answer')).not.toBeNull()
+  expect(item('submit')).not.toBeNull()
 })

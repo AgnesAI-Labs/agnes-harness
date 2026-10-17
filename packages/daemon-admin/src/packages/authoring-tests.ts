@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { collectPackageSkillFiles, discoverPackageSkill, packageSkillLoadError } from '@agnes/base'
 import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
@@ -11,6 +12,46 @@ import type { build as Build } from 'esbuild'
 /** Host-run Node tests, never caller-supplied success claims or Markdown-as-shell. */
 export const runAuthoringTests: AuthoringTestRunner = async (directory, files, signal) => {
   directory = realpathSync(directory)
+  const insideCandidate = (path: string): boolean => {
+    if (!path) return false
+    const rel = relative(directory, path)
+    return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+  }
+  // The Host validates document semantics with the same parser used by the worker. Author-written
+  // tests cannot claim that a malformed static Skill is ready for review.
+  try {
+    const manifest = JSON.parse(files.find((file) => file.path === 'package.json')?.content ?? '{}')
+    for (const contribution of manifest.agnes?.contributions ?? []) {
+      if (contribution.kind !== 'skill') continue
+      const source = files.find((file) => `./${file.path}` === contribution.path)?.content
+      if (
+        source === undefined ||
+        !discoverPackageSkill({
+          packageId: manifest.name,
+          contributionId: contribution.id,
+          relativeLocation: contribution.path,
+          source,
+        })
+      )
+        throw new Error('invalid static Skill')
+      const document = realpathSync(join(directory, contribution.path))
+      if (!insideCandidate(document)) throw new Error('invalid static Skill path')
+      signal.throwIfAborted()
+      await collectPackageSkillFiles(dirname(document), source)
+    }
+  } catch (error) {
+    signal.throwIfAborted()
+    const code = (error as { code?: unknown })?.code
+    return {
+      state: 'failed',
+      count: 0,
+      runner: 'node-test',
+      output:
+        typeof code === 'string' && code.startsWith('SKILL_')
+          ? `${packageSkillLoadError(code).message} Fix the Skill before submitting for review.`
+          : 'Static Skill metadata or body is invalid. Fix its SKILL.md before submitting for review.',
+    }
+  }
   const tests = files.filter((f) => /\.test\.(mjs|js|ts)$/.test(f.path))
   if (!tests.length)
     return {
@@ -66,7 +107,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
           name: 'authoring-public-sdk',
           setup(b) {
             b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox)/ }, (args) => {
-              if (!args.importer.startsWith(directory + '/')) return undefined
+              if (!insideCandidate(args.importer)) return undefined
               if (!Object.hasOwn(modules, args.path))
                 throw new Error('Only public author SDK modules are available in candidate tests')
               return existsSync(sdk)
@@ -95,7 +136,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
             }))
             // Preserve source-relative asset URLs when a plugin is bundled into a test entry.
             b.onLoad({ filter: /\.(ts|mjs|js)$/ }, async (args) => {
-              if (!args.path.startsWith(directory + '/')) return undefined
+              if (!insideCandidate(args.path)) return undefined
               const file = files.find((f) => join(directory, f.path) === args.path)
               if (!file) return undefined
               return {

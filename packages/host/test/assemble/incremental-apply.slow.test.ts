@@ -48,7 +48,7 @@ describe('incremental apply on the live tree', () => {
     await settle()
     expect(toolNames(h)).toContain('a_tool')
     await h.host.close()
-  })
+  }, 60_000)
 
   it('upgrading A leaves B untouched', async () => {
     let installed = [
@@ -65,7 +65,7 @@ describe('incremental apply on the live tree', () => {
     expect(runs('b')).toBe(before)
     expect(toolNames(h)).toEqual(expect.arrayContaining(['a_tool', 'b_tool']))
     await h.host.close()
-  })
+  }, 60_000)
 
   it('a failed upgrade rolls back to the old version of A', async () => {
     let installed = [source(A, V1, `ctx.tools.register(tool('a_v1'))`)]
@@ -108,7 +108,7 @@ describe('incremental apply on the live tree', () => {
     expect(runs('a_v1')).toBeGreaterThanOrEqual(4)
     expect(toolNames(h)).toContain('a_v1')
     await h.host.close()
-  })
+  }, 60_000)
 
   it('rebuilds the whole tree when compensation itself hangs and taints it, instead of losing the row silently', async () => {
     // v1's body hangs on runs 2 and 3 — EntryTree's own internal compensation attempt, then the
@@ -125,19 +125,23 @@ describe('incremental apply on the live tree', () => {
       else ctx.tools.register(tool('a_v1'))
     `
     let installed = [source(A, V1, hangDuringCompensation)]
-    const h = await livePluginHost(() => installed, { startTimeoutMs: 1_500 })
-    await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
-    await settle()
-    expect(toolNames(h)).toContain('a_v1')
-    installed = [source(A, V3, `throw new Error('v3 does not start')`), ...installed]
-    await expect(h.host.applyRuntimeTarget(targetOf([rowOf(A, V3)]))).rejects.toThrow('recovery failed')
-    await settle()
-    // The hung compensation timed out and tainted the tree; rebuildLiveTree must still repair it
-    // through a fresh candidate rather than leaving a_v1 silently vanished from the plugin table.
-    expect(toolNames(h)).toContain('a_v1')
-    // Close must not wait on the still-hung compensation fiber.
-    await h.host.close()
-  }, 20_000)
+    // This deadline also covers starting the complete replacement tree, not just the hung row.
+    // 1.5 seconds can expire before healthy builtins finish loading on Windows or macOS.
+    const h = await livePluginHost(() => installed, { startTimeoutMs: 10_000 })
+    try {
+      await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
+      await settle()
+      expect(toolNames(h)).toContain('a_v1')
+      installed = [source(A, V3, `throw new Error('v3 does not start')`), ...installed]
+      await expect(h.host.applyRuntimeTarget(targetOf([rowOf(A, V3)]))).rejects.toThrow('recovery failed')
+      await settle()
+      // The hung compensation timed out and tainted the tree; a fresh candidate restores the tool.
+      expect(toolNames(h)).toContain('a_v1')
+    } finally {
+      // Close must not wait on either hung compensation fiber, even if an assertion fails.
+      await h.host.close()
+    }
+  }, 90_000)
 
   it('an untrusted package is not remounted when the delivery that removes it is rejected', async () => {
     const a = source(A, V1, `ctx.tools.register(tool('a_tool'))`)

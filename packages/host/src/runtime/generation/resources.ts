@@ -53,7 +53,9 @@ function resourceData(snapshot: RuntimeGenerationResourceSnapshot): ResourceData
 }
 
 /** Code generations consume current resources; workspace authorization is scoped to each turn. */
-export function createGenerationSkills(original: SkillRuntimeInput | undefined) {
+export function createGenerationSkills(original: SkillRuntimeInput | undefined): {
+  input: SkillRuntimeInput
+} {
   const calls = new AsyncLocalStorage<{ key: string; active: boolean }>()
   const current = (key?: string) => {
     const call = calls.getStore()
@@ -62,6 +64,12 @@ export function createGenerationSkills(original: SkillRuntimeInput | undefined) 
     return original
   }
   const input: SkillRuntimeInput = {
+    ...(original?.scopeRuntime
+      ? {
+          scopeRuntime: (accept: Parameters<NonNullable<SkillRuntimeInput['scopeRuntime']>>[0]) =>
+            createGenerationSkills(original.scopeRuntime!(accept)).input,
+        }
+      : {}),
     list: () => current()?.list() ?? [],
     invocation: (id) => current()?.invocation?.(id),
     read: (id, session) =>

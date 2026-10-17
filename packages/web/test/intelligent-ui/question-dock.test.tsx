@@ -7,20 +7,20 @@ import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
+import { IntelligentUiClient } from '../../../web-conversation/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
   IntelligentPanel,
   newSurfacePlacements,
   type UiPlacementBinding,
-} from '../../src/intelligent-ui/placements.js'
+} from '../../../web-conversation/src/intelligent-ui/placements.js'
 import {
   AnsweredQuestions,
   QuestionAnswersNode,
   QuestionDock,
   questionSubmission,
-} from '../../src/intelligent-ui/question-dock.js'
-import { attachTurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+} from '../../../web-conversation/src/intelligent-ui/question-dock.js'
+import { attachIntelligentBinding } from '../../../web-conversation/src/intelligent-ui/turn-views.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
 
 /** The record ask_user_question leaves behind (packages/base/extensions/interaction/src/question.ts). */
@@ -117,7 +117,7 @@ async function mount(records: UiSurfaceRecord[], extra?: ReturnType<typeof creat
     expand: vi.fn(),
     approval: vi.fn(),
   }
-  const detach = attachTurnDeliverables(binding)
+  const detach = attachIntelligentBinding(binding)
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)

@@ -1,6 +1,16 @@
 /** @vitest-environment happy-dom */
 import type { McpServerDescriptor } from '@agnes/protocol'
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  afterEach as feedbackAfterEach,
+  beforeEach as feedbackBeforeEach,
+  it,
+  vi,
+} from 'vitest'
 
 const revision = 'a'.repeat(64)
 const server: McpServerDescriptor = {
@@ -152,6 +162,15 @@ beforeEach(async () => {
       if (path === 'operations/get')
         return Response.json({
           operationId: 'op',
+          kind: `_agnes/v1/mcp.servers.${
+            [...requests]
+              .reverse()
+              .find((request) =>
+                ['mcp/enable', 'mcp/disable', 'mcp/create', 'mcp/remove'].includes(request.path),
+              )
+              ?.path.split('/')[1] ?? 'update'
+          }`,
+          target: 'mcp/fixture',
           state: operationState,
           ...(operationState === 'failed'
             ? { lastSafeError: { code: 'MCP_CONNECT_FAILED', message: '连接已断开，请重连。' } }
@@ -525,12 +544,11 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
     serverId: 'created-mcp',
     transport: { kind: 'stdio', executable: 'fixture', args: ['--mode', 'test suite'] },
   })
-  await vi.waitFor(() =>
-    expect(byId('resource-notice').textContent).toContain('was created but is not available yet'),
-  )
-  expect(byId('resource-notice').textContent).toContain('enable it')
-  expect(byId('resource-notice').textContent).not.toContain('trust')
-  expect(byId('resource-notice').dataset.kind).toBe('success')
+  await vi.waitFor(() => expect(feedbackResults.at(-1)?.message).toContain('created'))
+  expect(feedbackResults.at(-1)?.effect?.kind).toBe('enable-required')
+  expect(feedbackResults.at(-1)?.message).not.toContain('trust')
+  expect(byId('resource-notice').dataset.kind).toBe('')
+  expect(feedbackResults.at(-1)?.outcome).toBe('success')
 })
 
 it('uses a published-skill link to open the filtered skills list', async () => {
@@ -633,6 +651,7 @@ it('toggles the row Switch without opening that row in the detail modal', async 
   byId<HTMLButtonElement>('admin-confirm-action').click()
   await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
+  await vi.waitFor(() => expect(feedbackResolved).toContain('resource:mcp/fixture'))
   expect(submitted('mcp/trust')[0]?.body).toMatchObject({
     serverId: 'fixture',
     expectedRevision: revision,
@@ -778,8 +797,9 @@ it('keeps successful control-plane notice without claiming every session switche
   action('Enable')
   await vi.waitFor(() => expect(submitted('mcp/list').length).toBeGreaterThan(2))
   await settle()
-  expect(byId('resource-notice').dataset.kind).toBe('success')
-  expect(byId('resource-notice').textContent).toContain(
+  expect(byId('resource-notice').dataset.kind).toBe('')
+  expect(feedbackResults.at(-1)?.outcome).toBe('success')
+  expect(feedbackResults.at(-1)?.message).toContain(
     'a successful refresh does not mean every session has switched',
   )
 })
@@ -1033,7 +1053,7 @@ it('prefills a Playwright preset without writes and requires save and enable con
   })
   expect(submitted('mcp/trust')).toHaveLength(0)
   expect(submitted('mcp/enable')).toHaveLength(0)
-  await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('Playwright MCP'))
+  await vi.waitFor(() => expect(feedbackResults.at(-1)?.message).toContain('Playwright MCP'))
   byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Playwright MCP'))
   action('Enable', { confirm: false })
@@ -1044,3 +1064,17 @@ it('prefills a Playwright preset without writes and requires save and enable con
   await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
 })
+
+const feedbackResults: OperationFeedback[] = []
+const feedbackResolved: string[] = []
+let releaseFeedback: (() => void) | undefined
+feedbackBeforeEach(async () => {
+  const { installFeedbackSink } = await import('@agnes/web-ui')
+  feedbackResults.length = 0
+  feedbackResolved.length = 0
+  releaseFeedback = installFeedbackSink({
+    publish: (value) => feedbackResults.push(value),
+    resolve: (scope) => feedbackResolved.push(scope),
+  })
+})
+feedbackAfterEach(() => releaseFeedback?.())

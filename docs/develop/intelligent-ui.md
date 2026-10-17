@@ -389,3 +389,53 @@ Reads and refreshes attach optional `UiSurfaceRecord.artifacts`, keyed by compon
 The agent input remains the full machine receipt, including submitted values. The optional `InputPresentation` metadata travels with the same idempotent input through the inbox, `UserMessage` and user `UINode`. Its `kind: "ui-action"`, terminal `status`, `operation`, action `label` and bounded field-name list let Web show a localized summary without parsing receipt text. The original content remains inspectable in the execution trace and is unchanged for model requests. Only backend system/untrusted inputs carry this presentation; ordinary prompt RPCs do not accept it. `AgentInputPort.deliver(key, text, signal, presentation?)` adds the optional fourth argument, validates its shape at the service boundary, and preserves existing actor, lane, cancellation and delivery-key authorization.
 
 Backend UI receipts remain durable pending input but do not appear in the editable composer queue; after acceptance, their localized summary appears in the conversation.
+
+### Public question compatibility and replaceable presentation
+
+The durable business events listed in `UI_EVENTS` are public protocol:
+
+| Events | Compatible meaning |
+| --- | --- |
+| `surface.opened`, `surface.updated`, `surface.closed` under `x/agnes/intelligent-ui/` | Recorded surface identity, revision, ownership, placement and lifecycle; historical reads remain valid |
+| `action.received`, `action.rejected`, `action.pending-approval`, `action.executing`, `action.succeeded`, `action.failed`, `action.retried`, `action.delivered` under the same namespace | Authenticated command correlation, receipt transitions and delivery; success is distinct from receipt or approval |
+| `x/agnes/interaction/requested` | Durable question identity, tool call, questions and optional deadline |
+| Delivered system input with source `agnes/intelligent-ui`, type `action-result` | Accepted `submitted.surfaceId/answers`, status and actor-preserving queued input |
+
+Client store notifications, reconnect hints, local presentation choices and cache
+layouts are official implementation details, not answer facts. Source-resolution
+`source.*` audit events have their separate exported diagnostic contract and do
+not authorize, complete or backfill an interaction.
+
+Public contracts are `UiSurface`, `UiSurfaceRecord`, `UiReadParams/Result`,
+`UiActionParams/Receipt`, authenticated deferred action delivery, and the
+question form marker (`data.question.kind = "ask_user_question"`, deadline and
+optional labels). Existing persisted question requests
+`x/agnes/interaction/requested` remain readable. The question projection rebuilds
+from those requests and authenticated UI facts, including historical sessions.
+
+`@agnes/intelligent-ui-contract` exports `UI_ANSWER_OWNER`, `UI_SUBMIT_TOOL`,
+`UI_ANSWER_EVENTS` and `readUiAnswerFact`. The historical namespace
+`x/agnes/intelligent-ui/` and matching `ext:agnes/intelligent-ui` origin are now
+explicit compatibility identities, not package lookup rules. The adapter reads
+`surface.opened` (`data.record.status`, `data.record.surface.id`),
+`action.received` (`data.record.request.commandId`, admitted invocation
+`{tool:"ui_submit", args:{surfaceId,answers}}`) and `action.succeeded`
+(`data.commandId`). A received fact alone never completes a question. Rejected,
+failed or foreign-origin facts and user prose cannot backfill answers. An
+alternative service implementation must preserve this public protocol and its
+authenticated owner checks; replacing browser presentation does not change it.
+
+The official package, DOM, local draft storage, placement implementation,
+component helpers and transient request/error text are implementation details.
+Do not parse those to recover answers or decide authorization. The official
+browser client owns question dock and receipt rendering through the
+`interaction` presentation role. A community client can replace the whole
+experience using the same public SDK read/action protocol and registries.
+
+Interaction declares Intelligent UI as an optional peer. It persists a request
+before optional rendering, and returns a successful text fallback immediately
+when the renderer is absent or refuses. Cancellation still propagates. The
+projection's version 3 caches bounded `surface.opened` identities so a retry
+following a crash or rendering failure ensures the deterministic question
+surface exists, while an already recorded surface is not published twice.
+No new storage or old-product data migration is introduced.

@@ -601,7 +601,7 @@
           "minimum": 1
         },
         "action": {
-          "enum": ["pause", "resume", "cancel", "interrupt", "child-stop", "child-continue"]
+          "enum": ["pause", "resume", "cancel", "interrupt", "promote", "child-stop", "child-continue"]
         },
         "itemId": {
           "type": "string",
@@ -2912,6 +2912,38 @@
     },
     "DaemonNotice": {
       "oneOf": [
+        {
+          "description": "Profile approval invalidation only. Re-read profile.decisions.list through its authorized ingress; no decision content or identifier is carried.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": { "const": "decisions_changed" },
+            "detail": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["profile", "principal"],
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+                },
+                "principal": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "org"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+                    "org": { "type": "string", "maxLength": 256 }
+                  }
+                }
+              }
+            },
+            "at": { "type": "string" }
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -5301,16 +5333,17 @@
         "createdAt": {
           "type": "string"
         },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
         "lastSeq": {
           "type": "integer",
           "minimum": 0
         },
         "generation": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0
         },
         "preset": {
-          "type": "string"
+          "anyOf": [{ "type": "string" }, { "type": "null" }]
         },
         "title": {
           "type": "string",
@@ -5335,6 +5368,50 @@
       }
     },
     "SessionListParams": {
+      "anyOf": [{ "$ref": "#/$defs/SessionLegacyListParams" }, { "$ref": "#/$defs/SessionSidebarListParams" }]
+    },
+    "SessionSidebarListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sidebar"],
+      "properties": {
+        "sidebar": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["groupId"],
+          "properties": {
+            "groupId": { "type": "string", "pattern": "^(unassigned|[a-f0-9]{64})$" }
+          }
+        },
+        "cursor": { "type": "string", "maxLength": 4096 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "SessionGroupsParams": { "type": "object", "additionalProperties": false, "properties": {} },
+    "SessionGroupsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "ready"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/SessionGroup" } }
+      }
+    },
+    "SessionGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "total", "lastMessageAt", "revision", "ready"],
+      "properties": {
+        "initializationError": { "type": "boolean" },
+        "groupId": { "type": "string", "pattern": "^(unassigned|[a-f0-9]{64})$" },
+        "workspaceId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "total": { "type": "integer", "minimum": 0 },
+        "lastMessageAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "revision": { "type": "string", "maxLength": 128 },
+        "ready": { "type": "boolean" }
+      }
+    },
+    "SessionLegacyListParams": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -5379,8 +5456,10 @@
         },
         "next": {
           "type": "string",
-          "maxLength": 512
-        }
+          "maxLength": 4096
+        },
+        "total": { "type": "integer", "minimum": 0 },
+        "revision": { "type": "string", "maxLength": 128 }
       }
     },
     "SessionSetPresetParams": {

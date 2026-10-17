@@ -644,6 +644,11 @@ const AGNES_DEFS: Record<string, TSchema> = {
   DiagnosticsEventsResult: AgnesGen.DiagnosticsEventsResult,
   SessionMeta: AgnesGen.SessionMeta,
   SessionListParams: AgnesGen.SessionListParams,
+  SessionGroupsParams: AgnesGen.SessionGroupsParams,
+  SessionGroupsResult: AgnesGen.SessionGroupsResult,
+  SessionGroup: AgnesGen.SessionGroup,
+  SessionSidebarListParams: AgnesGen.SessionSidebarListParams,
+  SessionLegacyListParams: AgnesGen.SessionLegacyListParams,
   PageSessionMeta: AgnesGen.PageSessionMeta,
   SessionSetPresetParams: AgnesGen.SessionSetPresetParams,
   SessionSetModelParams: AgnesGen.SessionSetModelParams,
@@ -4150,7 +4155,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
         sessionId: 's',
         createdAt: '2026-09-10T00:00:00Z',
         lastSeq: 3,
-        generation: 0, // boundary: one below minimum:1
+        generation: -1, // unopened sessions may have generation zero
         preset: 'code',
       },
     ],
@@ -4162,6 +4167,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { limit: 0 }, // boundary: one below minimum:1
       { limit: 501 }, // boundary: one above maximum:500
       { cursor: rep(513) }, // boundary: maxLength:512
+      { sidebar: { groupId: 'unassigned' }, q: {} },
+      { sidebar: { groupId: 'unassigned' }, limit: 6 },
     ],
     note: 'every field is optional; the three boundaries are limit range and cursor length',
   },
@@ -4175,7 +4182,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       {}, // missing required items
       { items: [{ sessionId: 's' }] }, // a row failing SessionMeta's own required fields
-      { items: [], next: rep(513) }, // boundary: maxLength:512
+      { items: [], next: rep(4097) }, // sidebar cursors include scope and revision
     ],
     note: 'the $ref to SessionMeta propagates its required fields into each row',
   },
@@ -5697,6 +5704,32 @@ const task20Fixtures = loadJsonl(`${pkgRoot}fixtures/configs/task20.jsonl`) as A
 >
 // Extend the existing diagnostics parity contract: legacy bundles remain valid,
 // while collector URLs or credential fields never become part of the public DTO.
+AGNES_SAMPLES.SessionLegacyListParams = AGNES_SAMPLES.SessionListParams!
+AGNES_SAMPLES.SessionSidebarListParams = {
+  valid: { sidebar: { groupId: 'unassigned' }, cursor: rep(4096), limit: 5 },
+  invalid: [
+    { sidebar: { groupId: 'unknown' } },
+    { sidebar: { groupId: 'unassigned' }, cursor: rep(4097) },
+    { sidebar: { groupId: 'unassigned' }, q: {} },
+  ],
+  note: 'sidebars use scoped cursors and cannot mix legacy filters',
+}
+AGNES_SAMPLES.SessionGroupsParams = {
+  valid: {},
+  invalid: [{ principalId: 'another' }],
+  note: 'principal comes only from authenticated context',
+}
+AGNES_SAMPLES.SessionGroup = {
+  valid: { groupId: 'unassigned', total: 0, revision: 'instance:1', ready: true, lastMessageAt: null },
+  invalid: [{ groupId: 'unassigned' }],
+  note: 'summary contains no session bodies',
+}
+AGNES_SAMPLES.SessionGroupsResult = {
+  valid: { items: [AGNES_SAMPLES.SessionGroup.valid], ready: true },
+  invalid: [{ items: [] }, { items: [], ready: 'yes' }],
+  note: 'global readiness controls initial selection',
+}
+
 AGNES_SAMPLES.DiagnosticsExportResult!.invalid.push(
   ...[
     {
@@ -6060,10 +6093,18 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     note: 'Skin contribution: reserved id, closed object, both palette modes, and value charset',
   },
   ClientContribution: {
-    valid: { entry: 'dist/client/index.js', styles: ['dist/client/index.css'], slots: ['workbench.panel'] },
+    valid: {
+      entry: 'dist/client/index.js',
+      styles: ['dist/client/index.css'],
+      slots: ['workbench.panel'],
+      requiresBackendRows: ['ext:community/feature'],
+    },
     invalid: [
       {},
       { entry: '' },
+      { entry: 'client.js', requiresBackendRows: ['ext:feature', 'ext:feature'] },
+      { entry: 'client.js', requiresBackendRows: ['bad\0row'] },
+      { entry: 'client.js', requiresBackendRows: Array.from({ length: 33 }, (_, i) => `row-${i}`) },
       { entry: 'dist/client/index.js', extra: true },
       { entry: 'dist/client/index.js', styles: ['x'], services: 'not-an-array' },
     ],
@@ -8523,6 +8564,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'DiagnosticsEventsResult',
   },
   '_agnes/v1/session.list': { fileId: AGNES_ID, params: 'SessionListParams', result: 'PageSessionMeta' },
+  '_agnes/v1/session.groups': {
+    fileId: AGNES_ID,
+    params: 'SessionGroupsParams',
+    result: 'SessionGroupsResult',
+  },
   '_agnes/v1/workspace.list': {
     fileId: AGNES_ID,
     params: 'WorkspaceListParams',
@@ -9322,6 +9368,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
+  '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
   '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealParams as Sample,
@@ -9406,6 +9453,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/extension.readOperation': ServiceSamples.ProfileServiceReceipt as Sample,
   '_agnes/v1/profile.decisions.list': ServiceSamples.ProfileDecisionsListResult as Sample,
   '_agnes/v1/profile.decisions.answer': SESSION_SAMPLES.DecisionCommandReceipt as Sample,
+  '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsResult!,
   '_agnes/v1/admin.credentials.delete': {
     note: 'Metadata-only response',
     valid: {},

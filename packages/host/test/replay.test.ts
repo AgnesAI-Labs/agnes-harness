@@ -758,7 +758,8 @@ describe('L1 replay corpus', () => {
   })
 
   for (const f of fixtures) {
-    it(f.id, async () => {
+    // Recovery cases assemble two complete Hosts; keep their budget separate from single-turn cases.
+    it(f.id, f.kill || f.reopen ? { timeout: 60_000 } : {}, async () => {
       const cwd = scratch(f.workspace)
       const denyPaths = f.denyPaths
       const artifacts = new Map<string, Uint8Array>()

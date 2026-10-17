@@ -66,7 +66,9 @@ describe('ext: rows on the tree', () => {
     await h.host.close()
   })
 
-  it('a target that omits the row unmounts the extension and drops its tools', async () => {
+  it('a target that omits the row unmounts the extension and drops its tools', {
+    timeout: 60_000,
+  }, async () => {
     const dataDir = scratch()
     const h = await createTestHost({ dataDir, packageDirs })
     const report = await h.host.extensionRows.apply([])

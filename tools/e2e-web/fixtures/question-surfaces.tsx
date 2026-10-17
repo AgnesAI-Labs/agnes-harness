@@ -9,14 +9,16 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { questionSurface } from '../../../packages/base/extensions/interaction/src/question.js'
-import { IntelligentUiClient } from '../../../packages/web/src/intelligent-ui/client.js'
+import { Dock } from '../../../packages/web/src/workbench/dock.js'
+import { IntelligentUiClient } from '../../../packages/web-conversation/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
   IntelligentPanel,
   type UiPlacementBinding,
-} from '../../../packages/web/src/intelligent-ui/placements.js'
-import type { IntelligentUiServer } from '../../../packages/web/src/intelligent-ui/types.js'
-import { Dock } from '../../../packages/web/src/workbench/dock.js'
+} from '../../../packages/web-conversation/src/intelligent-ui/placements.js'
+import { QuestionDock } from '../../../packages/web-conversation/src/intelligent-ui/question-dock.js'
+import { attachIntelligentBinding } from '../../../packages/web-conversation/src/intelligent-ui/turn-views.js'
+import type { IntelligentUiServer } from '../../../packages/web-conversation/src/intelligent-ui/types.js'
 
 // Synthetic authenticated server; production placements/client. No provider or real execution.
 const key = 'question-surface-fixture'
@@ -130,6 +132,7 @@ const binding: UiPlacementBinding = {
   },
   approval: () => {},
 }
+attachIntelligentBinding(binding)
 workbenchPanels.register({
   id: 'intelligent-ui',
   order: 1,
@@ -150,6 +153,7 @@ function Fixture() {
         )}
       </div>
       <div className="conversation-shell">
+        <QuestionDock />
         <IntelligentInline binding={binding} />
         <output data-testid="fixture-requests">{JSON.stringify(state.requests)}</output>
         <button

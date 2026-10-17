@@ -1,4 +1,5 @@
-import type { AuxiliaryModelSlots, ModelInputLimits, ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import type { ModelInputLimits, ModelSettings, ThinkingLevel } from '@agnes/protocol'
+import type { SessionAuxiliarySnapshot } from '@agnes/web-ui'
 
 export type ModelPickerOption = {
   id: string
@@ -36,7 +37,7 @@ export type ModelPickerState = {
 
 export type ModelPickerProps = {
   state: ModelPickerState
-  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>

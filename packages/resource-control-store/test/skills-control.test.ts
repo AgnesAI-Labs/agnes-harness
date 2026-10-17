@@ -24,6 +24,7 @@ type TestResult = Readonly<{
   operationId: string
   state: string
   items: readonly Readonly<{ resourceId: string; revision: string; name?: string }>[]
+  nextCursor?: string
   skillRoots?: readonly Readonly<{
     rootKey: string
     scope: string
@@ -77,6 +78,58 @@ afterEach(async () => {
 })
 
 describe('Skill resource control', () => {
+  it('persists an isolated load failure for list/get and clears it after a successful reload', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-load-failure-'))
+    const item = candidate('broken')
+    const lastSafeError = { code: 'SKILL_ATTACHMENTS_LIMIT', message: 'Skill attachment budget exceeded.' }
+    let broken = true
+    const service = testService(
+      createSkillResourceStore({
+        directory,
+        scope,
+        adapter: {
+          refresh: async () => [
+            {
+              ...item,
+              descriptor: {
+                ...item.descriptor,
+                ...(broken ? { actual: 'unavailable' as const, lastSafeError } : {}),
+              },
+            },
+          ],
+          reconcile: async () => [
+            {
+              resourceId: item.descriptor.resourceId,
+              actual: broken ? 'unavailable' : 'disabled',
+              ...(broken ? { lastSafeError } : {}),
+            },
+          ],
+        },
+      }),
+    )
+    for (const failed of [true, false]) {
+      broken = failed
+      const receipt = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: `failure-${failed}` },
+        authority,
+      )
+      expect(await settled(service, receipt.operationId)).toMatchObject({ state: 'succeeded' })
+      const result = await service.call(
+        '_agnes/v1/resources.get',
+        { profile, resourceId: item.descriptor.resourceId },
+        authority,
+      )
+      const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
+      if (failed) {
+        expect(result).toMatchObject({ actual: 'unavailable', lastSafeError })
+        expect(listed.items).toContainEqual(expect.objectContaining({ lastSafeError }))
+      } else {
+        expect(result).toMatchObject({ actual: 'disabled' })
+        expect(result).not.toHaveProperty('lastSafeError')
+      }
+    }
+  })
   it('keeps Host capability/actual observations private while making refresh/trust/desired idempotent', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-skill-control-'))
     const item = candidate()
@@ -158,6 +211,83 @@ describe('Skill resource control', () => {
 })
 
 describe('ResourceControlStore admission barrier', () => {
+  it('reads current runtime Skills without persisting control records and expires changed pages', async () => {
+    const { createResourceControlStore } = await import('../src/index.js')
+    directory = await mkdtemp(join(tmpdir(), 'agnes-runtime-skill-view-'))
+    let unavailable = false
+    let runtime = Array.from({ length: 101 }, (_, index) => ({
+      ...candidate(`runtime-${index}`).descriptor,
+      resourceId: `skill/runtime/runtime/${hash(`runtime-${index}`)}`,
+      sourceIdentity: {
+        scope: 'runtime' as const,
+        rootKey: 'runtime' as const,
+        sourceId: hash(`runtime-${index}`),
+      },
+      priority: 450,
+      actual: 'ready' as const,
+      desired: 'enabled' as const,
+      trust: 'trusted' as const,
+    }))
+    const store = createResourceControlStore({
+      directory,
+      scope,
+      skills: {
+        view: async ({ skills }) => {
+          if (unavailable) throw new Error('worker unavailable')
+          return [...skills, ...runtime]
+        },
+        refresh: async () => [],
+        reconcile: async () => [],
+      },
+    })
+    const service = testService(createResourceControlService(store))
+    const first = await service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority)
+    expect(first.items).toHaveLength(100)
+    expect(first.skillRoots).toContainEqual({ rootKey: 'runtime', scope: 'runtime', state: 'ready' })
+    const cursor = first.nextCursor
+    expect(cursor?.length).toBeLessThanOrEqual(256)
+    expect(
+      (await service.call('_agnes/v1/resources.list', { profile, kind: 'skill', cursor }, authority)).items,
+    ).toHaveLength(1)
+    const item = first.items[0]
+    if (!item) throw new Error('missing runtime Skill')
+    expect(
+      await service.call('_agnes/v1/resources.get', { profile, resourceId: item.resourceId }, authority),
+    ).toMatchObject(item)
+    await expect(
+      service.call(
+        '_agnes/v1/resources.desired.set',
+        {
+          profile,
+          resourceId: item.resourceId,
+          expectedRevision: item.revision,
+          state: 'disabled',
+          config: { kind: 'none' },
+          clientId: 'client',
+          commandId: 'disable-runtime',
+        },
+        authority,
+      ),
+    ).rejects.toMatchObject({ data: { code: 'SKILL_MANAGED_BY_PLUGIN' } })
+    expect(await store.skills.workerControl(profile)).toEqual({
+      priorities: {},
+      removed: [],
+      desired: [],
+      trust: [],
+    })
+    runtime = runtime.slice(1)
+    await expect(
+      service.call('_agnes/v1/resources.list', { profile, kind: 'skill', cursor }, authority),
+    ).rejects.toMatchObject({ data: { code: 'RESOURCE_CURSOR_STALE' } })
+    runtime = []
+    expect(
+      (await service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority)).items,
+    ).toEqual([])
+    unavailable = true
+    await expect(
+      service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority),
+    ).rejects.toThrow()
+  })
   it('notifies session lifecycle only after a successful durable resource snapshot publication', async () => {
     const { createResourceControlStore } = await import('../src/index.js')
     directory = await mkdtemp(join(tmpdir(), 'agnes-resource-session-refresh-'))
@@ -682,6 +812,7 @@ describe('Skill root persistence and workspace binding', () => {
       createSkillResourceStore({
         directory,
         scope,
+        resolveWorkspaceId: async (id) => id ?? firstId,
         adapter: {
           refresh: async ({ workspaceId }) =>
             workspaceId === secondId
@@ -738,6 +869,26 @@ describe('Skill root persistence and workspace binding', () => {
     )
     expect(listedA.items.map((item) => item.name)).toEqual(['alpha'])
     expect(listedB.items.map((item) => item.name)).toEqual(['beta'])
+    expect(
+      await service.call(
+        '_agnes/v1/resources.get',
+        {
+          profile,
+          resourceId: second.descriptor.resourceId,
+        },
+        authority,
+      ),
+    ).toMatchObject({ name: 'beta', workspaceId: secondId })
+    expect(
+      await service.call(
+        '_agnes/v1/resources.get',
+        {
+          profile,
+          resourceId: first.descriptor.resourceId,
+        },
+        authority,
+      ),
+    ).toMatchObject({ name: 'alpha', workspaceId: firstId })
   })
 
   it('loads a v2 journal without roots and writes v4 after the next refresh', async () => {

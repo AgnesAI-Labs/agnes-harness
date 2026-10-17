@@ -110,3 +110,15 @@ export class ClaimDenied extends SdkError {
     this.reason = reason
   }
 }
+
+/** The SDK still owns this submission; clients must not restore it as a fresh send. */
+export type UnresolvedSubmission = {
+  sessionId: string
+  commandId: string
+  state: 'pending' | 'needs-confirmation'
+}
+export function unresolvedSubmission(error: unknown): UnresolvedSubmission | undefined {
+  return error instanceof Error
+    ? (error as Error & { submission?: UnresolvedSubmission }).submission
+    : undefined
+}

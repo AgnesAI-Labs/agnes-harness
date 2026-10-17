@@ -1,6 +1,42 @@
 # agnes/schedule
 
-Official scheduled tasks. `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` are `defineTool` tools. They store a catalog row and a daemon Job; the Web automation page and `_agnes/v1/schedules.list|upsert|archive|control` read and change the same catalog.
+Official scheduled tasks. `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` are `defineTool` tools. They call the public scheduling service, which stores a catalog row and a daemon Job; the Web automation page and `_agnes/v1/schedules.list|upsert|archive|control` read and change the same catalog.
+
+## Scheduling service
+
+The official tools use `SchedulingService` from `@agnes/extension-api` exclusively. There is no
+worker table handle or package-specific Host injection. A third-party tool can use the same service:
+
+```ts
+import { schedulingKind } from '@agnes/extension-api'
+
+// Inside an admitted tool callback; list "providers" in the plugin's inject array.
+const scheduling = await ctx.providers.bindOwn(schedulingKind)
+const { schedules } = await scheduling.list()
+```
+
+Copy the six `schedulingServiceCapabilities` into `agnes.plugins[].capabilities.services` in the
+package manifest, and obtain the corresponding service lease grants. The descriptors must match
+exactly, including query/effect kind. Binding requires all six grants, and every operation rechecks
+the declaration, lease and callback lifetime. Bind within each callback; retaining a facade does
+not extend its authority. An unavailable daemon bridge fails closed.
+
+| Method | Result and scope |
+| --- | --- |
+| `list({ includeArchived?, recentDeliverySince? }?)` | Calling session's tasks; optional latest successful delivery notification to this session |
+| `get(id)` | Owned task or `undefined` |
+| `upsert({ id?, title, prompt, selector, target? })` | Create/update; omitted target keeps an existing target or defaults to this session |
+| `control({ id, action })` | Run, pause or resume an owned task |
+| `archive({ id })` | Archive an owned task; inaccessible IDs return `deleted: false` |
+| `runs(id)` | Recent runs of an owned task; inaccessible IDs return an empty list |
+
+The Host supplies session and workspace identity. Tasks bound to this session or originating from
+it are accessible; other sessions' tasks are hidden. New-session targets must use this workspace
+and pass the daemon's existing target checks. Caller-supplied ownership fields cannot grant access.
+Semantic validation errors retain their stable schedule code in the RPC error's `data.code`;
+update/control refusals retain `{ updated: false, code }`. Existing `_agnes/v1/schedules.*` RPCs and
+the automation page keep their current contracts. The scheduling engine remains daemon-owned and
+cannot be registered or selected by plugins.
 
 ## Targets
 

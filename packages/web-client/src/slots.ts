@@ -1,6 +1,6 @@
 /** Public slot contracts. The ledger implementation lives in @agnes/web-slots. */
 
-import type { UINode, WebClientModuleSlotName } from '@agnes/protocol'
+import type { UINode, UITurn, WebClientModuleSlotName } from '@agnes/protocol'
 import type {
   ChainSelection,
   SlotSpec as CoreSlotSpec,
@@ -70,6 +70,8 @@ export interface DshSlotProps<
 }
 
 export interface DshOwnerMap {
+  'conversation.chat.turnTail': { turn: UITurn; nodes: readonly UINode[] }
+
   'conversation.chat.node': {
     node: UINode
     nodeId: string

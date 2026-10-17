@@ -9,7 +9,7 @@ import {
   type ToolDef,
 } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
-import { inspectJsonData, validateAgainst, validateSlotPayload } from '@agnes/protocol'
+import { inspectJsonData, type JsonValue, jcs, validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
 import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
 import type { DisposerBag } from './disposers.js'
@@ -223,6 +223,14 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       registering,
       ports: () => ports,
       checkGrants(required) {
+        for (const cap of required?.services ?? [])
+          if (
+            !caps.services?.some(
+              (item) => jcs(item as unknown as JsonValue) === jcs(cap as unknown as JsonValue),
+            ) ||
+            !lease.allows('service', cap.name)
+          )
+            refuse('service not declared or granted')
         if (required?.events && (!caps.events || !lease.allows('event', '')))
           refuse('service requires events grant')
         for (const name of required?.projections ?? [])

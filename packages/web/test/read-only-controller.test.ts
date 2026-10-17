@@ -1,6 +1,7 @@
 import { SESSION_VERSION_CODES } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { createReadOnlyController } from '../src/app/read-only-controller.js'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { appReadOnly } from '../src/app-notices.js'
 
 vi.mock('../src/app-notices.js', () => ({ appReadOnly: { show: vi.fn(), clear: vi.fn() } }))
@@ -34,7 +35,7 @@ function setup() {
     render: vi.fn(),
     renderControls: vi.fn(),
     run: vi.fn(),
-    selection: 1,
+    sessionBinding: new SessionBindingOwner(),
     t: (key: string) => key,
     windowAtStart: false,
   }
@@ -48,14 +49,14 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 it('keeps the newest selection when a late loadEarlier response of the previous record arrives', async () => {
   const { context, controller, pending } = setup()
-  const a = controller.show('A', refusal, 1)
+  const a = controller.show('A', refusal, context.sessionBinding.capture())
   await tick()
   pending.get('A:200')?.(view('A'))
   await a
   const earlier = controller.loadEarlier()
   await tick()
-  context.selection = 2
-  const b = controller.show('B', refusal, 2)
+  context.sessionBinding.begin()
+  const b = controller.show('B', refusal, context.sessionBinding.capture())
   await tick()
   pending.get('B:200')?.(view('B'))
   await b
@@ -69,9 +70,9 @@ it.each([refusal, isolationRefusal])(
   'does not let a late response resurrect read-only state after the selection was cleared (%j)',
   async (error) => {
     const { context, controller, pending } = setup()
-    const a = controller.show('A', error, 1)
+    const a = controller.show('A', error, context.sessionBinding.capture())
     await tick()
-    context.selection = 2
+    context.sessionBinding.begin()
     controller.clear()
     pending.get('A:200')?.(view('A'))
     await a
@@ -91,7 +92,7 @@ it('shows isolation-refused history with only a new-session action, including ea
         localized: { en: 'unsafe', 'zh-CN': 'unsafe' },
       },
     },
-    1,
+    context.sessionBinding.capture(),
   )
   await tick()
   pending.get('A:200')?.(view('A'))
@@ -116,7 +117,7 @@ it.each([
   { data: { code: 'E_FORBIDDEN', reason: 'session-execution-record-invalid' } },
 ])('does not treat unrelated refusals as readable history (%j)', async (error) => {
   const { context, controller, pending } = setup()
-  expect(await controller.show('A', error, 1)).toBe(false)
+  expect(await controller.show('A', error, context.sessionBinding.capture())).toBe(false)
   expect(pending.size).toBe(0)
   expect(context.readOnly).toBeUndefined()
 })
@@ -128,8 +129,8 @@ it.each(['current', 'changed', 'cleared'])(
     context.client.session.view = async () => {
       throw new Error('unreadable history')
     }
-    const shown = controller.show('A', isolationRefusal, 1)
-    if (selection === 'changed') context.selection = 2
+    const shown = controller.show('A', isolationRefusal, context.sessionBinding.capture())
+    if (selection === 'changed') context.sessionBinding.begin()
     if (selection === 'cleared') controller.clear()
     expect(await shown).toBe(selection !== 'current')
     expect(context.readOnly).toBeUndefined()
@@ -138,8 +139,8 @@ it.each(['current', 'changed', 'cleared'])(
 )
 
 it('states which rows a truncated record shows', async () => {
-  const { controller, pending } = setup()
-  const shown = controller.show('A', refusal, 1)
+  const { context, controller, pending } = setup()
+  const shown = controller.show('A', refusal, context.sessionBinding.capture())
   await tick()
   pending.get('A:200')?.(view('A', true, { fromSeq: 901, throughSeq: 1500 }))
   await shown
@@ -150,14 +151,14 @@ it('states which rows a truncated record shows', async () => {
 
 it('labels opening history as unverified and ignores a preview that finishes after live admission', async () => {
   const { context, controller, pending } = setup()
-  const preview = controller.preview('A', 1)
+  const preview = controller.preview('A', context.sessionBinding.capture())
   await tick()
   pending.get('A:200')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
   controller.clear()
   expect(context.readOnly).toBeUndefined()
-  const late = controller.preview('B', 1)
+  const late = controller.preview('B', context.sessionBinding.capture())
   await tick()
   controller.clear()
   context.projection = { sessionId: 'live' }

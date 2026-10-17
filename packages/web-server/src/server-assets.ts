@@ -94,6 +94,7 @@ export function fileName(requestUrl: string): string {
   } catch {
     throw new Error('invalid Web request path')
   }
+  if (pathname === '/favicon.ico') return 'favicon.png'
   const file =
     pathname === '/'
       ? 'index.html'

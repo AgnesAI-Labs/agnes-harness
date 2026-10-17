@@ -171,3 +171,7 @@ plugin-runtime 提供所有 kind 的 defineX helper，extension-api/testkit 提�
 每项携带 `enabled` 和 `reasons[{source:{layer,name},rule}]`，被排除的项保留拒绝原因。单值选择携带来源，`codePin` 保留安全的 generation/package 身份。空 tools/MCP/Skills 列表沿用默认值；显式空 policy allowlist、surface 或 shell module/slot 列表禁止全部。MCP 的本地名与稳定公开工具名使用同一 server 选择；共享 MCP resource bridge 检查 `server` 参数。
 
 `Session.capabilities()` 读取现有鉴权 `_agnes/v1/session.tools` 结果中的可选 `capabilities`（旧服务返回 `undefined`），`agh tools --json` 输出同一结果。`PluginAdminApi.composition(preset?)` 经现有 composition GET/POST 路径读取 `CompositionCapabilitySnapshot`，`agh config dump` 也使用该结果。顶层能力集是静态 desired 检查：未传入目录时，依赖目录的列表保持空；`sessions[].capabilities` 记录实际运行会话事实。客户端切换前保留 `sessions[].toolGroups` 展示兼容 adapter，它不参与授权。
+
+只读后端状态依赖可以注册 `workspaceStateKind`，它不授予执行、账本或写入端口。Base 的计划后端提供 `plan-mode` 状态提供方，审批策略在清单中声明可选的 `planMode` 依赖；卸载客户端视图不会移除审批约束。计划操作使用普通服务：`plan.status` 查询和 `plan.command` 效果。后者接受 `/plan` 命令语法，并要求已认证的人工工作区控制授权。
+
+调用方可以通过 `Host.resolveService(sessionId, names)` 解析整个服务合同。解析使用会话锁定的 Host，并要求同一所有者提供全部所需服务；缺失或存在歧义的合同不授予权限。后续调用仍执行原有服务授权、主体、工作区及查询／效果检查。共享任务界面由此支持社区后端，无需按包名分发。

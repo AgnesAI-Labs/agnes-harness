@@ -7,6 +7,7 @@ import {
 } from '@agnes/host-extensions/resources/skill-preload'
 import { safeSkillReadRoots } from '@agnes/host-extensions/resources/skill-read-roots'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { skillRuntimeOwnerMatches } from '@agnes/resource-control-runtime'
 import { compositionSkillOwners, compositionSkills } from '../profile/composition-visibility.js'
 import type { AssemblyContext } from './context.js'
 import type { ProcessServices } from './process-services.js'
@@ -16,6 +17,7 @@ import type { ProcessServices } from './process-services.js'
  * mutable fields move together: `refreshSkillRow` swaps them and restores them on failure.
  */
 export type SkillState = {
+  readonly bind: (input: SkillRuntimeInput | undefined) => SkillRuntimeInput | undefined
   readonly owners: ReturnType<typeof compositionSkillOwners>
   /** What the daemon supplied, before composition filtering. */
   available: SkillRuntimeInput | undefined
@@ -38,14 +40,25 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
   const { deps, dataDir, workspaceInvocationFor } = ctx
   const { publicationDispatch } = ctx.gates
   const owners = compositionSkillOwners(deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [])
-  const preload = compositionSkills(deps.skillResources, ctx.profile.composition ?? {}, owners)
+  const bind = (input: SkillRuntimeInput | undefined) => {
+    const scoped = deps.skillContribution
+      ? (input?.scopeRuntime?.((owner) => {
+          const tree = ctx.live.pluginTree.peek()
+          return !!tree && skillRuntimeOwnerMatches(owner, tree.root, (rowId) => tree.tree.fiber(rowId))
+        }) ?? input)
+      : input
+    return compositionSkills(scoped, ctx.profile.composition ?? {}, owners)
+  }
+  const preload = bind(deps.skillResources)
   const state: SkillState = {
+    bind,
     owners,
     available: deps.skillResources,
     preload,
     active: preload,
     liveInput: Object.freeze({
       list: () => state.active?.list() ?? [],
+      invocation: (resourceId) => state.active?.invocation?.(resourceId),
       read: (resourceId, session) =>
         state.active?.read(resourceId, session) ?? { ok: false, code: 'NOT_FOUND' },
       readFile: (resourceId, revision, path, session) =>
@@ -59,6 +72,7 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
     }),
     discovery: Object.freeze({
       list: () => state.preload?.list() ?? [],
+      invocation: (resourceId) => state.preload?.invocation?.(resourceId),
       runInWorkspace: <T>(sessionKey: string, invoke: () => Promise<T>): Promise<T> => {
         const current = state.preload
         if (!current) return invoke()

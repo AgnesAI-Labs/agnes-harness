@@ -11,7 +11,6 @@ import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
-import { applyPlanCommand } from './plan-mode.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { TuiThemeName } from './theme.js'
@@ -38,7 +37,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind' },
   { name: '/compact', args: '[instructions]', descriptionKey: 'commands.compact' },
   { name: '/goal', args: '[create|edit|pause|resume|complete|clear] ...', descriptionKey: 'commands.goal' },
-  { name: '/plan', args: '[on|off|instruction]', descriptionKey: 'commands.plan' },
+  { name: '/plan', args: '[on|off|status|pending|instruction]', descriptionKey: 'commands.plan' },
   { name: '/preset', args: '<name>', descriptionKey: 'commands.preset' },
   { name: '/theme', args: '[light|dark|mono]', descriptionKey: 'commands.theme' },
   {
@@ -87,7 +86,7 @@ export type SessionChoice = {
   sessionId: string
   createdAt: string
   lastSeq: number
-  preset: string
+  preset: string | null
   title?: string
 }
 
@@ -338,7 +337,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return {}
     }
     case '/plan':
-      return applyPlanCommand(app.cwd, line.trim())
+      return c.call<{ active: boolean; text: string }>('_agnes/v1/admin.plan', {
+        cwd: app.cwd,
+        sessionId: s.id,
+        line: line.trim(),
+      })
     case '/compact': {
       const instructions = args.join(' ').trim()
       const outcome = await s.compactDetailed(instructions || undefined)

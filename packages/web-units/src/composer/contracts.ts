@@ -1,5 +1,4 @@
 import type {
-  AuxiliaryModelSlots,
   ContentBlock,
   ModelSettings,
   ThinkingLevel,
@@ -8,7 +7,7 @@ import type {
   userImagePolicy,
 } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import type { FileMention } from '@agnes/web-ui'
+import type { FileMention, SessionAuxiliarySnapshot } from '@agnes/web-ui'
 import type { ComponentType, ReactNode } from 'react'
 import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
@@ -18,6 +17,7 @@ export type ModelPickerOption = {
   id: string
   route: string
   label?: string
+  contextWindow?: number
   /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
   thinkingLevelMap?: Record<string, string>
 }
@@ -48,7 +48,7 @@ export type ModelPickerProps = {
   onSelect(option: ModelPickerOption): Promise<boolean>
   /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
-  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
 }
 
@@ -68,6 +68,8 @@ export type PermissionPickerProps = {
 
 /** Host adapters: this package has no dependency on the Web application or its pickers. */
 export interface ComposerDependencies {
+  loadHint?: import('./hint.js').HintLoader
+  subscribeHintInvalidation?: (listener: () => void) => () => void
   /** Locale-bound translate (host injects `LocaleService#t`); called during render, never cached. */
   translate: Translate
   /** Trigger plus popover for the session model; the host owns the catalog and the confirmed choice. */
@@ -106,7 +108,12 @@ export interface ComposerView {
   hasSession: boolean
   /** `action` is the one-click way out of the state the hint describes: switch to this model. */
   hint: { kind: 'shortcut' | 'state'; text: string; action?: { label: string; model: ModelPickerOption } }
-  input: { disabled: boolean; placeholder: string; exampleHint?: boolean }
+  input: {
+    disabled: boolean
+    placeholder: string
+    exampleHint?: boolean
+    hintScope?: import('./hint.js').HintScope
+  }
   loading: boolean
   model: ModelPickerState
   modelSettings?: {
@@ -163,7 +170,7 @@ export interface ComposerRegionOptions {
   prepareUploadSession?(): Promise<string>
   onDraftChange(value: string): void
   onError(error: unknown): void
-  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>

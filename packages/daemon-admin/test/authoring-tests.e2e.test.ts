@@ -66,6 +66,36 @@ it('does not accept missing or failing tests, lifecycle success claims or privat
       state: 'failed',
       count: 0,
     })
+    const skill = candidateTemplate('skill', 'review-demo')
+    const malformed = skill.map((file) =>
+      file.path.endsWith('/SKILL.md')
+        ? {
+            ...file,
+            content: '---\nname: demo\ndescription: valid\ndisable-model-invocation: definitely\n---\nbody',
+          }
+        : file,
+    )
+    expect(await runAuthoringTests(directory, malformed, new AbortController().signal)).toMatchObject({
+      state: 'failed',
+      count: 0,
+      output: expect.stringContaining('Static Skill metadata'),
+    })
+    const document = skill.find((file) => file.path.endsWith('/SKILL.md'))
+    if (!document) throw new Error('missing Skill document')
+    const skillDir = dirname(document.path)
+    const oversized = [
+      ...skill,
+      ...Array.from({ length: 33 }, (_, i) => ({
+        path: `${skillDir}/references/${i}.md`,
+        content: `attachment ${i}`,
+      })),
+    ]
+    writeFiles(directory, oversized)
+    expect(await runAuthoringTests(directory, oversized, new AbortController().signal)).toMatchObject({
+      state: 'failed',
+      count: 0,
+      output: expect.stringContaining('attachment count, size or traversal budget exceeded'),
+    })
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

@@ -103,29 +103,7 @@ export function SettingsStaticPane({
                 </span>
               </SettingsItem>
               <SettingsItem label={text('settings-shell.fontScale', '字号')}>
-                <fieldset
-                  className="appearance-choices agnes-settings-fieldset"
-                  aria-label={text('settings-shell.fontScale', '字号')}
-                >
-                  <SettingsChoice
-                    type="radio"
-                    name="agnes-font-scale"
-                    value="small"
-                    label={<span>{text('settings-shell.fontSmall', '小')}</span>}
-                  />
-                  <SettingsChoice
-                    type="radio"
-                    name="agnes-font-scale"
-                    value="normal"
-                    label={<span>{text('settings-shell.fontNormal', '标准')}</span>}
-                  />
-                  <SettingsChoice
-                    type="radio"
-                    name="agnes-font-scale"
-                    value="large"
-                    label={<span>{text('settings-shell.fontLarge', '大')}</span>}
-                  />
-                </fieldset>
+                <div id="font-scale-choices" />
               </SettingsItem>
               <SettingsItem
                 label={text('settings.appearance.language', '语言')}

@@ -2,6 +2,8 @@ import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import {
   Button,
   Dialog,
+  fallbackT,
+  reportSuccess,
   SettingsBlock,
   SettingsChoice,
   SettingsItem,
@@ -111,6 +113,7 @@ export function PermissionDefaults({
       if (lifetime.current?.signal.aborted) return
       window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
       setSnapshot(value as Snapshot)
+      reportSuccess('permission-defaults', fallbackT('ui.defaultsSaved'))
       setConfirm(false)
       setFailedPreset(undefined)
     } catch {

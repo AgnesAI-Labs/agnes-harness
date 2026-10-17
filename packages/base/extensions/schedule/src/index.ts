@@ -1,28 +1,19 @@
+import { schedulingKind } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
-import {
-  openScheduleCatalog,
-  openSeamScheduleDb,
-  type ScheduleCatalog,
-  type ScheduleView,
-} from './catalog.js'
+import type { ScheduleView } from './rules.js'
 import { createScheduleTools } from './tools.js'
-
-type ScheduleTable = Parameters<typeof openSeamScheduleDb>[0]
-export type ScheduleTableStore = { table(name: string): ScheduleTable }
 
 function clip(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max)
 }
 
-export function createScheduleExtension(tables?: ScheduleTableStore) {
-  const catalog: ScheduleCatalog | undefined = tables
-    ? openScheduleCatalog(openSeamScheduleDb(tables.table('schedules')))
-    : undefined
+export function createScheduleExtension() {
   return defineAgnesPlugin({
-    inject: ['tools', 'slots'],
+    inject: ['tools', 'slots', 'providers'],
     apply(plugin: Context) {
-      const disposers = createScheduleTools(catalog).map((tool) =>
+      const open = () => plugin.providers.bindOwn(schedulingKind)
+      const disposers = createScheduleTools(open).map((tool) =>
         plugin.tools.register({
           ...tool,
           async execute(args: Parameters<typeof tool.execute>[0], ctx) {
@@ -33,8 +24,8 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
             const target =
               details?.id ??
               (details?.deleted && 'id' in args && typeof args.id === 'string' ? args.id : undefined)
-            if (catalog && details && (target || details.schedules)) {
-              const row = target ? catalog.read(target) : undefined
+            if (details && (target || details.schedules)) {
+              const row = target ? await (await open()).get(target) : undefined
               const rows =
                 details.schedules?.filter((row) => row.status === 'active') ??
                 (row &&
@@ -72,8 +63,10 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
       )
       disposers.push(
         plugin.slots.register('notification', async (ctx) => {
-          if (ctx.trigger.kind !== 'turn_end' || !catalog) return null
-          const note = catalog.recentDelivery(ctx.session.key, Date.now() - 120_000)
+          if (ctx.trigger.kind !== 'turn_end') return null
+          const { recentDelivery: note } = await (await open()).list({
+            recentDeliverySince: Date.now() - 120_000,
+          })
           return note ? { title: clip(note.title, 256), body: clip(note.prompt, 4096) } : null
         }),
       )

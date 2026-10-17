@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -200,7 +200,9 @@ describe('fetchSource', () => {
     expect(fetched.integrity).toBe(hashDirectory(into))
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('acme/pkg-a')
     const outside = join(dir, 'absolute')
-    await fetchSource(parseSource('file:' + join(fixtures, 'pkg-a')), outside, { cwd: dir })
+    await fetchSource(parseSource('file:' + join(fixtures, 'pkg-a').split(sep).join('/')), outside, {
+      cwd: dir,
+    })
     expect(hashDirectory(outside)).toBe(fetched.integrity)
   })
 
@@ -405,7 +407,7 @@ describe('fetchSource', () => {
     ).resolves.toMatchObject({ dir: into, integrity, version: '1.2.3' })
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('@agnes/base')
     const localArchive = join(dir, 'local-tarball')
-    await fetchSource(parseSource('file:' + tarball), localArchive, { cwd: fixtures })
+    await fetchSource(parseSource('file:' + tarball.split(sep).join('/')), localArchive, { cwd: fixtures })
     expect(readFileSync(join(localArchive, 'package.json'), 'utf8')).toContain('@agnes/base')
   })
 

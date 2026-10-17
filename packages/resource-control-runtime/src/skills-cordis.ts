@@ -44,6 +44,7 @@ declare module '@agnes/cordis' {
 }
 
 type SkillRegistry = ReturnType<typeof createSkillCandidateRegistry>
+const serviceRegistries = new WeakMap<SkillCordisService, SkillRegistry>()
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
 
@@ -120,10 +121,41 @@ export function bindSkillRuntimeRows(root: object, lookup: SkillRuntimeRowLookup
 
 function ownerFor(ctx: Context): RuntimeSkillOwner {
   const scope = treeOwner(ctx)
-  const rowId = rowLookups.get(ctx.root)?.lookup(ctx.fiber)?.rowId
-  const fiberId = ctx.fiber.uid
-  if (rowId === undefined || rowId.length === 0 || fiberId === null) return { scope }
-  return { scope, rowId, fiberId: String(fiberId) }
+  const lookup = rowLookups.get(ctx.root)
+  let fiber = ctx.fiber
+  while (fiber.uid !== null) {
+    const rowId = lookup?.lookup(fiber)?.rowId
+    if (rowId && fiber.uid !== null) return { scope, rowId, fiberId: String(fiber.uid) }
+    if (fiber === fiber.parent.fiber) break
+    fiber = fiber.parent.fiber
+  }
+  return { scope }
+}
+
+/** Match the published tree and exact row installation, including when old/new fibers overlap. */
+export function skillRuntimeOwnerMatches(
+  owner: RuntimeSkillOwner,
+  root: object,
+  rowFiber: (rowId: string) => Fiber | undefined,
+): boolean {
+  if (treeOwners.get(root) !== owner.scope || !owner.rowId || !owner.fiberId) return false
+  const fiber = rowFiber(owner.rowId)
+  return fiber?.uid !== null && fiber?.uid !== undefined && String(fiber.uid) === owner.fiberId
+}
+
+/** Host-only read of registered candidates belonging to its published tree, before name arbitration. */
+export function readRuntimeSkillCandidates(
+  service: SkillCordisService,
+  root: object,
+  rowFiber: (rowId: string) => Fiber | undefined,
+): readonly SkillCandidate[] {
+  const registry = serviceRegistries.get(service)
+  if (!registry) throw new Error('runtime Skill registry is unavailable')
+  const owners = registry.runtimeOwners()
+  return [...registry.runtimeMap()].flatMap(([id, candidate]) => {
+    const owner = owners.get(id)
+    return owner && skillRuntimeOwnerMatches(owner, root, rowFiber) ? [structuredClone(candidate)] : []
+  })
 }
 
 export function createSkillCordisService(registry: SkillRegistry): SkillCordisService {
@@ -189,5 +221,6 @@ export function createSkillCordisService(registry: SkillRegistry): SkillCordisSe
     },
   }
   Object.defineProperty(service, symbols.tracker, { value: { property: 'ctx' } })
+  serviceRegistries.set(service, registry)
   return service
 }

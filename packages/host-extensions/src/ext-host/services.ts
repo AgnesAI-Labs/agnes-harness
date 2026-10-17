@@ -143,6 +143,23 @@ export class ServiceRegistry {
     return this.entries.get(`${extension}/${name}`)
   }
 
+  /** A composition must select one owner for the complete service contract. Ambiguity fails closed. */
+  binding(names: readonly string[]): { extension: string; packageId: string } | undefined {
+    if (!names.length) return undefined
+    const candidates = this.entries
+      .values()
+      .filter(
+        (entry) =>
+          entry.capability.name === names[0] &&
+          names.every((name) => this.resolve(entry.owner, name)?.packageId === entry.packageId),
+      )
+    if (candidates.length > 1) throw new ExtensionError('E_SERVICE_DEF', 'ambiguous service binding')
+    const entry = candidates[0]
+    if (!entry) return undefined
+    entry.assertAlive()
+    return { extension: entry.owner, packageId: entry.packageId }
+  }
+
   registrations(owner: string): string[] {
     return this.entries
       .values()

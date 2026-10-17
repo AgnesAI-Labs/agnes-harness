@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as owner from '@agnes/package-manager'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -49,7 +49,7 @@ it('new owner and unchanged Host API produce identical lock bytes and installed 
     ] as const)
       expect(manager[method], method).toBeTypeOf('function')
     await manager.add(dir, 'file:./pkg-a')
-    const lock = owner.readLock(dir, { profile: dir.split('/').at(-1) as string, agnesVersion: '0.1.0' })
+    const lock = owner.readLock(dir, { profile: basename(dir), agnesVersion: '0.1.0' })
     expect(lock.packages['acme/pkg-a']?.state.enabled).toBe(false)
     expect(lock.resolvedProfileHash).toBe(profile.hash)
     // The builtin profile evolves independently of the package-manager byte-format contract.
@@ -58,7 +58,7 @@ it('new owner and unchanged Host API produce identical lock bytes and installed 
       readFileSync(owner.lockPath(dir), 'utf8')
         .replaceAll(lock.profile, '<profile>')
         .replace(profile.hash, '<resolved-profile-hash>')
-        .replaceAll(realpathSync(fixture), '<fixture>'),
+        .replaceAll(JSON.stringify(join(realpathSync(fixture), 'pkg-a')), JSON.stringify('<fixture>/pkg-a')),
     )
     const installed = owner.packageDir(dir, lock.profile, 'acme/pkg-a')
     trees.push(

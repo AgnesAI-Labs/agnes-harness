@@ -7,9 +7,11 @@ import {
   type PluginSchema,
   PluginSchemaFields,
   pluginSchemaDefault,
+  reportSuccess,
   SettingsSelect,
   SettingsState,
   SettingsToolbar,
+  StatusMessage,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -119,11 +121,19 @@ export function PluginConfigPanel({
       const result = await api.save(id, entry.rowId, draft, snapshot.revision)
       if (!alive.current) return
       setIssues(result.issues)
-      setNotice(result.reason)
+      setNotice(result.ok && result.reason === 'saved' ? '' : result.reason)
       setRefusalReason(result.reason === 'refused' ? (result.refusalReason ?? '') : '')
-      if (result.ok) {
-        const latest = await api.get(id)
-        if (alive.current) {
+      if (result.ok && result.reason === 'saved') {
+        reportSuccess(
+          `plugin-config:${id}`,
+          t('saved'),
+          result.reload === 'next-session' ? { kind: 'new-sessions', message: t('next') } : undefined,
+        )
+        const latest = await api.get(id).catch(() => {
+          if (alive.current) setNotice('refreshFailed')
+          return undefined
+        })
+        if (alive.current && latest) {
           if (latest.revision === result.revision) {
             setSnapshot(latest)
             setDraft(latest.entries.find((item) => item.rowId === entry.rowId)?.value)
@@ -139,12 +149,16 @@ export function PluginConfigPanel({
   return (
     <section data-testid="plugin-config-panel" aria-label={t('config')}>
       {notice && (
-        <p role="status" data-testid="plugin-config-notice">
+        <StatusMessage
+          kind={notice === 'pending' ? 'pending' : 'error'}
+          data-testid="plugin-config-notice"
+          action={{ label: t('reload'), onSelect: () => setLoadVersion((value) => value + 1) }}
+        >
           {t(notice)}
           {notice === 'refused' && refusalReason && (
             <span data-testid="plugin-config-refusal-reason"> {refusalReason}</span>
           )}
-        </p>
+        </StatusMessage>
       )}
       {!snapshot && !notice && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {snapshot && !entry && <p>{t('empty')}</p>}
@@ -225,6 +239,7 @@ export function PluginConfigPanel({
               <Button
                 htmlType="submit"
                 data-testid="plugin-config-save"
+                loading={saving}
                 disabled={!canSave || saving || validating || issues.length > 0 || invalidJson.size > 0}
               >
                 {t('save')}

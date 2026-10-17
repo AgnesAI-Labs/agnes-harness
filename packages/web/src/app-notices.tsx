@@ -3,10 +3,14 @@ import {
   Banner,
   Button,
   createExternalStore,
+  FeedbackHost,
+  installFeedbackSink,
   Notifications,
   useDocumentLanguage,
   useStoreSelector,
 } from '@agnes/web-ui'
+import { useEffect, useState } from 'react'
+import { createOperationFeedback } from './operation-feedback.js'
 import type { ReconnectPhase } from './reconnect.js'
 
 type RecoveryNotice = { message: string; error: string; disabled: boolean; retry(): void; create(): void }
@@ -19,6 +23,10 @@ type NoticeSnapshot = {
   action?: NoticeAction
   actions?: readonly NoticeAction[]
 }
+const operationFeedback = createOperationFeedback()
+const feedback = operationFeedback.store
+installFeedbackSink(operationFeedback.sink)
+const dismissFeedback = operationFeedback.dismiss
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
 const errors = createExternalStore<readonly { id: number; message: string }[]>([])
 let nextError = 0
@@ -92,11 +100,25 @@ export function setConnectionNotice(connection: ConnectionState) {
 }
 
 export function AppNotice() {
+  const [noticeContainer, setNoticeContainer] = useState<Element | null>(null)
+  useEffect(() => {
+    const dialog = document.getElementById('config')
+    const sync = () =>
+      setNoticeContainer(
+        dialog?.hasAttribute('open') ? document.getElementById('settings-operation-notices') : null,
+      )
+    const observer = new MutationObserver(sync)
+    if (dialog) observer.observe(dialog, { attributes: true, attributeFilter: ['open'] })
+    sync()
+    return () => observer.disconnect()
+  }, [])
   const view = useStoreSelector(store, (value) => value)
+  const outcomes = useStoreSelector(feedback, (value) => value)
   const notifications = useStoreSelector(errors, (value) => value)
   useDocumentLanguage()
   return (
     <>
+      <FeedbackHost snapshot={outcomes} onDismiss={dismissFeedback} noticeContainer={noticeContainer} />
       <Notifications
         items={notifications}
         onDismiss={dismissError}

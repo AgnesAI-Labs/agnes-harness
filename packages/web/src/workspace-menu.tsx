@@ -40,7 +40,7 @@ export function WorkspaceMenu({
     trigger.current?.focus()
   }
   const perform = async (kind: 'reveal' | 'remove') => {
-    if (!action || pending || (kind === 'remove' && running)) return
+    if (!action || disabled || trigger.current?.disabled || pending || (kind === 'remove' && running)) return
     setPending(true)
     setError('')
     try {
@@ -55,6 +55,19 @@ export function WorkspaceMenu({
       setPending(false)
     }
   }
+  const button = (
+    <Button
+      ref={trigger}
+      appearance="ghost"
+      className="workspace-menu-trigger"
+      disabled={disabled || pending}
+      aria-label={t('workspace.menu.label', { name })}
+      aria-haspopup="menu"
+      aria-expanded={false}
+    >
+      <Icon name="ellipsis" />
+    </Button>
+  )
   return (
     <>
       <div className="workspace-row-actions">
@@ -69,56 +82,53 @@ export function WorkspaceMenu({
         >
           <Icon name="compose" />
         </Button>
-        <Menu
-          tone="neutral"
-          label={t('workspace.menu.label', { name })}
-          trigger={
-            <Button
-              ref={trigger}
-              appearance="ghost"
-              className="workspace-menu-trigger"
-              disabled={disabled || pending}
-              aria-label={t('workspace.menu.label', { name })}
-            >
-              <Icon name="ellipsis" />
-            </Button>
-          }
-          items={[
-            {
-              id: 'new',
-              label: t('workspace.menu.new'),
-              icon: <Icon name="compose" />,
-              disabled: newDisabled,
-              onSelect: newSession,
-            },
-            {
-              id: 'reveal',
-              label: t(
-                platform === 'darwin'
-                  ? 'session.menu.openFinder'
-                  : platform === 'win32'
-                    ? 'session.menu.openExplorer'
-                    : 'session.menu.openFolder',
-              ),
-              icon: <Icon name="folder-open" />,
-              disabled: !action || !workspace.available || pending,
-              onSelect: () => void perform('reveal'),
-            },
-            {
-              id: 'remove',
-              label: t('workspace.menu.remove'),
-              icon: <Icon name="x" />,
-              danger: true,
-              dividerBefore: true,
-              disabled: !action || !workspace.workspaceId || pending,
-              onSelect: () => {
-                setError('')
-                setServerRunning(0)
-                setConfirm(true)
+        {disabled || pending ? (
+          button
+        ) : (
+          <Menu
+            tone="neutral"
+            label={t('workspace.menu.label', { name })}
+            trigger={button}
+            items={[
+              {
+                id: 'new',
+                label: t('workspace.menu.new'),
+                icon: <Icon name="compose" />,
+                disabled: newDisabled,
+                onSelect: () => {
+                  if (!disabled && !newDisabled && !trigger.current?.disabled) newSession()
+                },
               },
-            },
-          ]}
-        />
+              {
+                id: 'reveal',
+                label: t(
+                  platform === 'darwin'
+                    ? 'session.menu.openFinder'
+                    : platform === 'win32'
+                      ? 'session.menu.openExplorer'
+                      : 'session.menu.openFolder',
+                ),
+                icon: <Icon name="folder-open" />,
+                disabled: !action || !workspace.available || pending,
+                onSelect: () => void perform('reveal'),
+              },
+              {
+                id: 'remove',
+                label: t('workspace.menu.remove'),
+                icon: <Icon name="x" />,
+                danger: true,
+                dividerBefore: true,
+                disabled: !action || !workspace.workspaceId || pending,
+                onSelect: () => {
+                  if (disabled || trigger.current?.disabled) return
+                  setError('')
+                  setServerRunning(0)
+                  setConfirm(true)
+                },
+              },
+            ]}
+          />
+        )}
       </div>
       {error && !confirm && (
         <span role="alert" className="workspace-action-error">

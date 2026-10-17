@@ -257,16 +257,6 @@ export function SessionNavigation(props: { options: SidebarNavigationOptions; t:
  */
 function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
   const [, redraw] = useState(0)
-  const menuEpoch = JSON.stringify([
-    options.sessions,
-    options.workspaces,
-    [...options.labels],
-    options.currentId,
-    options.disabled,
-    options.newDisabled,
-    options.next,
-    t('session.menu.label'),
-  ])
   // Sessions whose folder is no longer registered collect in a last, unnamed-workspace folder.
   const groups = new Map<string, SidebarNavigationOptions['sessions']>()
   for (const workspace of options.workspaces) groups.set(workspace.path, [])
@@ -276,6 +266,11 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
     if (row.archived) continue
     count += 1
     ;(groups.get(row.cwd ?? '') ?? groups.get(''))?.push(row)
+  }
+  if (options.paging) {
+    groups.clear()
+    for (const group of options.paging.groups) groups.set(group.groupId, group.items)
+    count = options.paging.groups.reduce((sum, group) => sum + group.total, 0)
   }
   const item = (row: SidebarNavigationOptions['sessions'][number]): ConversationItemType => {
     const title =
@@ -304,7 +299,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
           </Button>
           {options.action && (
             <SessionMenu
-              key={menuEpoch}
+              key={row.sessionId}
               id={row.sessionId}
               title={title}
               disabled={options.disabled ?? false}
@@ -319,16 +314,40 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
   }
   return (
     <>
+      {options.paging && (!options.paging.ready || options.paging.error) && (
+        <p role={options.paging.error ? 'alert' : 'status'}>
+          {options.paging.error ??
+            t(
+              options.paging.groups.some((group) => group.initializationError)
+                ? 'nav.initializationFailed'
+                : 'nav.initializing',
+            )}{' '}
+          <Button size="small" disabled={options.paging.loading} onClick={options.refreshGroups}>
+            {t('nav.retry')}
+          </Button>
+        </p>
+      )}
       <XProvider>
         {[...groups].map(([path, sessions]) => {
           if (!sessions.length && !path) return null
-          const workspace = options.workspaces.find((entry) => entry.path === path)
+          const page = options.paging?.groups.find((group) => group.groupId === path)
+          if (page?.groupId === 'unassigned' && page.total === 0) return null
+          const workspace = options.workspaces.find((entry) =>
+            page ? entry.workspaceId === page.workspaceId : entry.path === path,
+          )
           const name = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
-          const collapsed = collapsedGroups.has(path)
+          const collapsed = page ? !page.opened : collapsedGroups.has(path)
           const expanded = expandedGroups.has(path)
-          const sorted = sortSessionsByRecency(sessions)
-          const { shown, hidden } = shownSessions(sorted, expanded, options.currentId)
-          const toggleable = sorted.length > RECENT_SESSIONS
+          const sorted = page ? sessions : sortSessionsByRecency(sessions)
+          const { shown, hidden } = page
+            ? { shown: sessions, hidden: Math.max(0, page.total - sessions.length) }
+            : shownSessions(sorted, expanded, options.currentId)
+          const toggleable = page
+            ? (!page.stale || page.loading) &&
+              page.loaded &&
+              (!!page.next || page.items.length > RECENT_SESSIONS)
+            : sorted.length > RECENT_SESSIONS
+          const listId = `workspace-sessions-${encodeURIComponent(path)}`
           return (
             <section key={path} className="workspace-group">
               <div className="workspace-heading-row">
@@ -336,8 +355,13 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   appearance="ghost"
                   className="workspace-heading"
                   aria-expanded={!collapsed}
+                  aria-controls={listId}
                   title={workspace?.path ?? t('nav.noWorkspaceTitle')}
                   onClick={() => {
+                    if (page) {
+                      options.groupAction?.(path, 'toggle')
+                      return
+                    }
                     if (collapsed) collapsedGroups.delete(path)
                     else collapsedGroups.add(path)
                     saveCollapsedGroups()
@@ -364,29 +388,55 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   />
                 )}
               </div>
-              <div className="workspace-sessions" hidden={collapsed}>
-                {sessions.length > 0 && (
+              <div id={listId} className="workspace-sessions" hidden={collapsed} aria-busy={page?.loading}>
+                {!collapsed && sessions.length > 0 && (
                   <Conversations
                     className="session-conversations"
                     {...(options.currentId ? { activeKey: options.currentId } : {})}
                     items={shown.map(item)}
                   />
                 )}
-                {toggleable && (
+                {!collapsed && page && (
+                  <>
+                    {page.loading && !page.loaded && <p role="status">{t('nav.loading')}</p>}
+                    {!page.ready && <p role="status">{t('nav.initializing')}</p>}
+                    {(page.error || (page.stale && !page.loading)) && (
+                      <p role={page.error ? 'alert' : 'status'}>
+                        {page.error ?? t('nav.updated')}{' '}
+                        <Button
+                          size="small"
+                          disabled={page.loading}
+                          onClick={() => options.groupAction?.(path, page.stale ? 'reload' : 'retry')}
+                        >
+                          {t(page.stale ? 'nav.reload' : 'nav.retry')}
+                        </Button>
+                      </p>
+                    )}
+                    {page.loaded && page.items.length === 0 && !page.loading && <p>{t('nav.empty.title')}</p>}
+                  </>
+                )}
+                {!collapsed && toggleable && (
                   <Button
                     appearance="ghost"
                     className="session-list-toggle"
                     data-testid="workspace-sessions-toggle"
                     data-workspace={path}
-                    aria-expanded={expanded}
+                    aria-expanded={page ? page.items.length > RECENT_SESSIONS : expanded}
+                    disabled={page?.loading ?? false}
                     onClick={() => {
+                      if (page) {
+                        options.groupAction?.(path, page.next ? 'more' : 'collapse')
+                        return
+                      }
                       if (expanded) expandedGroups.delete(path)
                       else expandedGroups.add(path)
                       saveExpandedGroups()
                       redraw((value) => value + 1)
                     }}
                   >
-                    {expanded ? t('nav.showLess') : t('nav.showMore', { count: hidden })}
+                    {(page ? !page.next : expanded)
+                      ? t('nav.showLess')
+                      : t('nav.showMore', { count: hidden })}
                   </Button>
                 )}
               </div>
@@ -394,7 +444,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
           )
         })}
       </XProvider>
-      {count === 0 && (
+      {count === 0 && (!options.paging || (options.paging.ready && !options.paging.error)) && (
         <EmptyState
           className="session-list-empty"
           icon={<Icon name="message-square" />}
@@ -402,7 +452,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
           description={t('nav.empty.description')}
         />
       )}
-      {options.next && options.loadMore && (
+      {!options.paging && options.next && options.loadMore && (
         <Button
           disabled={options.disabled ?? false}
           onClick={() => {

@@ -4,6 +4,8 @@ import {
   Banner,
   Button,
   MetaText,
+  reportSuccess,
+  resolveFeedback,
   SettingsDetails,
   SettingsFooter,
   SettingsGroup,
@@ -14,6 +16,7 @@ import {
   SettingsSection,
   SettingsState,
   SettingsTechnicalDetails,
+  StatusMessage,
   Tag,
 } from '@agnes/web-ui'
 import { useState } from 'react'
@@ -158,7 +161,7 @@ export function GenerationsPanel({
     try {
       const value = await api.migrateSession(sessionId.trim())
       setResult({ previous: value.previousGenerationId, current: value.generationId })
-      setMessage(value.changed ? 'migrated' : 'alreadyCurrent')
+      reportSuccess('session-migration', t(value.changed ? 'migrated' : 'alreadyCurrent'))
       setConfirming(false)
       // Migration remains successful if the separate catalog refresh is unavailable.
       try {
@@ -302,21 +305,21 @@ export function GenerationsPanel({
             {t('migrationConfirm')} <code>{sessionId.trim()}</code>
           </Banner>
         )}
-        {message &&
-          (message === 'migrationFailed' ? (
-            <Banner tone="error" role="alert">
-              {t(message)}
-            </Banner>
-          ) : (
-            <SettingsState tone="success" role="status" data-testid="session-migration-status">
-              {t(message)}{' '}
-              {result && (
-                <span data-testid="session-migration-result">
-                  <code>{short(result.previous)}</code> → <code>{short(result.current)}</code>
-                </span>
-              )}
-            </SettingsState>
-          ))}
+        {message && (
+          <StatusMessage
+            kind="error"
+            action={{ label: t('confirmMigration'), onSelect: () => void migrate(), busy }}
+          >
+            {t(message)}
+          </StatusMessage>
+        )}
+        {result && (
+          <SettingsState data-testid="session-migration-status">
+            <span data-testid="session-migration-result">
+              <code>{short(result.previous)}</code> → <code>{short(result.current)}</code>
+            </span>
+          </SettingsState>
+        )}
         <SettingsDetails title={t('migrateManual')} data-testid="migration-manual" compact>
           <SettingsGroup>
             <SettingsItem label={t('sessionKey')} labelId="migration-session-key-label">
@@ -416,7 +419,11 @@ export function LocalPluginsPanel({
     setConfirming(undefined)
     try {
       await api.trustWorkspace(deployment.deployDir, deployment.trustHash)
-      setMessage('trusted')
+      reportSuccess('plugin-folders', t('trusted'), {
+        kind: 'rescan-required',
+        message: t('rescanRequired'),
+        action: { label: t('reloadLocal'), onSelect: () => void reload() },
+      })
       // The trust stands even if the separate catalog refresh is unavailable.
       await onRefresh().catch(() => undefined)
     } catch {
@@ -432,8 +439,12 @@ export function LocalPluginsPanel({
     setFailed(false)
     try {
       await api.reloadLocal()
-      await onRefresh()
-      setMessage('rescanned')
+      resolveFeedback('plugin-folders')
+      reportSuccess('plugin-folders', t('rescanned'))
+      await onRefresh().catch(() => {
+        setMessage('reloadRefreshFailed')
+        setFailed(true)
+      })
     } catch {
       setMessage('reloadFailed')
       setFailed(true)

@@ -1,11 +1,11 @@
 import { lstatSync, realpathSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fault, hash } from './content.js'
 
 const fold = (path: string): string => path.toLowerCase()
 export function inside(root: string, path: string): boolean {
   const rel = relative(fold(root), fold(path))
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !rel.startsWith(sep))
+  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 export function missing(error: unknown): boolean {
   return (error as { code?: string }).code === 'ENOENT'

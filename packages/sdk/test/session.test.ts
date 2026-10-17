@@ -654,7 +654,7 @@ describe('Session', () => {
     })
   })
 
-  it.each(['sendNow', 'removeQueued'] as const)(
+  it.each(['sendNow', 'removeQueued', 'promoteQueued'] as const)(
     'does not replay a definitive %s refusal when attaching again',
     async (kind) => {
       const f = fakeEndpoint({

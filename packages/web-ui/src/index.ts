@@ -48,6 +48,7 @@ export {
   type StoreOptions,
   useStoreSelector,
 } from './external-store.js'
+export * from './feedback.js'
 export * from './first-run.js'
 export * from './intelligent-ui/index.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
@@ -61,7 +62,7 @@ export { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/a
 export { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.js'
 export { FIRST_RUN_NAMESPACE, firstRunCatalog } from './locales/first-run.js'
 export type { LocaleCatalog, LocaleDictionary, Translate } from './locales/index.js'
-export { WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
+export { fallbackT, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
 export {
   MODEL_SETTINGS_LOCALE_NAMESPACE,
   modelSettingsLocaleCatalog,

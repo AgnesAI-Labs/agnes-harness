@@ -57,6 +57,22 @@ Exports may contain prompts, tool arguments, paths, and business data. Review th
 
 ## Interruptions and restarts
 
+If a submitted steer, follow-up or queue control has no confirmed result, the SDK retains its
+original command ID. Reconnect retries a pending command once. An uncertain acknowledgement,
+`UNCERTAIN` error or another failed replay moves it to `needs-confirmation`, stops automatic
+retries and allows the remaining commands and session subscriptions to recover. Definitive
+refusals clear the command. `session.pendingCommands()` includes both pending and
+needs-confirmation entries; `session.checkCommand(commandId)` explicitly checks using the
+original payload and identity. Numeric success results are unchanged; submission errors carry
+`submission: { sessionId, commandId, state }` while the SDK owns the command.
+
+Web shows **Result unconfirmed. Please check before sending again.** (「结果未确认，请核对」)
+and offers **Check result**. It does not restore the SDK-owned message as a fresh draft, and
+blocks another send until the result is known. With browser storage available, the journal
+survives reload in that tab. Selecting another session does not transfer its unresolved commands.
+Queue promotion changes the existing item into guidance atomically, preserving attachments;
+it never removes the item and compensates with another message.
+
 A stop request, process exit, expired approval, and completed run are different events. Core recovers through persistent events and a state machine. Unknown side effects may require human confirmation. Recovery cannot guarantee exactly-once operations in external systems, and resending the same natural-language request is not a recovery protocol.
 
 After a daemon failure, preserve the home and error, inspect `daemon status`, restart with the same profile, and check history before continuing. Do not delete SQLite, owner, or audit records to force a restart. Stop the relevant instance before backing up related data from its home. Copying a database file while it is being written is not a reliable backup.
@@ -93,7 +109,7 @@ Import the bundle with `node agnes.mjs import session.agnes --key NEW_SESSION_KE
 
 Sending while the agent is working queues a steer for the next step boundary, after the active model call or tool batch. Edit or withdraw it above the composer before delivery. **Interrupt now** on a queued message cooperatively stops the active step and runs that message next; committed effects remain committed and unknown outcomes remain unknown.
 
-**Pause** waits for the next boundary; **Resume** continues the same turn. Reloading the browser or cold restarting the daemon keeps the pause. **Cancel** ends the turn and returns queued steers to the composer. The trace's **Human control facts** shows the actor, time, request and outcome. Controls use the session's pinned Loop generation, including during an upgrade. Unsupported controls are disabled with the pinned Loop's refusal reason.
+**Pause** waits for the next boundary; **Resume** continues the same turn. Reloading the browser or cold restarting the daemon keeps the pause. If shutdown already ended the turn, Resume clears the retained pause so queued messages can run; it does not replay the ended turn. **Cancel** ends the turn and returns queued steers to the composer. The trace's **Human control facts** shows the actor, time, request and outcome. Controls use the session's pinned Loop generation, including during an upgrade. Unsupported controls are disabled with the pinned Loop's refusal reason.
 
 SDK: `session.controls()` reads capabilities and state; `steer(content)`, `editQueued(itemId, content)`, `removeQueued(itemId)`, `interrupt(itemId)`, `pause()`, `resume()` and `cancel()` use durable commands. A Loop opts in through `LoopFactory.controls`; omission refuses steer, interrupt and pause. Without `afterSeq`, `controls()` returns the latest window of at most 200 facts (`facts[0].seq` is the earliest seq in that window) and sets `factsMore` when the window is full. Use `afterSeq`, starting at 0, to read history.
 

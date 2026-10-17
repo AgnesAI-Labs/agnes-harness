@@ -26,9 +26,9 @@ import {
   INITIAL_VIEW,
   pickerState,
 } from './composer/contracts.js'
-import { useExampleHint } from './composer/example-hint.js'
 import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
+import { useComposerHint } from './composer/hint.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
 import { ReferencePicker } from './reference-picker.js'
@@ -36,7 +36,7 @@ import { ReferencePicker } from './reference-picker.js'
 const INPUT_ATTRIBUTES: SenderInputAttributes = {
   id: 'prompt',
   'data-agnes-region': 'composer-input',
-  'aria-describedby': 'composer-hint',
+  'aria-describedby': 'composer-hint composer-suggestion',
 }
 const AUTO_SIZE = { minRows: 2, maxRows: 8 }
 const SENDER_CLASSES = { content: 'composer-content', footer: 'composer-footer' }
@@ -105,14 +105,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const [focused, setFocused] = useState(false)
   const hasAttachments = attachments.length + pendingCount + uploads.chips.length > 0
-  const example = useExampleHint(
+  const example = useComposerHint(
     examplePrompts,
-    view.input.exampleHint === true &&
-      !view.input.disabled &&
+    view.input.exampleHint === true,
+    !view.input.disabled &&
       !view.loading &&
       !view.sending &&
+      !view.stopping &&
+      view.send.mode === 'idle' &&
       !draft &&
       !hasAttachments,
+    view.input.hintScope,
+    dependencies.loadHint,
+    dependencies.subscribeHintInvalidation,
   )
   const { pause, resume } = example
   useEffect(() => {
@@ -379,6 +384,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onChange={changeDraft}
             onKeyDown={(event) => {
               const native = event.nativeEvent as KeyboardEvent
+              if (event.key === 'Escape' && example.visible && !native.isComposing) {
+                event.preventDefault()
+                example.pause()
+                return false
+              }
               if (
                 event.key === 'Tab' &&
                 !event.shiftKey &&
@@ -416,7 +426,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ) {
                 event.preventDefault()
                 submitAsSteer.current = event.metaKey || event.ctrlKey
-                form.current?.requestSubmit()
+                if (currentDraft().trim() || hasAttachments) form.current?.requestSubmit()
               }
               // One keyboard contract: the host's shortcut decides, never Sender's own Enter rule.
               return false
@@ -558,6 +568,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             void addFiles(files)
           }}
         />
+        <span id="composer-suggestion" className="visually-hidden">
+          {example.complete
+            ? `${example.text} — ${t('composer.example.tab')} ${t('composer.example.adopt')}`
+            : ''}
+        </span>
         <span id="composer-image-hint" className="visually-hidden">
           {imageHint}
         </span>

@@ -44,6 +44,7 @@ export type Assembled = {
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
   profileServices: import('@agnes/host-extensions/profile/runtime').ProfileServiceRuntime
+  serviceBinding: (names: readonly string[]) => { extension: string; packageId: string } | undefined
   callService: ReturnType<typeof serviceInvoker>['call']
   inspectService: ReturnType<typeof serviceInvoker>['inspect']
   prepareService: ReturnType<typeof serviceInvoker>['prepare']

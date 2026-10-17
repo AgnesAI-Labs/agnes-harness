@@ -23,7 +23,9 @@
     "./trace-panel": "./src/trace-panel.ts",
     "./usage": "./src/usage.ts",
     "./conversation-registry": "./src/conversation-registry.tsx",
-    "./workbench": "./src/workbench/register.tsx"
+    "./workbench/terminal": "./src/workbench/terminal-client.ts",
+    "./workbench": "./src/workbench/register.tsx",
+    "./session-actions": "./src/registered-card.tsx"
   },
   "scripts": {
     "test": "pnpm --dir ../.. exec vitest run packages/web-conversation/test --maxWorkers=1",

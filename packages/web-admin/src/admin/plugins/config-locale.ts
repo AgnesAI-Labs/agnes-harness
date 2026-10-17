@@ -2,7 +2,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const PLUGIN_CONFIG_ADMIN_NAMESPACE = '@agnes/web/plugin-configuration'
 export const pluginConfigAdminCatalog: LocaleCatalog = {
   en: {
-    fieldError: 'Invalid field ({code}).',
+    fieldError: 'Check this field.',
     permissions: 'Permissions & trust',
     versions: 'Versions',
     details: 'Overview',
@@ -15,6 +15,7 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
     save: 'Save configuration',
     reload: 'Reload configuration',
     saved: 'Configuration saved.',
+    refreshFailed: 'Configuration saved. The latest view could not be loaded. Reload configuration.',
     invalid: 'Fix the highlighted fields. The previous configuration remains active.',
     conflict:
       'Configuration changed elsewhere. Your draft is preserved. Reload to review the latest revision before saving.',
@@ -31,7 +32,7 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
     revision: 'Revision: {revision}',
   },
   'zh-CN': {
-    fieldError: '字段不合法（{code}）。',
+    fieldError: '请检查此字段。',
     permissions: '权限与信任',
     versions: '版本',
     details: '概览',
@@ -44,6 +45,7 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
     save: '保存配置',
     reload: '重新读取配置',
     saved: '配置已保存。',
+    refreshFailed: '配置已保存。最新视图读取失败，请重新读取配置。',
     invalid: '请修正标出的字段；先前配置保持生效。',
     conflict: '配置已被其他操作修改，草稿已保留。请重新读取并核对最新版本后保存。',
     refused: '插件拒绝了这份配置；先前配置保持生效。',

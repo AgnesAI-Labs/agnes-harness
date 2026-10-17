@@ -77,3 +77,42 @@ profile 模块使用 `ctx.profile.examples.list/inspect/enable/read/stop/inspect
 场景资源声明在 `client.assets` 中，相对于与 entry 相同的描述文件目录。支持 glTF/GLB、二进制缓冲、PNG/JPEG/WebP、KTX2 和 WebAssembly。安装拒绝路径穿越和越界符号链接；不可变快照绑定每个文件的哈希和长度，读取时再次校验。代码继续受单文件 4 MiB、合计 16 MiB 限制；场景资源单文件最多 32 MiB、完整快照最多 128 MiB。不支持或超限的资源拒绝发布。解码器执行仍须满足部署 CSP，能够下发 wasm 文件不代表浏览器能够执行。示例应明确展示场景加载失败，不得据此伪报设备已就绪。 启动器的私有资产读取支持相同的 32 MiB 资源上限，并计入 base64 编码开销。本地和 SEA 打包会检查声明的客户端文件、字面量 `new URL(..., import.meta.url)`、CSS URL 及 glTF 缓冲区/图像引用是否存在于交付 payload；优先使用字面量资产 URL，使漏文件在构建时失败。
 
 profile 的 primary 声明可添加 `navigation: { title, titles?, icon, order }`。`titles` 按界面语言提供标签，`title` 为回退值。宿主收到已启用且就绪的名册后即呈现入口，首次打开才加载模块；模块仍通过原有的 `ctx.homeEntries.register`、声明与归属校验接管同一入口。省略元数据时保留立即加载行为。失败或撤销会立即移除入口；元数据不授予权限。
+
+## 替换交付物呈现
+
+生命周期为 `profile` 的客户端模块可调用 `ctx.presentationRoles.register({ role: 'deliverables', priority: 0, mount })`。`mount` 必须返回同步清理函数，撤销它注册的全部 slot、卡片、面板和订阅。角色沿用 single slot 的优先级规则：数值最小者生效，同优先级拒绝注册，先卸下旧提供方再挂载新提供方。默认 `@agnes/deliverables-ui` 使用 100。名册撤权在异步模块清理之前撤销角色；禁用替代插件会恢复默认呈现。角色不授予后台权限。
+
+使用 `@agnes/web-client` 的 `DeliverablesStore(ctx.agnes, ctx.session)`，并随呈现一起 dispose。只读 `DeliverableRecord` 包含 `id`、`sessionId`、`laneId`、来源 owner/调用、可确定时的所属 `turnId`、呈现 `seq`、名称/说明、inline/workbench 位置及现有完整 `ArtifactRef`。同名历史只是展示分组，不证明版本谱系。修改工作区源文件不会改变已交付快照。新交付在现有交付物事件之外持久化工具 `structured` 结果；原有 Intelligent UI 文件列表仍可读取。Intelligent UI 是可选增强：没有渲染器时仍能展示已记录文件的普通列表。
+
+通过 `conversation.chat.turnTail` 注册轮次卡片（owner 为 `{ turn: UITurn, nodes: readonly UINode[] }`），通过 `workbenchPanels` 注册标签，通过 `conversationCards` 的 `artifact-file` 类别渲染文件组件（data 为 `{ file, sessionId, laneId }`）。匹配 `intelligent-ui.surface` 类别、data 为 `UiSurfaceRecord` 的卡片表示由插件接管整个 surface，通用视图面板会让出它。角色 mount 应返回上述全部注销函数，不依赖异步卸载清除标签。打开和下载必须通过 `ctx.resources.documents/files`，携带记录中的 lane 和完整 artifact 引用，不得把源路径当下载 URL。
+
+参见[独立画廊示例](../../examples/community/deliverables-gallery/README.md)。它不导入 Web 宿主代码，展示当前 profile 启用、历史恢复、接管及回退。
+
+### 目标与问答呈现
+
+默认捆绑包 `@agnes/goal-ui`、`@agnes/interaction-ui` 分别以优先级 100 注册
+`goal`、`interaction` 呈现角色；替换界面通常使用 0。角色卸载会同步撤销卡片、面板、
+输入命令、问题 dock、答案回执及折叠策略。预算准入与执行授权仍由平台后端负责。
+
+客户端描述可以声明 `requiresBackendRows: ["ext:vendor/feature"]`，表示可选的呈现依赖。
+只有最后成功的运行目标（首次成功激活前使用 desired）中全部依赖后端行存在且启用，
+该客户端才进入名册。缺失或未观察到的依赖默认拒绝挂载；此条件不授予任何后端权限。
+依赖关闭期间仍完整保留不可变快照中的全部声明和资源，重新启用、重启时可以恢复。
+官方描述依赖 `ext:agnes/goal`、`ext:agnes/intelligent-ui`；宿主对所有包应用同一规则。
+
+公开 `readGoal(timeline)` 返回校验后的 `GoalView`（带可选 `GoalSnapshot` 的
+`StatusLinePayload`），优先使用实时 `status.line`，包括明确的清除和错误；没有实时填充时
+读取历史 slot 节点。`goalCommand(input)` 仅生成通过普通会话输入提交的人类命令，
+不授权自动执行，也不改变平台预算。
+
+通用卡片输入包括：`session.actions` 的 `{timeline, disabled, command(text)}`、
+`composer.before-input`、`conversation.turn-tail` 和 `conversation.turn-actions` 的
+`{turn, nodes}`，以及 `conversation.node` 的 `UINode`（`context.data` 为原生回退内容）。
+卡片可通过 `hiddenNodeIds(nodes, turns)` 折叠已被自身可见回执替代的节点；卸载后恢复原生节点。
+`composerCommands` 接收 `{id, order, route({text, sessionId, busy})}`：返回 `handled`
+表示呈现操作已处理，`steer` 请求正常后端准入的 steer 路径，`undefined` 保留普通输入流程。
+命令与卡片应在同一角色内注册、撤销。
+
+`ctx.presentation` 提供可选的呈现导航 `revealConversation`、`focusApproval`，以及经过
+宿主认证的自定义组件名册读取、订阅 `listComponents`、`subscribeComponents`。
+问题和表单继续使用已有 SDK 的授权 UI 协议；回答不能作为执行许可。

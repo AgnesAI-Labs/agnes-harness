@@ -16,24 +16,17 @@ export function candidateTemplate(template: string, name: string): { path: strin
           version: '0.1.0',
           type: 'module',
           license: 'Apache-2.0',
-          exports: './index.mjs',
           agnes: {
             kinds: ['skills'],
-            plugins: [
+            contributions: [
               {
-                apiRange: '^4.0.0',
-                id: `ext:${name}/main`,
-                export: 'main',
-                inject: ['skills'],
-                capabilities: {},
+                kind: 'skill',
+                id: `${name}/main`,
+                path: `./skills/${skill}/SKILL.md`,
               },
             ],
           },
         }),
-      },
-      {
-        path: 'index.mjs',
-        content: `import {readFileSync} from 'node:fs'\nimport {defineAgnesPlugin} from '@agnes/plugin-runtime'\nexport const main=defineAgnesPlugin({apply(ctx){ctx.skills.register({name:${JSON.stringify(skill)},description:'A reviewed reusable method.',body:readFileSync(new URL('./skills/${skill}/SKILL.md',import.meta.url),'utf8')})}})\n`,
       },
       {
         path: `skills/${skill}/SKILL.md`,
@@ -41,7 +34,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
       },
       {
         path: 'test/skill.test.mjs',
-        content: `import {test} from 'node:test'\nimport assert from 'node:assert/strict'\nimport {readFileSync} from 'node:fs'\ntest('skill is readable Markdown with a name, description and body',()=>{const text=readFileSync('skills/${skill}/SKILL.md','utf8');assert.match(text,/^---\\nname: ${skill}\\ndescription: .+\\n---\\n\\n\\S/);assert.ok(text.length<196608)})\n`,
+        content: `import {test} from 'node:test'\nimport assert from 'node:assert/strict'\nimport {readFileSync} from 'node:fs'\ntest('skill uses the static document loader',()=>{const pkg=JSON.parse(readFileSync('package.json','utf8'));assert.deepEqual(pkg.agnes.contributions,[{kind:'skill',id:${JSON.stringify(name + '/main')},path:'./skills/${skill}/SKILL.md'}]);assert.equal(pkg.agnes.plugins,undefined);const text=readFileSync('skills/${skill}/SKILL.md','utf8');assert.match(text,/^---\\r?\\n/);assert.ok(Buffer.byteLength(text)<=131072)})\n`,
       },
     ]
   if (!creatorAssets.templateNames.includes(template as (typeof creatorAssets.templateNames)[number]))

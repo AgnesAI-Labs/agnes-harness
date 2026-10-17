@@ -27,6 +27,8 @@
     "./storage/command-journal": "./src/storage/command-journal.ts",
     "./storage/composite-target-store": "./src/storage/composite-target-store.ts",
     "./storage/lister": "./src/storage/lister.ts",
+    "./storage/sidebar-sessions": "./src/storage/sidebar-sessions.ts",
+    "./storage/sidebar-memory": "./src/storage/sidebar-memory.ts",
     "./storage/session-ownership": "./src/storage/session-ownership.ts",
     "./storage/session-preferences": "./src/storage/session-preferences.ts",
     "./storage/source-auth-rotation": "./src/storage/source-auth-rotation.ts",

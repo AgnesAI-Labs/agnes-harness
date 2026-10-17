@@ -1,6 +1,12 @@
 import type { Duplex } from 'node:stream'
 import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
-import type { EventEnvelope, LoopSelection, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
+import type {
+  DaemonNotice,
+  EventEnvelope,
+  LoopSelection,
+  McpStatus,
+  RuntimeTargetArtifact,
+} from '@agnes/protocol'
 import type {
   RequestFrame,
   SessionMethod,
@@ -12,6 +18,7 @@ import type {
 } from './frames.js'
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import { packageManageReplyError } from './package-manage-error.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
 export type WorkerCommandOptions = {
@@ -110,6 +117,7 @@ export class WorkerLink {
     private readonly options: {
       onEvent: (sessionKey: string, event: EventEnvelope) => void | Promise<void>
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
+      onDecisionsChanged?: (detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail']) => void
       onResourceStatus?: (serverId: string, status: McpStatus) => void
       onRequest: (frame: RequestFrame, signal: AbortSignal) => Promise<unknown>
       onLog?: (
@@ -181,6 +189,7 @@ export class WorkerLink {
       'event',
       'preview',
       'resourceStatus',
+      'decisionsChanged',
       'reply',
       'request',
       'session.interrupted',
@@ -259,6 +268,23 @@ export class WorkerLink {
       this.options.onPreview?.(sessionKey, update)
       return
     }
+    if (frame.kind === 'decisionsChanged') {
+      const { detail } = frame
+      if (
+        !detail ||
+        typeof detail.profile !== 'string' ||
+        !detail.principal ||
+        typeof detail.principal.id !== 'string' ||
+        typeof detail.principal.org !== 'string'
+      )
+        throw new Error('invalid decision invalidation')
+      // Reconstruct the signal, never forward unrecognized worker payload fields.
+      this.options.onDecisionsChanged?.({
+        profile: detail.profile,
+        principal: { id: detail.principal.id, org: detail.principal.org },
+      })
+      return
+    }
     if (frame.kind === 'resourceStatus') {
       this.options.onResourceStatus?.(frame.serverId, frame.status)
       return
@@ -326,18 +352,20 @@ export class WorkerLink {
             requestId: frame.requestId,
             sessionKey: frame.sessionKey,
             error:
-              frame.method === 'mcp-manage' || frame.method === 'plugin-manage'
-                ? {
-                    code:
-                      typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
-                        ? (error as { data: { code: string } }).data.code
-                        : 'HELPER_MANAGEMENT_FAILED',
-                    message:
-                      'The AGH extension operation did not finish. Check its status or policy in Settings.',
-                  }
-                : frame.method === 'skill-install'
-                  ? skillInstallReplyError(error)
-                  : { code: 'E_REQUEST', message: String(error) },
+              frame.method === 'plugin-manage'
+                ? packageManageReplyError(error)
+                : frame.method === 'mcp-manage'
+                  ? {
+                      code:
+                        typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
+                          ? (error as { data: { code: string } }).data.code
+                          : 'HELPER_MANAGEMENT_FAILED',
+                      message:
+                        'The AGH extension operation did not finish. Check its status or policy in Settings.',
+                    }
+                  : frame.method === 'skill-install'
+                    ? skillInstallReplyError(error)
+                    : { code: 'E_REQUEST', message: String(error) },
           }),
       )
     this.options.onActivity?.(frame.sessionKey)

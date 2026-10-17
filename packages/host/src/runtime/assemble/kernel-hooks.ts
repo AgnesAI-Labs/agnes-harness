@@ -4,6 +4,7 @@ import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-life
 import { assertCompositionCompatible } from '@agnes/host-common/profile/composition'
 import { capabilityEnabled } from '../profile/session-capabilities.js'
 import { startObservabilityFeed } from '../services/observability-feed.js'
+import { createSessionTasks } from '../sessions/session-tasks.js'
 import type { createCapabilities } from './capabilities.js'
 import type { AssemblyContext } from './context.js'
 import type { createEcosystemContexts } from './ecosystem-context.js'
@@ -79,6 +80,7 @@ export async function startKernelHooks(
       compositionLease?.revoke('host closed')
     })
   }
+  ecosystem.sessionTasks.current = createSessionTasks((ref) => extensionSessions.resolve(ref))
   ecosystem.privacyTrajectory.current = createTrajectoryLifecycle(
     {
       ...deps,

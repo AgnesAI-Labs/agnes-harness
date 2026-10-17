@@ -16,6 +16,7 @@ import {
   Loadable,
   Menu,
   PushPage,
+  reportSuccess,
   SettingsDetails,
   SettingsGroup,
   SettingsInput,
@@ -29,6 +30,7 @@ import {
   SettingsTextArea,
   StateSwitch,
   StatusDot,
+  StatusMessage,
   setResource,
   Tag,
   usePushStack,
@@ -128,6 +130,8 @@ export function TriggersPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const [notice, setNotice] = useState('')
+  const [filtersError, setFiltersError] = useState(false)
+  const [payloadError, setPayloadError] = useState(false)
   useSettingsOverlay(formOpen || !!removing)
   useEffect(() => {
     const abort = new AbortController()
@@ -174,7 +178,13 @@ export function TriggersPanel({
       if (lifetime.current?.signal.aborted) return
       if (refreshed.snapshot)
         setResource<TriggersRead>(TRIGGERS_KEY, { snapshot: refreshed.snapshot, workspaces })
-      setNotice(result.delivery?.status ?? 'saved')
+      if (result.delivery) setNotice(result.delivery.status)
+      else if (input.action === 'configure' || input.action === 'upsert' || input.action === 'delete') {
+        reportSuccess(
+          'triggers',
+          t(input.action === 'delete' ? 'deleted' : input.action === 'configure' ? 'configured' : 'saved'),
+        )
+      }
       if (input.action === 'upsert') nav.back()
       if (input.action === 'delete') setRemoving(undefined)
     } catch {
@@ -237,27 +247,26 @@ export function TriggersPanel({
         actionsHost && createPortal(create, actionsHost)
       )}
       {error && (
-        <SettingsState tone="error" role="alert" data-testid="triggers-error">
+        <StatusMessage
+          kind="error"
+          data-testid="triggers-error"
+          action={{ label: t('refresh'), onSelect: list.reload }}
+        >
           {t('failed')}
-        </SettingsState>
+        </StatusMessage>
       )}
       {notice && (
-        <SettingsState
-          tone={
-            notice === 'saved' || notice === 'accepted'
-              ? 'success'
-              : notice === 'pending' ||
-                  notice === 'disabled' ||
-                  notice === 'duplicate' ||
-                  notice === 'no-rule'
-                ? 'empty'
-                : 'error'
+        <StatusMessage
+          kind={
+            ['accepted', 'pending', 'disabled', 'duplicate', 'no-rule', 'unknown'].includes(notice)
+              ? 'pending'
+              : 'error'
           }
-          role="status"
           data-testid="triggers-notice"
+          action={{ label: t('refresh'), onSelect: list.reload }}
         >
           {t(notice)}
-        </SettingsState>
+        </StatusMessage>
       )}
       <Loadable
         loading={list.loading}
@@ -330,6 +339,7 @@ export function TriggersPanel({
             </Field>
           </div>
           <Button
+            loading={busy}
             data-testid="triggers-configure"
             disabled={!canSave || busy}
             onClick={() => void request({ action: 'configure', config: snapshot.config })}
@@ -489,6 +499,7 @@ export function TriggersPanel({
           className="automation-form"
           onSubmit={(event) => {
             event.preventDefault()
+            setFiltersError(false)
             try {
               void request({
                 action: 'upsert',
@@ -502,7 +513,8 @@ export function TriggersPanel({
                 },
               })
             } catch {
-              setError(true)
+              setFiltersError(true)
+              document.getElementById('trigger-filters')?.focus()
             }
           }}
         >
@@ -616,14 +628,21 @@ export function TriggersPanel({
                 />
               </Field>
             </div>
-            <Field htmlFor="trigger-filters" label={t('filters')}>
+            <Field
+              htmlFor="trigger-filters"
+              label={t('filters')}
+              error={filtersError ? t('jsonError') : undefined}
+            >
               <SettingsTextArea
                 id="trigger-filters"
                 data-testid="trigger-filters"
                 rows={3}
                 value={filters}
                 disabled={!canSave || busy}
-                onChange={(event) => setFilters(event.target.value)}
+                onChange={(event) => {
+                  setFilters(event.target.value)
+                  setFiltersError(false)
+                }}
               />
             </Field>
             {input('secretRef', 'refLabel')}
@@ -659,17 +678,26 @@ export function TriggersPanel({
           summary={t('testSummary')}
           data-testid="trigger-test-details"
         >
-          <Field htmlFor="trigger-sample" label={t('sample')} hint={t('testHelp')}>
+          <Field
+            htmlFor="trigger-sample"
+            label={t('sample')}
+            hint={t('testHelp')}
+            error={payloadError ? t('jsonError') : undefined}
+          >
             <SettingsTextArea
               id="trigger-sample"
               data-testid="trigger-sample"
               rows={6}
               value={payload}
               disabled={busy}
-              onChange={(event) => setPayload(event.target.value)}
+              onChange={(event) => {
+                setPayload(event.target.value)
+                setPayloadError(false)
+              }}
             />
           </Field>
           <Button
+            loading={busy}
             data-testid="trigger-test"
             disabled={!canSave || busy || !snapshot?.rules.some((item) => item.id === rule.id)}
             disabledReason={t('testNeedsSave')}
@@ -677,7 +705,8 @@ export function TriggersPanel({
               try {
                 void request({ action: 'test', ruleId: rule.id, payload: JSON.parse(payload) })
               } catch {
-                setError(true)
+                setPayloadError(true)
+                document.getElementById('trigger-sample')?.focus()
               }
             }}
           >

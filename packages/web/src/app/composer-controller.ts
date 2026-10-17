@@ -3,7 +3,6 @@ import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loo
 import { choiceName } from '@agnes/web-admin/settings/choices'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
-import { renderGoalCard } from '@agnes/web-conversation/goal-card'
 import {
   composerActionPresentation,
   composerHintPresentation,
@@ -11,6 +10,7 @@ import {
   modelSelectLabel,
   shouldShowEmptyState,
 } from '@agnes/web-conversation/presentation'
+import { renderSessionActions } from '@agnes/web-conversation/session-actions'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { shortcutLabel, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
@@ -25,13 +25,13 @@ let endSessionRead: (() => void) | undefined
 export function createComposerController(
   context: Pick<
     AppSessionContext,
+    | 'submissions'
     | 'beginNewDraft'
     | 'clientModules'
     | 'composerDraftKey'
     | 'composerRuntime'
     | 'configured'
     | 'connected'
-    | 'controlPending'
     | 'conversationRuntime'
     | 'current'
     | 'dockControlsHost'
@@ -56,7 +56,6 @@ export function createComposerController(
     | 'permissionRefreshPending'
     | 'projection'
     | 'readOnly'
-    | 'queueAction'
     | 'recoveryDisabled'
     | 'references'
     | 'renderNewSessionControls'
@@ -66,8 +65,6 @@ export function createComposerController(
     | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
-    | 'selection'
-    | 'sending'
     | 'sessionControls'
     | 'sessionIsolation'
     | 'sessionPending'
@@ -86,7 +83,8 @@ export function createComposerController(
     const workbench: WorkbenchContext = {
       session: context.draftingNew || context.sessionPending ? undefined : context.current,
       timeline: context.draftingNew || context.sessionPending ? undefined : context.projection,
-      disabled: !context.connected || context.sessionPending || context.sending || context.stopping,
+      disabled:
+        !context.connected || context.sessionPending || context.submissions.sending || context.stopping,
       // A workbench path becomes a file chip at the caret, sent as a link to its absolute path.
       mention: (path, directory = false) => {
         const root = context.selectedWorkspace?.path
@@ -123,14 +121,15 @@ export function createComposerController(
         })
       else unmountWorkbench(dockHost)
     }
-    renderGoalCard(
+    renderSessionActions(
       context.goalHost,
       context.draftingNew ? undefined : context.projection,
-      !context.connected || context.sessionPending || context.sending || context.stopping,
+      !context.connected || context.sessionPending || context.submissions.sending || context.stopping,
       (command) => {
         context.composerRuntime.setDraft(command)
         context.submitComposer()
       },
+      context.t,
     )
     // The top bar names the Agent bound to the selected session.
     const sessionLoop = workbench.session
@@ -158,15 +157,16 @@ export function createComposerController(
       endSessionRead = undefined
     }
     const available = context.connected
+    const lastTurn = context.projection?.turns.at(-1)
     const busy = context.projection ? webView(context.projection, undefined, context.t).busy : false
     const images = context.composerRuntime.getAttachmentBlocks()
     const hasInput =
       context.composerRuntime.getDraft().trim().length > 0 ||
       images.length > 0 ||
       context.references.getSnapshot().length > 0
-    const initialSubmissionPending = context.sending && context.pendingSessionKey !== undefined
+    const initialSubmissionPending = context.submissions.sending && context.pendingSessionKey !== undefined
     const action = composerActionPresentation(
-      { busy, loading: context.sessionPending, sending: context.sending },
+      { busy, loading: context.sessionPending, sending: context.submissions.sending },
       context.t,
     )
     context.notice.disableRecovery(context.recoveryDisabled())
@@ -181,6 +181,7 @@ export function createComposerController(
     )
     const imageUnsupported =
       images.some((block) => block.type === 'image') && !userImagePolicy(selectedRecord).supported
+    const queueAction = context.submissions.queueAction
     const composerView: ComposerView = {
       imagePolicy: userImagePolicy(selectedRecord),
       cancel: {
@@ -189,10 +190,7 @@ export function createComposerController(
           !busy ||
           context.stopping ||
           context.sessionPending ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction?.selection === context.selection &&
-            context.queueAction.kind === 'sendNow' &&
-            context.queueAction.pending),
+          (queueAction?.kind === 'sendNow' && queueAction.pending),
         hidden: !busy && !context.stopping,
         label: context.stopping ? context.t('composer.cancel.stopping') : context.t('composer.cancel.stop'),
       },
@@ -205,7 +203,7 @@ export function createComposerController(
         paused:
           context.sessionControls?.sessionId === context.current?.id &&
           context.sessionControls?.value.paused === true,
-        pending: context.controlPending,
+        pending: context.submissions.controlPending,
         disabled: !context.connected || !busy || context.sessionPending || context.stopping,
         pauseSupported:
           context.sessionControls?.sessionId === context.current?.id &&
@@ -265,6 +263,19 @@ export function createComposerController(
                       context.t,
                     ),
       input: {
+        ...(!context.draftingNew &&
+        !context.readOnly &&
+        !context.sessionPending &&
+        context.current &&
+        lastTurn
+          ? {
+              hintScope: {
+                sessionId: context.current.id,
+                turn: lastTurn.turn,
+                completed: !busy && lastTurn.reason === 'completed',
+              },
+            }
+          : {}),
         exampleHint: context.draftingNew && !context.readOnly,
         disabled:
           !available ||
@@ -359,9 +370,7 @@ export function createComposerController(
           !context.current ||
           context.sessionPending ||
           context.stopping ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction.selection === context.selection &&
-            context.queueAction.pending),
+          queueAction?.pending === true,
         disabled:
           !available ||
           !context.configured ||
@@ -371,24 +380,21 @@ export function createComposerController(
           context.stopping ||
           context.permissionChangePending ||
           permissionUnknown ||
-          (context.queueAction?.sessionId === context.current?.id &&
-            context.queueAction.selection === context.selection &&
-            context.queueAction.pending),
-        ...(context.queueAction?.sessionId === context.current?.id &&
-        context.queueAction?.selection === context.selection
+          queueAction?.pending === true,
+        ...(queueAction
           ? {
-              ...(context.queueAction.pending
-                ? context.queueAction.kind === 'sendNow'
-                  ? { sending: context.queueAction.itemId }
-                  : context.queueAction.kind === 'promote'
-                    ? { promoting: context.queueAction.itemId }
-                    : { removing: context.queueAction.itemId }
+              ...(queueAction.pending
+                ? queueAction.kind === 'sendNow'
+                  ? { sending: queueAction.itemId }
+                  : queueAction.kind === 'promote'
+                    ? { promoting: queueAction.itemId }
+                    : { removing: queueAction.itemId }
                 : {}),
-              ...(context.queueAction.error ? { error: context.queueAction.error } : {}),
+              ...(queueAction.error ? { error: queueAction.error } : {}),
             }
           : {}),
       },
-      sending: context.sending,
+      sending: context.submissions.sending,
       send: {
         disabled:
           !available ||
@@ -400,7 +406,7 @@ export function createComposerController(
           (busy && context.sessionControls?.sessionId !== context.current?.id) ||
           context.composerRuntime.hasPendingImages() ||
           Boolean(imageUnsupported) ||
-          context.sending ||
+          context.submissions.sending ||
           context.stopping ||
           context.sessionPending ||
           context.permissionChangePending ||
@@ -414,7 +420,7 @@ export function createComposerController(
       workspace: {
         ...(context.selectedWorkspace?.path ? { root: context.selectedWorkspace.path } : {}),
         visible: !context.current || context.draftingNew,
-        disabled: !available || context.sending || context.sessionPending,
+        disabled: !available || context.submissions.sending || context.sessionPending,
         label:
           context.selectedWorkspace?.name ??
           (context.current
@@ -443,7 +449,11 @@ export function createComposerController(
     const adminLoop = context.newSessionCatalog && defaultLoop(context.newSessionCatalog.defaults)
     updateLoopPicker({
       visible: context.draftingNew,
-      disabled: !context.connected || context.sending || context.sessionPending || context.loopCatalogPending,
+      disabled:
+        !context.connected ||
+        context.submissions.sending ||
+        context.sessionPending ||
+        context.loopCatalogPending,
       loops: context.newSessionCatalog?.loops ?? [],
       resolvedLoop: adminLoop ?? context.newSessionCatalog?.composition?.loop,
       loopSource: adminLoop
@@ -455,7 +465,7 @@ export function createComposerController(
       inherited: context.t('composer.loop.inherited'),
       unavailable: context.t('composer.loop.unavailable'),
       onSelect(loop) {
-        if (!context.draftingNew || context.sending || context.sessionPending) return
+        if (!context.draftingNew || context.submissions.sending || context.sessionPending) return
         context.draftLoop = loop
         context.draftLoopEdited = true
         renderControls()
@@ -465,7 +475,7 @@ export function createComposerController(
       selectedBundles: context.draftBundles,
       bundlesLabel: context.settingsText('sessionBundles'),
       onBundles(bundles) {
-        if (!context.draftingNew || context.sending || context.sessionPending) return
+        if (!context.draftingNew || context.submissions.sending || context.sessionPending) return
         context.draftBundles = bundles
         renderControls()
       },

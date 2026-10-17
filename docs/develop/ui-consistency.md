@@ -87,6 +87,8 @@ Review each inventory surface in en and zh-CN, light and dark, at desktop and 39
 `@agnes/web-ui` owns `Button`, `IconButton`, `Icon`, `Tag`, `MetaText`, `Count`,
 `Menu`, `Tooltip`, `Toast`, `EmptyState`, `Banner`, `ListRow`, `Drawer`, `Skeleton`, `Field`,
 `SettingsPageHeader` and `SettingsSaveBar`. Existing props and hooks remain supported.
+
+`ListRow` supports `variant="file"` for compact file cards; it reuses the existing deliverable skin hooks and tokens. Keep previews outside the row so actions remain independent.
 `Button` additionally accepts `appearance="primary|secondary|ghost|danger|link"`;
 `dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
 explain unavailable actions. Icon actions require a label and shared tooltip.
@@ -136,3 +138,10 @@ A resource write commits a new version. Reads started before that commit cannot 
 Finishing a routed page always replaces its current URL with the parent stack, even when the page came from a deep link with no owned history state. Reload and history restoration must keep that completed page closed.
 
 Incidental URL updates preserve the raw `view` and `settings` route encoding, so page boundaries and identifiers containing slashes survive session and account metadata changes.
+
+Completed operations publish localized results through the shell-owned feedback sink. Use one 3-second, polite `Toast` per operation ID, with no focus change. Keep field validation in `Field.error`, failures next to their operation in `StatusMessage` with an actual recovery action, and unresolved restart/rescan/reconnect/enable consequences in one notice per resource. Pending, unknown and partial outcomes are never success. Scope-only effects belong in a second toast sentence and stable help. `SettingsSaveBar` only handles unsaved edits.
+
+Use `SettingsInput`, `SettingsTextArea`, `SettingsSelect`, `Select` and `SearchBar` for fields. They share `--agnes-input-surface` and state tokens; preserve unavailable saved values. Eligible fixed short-choice groups use `Segmented`: the same measured sliding thumb and track as the conversation/trace switch, native radio arrow keys and a visible focus state. Theme preview tiles and multi-select chips keep their own semantics. New raw inputs/selects and color literals outside web-ui are rejected by the explicit legacy ratchet.
+
+
+Segmented is only for **2–5 short labels**, with a fixed small option count, no descriptions or sub-text, and labels that fit one line in both Chinese and English. A `radiogroup` is a selection semantic, not a presentation requirement. Use the existing descriptive `SettingsChoice` radio option list for titles with descriptions, source/version/capabilities, or long labels; use `Select` for long lists. Runtime/plugin-driven choices use descriptive rows or a Select, never Segmented. Preserve all option information and existing save/confirmation behavior. Do not shorten labels or remove descriptions to make a group fit Segmented. The UI guard permits descriptive radio groups and rejects hand-written segmented presentation, dynamic counts and out-of-range fixed counts. Translation fit is reviewed in both locales.

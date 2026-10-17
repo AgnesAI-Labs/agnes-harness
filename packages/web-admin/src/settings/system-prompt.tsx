@@ -3,15 +3,18 @@ import {
   Banner,
   Button,
   CopyButton,
+  fallbackT,
   promptSourceLabel,
-  Segmented,
+  reportSuccess,
   Select,
   type SessionOption,
   SettingsBlock,
   SettingsCheckbox,
+  SettingsChoice,
   SettingsCode,
   SettingsDrill,
   SettingsExpand,
+  SettingsGroup,
   SettingsItem,
   SettingsTextArea,
   StateSwitch,
@@ -91,6 +94,7 @@ function PromptOverride({ canSave, api }: { canSave: boolean; api: PromptApi }) 
         const { fullOverride: _replaced, ...rest } = latest
         return value ? { ...rest, fullOverride: value } : rest
       }, !!value && confirmed)
+      reportSuccess('system-prompt', fallbackT('ui.settingsSaved'))
       setDraft(undefined)
       setOpen(!!value)
       setConfirmed(false)
@@ -304,16 +308,29 @@ function PromptPreview({ api }: { api: PromptApi }) {
       >
         <div className="agnes-settings-stack" data-testid="system-prompt-preview">
           <div className="agnes-settings-toolbar-row">
-            <Segmented<'defaults' | 'session'>
-              label={t('previewTitle')}
-              testId="system-prompt-preview-view"
-              value={view}
-              options={[
-                { value: 'defaults', label: t('previewDefaults') },
-                { value: 'session', label: t('previewSession') },
-              ]}
-              onChange={setView}
-            />
+            <SettingsGroup
+              role="radiogroup"
+              aria-label={t('previewTitle')}
+              data-testid="system-prompt-preview-view"
+              className="agnes-settings-choices"
+            >
+              <SettingsChoice
+                type="radio"
+                name="system-prompt-preview-view"
+                value="defaults"
+                label={t('previewDefaults')}
+                checked={view === 'defaults'}
+                onChange={() => setView('defaults')}
+              />
+              <SettingsChoice
+                type="radio"
+                name="system-prompt-preview-view"
+                value="session"
+                label={t('previewSession')}
+                checked={view === 'session'}
+                onChange={() => setView('session')}
+              />
+            </SettingsGroup>
             {view === 'session' && (
               <Select<string>
                 aria-label={t('session')}

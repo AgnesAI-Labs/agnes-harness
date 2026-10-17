@@ -42,6 +42,7 @@ import {
   setDialogOpen,
   showSettingsDialog,
 } from './settings/dialog.js'
+import { reportAccountSaved } from './settings/feedback.js'
 import { modelSlotsPanel } from './settings/model-slots.js'
 import { sideModelsPanel } from './settings/side-models.js'
 
@@ -135,7 +136,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ui.contextWindow?.value,
     ])
   let editingId: string | undefined
-  let savedNotice = false
   let removingId: string | undefined
   const selectedAccount = (): ConfigAccount | undefined =>
     configuration?.accounts?.find((row) => row.accountId === editingId)
@@ -497,7 +497,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const close = (): void => {
     const wasOpen = ui.dialog.open
-    savedNotice = false
     oauth.clear()
     testPending = false
     closeAccountDialog()
@@ -683,20 +682,16 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       oauth.clear()
       configuration = saved
       tested = undefined
-      ui.state.dataset.tone = ''
-      ui.state.textContent =
-        saved.effect === 'restart-required'
-          ? tr('settings.saved.restartRequired')
-          : tr('settings.saved.newSessionsOnly')
+      ui.state.textContent = ''
+      reportAccountSaved(saved.effect)
       try {
         await options.onSaved(saved)
-      } catch (error) {
-        setError(error)
+      } catch {
+        ui.error.textContent = tr('settings.saved.refreshFailed')
         return
       }
       if (current(token)) {
         // 保存成功后只收起账户弹窗、留在设置里并刷新列表（该账户保持选中）。
-        savedNotice = !inlineHost
         closeAccountDialog()
         renderAccounts()
       }
@@ -805,7 +800,12 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         action,
         expectedRevision: configuration.revision,
       })
-      await options.onSaved(saved)
+      reportAccountSaved(saved.effect)
+      try {
+        await options.onSaved(saved)
+      } catch {
+        if (current(token)) ui.error.textContent = tr('settings.saved.refreshFailed')
+      }
       if (!current(token)) return
       configuration = saved
       removingId = undefined
@@ -815,11 +815,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderProviders()
       resetTest()
       renderAccounts()
-      ui.state.dataset.tone = ''
-      ui.state.textContent =
-        saved.effect === 'restart-required'
-          ? tr('settings.saved.restartNeeded')
-          : tr('settings.saved.newSessions')
+      ui.state.textContent = ''
     } catch (error) {
       if (current(token)) setError(error)
     } finally {
@@ -869,11 +865,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         accounts: configuration?.accounts ?? [],
         phase: loadPhase,
         ...accountWelcome(providers, tr, () => editAccount(), selectProvider, close),
-        saved: savedNotice,
-        onDismissSaved: () => {
-          savedNotice = false
-          renderAccounts()
-        },
         onRetry: () => ui.retry?.click(),
         defaultAccountId: configuration?.defaultAccountId,
         disabled: !connected || loadPhase === 'loading' || testPending || savePending,

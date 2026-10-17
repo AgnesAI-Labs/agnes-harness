@@ -41,7 +41,9 @@ export type TreeChangedDetail = {
  * connection and handed to the audit sink - one `at` timestamp per emitted notice, not one per
  * recipient. `packages_changed` is profile-scoped rather than session-scoped: it reaches every
  * initialized, credential-verified connection bound by the server to the matching profile,
- * including pages which have not attached to a session.
+ * including pages which have not attached to a session. `decisions_changed` is narrower: an initialized
+ * local human reader must have successfully listed approvals and match both the profile and the
+ * backend-resolved principal (id and organization). Transport labels never supply that identity.
  *
  * A notice is best-effort and `emit` never throws: callers are lifecycle paths (worker failure
  * handling, lease reclaim, shutdown) that run detached from any request, where an exception has no
@@ -58,10 +60,14 @@ export class NoticeSink {
     },
   ) {}
 
+  emit(
+    kind: 'decisions_changed',
+    o: { detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail'] },
+  ): void
   emit(kind: 'packages_changed', o: { detail: PackagesChangedDetail }): void
   emit(kind: 'tree_changed', o: { detail: TreeChangedDetail }): void
   emit(
-    kind: Exclude<NoticeKind, 'packages_changed' | 'tree_changed'>,
+    kind: Exclude<NoticeKind, 'packages_changed' | 'tree_changed' | 'decisions_changed'>,
     o: { sessionId?: string; detail: unknown },
   ): void
   emit(kind: NoticeKind, o: { sessionId?: string; detail: unknown }): void {
@@ -76,6 +82,7 @@ export class NoticeSink {
       }),
     )
     const params = n.params as DaemonNotice
+    const decision = params.kind === 'decisions_changed' ? params.detail : undefined
     const noticeProfile =
       (kind === 'packages_changed' || kind === 'tree_changed') &&
       typeof o.detail === 'object' &&
@@ -86,13 +93,21 @@ export class NoticeSink {
     for (const { ep, conn } of this.o.endpoints())
       if (
         kind === 'shutting_down' ||
-        (kind === 'packages_changed' || kind === 'tree_changed'
-          ? noticeProfile !== undefined &&
-            conn.profile === noticeProfile &&
+        (kind === 'decisions_changed'
+          ? decision !== undefined &&
             conn.initialized &&
-            conn.authKind !== undefined &&
-            (conn.clientModuleNotices || (kind === 'packages_changed' && conn.surfaceMountNotices === true))
-          : o.sessionId !== undefined && conn.attached.has(o.sessionId))
+            conn.authKind === 'local' &&
+            conn.credentialKind === 'local' &&
+            conn.profile === decision.profile &&
+            conn.decisionPrincipal?.id === decision.principal.id &&
+            conn.decisionPrincipal?.org === decision.principal.org
+          : kind === 'packages_changed' || kind === 'tree_changed'
+            ? noticeProfile !== undefined &&
+              conn.profile === noticeProfile &&
+              conn.initialized &&
+              conn.authKind !== undefined &&
+              (conn.clientModuleNotices || (kind === 'packages_changed' && conn.surfaceMountNotices === true))
+            : o.sessionId !== undefined && conn.attached.has(o.sessionId))
       )
         this.deliver(ep, n)
     // Nested rather than spread: `params` is a DaemonNotice and carries its own `kind` (e.g.

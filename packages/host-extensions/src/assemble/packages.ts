@@ -81,6 +81,7 @@ export type {
   SeamFactory,
   SeamInitContext,
   SeamProfileView,
+  SessionTasks,
   SkillRuntimeDiscovery,
 } from '../contracts/package.js'
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'

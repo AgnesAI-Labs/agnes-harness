@@ -1,11 +1,11 @@
 import type { UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import { useId, useState } from 'react'
+import { reportSuccess, StatusMessage } from '../feedback.js'
 import { Button } from '../ui/button.js'
 import { Icon } from '../ui/icon.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu, type MenuItem } from '../ui/menu.js'
 import { MetaText } from '../ui/tag.js'
-import { Toast } from '../ui/toast.js'
 import { useUiText } from '../ui-locale.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { surfaceDockSummary, surfaceIcon, surfaceTitle, useNow } from './summary.js'
@@ -50,7 +50,8 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(summary ? `${title} · ${summary}` : title)
       setCopyFailed(false)
-      setCopyMessage(t('ui.copied'))
+      setCopyMessage('')
+      reportSuccess('clipboard', t('ui.copied'))
     } catch {
       setCopyFailed(true)
       setCopyMessage(t('ui.copyFailed'))
@@ -73,13 +74,11 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
       data-attention={attention ? true : undefined}
       aria-labelledby={titleId}
     >
-      <Toast
-        tone={copyFailed ? 'error' : 'success'}
-        open={!!copyMessage}
-        onDismiss={() => setCopyMessage('')}
-      >
-        {copyMessage}
-      </Toast>
+      {copyFailed && (
+        <StatusMessage kind="error" action={{ label: t('ui.copy'), onSelect: () => void copySummary() }}>
+          {copyMessage}
+        </StatusMessage>
+      )}
       <Button
         htmlType="button"
         appearance="ghost"

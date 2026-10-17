@@ -2,31 +2,30 @@ import type { ContentBlock } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { Session } from '@agnes/sdk/browser'
 import type { AppSessionContext } from '../app.js'
+import { showCommandFeedback } from './command-feedback.js'
 
 export function createCommandController(
   context: Pick<
     AppSessionContext,
+    | 'submissions'
     | 'composerDraftKey'
     | 'client'
     | 'composerRuntime'
     | 'configured'
     | 'connected'
-    | 'controlPending'
     | 'controlsHistory'
-    | 'controlsRefresh'
     | 'current'
     | 'live'
     | 'notice'
     | 'permissionChangePending'
     | 'permissionRefreshPending'
     | 'projection'
-    | 'queueAction'
     | 'recoveredReturns'
     | 'render'
     | 'renderControls'
     | 'run'
     | 'selectedModelAvailable'
-    | 'selection'
+    | 'sessionBinding'
     | 'sessionControls'
     | 'sessionPending'
     | 'sessionYoloEnabled'
@@ -37,6 +36,7 @@ export function createCommandController(
   >,
 ) {
   let stopRequest = 0
+  let controlsRefresh = 0
   function handleComposerCancel(): void {
     requestStop(false)
   }
@@ -45,10 +45,9 @@ export function createCommandController(
     context.run(async () => {
       const session = context.current
       if (!session || context.sessionPending || context.stopping) return
-      const epoch = context.selection
+      const epoch = context.sessionBinding.capture()
       const request = ++stopRequest
-      const current = () =>
-        context.current === session && context.selection === epoch && request === stopRequest
+      const current = () => context.sessionBinding.isCurrent(epoch, session) && request === stopRequest
       context.stopping = true
       context.stopAfterSeq = context.projection?.upto ?? 0
       context.render()
@@ -109,23 +108,6 @@ export function createCommandController(
     })
   }
 
-  /**
-   * "Send at next step": the queued follow-up becomes guidance. There is no conversion command, so
-   * the item is taken out of the queue and its full content (attachments included) is sent as a steer.
-   * Should the steer be refused after the removal, the content goes back as a follow-up, so it is not lost.
-   */
-  async function promoteQueued(session: Session, itemId: string): Promise<void> {
-    const item = (await session.controls()).pending.find((candidate) => candidate.itemId === itemId)
-    if (!item) throw new Error(context.t('composer.queue.gone'))
-    await session.removeQueued(itemId)
-    try {
-      await session.steer(item.content)
-    } catch (error) {
-      await session.followUp(item.content).catch(() => undefined)
-      throw error
-    }
-  }
-
   function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | 'promote'): void {
     const session = context.current
     if (
@@ -138,72 +120,75 @@ export function createCommandController(
         (context.permissionChangePending ||
           context.permissionRefreshPending ||
           context.sessionYoloEnabled === undefined)) ||
-      (context.queueAction?.pending &&
-        context.queueAction.sessionId === session.id &&
-        context.queueAction.selection === context.selection) ||
+      context.submissions.queueAction?.pending ||
       context.projection?.sessionId !== session.id ||
       !context.projection.pendingInputs?.some((item) => item.itemId === itemId)
     )
       return
-    const action = {
-      sessionId: session.id,
-      selection: context.selection,
-      itemId,
-      kind,
-      pending: true,
-    } as NonNullable<typeof context.queueAction>
-    context.queueAction = action
+    const action = context.submissions.beginQueue({ itemId, kind })
+    if (!action) return
     context.renderControls()
-    void (
-      kind === 'sendNow'
+    const work = async () => {
+      const held = await session.pendingCommands()
+      if (
+        held.some(
+          (command) => (command.params as { payload?: { itemId?: string } }).payload?.itemId === itemId,
+        )
+      ) {
+        await showCommandFeedback(context, session)
+        return
+      }
+      return kind === 'sendNow'
         ? session.interrupt(itemId)
         : kind === 'promote'
-          ? promoteQueued(session, itemId)
+          ? session.promoteQueued(itemId)
           : session.removeQueued(itemId)
-    )
+    }
+    void action
+      .run(async () => {
+        await work()
+      })
       .then(() => {
-        if (context.current === session && context.selection === action.selection) {
+        if (context.submissions.isCurrent(action)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
       })
       .catch((error: unknown) => {
         const failure = error as { data?: { code?: unknown } }
-        action.error =
+        action.presentError(
           failure?.data?.code === 'QUEUED_INPUT_GONE'
             ? context.t('composer.queue.gone')
             : error instanceof Error
               ? error.message
-              : String(error)
-        if (context.current === session && context.selection === action.selection) {
+              : String(error),
+        )
+        if (context.submissions.isCurrent(action)) {
           context.live?.refresh()
           void refreshSessionControls(session).catch(context.showError)
         }
       })
       .finally(() => {
-        action.pending = false
-        if (context.current === session && context.selection === action.selection) context.renderControls()
+        if (context.submissions.isCurrent(action)) context.renderControls()
       })
   }
 
   async function refreshSessionControls(session: Session): Promise<void> {
-    const epoch = context.selection
-    const request = ++context.controlsRefresh
+    const epoch = context.sessionBinding.capture()
+    const request = ++controlsRefresh
     const history = context.controlsHistory.get(session.id) ?? { through: 0, facts: [] }
     let through = history.through
     const facts = [...history.facts]
     let value: SessionControlStateResult
     do {
       value = await session.controls({ afterSeq: through })
-      if (context.current !== session || context.selection !== epoch || request !== context.controlsRefresh)
-        return
+      if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
       facts.push(...(value.facts ?? []))
       through = value.factsThrough ?? through
     } while (value.factsMore)
     value = { ...value, facts }
     context.controlsHistory.set(session.id, { through, facts })
-    if (context.current !== session || context.selection !== epoch || request !== context.controlsRefresh)
-      return
+    if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
     context.sessionControls = { sessionId: session.id, value }
     for (const fact of value.facts ?? []) {
       if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
@@ -230,6 +215,7 @@ export function createCommandController(
       sessionStorage.setItem(key, 'pending')
     }
     context.render()
+    await showCommandFeedback(context, session)
   }
 
   async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
@@ -247,22 +233,22 @@ export function createCommandController(
       if (
         !session ||
         context.sessionPending ||
-        context.controlPending ||
+        context.submissions.controlPending ||
         context.sessionControls?.sessionId !== session.id
       )
         return
-      const epoch = context.selection
-      context.controlPending = true
+      const action = context.submissions.beginControl()
+      if (!action) return
       context.renderControls()
       try {
-        await session.control(context.sessionControls.value.paused ? 'resume' : 'pause')
-        await refreshSessionControls(session)
-        context.live?.refresh()
+        const kind = context.sessionControls.value.paused ? 'resume' : 'pause'
+        await action.run(async () => {
+          await session.control(kind)
+          await refreshSessionControls(session)
+          if (context.submissions.isCurrent(action)) context.live?.refresh()
+        })
       } finally {
-        if (context.current === session && context.selection === epoch) {
-          context.controlPending = false
-          context.renderControls()
-        }
+        if (context.submissions.isCurrent(action)) context.renderControls()
       }
     })
   }

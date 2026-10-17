@@ -1,19 +1,9 @@
-import { type ConversationCardInput, conversationCards, type UiExtensionContext } from '@agnes/web-client'
+import { conversationCards } from '@agnes/web-client'
 import { ConversationCardLayout } from '@agnes/web-ui'
-import { type ReactNode, useSyncExternalStore } from 'react'
+import type { ReactNode } from 'react'
 
-/** All presentation categories share registration, disposal, ordering and reactive resolution. */
-export function RegisteredConversationCard({
-  card,
-  context,
-}: {
-  card: ConversationCardInput
-  context: UiExtensionContext
-}) {
-  useSyncExternalStore(conversationCards.subscribe, conversationCards.getSnapshot)
-  const Component = conversationCards.entries().find((entry) => entry.matches(card))?.component
-  return Component ? <Component card={card} context={context} /> : null
-}
+export { RegisteredConversationCard } from './registered-card.js'
+
 for (const [id, kind, testId] of [
   ['job', 'background-job', 'background-job-card'],
   ['child', 'child-agent', 'child-agent-card'],

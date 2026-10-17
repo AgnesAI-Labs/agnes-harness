@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { collectPackageSkillFiles } from '@agnes/base'
 import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
@@ -89,6 +90,8 @@ import {
   SessionPreferencesStore,
   withSessionPreferences,
 } from '@agnes/daemon-foundation/storage/session-preferences'
+import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
+import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import {
   type SourceAuthCredential,
   SourceAuthRotation,
@@ -132,6 +135,7 @@ import {
 } from '@agnes/daemon-rpc/local/methods/session-selection'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
+import { createPlanCommands } from '@agnes/daemon-rpc/local/plan-commands'
 import { type ApprovalRequest, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import type { SessionEntry } from '@agnes/daemon-rpc/local/sessions'
 import { coordinateSurfacesOnBoot } from '@agnes/daemon-surfaces/surfaces/boot-coordination'
@@ -240,11 +244,14 @@ import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
+import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
+  createClientServiceDispatcher,
   workerComputerUseStatusSource,
   workerServiceCaller,
   workerServiceInspector,
+  workerServiceResolver,
 } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor } from './session-reads.js'
@@ -976,7 +983,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     // Inventory verifies the lock and installed tree before any contribution reaches a worker.
     // A package-bearing profile therefore fails closed at startup rather than silently scanning a
     // user-controlled package directory.
-    await writePackageSkillInventory(o.profile, o.profileDir, packageSkillSnapshotPath)
+    await writePackageSkillInventory(
+      o.profile,
+      o.profileDir,
+      packageSkillSnapshotPath,
+      collectPackageSkillFiles,
+    )
     const activationBarrier = o.activationBarrier ?? createExtensionActivationBarrier()
     const commandQueue = new CommandQueue(undefined, (depth) => o.observability?.queueDepth(depth))
     startupCleanup.push(() => commandQueue.close())
@@ -1213,6 +1225,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         return deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces)
       },
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
+      onDecisionsChanged: (detail) => {
+        if (detail.profile === o.profile.name) notices.emit('decisions_changed', { detail })
+      },
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onRuntimeLog: (record) => o.audit?.(record),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
@@ -1220,6 +1235,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f, workerSignal) => {
+        if (f.method === 'scheduling')
+          return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
         if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
@@ -1327,7 +1344,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           return workspaceCatalog.bind(workspaceId, resourceWorkerRoot)
         },
         refreshPackageSkills: () =>
-          writePackageSkillInventory(o.profile, o.profileDir, packageSkillSnapshotPath),
+          writePackageSkillInventory(
+            o.profile,
+            o.profileDir,
+            packageSkillSnapshotPath,
+            collectPackageSkillFiles,
+          ),
       })
       observeResourceMcpStatus = resourceAdapters.observeMcpStatus
       wireResourceSnapshotNotifications({ localResourceStore, registry, pool, log: console })
@@ -1757,31 +1779,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const host = hostFacade.host
     const callService = workerServiceCaller(pool, () => host.profile)
     const inspectService = workerServiceInspector(pool, () => host.profile)
-    const dispatchClientService = async (
-      input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
-    ): Promise<ExtensionCallResult> => {
-      const params: ExtensionCallParams = {
-        sessionId: input.sessionId,
-        extension: input.extension,
-        service: input.service,
-        input: input.input,
-      }
-      // Synthesized only after a fresh ready-row/manifest match; it never crosses the browser
-      // boundary and has one query service grant rather than generic daemon authority.
-      const credential = Object.freeze({
-        kind: 'surface-service' as const,
-        // `client-web` is a dedicated server-side principal for the authenticated loopback BFF.
-        // It is deliberately not derived from profile/row text: the worker service-authority
-        // envelope allows only a bounded source grammar and the row itself is already held in the
-        // exact grant below.
-        source: 'client-web',
-        subjectCredential: Object.freeze({ kind: 'local' }),
-        grants: Object.freeze([{ extension: input.extension, name: input.service, range: '*' }]),
-      })
-      const inspection = await inspectService(params, credential)
-      if (inspection.kind !== 'query') throw rpcError('CAPABILITY_DENIED')
-      return await callService(params, credential)
-    }
+    const resolveService = workerServiceResolver(pool)
+    const dispatchClientService = createClientServiceDispatcher(callService, inspectService)
     clientServiceCall = dispatchClientService
     o.packageRuntime?.bindClientService?.(dispatchClientService)
     const dispatchClientEffect = async (
@@ -1849,6 +1848,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       : undefined
     const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
+    const sidebarSessions = jobTables
+      ? new SidebarSessions(
+          jobTables.table('session_workspaces'),
+          workspaces,
+          o.sessionFactRead ? (key, query) => o.sessionFactRead!(key)(query) : undefined,
+        )
+      : new MemorySidebarSessions(workspaces, sessionOwnership, preferences, () => workspaceCatalog.list())
+    startupCleanup.push(() => sidebarSessions.close())
     const rawLister =
       o.ports?.lister ??
       (o.tables
@@ -2053,6 +2060,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       profileDir: o.profileDir,
       resolveProfile: o.reloadProfile ?? (async () => o.profile),
       workspaces: () => workspaceCatalog.list(),
+      plan: createPlanCommands({
+        activationBarrier,
+        journal,
+        commandQueue,
+        callService,
+        inspectService,
+        resolveService,
+      }),
       memory: async (input) => {
         const link = await pool.acquireSharedWorker()
         return (await link.command('memory.manage', input)) as Pick<
@@ -2084,7 +2099,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
       const cx: AgnesContext = {
         profileFeatures: profilePorts.features,
-        sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
+        sessionServices: {
+          activationBarrier,
+          journal,
+          commandQueue,
+          callService,
+          inspectService,
+          resolveService,
+        },
         host,
         registry: supervisorRegistry,
         prompter,
@@ -2111,6 +2133,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         // local credential. Any custom principals seam stays closed before a worker exists.
         resolveNewSessionActor,
         sessionOwnership,
+        ...(sidebarSessions ? { sidebarSessions } : {}),
         hasSessionFact: (sessionId: string) =>
           supervisorRegistry.get(sessionId) !== undefined ||
           workspaceCatalog.sessionPath(sessionId) !== undefined,
@@ -2612,6 +2635,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         },
         killWorkers: () => pool.killAll(),
         closeSockets: async () => {
+          await sidebarSessions?.close()
           await triggerSessions.close()
           const results = await Promise.allSettled([
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.close())),

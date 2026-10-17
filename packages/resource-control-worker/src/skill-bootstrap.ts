@@ -1,12 +1,14 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import {
   skillRoots as baseSkillRoots,
   type DiscoveredSkillCandidate,
+  decodePackageSkillFiles,
   discoverPackageSkill,
   discoverSkillRoot,
+  packageSkillLoadError,
   readContextConfig,
   type SkillRootFailure,
   workspaceSkillKey,
@@ -288,28 +290,83 @@ export async function scanSkills(
         { rootKey: 'package' as const, scope: 'package' as const, state: 'empty' as const },
       ],
     }
-  const raw = JSON.parse(await readFile(packageSnapshot, 'utf8')) as { version?: unknown; skills?: unknown }
-  if (raw.version !== 1 || !Array.isArray(raw.skills) || raw.skills.length > 128)
+  if ((await stat(packageSnapshot)).size > 32 * 1024 * 1024)
+    throw new Error('package Skill inventory exceeds snapshot budget')
+  const snapshotBytes = await readFile(packageSnapshot)
+  if (snapshotBytes.byteLength > 32 * 1024 * 1024)
+    throw new Error('package Skill inventory exceeds snapshot budget')
+  const raw = JSON.parse(snapshotBytes.toString('utf8')) as {
+    version?: unknown
+    skills?: unknown
+    failures?: unknown
+  }
+  if (
+    raw.version !== 1 ||
+    !Array.isArray(raw.skills) ||
+    (raw.failures !== undefined && !Array.isArray(raw.failures)) ||
+    raw.skills.length + (Array.isArray(raw.failures) ? raw.failures.length : 0) > 128
+  )
     throw new Error('invalid package skill inventory snapshot')
-  const packageCandidates = raw.skills.map((entry) => {
+  const entries = [
+    ...raw.skills.map((entry) => ({ entry, failed: false })),
+    ...(Array.isArray(raw.failures) ? raw.failures.map((entry) => ({ entry, failed: true })) : []),
+  ]
+  const packageCandidates = entries.map(({ entry, failed }) => {
     if (!entry || typeof entry !== 'object') throw new Error('invalid package skill inventory snapshot')
     const row = entry as Record<string, unknown>
     if (
       typeof row.packageId !== 'string' ||
       typeof row.contributionId !== 'string' ||
-      typeof row.relativeLocation !== 'string' ||
-      typeof row.source !== 'string'
+      typeof row.relativeLocation !== 'string'
     )
       throw new Error('invalid package skill inventory snapshot')
-    const candidate = discoverPackageSkill({
+    const identity = {
       packageId: row.packageId,
       contributionId: row.contributionId,
       relativeLocation: row.relativeLocation,
-      source: row.source,
+    }
+    // Validate identity independently. A corrupt envelope must not acquire package authority.
+    const fallback = discoverPackageSkill({
+      ...identity,
+      source: `---\nname: ${JSON.stringify(row.contributionId.slice(0, MAX_NAME_LENGTH))}\ndescription: Skill failed to load.\n---\nUnavailable.`,
     })
-    if (!candidate) throw new Error('invalid attested package skill contribution')
-    const { normalizedName: _normalizedName, ...hostCandidate } = candidate
-    return hostCandidate
+    if (!fallback) throw new Error('invalid package skill inventory identity')
+    let document: ReturnType<typeof discoverPackageSkill>
+    try {
+      document =
+        typeof row.source === 'string' && Buffer.byteLength(row.source) <= 256 * 1024
+          ? discoverPackageSkill({ ...identity, source: row.source })
+          : undefined
+      if (failed) throw Object.assign(new Error('Skill load failed'), { code: row.code })
+      if (!document)
+        throw Object.assign(new Error('invalid Skill document'), { code: 'SKILL_DOCUMENT_INVALID' })
+      if (
+        row.directory !== undefined &&
+        (typeof row.directory !== 'string' || !isAbsolute(row.directory) || row.directory.includes('\0'))
+      )
+        throw Object.assign(new Error('invalid Skill directory'), { code: 'SKILL_LOAD_FAILED' })
+      let files: ReturnType<typeof decodePackageSkillFiles>
+      try {
+        files = decodePackageSkillFiles(row.files)
+      } catch {
+        throw Object.assign(new Error('invalid Skill attachments'), { code: 'SKILL_ATTACHMENTS_UNREADABLE' })
+      }
+      document = discoverPackageSkill({
+        ...identity,
+        source: row.source as string,
+        ...(files ? { files } : {}),
+        ...(typeof row.directory === 'string' ? { directory: row.directory } : {}),
+      })
+      if (!document)
+        throw Object.assign(new Error('invalid Skill document'), { code: 'SKILL_DOCUMENT_INVALID' })
+      const { normalizedName: _normalizedName, ...candidate } = document
+      return candidate
+    } catch (error) {
+      const loadError = packageSkillLoadError((error as { code?: unknown })?.code)
+      const { normalizedName: _normalizedName, ...candidate } = document ?? fallback
+      console.warn(`agnes: Skill ${candidate.resourceId} unavailable (${loadError.code})`)
+      return { ...candidate, body: '', loadError }
+    }
   })
   return {
     roots: packageCandidates.length

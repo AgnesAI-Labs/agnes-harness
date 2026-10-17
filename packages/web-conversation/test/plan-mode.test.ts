@@ -10,14 +10,14 @@ describe('submitPlanCommand', () => {
       init = nextInit
       return new Response(JSON.stringify({ active: true, text: 'Plan mode is on' }), { status: 200 })
     }) as typeof fetch
-    await expect(submitPlanCommand('/work', '/plan on', fetcher)).resolves.toEqual({
+    await expect(submitPlanCommand('/work', '/plan on', fetcher, 'plan-session')).resolves.toEqual({
       active: true,
       text: 'Plan mode is on',
     })
     expect(url).toBe('/api/plan-mode')
     expect(init?.method).toBe('POST')
     expect(init?.credentials).toBe('same-origin')
-    expect(init?.body).toBe(JSON.stringify({ cwd: '/work', line: '/plan on' }))
+    expect(init?.body).toBe(JSON.stringify({ cwd: '/work', line: '/plan on', sessionId: 'plan-session' }))
   })
 
   it('rejects a response that is not a plan-mode result', async () => {

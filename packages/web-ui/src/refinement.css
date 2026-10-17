@@ -217,17 +217,65 @@
 
   /* Segmented control: a rounded-rectangle track with a raised block on the picked option. */
   .agh-segmented {
+    line-height: calc(var(--line-sm) + var(--s2));
+    --agh-segment-thumb-left: 2px;
+    --agh-segment-thumb-width: calc(50% - 2px);
+    position: relative;
+    isolation: isolate;
     display: inline-flex;
     align-items: stretch;
     gap: var(--s2);
-    max-width: 100%;
-    min-width: 0;
-    margin: 0;
     padding: var(--s2);
-    border: 0;
     border-radius: var(--radius-segmented);
     background: var(--agnes-segment-track);
     box-shadow: inset 0 0 0 var(--hairline) var(--agnes-line-hairline);
+  }
+  .agh-segmented:not(:has([data-selected="true"])) > .agh-segmented-thumb {
+    visibility: hidden;
+  }
+  .agh-segmented-thumb {
+    position: absolute;
+    inset-block: var(--s2);
+    left: var(--agh-segment-thumb-left);
+    width: var(--agh-segment-thumb-width);
+    border-radius: calc(var(--radius-segmented) - var(--s2));
+    background: var(--agnes-bg-control);
+    box-shadow: var(--shadow-control);
+    transition:
+      left 380ms cubic-bezier(0.3, 1.35, 0.5, 1),
+      width 380ms cubic-bezier(0.3, 1.35, 0.5, 1);
+    pointer-events: none;
+  }
+  .agh-segmented > .agh-segmented-option {
+    position: relative;
+    gap: var(--s4);
+    min-height: var(--control-height-xs);
+    height: auto;
+    padding: 0 var(--s12);
+    border: 0;
+    border-radius: calc(var(--radius-segmented) - var(--s2));
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+  .agh-segmented > .agh-segmented-option:hover {
+    color: var(--agnes-text-primary);
+    background: transparent;
+    border-color: transparent;
+  }
+  .agh-segmented > .agh-segmented-option[data-selected="true"] {
+    border-color: currentColor;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+  }
+  .agh-segmented {
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    border: 0;
   }
   .agh-segmented[data-block="true"] {
     display: flex;
@@ -235,28 +283,19 @@
   .agh-segmented[data-block="true"] > .agh-segmented-option {
     flex: 1 1 0;
   }
-  .agh-segmented-option {
-    position: relative;
+  .agh-segmented > .agh-segmented-option {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--s4);
-    min-width: 0;
-    min-height: var(--control-height-xs);
-    box-sizing: border-box;
-    padding: 0 var(--s12);
-    border-radius: calc(var(--radius-segmented) - var(--s2));
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-sm);
-    white-space: nowrap;
     cursor: pointer;
-    transition:
-      background-color var(--motion-short) var(--motion-ease-out),
-      box-shadow var(--motion-short) var(--motion-ease-out);
+    min-width: 0;
+    line-height: var(--line-sm);
   }
-  /* The radio keeps its name, value and arrow keys; the segment is its presentation. */
+  .agh-segmented-option > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
   .agh-segmented-option > input {
     position: absolute;
     inset: 0;
@@ -265,153 +304,103 @@
     min-height: 0;
     margin: 0;
     padding: 0;
-    border: 0;
     opacity: 0;
     cursor: inherit;
   }
-  .agh-segmented-option > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .agh-segmented-option:hover {
-    color: var(--agnes-text-primary);
-  }
   .agh-segmented-option:has(input:checked) {
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-control);
-    box-shadow: var(--shadow-control);
   }
-  .agh-segmented-option:has(input:focus-visible) {
+  .agh-segmented-option:has(input:focus-visible),
+  .agh-segmented-option:focus-visible {
     outline: var(--focus-outline);
     outline-offset: 1px;
     box-shadow: var(--focus-line);
   }
-  .agh-segmented-option:has(input:disabled) {
+  .agh-segmented-option:has(input:disabled),
+  .agh-segmented-option:disabled {
     color: var(--agnes-text-tertiary);
     cursor: not-allowed;
   }
-  @media (max-width: 767px) {
-    .agh-segmented {
-      max-width: 100%;
-      flex-wrap: wrap;
-    }
-    .agh-segmented-option {
-      min-width: var(--control-height-touch);
-      min-height: var(--control-height-touch);
-    }
-    .agh-segmented-option > input {
-      inset: min(0px, calc((100% - var(--control-height-touch)) / 2)) 0;
-      height: auto;
+  @media (prefers-reduced-motion: reduce) {
+    .agh-segmented-thumb {
+      transition: none;
     }
   }
 
-  /* Popup button: a select that picks one of a set. The accent block with the up/down chevrons
-   tells it apart from a one-way chevron that expands something. */
-  .agh-popup-chevrons {
-    position: relative;
-    display: block;
-    width: 1.125rem;
-    height: 1.125rem;
-    border-radius: 5px;
-    color: var(--agnes-button-primary-content);
-    background: var(--agnes-brand-primary);
-  }
-  .agh-popup-chevrons::before,
-  .agh-popup-chevrons::after {
-    content: "";
-    position: absolute;
-    left: calc(50% - 0.15625rem);
-    width: 0.3125rem;
-    height: 0.3125rem;
-    box-sizing: border-box;
-    border: 0 solid currentColor;
-    rotate: 45deg;
-  }
-  .agh-popup-chevrons::before {
-    top: 0.3125rem;
-    border-width: 1.5px 0 0 1.5px;
-  }
-  .agh-popup-chevrons::after {
-    bottom: 0.3125rem;
-    border-width: 0 1.5px 1.5px 0;
-  }
-  .agnes-ui-select.ant-select:not(.ant-select-show-search, .ant-select-multiple, .ant-select-disabled) {
-    --ant-color-border: transparent;
-    --ant-select-hover-border-color: transparent;
-    --ant-select-show-arrow-padding-inline-end: 1.625rem;
+  .select-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    width: 100%;
+    min-width: 0;
+    min-height: var(--control-height);
+    /* A popup button with the shared neutral down-chevron. */
+    padding: 0 var(--s4) 0 var(--s10);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-input-content-strong);
     background: var(--agnes-bg-control);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    text-align: start;
     box-shadow: var(--shadow-control);
   }
-  .agnes-ui-select.ant-select:not(.ant-select-show-search, .ant-select-multiple, .ant-select-disabled):hover {
-    background-image: linear-gradient(var(--agnes-bg-hover), var(--agnes-bg-hover));
+  .select-picker-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .agnes-ui-select.ant-select:not(.ant-select-show-search, .ant-select-multiple)
-    :is(.ant-select-arrow, .ant-select-suffix) {
-    inset-inline-end: var(--s4);
-    opacity: 1;
-  }
-  .agnes-ui-select.ant-select-disabled .agh-popup-chevrons {
+  /* One neutral down-chevron for rich, native and DOM select controls. */
+  .agh-popup-chevrons,
+  .select-picker-chevron {
+    position: relative;
+    display: block;
+    flex: 0 0 auto;
+    width: 1.125rem;
+    height: 1.125rem;
     color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-fill);
+    background: none;
   }
-  /* The native select draws the same block from background layers: a rounded square, then the
-   two chevron heads on it. */
+  :is(.agh-popup-chevrons, .select-picker-chevron)::before {
+    content: none;
+  }
+  :is(.agh-popup-chevrons, .select-picker-chevron)::after {
+    content: "";
+    position: absolute;
+    left: calc(50% - 0.1875rem);
+    top: calc(50% - 0.25rem);
+    width: 0.375rem;
+    height: 0.375rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    rotate: 45deg;
+  }
   select.agnes-settings-input:not([multiple]) {
     min-height: var(--control-height);
     padding-block: 0;
     padding-inline: var(--s10) 1.75rem;
-    border-color: transparent;
-    background-color: var(--agnes-bg-control);
+    appearance: none;
     background-image:
-      linear-gradient(135deg, transparent 50%, var(--agnes-button-primary-content) 50%),
-      linear-gradient(225deg, transparent 50%, var(--agnes-button-primary-content) 50%),
-      linear-gradient(45deg, transparent 50%, var(--agnes-button-primary-content) 50%),
-      linear-gradient(315deg, transparent 50%, var(--agnes-button-primary-content) 50%),
-      radial-gradient(circle closest-side, var(--agnes-brand-primary) 97%, transparent),
-      radial-gradient(circle closest-side, var(--agnes-brand-primary) 97%, transparent),
-      radial-gradient(circle closest-side, var(--agnes-brand-primary) 97%, transparent),
-      radial-gradient(circle closest-side, var(--agnes-brand-primary) 97%, transparent),
-      linear-gradient(var(--agnes-brand-primary), var(--agnes-brand-primary)),
-      linear-gradient(var(--agnes-brand-primary), var(--agnes-brand-primary));
+      linear-gradient(
+        45deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      linear-gradient(
+        135deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      );
     background-position:
-      right 13px top calc(50% - 3.5px),
-      right 10px top calc(50% - 3.5px),
-      right 13px top calc(50% + 3.5px),
-      right 10px top calc(50% + 3.5px),
-      right 12px top calc(50% - 4px),
-      right 4px top calc(50% - 4px),
-      right 12px top calc(50% + 4px),
-      right 4px top calc(50% + 4px),
-      right 4px center,
+      right 13px center,
       right 9px center;
-    background-size:
-      3px 3px,
-      3px 3px,
-      3px 3px,
-      3px 3px,
-      10px 10px,
-      10px 10px,
-      10px 10px,
-      10px 10px,
-      18px 8px,
-      8px 18px;
+    background-size: 4px 4px;
     background-repeat: no-repeat;
-    box-shadow: var(--shadow-control);
-  }
-  select.agnes-settings-input:not([multiple]):hover:not(:disabled):not(:focus-visible) {
-    border-color: transparent;
-    background-color: var(--agnes-bg-control);
-  }
-  select.agnes-settings-input:not([multiple]):focus-visible {
-    background-color: var(--agnes-bg-control);
-    box-shadow:
-      0 0 0 3px var(--agnes-focus-ring-soft),
-      var(--shadow-control);
-  }
-  select.agnes-settings-input:not([multiple]):disabled {
-    background-color: var(--agnes-bg-card);
-    background-image: none;
-    box-shadow: none;
   }
   @media (max-width: 767px) {
     select.agnes-settings-input:not([multiple]) {
@@ -450,7 +439,8 @@
     box-shadow: none;
   }
   .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
-  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item[data-danger]:focus-visible:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral)
+    .agh-menu-item[data-danger]:focus-visible:not([aria-disabled="true"]),
   :root:not([data-agnes-input="pointer"])
     .agh-menu-popup:not(.agh-menu-popup--neutral)
     .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
@@ -465,7 +455,8 @@
   .agh-menu-popup--neutral .agh-menu-item:hover:not([aria-disabled="true"]),
   .agh-menu-popup--neutral .agh-menu-item:focus:not([aria-disabled="true"]),
   :root:not([data-agnes-input="pointer"])
-    .agh-menu-popup--neutral .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    .agh-menu-popup--neutral
+    .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
     box-shadow: none;
@@ -480,7 +471,8 @@
   .agh-menu-popup--neutral .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
   .agh-menu-popup--neutral .agh-menu-item[data-danger]:focus:not([aria-disabled="true"]),
   :root:not([data-agnes-input="pointer"])
-    .agh-menu-popup--neutral .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    .agh-menu-popup--neutral
+    .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
     color: var(--agnes-status-danger-text);
     background: var(--agnes-bg-hover);
   }
@@ -613,5 +605,96 @@
       > .agh-disclosure-body:not([hidden]) {
       animation: agh-disclose var(--motion-medium) var(--motion-spring);
     }
+  }
+}
+
+/* Input states are shared without changing the controls' dimensions or typography.
+   Plain code/terminal editors and the library's internal search input keep their surfaces. */
+@layer ui {
+  :is(
+    .agnes-settings-input:not([type="checkbox"], [type="radio"]),
+    .agnes-ui-select.ant-select,
+    .select-picker-trigger
+  ) {
+    --ant-color-border: var(--agnes-input-border);
+    --ant-select-hover-border-color: var(--agnes-input-border-emphasis);
+    --ant-select-selector-bg: transparent;
+    --ant-select-active-border-color: var(--agnes-input-border-focus);
+    --ant-select-active-outline-color: var(--agnes-focus-ring-soft);
+    border-color: var(--agnes-input-border);
+    background-color: var(--agnes-input-surface);
+    color: var(--agnes-input-content-strong);
+    box-shadow: none;
+  }
+  .select-picker-trigger {
+    border: 1px solid var(--agnes-input-border);
+    background-image: none;
+  }
+  :is(.agnes-settings-input, .agnes-ui-select.ant-select, .select-picker-trigger):hover:where(
+    :not(:disabled):not(.ant-select-disabled):not([readonly]):not([aria-readonly="true"]):not(
+      [data-readonly="true"]
+    )
+  ) {
+    border-color: var(--agnes-input-border-emphasis);
+    background-color: var(--agnes-input-surface);
+    background-image: none;
+  }
+  select.agnes-settings-input:not([multiple]):hover:not(:disabled) {
+    background-image:
+      linear-gradient(
+        45deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      linear-gradient(
+        135deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      );
+  }
+  :is(.agnes-settings-input, .select-picker-trigger):focus-visible,
+  .agnes-ui-select.ant-select-focused:not(.ant-select-disabled),
+  .select-picker-trigger[aria-expanded="true"] {
+    outline: none;
+    border-color: var(--agnes-input-border-focus);
+    background-color: var(--agnes-input-surface);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  :is(.agnes-settings-input, .agnes-ui-select.ant-select, .select-picker-trigger)[aria-invalid="true"],
+  .agnes-ui-select.ant-select-status-error {
+    --ant-color-border: var(--agnes-status-danger-text);
+    --ant-select-hover-border-color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+  }
+  :is(.agnes-settings-input, .select-picker-trigger)[readonly],
+  .agnes-ui-select[data-readonly="true"],
+  .select-picker-trigger[aria-readonly="true"],
+  select.agnes-settings-input[aria-readonly="true"] {
+    background-color: var(--agnes-input-surface);
+    color: var(--agnes-text-secondary);
+    cursor: default;
+    --ant-select-hover-border-color: var(--agnes-input-border);
+  }
+  :is(.agnes-settings-input, .select-picker-trigger):disabled,
+  .agnes-ui-select.ant-select-disabled {
+    --ant-color-border: var(--agnes-line-primary);
+    border-color: var(--agnes-line-primary);
+    background-color: var(--agnes-bg-card);
+    color: var(--agnes-text-tertiary);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+}
+
+@layer ui {
+  .agnes-settings-code-input:not(:focus-visible) {
+    background-color: var(--agnes-bg-fill);
+  }
+  .agnes-settings-code-input:hover:not(:disabled):not(:focus-visible) {
+    background-color: var(--agnes-bg-fill-hover);
   }
 }

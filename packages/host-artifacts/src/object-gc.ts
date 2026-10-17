@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { open, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { createArtifactGcScheduler, planArtifactGc } from '@agnes/core/artifacts'
+import { artifactStorePath, createArtifactGcScheduler, planArtifactGc } from '@agnes/core/artifacts'
 import type { AttachmentRootSnapshot } from '@agnes/extension-api'
 import { deletePrivateArtifactSync } from '@agnes/system-node'
 import { computerUseArtifactRootSnapshot } from './artifact-gc-roots-sqlite.js'
@@ -92,7 +92,7 @@ export async function scanStoredObjects(dataDir: string, now: number) {
         candidates.push({
           sha256: hash,
           contentSha256: hash,
-          path,
+          path: artifactStorePath(dataDir, hash),
           size: stat.size,
           createdAtMs: marker.createdAtMs,
         })

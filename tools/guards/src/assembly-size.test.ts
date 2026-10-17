@@ -3,7 +3,7 @@
 // These ceilings keep it that way: a stage that grows past them should be split by the state it
 // shares, not by step name, and Computer Use's OS backends stay behind their own module.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { countLines } from './count-lines.js'
 import { listSourceFiles, repoRoot } from './repo.js'
@@ -42,7 +42,7 @@ describe('host assembly stays split into stages', () => {
     expect(stageFiles().length).toBeGreaterThan(20)
   })
   for (const file of stageFiles()) {
-    const name = relative(root, file)
+    const name = relative(root, file).split(sep).join('/')
     it(`${name} stays under its line ceiling`, () => {
       const max = name.endsWith('/assemble/assemble.ts') ? MAX_ASSEMBLE_FILE_LINES : MAX_FILE_LINES
       expect(countLines(readFileSync(file, 'utf8')), name).toBeLessThanOrEqual(max)
@@ -66,7 +66,7 @@ describe('host assembly stays split into stages', () => {
     expect(existsSync(hostSrc)).toBe(true)
     const offenders = listSourceFiles(hostSrc)
       .filter((file) => osBackend.test(readFileSync(file, 'utf8')))
-      .map((file) => relative(hostSrc, file))
+      .map((file) => relative(hostSrc, file).split(sep).join('/'))
       .filter((file) => file !== 'index.ts' && !file.startsWith('runtime/computer-use/'))
     expect(offenders).toEqual([])
   })

@@ -1,0 +1,187 @@
+/** @vitest-environment happy-dom */
+import { Context } from '@agnes/cordis'
+import type { UITimeline } from '@agnes/protocol'
+import {
+  composerCommands,
+  conversationCards,
+  LocaleService,
+  PresentationRoleRegistry,
+  SessionService,
+  SlotRegistry,
+  workbenchPanels,
+} from '@agnes/web-client'
+import { renderSessionActions } from '@agnes/web-conversation/session-actions'
+import { unmountRegion } from '@agnes/web-ui'
+import { flushSync } from 'react-dom'
+import { expect, it, vi } from 'vitest'
+// @ts-expect-error Generated shipped ESM is exercised directly without a release build.
+import * as goal from '../../package-manager/bundled-plugins/goal-ui/src/client.js'
+// @ts-expect-error Generated shipped ESM is exercised directly without a release build.
+import * as interaction from '../../package-manager/bundled-plugins/interaction-ui/src/client.js'
+
+it.each([
+  ['goal', goal, 'goal', 'goal'],
+  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views'],
+] as const)(
+  'registers, yields, restores and revokes the complete %s presentation',
+  async (role, official, panelId, cardId) => {
+    const ctx = new Context(),
+      slots = new SlotRegistry(ctx),
+      roles = new PresentationRoleRegistry()
+    const session = new SessionService(ctx)
+    const locale = new LocaleService(ctx, 'en')
+    const client = { sessions: { get: () => undefined } }
+    // Services are non-enumerable just as on a real Cordis client fiber.
+    const services = Object.create(
+      null,
+      Object.fromEntries(
+        Object.entries({
+          slots,
+          session,
+          locale,
+          agnes: client,
+          resources: {},
+          theme: {},
+          presentation: {},
+          presentationRoles: { register: (provider: never) => roles.register('official', provider) },
+        }).map(([name, value]) => [name, { value }]),
+      ),
+    )
+    const stop = official.apply(services)
+    let stopReplacement: (() => void) | undefined
+    const host = document.createElement('div')
+    document.body.append(host)
+    try {
+      expect(workbenchPanels.get(panelId)).toBeDefined()
+      if (role === 'goal')
+        expect(
+          composerCommands.get('goal')?.route({ text: '/goal pause', sessionId: 'history', busy: true }),
+        ).toBe('steer')
+      expect(conversationCards.get(cardId)).toBeDefined()
+      if (role === 'goal') {
+        // Historical node input, with no live slots, uses the public reader.
+        const timeline = {
+          sessionId: 'history',
+          nodes: [
+            {
+              kind: 'slot',
+              fill: {
+                extId: 'agnes/goal',
+                slot: 'status.line',
+                payload: {
+                  text: 'Paused',
+                  level: 'info',
+                  goal: {
+                    id: 'g',
+                    revision: 1,
+                    phase: 'paused',
+                    objective: 'Historical goal',
+                    rounds: 1,
+                    maxRounds: 10,
+                    creditsUsed: 0,
+                  },
+                },
+              },
+            },
+          ],
+        } as unknown as UITimeline
+        const command = vi.fn()
+        flushSync(() => renderSessionActions(host, timeline, false, command, (key) => locale.t(key)))
+        expect(host.querySelector('[data-testid="goal-toggle"]')).not.toBeNull()
+        flushSync(() => host.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')!.click())
+        await vi.waitFor(() => expect(document.body.textContent).toContain('Historical goal'))
+        flushSync(() => document.querySelector<HTMLButtonElement>('[data-testid="goal-resume"]')!.click())
+        expect(command).toHaveBeenCalledWith('/goal resume')
+      }
+      stopReplacement = roles.register('replacement', {
+        role,
+        priority: 0,
+        mount() {
+          const off = workbenchPanels.register({
+            id: 'replacement',
+            order: 0,
+            edge: 'right',
+            titleKey: 'replacement',
+            component: () => null,
+          })
+          return off
+        },
+      })
+      expect(workbenchPanels.get(panelId)).toBeUndefined()
+      if (role === 'goal') expect(composerCommands.get('goal')).toBeUndefined()
+      else
+        for (const id of ['question-dock', 'question-turn-actions', 'question-answer-node'])
+          expect(conversationCards.get(id)).toBeUndefined()
+      expect(conversationCards.get(cardId)).toBeUndefined()
+      expect(slots.entriesOfSlot('conversation.view')).toHaveLength(0)
+      stopReplacement()
+      stopReplacement = undefined
+      expect(workbenchPanels.get(panelId)).toBeDefined()
+      expect(conversationCards.get(cardId)).toBeDefined()
+      if (role === 'interaction') expect(slots.entriesOfSlot('conversation.view')).toHaveLength(1)
+      stop()
+      expect(workbenchPanels.get(panelId)).toBeUndefined()
+      expect(conversationCards.get(cardId)).toBeUndefined()
+      expect(slots.entriesOfSlot('conversation.view')).toHaveLength(0)
+    } finally {
+      stopReplacement?.()
+      stop()
+      unmountRegion(host)
+      host.remove()
+    }
+  },
+)
+
+it.each([
+  ['goal', goal, []],
+  ['interaction', interaction, ['conversation.view']],
+] as const)(
+  'loads the shipped %s descriptor through the real Cordis client facade and revokes synchronously',
+  async (role, official, allowedSlots) => {
+    const {
+      AgnesClientService,
+      CommandService,
+      clientModule,
+      presentationRoles,
+      revokeContributionOwner,
+      ThemeService,
+    } = await import('@agnes/web-client')
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry)
+    const client = { sessions: { get: () => undefined } } as never
+    new AgnesClientService(ctx, client)
+    new CommandService(ctx)
+    new SessionService(ctx, undefined, client)
+    new LocaleService(ctx, 'en')
+    new ThemeService(ctx, 'light')
+    const owner = `${role}-actual-fiber`
+    const fiber = ctx.plugin(clientModule(official), {
+      packageId: `official-${role}`,
+      revision: 'fixture',
+      rowId: owner,
+      allowedSlots: [...allowedSlots],
+      slotCatalogVersion: 'dsh-client-slots/v1',
+      binding: { owner, lifetime: 'profile', availability: 'active' },
+    } as never)
+    let stopReplacement: (() => void) | undefined
+    try {
+      await fiber
+      expect(workbenchPanels.get(role === 'goal' ? 'goal' : 'intelligent-ui')).toBeDefined()
+      stopReplacement = presentationRoles.register('community-fiber', {
+        role,
+        priority: 0,
+        mount: () => () => {},
+      })
+      expect(workbenchPanels.get(role === 'goal' ? 'goal' : 'intelligent-ui')).toBeUndefined()
+      stopReplacement()
+      stopReplacement = undefined
+      expect(workbenchPanels.get(role === 'goal' ? 'goal' : 'intelligent-ui')).toBeDefined()
+      revokeContributionOwner(owner)
+      expect(workbenchPanels.get(role === 'goal' ? 'goal' : 'intelligent-ui')).toBeUndefined()
+    } finally {
+      stopReplacement?.()
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  },
+)

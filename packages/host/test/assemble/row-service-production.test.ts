@@ -84,6 +84,12 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
         output: { sessionless: true },
       })
       const session = await host.createSession({ cwd: dataDir, key: 'row-service' })
+      await expect(host.resolveService(session.key, ['panel.version'])).resolves.toMatchObject({
+        extension: owner,
+        packageId,
+        workspaceRoot: session.workspaceRoot,
+      })
+      await expect(host.resolveService(session.key, ['absent.service'])).resolves.toBeUndefined()
       await expect(
         host.callService(
           { sessionId: session.key, extension: owner, service: 'panel.version', input: {} },
@@ -100,7 +106,11 @@ it('keeps a pinned row query service and denies it to new sessions when disabled
           { kind: 'local' },
         ),
       ).resolves.toEqual({ output: { version: '1.0.0' } })
+      await expect(host.resolveService(session.key, ['panel.version'])).resolves.toMatchObject({
+        extension: owner,
+      })
       const disabled = await host.createSession({ cwd: dataDir, key: 'row-service-disabled' })
+      await expect(host.resolveService(disabled.key, ['panel.version'])).resolves.toBeUndefined()
       await expect(
         host.callService(
           { sessionId: disabled.key, extension: owner, service: 'panel.version', input: {} },

@@ -163,6 +163,7 @@ export function createSkillInstallRequests(options: {
             if (!currentAuthority || currentAuthority.principalId !== authority.principalId)
               throw rpcError('CAPABILITY_DENIED')
             const permitted = new Set([
+              '_agnes/v1/resources.list',
               '_agnes/v1/resources.get',
               '_agnes/v1/resources.operation.get',
               '_agnes/v1/skills.refresh',

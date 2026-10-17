@@ -7,6 +7,7 @@ import {
 } from '@agnes/daemon-admin/packages/permissions'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { createConfigurationService, createCredentialStore, type Host } from '@agnes/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import {
   hostSessionCatalog,
@@ -15,7 +16,9 @@ import {
 } from '../src/local/methods/session-selection.js'
 
 it('serves host catalogs, persists exact defaults and refuses web/narrow writes', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const configuration = createConfigurationService({ home, profile: 'local-dev' })
   const loop = { id: 'example', version: '1.0.0', sourcePackage: '@acme/loop', capabilities: ['resume'] }
   const adapter = {
@@ -109,12 +112,14 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     })
   } finally {
     await Promise.all([ep.close(), browser.close(), reader.close()])
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })
 
 it('lists a payload-only adapter without models and refuses its models as the default', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const configuration = createConfigurationService({ home, profile: 'local-dev' })
   const entry = (id: string, wireApi: string, capabilities: Record<string, boolean>) => ({
     id,
@@ -185,12 +190,14 @@ it('lists a payload-only adapter without models and refuses its models as the de
     expect(await save('mixed', 'mixed-1')).toMatchObject({ result: { revision: 1 } })
   } finally {
     await ep.close()
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })
 
 it('projects no conversation models for the route a saved configuration account produced', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agnes-selection-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const configuration = createConfigurationService({ home, profile: 'local-dev' })
   const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
   await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
@@ -259,6 +266,6 @@ it('projects no conversation models for the route a saved configuration account 
     ).toMatchObject({ error: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } } })
   } finally {
     await ep.close()
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })

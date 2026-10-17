@@ -55,19 +55,21 @@ export function Toast({
     // The pinned message hook forwards notice attributes; content owns the sole polite live region.
     const notice = {
       key: id,
-      duration: duration / 1000,
+      duration: 0,
       icon: null,
       role: 'presentation',
       onClose: finish,
       content: <ToastBody />,
     }
     api.open(notice)
+    const timer = duration > 0 ? setTimeout(finish, duration) : undefined
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') finish()
     }
     document.addEventListener('keydown', handleEscape)
     return () => {
       active = false
+      clearTimeout(timer)
       api.destroy(id)
       document.removeEventListener('keydown', handleEscape)
     }

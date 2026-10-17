@@ -79,13 +79,16 @@
     "sandboxKind",
     "sandboxUnavailable",
     "satisfiesApiRange",
+    "schedulingKind",
+    "schedulingServiceCapabilities",
     "systemPromptKind",
     "toolPolicyKind",
     "toolRuntimeKind",
     "unavailableDecisions",
     "unavailableProjections",
     "validSandboxCapabilities",
-    "webhookTriggerKind"
+    "webhookTriggerKind",
+    "workspaceStateKind"
   ],
   "workspaceIdentity": {
     "ToolPolicyInput": "workspaceRoot",

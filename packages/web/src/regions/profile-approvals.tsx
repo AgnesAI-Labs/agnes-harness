@@ -18,14 +18,10 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
   useEffect(() => {
     let alive = true
     let pending: Promise<void> | undefined
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let attempts = 0
-    let count = 0
     let again = false
     const read = () => {
       if (!alive || document.visibilityState === 'hidden') return Promise.resolve()
       if (pending) return pending
-      clearTimeout(timer)
       pending = Promise.resolve().then(async () => {
         try {
           const result = await client.call<{ decisions: DecisionSnapshot[] }>(
@@ -33,7 +29,6 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
             {},
           )
           if (alive) {
-            count = result.decisions.length
             setDecisions(result.decisions)
             setError(false)
           }
@@ -41,13 +36,9 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
           if (alive && opened.current) setError(true)
         } finally {
           pending = undefined
-          // There is no profile-decision push in the current protocol. Keep visible-only discovery
-          // at one minute; only known pending approvals need faster, backed-off revalidation.
-          const delay = count ? Math.min(30_000, 3000 * 2 ** Math.min(4, attempts++)) : 60_000
-          if (!count) attempts = 0
-          if (alive && document.visibilityState !== 'hidden') {
-            timer = setTimeout(() => void read(), again ? 0 : delay)
+          if (alive && again) {
             again = false
+            void read()
           }
         }
       })
@@ -55,9 +46,19 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
     }
     const wake = () => {
       again = pending !== undefined
-      clearTimeout(timer)
       void read()
     }
+    const stopNotice = client.on?.('notice', (payload) => {
+      const notice = payload as { kind?: unknown }
+      // The daemon routes this signal to the authorized profile/principal, never as list data.
+      if (notice?.kind === 'decisions_changed') wake()
+    })
+    let connectionState = client.connectionState
+    const stopConnection = client.on?.('connectionStateChanged', (state) => {
+      const previous = connectionState
+      connectionState = state as typeof connectionState
+      if (state === 'connected' && previous !== 'connected') wake()
+    })
     refresh.current = read
     document.addEventListener('visibilitychange', wake)
     window.addEventListener('focus', wake)
@@ -65,7 +66,8 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
     void read()
     return () => {
       alive = false
-      clearTimeout(timer)
+      stopNotice?.()
+      stopConnection?.()
       refresh.current = async () => {}
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('focus', wake)

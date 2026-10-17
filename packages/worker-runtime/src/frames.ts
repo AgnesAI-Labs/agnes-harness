@@ -1,4 +1,5 @@
 import type {
+  DaemonNotice,
   EventEnvelope,
   LoopSelection,
   McpStatus,
@@ -77,6 +78,7 @@ export type WorkerMethod =
   | 'profileService.readOperation'
   | 'profileService.listDecisions'
   | 'profileService.answerDecision'
+  | 'resolveService'
   | 'inspectService'
   | 'callService'
   | 'abortService'
@@ -88,6 +90,7 @@ export type WorkerMethod =
   | 'computerUse.operationStatus'
   | 'computerUse.operationCancel'
   | 'resourceSkillScan'
+  | 'resourceSkillView'
   | 'resourceSkillRemove'
   | 'resourceMcpTest'
   | 'resourceMcpTools'
@@ -193,6 +196,7 @@ export type RequestFrame = {
   sessionKey: string
   requestId: string
   method:
+    | 'scheduling'
     | 'bound-wake'
     | 'permission'
     | 'permission-abort'
@@ -256,6 +260,7 @@ export type WorkerToSupervisor =
   | PreviewFrame
   | SessionInterruptedFrame
   | LogFrame
+  | { kind: 'decisionsChanged'; detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail'] }
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame

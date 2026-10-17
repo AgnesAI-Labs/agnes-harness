@@ -86,3 +86,12 @@ Example tests load the actual backend module, capture its registered definition,
 Keep package structure and registration first, then replace the business logic. Update input validation, permissions, approvals, and replay declarations for actual side effects. Add connections and listeners to the Cordis lifecycle so disabling the plugin cleans them up. To show results in an interface, continue with [frontend panels](frontend.md) and [full-stack integration](fullstack.md).
 
 See [cordis-greeting](../../examples/packages/cordis-greeting/greeting.test.ts) for configured services, and the [hot-service](../../examples/packages/hot-service/README.md) family for updates, failed candidates, and fallback. Avoid copying a backend entry solely from the old `hot-tool` `agnes.extensions` format.
+
+### Scheduled tasks from tools
+
+Tools can bind the fixed daemon scheduling service through `ctx.providers.bindOwn(schedulingKind)`
+inside an admitted callback. Declare the exact six `schedulingServiceCapabilities` in the package
+manifest's `capabilities.services` and obtain their service lease grants. Official and third-party
+tools use the same checks, session ownership and workspace restrictions. The interface provides
+list/get/upsert/control/archive/runs; it does not replace the scheduling engine. See the
+[scheduling service contract](../../packages/base/extensions/schedule/README.md#scheduling-service).

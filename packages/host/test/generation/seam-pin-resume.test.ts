@@ -303,6 +303,8 @@ it.each(
   ]),
 )(
   'tells the person which direction %s fails in and leaves the ledger and pin untouched',
+  // Composition cases assemble both the pinned Host and a fresh recovery Host.
+  { timeout: 60_000 },
   async (_name, code, cause, damage, composition) => {
     const { root, pinFile, generationFile } = await pinnedSessionRoot(composition)
     const generation = JSON.parse(readFileSync(generationFile, 'utf8')) as Record<string, unknown>

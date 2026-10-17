@@ -65,13 +65,10 @@
       "className": 5
     },
     "packages/web-ui/src/settings-layout.tsx": {
-      "intrinsic": 4,
+      "intrinsic": 3,
       "className": 1
     },
     "packages/web/src/client-modules/reconcile/styles.ts": {
-      "dom": 1
-    },
-    "packages/web/src/intelligent-ui/artifact-file.tsx": {
       "dom": 1
     },
     "packages/web/src/timeline-node-host.tsx": {

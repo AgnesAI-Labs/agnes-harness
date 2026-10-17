@@ -33,6 +33,13 @@ export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'
 export { revokeContributionOwner, updateContributionAvailability } from './contribution-scope.js'
 export { reserveHomeEntry } from './declared-home-entries.js'
+export type { DeliverableRecord, DeliverablesSnapshot } from './deliverables.js'
+export {
+  DeliverablesStore,
+  deliveredFiles,
+  groupDeliveredFiles,
+  surfaceDeliverables,
+} from './deliverables.js'
 export type { DshSlotDefinition, DshSlotName } from './dsh-slot-catalog.js'
 export {
   DSH_PUBLIC_SLOT_NAMES,
@@ -51,10 +58,13 @@ export type { ExamplePageContribution } from './example-pages.js'
 export type { ExternalSpecifier } from './externals.js'
 export { BUILDER_VERSION, externals } from './externals.js'
 export { factChainLinks, RegistrableLink, workbenchNavigation } from './fact-chain-links.js'
+export { type GoalCommand, type GoalView, goalCommand, readGoal } from './goals.js'
 export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intelligent-ui-renderer.js'
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'
+export type { PresentationProvider } from './presentation-roles.js'
+export { PresentationRoleRegistry, presentationRoles } from './presentation-roles.js'
 export type { RegisterOptions } from './registry.js'
 export { SlotRegistry } from './registry.js'
 export type {
@@ -93,6 +103,7 @@ export {
   ThemeService,
   UI_LOCALES,
 } from './services.js'
+export { type PresentationHost, PresentationService } from './services-presentation.js'
 export type {
   ChainRenderOpts,
   ChainSelect,
@@ -131,6 +142,8 @@ export type {
   WorkbenchPanelCount,
 } from './ui-registries.js'
 export {
+  type ComposerInputCommand,
+  composerCommands,
   conversationCards,
   fileViewerActions,
   HomeEntryRegistry,

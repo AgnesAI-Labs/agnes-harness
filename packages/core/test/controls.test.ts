@@ -91,6 +91,57 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
+  it.each(['active', 'completed'] as const)(
+    'promotes one queue item atomically during %s, preserving content on failure',
+    async (mode) => {
+      const { session, log } = await openSession({ provider: fakeProvider([textTurn('answer')]) })
+      try {
+        await session.enqueue('next-turn', { content: content('go'), actor })
+        await session.acceptInput()
+        await session.enqueue('next-turn', {
+          content: [
+            ...content('one action'),
+            { type: 'file', name: 'note.txt', mimeType: 'text/plain', data: 'eA==' },
+          ],
+          actor,
+          kind: 'follow_up',
+        })
+        const [item] = (await session.controls.state()).pending
+        if (!item) throw new Error('missing queued item')
+        const before = (await session.controls.state()).pending
+        const append = vi.spyOn(log, 'append')
+        append.mockRejectedValueOnce(new Error('synthetic storage failure'))
+        await expect(session.controls.apply('promote', actor, 'promote', item.itemId)).rejects.toThrow(
+          'synthetic storage failure',
+        )
+        expect((await session.controls.state()).pending).toEqual(before)
+        expect(await facts(log)).not.toContainEqual(
+          expect.objectContaining({ action: 'promote', outcome: 'applied' }),
+        )
+        append.mockRestore()
+        if (mode === 'completed') {
+          await session.endTurn('completed')
+          await expect(session.controls.apply('promote', actor, 'late', item.itemId)).rejects.toMatchObject({
+            detail: { reason: 'CONTROL_NOT_RUNNING' },
+          })
+          expect((await session.controls.state()).pending).toEqual(before)
+          return
+        }
+        await session.controls.apply('promote', actor, 'promote', item.itemId)
+        expect((await session.controls.state()).pending).toEqual([
+          { ...item, kind: 'steer', target: 'next-step' },
+        ])
+        await expect(session.controls.apply('promote', actor, 'gone', 'missing')).rejects.toMatchObject({
+          code: 'E_RELATION',
+        })
+        expect((await session.controls.state()).pending).toHaveLength(1)
+        expect((await session.projectUI()).pendingInputs).toMatchObject([{ itemId: item.itemId }])
+      } finally {
+        await session.close()
+      }
+    },
+  )
+
   it('interrupt cooperatively drains a running tool and retains its committed result', async () => {
     const entered = gate()
     const registry = new ToolRegistry()
@@ -133,29 +184,45 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
-  it('pauses at a boundary and stays paused through projection reload and cold reopen', async () => {
-    const storage = new MemoryStorage()
-    const a = await openSession({ storage, provider: fakeProvider([textTurn('answer')]) })
-    await a.session.enqueue('next-turn', { content: content('go'), actor })
-    await a.session.step()
-    const turn = a.session.op()!.meta.turn
-    await a.session.controls.apply('pause', actor, 'pause')
-    expect(await a.session.step()).toMatchObject({ phase: 'paused', outcome: 'parked' })
-    expect((await a.session.projectUI()).opState).not.toBeNull()
-    await a.log.close()
-    const provider = fakeProvider([textTurn('answer')])
-    const b = await openSession({ storage, writerRunId: 'r2', provider })
-    await b.session.resume()
-    expect(await b.session.step()).toMatchObject({ phase: 'paused' })
-    expect(b.session.op()!.meta.turn).toBe(turn)
-    expect(provider.requests).toEqual([])
-    await b.session.controls.apply('resume', actor, 'resume')
-    expect((await run(b.session)).reason).toBe('completed')
-    expect(await facts(b.log)).toContainEqual(
-      expect.objectContaining({ action: 'pause', outcome: 'applied' }),
-    )
-    await b.session.close()
-  })
+  it.each(['open', 'settled'] as const)(
+    'keeps a %s paused turn resumable through cold reopen',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const a = await openSession({ storage, provider: fakeProvider([textTurn('answer')]) })
+      for (const action of ['pause', 'resume'] as const)
+        await expect(a.session.controls.apply(action, actor, `idle-${action}`)).rejects.toMatchObject({
+          code: 'E_RELATION',
+          detail: { reason: 'CONTROL_NOT_RUNNING' },
+        })
+      await a.session.enqueue('next-turn', { content: content('go'), actor })
+      await a.session.step()
+      const turn = a.session.op()!.meta.turn
+      await a.session.controls.apply('pause', actor, 'pause')
+      expect(await a.session.step()).toMatchObject({ phase: 'paused', outcome: 'parked' })
+      expect((await a.session.projectUI()).opState).not.toBeNull()
+      if (mode === 'settled') {
+        await a.session.enqueue('next-turn', { content: content('queued after shutdown'), actor })
+        await a.session.resume({ mode: 'close' })
+        expect(a.session.op()).toBeNull()
+      }
+      await a.log.close()
+      const provider = fakeProvider([textTurn('answer')])
+      const b = await openSession({ storage, writerRunId: 'r2', provider })
+      await b.session.resume()
+      expect(await b.session.step()).toMatchObject({ phase: 'paused' })
+      if (mode === 'open') expect(b.session.op()!.meta.turn).toBe(turn)
+      else expect(b.session.op()).toBeNull()
+      expect(provider.requests).toEqual([])
+      await b.session.controls.apply('resume', actor, 'resume')
+      expect((await run(b.session)).reason).toBe('completed')
+      expect((await b.session.controls.state()).paused).toBe(false)
+      expect((await b.session.controls.state()).pending).toEqual([])
+      expect(await facts(b.log)).toContainEqual(
+        expect.objectContaining({ action: 'pause', outcome: 'applied' }),
+      )
+      await b.session.close()
+    },
+  )
 
   it('pages all control facts so reload recovery cannot lose old returned steers', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })
@@ -357,7 +424,7 @@ describe('human Loop controls', () => {
     },
   )
 
-  it.each(['steer', 'pause', 'interrupt'] as const)(
+  it.each(['steer', 'pause', 'interrupt', 'promote'] as const)(
     'refuses unsupported %s on the pinned factory',
     async (action) => {
       const { session, log } = await openSession({
@@ -372,9 +439,11 @@ describe('human Loop controls', () => {
           : session.controls.apply(action, actor, 'unsupported', 'missing')
       await expect(operation).rejects.toMatchObject({
         code: 'E_UNSUPPORTED',
-        detail: { reason: 'LOOP_CONTROL_UNSUPPORTED', control: action },
+        detail: { reason: 'LOOP_CONTROL_UNSUPPORTED', control: action === 'promote' ? 'steer' : action },
       })
-      expect(await facts(log)).toContainEqual(expect.objectContaining({ action, outcome: 'refused' }))
+      expect(await facts(log)).toContainEqual(
+        expect.objectContaining({ action: action === 'promote' ? 'steer' : action, outcome: 'refused' }),
+      )
       await session.close()
     },
   )

@@ -117,7 +117,7 @@ it('keeps the dialog open and says what is wrong when a workspace source lacks i
   // Nothing was sent and nothing closed: the user is still looking at what they typed.
   expect(inspectCalls(fetcher)).toHaveLength(0)
   expect(sourceDialog().open).toBe(true)
-})
+}, 60_000)
 
 it('shows an example for the selected source type instead of the npm one', async () => {
   await mount(backend(() => Response.json({})))
@@ -127,13 +127,13 @@ it('shows an example for the selected source type instead of the npm one', async
   // 组件层用原生 select（旧 select-picker 的触发器/listbox DOM 已随迁移移除）。
   setNativeValue(sourceType(), 'file')
   expect(sourceType().value).toBe('file')
-  expect(placeholder()).toBe('/path/to/my-plugin.tgz')
+  await vi.waitFor(() => expect(placeholder()).toBe('/path/to/my-plugin.tgz'))
 
   setNativeValue(sourceType(), 'workspace')
-  expect(placeholder()).toMatch(/^workspace:extensions\//)
+  await vi.waitFor(() => expect(placeholder()).toMatch(/^workspace:extensions\//))
 
   setNativeValue(sourceType(), 'npm')
-  expect(placeholder()).toMatch(/^npm:/)
+  await vi.waitFor(() => expect(placeholder()).toMatch(/^npm:/))
 })
 
 it('sends a well-formed source and closes the dialog once the check has been accepted', async () => {

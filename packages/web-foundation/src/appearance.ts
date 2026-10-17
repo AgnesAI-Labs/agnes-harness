@@ -2,6 +2,7 @@ import {
   Button,
   createSelectPicker,
   renderRegion,
+  Segmented,
   SettingsState,
   setSettingsSelectOptions,
 } from '@agnes/web-ui'
@@ -63,6 +64,7 @@ export function bindAppearance(options: {
 }): AppearanceController {
   const prefersDark = options.prefersDark ?? (() => systemPrefersDark(globalThis))
   const themeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(THEME_INPUT)]
+  const fontScaleHost = options.scope.querySelector<HTMLElement>('#font-scale-choices')
   const fontScaleInputs = [...options.scope.querySelectorAll<HTMLInputElement>(FONT_SCALE_INPUT)]
   const localeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(LOCALE_INPUT)]
   // The language picker lists whatever interface languages exist, each in its own name.
@@ -81,6 +83,26 @@ export function bindAppearance(options: {
     for (const input of themeInputs) input.checked = input.value === theme
     const scale = readFontScale(options.storage)
     for (const input of fontScaleInputs) input.checked = input.value === scale
+    if (fontScaleHost)
+      renderRegion(
+        fontScaleHost,
+        createElement(Segmented, {
+          label: tr('settings-shell.fontScale'),
+          name: 'agnes-font-scale',
+          value: scale,
+          options: [
+            { value: 'small', label: tr('settings-shell.fontSmall') },
+            { value: 'normal', label: tr('settings-shell.fontNormal') },
+            { value: 'large', label: tr('settings-shell.fontLarge') },
+          ],
+          onChange(value: string) {
+            if (!isFontScale(value)) return
+            writeFontScale(options.storage, value)
+            applyFontScale(options.root, value)
+            sync()
+          },
+        }),
+      )
     if (options.locale) {
       syncLocaleRadios(options.scope, options.locale.current())
       if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)

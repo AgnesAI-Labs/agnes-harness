@@ -1,5 +1,5 @@
 import { AutoReviewConfig, type ToolReviewFact, validateAgainst } from '@agnes/protocol'
-import { Button } from '@agnes/web-ui'
+import { Button, fallbackT, reportSuccess, StatusMessage } from '@agnes/web-ui'
 import { useState } from 'react'
 import { traceText } from './trace-locale.js'
 
@@ -34,14 +34,17 @@ export async function saveFutureRule(
 
 /** The authorization decision for a call and the three future-call rules: allow, ask me, deny. */
 export function TraceReview({ name, review }: { name: string; review: ToolReviewFact }) {
-  const [message, setMessage] = useState<'saved' | 'failed' | undefined>()
+  const [message, setMessage] = useState<'failed' | undefined>()
   const [busy, setBusy] = useState(false)
+  const [failedDecision, setFailedDecision] = useState<'allow' | 'deny' | 'escalate'>('escalate')
   const save = async (decision: 'allow' | 'deny' | 'escalate') => {
     setBusy(true)
     try {
       await saveFutureRule(name, review, decision)
-      setMessage('saved')
+      setMessage(undefined)
+      reportSuccess('future-rule', traceText('trace.facts.ruleSaved'))
     } catch {
+      setFailedDecision(decision)
       setMessage('failed')
     } finally {
       setBusy(false)
@@ -82,6 +85,7 @@ export function TraceReview({ name, review }: { name: string; review: ToolReview
           <Button
             size="small"
             data-testid="review-future-allow"
+            loading={busy}
             disabled={busy}
             onClick={() => void save('allow')}
           >
@@ -91,6 +95,7 @@ export function TraceReview({ name, review }: { name: string; review: ToolReview
         <Button
           size="small"
           data-testid="review-future-ask"
+          loading={busy}
           disabled={busy}
           onClick={() => void save('escalate')}
         >
@@ -99,6 +104,7 @@ export function TraceReview({ name, review }: { name: string; review: ToolReview
         <Button
           size="small"
           data-testid="review-future-deny"
+          loading={busy}
           disabled={busy}
           onClick={() => void save('deny')}
         >
@@ -106,9 +112,12 @@ export function TraceReview({ name, review }: { name: string; review: ToolReview
         </Button>
       </div>
       {message ? (
-        <p role={message === 'failed' ? 'alert' : 'status'}>
-          {traceText(message === 'failed' ? 'trace.facts.ruleFailed' : 'trace.facts.ruleSaved')}
-        </p>
+        <StatusMessage
+          kind="error"
+          action={{ label: fallbackT('ui.retry'), onSelect: () => void save(failedDecision), busy }}
+        >
+          {traceText('trace.facts.ruleFailed')}
+        </StatusMessage>
       ) : null}
     </section>
   )

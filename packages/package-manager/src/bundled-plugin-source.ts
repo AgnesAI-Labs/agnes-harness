@@ -8,7 +8,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'skill-helper',
     id: '@agnes/skill-helper',
-    version: '0.2.0',
+    version: '0.3.0',
     license: 'MIT',
     ref: BUNDLED_SKILL_HELPER_REF,
   },
@@ -22,9 +22,23 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.0',
+    version: '0.2.1',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
+  },
+  ...['goal-ui', 'interaction-ui'].map((name) => ({
+    name,
+    id: `@agnes/${name}`,
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: `file:./bundled-plugins/${name}`,
+  })),
+  {
+    name: 'deliverables-ui',
+    id: '@agnes/deliverables-ui',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/deliverables-ui',
   },
   {
     name: 'document-reader',

@@ -2,7 +2,15 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
+import type {
+  ConfigSnapshot,
+  PageSessionMeta,
+  SessionGroupsResult,
+  SessionListParams,
+  UIOpeningResult,
+  UIProjectionUpdate,
+  UITimeline,
+} from '@agnes/protocol'
 import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
@@ -64,8 +72,8 @@ vi.mock('../src/app/session-controller.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/app/session-controller.js')>()
   return {
     ...actual,
-    createSessionController: (context: Parameters<typeof actual.createSessionController>[0]) => {
-      const controller = actual.createSessionController(context)
+    createSessionController: (...args: Parameters<typeof actual.createSessionController>) => {
+      const controller = actual.createSessionController(...args)
       selectionController.open = controller.open
       return controller
     },
@@ -79,6 +87,49 @@ const binding = vi.hoisted(() => ({
 const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
 const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
+// Existing app fixtures own their rows, failures and deferred responses. Add the current sidebar
+// wire shape here; explicit pagination fixtures bypass this adapter and keep their refusal semantics.
+function sidebarListingFixture(read: (input: SessionListParams) => Promise<PageSessionMeta>) {
+  const active = (page: PageSessionMeta) => page.items.filter((row) => !row.archived)
+  const revision = (rows: PageSessionMeta['items']) =>
+    createHash('sha256').update(JSON.stringify(rows)).digest('hex')
+  return {
+    groups: vi.fn(async (): Promise<SessionGroupsResult> => {
+      const rows = active(await read({ limit: 100 }))
+      return {
+        ready: true,
+        items: [
+          {
+            groupId: 'unassigned',
+            total: rows.length,
+            lastMessageAt: null,
+            revision: revision(rows),
+            ready: true,
+          },
+        ],
+      }
+    }),
+    list: vi.fn(async (input: SessionListParams = {}) => {
+      const page = await read(input)
+      if (!('sidebar' in input)) return page
+      const rows = active(page)
+      const version = revision(rows)
+      const offset = input.cursor ? Number(input.cursor.split(':')[1]) : 0
+      if (input.cursor && input.cursor.split(':')[0] !== version)
+        throw Object.assign(new Error('Session group changed'), {
+          data: { code: 'SESSION_SIDEBAR_CURSOR_STALE' },
+        })
+      const limit = input.limit ?? 5
+      return {
+        items: rows.slice(offset, offset + limit),
+        total: rows.length,
+        revision: version,
+        ...(offset + limit < rows.length ? { next: `${version}:${offset + limit}` } : {}),
+      }
+    }),
+  }
+}
+
 vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agnes/sdk/browser')>()),
   // The live projection reads the connection state and keeps the disposers `on` returns.
@@ -89,6 +140,8 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
     if (client && !('sessions' in client)) client.sessions = new Map()
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
+    if (client?.session?.list && !client.session.groups)
+      Object.assign(client.session, sidebarListingFixture(client.session.list))
     return client
   },
   memoryJournal: sdk.memoryJournal,
@@ -112,6 +165,7 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
+  pendingCommands: ReturnType<typeof vi.fn>
   controls: ReturnType<typeof vi.fn>
   control: ReturnType<typeof vi.fn>
   editQueued: ReturnType<typeof vi.fn>
@@ -210,6 +264,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
     }
   })
   return {
+    pendingCommands: vi.fn(async () => []),
     projectUIOpening: opening,
     projectUIPatch: patch,
     projectUIHistory: vi.fn(async () => {
@@ -327,6 +382,170 @@ afterEach(async () => {
   document.documentElement.replaceChildren()
   sessionStorage.clear()
   localStorage.clear()
+})
+
+describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (platform) => {
+  async function boot(
+    accountsReady = true,
+    state: 'failed-page' | 'empty' | 'initializing' | 'failed-summary' | 'loaded' = 'failed-page',
+  ) {
+    installPublicFixture()
+    history.replaceState(null, '', '/#test-launcher-token')
+    const rows = ['old', 'other'].map((sessionId) => ({
+      sessionId,
+      title: `${sessionId} task`,
+      createdAt: '2026-10-16T00:00:00Z',
+      lastSeq: 0,
+      generation: 1,
+      preset: 'standard',
+    }))
+    const page = { items: rows, total: rows.length, revision: 'v1' }
+    const list = vi.fn(async (input?: { q?: { prefix?: string } }) =>
+      input?.q ? { items: rows.filter((row) => row.sessionId === input.q?.prefix) } : page,
+    )
+    if (state === 'failed-page') list.mockRejectedValueOnce(new Error('first sidebar page unavailable'))
+    const client = {
+      initialize: vi.fn(async () => ({ platform })),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: accountsReady, ...(accountsReady ? {} : { accounts: [] }) })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list,
+        groups: vi.fn(
+          async (): Promise<SessionGroupsResult> => ({
+            ready: state !== 'initializing',
+            items:
+              state === 'empty' || state === 'initializing'
+                ? []
+                : [{ groupId: 'unassigned', total: 2, lastMessageAt: null, revision: 'v1', ready: true }],
+          }),
+        ),
+        load: vi.fn(),
+      },
+    }
+    if (state === 'failed-summary')
+      client.session.groups.mockRejectedValueOnce(new Error('sidebar summary unavailable'))
+    sdk.createClient.mockReturnValue(client)
+    binding.loadWebSession.mockImplementation(async (_load, id: string) => ({
+      session: session(id, async () => idleTimeline(id)),
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    // Diagnostics run at the end of startup, after the automatic navigation decision.
+    await vi.waitFor(() =>
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/admin/api/doctor')).toBe(true),
+    )
+    await act(async () => {})
+    const retry = () => {
+      const button = document.querySelector<HTMLButtonElement>('#sessions [role="alert"] button')
+      if (!button) throw new Error('missing sidebar retry button')
+      button.click()
+    }
+    return { list, page, retry, groups: client.session.groups }
+  }
+
+  it.each([true, false])(
+    'does not treat a failed first page as an empty account (configured=%s)',
+    async (configured) => {
+      await boot(configured)
+      expect(document.querySelector('#sessions [role="alert"]')?.textContent).toContain(
+        'first sidebar page unavailable',
+      )
+      expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+      expect(binding.loadWebSession).not.toHaveBeenCalled()
+      expect(new URL(location.href).searchParams.has('session')).toBe(false)
+    },
+    // The first case cold-imports the full application; behavioral polling keeps its normal deadline.
+    180_000,
+  )
+
+  it('restores the first page on retry and lets the user open its session', async () => {
+    const { retry } = await boot()
+    retry()
+    const row = await vi.waitFor(() => {
+      const row = document.querySelector<HTMLButtonElement>('#sessions button[data-session="old"]')
+      if (!row) throw new Error('missing recovered session')
+      return row
+    })
+    expect(document.querySelector('#sessions [role="alert"]')).toBeNull()
+    expect(binding.loadWebSession).not.toHaveBeenCalled()
+    row.click()
+    await vi.waitFor(() => expect(new URL(location.href).searchParams.get('session')).toBe('old'))
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+  })
+
+  it('keeps a manually selected session when the first-page retry arrives late', async () => {
+    const { list, page, retry } = await boot()
+    const pending = deferred<typeof page>()
+    list.mockImplementationOnce(() => pending.promise)
+    retry()
+    await vi.waitFor(() => expect(document.querySelector('#sessions [aria-busy="true"]')).not.toBeNull())
+    await selectionController.open?.('other')
+    expect(new URL(location.href).searchParams.get('session')).toBe('other')
+    await act(async () => pending.resolve(page))
+    await vi.waitFor(() => expect(document.querySelector('#sessions [data-session="old"]')).not.toBeNull())
+    expect(new URL(location.href).searchParams.get('session')).toBe('other')
+    expect(document.getElementById('task-title')?.textContent).toBe('other task')
+    expect(binding.loadWebSession.mock.calls.map(([, id]) => id)).toEqual(['other'])
+    expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+  })
+
+  it('reports a selected-session lookup failure during sidebar retry without losing the selection', async () => {
+    const { list, page, retry, groups } = await boot()
+    groups.mockRejectedValueOnce(new Error('summary unavailable after selection'))
+    await selectionController.open?.('other')
+    await vi.waitFor(() =>
+      expect(document.querySelector('#sessions [role="alert"]')?.textContent).toContain(
+        'summary unavailable after selection',
+      ),
+    )
+    await act(async () => {})
+    list.mockImplementation(async (input) => {
+      if (input?.q) throw new Error('selected session lookup unavailable')
+      return page
+    })
+    retry()
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agh-notifications')?.textContent).toContain(
+        'selected session lookup unavailable',
+      ),
+    )
+    expect(new URL(location.href).searchParams.get('session')).toBe('other')
+    expect(document.getElementById('task-title')?.textContent).toBe('other task')
+    expect(document.querySelector('#sessions [data-session="old"]')).not.toBeNull()
+  })
+
+  it.each(['initializing', 'failed-summary'] as const)(
+    'does not offer first-run setup while the sidebar is %s',
+    async (state) => {
+      await boot(false, state)
+      expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+      expect(binding.loadWebSession).not.toHaveBeenCalled()
+      expect(document.querySelector('#sessions [role]')).not.toBeNull()
+    },
+  )
+
+  it.each([true, false])('preserves empty-account startup (configured=%s)', async (configured) => {
+    await boot(configured, 'empty')
+    expect(Boolean(document.querySelector('[data-testid="first-run-guide"]'))).toBe(!configured)
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(configured)
+    expect(binding.loadWebSession).not.toHaveBeenCalled()
+  })
+
+  it('still opens a successfully loaded existing session without first-run setup', async () => {
+    await boot(false, 'loaded')
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
+    expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+  })
 })
 
 describe('web permission synchronization', () => {
@@ -458,7 +677,9 @@ describe('web permission synchronization', () => {
       }
       sdk.createClient.mockReturnValue(client)
       await import('../src/app.js')
-      await vi.waitFor(() => expect(client.session.list).toHaveBeenCalled())
+      await vi.waitFor(() =>
+        expect(sdk.createClient.mock.results.at(-1)?.value.session.groups).toHaveBeenCalled(),
+      )
     })
 
     it('keeps the user choice when the startup session list arrives after navigation', async () => {
@@ -918,32 +1139,42 @@ describe('web session selection', () => {
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
-      // 会话参数在模型列表下面的同一块面板里：思考强度与上下文窗口各是一组单选。
+      // Reuse the current model-picker contract: choices live in their named radio panels.
       const settingsPanel = () => document.querySelector<HTMLElement>('#model-settings-popover')
-      const choice = (group: string, label: string) =>
-        [...document.querySelectorAll<HTMLElement>(`#${group} [role="radio"]`)].find(
-          (option) => option.textContent === label,
+      const choice = (group: string, label: string) => {
+        const selected = [...document.querySelectorAll<HTMLButtonElement>(`#${group} [role="radio"]`)].find(
+          (option) => option.querySelector('span')?.childNodes[0]?.textContent === label,
         )
+        if (!selected) throw new Error(`missing choice: ${label}`)
+        return selected
+      }
+      const choose = (group: string, label: string) => {
+        choice(group, label).click()
+      }
       // 提交在飞行中时触发按钮与面板会一起禁用，每次开关前等它落定。
-      const openPanel = async () => {
+      const openPanel = async (panel: 'thinking' | 'context' = 'thinking') => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (!document.getElementById('model-listbox')) model.click()
         await vi.waitFor(() => expect(settingsPanel()).not.toBeNull())
+        document.querySelector<HTMLButtonElement>(`#model-picker-${panel}`)?.click()
+        await vi.waitFor(() => expect(settingsPanel()?.hidden).toBe(false))
       }
       const closePanel = async () => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (document.getElementById('model-listbox')) model.click()
         await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       }
+      await openPanel('context')
+      expect(settingsPanel()?.textContent).toContain('128K')
+      await closePanel()
       await openPanel()
-      expect(settingsPanel()?.textContent).toContain('128,000')
-      expect(choice('session-model-thinking', '高')?.getAttribute('aria-checked')).toBe('true')
-      choice('session-model-thinking', '低')?.click()
+      expect(choice('session-model-thinking', '高').getAttribute('aria-checked')).toBe('true')
+      choose('session-model-thinking', '低')
       await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
       // 选完一个参数面板收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
-      await openPanel()
-      choice('session-model-budget', '32K')?.click()
+      await openPanel('context')
+      choose('session-model-budget', '32K')
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
       await configurationCallback.saved?.({
@@ -954,8 +1185,8 @@ describe('web session selection', () => {
         effect: 'new-sessions',
       })
       await openPanel()
-      expect(choice('session-model-thinking', '低')?.getAttribute('aria-checked')).toBe('true')
-      expect(choice('session-model-budget', '32K')?.getAttribute('aria-checked')).toBe('true')
+      expect(choice('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
+      expect(choice('session-model-budget', '32K').getAttribute('aria-checked')).toBe('true')
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
@@ -1039,6 +1270,7 @@ describe('web session selection', () => {
   it('starts a draft in the workspace chosen from its sidebar action', async () => {
     installPublicFixture()
     const alpha = {
+      workspaceId: 'a'.repeat(64),
       path: '/workspace/alpha',
       name: 'Alpha',
       lastUsedAt: null,
@@ -1046,6 +1278,7 @@ describe('web session selection', () => {
       available: true,
     }
     const beta = {
+      workspaceId: 'b'.repeat(64),
       path: '/workspace/beta',
       name: 'Beta',
       lastUsedAt: null,
@@ -1067,7 +1300,28 @@ describe('web session selection', () => {
       approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       workspace: { list: vi.fn(async () => ({ items: [alpha, beta] })) },
       session: {
-        list: vi.fn(async () => ({ items: [{ sessionId: 'old', cwd: alpha.path }] })),
+        groups: vi.fn(
+          async (): Promise<SessionGroupsResult> => ({
+            ready: true,
+            items: [alpha, beta].map((workspace) => ({
+              groupId: workspace.workspaceId,
+              workspaceId: workspace.workspaceId,
+              total: workspace.sessionCount,
+              lastMessageAt: null,
+              revision: '1',
+              ready: true,
+            })),
+          }),
+        ),
+        list: vi.fn(async (input: SessionListParams) => ({
+          items:
+            'sidebar' in input && input.sidebar.groupId === beta.workspaceId
+              ? []
+              : [{ sessionId: 'old', cwd: alpha.path, workspaceId: alpha.workspaceId }],
+          ...('sidebar' in input
+            ? { total: input.sidebar.groupId === beta.workspaceId ? 0 : 1, revision: '1' }
+            : {}),
+        })),
         load: vi.fn(async () => old),
         new: create,
       },
@@ -1137,7 +1391,13 @@ describe('web session selection', () => {
     await savedCallback(snapshot)
     for (const id of ['model', 'composer-workspace', 'composer-permission', 'new', 'prompt'])
       expect(control(id).disabled).toBe(false)
-    expect(document.getElementById('notice')?.textContent).toContain('尚未生效')
+    // The account settings owner reports the restart consequence, not this refresh callback.
+    expect(document.getElementById('notice')?.textContent).not.toContain('尚未生效')
+    control('model').click()
+    await openModelList()
+    expect(modelMenu().textContent).toContain('model-a')
+    expect(modelMenu().textContent).not.toContain('model-b')
+    control('model').click()
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
     control('model').click()
@@ -1280,7 +1540,7 @@ describe('web session selection', () => {
   })
 
   it.each(['idle-save', 'poll-save', 'failed-poll-save'])(
-    'keeps saved model status accurate after coordinated %s',
+    'refreshes saved model choices after coordinated %s without duplicating account feedback',
     async (order) => {
       installPublicFixture()
       const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
@@ -1327,7 +1587,8 @@ describe('web session selection', () => {
         afterSave.resolve(result)
       }
       await saved
-      expect(document.getElementById('notice')?.textContent).toContain('模型配置已更新')
+      expect(document.getElementById('notice')?.textContent).not.toContain('模型配置已更新')
+      expect(document.getElementById('notice')?.textContent).not.toContain('尚未生效')
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
       await openModelList()
@@ -1483,12 +1744,16 @@ describe('web session selection', () => {
         retry.focus()
         client.session.list.mockRejectedValueOnce(new Error('review-list-failure'))
         window.dispatchEvent(new Event('focus'))
-        await vi.waitFor(() => expect(notice.textContent).toContain('review-list-failure'))
+        await vi.waitFor(() =>
+          expect(document.getElementById('sessions')?.textContent).toContain('review-list-failure'),
+        )
         expect(notice.textContent).toContain('00000000-0000-4000-8000-000000000001')
         expect(notice.querySelector('button')).toBe(retry)
         expect(document.activeElement).toBe(retry)
         window.dispatchEvent(new Event('focus'))
-        await vi.waitFor(() => expect(notice.textContent).not.toContain('review-list-failure'))
+        await vi.waitFor(() =>
+          expect(document.getElementById('sessions')?.textContent).not.toContain('review-list-failure'),
+        )
         expect(notice.dataset.kind).toBe('session-recovery')
         expect(notice.textContent).toContain('历史任务打开失败')
         expect(notice.querySelector('button')).toBe(retry)
@@ -1592,10 +1857,8 @@ describe('web session selection', () => {
     old.detach.mockRejectedValueOnce(new Error('detach cleanup failed'))
     newButton.click()
     expect(newSession.open).toBe(true)
-    const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
     const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
     const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
-    const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
     expect(create).not.toHaveBeenCalled()
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('detach cleanup failed'),
@@ -1613,8 +1876,16 @@ describe('web session selection', () => {
     )
     newButton.click()
     expect(location.hash).toBe('#settings-subsection-examples')
-    newSessionCwd.value = ' /workspace/agnes '
-    newSessionCwd.dispatchEvent(new Event('input', { bubbles: true }))
+    // The dialog can unmount its controls when closed; use the reopened form.
+    const newSessionForm = await vi.waitFor(() => {
+      const form = document.getElementById('new-session-form')
+      expect(form).not.toBeNull()
+      return form as HTMLFormElement
+    })
+    const confirmedCwd = document.getElementById('new-session-cwd') as HTMLInputElement
+    const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
+    confirmedCwd.value = ' /workspace/agnes '
+    confirmedCwd.dispatchEvent(new Event('input', { bubbles: true }))
     await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
     newSessionForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(newSession.open).toBe(false))
@@ -1777,8 +2048,8 @@ describe('web session selection', () => {
 
     await import('../src/app.js')
     const dialog = document.getElementById('new-session') as HTMLDialogElement
-    const picker = document.getElementById('workspace-pick') as HTMLButtonElement
     await vi.waitFor(() => expect(dialog.open).toBe(true))
+    const picker = document.getElementById('workspace-pick') as HTMLButtonElement
     expect(picker.getAttribute('aria-busy')).toBe('true')
     releasePicker()
     await vi.waitFor(() => {
@@ -1872,8 +2143,12 @@ describe('web session selection', () => {
     })
 
     await import('../src/app.js')
-    const picker = document.getElementById('workspace-pick') as HTMLButtonElement
-    await vi.waitFor(() => expect(picker.disabled).toBe(false))
+    const picker = await vi.waitFor(() => {
+      const button = document.getElementById('workspace-pick') as HTMLButtonElement
+      expect(button).not.toBeNull()
+      expect(button.disabled).toBe(false)
+      return button
+    })
     picker.click()
     await vi.waitFor(() =>
       expect(document.getElementById('new-session-error')?.textContent).toContain(
@@ -2029,6 +2304,7 @@ describe('web session selection', () => {
 
     await import('../src/app.js')
     const dialog = document.getElementById('new-session') as HTMLDialogElement
+    await vi.waitFor(() => expect(dialog.open).toBe(true))
     const path = document.getElementById('new-session-cwd') as HTMLInputElement
     const form = document.getElementById('new-session-form') as HTMLFormElement
     const createButton = document.getElementById('new-session-create') as HTMLButtonElement
@@ -2223,7 +2499,7 @@ describe('web session selection', () => {
     running.removeQueued.mockImplementationOnce(() => removing.promise)
     remove.click()
     remove.click()
-    expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId)
+    await vi.waitFor(() => expect(running.removeQueued).toHaveBeenCalledExactlyOnceWith(removeItemId))
     expect(remove.disabled).toBe(true)
     // In flight it spins in place of its icon; the state is aria-busy, not a changed label.
     expect(remove.getAttribute('aria-busy')).toBe('true')
@@ -2354,13 +2630,13 @@ describe('queued input deletion', () => {
         true,
       )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
-      expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      await vi.waitFor(() => expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id'))
       document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
       await vi.waitFor(() =>
         expect(document.querySelector('.composer-queue-preview')?.textContent).toBe('next input'),
       )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
-      expect(next.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id')
+      await vi.waitFor(() => expect(next.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id'))
       if (outcome === 'success') oldRemoval.resolve(1)
       else oldRemoval.reject(new Error('late old-session refusal'))
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -2811,7 +3087,7 @@ describe('web model confirmation', () => {
 
     await vi.waitFor(() => expect(model.disabled).toBe(false))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('选择模型')
-    expect(document.querySelector('[role="listbox"]')).toBeNull()
+    await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
     expect(old.setModel).toHaveBeenCalledTimes(2)
   })
 })
@@ -2894,7 +3170,10 @@ describe('session action review regressions', () => {
     // A gap reopens the bounded window; it no longer reads the whole projection.
     await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(prior))
     await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('改名后'))
-    expect(document.querySelector('[data-session="old"]')?.textContent).toBe('改名后')
+    await vi.waitFor(() => expect(document.querySelectorAll('#sessions [data-session]')).toHaveLength(5))
+    expect(document.querySelector('[data-session="old"]')).toBeNull()
+    expect(document.querySelector('#sessions [data-session]')?.getAttribute('data-session')).toBe('recent-0')
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
   })
 
   it('reveals sidebar failures to narrow-screen users and restores keyboard focus', async () => {
@@ -2958,11 +3237,11 @@ describe('sidebar recency', () => {
       [...document.querySelectorAll<HTMLElement>('#sessions [data-session]')].map((b) => b.dataset.session)
     await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('旧任务'))
     expect(order()).toEqual(['other', 'old'])
-    const before = list.mock.calls.length
     chatted = true
     arrival.resolve({ done: false, value: { type: 'user/message', seq: 9, data: {} } })
     await vi.waitFor(() => expect(order()).toEqual(['old', 'other']))
-    expect(list.mock.calls.length).toBe(before + 1)
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
+    expect(document.getElementById('task-title')?.textContent).toBe('旧任务')
   })
 })
 

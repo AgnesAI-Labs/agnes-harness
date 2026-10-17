@@ -29,6 +29,12 @@ export type SkillActualObservation = Readonly<{
 
 /** Host supplied catalogue: Daemon never imports bridges/base to discover Skills. */
 export type SkillCatalogAdapter = Readonly<{
+  /** Read-only current-instance projection. Runtime rows must never enter the journal. */
+  view?(input: {
+    profile: string
+    skills: readonly SkillDescriptor[]
+    signal: AbortSignal
+  }): Promise<readonly SkillDescriptor[]>
   validateRemove?(input: { profile: string; descriptor: SkillDescriptor }): Promise<void>
   remove?(input: { profile: string; descriptor: SkillDescriptor; signal: AbortSignal }): Promise<void>
   refresh(input: {

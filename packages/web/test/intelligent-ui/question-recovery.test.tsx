@@ -6,10 +6,10 @@ import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
-import type { UiPlacementBinding } from '../../src/intelligent-ui/placements.js'
-import { QuestionDock, questionRecovery } from '../../src/intelligent-ui/question-dock.js'
-import { attachTurnDeliverables } from '../../src/intelligent-ui/turn-deliverables.js'
+import { IntelligentUiClient } from '../../../web-conversation/src/intelligent-ui/client.js'
+import type { UiPlacementBinding } from '../../../web-conversation/src/intelligent-ui/placements.js'
+import { QuestionDock, questionRecovery } from '../../../web-conversation/src/intelligent-ui/question-dock.js'
+import { attachIntelligentBinding } from '../../../web-conversation/src/intelligent-ui/turn-views.js'
 import { uiPage, uiReceipt } from './fixture.js'
 
 /** One single-choice question, as ask_user_question publishes it. */
@@ -117,7 +117,7 @@ async function mount(
     expand: vi.fn(),
     approval: vi.fn(),
   }
-  const detach = attachTurnDeliverables(binding)
+  const detach = attachIntelligentBinding(binding)
   const host = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
   await act(async () => root.render(createElement(QuestionDock)))

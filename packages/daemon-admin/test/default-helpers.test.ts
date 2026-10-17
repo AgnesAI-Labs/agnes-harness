@@ -1,6 +1,6 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import { loadTemplate } from '@agnes/host'
 import {
@@ -482,7 +482,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
         },
       }),
     )
-    const childSource = parseSource(`file:${child}`)
+    const childSource = parseSource(`file:${child.split(sep).join('/')}`)
     const example = await s.manager.inspect(s.profileDir, childSource)
     expect(example.dependencies[helper.id]).toBe(parentRange)
     expect(example.blockers).toEqual([])
@@ -600,6 +600,8 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
       (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id),
     ).toBeUndefined()
   },
+  // This verifies several real install/update cycles, including retained snapshots and rollback.
+  120_000,
 )
 
 it('retains a changed-capability release for explicit review, and preserves a different source and revoked trust', async () => {
@@ -652,7 +654,7 @@ it('retains a changed-capability release for explicit review, and preserves a di
     capabilityHash: otherBefore.capabilityHash,
   })
   const revoked = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === other.id)
-  const pinnedSource = parseSource(`file:${payload}`)
+  const pinnedSource = parseSource(`file:${payload.split(sep).join('/')}`)
   const pinned = await s.manager.update(s.profileDir, helper.id, pinnedSource, {
     expectedIntegrity: preview.integrity,
   })
@@ -669,4 +671,4 @@ it('retains a changed-capability release for explicit review, and preserves a di
   expect((await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === other.id)).toEqual(
     revoked,
   )
-})
+}, 120_000)

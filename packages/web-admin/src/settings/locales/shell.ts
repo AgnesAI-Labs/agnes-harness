@@ -13,7 +13,7 @@ export const shellCatalog: LocaleCatalog = {
     isolationDetails: 'Isolation technical details',
     migrateManual: 'Enter a session key',
     trustFailed: 'The workspace could not be trusted. Check the folder and try again.',
-    trusted: 'Trusted. Rescan to load the plugins.',
+    trusted: 'Plugin folder trusted.',
     trustConfirmAction: 'Trust',
     trustConfirm: 'Trust the plugins in {path}? They run with your user rights.',
     localTrustConfirm:
@@ -147,6 +147,8 @@ export const shellCatalog: LocaleCatalog = {
     workspace: 'Workspace folder',
     localHelp:
       'Files in these folders are watched. Changes publish code for new sessions; existing sessions keep their generation. A rescan can report failed or restart-required plugins below.',
+    rescanRequired: 'Rescan to load plugins from the trusted folder.',
+    reloadRefreshFailed: 'Scan completed, but the list did not refresh. Refresh the list.',
     reloadLocal: 'Rescan local plugins',
     rescanned: 'Rescan completed. Review the plugin states for activation results.',
     reloadFailed: 'Rescan could not be confirmed. Refresh and inspect plugin states.',
@@ -194,7 +196,7 @@ export const shellCatalog: LocaleCatalog = {
     isolationDetails: '隔离保护技术详情',
     migrateManual: '手动输入会话标识',
     trustFailed: '无法信任这个工作区，请检查目录后重试。',
-    trusted: '已信任。重新扫描后加载这些插件。',
+    trusted: '插件目录已信任。',
     trustConfirmAction: '信任',
     trustConfirm: '信任 {path} 里的插件？它们以你的用户权限运行。',
     localTrustConfirm:
@@ -310,7 +312,7 @@ export const shellCatalog: LocaleCatalog = {
     migrationConfirm: '确认迁移此会话：',
     confirmMigration: '确认迁移',
     cancel: '取消',
-    migrated: '会话已迁移，下一轮将使用报告中的插件代际。',
+    migrated: '会话已迁移。下一轮会使用报告中的插件代际。',
     alreadyCurrent: '会话已使用当前代际。',
     migrationFailed:
       '无法确认迁移结果。请刷新绑定列表，停止正在进行的轮次，并检查 Agent Loop 与适配器兼容性后重试。',
@@ -325,8 +327,10 @@ export const shellCatalog: LocaleCatalog = {
     workspace: '工作区插件目录',
     localHelp:
       '这些目录的文件会自动监视。代码变更面向新会话发布；现有会话保留原代际。重新扫描后请查看下方的失败或需要重启状态。',
+    rescanRequired: '重新扫描以加载已信任目录中的插件。',
+    reloadRefreshFailed: '扫描已完成，但列表未刷新。请刷新列表。',
     reloadLocal: '重新扫描本地插件',
-    rescanned: '扫描完成。请查看插件状态确认激活结果。',
+    rescanned: '扫描已完成。请查看插件状态确认激活结果。',
     reloadFailed: '无法确认扫描结果。请刷新并查看插件状态。',
     creator: '请智能体创建插件',
     creatorHelp: '创建带插件开发请求的新任务，检查草稿后再发送。',

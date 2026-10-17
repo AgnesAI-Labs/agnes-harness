@@ -477,7 +477,7 @@
     overflow-wrap: anywhere;
   }
   .turn-feedback {
-    color: var(--agnes-status-danger-text);
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
   }
   .timeline-unassigned:not(:empty) {

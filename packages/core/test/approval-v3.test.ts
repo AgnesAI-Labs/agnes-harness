@@ -807,6 +807,37 @@ describe('v3 approval modes and grants', () => {
     expect(executions).toBe(1)
   })
 
+  it.each([
+    ['EIO', 'E_FS_IO'],
+    ['E_WORKSPACE_CLOSED', 'E_WORKSPACE_CLOSED'],
+    ['EACCES', 'E_FS_DENIED'],
+    ['MEMORY_DISABLED', 'E_FS_DENIED'],
+    ['UNKNOWN_PRIVATE_ERROR', 'E_FS_CHECK_FAILED'],
+  ])('keeps preflight %s distinct and refuses execution', async (failure, expected) => {
+    const blocked = await atTools({
+      scopes: ['tool:write'],
+      fsOps: {
+        ...testFsOps(),
+        preflight: async () => {
+          throw Object.assign(new Error('PRIVATE_PATH_SENTINEL'), { code: failure })
+        },
+      },
+      paths: [{ arg: 'value', access: 'write' }],
+      execute: async () => {
+        throw new Error('preflight failure must prevent execution')
+      },
+    })
+    await blocked.session.runToolsPhase()
+    const result = (await blocked.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data
+    expect(result).toMatchObject({ code: expected, isError: true })
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_PATH_SENTINEL')
+    expect(
+      (await blocked.log.scan({ type: 'effect/intent', limit: 100 })).filter(
+        (row) => (row.data as { kind: string }).kind === 'tool',
+      ),
+    ).toEqual([])
+  })
+
   it.each([false, true])(
     'provides tool-free reviewer requests and refuses unreserved hard-budget reviews (hard=%s)',
     async (hard) => {

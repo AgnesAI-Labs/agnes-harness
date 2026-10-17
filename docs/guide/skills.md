@@ -10,6 +10,14 @@ Capture project conventions, checks, and common methods as a Skill for agents to
 
 A Skill provides instructions and resources; it does not grant execution permission. AGH discovers candidates, reviews revisions, resolves same-name candidates, and exposes usable content to a session. A file's existence does not prove that the model has read it.
 
+## Ask the agent to create a Skill
+
+For example: “Create a simple skill called 数学老师skill.” The agent uses an ASCII directory identifier such as `math-teacher`; `SKILL.md` frontmatter can keep the Chinese display name and must provide `name` and `description`.
+
+Instruction-only drafts (`SKILL.md` plus optional `.md`, `.txt`, `.json`, `.yaml`, `.yml` or `.csv` resources outside `scripts/`) use static validation. AGH checks frontmatter and invocation flags, names and collisions, file counts and sizes, relative paths and resource integrity. It does not generate a JavaScript plugin or run Node author tests. Review the name, description, file list, target and SHA256 digest in the install confirmation. Exactly one confirmation installs the frozen revision and, by default, trusts and enables it, including under full access. The default scope is the workspace; user scope and install-only are also supported. Wait for `ready` before using it on the next turn (`installed` means install-only).
+
+Scripts, package manifests and other file types keep the plugin candidate → author tests → human publication path. Installation does not execute those scripts or grant them execution permission. Existing local-source imports retain their separate source-read approval. An invalid or conflicting draft is refused without overwriting files; denial, cancellation, expired ownership or a changed lease cannot authorize installation. The private receipt retains the authoring session, plugin snapshot, content digest and resource revision. Update an already installed Skill Helper to receive this flow; installed helper packages are not automatically upgraded.
+
 <a id="创建一个工作区-skill"></a>
 
 ## Create a workspace Skill
@@ -70,7 +78,7 @@ Under the explicit **full-access** permission preset, agent-authored plugin and 
 
 Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
 
-Settings → Skills has My skills, Pending review and Feedback tabs. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Agent proposals appear in Pending review; open a review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
+Settings → Skills has My skills, Pending review and Feedback tabs. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Plugin candidate proposals appear in Pending review; instruction-only Helper drafts use the install confirmation above. Open a candidate review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
 
 Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills and Scan folders use the existing confirmed rescan operation.
 
@@ -134,3 +142,5 @@ The bundled Skill Helper has its own installation request flow. A tool may reque
 Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host-extensions/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
 
 Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. The Context page also offers an invocation form. The Host loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.
+
+Packaged Skill attachments are copied into the approved runtime snapshot. Unsupported file types are omitted by the existing attachment rules. The authoring test runner checks supported attachments against the loader's limits before review. If an installed Skill has an invalid document, unreadable attachments or exceeds the attachment budget, only that Skill becomes unavailable: Settings shows the reason, no partial content is exposed, and healthy Skills continue loading during service startup. Repair and update the package through the existing review flow, then reload it. Package integrity checks and snapshot publication failures still fail closed. Runtime-registered Skills in Settings are scoped to the current plugin composition and registration owner, then undergo name arbitration. They are managed through their plugin, so the Skill page cannot edit or toggle them independently. Old sessions keep their pinned plugin versions.

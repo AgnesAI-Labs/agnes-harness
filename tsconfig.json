@@ -293,6 +293,9 @@
       "path": "packages/intelligent-ui-contract"
     },
     {
+      "path": "packages/intelligent-ui-contract/tsconfig.test.json"
+    },
+    {
       "path": "packages/git-worktree-contract"
     },
     {

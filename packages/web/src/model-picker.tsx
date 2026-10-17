@@ -1,4 +1,3 @@
-import type { ModelSettings } from '@agnes/protocol'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
   Button,
@@ -6,29 +5,13 @@ import {
   Icon,
   Popover,
   SessionAuxiliaryModels,
+  type SessionAuxiliarySnapshot,
   SettingsInput,
 } from '@agnes/web-ui'
-import {
-  type KeyboardEvent,
-  type ReactElement,
-  type ReactNode,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
-import {
-  budgetChoices,
-  checkBudget,
-  draftSettings,
-  flatModels,
-  groupModels,
-  sameOption,
-  thinkingBadge,
-  thinkingChoices,
-  unavailableThinking,
-} from './model-picker/state.js'
-import type { ModelPickerOption, ModelPickerProps, ModelPickerSettings } from './model-picker/types.js'
+import { type KeyboardEvent, type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { SessionModelSettings } from './model-picker/session-settings.js'
+import { flatModels, groupModels, sameOption, thinkingBadge, thinkingChoices } from './model-picker/state.js'
+import type { ModelPickerOption, ModelPickerProps } from './model-picker/types.js'
 
 export type {
   ModelPickerOption,
@@ -40,6 +23,8 @@ export type {
 /** 模型少时一眼能看完，搜索框只会多占一行。 */
 const searchThreshold = 7
 const NO_MOTION = { motionName: '' }
+// Keep right-aligned panels inside narrow viewports.
+const PANEL_ALIGN = { overflow: { shiftX: true, adjustX: true, adjustY: true } }
 
 /**
  * Session model selector. The app keeps the confirmed model; this component owns only the
@@ -76,6 +61,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
       open={open}
       trigger="click"
       placement="topRight"
+      align={PANEL_ALIGN}
       arrow={false}
       destroyOnHidden={true}
       // Opened many times a day, often from the keyboard: no entrance or exit motion.
@@ -131,6 +117,11 @@ function ModelPanel({
   close,
   onBusy,
 }: PanelProps): ReactElement {
+  const [panel, setPanel] = useState<'thinking' | 'context' | 'auxiliary'>()
+  const [auxiliary, setAuxiliary] = useState<SessionAuxiliarySnapshot>()
+  const [auxiliaryFailed, setAuxiliaryFailed] = useState(false)
+  const back = useRef<HTMLButtonElement>(null)
+  const returning = useRef<string>()
   const [query, setQuery] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [failure, setFailure] = useState<'select' | 'settings'>()
@@ -148,6 +139,71 @@ function ModelPanel({
   const searchable = state.options.length > searchThreshold
   const busy = state.pending || selecting
   const activeIndex = Math.min(active, Math.max(visible.length - 1, 0))
+
+  const auxiliaryAvailable = state.auxiliaryAvailable && onAuxiliaryRead && onAuxiliarySelect
+  useEffect(() => {
+    if (!state.auxiliaryAvailable || !onAuxiliaryRead || !onAuxiliarySelect) return
+    let disposed = false
+    void onAuxiliaryRead()
+      .then((value) => {
+        if (!disposed) {
+          setAuxiliary(value)
+          setAuxiliaryFailed(false)
+        }
+      })
+      .catch(() => {
+        if (!disposed) setAuxiliaryFailed(true)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [state.auxiliaryAvailable, onAuxiliaryRead, onAuxiliarySelect])
+  useLayoutEffect(() => {
+    if (panel) back.current?.focus({ preventScroll: true })
+    else if (returning.current)
+      document.getElementById(`model-picker-${returning.current}`)?.focus({ preventScroll: true })
+  }, [panel])
+  function enter(next: 'thinking' | 'context' | 'auxiliary') {
+    returning.current = next
+    setPanel(next)
+  }
+  const titles = {
+    thinking: tr('modelSettings.thinkingLabel'),
+    context: tr('modelSettings.windowLabel'),
+    auxiliary: tr('modelSettings.slots.title'),
+  }
+  const capacity = state.settings ? contextBudgetLabel(state.settings.capacity) : ''
+  const followsDefaults =
+    auxiliary &&
+    (['fast', 'verifier'] as const).every(
+      (slot) =>
+        auxiliary[slot]?.route === auxiliary.defaults?.[slot]?.route &&
+        auxiliary[slot]?.model === auxiliary.defaults?.[slot]?.model,
+    )
+  const settingsAddress = new URLSearchParams(window.location.search)
+  settingsAddress.set('settings', 'auxiliary-models')
+  const values = {
+    thinking:
+      thinkingChoices(state.settings, tr).find((choice) => choice.value === (state.settings?.thinking ?? ''))
+        ?.label ??
+      state.settings?.thinking ??
+      tr('modelSettings.presetAuto'),
+    context:
+      state.settings?.contextWindow === undefined || state.settings.contextWindow === state.settings.capacity
+        ? `${tr('modelSettings.presetAuto')} · ${capacity}`
+        : contextBudgetLabel(state.settings.contextWindow),
+    auxiliary: !auxiliaryAvailable
+      ? tr('modelSettings.slots.follow')
+      : auxiliaryFailed
+        ? tr('modelSettings.slots.unavailable')
+        : !auxiliary
+          ? tr('modelSettings.slots.loading')
+          : followsDefaults
+            ? tr('modelSettings.slots.follow')
+            : (['fast', 'verifier'] as const)
+                .map((slot) => auxiliary[slot]?.model ?? tr('modelSettings.slots.unset'))
+                .join(' · '),
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus moves once, when the panel mounts.
   useLayoutEffect(() => {
@@ -217,90 +273,152 @@ function ModelPanel({
 
   const activeId = visible.length ? `model-picker-option-${activeIndex}` : undefined
   return (
-    <section id="model-picker-popover" className="model-picker" aria-label={tr('settings.modelPicker.aria')}>
-      {searchable ? (
-        <div className="model-picker-search">
-          <Icon name="search" />
-          <SettingsInput
-            ref={search}
-            type="search"
-            role="combobox"
-            autoComplete="off"
-            spellCheck={false}
-            value={query}
-            placeholder={tr('settings.modelPicker.search')}
-            aria-label={tr('settings.modelPicker.searchAria')}
-            aria-expanded={true}
-            aria-controls="model-listbox"
-            aria-autocomplete="list"
-            aria-activedescendant={activeId}
-            onChange={(event) => {
-              setQuery(event.currentTarget.value)
-              setActive(0)
-            }}
-            onKeyDown={(event) => listKeys(event, true)}
-          />
-        </div>
-      ) : null}
-      {state.selected ? null : (
-        <p className="model-picker-help" data-model-picker-help="">
-          {tr('settings.modelPicker.help')}
-        </p>
-      )}
-      <div
-        ref={listbox}
-        id="model-listbox"
-        className="model-picker-list"
-        role="listbox"
-        tabIndex={-1}
-        aria-label={tr('settings.modelPicker.listAria')}
-        aria-busy={busy}
-        aria-activedescendant={activeId}
-        onKeyDown={(event) => listKeys(event, false)}
-      >
-        {groups.map((group) => (
-          // biome-ignore lint/a11y/useSemanticElements: a listbox group is not a form fieldset.
-          <div key={group.key} role="group" aria-label={group.label} className="model-picker-group">
-            <p className="model-picker-group-title" aria-hidden="true">
-              {group.label}
-            </p>
-            {group.entries.map(({ option, index }) => {
-              const selected = sameOption(option, state.selected)
-              return (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: the listbox owns the keyboard through aria-activedescendant.
-                <div
-                  id={`model-picker-option-${index}`}
-                  key={option.id}
-                  className="model-picker-option"
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={selected}
-                  aria-disabled={busy}
-                  data-active={index === activeIndex}
-                  onMouseMove={() => setActive(index)}
-                  onClick={() => select(option)}
-                >
-                  <span className="model-picker-model" translate="no">
-                    {option.id}
-                  </span>
-                  {selected ? <Icon name="check" className="model-picker-check" /> : null}
-                </div>
-              )
-            })}
+    <section
+      id="model-picker-popover"
+      className="model-picker"
+      aria-label={panel ? titles[panel] : tr('settings.modelPicker.aria')}
+      onKeyDown={(event) => {
+        if (event.defaultPrevented || event.nativeEvent.isComposing || !panel) return
+        if (
+          event.key === 'Escape' ||
+          (event.key === 'ArrowLeft' && !(event.target instanceof HTMLInputElement))
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+          setPanel(undefined)
+        }
+      }}
+    >
+      <div hidden={!!panel}>
+        {searchable ? (
+          <div className="model-picker-search">
+            <Icon name="search" />
+            <SettingsInput
+              ref={search}
+              type="search"
+              role="combobox"
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              placeholder={tr('settings.modelPicker.search')}
+              aria-label={tr('settings.modelPicker.searchAria')}
+              aria-expanded={true}
+              aria-controls="model-listbox"
+              aria-autocomplete="list"
+              aria-activedescendant={activeId}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value)
+                setActive(0)
+              }}
+              onKeyDown={(event) => listKeys(event, true)}
+            />
           </div>
-        ))}
+        ) : null}
+        {state.selected ? null : (
+          <p className="model-picker-help" data-model-picker-help="">
+            {tr('settings.modelPicker.help')}
+          </p>
+        )}
+        <div
+          ref={listbox}
+          id="model-listbox"
+          className="model-picker-list"
+          role="listbox"
+          tabIndex={-1}
+          aria-label={tr('settings.modelPicker.listAria')}
+          aria-busy={busy}
+          aria-activedescendant={activeId}
+          onKeyDown={(event) => listKeys(event, false)}
+        >
+          {groups.map((group) => (
+            // biome-ignore lint/a11y/useSemanticElements: a listbox group is not a form fieldset.
+            <div key={group.key} role="group" aria-label={group.label} className="model-picker-group">
+              <p className="model-picker-group-title" aria-hidden="true">
+                {group.label}
+              </p>
+              {group.entries.map(({ option, index }) => {
+                const selected = sameOption(option, state.selected)
+                return (
+                  // biome-ignore lint/a11y/useKeyWithClickEvents: the listbox owns the keyboard through aria-activedescendant.
+                  <div
+                    id={`model-picker-option-${index}`}
+                    key={option.id}
+                    className="model-picker-option"
+                    role="option"
+                    tabIndex={-1}
+                    aria-selected={selected}
+                    aria-disabled={busy}
+                    data-active={index === activeIndex}
+                    onMouseMove={() => setActive(index)}
+                    onClick={() => select(option)}
+                  >
+                    <span className="model-picker-model" translate="no">
+                      {option.id}
+                    </span>
+                    {option.contextWindow ? (
+                      <span className="model-picker-capacity">
+                        {contextBudgetLabel(option.contextWindow)}
+                      </span>
+                    ) : null}
+                    {selected ? <Icon name="check" className="model-picker-check" /> : null}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+        {visible.length ? null : (
+          <p className="model-picker-empty" role="status">
+            {tr('settings.modelPicker.noMatch', { query: query.trim() })}
+          </p>
+        )}
+        {(state.settings && onSettingsChange) || auxiliaryAvailable ? (
+          <div className="model-picker-session">
+            <p className="model-picker-group-title">{tr('modelSettings.session')}</p>
+            {(['thinking', 'context', 'auxiliary'] as const).map((kind) => (
+              <Button
+                key={kind}
+                id={`model-picker-${kind}`}
+                appearance="ghost"
+                className="model-picker-nav"
+                title={values[kind]}
+                disabled={
+                  state.disabled ||
+                  busy ||
+                  (kind === 'auxiliary' ? !auxiliaryAvailable : !state.settings || !onSettingsChange)
+                }
+                onClick={() => enter(kind)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowRight' || event.key === 'Enter') {
+                    event.preventDefault()
+                    enter(kind)
+                  }
+                }}
+              >
+                <span>{titles[kind]}</span>
+                <span className="model-picker-value">{values[kind]}</span>
+                <Icon name="chevron-right" />
+              </Button>
+            ))}
+          </div>
+        ) : null}
       </div>
-      {visible.length ? null : (
-        <p className="model-picker-empty" role="status">
-          {tr('settings.modelPicker.noMatch', { query: query.trim() })}
-        </p>
-      )}
+      {panel ? (
+        <Button
+          ref={back}
+          appearance="ghost"
+          className="model-picker-back"
+          onClick={() => setPanel(undefined)}
+        >
+          <Icon name="chevron-left" />
+          {titles[panel]}
+        </Button>
+      ) : null}
       {state.settings && onSettingsChange ? (
         <SessionModelSettings
-          // 换了模型或设置后草稿从新的会话现状重新开始。
           key={JSON.stringify([state.selected?.route, state.selected?.id, state.settings])}
+          panel={panel}
           settings={state.settings}
-          title={state.selected?.id}
           disabled={state.disabled || busy}
           commit={(next) => run('settings', () => onSettingsChange(next))}
           close={close}
@@ -311,201 +429,28 @@ function ModelPanel({
           ? tr(failure === 'select' ? 'settings.modelPicker.failed' : 'settings.modelPicker.settingsFailed')
           : ''}
       </p>
-      {state.auxiliaryAvailable && onAuxiliaryRead && onAuxiliarySelect ? (
-        <div className="model-picker-auxiliary">
-          <SessionAuxiliaryModels
-            models={state.options}
-            load={onAuxiliaryRead}
-            save={onAuxiliarySelect}
-            disabled={state.disabled || busy}
-            t={tr}
-          />
+      {auxiliaryAvailable ? (
+        <div hidden={panel !== 'auxiliary'}>
+          {auxiliary && onAuxiliarySelect ? (
+            <SessionAuxiliaryModels
+              models={state.options}
+              snapshot={auxiliary}
+              save={onAuxiliarySelect}
+              onSaved={(slot, target) => setAuxiliary((current) => ({ ...current, [slot]: target }))}
+              disabled={state.disabled || busy}
+              t={tr}
+            />
+          ) : (
+            <p className="model-picker-hint" role={auxiliaryFailed ? 'alert' : 'status'}>
+              {values.auxiliary}
+            </p>
+          )}
+          <p className="model-picker-hint">{tr('modelSettings.slots.sessionHelp')}</p>
+          <a className="model-picker-defaults-link" href={`?${settingsAddress}`}>
+            {tr('modelSettings.slots.editDefaults')}
+          </a>
         </div>
       ) : null}
-    </section>
-  )
-}
-
-/** Arrow keys walk a radio group and move focus with the choice, per the APG radio pattern. */
-function radioKeys(event: KeyboardEvent<HTMLElement>): void {
-  const delta =
-    event.key === 'ArrowRight' || event.key === 'ArrowDown'
-      ? 1
-      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-        ? -1
-        : 0
-  if (!delta) return
-  const radios = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]:not(:disabled)')]
-  const current = radios.indexOf(event.target as HTMLElement)
-  if (current < 0) return
-  event.preventDefault()
-  radios[(current + delta + radios.length) % radios.length]?.focus({ preventScroll: true })
-}
-
-function Choices({
-  id,
-  label,
-  options,
-  selected,
-  disabled,
-  onChoose,
-}: {
-  id: string
-  label: string
-  options: ReadonlyArray<{ label: string; value: string }>
-  selected: string | undefined
-  disabled: boolean
-  onChoose(value: string): void
-}): ReactElement {
-  const tabStop = options.some((option) => option.value === selected) ? selected : options[0]?.value
-  return (
-    <div id={id} className="model-picker-choices" role="radiogroup" aria-label={label} onKeyDown={radioKeys}>
-      {options.map((option) => (
-        <Button
-          key={option.value || 'auto'}
-          role="radio"
-          size="small"
-          appearance="ghost"
-          htmlType="button"
-          aria-checked={option.value === selected}
-          tabIndex={option.value === tabStop ? 0 : -1}
-          disabled={disabled}
-          onClick={() => onChoose(option.value)}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
-  return (
-    <div className="model-picker-setting">
-      <span className="model-picker-setting-label">{label}</span>
-      {children}
-    </div>
-  )
-}
-
-function SessionModelSettings({
-  settings,
-  title,
-  disabled,
-  commit,
-  close,
-}: {
-  settings: ModelPickerSettings
-  title: string | undefined
-  disabled: boolean
-  commit(next: ModelSettings): Promise<void>
-  close(returnFocus: boolean): void
-}): ReactElement {
-  const saved = settings.contextWindow === undefined ? '' : String(settings.contextWindow)
-  const [budget, setBudget] = useState(saved)
-  const levels = thinkingChoices(settings, tr)
-  const stale = unavailableThinking(settings, tr)
-  const thinking = stale ? undefined : (settings.thinking ?? '')
-  const check = checkBudget(budget, settings.capacity)
-  const capacity = settings.capacity.toLocaleString('en-US')
-
-  /** 预算非法时错误已经显示在输入框下面，不按旧值悄悄提交。 */
-  function apply(level: string, raw: string, dismissUnchanged: boolean): void {
-    if (level === thinking && raw.trim() === saved) {
-      if (dismissUnchanged) close(true)
-      return
-    }
-    const next = draftSettings(level, raw, settings.capacity)
-    if (next) void commit(next)
-  }
-
-  return (
-    <section
-      id="model-settings-popover"
-      className="model-picker-settings"
-      aria-label={tr('modelSettings.detailAria')}
-    >
-      {title ? (
-        <p className="model-picker-settings-title" translate="no">
-          {title}
-        </p>
-      ) : null}
-      {levels.length > 1 ? (
-        <Row label={tr('modelSettings.thinkingLabel')}>
-          <Choices
-            id="session-model-thinking"
-            label={tr('modelSettings.thinkingLabel')}
-            options={levels}
-            selected={thinking}
-            disabled={disabled}
-            // 已保存的预算草稿一并提交，免得只改档位把预算重置。
-            onChoose={(value) => apply(value, budget, true)}
-          />
-        </Row>
-      ) : null}
-      {stale ? (
-        <p className="model-picker-notice">
-          {tr('modelSettings.savedThinkingUnavailable', { value: stale })}
-        </p>
-      ) : null}
-      <Row label={tr('modelSettings.windowLabel')}>
-        <Choices
-          id="session-model-budget"
-          label={tr('modelSettings.windowLabel')}
-          options={[
-            { label: tr('modelSettings.presetAuto'), value: '' },
-            ...budgetChoices(settings.capacity).map((tokens) => ({
-              label: contextBudgetLabel(tokens),
-              value: String(tokens),
-            })),
-          ]}
-          selected={check.valid ? (check.tokens === undefined ? '' : String(check.tokens)) : undefined}
-          disabled={disabled}
-          onChoose={(value) => {
-            setBudget(value)
-            // 已保存的档位不可用时按空档提交，等于借这次改动把它归位到「自动」。
-            apply(thinking ?? '', value, true)
-          }}
-        />
-        <SettingsInput
-          id="session-model-window"
-          className="model-picker-budget"
-          type="text"
-          inputMode="numeric"
-          maxLength={32}
-          autoComplete="off"
-          value={budget}
-          disabled={disabled}
-          placeholder={tr('modelSettings.windowPlaceholder', { tokens: capacity })}
-          aria-label={tr('modelSettings.customAria')}
-          aria-invalid={!check.valid}
-          aria-describedby="session-model-window-hint session-model-settings-error"
-          onChange={(event) => setBudget(event.currentTarget.value)}
-          // 逐字符提交会让每次按键都发一次 setModel；回车或离开输入框才算一次确定输入。
-          onBlur={(event) => {
-            // 焦点在面板内的控件之间移动时交给那个控件处理，别在这里抢先发一次。
-            const panel = event.currentTarget.closest('#model-picker-popover')
-            if (panel?.contains(event.relatedTarget)) return
-            apply(thinking ?? '', budget, false)
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-            event.preventDefault()
-            apply(thinking ?? '', budget, true)
-          }}
-        />
-      </Row>
-      <p id="session-model-window-hint" className="model-picker-hint">
-        {tr('modelSettings.windowHint', { tokens: capacity })}
-      </p>
-      <p id="session-model-settings-error" className="model-picker-error" role="alert">
-        {check.valid
-          ? ''
-          : tr('modelSettings.windowRange', {
-              min: check.min.toLocaleString('en-US'),
-              max: check.max.toLocaleString('en-US'),
-            })}
-      </p>
     </section>
   )
 }

@@ -119,7 +119,7 @@ export function verifyPackageDirectory(
   ceiling: readonly string[],
   cache?: InventoryVerificationCache,
 ): VerifiedPackageDirectory {
-  const hash = capabilityHash(entry)
+  capabilityHash(entry)
   if (
     entry.contributions === undefined ||
     entry.treeIntegrity === undefined ||
@@ -130,7 +130,21 @@ export function verifyPackageDirectory(
       detail: { id },
     })
   const treeIntegrity = hashDirectory(directory, { exclude: [] })
-  if (treeIntegrity !== entry.treeIntegrity)
+  return verifyHashedPackageDirectory(id, entry, directory, ceiling, treeIntegrity, cache)
+}
+
+/** Package-private: the caller has just hashed this directory synchronously and checked its identity.
+ * Never pass a digest from an earlier request, an await boundary, or the lock's expected value. */
+export function verifyHashedPackageDirectory(
+  id: string,
+  entry: LockEntry,
+  directory: string,
+  ceiling: readonly string[],
+  treeIntegrity: string,
+  cache?: InventoryVerificationCache,
+): VerifiedPackageDirectory {
+  const hash = capabilityHash(entry)
+  if (entry.contributions === undefined || treeIntegrity !== entry.treeIntegrity)
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })

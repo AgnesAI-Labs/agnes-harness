@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { inspectStaged } from '../src/inspect.js'
 import { capabilityHash } from '../src/integrity.js'
@@ -144,7 +144,7 @@ it('reviews transport declarations as authority and binds descriptor changes to 
 
 it('binds declarations to previews/trust and rejects newly disallowed enable requests', async () => {
   const f = fixture(),
-    source = parseSource('file:' + f.source)
+    source = parseSource('file:' + f.source.split(sep).join('/'))
   const admitted = createPackageManager({
     dataDir: join(f.root, 'data'),
     cwd: f.profile,
@@ -249,7 +249,7 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
 
 it('enforces the profile ceiling during inspection and install before executing package code', async () => {
   const f = fixture()
-  const source = parseSource('file:' + f.source)
+  const source = parseSource('file:' + f.source.split(sep).join('/'))
   const preview = await f.manager.inspect(f.profile, source)
   expect(preview.blockers).toContainEqual({
     code: 'policy',

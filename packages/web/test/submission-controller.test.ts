@@ -2,7 +2,9 @@
 import { type ContentBlock, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol'
 import { attachmentErrorMessage } from '@agnes/web-units'
 import { describe, expect, it } from 'vitest'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { createSubmissionController } from '../src/app/submission-controller.js'
+import { Submission, SubmissionOwner } from '../src/app/submission-owner.js'
 import { enT, zhT } from './helpers/locale.js'
 
 describe('composer submission validation', () => {
@@ -40,7 +42,7 @@ describe('composer submission validation', () => {
         references: { getSnapshot: () => [] },
         configured: true,
         connected: true,
-        sending: false,
+        submissions: new SubmissionOwner(new SessionBindingOwner()),
         stopping: false,
         sessionPending: false,
         sessionYoloEnabled: false,
@@ -58,4 +60,155 @@ describe('composer submission validation', () => {
       expect(refusal).toBe(message)
     },
   )
+})
+
+describe('submission owners', () => {
+  it('owns draft, submitting and accepted transitions and dispatches a single intent once', async () => {
+    const binding = new SessionBindingOwner()
+    const submission = new Submission(binding.capture())
+    expect(submission.snapshot.phase).toBe('draft')
+    const sent: string[] = []
+    let accept!: () => void
+    const receipt = new Promise<void>((resolve) => {
+      accept = resolve
+    })
+    const work = submission.run(async () => {
+      sent.push('original command')
+      await receipt
+    })
+    const duplicate = submission.run(async () => {
+      sent.push('duplicate command')
+    })
+    expect(submission.snapshot.phase).toBe('submitting')
+    expect(duplicate).toBe(work)
+    await Promise.resolve()
+    expect(sent).toEqual(['original command'])
+    accept()
+    await work
+    expect(submission.snapshot.phase).toBe('accepted')
+    expect(submission.pending).toBe(false)
+  })
+
+  it.each(['failed', 'refused', 'needs-confirmation'] as const)('retains the %s outcome', async (phase) => {
+    const binding = new SessionBindingOwner()
+    const submission = new Submission(binding.capture())
+    const error = Object.assign(
+      new Error('fixture refusal'),
+      phase === 'refused'
+        ? { data: { code: 'LOOP_CONTROL_UNSUPPORTED' } }
+        : phase === 'needs-confirmation'
+          ? { submission: { sessionId: 'session', commandId: 'original', state: 'needs-confirmation' } }
+          : {},
+    )
+    await expect(
+      submission.run(async () => {
+        throw error
+      }),
+    ).rejects.toBe(error)
+    expect(submission.snapshot.phase).toBe(phase)
+    if (phase === 'needs-confirmation') expect(submission.snapshot.command?.commandId).toBe('original')
+  })
+
+  it('scopes pending composer and queue work to the binding and preserves only an explicit draft handoff', () => {
+    const binding = new SessionBindingOwner()
+    const owner = new SubmissionOwner(binding)
+    const composer = owner.beginComposer(true)
+    const queue = owner.beginQueue({ itemId: 'q', kind: 'promote' })
+    if (!composer || !queue) throw new Error('missing submission')
+    expect(owner.beginComposer(true)).toBeUndefined()
+    expect(owner.beginQueue({ itemId: 'q', kind: 'promote' })).toBeUndefined()
+    const next = binding.begin()
+    expect(owner.sending).toBe(false)
+    expect(owner.queueAction).toBeUndefined()
+    composer.adopt(next.binding)
+    expect(owner.sending).toBe(true)
+    owner.promptStarted()
+    expect(composer.snapshot.phase).toBe('accepted')
+    expect(owner.sending).toBe(false)
+    expect(owner.isCurrent(queue)).toBe(false)
+  })
+})
+
+it('recovers journaled identity after reload and shares concurrent checks of the original command', async () => {
+  const binding = new SessionBindingOwner()
+  let commands: import('@agnes/sdk/browser').PendingCommand[] = [
+    { commandId: 'original', method: '_agnes/v1/submit', params: {}, state: 'needs-confirmation' },
+  ]
+  const checked: string[] = []
+  let release!: () => void
+  const receipt = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const session = {
+    id: 'session',
+    pendingCommands: async () => commands,
+    checkCommand: async (id: string) => {
+      checked.push(id)
+      await receipt
+      commands = []
+    },
+  } as unknown as import('@agnes/sdk/browser').Session
+  binding.attach(binding.capture(), { session })
+  const reopened = new SubmissionOwner(binding)
+  const [submission] = (await reopened.recover(session)) ?? []
+  if (!submission) throw new Error('missing recovered submission')
+  expect(submission.snapshot).toMatchObject({
+    phase: 'needs-confirmation',
+    command: { commandId: 'original' },
+  })
+  const duplicate: string[] = []
+  await expect(
+    submission.run(async () => {
+      duplicate.push('fresh send')
+    }),
+  ).rejects.toThrow('requires confirmation')
+  expect(duplicate).toEqual([])
+  const first = submission.check(session)
+  const second = submission.check(session)
+  expect(first).toBe(second)
+  release()
+  await first
+  expect(checked).toEqual(['original'])
+  expect(submission.snapshot.phase).toBe('accepted')
+  expect(await reopened.recover(session)).toEqual([])
+})
+
+it('rejects a late recovery read after reloading the same SDK session', async () => {
+  const binding = new SessionBindingOwner()
+  let finish!: (commands: import('@agnes/sdk/browser').PendingCommand[]) => void
+  const pending = new Promise<import('@agnes/sdk/browser').PendingCommand[]>((resolve) => {
+    finish = resolve
+  })
+  const session = {
+    id: 'session',
+    pendingCommands: () => pending,
+  } as unknown as import('@agnes/sdk/browser').Session
+  binding.attach(binding.capture(), { session })
+  const owner = new SubmissionOwner(binding)
+  const work = owner.recover(session)
+  binding.begin()
+  binding.attach(binding.capture(), { session })
+  finish([{ commandId: 'old', method: '_agnes/v1/submit', params: {}, state: 'needs-confirmation' }])
+  expect(await work).toBeUndefined()
+})
+
+it('records a definitive refusal when checking clears the SDK journal', async () => {
+  const binding = new SessionBindingOwner()
+  const submission = new Submission(binding.capture())
+  submission.restore('session', {
+    commandId: 'original',
+    method: '_agnes/v1/submit',
+    params: {},
+    state: 'needs-confirmation',
+  })
+  const refusal = Object.assign(new Error('not running'), { data: { code: 'SESSION_NOT_RUNNING' } })
+  const session = {
+    id: 'session',
+    checkCommand: async () => {
+      throw refusal
+    },
+    pendingCommands: async () => [],
+  } as unknown as import('@agnes/sdk/browser').Session
+  await submission.check(session)
+  expect(submission.snapshot).toEqual({ phase: 'refused', error: refusal })
 })

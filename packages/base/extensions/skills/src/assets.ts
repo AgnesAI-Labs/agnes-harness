@@ -53,7 +53,9 @@ function extensionOf(relativePath: string): string {
   return at <= 0 ? '' : base.slice(at).toLocaleLowerCase('en-US')
 }
 
-function classify(relativePath: string): { kind: SkillFileKind; mime: string; limit: number } | undefined {
+export function classifySkillFile(
+  relativePath: string,
+): { kind: SkillFileKind; mime: string; limit: number } | undefined {
   const ext = extensionOf(relativePath)
   if (TEXT_EXT.has(ext))
     return {
@@ -122,31 +124,58 @@ export async function collectSkillFiles(
   fs: SkillFs,
   skillDir: string,
   skillReal?: string,
+  options: Readonly<{ complete?: boolean }> = {},
 ): Promise<readonly SkillFile[]> {
   const files: SkillFile[] = []
   let visited = 0
   let bytesTotal = 0
+  const incomplete = (code = 'SKILL_ATTACHMENTS_UNREADABLE'): void => {
+    if (options.complete) throw Object.assign(new Error('incomplete Skill attachments'), { code })
+  }
   const walk = async (relativeDir: string, depth: number): Promise<void> => {
     let entries: Awaited<ReturnType<SkillFs['list']>>
     try {
+      if (
+        options.complete &&
+        fs.realpath &&
+        skillReal &&
+        !boundToRoot(skillReal, await fs.realpath(join(skillDir, relativeDir)))
+      )
+        throw new Error('outside Skill directory')
       entries = await fs.list(join(skillDir, relativeDir))
     } catch {
+      incomplete()
       return
     }
     for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
       visited += 1
-      if (visited > MAX_SKILL_ENTRIES_VISITED || files.length >= MAX_SKILL_FILES) return
+      if (visited > MAX_SKILL_ENTRIES_VISITED) {
+        incomplete('SKILL_ATTACHMENTS_LIMIT')
+        return
+      }
       const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name
       if (entry.kind === 'dir') {
         if (depth < MAX_RELATIVE_DEPTH - 1 && isSkillRelativePath(`${relativePath}/x`))
           await walk(relativePath, depth + 1)
         continue
       }
-      if (entry.kind !== 'file' || !isSkillRelativePath(relativePath)) continue
-      const classified = classify(relativePath)
+      if (!isSkillRelativePath(relativePath)) continue
+      if (entry.kind === 'symlink') {
+        incomplete()
+        continue
+      }
+      if (entry.kind !== 'file') continue
+      const classified = classifySkillFile(relativePath)
       if (!classified) continue
-      const file = await readSkillFile(fs, join(skillDir, relativePath), classified, skillReal)
-      if (!file || bytesTotal + file.byteLength > MAX_SKILL_ATTACHMENT_BYTES) continue
+      const file = await readSkillFile(fs, join(skillDir, relativePath), classified, skillReal, incomplete)
+      if (
+        !file ||
+        files.length >= MAX_SKILL_FILES ||
+        bytesTotal + file.byteLength > MAX_SKILL_ATTACHMENT_BYTES
+      ) {
+        incomplete(file ? 'SKILL_ATTACHMENTS_LIMIT' : 'SKILL_ATTACHMENTS_UNREADABLE')
+        continue
+      }
       bytesTotal += file.byteLength
       files.push(
         Object.freeze({
@@ -169,10 +198,13 @@ async function readSkillFile(
   absolute: string,
   classified: { kind: SkillFileKind; limit: number },
   skillReal: string | undefined,
+  incomplete: (code: string) => void,
 ): Promise<Uint8Array | undefined> {
+  let overLimit = false
   try {
     if (fs.realpath && skillReal && !boundToRoot(skillReal, await fs.realpath(absolute))) return undefined
     const stat = await fs.stat(absolute)
+    overLimit = stat.size > classified.limit
     if (
       stat.kind !== 'file' ||
       !Number.isSafeInteger(stat.size) ||
@@ -186,5 +218,7 @@ async function readSkillFile(
     return bytes
   } catch {
     return undefined
+  } finally {
+    if (overLimit) incomplete('SKILL_ATTACHMENTS_LIMIT')
   }
 }

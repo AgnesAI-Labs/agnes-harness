@@ -53,6 +53,10 @@
       "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
+        "examples/community/deliverables-gallery",
+        "packages/package-manager/bundled-plugins/deliverables-ui",
+        "packages/package-manager/bundled-plugins/goal-ui",
+        "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-admin",

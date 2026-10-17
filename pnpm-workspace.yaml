@@ -1,6 +1,10 @@
 packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
+  - packages/package-manager/bundled-plugins/deliverables-ui
+  - packages/package-manager/bundled-plugins/goal-ui
+  - packages/package-manager/bundled-plugins/interaction-ui
+  - examples/community/deliverables-gallery
   - examples/packages/cordis-greeting
   - examples/loops/decision-loop
   - examples/loops/dag-loop

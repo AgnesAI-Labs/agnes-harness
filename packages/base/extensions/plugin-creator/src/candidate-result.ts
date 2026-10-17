@@ -1,0 +1,101 @@
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import type { AuthoringCandidate } from '@agnes/protocol'
+
+// Leave room for Core's conservative JSON accounting and the bridge envelope.
+const STRUCTURED_BYTES = 240 * 1024
+const PAGE_BYTES = 32 * 1024
+type ReadOptions = { offset?: number; expectedHash?: string }
+const failure = (code: string, message: string): ToolResult => ({
+  isError: true,
+  details: { code },
+  content: [{ type: 'text', text: message }],
+})
+const receipt = (value: AuthoringCandidate) => ({
+  candidateId: value.candidateId,
+  candidateHash: value.candidateHash,
+  packageId: value.packageId,
+  state: value.state,
+  baseHash: value.baseHash,
+  reviewHash: value.reviewHash,
+  message: value.message,
+  tests: value.tests,
+})
+
+/** Only adapts tool output; the Host retains full diffs and authoring authority. */
+export async function candidateResult(
+  ctx: ToolContext,
+  value: AuthoringCandidate,
+  read?: ReadOptions,
+): Promise<ToolResult> {
+  const summary = receipt(value)
+  const display = { ...summary, tests: value.tests && { ...value.tests, output: undefined } }
+  let text = JSON.stringify(display)
+  if (read === undefined) {
+    const failed =
+      ['failed', 'interrupted', 'cancelled', 'rejected'].includes(value.state) ||
+      value.tests?.state === 'failed'
+    return {
+      ...(failed ? { isError: true, details: { code: 'CANDIDATE_ACTION_FAILED' } } : {}),
+      content: [{ type: 'text', text }],
+      structured: summary,
+    }
+  }
+  if (read.expectedHash !== undefined && read.expectedHash !== value.candidateHash)
+    return failure(
+      'E_PACKAGE_PREVIEW_STALE',
+      'Candidate changed. Read it again from the beginning before editing.',
+    )
+  const snapshot = {
+    candidateId: value.candidateId,
+    candidateHash: value.candidateHash,
+    sourceFiles: value.sourceFiles,
+  }
+  const json = JSON.stringify(snapshot),
+    bytes = Buffer.from(json, 'utf8'),
+    offset = read.offset ?? 0
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > bytes.length ||
+    (offset < bytes.length && (bytes[offset]! & 0xc0) === 0x80) ||
+    (offset > 0 && !read.expectedHash)
+  )
+    return failure(
+      'E_PACKAGE_SOURCE',
+      'Invalid source offset. Continue with the returned nextOffset and candidateHash.',
+    )
+  let structured: ToolResult['structured'] = snapshot
+  if (read.offset !== undefined || bytes.length > STRUCTURED_BYTES) {
+    let end = Math.min(bytes.length, offset + PAGE_BYTES)
+    while (end < bytes.length && (bytes[end]! & 0xc0) === 0x80) end--
+    const page = () => ({
+      kind: 'candidate-source-page',
+      candidateId: value.candidateId,
+      candidateHash: value.candidateHash,
+      offset,
+      data: bytes.subarray(offset, end).toString('utf8'),
+      nextOffset: end === bytes.length ? null : end,
+      totalBytes: bytes.length,
+    })
+    // Measure the final escaped envelope, not source characters or the model's text budget.
+    while (Buffer.byteLength(JSON.stringify(page())) > STRUCTURED_BYTES && end > offset) {
+      end--
+      while (end > offset && (bytes[end]! & 0xc0) === 0x80) end--
+    }
+    structured = page()
+    text += `\nSource page ${offset}..${end} of ${bytes.length} bytes; nextOffset=${end === bytes.length ? 'null' : end}.`
+  }
+  const displayBudget = Math.min(ctx.outputMaxBytes ?? 32768, 4096)
+  if (bytes.length + 256 <= displayBudget && read.offset === undefined) text = json
+  else if (offset === 0) {
+    try {
+      const ref = await ctx.artifacts.put(bytes, { mime: 'text/plain', name: 'candidate-source.json' })
+      text += `\nFull source: artifact://${ref.sha256}?size=${ref.size}. Use read/grep with this path, or run_code with the structured result.`
+    } catch {
+      text +=
+        '\nFull preview could not be saved. Program data is still available through run_code; do not recreate the candidate.'
+    }
+  }
+  ctx.signal.throwIfAborted()
+  return { content: [{ type: 'text', text }], structured }
+}

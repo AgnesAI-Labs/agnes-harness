@@ -145,6 +145,8 @@ export type PackageSkillContribution = Readonly<{
   contributionId: string
   relativeLocation: string
   source: string
+  files?: readonly SkillFile[]
+  directory?: string
 }>
 
 const decoder = new TextDecoder()
@@ -457,7 +459,14 @@ export function discoverPackageSkill(input: PackageSkillContribution): SkillCand
   })
   // Package contributions keep their existing contract: a rejected candidate drops instead of failing
   // a root, because the root here is the package snapshot rather than a filesystem directory.
-  return outcome.ok ? outcome.candidate : undefined
+  return outcome.ok
+    ? Object.freeze({
+        ...outcome.candidate,
+        revision: skillRevision(input.source, input.files ?? []),
+        ...(input.files ? { files: input.files } : {}),
+        ...(input.directory ? { directory: input.directory } : {}),
+      })
+    : undefined
 }
 
 /** Only this safe resolution shape is suitable for lists, actual reports, or the protocol. */

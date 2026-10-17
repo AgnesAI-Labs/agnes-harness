@@ -1,0 +1,262 @@
+import type { PageSessionMeta, SessionGroupsResult, SessionSidebarListParams } from '@agnes/protocol'
+import type { SidebarGroupState, SidebarPaging } from '@agnes/web-units'
+
+type Group = SidebarGroupState & {
+  generation: number
+  firstNext?: string | undefined
+  pageRevision?: string | undefined
+  pending?: Promise<void> | undefined
+  retryAppend?: boolean
+}
+type Port = {
+  groups(): Promise<SessionGroupsResult>
+  list(input: SessionSidebarListParams): Promise<PageSessionMeta>
+}
+
+/** Per-page state only. It does not own the selected conversation or cache unloaded sessions. */
+export function createSidebarPagination(
+  port: Port,
+  changed: () => void,
+  errorText: (error: unknown) => string,
+) {
+  let groups: Group[] = [],
+    ready = false,
+    loading = false,
+    error: string | undefined
+  let epoch = 0,
+    mutations = 0,
+    initialised = false,
+    touched = false,
+    refreshRows = false,
+    refreshing: Promise<void> | undefined
+  const snapshot = (): SidebarPaging => ({
+    groups: groups.map(
+      ({ generation: _g, firstNext: _f, pageRevision: _r, pending: _p, retryAppend: _a, ...view }) => view,
+    ),
+    ready,
+    loading,
+    ...(error ? { error } : {}),
+  })
+  const rows = () => groups.flatMap((group) => group.items)
+  const failCode = (value: unknown): string | undefined => (value as { data?: { code?: string } })?.data?.code
+  const load = (group: Group, append = false): Promise<void> => {
+    if (group.pending) return group.pending
+    if (!group.opened || !group.ready || (append && (!group.next || group.stale))) return Promise.resolve()
+    const generation = ++group.generation,
+      connection = epoch,
+      cursor = append ? group.next : undefined
+    group.loading = true
+    delete group.error
+    delete group.retryAppend
+    changed()
+    const current = () =>
+      epoch === connection && group.generation === generation && groups.includes(group) && group.opened
+    const pending = Promise.resolve().then(async () => {
+      try {
+        const page = await port.list({
+          sidebar: { groupId: group.groupId },
+          limit: 5,
+          ...(cursor ? { cursor } : {}),
+        })
+        if (!current()) return
+        if (page.total === undefined || page.revision === undefined || page.items.length > 5)
+          throw new Error('SESSION_SIDEBAR_UNAVAILABLE')
+        if (append && page.revision !== group.pageRevision) {
+          group.stale = true
+          return
+        }
+        const old = new Map(group.items.map((row) => [row.sessionId, row]))
+        const incoming = page.items.map((row) => {
+          const previous = old.get(row.sessionId)
+          return previous && JSON.stringify(previous) === JSON.stringify(row) ? previous : row
+        })
+        if (append && incoming.some((row) => old.has(row.sessionId))) {
+          group.stale = true
+          return
+        }
+        group.items = append ? [...group.items, ...incoming] : incoming
+        group.total = page.total
+        group.revision = page.revision
+        group.pageRevision = page.revision
+        group.next = page.next
+        group.loaded = true
+        group.stale = false
+        if (!append) group.firstNext = page.next
+      } catch (failure) {
+        if (!current()) return
+        group.retryAppend = append
+        if (failCode(failure) === 'SESSION_SIDEBAR_CURSOR_STALE') group.stale = true
+        else group.error = errorText(failure)
+      } finally {
+        if (current()) {
+          group.loading = false
+          group.pending = undefined
+          changed()
+        }
+      }
+    })
+    group.pending = pending
+    return pending
+  }
+  const invalidate = (group: Group) => {
+    delete group.retryAppend
+    delete group.error
+    group.generation++
+    group.pending = undefined
+    group.loading = false
+  }
+  const refresh = (metadata = false): Promise<void> => {
+    refreshRows ||= metadata
+    if (refreshing) return refreshing
+    const connection = epoch,
+      mutation = mutations,
+      readRows = refreshRows
+    refreshRows = false
+    loading = true
+    error = undefined
+    changed()
+    const pending = Promise.resolve().then(async () => {
+      try {
+        const summary = await port.groups()
+        if (connection !== epoch || mutation !== mutations) return
+        const old = new Map(groups.map((group) => [group.groupId, group]))
+        const reload: Group[] = []
+        groups = summary.items.map((item) => {
+          const group = old.get(item.groupId) ?? {
+            ...item,
+            items: [],
+            opened: false,
+            loaded: false,
+            loading: false,
+            generation: 0,
+          }
+          if (group.stale || group.revision !== item.revision) {
+            invalidate(group)
+            group.stale = true
+            if (group.opened && group.items.length <= 5 && item.ready) reload.push(group)
+          }
+          // Counts alongside retained multi-page rows belong to that page's snapshot.
+          const total = group.stale && group.items.length > 5 ? group.total : item.total
+          delete group.initializationError
+          Object.assign(group, item, { total })
+          // Revisions cover paging, not every metadata edit; focus/reconnect explicitly reread rows.
+          if (
+            group.opened &&
+            group.ready &&
+            !group.pending &&
+            (!group.loaded || readRows) &&
+            group.items.length <= 5
+          )
+            reload.push(group)
+          return group
+        })
+        ready = summary.ready
+        if (!initialised && ready) {
+          initialised = true
+          if (!touched) {
+            const first = groups.find((group) => group.total > 0)
+            if (first) {
+              first.opened = true
+              reload.push(first)
+            }
+          }
+        }
+        changed()
+        await Promise.all([...new Set(reload)].map((group) => load(group)))
+      } catch (failure) {
+        if (connection === epoch) error = errorText(failure)
+      } finally {
+        if (connection === epoch) {
+          loading = false
+          refreshing = undefined
+          changed()
+          if (mutation !== mutations || refreshRows) await refresh(readRows)
+        }
+      }
+    })
+    refreshing = pending
+    return pending
+  }
+  return {
+    snapshot,
+    rows,
+    refresh,
+    patch(row: PageSessionMeta['items'][number]) {
+      for (const group of groups) {
+        if (!group.items.some((previous) => previous.sessionId === row.sessionId)) continue
+        // Fence older replies without discarding loaded pages, cursors or an idle retry state.
+        if (group.pending) invalidate(group)
+        group.items = group.items.map((previous) => (previous.sessionId === row.sessionId ? row : previous))
+      }
+      changed()
+    },
+    async created(workspaceId: string) {
+      touched = true
+      await refresh()
+      const group = groups.find((item) => item.groupId === workspaceId)
+      if (group) {
+        if (group.opened && group.loaded && !group.stale && !group.error && group.items.length <= 5) return
+        group.opened = true
+        invalidate(group)
+        await load(group)
+      }
+    },
+    reset() {
+      epoch++
+      refreshing = undefined
+      refreshRows = false
+      loading = false
+      for (const group of groups) {
+        invalidate(group)
+        group.stale = group.loaded
+      }
+    },
+    async action(id: string, action: 'toggle' | 'more' | 'collapse' | 'reload' | 'retry'): Promise<void> {
+      const group = groups.find((item) => item.groupId === id)
+      if (!group) return
+      touched = true
+      if (action === 'toggle') {
+        group.opened = !group.opened
+        if (!group.opened) {
+          invalidate(group)
+          group.items = []
+          group.loaded = false
+          group.stale = false
+          delete group.next
+          delete group.firstNext
+          delete group.pageRevision
+          delete group.error
+          changed()
+          return
+        }
+        changed()
+        await load(group)
+        return
+      }
+      if (action === 'collapse') {
+        invalidate(group)
+        group.items = group.items.slice(0, 5)
+        group.next = group.firstNext
+        changed()
+        if (group.stale) await load(group)
+      } else if (action === 'reload') {
+        invalidate(group)
+        await load(group)
+      } else await load(group, action === 'more' || (!group.stale && group.retryAppend === true))
+    },
+    /** A locally persisted message must fence a page already in flight before the summary arrives. */
+    invalidateSession(
+      id: string,
+      cwd?: string,
+      workspaces: readonly { path: string; workspaceId?: string }[] = [],
+    ) {
+      mutations++
+      const groupId = workspaces.find((row) => row.path === cwd)?.workspaceId ?? 'unassigned'
+      for (const group of groups)
+        if (group.groupId === groupId || group.items.some((row) => row.sessionId === id)) {
+          invalidate(group)
+          group.stale = true
+        }
+    },
+  }
+}

@@ -41,8 +41,7 @@ import type { RuntimeConvergenceReport, RuntimeTarget } from '@agnes/plugin-runt
 import { createTreeSnapshot } from '@agnes/plugin-runtime/host'
 import { compositionTools } from '../profile/composition-visibility.js'
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
-import { installGitWorktreeService } from '../services/git-worktrees.js'
-import { installObservabilityService } from '../services/observability-feed.js'
+import { installHostServices } from '../services/install.js'
 import { rememberDeferredInvocations } from '../sessions/deferred-invocations.js'
 import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
 import type { OrdinaryReconciliationLifecycle } from './assembled.js'
@@ -229,8 +228,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
             )
           const extensionHost = shared.extensionServices.current
           if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
-          installGitWorktreeService(extensionHost, root, origins, proc.gitWorktrees)
-          installObservabilityService(extensionHost, root, origins)
+          installHostServices(extensionHost, root, origins, proc.gitWorktrees, ctx.deps)
           const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
             import('@agnes/extension-api').MemoryProvider
           > = installProviderRegistry(root, memoryKind, (owner, source, provider) =>
@@ -414,7 +412,6 @@ export async function mountRuntimeTarget(
   ctx: AssemblyContext,
   input: RuntimeTargetInput,
 ): Promise<RuntimeTargetHost> {
-  const { deps } = ctx
   const { pkgs, bootRows } = input
   const publisherRef = new Late<Publisher>('runtime target publisher')
   const shared: Shared = {
@@ -438,15 +435,16 @@ export async function mountRuntimeTarget(
   }
   shared.extensionServices.current = createExtensionServiceHost({
     providers: () => publishedOrdinary().root.providers,
-    sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    sessionGeneration: (key) => ctx.deps.sessionGeneration?.(key),
+    serviceIdentity: (owner) => input.hosts.rowExtensions.serviceIdentity(owner),
   })
   const intelligentUi = createIntelligentUiBridge({
     dataDir: ctx.dataDir,
     extensionHost: shared.extensionServices.current,
-    profileDir: deps.profileDir,
+    profileDir: ctx.deps.profileDir,
     profileName: ctx.profile.name,
-    agnesVersion: deps.agnesVersion ?? '0.0.0',
-    sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    agnesVersion: ctx.deps.agnesVersion ?? '0.0.0',
+    sessionGeneration: (key) => ctx.deps.sessionGeneration?.(key),
     session: (key) => ctx.live.kernel.peek()?.get(key),
     providers: () => publishedOrdinary().root.providers as UiDataSourceCatalog,
   })
@@ -490,7 +488,7 @@ export async function mountRuntimeTarget(
   }
   ctx.live.pluginTree.set(pluginTree)
   const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
-    deps.onGenerationSessionBinding?.(sessionKey)
+    ctx.deps.onGenerationSessionBinding?.(sessionKey)
     const published = publisher.current().value.current
     if (!published) return
     const overlay = isolateSessionOverlay(published.ordinary.pluginTree.root, sessionKey, preset)

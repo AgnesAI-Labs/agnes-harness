@@ -1,3 +1,5 @@
+import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
+import { afterEach as feedbackAfterEach, beforeEach as feedbackBeforeEach } from 'vitest'
 /** @vitest-environment happy-dom */
 
 import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
@@ -159,6 +161,12 @@ it('creates a new-session task in the workspace of the session the user came fro
   await click('schedules-new', host)
   // A new task runs in a new session by default, in this session's workspace.
   expect(document.querySelector('[data-testid="schedules-target"]')?.textContent).toContain(ux('targetNew'))
+  expect(
+    document.querySelector('[data-testid="schedules-target-new-session"]')?.closest('label')?.textContent,
+  ).toContain(ux('targetNewHint'))
+  expect(
+    document.querySelector('[data-testid="schedules-target-session"]')?.closest('label')?.textContent,
+  ).toContain(ux('targetSessionHint'))
   await vi.waitFor(() =>
     expect(document.querySelector<HTMLSelectElement>('[data-testid="schedules-workspace"]')?.value).toBe(
       '/work/app',
@@ -178,7 +186,12 @@ it('creates a new-session task in the workspace of the session the user came fro
     selector: { daily: { time: '09:00', timeZone: localTimeZone() } },
     target: { kind: 'new-session', cwd: '/work/app' },
   })
-  expect(host.querySelector('[data-testid="schedules-notice"]')?.textContent).toBe(t('schedulesCreated'))
+  expect(host.querySelector('[data-testid="schedules-notice"]')).toBeNull()
+  expect(feedbackResults.at(-1)).toMatchObject({
+    scope: 'schedules',
+    outcome: 'success',
+    message: t('schedulesCreated'),
+  })
 })
 
 it('creates a reminder on the session the user came from', async () => {
@@ -220,7 +233,7 @@ it('words a refused save by its code', async () => {
     ),
   )
   await submit()
-  expect(document.querySelector('[data-testid="schedules-form-error"]')?.textContent).toBe(
+  expect(document.querySelector('[data-testid="schedules-form-error"] .agh-banner-copy')?.textContent).toBe(
     ux('reason.workspace_missing'),
   )
 })
@@ -291,7 +304,11 @@ it('pauses, resumes and runs a task now through the daemon', async () => {
   await act(async () => host.querySelectorAll<HTMLElement>('[data-testid="schedules-enabled"]')[1]?.click())
   expect(daemon.control).toHaveBeenCalledWith({ id: report.id, action: 'resume' })
   await vi.waitFor(() =>
-    expect(host.querySelector('[data-testid="schedules-notice"]')?.textContent).toBe(ux('noticeResumed')),
+    expect(feedbackResults.at(-1)).toMatchObject({
+      scope: 'schedules',
+      outcome: 'success',
+      message: ux('noticeResumed'),
+    }),
   )
 })
 
@@ -769,3 +786,11 @@ it('offers no model of a payload-only adapter to a scheduled task', () => {
   })
   expect(choices.models.map((model) => model.model)).toEqual(['m', 'x'])
 })
+
+const feedbackResults: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+feedbackBeforeEach(() => {
+  feedbackResults.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (value) => feedbackResults.push(value), resolve() {} })
+})
+feedbackAfterEach(() => releaseFeedback?.())

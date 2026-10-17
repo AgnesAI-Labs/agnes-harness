@@ -1,6 +1,8 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 export const observabilityCatalog: LocaleCatalog = {
   en: {
+    headerNameError: 'Enter a valid header name.',
+    headerEnvError: 'Enter an environment variable name, such as OTEL_TOKEN.',
     row: 'OTLP export',
     scopeLabel: 'Scope',
     headerHint: 'For example authorization; the value stays in the service environment',
@@ -59,6 +61,8 @@ export const observabilityCatalog: LocaleCatalog = {
     workerUnavailable: 'Worker health is unavailable',
   },
   'zh-CN': {
+    headerNameError: '请输入有效的请求头名称。',
+    headerEnvError: '请输入环境变量名，例如 OTEL_TOKEN。',
     row: 'OTLP 导出',
     scopeLabel: '导出范围',
     headerHint: '例如认证；值保存在后台环境变量里，不在这里显示',

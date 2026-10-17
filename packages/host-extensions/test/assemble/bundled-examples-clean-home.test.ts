@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import Module from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadTemplate } from '@agnes/host-common/profile/templates'
 import {
@@ -77,7 +77,7 @@ it.each(shipped)('installs, trusts, enables and loads %s from a clean home', asy
   })
   const directory = join(examples, path)
   const id = String(manifest(path).name)
-  const spec = parseSource(`file:${directory}`)
+  const spec = parseSource(`file:${directory.split(sep).join('/')}`)
   const parentId = manifest(path).agnes?.metadata?.exampleOf
   if (parentId && !(await m.inventory(profile)).packages.some((pkg) => pkg.id === parentId)) {
     expect((await m.inspect(profile, spec)).blockers).toEqual([

@@ -175,6 +175,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/diagnostics.collect': 'admin',
   '_agnes/v1/diagnostics.events': 'admin',
   '_agnes/v1/session.list': 'client',
+  '_agnes/v1/session.groups': 'client',
   '_agnes/v1/workspace.list': 'client',
   '_agnes/v1/workspace.add': 'client',
   '_agnes/v1/workspace.reveal': 'client',

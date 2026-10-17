@@ -664,6 +664,10 @@ export class Fiber {
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
       if (!impl) {
+        if (this.inject[name]?.required === false) {
+          epoch += ':optional'
+          continue
+        }
         epoch = INACTIVE
         break
       }

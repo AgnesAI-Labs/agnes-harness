@@ -113,18 +113,12 @@ export function FirstRunGuide({
                 {t('firstRun.demo')}
               </Button>
             </div>
-            {accountReady && !connecting && <p role="status">{t('firstRun.saved')}</p>}
             {connecting && <InlineAccount attach={attachAccount} />}
             {demo && <p className="field-hint">{t('firstRun.demoHelp')}</p>}
           </>
         )}
         {step === 1 && (
           <>
-            {!demo && (
-              <SettingsState tone="success" data-testid="first-run-saved">
-                {t('firstRun.saved')}
-              </SettingsState>
-            )}
             {workspace && <p data-testid="first-run-workspace">{workspace}</p>}
             <Button data-testid="first-run-workspace-pick" onClick={() => onWorkspace()} disabled={busy}>
               <Icon name="folder" />

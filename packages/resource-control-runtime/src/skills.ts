@@ -25,6 +25,8 @@ export type SkillCandidate = Readonly<{
   sourceIdentity: SkillSourceIdentity
   priority: number
   body: string
+  /** A failed static load stays visible but never publishes content or wins name arbitration. */
+  loadError?: SafeError
   workspaceId?: string
   files?: readonly Readonly<{
     relativePath: string
@@ -135,6 +137,8 @@ export function restoreSkillGeneration(snapshot: SkillGenerationSnapshot): Skill
   } satisfies SkillRuntimeInput)
 }
 export type SkillRuntimeInput = Readonly<{
+  /** Host-private selection before name arbitration; never a plugin-controlled authorization input. */
+  scopeRuntime?(accept: (owner: RuntimeSkillOwner) => boolean): SkillRuntimeInput
   /** Private, serializable view for session generations. Never returned by resource admin RPC. */
   generationSnapshot?(): SkillGenerationSnapshot
   list(): readonly SkillActual[]
@@ -194,6 +198,7 @@ const copyCandidate = (candidate: SkillCandidate): SkillCandidate =>
   Object.freeze({
     ...candidate,
     sourceIdentity: Object.freeze({ ...candidate.sourceIdentity }),
+    ...(candidate.loadError ? { loadError: Object.freeze({ ...candidate.loadError }) } : {}),
     ...(candidate.files
       ? { files: Object.freeze(candidate.files.map((file) => Object.freeze({ ...file }))) }
       : {}),
@@ -294,6 +299,7 @@ function groups(state: RegistryState): SkillCandidate[][] {
       (a, b) =>
         Number(state.control.removed?.includes(a.resourceId) ?? false) -
           Number(state.control.removed?.includes(b.resourceId) ?? false) ||
+        Number(!!a.loadError) - Number(!!b.loadError) ||
         b.priority - a.priority ||
         a.sourceIdentity.sourceId.localeCompare(b.sourceIdentity.sourceId),
     ),
@@ -332,6 +338,8 @@ function actualFor(
       actual: 'unavailable' as const,
       lastSafeError: safeError('SKILL_REMOVED', 'Skill deletion was requested'),
     })
+  if (candidate.loadError)
+    return Object.freeze({ ...base, actual: 'unavailable' as const, lastSafeError: candidate.loadError })
   if (!winner)
     return Object.freeze({
       ...base,
@@ -370,6 +378,63 @@ const actual = (state: RegistryState): readonly SkillActual[] =>
       .sort((a, b) => a.name.localeCompare(b.name) || a.resourceId.localeCompare(b.resourceId)),
   )
 
+/** Read-only management projection. Runtime registrations never become durable control records. */
+export function projectRuntimeSkills(
+  files: readonly SkillDescriptor[],
+  runtime: readonly SkillCandidate[],
+): readonly SkillDescriptor[] {
+  const originals = new Map(files.map((file) => [file.resourceId, file]))
+  const state = empty(new Map(runtime.map((candidate) => [candidate.resourceId, candidate])))
+  state.roots.set('user-agnes', {
+    stale: false,
+    candidates: files.map((file) => ({
+      ...file,
+      description: file.description ?? '',
+      body: '',
+      capabilityHash: '',
+      ...(file.lastSafeError?.code.startsWith('SKILL_') && file.actual === 'unavailable'
+        ? { loadError: file.lastSafeError }
+        : {}),
+    })),
+  })
+  state.control = {
+    desired: [],
+    trust: [],
+    removed: files
+      .filter((file) => ['SKILL_REMOVED', 'SKILL_REMOVAL_PENDING'].includes(file.lastSafeError?.code ?? ''))
+      .map((file) => file.resourceId),
+  }
+  return groups(state).flatMap((group) =>
+    group.map((candidate, index) => {
+      const shadows = index === 0 ? group.slice(1, 1 + MAX_SHADOWED).map(shadow) : []
+      const original = originals.get(candidate.resourceId)
+      if (!original) return actualFor(state, candidate, index === 0, shadows)
+      const resolution = { winner: index === 0, shadowed: shadows }
+      if (state.control.removed?.includes(candidate.resourceId) || candidate.loadError)
+        return { ...original, resolution }
+      if (index !== 0)
+        return {
+          ...original,
+          resolution,
+          actual: 'unavailable' as const,
+          lastSafeError: safeError('SHADOWED', 'skill is shadowed by a higher-priority source'),
+        }
+      if (original.lastSafeError?.code !== 'SHADOWED') return { ...original, resolution }
+      const { lastSafeError: _shadowed, ...rest } = original
+      return {
+        ...rest,
+        resolution,
+        actual:
+          original.desired !== 'enabled'
+            ? ('disabled' as const)
+            : original.trust === 'trusted'
+              ? ('ready' as const)
+              : ('unavailable' as const),
+      }
+    }),
+  )
+}
+
 function blockInvocation(flags: SkillInvocation | undefined): Extract<SkillRead, { ok: false }> | undefined {
   if (!flags) return undefined
   if (flags.disabled || (!flags.modelInvocable && !flags.userInvocable))
@@ -393,6 +458,7 @@ function denyRead(
     return Object.freeze({ ok: false, code: 'TRUST_REJECTED' as const })
   if (found.actual.lastSafeError?.code === 'UNTRUSTED_REVISION')
     return Object.freeze({ ok: false, code: 'UNTRUSTED_REVISION' as const })
+  if (found.actual.actual !== 'ready') return Object.freeze({ ok: false, code: 'NOT_FOUND' as const })
   if (canRead && !canRead(resourceId, session))
     return Object.freeze({ ok: false, code: 'UNAUTHORIZED' as const })
   return undefined
@@ -438,8 +504,30 @@ const baseDirectoryNote = (directory: string) =>
   'the directory is read-only.\n\n'
 
 /** Each list/read/readFile call re-reads the registry. A snapshot taken earlier still sees later writes. */
-function liveSnapshot(current: () => RegistryState, canRead: Options['canRead']): SkillRuntimeInput {
+function liveSnapshot(
+  current: () => RegistryState,
+  canRead: Options['canRead'],
+  owners: () => ReadonlyMap<string, RuntimeSkillOwner>,
+): SkillRuntimeInput {
   return Object.freeze({
+    scopeRuntime: (accept) =>
+      liveSnapshot(
+        () => {
+          const state = current()
+          const ownership = owners()
+          return {
+            ...state,
+            runtime: new Map(
+              [...state.runtime].filter(([id]) => {
+                const owner = ownership.get(id)
+                return owner !== undefined && accept(owner)
+              }),
+            ),
+          }
+        },
+        canRead,
+        owners,
+      ),
     generationSnapshot() {
       if (canRead)
         throw new Error('E_GENERATION_SKILLS_AUTHORIZATION: custom authorization cannot be serialized')
@@ -516,7 +604,11 @@ export function createSkillCandidateRegistry(options: Options) {
     mutate(next)
     staged = next
   }
-  const consumer = liveSnapshot(() => view, options.canRead)
+  const consumer = liveSnapshot(
+    () => view,
+    options.canRead,
+    () => runtimeOwners,
+  )
   return Object.freeze({
     replaceRoot(root: SkillSourceIdentity['rootKey'], next: readonly SkillCandidate[]) {
       const policy = rootPolicy.get(root)

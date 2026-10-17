@@ -9,12 +9,15 @@ import { createTestHost } from '@agnes/host/testkit'
 import type { ConfigSnapshot } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { accountDefaultModel, resolveNewSessionSelection } from '@agnes/sdk/composer-selection'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { configurationApplication } from '../src/supervisor/configuration.js'
 
 it('refreshes the composer RPC catalog after account changes following a bundle install', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-config-catalog-'))
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'agnes-config-catalog-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const server = createServer((_request, response) => {
     response.setHeader('content-type', 'application/json')
     response.end(JSON.stringify({ data: [{ id: 'deepseek-flash' }, { id: 'deepseek-v4-pro' }] }))
@@ -153,6 +156,6 @@ it('refreshes the composer RPC catalog after account changes following a bundle 
     await Promise.all([config.close(), projection.close()])
     await host.close()
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    await rm(home, { recursive: true, force: true })
+    await rm(fixtureRoot, { recursive: true, force: true })
   }
 })

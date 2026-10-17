@@ -383,9 +383,9 @@ describe('preset surface contract and ledger lifecycle', () => {
       expect(tool.meta.deferLoading).toBe(false)
       if (name === 'ui_render') {
         expect(tool.description).toContain('show/display in the UI')
-        expect(tool.description).toContain('instead of writing HTML and presenting a file')
+        expect(tool.description).toContain('use this instead of HTML files')
         // Words go in the reply; titles in one language; ids are the model's own.
-        expect(tool.description).toContain('plain text, outlines and summaries belong in the reply')
+        expect(tool.description).toContain('plain text/outlines/summaries stay in the reply')
         expect(tool.description).toContain('never a bilingual "A / B" title')
         expect(tool.description).toContain('never imitate system ids')
       }
@@ -395,16 +395,29 @@ describe('preset surface contract and ledger lifecycle', () => {
         expect(text.text, kind).toContain(kind + ':')
         expect(text.text).toContain(shape)
       }
-      expect(text.text).toContain('{"id":"collect","label":"Collect evidence","state":"done"}')
+      expect(text.text).toContain('{"id":"review","label":"Review","state":"active"}')
       expect(text.text).toContain('{"label":"Checks","value":2,"total":5}')
       expect(text.text).toContain('surface.data[component.dataKey]')
+      for (const constraint of [
+        'exact ref',
+        'No invented refs, paths or URLs',
+        'component.id, not dataKey',
+        'answers, not values',
+        'local synchronous',
+        'real ISO calendar values',
+        'one nonnegative series',
+        'No remote URLs',
+        'exact fallback',
+        'no actor/session/permission fields',
+      ])
+        expect(text.text, constraint).toContain(constraint)
       const bytes = (value: string) => new TextEncoder().encode(value).byteLength
-      expect(bytes(tool.description)).toBeLessThan(4500)
+      expect(bytes(tool.description)).toBeLessThan(2800)
       // Registration refuses a description over the wire limit (UTF-16 units) and the whole
       // extension then fails to load; keep headroom for the shared data contracts to grow.
       expect(tool.description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_MAX_LENGTH - 100)
       expect(bytes(JSON.stringify(tool.parameters))).toBeLessThan(10000)
-      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(14000)
+      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(12000)
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })

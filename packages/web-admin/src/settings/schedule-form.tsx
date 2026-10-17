@@ -5,11 +5,14 @@ import {
   PushPage,
   Segmented,
   SessionPicker,
+  SettingsChoice,
+  SettingsGroup,
   SettingsInput,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
   StateSwitch,
+  StatusMessage,
 } from '@agnes/web-ui'
 import { useState } from 'react'
 import {
@@ -282,23 +285,37 @@ export function ScheduleEditor({
             onChange={(event) => set('title', event.target.value)}
           />
         </Field>
-        <Field
-          label={ux('targetLabel')}
-          hint={draft.target === 'new-session' ? ux('targetNewHint') : ux('targetSessionHint')}
-        >
-          <Segmented<TargetKind>
+        <Field label={ux('targetLabel')}>
+          <SettingsGroup
             id="schedules-target"
-            block
-            label={ux('targetLabel')}
-            testId="schedules-target"
-            value={draft.target}
-            disabled={busy}
-            onChange={(value) => set('target', value)}
-            options={[
-              { value: 'new-session', label: ux('targetNew'), testId: 'schedules-target-new-session' },
-              { value: 'session', label: ux('targetSession'), testId: 'schedules-target-session' },
-            ]}
-          />
+            data-testid="schedules-target"
+            role="radiogroup"
+            aria-label={ux('targetLabel')}
+            className="agnes-settings-choices"
+          >
+            <SettingsChoice
+              type="radio"
+              name="schedules-target"
+              value="new-session"
+              label={ux('targetNew')}
+              hint={ux('targetNewHint')}
+              data-testid="schedules-target-new-session"
+              checked={draft.target === 'new-session'}
+              disabled={busy}
+              onChange={() => set('target', 'new-session')}
+            />
+            <SettingsChoice
+              type="radio"
+              name="schedules-target"
+              value="session"
+              label={ux('targetSession')}
+              hint={ux('targetSessionHint')}
+              data-testid="schedules-target-session"
+              checked={draft.target === 'session'}
+              disabled={busy}
+              onChange={() => set('target', 'session')}
+            />
+          </SettingsGroup>
         </Field>
         {draft.target === 'new-session' ? (
           <>
@@ -543,9 +560,13 @@ export function ScheduleEditor({
         </MetaText>
       </form>
       {error && (
-        <SettingsState tone="error" data-testid="schedules-form-error">
+        <StatusMessage
+          kind="error"
+          data-testid="schedules-form-error"
+          action={{ label: t('schedulesSave'), onSelect: onSubmit, busy }}
+        >
           {error}
-        </SettingsState>
+        </StatusMessage>
       )}
       <div className="home-push-actions">
         <Button disabled={busy} onClick={onCancel}>

@@ -80,12 +80,14 @@ export function useAutosave<T>({
   save,
   equal = Object.is,
   idle = AUTOSAVE_IDLE_MS,
+  onSaved,
 }: {
   /** Shared remote resource identity; omit only for a component-local setting. */
   resourceKey?: string | undefined
   stored: T | undefined
   save(next: T): Promise<unknown>
   equal?(a: T, b: T): boolean
+  onSaved?(): void
   idle?: number
 }): Autosave<T> {
   const undo = useContext(UndoContext)
@@ -94,8 +96,8 @@ export function useAutosave<T>({
   const [busy, setBusy] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pending = useRef<{ value: T; previous: T | undefined } | undefined>(undefined)
-  const latest = useRef({ stored, save, equal })
-  latest.current = { stored, save, equal }
+  const latest = useRef({ stored, save, equal, onSaved })
+  latest.current = { stored, save, equal, onSaved }
   const reverting = useRef(false)
   // One save per setting at a time. Settings are written as whole objects, so two saves in flight
   // could land in either order and leave an older value stored. An edit made while a save is on its
@@ -144,6 +146,7 @@ export function useAutosave<T>({
           if (next() || !mounted.current) return
           setBusy(false)
           setFailed(false)
+          latest.current.onSaved?.()
         },
         () => {
           // The newest edit carries the whole setting, so it supersedes this failed one.

@@ -9,6 +9,7 @@ import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
+import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
 import goalExtension from '../extensions/goal/src/index.js'
 import {
   type CcHookMap,
@@ -222,6 +223,8 @@ const bundled = {
   'agnes/intelligent-ui': (): BundledPlugin => intelligentUiExtension,
   'agnes/workflow': (): BundledPlugin => workflowExtension,
   'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
+  'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
+    createFollowUpHintExtension(init.sessionTasks),
   'agnes/time-context': (): BundledPlugin => timeContextExtension,
 
   'agnes/goal': (): BundledPlugin => goalExtension,
@@ -252,7 +255,7 @@ const bundled = {
   'agnes/skills': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).skills(),
   'agnes/plan-mode': (): BundledPlugin => planModeExtension,
   'agnes/mcp-resources': (): BundledPlugin => mcpResourcesExtension,
-  'agnes/schedule': (init: SeamInitContext): BundledPlugin => createScheduleExtension(init.scheduleTables),
+  'agnes/schedule': (): BundledPlugin => createScheduleExtension(),
   'agnes/computer-use': (init: SeamInitContext): BundledPlugin => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')

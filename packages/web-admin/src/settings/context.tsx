@@ -1,8 +1,10 @@
 import {
   appServerErrorMessage,
   Banner,
+  fallbackT,
   IconButton,
   minutePresets,
+  reportSuccess,
   Select,
   SettingsBlock,
   SettingsChips,
@@ -150,6 +152,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
   }, [reads])
   const config = useAutosave<Config>({
     resourceKey: 'settings:context',
+    onSaved: () => reportSuccess('settings:context', fallbackT('ui.settingsSaved')),
     stored: snapshot?.config,
     equal: sameConfig,
     save: async (next) => {

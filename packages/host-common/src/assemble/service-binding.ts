@@ -12,6 +12,7 @@ import {
   type ProviderCatalogEntry,
   ProviderError,
   type ServiceBinding,
+  type ServiceCapability,
   type ServiceInstance,
   type ServicePortName,
   type ServicePorts,
@@ -28,13 +29,15 @@ import {
   providerSource,
 } from './provider-registry.js'
 
-export type ServiceAudience = 'callback' | 'host'
+export type ServiceAudience = 'callback' | 'host' | 'shared'
 export type ServiceDelivery = 'next-turn' | 'follow-steer'
 export type ServiceDedupeKeys = 'namespaced' | 'exact'
 
 /** Host-owned grant. It can only shrink the kind's declared ports. */
 export interface ServiceDescriptor {
   readonly ports: readonly ServicePortName[]
+  /** Declared service capabilities required to bind and retain this facade. */
+  readonly services?: readonly ServiceCapability[]
   readonly dedupeKeys?: ServiceDedupeKeys
   readonly eventNames?: readonly string[]
   readonly projectionNames?: readonly string[]
@@ -125,7 +128,9 @@ function clean(value: string | undefined): boolean {
  */
 export class ServiceBindings {
   private readonly installed = new Map<string, InstalledService>()
+  private readonly admittedOpens = new WeakMap<object, object>()
   private readonly claims = new Map<string, OwnerClaim>()
+  private readonly registries = new WeakMap<Context, Map<object, unknown>>()
   constructor(private readonly current: () => ProvidersService) {}
 
   install<S extends ServiceInstance, P extends ServicePorts>(
@@ -153,6 +158,33 @@ export class ServiceBindings {
         await provider.dispose?.()
       })
     })
+    const registries = this.registries.get(ctx) ?? new Map()
+    registries.set(kind, registry)
+    this.registries.set(ctx, registries)
+  }
+
+  /** Host holds the registry; author registration still refuses host-owned kinds. */
+  registerHost<S extends ServiceInstance, P extends ServicePorts>(
+    ctx: Context,
+    kind: BindableKind<S, P>,
+    provider: ServiceProvider<S, P>,
+    source: string,
+  ): () => Promise<void> {
+    const registry = this.registries.get(ctx)?.get(kind)
+    if (!registry || kind.authority !== 'host') throw closed(kind.kind, 'register')
+    // Public provider resolution must never turn a factory into an ungranted open capability.
+    const guarded: ServiceProvider<S, P> = {
+      ...provider,
+      id: provider.id,
+      version: provider.version,
+      open: (ports) => {
+        if (this.admittedOpens.get(ports?.binding) !== kind) throw closed(kind.kind, 'open')
+        this.admittedOpens.delete(ports.binding)
+        return provider.open(ports)
+      },
+    }
+    // The exact invariant token above owns the registry installed with S and P.
+    return (registry as ProviderRegistry<ServiceProvider<S, P>>).register(source, guarded, ctx)
   }
 
   noteOwner(kind: string, id: string, version: string, owner: string, packageId: string): void {
@@ -177,11 +209,18 @@ export class ServiceBindings {
   }
 
   /** Events and projection names the installed descriptor still grants. Absent until install. */
-  grants(kind: string): { readonly events: boolean; readonly projections: readonly string[] } | undefined {
+  grants(kind: string):
+    | {
+        readonly events: boolean
+        readonly projections: readonly string[]
+        readonly services?: readonly ServiceCapability[]
+      }
+    | undefined {
     const installed = this.installed.get(kind)
     if (!installed) return undefined
     return Object.freeze({
       events: (installed.descriptor.eventNames?.length ?? 0) > 0,
+      ...(installed.descriptor.services?.length ? { services: installed.descriptor.services } : {}),
       projections: Object.freeze([...(installed.descriptor.projectionNames ?? [])]),
     })
   }
@@ -241,7 +280,13 @@ export class ServiceBindings {
     // A service instance may own a `then` method. Awaiting the open result would adopt that method
     // and never settle. Only a real Promise is waited on, and its fulfillment is kept inside a
     // plain holder so the instance itself is never resolved as a thenable.
-    const opened = provider.open(ports as P)
+    if (kind.authority === 'host') this.admittedOpens.set(binding, kind)
+    let opened: S | Promise<S>
+    try {
+      opened = provider.open(ports as P)
+    } finally {
+      this.admittedOpens.delete(binding)
+    }
     const raw = (
       await new Promise<{ value: unknown }>((resolve, reject) => {
         try {
@@ -288,7 +333,7 @@ export class ServiceBindings {
     if (!providers?.catalog) throw closed(kind.kind, 'bind')
     const owned = providers
       .catalog()
-      .filter((entry) => entry.kind === kind.kind && owns(entry, call, descriptor, this.claims))
+      .filter((entry) => entry.kind === kind.kind && owns(entry, call, descriptor, this.claims, kind))
     if (kind.cardinality === 'multi') {
       const id = call.providerId
       if (!clean(id)) throw closed(kind.kind, 'bind')
@@ -322,7 +367,13 @@ function owns(
   call: ServiceCall,
   descriptor: InstalledService['descriptor'],
   claims: ReadonlyMap<string, OwnerClaim>,
+  kind: BindableKindToken & {
+    readonly authority?: string
+    readonly operations?: { readonly register: boolean }
+  },
 ): boolean {
+  if (descriptor.audience === 'shared')
+    return kind.authority === 'host' && kind.operations?.register === false
   if (entry.sourcePackage !== call.packageId) return false
   if (descriptor.audience === 'host') return true
   const claim = claims.get(claimKey(entry.kind, entry.id, entry.version))
@@ -385,7 +436,7 @@ function freezeDescriptor(
   const delivery = descriptor.delivery ?? 'next-turn'
   if (
     (dedupeKeys !== 'namespaced' && dedupeKeys !== 'exact') ||
-    (audience !== 'callback' && audience !== 'host') ||
+    (audience !== 'callback' && audience !== 'host' && audience !== 'shared') ||
     (delivery !== 'next-turn' && delivery !== 'follow-steer')
   )
     throw new ProviderError('E_PROVIDER_INVALID', 'service descriptor is invalid', {
@@ -418,6 +469,7 @@ function freezeDescriptor(
     })
   return Object.freeze({
     ports: Object.freeze([...descriptor.ports]),
+    services: Object.freeze(JSON.parse(JSON.stringify(descriptor.services ?? [])) as ServiceCapability[]),
     dedupeKeys,
     audience,
     delivery,

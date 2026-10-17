@@ -9,7 +9,14 @@ import { inboxEvent, inputMessageEvents } from '../step/inbox.js'
 import type { SessionImpl } from '../step/session.js'
 import { applyChildControl, controlledChildTree } from './child-controls.js'
 
-export type SessionControl = 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue'
+export type SessionControl =
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'interrupt'
+  | 'promote'
+  | 'child-stop'
+  | 'child-continue'
 const PAUSE = 'x/core/pause-state'
 
 /** Core-owned controls apply to the session's pinned factory, independent of its scheduler. */
@@ -238,7 +245,9 @@ export class SessionControls {
     if (action === 'pause' || action === 'resume') {
       await this.require('pause', actor)
       const seq = await this.s.locked(async () => {
-        if (!this.s.op()) {
+        // Shutdown can close the turn while its durable pause still fences queued input.
+        // That fence must remain explicitly resumable even without an open operation.
+        if (!this.s.op() && (action !== 'resume' || !(await this.paused()))) {
           await this.s.d.log.append([
             this.fact(action, 'refused', actor, { admissionId, reason: 'CONTROL_NOT_RUNNING' }),
           ])
@@ -254,6 +263,36 @@ export class SessionControls {
       })
       if (action === 'resume' && !this.s.turn) await this.s.resume()
       return seq
+    }
+    if (action === 'promote') {
+      await this.require('steer', actor)
+      if (!itemId) throw new CoreError('E_ENVELOPE', 'Promotion requires a queued input')
+      return this.s.locked(async () => {
+        if (!this.s.op()) {
+          await this.s.d.log.append([
+            this.fact(action, 'refused', actor, { admissionId, itemId, reason: 'CONTROL_NOT_RUNNING' }),
+          ])
+          throw new CoreError('E_RELATION', 'Promotion requires an open turn', {
+            reason: 'CONTROL_NOT_RUNNING',
+          })
+        }
+        const inbox = (this.s.latest('inbox') as Inbox | undefined) ?? { items: [] }
+        if (!inbox.items.some((item) => item.itemId === itemId)) {
+          await this.s.d.log.append([
+            this.fact(action, 'refused', actor, { admissionId, itemId, reason: 'QUEUED_INPUT_GONE' }),
+          ])
+          throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+        }
+        const result = await this.s.d.log.append([
+          inboxEvent(this.s.lane, actor, {
+            items: inbox.items.map((item) =>
+              item.itemId === itemId ? { ...item, target: 'next-step', kind: 'steer' } : item,
+            ),
+          }),
+          this.fact(action, 'applied', actor, { admissionId, itemId }),
+        ])
+        return result.seqs.at(-1) ?? result.firstSeq
+      })
     }
     if (action === 'interrupt') {
       await this.require('interrupt', actor)

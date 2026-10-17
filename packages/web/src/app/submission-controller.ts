@@ -8,18 +8,19 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol'
-import type { Session } from '@agnes/sdk/browser'
+import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
+import { composerCommands } from '@agnes/web-client'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
+import { showCommandFeedback } from './command-feedback.js'
 
 export function createSubmissionController(
   context: Pick<
     AppSessionContext,
-    | 'attachmentSessionOpening'
-    | 'awaitingPromptStart'
+    | 'submissions'
     | 'client'
     | 'clientModules'
     | 'composerDraftKey'
@@ -32,7 +33,6 @@ export function createSubmissionController(
     | 'draftLoopAvailable'
     | 'draftPreset'
     | 'draftingNew'
-    | 'goalHost'
     | 'initialModelPending'
     | 'initialPermissionPending'
     | 'intentionalClose'
@@ -50,7 +50,6 @@ export function createSubmissionController(
     | 'permissionSelectionSeq'
     | 'projection'
     | 'recoveredReturns'
-    | 'referenceSessionPending'
     | 'references'
     | 'render'
     | 'renderControls'
@@ -60,8 +59,7 @@ export function createSubmissionController(
     | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
-    | 'selection'
-    | 'sending'
+    | 'sessionBinding'
     | 'sessionControls'
     | 'sessionPending'
     | 'sessionTitles'
@@ -69,11 +67,13 @@ export function createSubmissionController(
     | 'settingsText'
     | 'showError'
     | 'stopping'
-    | 'submissionGeneration'
     | 't'
     | 'titleRefresh'
   >,
 ) {
+  let referenceSessionPending: Promise<Session> | undefined
+  let attachmentSessionOpening: Promise<string> | undefined
+
   function imageSubmissionFrameBytes(
     sessionId: string,
     content: ContentBlock[],
@@ -108,13 +108,13 @@ export function createSubmissionController(
 
   async function prepareComposerSession(): Promise<Session> {
     if (context.current) return context.current
-    if (context.referenceSessionPending) return context.referenceSessionPending
+    if (referenceSessionPending) return referenceSessionPending
     if (!context.draftingNew || !context.selectedWorkspace?.available || context.sessionPending)
       throw new Error(context.t('app.session.createFailed'))
-    const epoch = context.selection
+    const epoch = context.sessionBinding.capture()
     context.sessionPending = true
     context.renderControls()
-    context.referenceSessionPending = (async () => {
+    referenceSessionPending = (async () => {
       const key = context.pendingSessionKey ?? crypto.randomUUID()
       const draftModel = context.knownSessionModel
       const workspace = context.selectedWorkspace
@@ -134,22 +134,25 @@ export function createSubmissionController(
         ...(context.draftPreset ? { preset: context.draftPreset } : {}),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
-      if (context.selection !== epoch) throw new Error(context.t('app.session.selectionChanged'))
-      await context.open(created.id, {
+      if (!context.sessionBinding.isCurrent(epoch)) throw new Error(context.t('app.session.selectionChanged'))
+      const opening = context.open(created.id, {
         created,
         preserveSending: true,
         ...(workspace ? { workspace } : {}),
         ...(draftModel ? { initialModel: draftModel } : {}),
       })
-      if (context.current !== created) throw new Error(context.t('app.session.selectionChanged'))
+      const openedBinding = context.sessionBinding.capture()
+      await opening
+      if (!context.sessionBinding.isCurrent(openedBinding, created))
+        throw new Error(context.t('app.session.selectionChanged'))
       if (!context.current) throw new Error(context.t('app.session.createFailed'))
       return context.current
     })()
     try {
-      return await context.referenceSessionPending
+      return await referenceSessionPending
     } finally {
-      context.referenceSessionPending = undefined
-      if (context.selection === epoch) {
+      referenceSessionPending = undefined
+      if (context.sessionBinding.isCurrent(epoch)) {
         context.sessionPending = false
         context.renderControls()
       }
@@ -165,28 +168,19 @@ export function createSubmissionController(
     const selectedReferences = context.references.getSnapshot()
     const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))
     const input = originalDraft.trim()
-    if (
-      !selectedReferences.length &&
-      /^\/goal(?:\s+show)?$/.test(input) &&
-      context.composerRuntime.getAttachmentBlocks().length === 0
-    ) {
-      context.composerRuntime.setDraft('')
-      sessionStorage.removeItem(context.composerDraftKey)
-      const toggle = context.goalHost.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')
-      if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click()
-      toggle?.focus()
-      return
-    }
-    if (
-      !selectedReferences.length &&
-      /^\/goal(?:\s|$)/.test(input) &&
-      context.current &&
-      context.projection?.opState
-    ) {
-      context.composerRuntime.setDraft('')
-      sessionStorage.removeItem(context.composerDraftKey)
-      void context.current.steer(input).catch(context.showError)
-      return
+    if (!selectedReferences.length && context.composerRuntime.getAttachmentBlocks().length === 0) {
+      for (const command of composerCommands.entries()) {
+        const route = command.route({
+          text: input,
+          ...(context.current ? { sessionId: context.current.id } : {}),
+          busy: !!context.projection?.opState,
+        })
+        if (!route) continue
+        context.composerRuntime.setDraft('')
+        sessionStorage.removeItem(context.composerDraftKey)
+        if (route === 'steer' && context.current) void context.current.steer(input).catch(context.showError)
+        return
+      }
     }
     if (!selectedReferences.length && isPlanCommand(input)) {
       const cwd = context.selectedWorkspace?.path
@@ -196,7 +190,8 @@ export function createSubmissionController(
       }
       context.composerRuntime.setDraft('')
       sessionStorage.removeItem(context.composerDraftKey)
-      void submitPlanCommand(cwd, input)
+      void prepareComposerSession()
+        .then((session) => submitPlanCommand(cwd, input, fetch, session.id))
         .then((result) => {
           context.notice.setText(result.text)
           context.notice.setKind('')
@@ -226,7 +221,7 @@ export function createSubmissionController(
       !canSubmitComposer({
         connected: context.connected,
         hasSession: true,
-        sending: context.sending,
+        sending: context.submissions.sending,
         stopping: context.stopping,
         loading: context.sessionPending,
       })
@@ -271,11 +266,9 @@ export function createSubmissionController(
     const submittedReturns = [...context.recoveredReturns].filter((key) =>
       key.startsWith(`agnes-return:${session?.id}:`),
     )
-    const submission = ++context.submissionGeneration
+    const submission = context.submissions.beginComposer(!busy)
+    if (!submission) return
     const connectionEpoch = context.permissionConnectionEpoch
-    let ownedSelection = context.selection
-    context.sending = true
-    context.awaitingPromptStart = !busy
     context.composerRuntime.setDraft('')
     context.composerRuntime.clearImageBlocks()
     context.references.clear()
@@ -283,13 +276,9 @@ export function createSubmissionController(
     context.renderer.pinToBottom()
     context.renderControls()
     // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
-    const work = (async () => {
+    const work = submission.run(async () => {
       if (!session) {
-        try {
-          session = await prepareComposerSession()
-        } finally {
-          ownedSelection = context.selection
-        }
+        session = await prepareComposerSession()
       }
       if (!session) throw new Error(context.t('app.session.createFailed'))
       if (context.initialModelPending) {
@@ -301,7 +290,7 @@ export function createSubmissionController(
           thinking: selectedModel.settings?.thinking ?? null,
           contextWindow: selectedModel.settings?.contextWindow ?? null,
         })
-        if (context.current !== session || context.selection !== ownedSelection)
+        if (!context.submissions.isCurrent(submission, session))
           throw new Error(context.t('app.error.sessionChanged'))
         context.modelSelectionSeq = applied.effectiveFromSeq
         context.knownSessionModel = selectedModel
@@ -318,7 +307,7 @@ export function createSubmissionController(
         const selectedPermission = context.initialPermissionPending
         const enabled = yoloEnabled(selectedPermission)
         const applied = await session.setYolo(enabled)
-        if (context.current !== session || context.selection !== ownedSelection)
+        if (!context.submissions.isCurrent(submission, session))
           throw new Error(context.t('app.error.sessionChanged'))
         if (connectionEpoch !== context.permissionConnectionEpoch)
           throw new Error(context.t('app.error.connectionChanged'))
@@ -333,9 +322,14 @@ export function createSubmissionController(
         context.permissionRefreshPending
       )
         throw new Error(context.t('app.error.connectionChanged'))
-      if (context.current !== session || context.selection !== ownedSelection)
+      if (!context.submissions.isCurrent(submission, session))
         throw new Error(context.t('app.error.sessionChanged'))
       if (context.sessionYoloEnabled === undefined) throw new Error(context.t('app.error.permissionRequired'))
+      if ((await session.pendingCommands()).length) {
+        throw new Error(context.t('app.command.unconfirmed'))
+      }
+      if (!context.submissions.isCurrent(submission, session))
+        throw new Error(context.t('app.error.sessionChanged'))
       const result = await (busy
         ? steer
           ? session.steer(content, { references: referenceSelections })
@@ -353,11 +347,11 @@ export function createSubmissionController(
         context.titleRefresh.start(submittedId)
       for (const key of submittedReturns) sessionStorage.setItem(key, 'sent')
       context.pendingSessionKey = undefined
-      if (busy && context.current === session && context.selection === ownedSelection) context.live?.refresh()
-    })()
+      if (busy && context.submissions.isCurrent(submission)) context.live?.refresh()
+    })
     void work
-      .catch((error: unknown) => {
-        if (submission === context.submissionGeneration && ownedSelection === context.selection) {
+      .catch(async (error: unknown) => {
+        if (context.submissions.isCurrent(submission)) {
           if (connectionEpoch !== context.permissionConnectionEpoch) {
             context.initialPermissionPending = undefined
             context.sessionYoloEnabled = undefined
@@ -365,7 +359,7 @@ export function createSubmissionController(
           }
           // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
           // already accepted. That is not a failed send, so the sent text must not come back as a draft.
-          if (!context.intentionalClose) {
+          if (!context.intentionalClose && !unresolvedSubmission(error)) {
             const laterDraft = context.composerRuntime.getDraft()
             if (originalDraft) {
               const restoredDraft = laterDraft ? `${originalDraft}\n${laterDraft}` : originalDraft
@@ -379,13 +373,12 @@ export function createSubmissionController(
               context.composerRuntime.restoreAttachmentBlocks(attachments)
             context.references.restore([...selectedReferences, ...context.references.getSnapshot()])
           }
-          context.showError(error)
+          if (!unresolvedSubmission(error)) context.showError(error)
+          if (session) await showCommandFeedback(context, session).catch(context.showError)
         }
       })
       .finally(() => {
-        if (submission === context.submissionGeneration && ownedSelection === context.selection) {
-          context.sending = false
-          context.awaitingPromptStart = false
+        if (context.submissions.isCurrent(submission)) {
           context.renderControls()
           context.live?.refresh()
         }
@@ -394,8 +387,8 @@ export function createSubmissionController(
 
   async function prepareAttachmentSession(): Promise<string> {
     if (context.current) return context.current.id
-    if (context.attachmentSessionOpening) return context.attachmentSessionOpening
-    context.attachmentSessionOpening = (async () => {
+    if (attachmentSessionOpening) return attachmentSessionOpening
+    attachmentSessionOpening = (async () => {
       if (
         !context.draftingNew ||
         !context.selectedWorkspace?.available ||
@@ -405,7 +398,7 @@ export function createSubmissionController(
         throw new Error(context.t('app.session.createFailed'))
       const workspace = context.selectedWorkspace
       const model = context.knownSessionModel
-      const epoch = context.selection
+      const epoch = context.sessionBinding.capture()
       const key = context.pendingSessionKey ?? crypto.randomUUID()
       context.pendingSessionKey = key
       if (
@@ -421,15 +414,22 @@ export function createSubmissionController(
         ...(context.draftPreset ? { preset: context.draftPreset } : {}),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
-      if (epoch !== context.selection || !context.draftingNew)
+      if (!context.sessionBinding.isCurrent(epoch) || !context.draftingNew)
         throw new Error(context.t('app.session.selectionChanged'))
-      await context.open(created.id, { created, workspace, ...(model ? { initialModel: model } : {}) })
-      if (context.current !== created) throw new Error(context.t('app.session.selectionChanged'))
+      const opening = context.open(created.id, {
+        created,
+        workspace,
+        ...(model ? { initialModel: model } : {}),
+      })
+      const openedBinding = context.sessionBinding.capture()
+      await opening
+      if (!context.sessionBinding.isCurrent(openedBinding, created))
+        throw new Error(context.t('app.session.selectionChanged'))
       return created.id
     })().finally(() => {
-      context.attachmentSessionOpening = undefined
+      attachmentSessionOpening = undefined
     })
-    return context.attachmentSessionOpening
+    return attachmentSessionOpening
   }
 
   return {

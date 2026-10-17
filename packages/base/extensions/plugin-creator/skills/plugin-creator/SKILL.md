@@ -8,7 +8,7 @@ description: Draft, test and submit an Agnes plugin or Skill for human review.
 Use the [SDK import map](https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md) to choose helpers, contracts and service kind tokens. Keep testkit imports in tests; do not compose the legacy plugin-runtime/testkit + host/testkit pair.
 
 1. Describe observable inputs, outputs, errors and side effects. Prefer the `tool` template; choose `skill` for reusable Markdown instructions. For a staged business agent, choose `loop` and `defineWorkflowLoop` from `@agnes/plugin-runtime`: write business stages and use its confirmation, checkpoint, approval continuation and structured input-stage support instead of copying a scheduler. See the [workflow guide](https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/workflow-loops.md).
-2. Call `plugin_scaffold` with `template` and lowercase package `name`. It returns a Host-owned candidateId and candidateHash. The candidate stays outside discovery roots and is never automatically installed or activated. The legacy directory hint does not select a filesystem destination.
+2. Call `plugin_scaffold` with a supported `template` (`tool`, `tool-with-panel`, `mcp-skills`, `model-adapter`, `loop`, or `skill`) and lowercase package `name`. For a CSS skin, use `plugin_helper_guide(kind: "skin")` only if that tool appears in the current tool catalog; otherwise report the missing capability. It returns a Host-owned candidateId and candidateHash. The candidate stays outside discovery roots and is never automatically installed or activated. The legacy directory hint does not select a filesystem destination.
 3. Use `plugin_candidate_read`, then `plugin_candidate_write` with candidateId, expectedHash and the complete files array. Keep public API ranges and honestly declared capabilities. Every change clears tests and any earlier review. Do not write drafts to `.agh/plugins`, user plugins or Skill discovery directories.
 4. Extend observable Node tests (`*.test.mjs` or `*.test.ts`). The Host supplies the public author SDK and `@agnes/host/author-testkit`: use `createPluginTestHost(plugin)` with its real Host registration, `scriptedModel(replies)` or `driveLoop(factory, { replies, tools })`. No paid model is needed. Do not fake test results or remove meaningful assertions. The fixed runner compiles tests and runs Node’s test runner; arbitrary npm lifecycle scripts are not run.
 5. Call `plugin_test` with candidateId and expectedHash. The local user must approve test code execution. A refused/cancelled/failed test cannot authorize publication. Tests run a private copy, and both that copy and the draft must retain the same hash afterward.
@@ -25,18 +25,39 @@ Minimal TypeScript cell pattern (replace the candidate ID and use a path/unique 
 ```ts
 const candidateId = 'CANDIDATE_ID';
 const unpack = (result) => {
-  if (result.isError) throw new Error('Candidate operation refused');
-  return JSON.parse(result.content.find((part) => part.type === 'text').text);
+  const value = typeof result === 'string' ? JSON.parse(result) : result;
+  if (!value || value.isError || ['failed', 'interrupted', 'cancelled', 'rejected'].includes(value.state) || value.tests?.state === 'failed') throw new Error('Candidate operation refused');
+  return value;
 };
-const current = unpack(await tools.plugin_candidate_read({candidateId}));
+let current = unpack(await tools.plugin_candidate_read({candidateId}));
+if (current.kind === 'candidate-source-page') {
+  const hash = current.candidateHash, total = current.totalBytes;
+  let offset = 0, chunks = [], calls = 0;
+  while (true) {
+    if (++calls > 128 || current.kind !== 'candidate-source-page' || current.candidateId !== candidateId || current.candidateHash !== hash || current.totalBytes !== total || current.offset !== offset || typeof current.data !== 'string') throw new Error('Incomplete or changed candidate');
+    const next = offset + new TextEncoder().encode(current.data).length;
+    if (next > total || (current.nextOffset === null ? next !== total : current.nextOffset !== next || next <= offset)) throw new Error('Invalid source page');
+    chunks.push(current.data);
+    if (current.nextOffset === null) break;
+    offset = next;
+    current = unpack(await tools.plugin_candidate_read({candidateId, offset, expectedHash: hash}));
+  }
+  current = JSON.parse(chunks.join(''));
+  if (current.candidateId !== candidateId || current.candidateHash !== hash) throw new Error('Candidate identity changed');
+}
+if (current.candidateId !== candidateId || !Array.isArray(current.sourceFiles) || current.sourceFiles.length < 1 || current.sourceFiles.length > 64) throw new Error('Incomplete candidate files');
 const path = 'skills/example/SKILL.md', marker = '<!-- next-section -->';
 const target = current.sourceFiles.find((file) => file.path === path);
 if (!target || target.content.split(marker).length !== 2) throw new Error('Read the current path/marker again');
 const files = current.sourceFiles.map((file) => file.path === path
   ? {...file, content: file.content.replace(marker, 'A complete small section.')}
   : file);
-const updated = unpack(await tools.plugin_candidate_write({candidateId, expectedHash: current.candidateHash, files}));
+const write = {candidateId, expectedHash: current.candidateHash, files};
+if (new TextEncoder().encode(JSON.stringify(write)).length > 1000000) throw new Error('Full write exceeds the bridge frame budget; simplify the candidate before editing');
+const updated = unpack(await tools.plugin_candidate_write(write));
 return {candidateId, candidateHash: updated.candidateHash};
 ```
+
+Source pages bind only the source ID/hash/files, not independently changing test or review metadata. Each page is authorized again. At most 128 page calls leave room within the 256-call code budget; missing pages, cancellation, stale hashes or oversized writes must stop before writing. Model text contains a short status; `run_code` receives the complete object or source page. Use the returned `artifact://` path with `read`/`grep` for human inspection. A preview storage failure does not undo a successful action. Do not switch to shell or partial-tree writes to bypass these limits.
 
 After OUTPUT_LIMIT, the unfinished tool call was discarded. Read and continue the same candidate; inspect which sections persisted, add smaller complete pieces, then run tests on the final hash and submit review. Do not scaffold a duplicate, assume the discarded call wrote anything, or claim tests/review succeeded.

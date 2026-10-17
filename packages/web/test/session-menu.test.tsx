@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { mountRegion } from '@agnes/web-ui'
+import { mountRegion, renderRegion } from '@agnes/web-ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SessionMenu } from '../src/session-menu.js'
 import { zhT } from './helpers/locale.js'
@@ -15,26 +15,35 @@ function renderMenu(platform?: string) {
   const host = document.createElement('div')
   document.body.append(host)
   const select = vi.fn()
-  const dispose = mountRegion(
-    host,
+  const view = (disabled: boolean) => (
     <div className="session-row">
       <SessionMenu
         id="visible"
         title="名称 visible"
-        disabled={false}
+        disabled={disabled}
         platform={platform}
         t={zhT}
         action={select}
       />
-    </div>,
+    </div>
   )
+  const dispose = mountRegion(host, view(false))
   cleanups.push(dispose)
   const row = host.querySelector<HTMLElement>('.session-row')
-  const trigger = host.querySelector<HTMLButtonElement>('[data-session-action-id="visible"]')
-  if (!row || !trigger) throw new Error('session menu did not render')
-  const open = async () => {
+  const getTrigger = () => {
+    const button = host.querySelector<HTMLButtonElement>('[data-session-action-id="visible"]')
+    if (!button) throw new Error('session menu trigger did not render')
+    return button
+  }
+  if (!row) throw new Error('session menu did not render')
+  const open = async (keyboard = false) => {
+    const trigger = getTrigger()
     trigger.focus()
-    trigger.click()
+    if (keyboard)
+      trigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+      )
+    else trigger.click()
     await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'))
     await vi.waitFor(() =>
       expect(document.getElementById(trigger.getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe(
@@ -48,11 +57,74 @@ function renderMenu(platform?: string) {
     return panel
   }
   const closed = async () => {
-    await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+    await vi.waitFor(() => expect(getTrigger().getAttribute('aria-expanded')).toBe('false'))
     await vi.waitFor(() => expect(row.hasAttribute('data-menu-open')).toBe(false))
   }
-  return { host, row, trigger, select, dispose, open, closed }
+  return {
+    host,
+    row,
+    select,
+    dispose,
+    open,
+    closed,
+    get trigger() {
+      return getTrigger()
+    },
+    setDisabled(disabled: boolean) {
+      renderRegion(host, view(disabled))
+    },
+  }
 }
+
+it.each(['win32', 'darwin'])(
+  'closes and blocks a disabled session menu, then reopens on %s',
+  async (platform) => {
+    const menu = renderMenu(platform)
+    const panel = await menu.open()
+    const oldItems = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    menu.setDisabled(true)
+    expect(menu.trigger.disabled).toBe(true)
+    expect(menu.trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(menu.trigger.hasAttribute('aria-controls')).toBe(false)
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(menu.row.hasAttribute('data-menu-open')).toBe(false)
+    // Late input on the removed popup and attempts to reopen must not dispatch an action.
+    for (const item of oldItems) {
+      item.click()
+      item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    }
+    menu.trigger.click()
+    menu.trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(menu.select).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    menu.setDisabled(false)
+    expect(menu.trigger.disabled).toBe(false)
+    expect(menu.trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(menu.row.hasAttribute('data-menu-open')).toBe(false)
+    for (const item of oldItems) item.click()
+    expect(menu.select).not.toHaveBeenCalled()
+    const reopened = await menu.open(true)
+    const label = platform === 'darwin' ? '在访达中打开' : '在资源管理器中打开'
+    const item = [...reopened.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === label,
+    )
+    expect(item).toBeDefined()
+    item?.click()
+    await menu.closed()
+    expect(menu.select).toHaveBeenCalledWith('revealWorkspace', 'visible', '名称 visible', menu.trigger)
+    expect(document.activeElement).toBe(menu.trigger)
+    // A second disable/enable cycle must rebind row tracking to the new trigger too.
+    await menu.open()
+    menu.setDisabled(true)
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(menu.row.hasAttribute('data-menu-open')).toBe(false)
+    menu.setDisabled(false)
+    await menu.open()
+    menu.dispose()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(menu.row.hasAttribute('data-menu-open')).toBe(false)
+  },
+)
 
 it('labels the trigger for assistive technology and starts collapsed', () => {
   const { trigger } = renderMenu()

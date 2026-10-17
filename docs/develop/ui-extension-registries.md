@@ -73,3 +73,64 @@ An example's profile module registers its declared component through `ctx.exampl
 Declare scene resources in `client.assets`, relative to the same descriptor as `entry`. Supported formats include glTF/GLB, binary buffers, PNG/JPEG/WebP, KTX2 and WebAssembly. Installation rejects traversal and escaping symlinks. Immutable snapshots bind every file's hash and length and verify them on reads. Code files retain the 4 MiB per-file and 16 MiB combined limits; scene resources have a 32 MiB per-file and 128 MiB combined snapshot limit. Unsupported or oversized assets fail publication. Decoder execution must satisfy the deployment CSP; a served WebAssembly file does not imply that the browser can execute it. Scene loading failures must be surfaced by the example and must not be reported as device readiness. The launcher’s private asset read supports the same 32 MiB resource limit, including base64 overhead. Local and SEA packaging check declared client files, literal `new URL(..., import.meta.url)` references, CSS URLs and glTF buffer/image references against the shipped payload; prefer literal asset URLs so missing files fail the build.
 
 A profile primary declaration may include `navigation: { title, titles?, icon, order }`. `titles` maps UI language tags to labels; `title` is the fallback. The host publishes navigation from the ready, enabled roster before importing code, then loads the module on first open. Its ordinary `ctx.homeEntries.register` claims the same entry under the existing declaration and ownership checks. Missing metadata preserves eager loading. Failed or revoked contributions remove their navigation immediately. This metadata grants no authority.
+
+## Replace the deliverables presentation
+
+A profile-lifetime client module can register `ctx.presentationRoles.register({ role: 'deliverables', priority: 0, mount })`. `mount` returns a synchronous disposer for every slot, card, panel and subscription it creates. The role uses the existing single-slot priority rule: the lowest number wins, equal priorities refuse registration, and the former owner yields before the next mounts. The default `@agnes/deliverables-ui` registers at 100. Roster revocation removes a provider before asynchronous module disposal; disabling a replacement restores the default. A role grants no backend authority.
+
+Use `DeliverablesStore(ctx.agnes, ctx.session)` from `@agnes/web-client`; dispose it with the presentation. Its immutable `DeliverableRecord` contains `id`, `sessionId`, `laneId`, source owner/call, owning `turnId` when known, presentation `seq`, name/description, inline/workbench placement and the existing full `ArtifactRef`. Same-name history is a display grouping, not proof of lineage. A delivered version retains its snapshot when the workspace source changes. New deliveries persist a `structured` tool result alongside the existing deliverables event; historical Intelligent UI file lists remain readable. Intelligent UI is optional: recorded files remain available as a plain list without its renderer.
+
+Register turn cards through `conversation.chat.turnTail` (owner `{ turn: UITurn, nodes: readonly UINode[] }`), the tab through `workbenchPanels`, and artifact components through `conversationCards` with kind `artifact-file` (data `{ file, sessionId, laneId }`). A card matching kind `intelligent-ui.surface` with a `UiSurfaceRecord` claims that whole surface for its own presentation, so the generic Views panel yields it. Return all these disposers from the role mount; do not rely on asynchronous unload to remove a tab. Open/download through `ctx.resources.documents/files` with the recorded lane and complete artifact reference. Never use the source path as a download URL.
+
+See [the independent gallery example](../../examples/community/deliverables-gallery/README.md). The example covers current profile activation, historical recovery, takeover and restoration without Web host imports.
+
+### Goals and interaction presentations
+
+The default bundled `@agnes/goal-ui` and `@agnes/interaction-ui` packages own the
+`goal` and `interaction` presentation roles, respectively (priority 100). A
+replacement normally registers at priority 0. Role cleanup removes the complete
+experience: cards, panels, composer commands, question dock, answer receipts and
+folding policy. Backend goals, cost admission and execution authorization are
+unaffected by presentation election.
+
+A client descriptor can declare `requiresBackendRows: ["ext:vendor/feature"]`.
+These are optional presentation dependencies on exact backend row identities.
+The daemon mounts the client only when every dependency is present and enabled
+in the last successful runtime target (or the desired target before a first
+successful activation). Missing/unobserved dependencies fail closed. This is a
+visibility condition and grants no services, projections or execution rights.
+All declarations and assets remain in the immutable snapshot while a dependency
+is disabled, so enable/restart can restore the same reviewed client bytes.
+The official descriptors name `ext:agnes/goal` and `ext:agnes/intelligent-ui`;
+the host applies the same rule to every client, without package-name dispatch.
+
+`readGoal(timeline)` returns the validated public `GoalView` (`StatusLinePayload`
+with optional `GoalSnapshot`). It prefers the live `status.line` projection,
+including an explicit clear/error, and recovers historical slot nodes when no
+live fill exists. `goalCommand(input)` formats a human command request; send it
+through the ordinary session input path. It does not authorize automatic
+execution or change any platform budget. Durable goal facts and their existing
+projection remain authoritative.
+
+The generic conversation-card inputs used by these clients are:
+
+| Kind | Data/context |
+| --- | --- |
+| `session.actions` | `{ timeline, disabled, command(text) }` |
+| `composer.before-input` | Composer presentation outlet |
+| `conversation.turn-tail` | `{ turn, nodes }` |
+| `conversation.turn-actions` | `{ turn, nodes }` |
+| `conversation.node` | The `UINode`; `context.data` is the native fallback |
+
+A card can optionally provide `hiddenNodeIds(nodes, turns)` when its own visible
+receipt replaces those nodes. On unregister the host restores native nodes.
+The `composerCommands` registry accepts `{ id, order, route({text, sessionId,
+busy}) }`; return `handled` for a completed presentation action, `steer` to
+request the normal server-admitted steer path, or `undefined` to leave ordinary
+input handling in place. Register and dispose these within the same role.
+
+`ctx.presentation` exposes optional host navigation (`revealConversation`,
+`focusApproval`) and authenticated custom-component roster reads/subscriptions
+(`listComponents`, `subscribeComponents`). These are presentation seats only.
+Question/form reads and actions continue through the existing authorized SDK
+UI protocol; clients must never infer permission from an answer.

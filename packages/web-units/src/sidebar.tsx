@@ -1,4 +1,4 @@
-import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
+import type { PageSessionMeta, SessionGroup, WorkspaceEntry } from '@agnes/protocol'
 import { Button, Icon, IconButton, Kbd, Tooltip } from '@agnes/web-ui'
 import {
   forwardRef,
@@ -14,11 +14,25 @@ import {
 import type { Translate } from './locales/index.js'
 import { isNewSessionShortcut, newSessionShortcutKeys } from './session-groups.js'
 export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
+export type SidebarGroupState = SessionGroup & {
+  items: PageSessionMeta['items']
+  opened: boolean
+  loaded: boolean
+  loading: boolean
+  next?: string | undefined
+  stale?: boolean
+  error?: string
+}
+export type SidebarPaging = { groups: SidebarGroupState[]; ready: boolean; loading: boolean; error?: string }
+export type SidebarGroupAction = 'toggle' | 'more' | 'collapse' | 'reload' | 'retry'
 
 export interface SidebarNavigationOptions {
   runtimePlatform?: string
 
   sessions: PageSessionMeta['items']
+  paging?: SidebarPaging
+  groupAction?(id: string, action: SidebarGroupAction): void
+  refreshGroups?(): void
   workspaces: readonly WorkspaceEntry[]
   currentId?: string
   activeId?: string
@@ -53,6 +67,7 @@ export interface SidebarState {
   runtimePlatform?: string
 
   sessions: PageSessionMeta['items']
+  paging?: SidebarPaging
   workspaces: readonly WorkspaceEntry[]
   labels: ReadonlyMap<string, string>
   locale?: string
@@ -64,6 +79,8 @@ export interface SidebarState {
 
 export interface SidebarActions {
   workspaceAction?(action: 'reveal' | 'remove', workspace: WorkspaceEntry): Promise<void>
+  groupAction?(id: string, action: SidebarGroupAction): void
+  refreshGroups?(): void
   newSession(workspace?: WorkspaceEntry): void
   addWorkspace(): void
   openSettings(): void
@@ -126,6 +143,7 @@ function navigationSignature(state: SidebarState): string {
       const row = session as SidebarSessionRow
       return [row.sessionId, row.title, row.cwd ?? '', row.archived ?? false]
     }),
+    state.paging,
     state.workspaces.map((workspace) => [workspace.path, workspace.name, workspace.available]),
     labels,
     state.locale ?? null,
@@ -273,6 +291,9 @@ const SidebarBuiltin = forwardRef<
       <nav id="sessions" aria-label={t('sidebar.sessionsNav')}>
         {dependencies?.renderNavigation({
           sessions: current.sessions,
+          ...(current.paging ? { paging: current.paging } : {}),
+          ...(actions.groupAction ? { groupAction: actions.groupAction } : {}),
+          ...(actions.refreshGroups ? { refreshGroups: actions.refreshGroups } : {}),
           workspaces: current.workspaces,
           labels: current.labels,
           runningIds: running,

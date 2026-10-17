@@ -3,6 +3,49 @@ import { LocalEndpoint } from '../src/local/endpoint.js'
 import { NoticeSink } from '../src/local/notice.js'
 
 describe('NoticeSink', () => {
+  it('routes decision invalidations only to initialized local readers of the matching profile and principal', () => {
+    const endpoints = Array.from(
+      { length: 7 },
+      () => new LocalEndpoint({ clock: () => 0, principalId: 'local', profile: 'p1' }),
+    )
+    for (const ep of endpoints) {
+      ep.conn.initialized = true
+      ep.conn.authKind = 'local'
+      ep.conn.credentialKind = 'local'
+      ep.conn.decisionPrincipal = { id: 'operator', org: 'local' }
+    }
+    endpoints[1]!.conn.decisionPrincipal = { id: 'other', org: 'local' }
+    endpoints[2]!.conn.decisionPrincipal = { id: 'operator', org: 'other' }
+    endpoints[3]!.conn.initialized = false
+    endpoints[4]!.conn.authKind = 'surface'
+    endpoints[5]!.conn.credentialKind = 'jwt'
+    delete endpoints[6]!.conn.decisionPrincipal
+    const otherProfile = new LocalEndpoint({ clock: () => 0, principalId: 'local', profile: 'p2' })
+    otherProfile.conn.initialized = true
+    otherProfile.conn.authKind = 'local'
+    otherProfile.conn.credentialKind = 'local'
+    otherProfile.conn.decisionPrincipal = { id: 'operator', org: 'local' }
+    endpoints.push(otherProfile)
+    const audit: unknown[] = []
+    const sink = new NoticeSink({
+      endpoints: () => endpoints.map((ep) => ({ ep, conn: ep.conn })),
+      clock: () => 42,
+      audit: (row) => audit.push(row),
+    })
+    sink.emit('decisions_changed', { detail: { profile: 'p1', principal: { id: 'operator', org: 'local' } } })
+    expect(endpoints.map((ep) => ep.pending().events)).toEqual([1, 0, 0, 0, 0, 0, 0, 0])
+    expect(audit).toEqual([
+      {
+        kind: 'daemon.notice',
+        notice: {
+          kind: 'decisions_changed',
+          detail: { profile: 'p1', principal: { id: 'operator', org: 'local' } },
+          at: '1970-01-01T00:00:00.042Z',
+        },
+      },
+    ])
+  })
+
   it('routes by attachment and broadcasts shutting_down', () => {
     const a = new LocalEndpoint({ clock: () => 0, principalId: 'a' })
     const b = new LocalEndpoint({ clock: () => 0, principalId: 'b' })

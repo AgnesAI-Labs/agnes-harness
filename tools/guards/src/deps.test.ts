@@ -253,8 +253,8 @@ it('production source and manifests form declared, acyclic package graphs', () =
           const owner = packages.find((candidate) => target.startsWith(`${candidate.dir}${sep}`))
           if (owner && owner !== pkg) {
             edges.add(owner.name)
-            if (!legacyPaths.has(`${relative(root, file)}:${spec}`)) {
-              errors.push(`${relative(root, file)} imports private path ${spec}`)
+            if (!legacyPaths.has(`${relative(root, file).split(sep).join('/')}:${spec}`)) {
+              errors.push(`${relative(root, file).split(sep).join('/')} imports private path ${spec}`)
             }
           }
           continue
@@ -262,7 +262,8 @@ it('production source and manifests form declared, acyclic package graphs', () =
         const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
         if (!name || !byName.has(name) || name === pkg.name) continue
         edges.add(name)
-        if (!(name in declared)) errors.push(`${relative(root, file)} imports undeclared ${spec}`)
+        if (!(name in declared))
+          errors.push(`${relative(root, file).split(sep).join('/')} imports undeclared ${spec}`)
       }
     }
   }

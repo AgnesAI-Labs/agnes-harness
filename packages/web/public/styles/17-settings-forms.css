@@ -228,79 +228,6 @@
   #account-dialog {
     width: min(30rem, calc(100vw - 3rem));
   }
-  .select-picker-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s12);
-    width: 100%;
-    min-width: 0;
-    min-height: var(--control-height);
-    /* A popup button: a raised surface that ends in the accent block with up/down chevrons. */
-    padding: 0 var(--s4) 0 var(--s10);
-    border: 0;
-    border-radius: var(--radius-control);
-    color: var(--agnes-input-content-strong);
-    background: var(--agnes-bg-control);
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    text-align: start;
-    box-shadow: var(--shadow-control);
-  }
-  .select-picker-trigger:hover:not(:disabled),
-  .select-picker-trigger[aria-expanded="true"] {
-    background: var(--agnes-bg-control);
-    background-image: linear-gradient(var(--agnes-bg-hover), var(--agnes-bg-hover));
-  }
-  .select-picker-trigger:focus-visible {
-    outline: var(--focus-outline);
-    outline-offset: 1px;
-    box-shadow: var(--focus-line), var(--shadow-control);
-  }
-  .select-picker-trigger:disabled {
-    color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-card);
-    box-shadow: none;
-    cursor: not-allowed;
-  }
-  .select-picker-trigger:disabled .select-picker-chevron {
-    color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-fill);
-  }
-  .select-picker-value {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .select-picker-chevron {
-    position: relative;
-    flex: 0 0 auto;
-    width: 1.125rem;
-    height: 1.125rem;
-    border-radius: 5px;
-    color: var(--agnes-button-primary-content);
-    background: var(--agnes-brand-primary);
-  }
-  /* Two chevron heads, up and down: this control picks one of a set; it does not expand. */
-  .select-picker-chevron::before,
-  .select-picker-chevron::after {
-    content: "";
-    position: absolute;
-    left: calc(50% - 0.15625rem);
-    width: 0.3125rem;
-    height: 0.3125rem;
-    box-sizing: border-box;
-    border: 0 solid currentColor;
-    rotate: 45deg;
-  }
-  .select-picker-chevron::before {
-    top: 0.3125rem;
-    border-width: 1.5px 0 0 1.5px;
-  }
-  .select-picker-chevron::after {
-    bottom: 0.3125rem;
-    border-width: 0 1.5px 1.5px 0;
-  }
   .select-picker-panel {
     pointer-events: auto;
     position: fixed;
@@ -708,11 +635,6 @@
     color: var(--agnes-text-primary);
     text-align: right;
     font-variant-numeric: tabular-nums;
-  }
-  .usage-note {
-    margin: 0.625rem 0 0;
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
   }
   .turn-process-body .assistant .node-label {
     display: none;

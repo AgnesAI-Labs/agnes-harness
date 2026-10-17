@@ -1,7 +1,11 @@
 import { Context, FiberState } from '@agnes/cordis'
 import { describe, expect, it } from 'vitest'
 import { createSkillCandidateRegistry } from '../src/skills.js'
-import { bindSkillRuntimeRows, createSkillCordisService } from '../src/skills-cordis.js'
+import {
+  bindSkillRuntimeRows,
+  createSkillCordisService,
+  skillRuntimeOwnerMatches,
+} from '../src/skills-cordis.js'
 
 const barrier = {
   quiesce: async <T>(_id: string, publish: (permit: unknown) => Promise<T>) => publish({}),
@@ -222,6 +226,15 @@ describe('cordis skill contribution', () => {
     await successor
     expect(successor.state).toBe(FiberState.ACTIVE)
     expect(predecessor.state).toBe(FiberState.ACTIVE)
+    const selected = registry
+      .snapshot()
+      .scopeRuntime?.((owner) => skillRuntimeOwnerMatches(owner, root, () => successor))
+    const current = selected?.list()[0]
+    expect(current?.actual).toBe('ready')
+    expect(selected?.read(current?.resourceId ?? '', { sessionKey: 'new' })).toMatchObject({
+      ok: true,
+      content: 'new',
+    })
     await predecessor.dispose()
     expect(successor.state).toBe(FiberState.ACTIVE)
     expect(readyBody()).toBe('new')

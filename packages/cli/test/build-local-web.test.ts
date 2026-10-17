@@ -31,6 +31,10 @@ it('builds local web assets with the shared platform vendor modules', async () =
       origin: `http://127.0.0.1:${port}`,
     })
     try {
+      const favicon = await fetch(`${server.url}/favicon.ico`)
+      expect(favicon.status).toBe(200)
+      expect(favicon.headers.get('content-type')).toBe('image/png; charset=utf-8')
+      expect(Buffer.from(await favicon.arrayBuffer())).toEqual(await readFile(join(output, 'favicon.png')))
       for (const file of assets) {
         const response = await fetch(`${server.url}/${file}`)
         expect(response.status, file).toBe(200)
@@ -94,6 +98,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
 
     for (const page of ['index.html', 'admin.html', 'resources.html']) {
       const source = await readFile(join(output, page), 'utf8')
+      expect(source).toContain('<link rel="icon" href="/favicon.png" type="image/png"')
       const importMap = source.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1]
       expect(importMap, `${page} import map`).toBeDefined()
       const imports = (JSON.parse(importMap ?? '{}') as { imports: Record<string, string> }).imports

@@ -354,10 +354,15 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       unsubscribers.push(
         dependencies.client.on('notice', (payload) => {
           if (abort.signal.aborted || !isDaemonNotice(payload)) return
-          // Client-module roster notices are consumed by the Web client. They deliberately carry
+          // Profile invalidations are consumed by the Web client. They deliberately carry
           // profile scope instead of a session id, so channel routing must ignore them before
           // narrowing to the session-scoped notice variants below.
-          if (payload.kind === 'packages_changed' || payload.kind === 'tree_changed') return
+          if (
+            payload.kind === 'packages_changed' ||
+            payload.kind === 'tree_changed' ||
+            payload.kind === 'decisions_changed'
+          )
+            return
           const text = noticeText(payload)
           if (text === null) return
           const matching = [...targets].filter(

@@ -106,7 +106,7 @@ export function PinsPanel({
           {t('pinsUnavailable')}
         </Banner>
       )}
-      {skipped > 0 && <SettingsState tone="success">{t('pinsSkipped', { count: skipped })}</SettingsState>}
+      {skipped > 0 && <SettingsState>{t('pinsSkipped', { count: skipped })}</SettingsState>}
       {confirming && (
         <Banner
           tone="warning"

@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { PluginCapabilities } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { createPackageManager, emptyLock, parseSource, writeLock } from '../src/index.js'
@@ -177,7 +177,7 @@ it.each([undefined, 'profile', 'session'] as const)(
     })
     const archive = await packPlugin(dir, join(dataDir, 'panel.tgz'))
     const manager = createPackageManager({ dataDir, agnesVersion: '0.1.0', references: async () => [] })
-    const source = parseSource(`file:${archive}`)
+    const source = parseSource(`file:${archive.split(sep).join('/')}`)
     const packed = await manager.inspect(profile, source)
     expect(packed.blockers).toEqual([])
     expect(packed.contributions).toEqual(preview.contributions)
@@ -210,7 +210,7 @@ it.each([undefined, 'profile', 'session'] as const)(
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     manifest.agnes.plugins[0].capabilities.streams[0].scope = scope === 'profile' ? 'session' : 'profile'
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
-    const changedSource = parseSource(`file:${dir}`)
+    const changedSource = parseSource(`file:${dir.split(sep).join('/')}`)
     const changed = await manager.inspect(profile, changedSource)
     expect(changed.capabilityHash).not.toBe(packed.capabilityHash)
     expect(changed.capabilityDiff.added).toContain(

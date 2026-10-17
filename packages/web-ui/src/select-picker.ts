@@ -65,6 +65,9 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   function sync(): void {
     const state = JSON.stringify([
       select.disabled,
+      select.getAttribute('aria-invalid'),
+      select.getAttribute('aria-readonly'),
+      select.getAttribute('aria-describedby'),
       Array.from(select.options).map((item) => {
         const group = item.closest('optgroup')
         return [item.value, optionLabel(item), item.selected, available(item), group?.label]
@@ -88,6 +91,12 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
         value: text,
       }),
     )
+    const invalid = select.getAttribute('aria-invalid') === 'true' || !!selected?.disabled
+    trigger.setAttribute('aria-invalid', String(invalid))
+    trigger.setAttribute('aria-readonly', select.getAttribute('aria-readonly') ?? 'false')
+    const description = select.getAttribute('aria-describedby')
+    if (description) trigger.setAttribute('aria-describedby', description)
+    else trigger.removeAttribute('aria-describedby')
     trigger.disabled = select.disabled || !Array.from(select.options).some(available)
   }
 
@@ -155,7 +164,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function open(): void {
-    if (trigger.disabled || panel) return
+    if (trigger.disabled || select.getAttribute('aria-readonly') === 'true' || panel) return
     choices = Array.from(select.options).filter(available)
     if (!choices.length) return
     openedAt = view?.performance.now() ?? 0

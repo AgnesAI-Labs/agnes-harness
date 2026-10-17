@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   createSkillCandidateRegistry,
   MAX_SHADOWED,
+  projectRuntimeSkills,
   RUNTIME_SKILL_PRIORITY,
+  restoreSkillGeneration,
   type SkillCandidate,
 } from '../src/skills.js'
 import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '../src/skills-cordis.js'
@@ -62,6 +64,63 @@ async function publishDisk(registry: Registry, skills: readonly SkillCandidate[]
 }
 
 describe('runtime skill contributions', () => {
+  it('isolates a load failure without shadowing a healthy Skill or losing its reason in management', async () => {
+    const registry = createSkillCandidateRegistry({ barrier })
+    const good = disk('user-agnes', 'review', 'healthy body')
+    const bad = {
+      ...disk('workspace-agnes', 'review', 'must not escape'),
+      loadError: { code: 'SKILL_ATTACHMENTS_LIMIT', message: 'Skill attachment budget exceeded.' },
+    }
+    await publishDisk(registry, [good, bad])
+    const snapshot = registry.snapshot()
+    expect(snapshot.read(good.resourceId, { sessionKey: 'test' })).toMatchObject({
+      ok: true,
+      content: 'healthy body',
+    })
+    expect(snapshot.read(bad.resourceId, { sessionKey: 'test' })).toMatchObject({
+      ok: false,
+      code: 'NOT_FOUND',
+    })
+    const generation = snapshot.generationSnapshot?.()
+    if (!generation) throw new Error('missing generation snapshot')
+    expect(JSON.stringify(generation)).not.toContain('must not escape')
+    expect(restoreSkillGeneration(generation).read(bad.resourceId, { sessionKey: 'test' })).toMatchObject({
+      ok: false,
+    })
+    for (const runtime of [[], [runtimeSkill('review')]]) {
+      const view = projectRuntimeSkills(snapshot.list(), runtime)
+      expect(view.find((s) => s.resourceId === bad.resourceId)).toMatchObject({
+        actual: 'unavailable',
+        lastSafeError: bad.loadError,
+        resolution: { winner: false },
+      })
+      expect(view.find((s) => s.resolution.winner)?.actual).toBe('ready')
+    }
+  })
+  it('projects runtime and file Skills with one winner and no private candidate content', async () => {
+    const registry = createSkillCandidateRegistry({ barrier })
+    const file = disk('user-agnes', 'review', 'file private body')
+    await publishDisk(registry, [file])
+    const runtime = runtimeSkill('review', 'runtime private body')
+    const files = registry.snapshot().list()
+    const view = projectRuntimeSkills(files, [runtime])
+    expect(view.find((item) => item.resourceId === runtime.resourceId)).toMatchObject({
+      actual: 'ready',
+      resolution: { winner: true },
+    })
+    expect(view.find((item) => item.resourceId === file.resourceId)).toMatchObject({
+      actual: 'unavailable',
+      lastSafeError: { code: 'SHADOWED' },
+    })
+    expect(JSON.stringify(view)).not.toContain('private body')
+    expect(
+      projectRuntimeSkills(
+        view.filter((item) => item.sourceIdentity.scope !== 'runtime'),
+        [],
+      ),
+    ).toMatchObject([{ resourceId: file.resourceId, actual: 'ready', resolution: { winner: true } }])
+    expect(registry.snapshot().list()).toEqual(files)
+  })
   it('carries a full 1024-unit description in the descriptor', async () => {
     const registry = createSkillCandidateRegistry({ barrier })
     const body = '# verbose skill\nKeep the full instructions.'
@@ -284,12 +343,31 @@ describe('runtime skill contributions', () => {
     registry.registerRuntime(first, { scope: 'tree', rowId: 'host:test-seam', fiberId: '1' })
     const next = runtimeSkill('handoff', 'new')
     registry.registerRuntime(next, { scope: 'tree', rowId: 'host:test-seam', fiberId: '2' })
+    let currentFiber = '2'
+    const scoped = seen.scopeRuntime?.((owner) => owner.scope === 'tree' && owner.fiberId === currentFiber)
+    if (!scoped) throw new Error('missing runtime owner selection')
+    const historical = seen.scopeRuntime?.((owner) => owner.scope === 'tree' && owner.fiberId === '1')
+    expect(scoped.list()).toMatchObject([{ resourceId: next.resourceId, actual: 'ready' }])
+    expect(historical?.read(first.resourceId, { sessionKey: 'old' })).toMatchObject({
+      ok: true,
+      content: 'old',
+    })
+    expect(scoped.read(first.resourceId, { sessionKey: 'new' })).toMatchObject({
+      ok: false,
+      code: 'NOT_FOUND',
+    })
+    // Rollback chooses the previous installed owner, not whichever sourceId sorts first.
+    currentFiber = '1'
+    expect(scoped.list()).toMatchObject([{ resourceId: first.resourceId, actual: 'ready' }])
+    currentFiber = '2'
     registry.unregisterRuntime(first.resourceId)
+    expect(historical?.list()).toEqual([])
     expect(seen.read(next.resourceId, { sessionKey: 's' })).toEqual(
       expect.objectContaining({ ok: true, content: 'new' }),
     )
     const otherTree = runtimeSkill('handoff', 'elsewhere')
     registry.registerRuntime(otherTree, { scope: 'other-tree', rowId: 'host:test-seam', fiberId: '9' })
+    expect(scoped.list()).toMatchObject([{ resourceId: next.resourceId, actual: 'ready' }])
     expect(() =>
       registry.registerRuntime(runtimeSkill('handoff', 'blocked'), {
         scope: 'tree',

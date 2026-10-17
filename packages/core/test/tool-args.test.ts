@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { noopHooks } from '../src/step/session.js'
+import { toolArgumentError } from '../src/step/tool-args.js'
 import { fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -83,6 +84,30 @@ async function check(args: unknown, schema: ToolDef['parameters'] = parameters, 
 }
 
 describe('tool argument boundary', () => {
+  it('identifies nested schema failures without echoing supplied values', () => {
+    const schema = Type.Object({
+      options: Type.Object(
+        {
+          template: Type.Union([Type.Literal('tool'), Type.Literal('skill')]),
+          count: Type.Integer({ minimum: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+    })
+    const message = toolArgumentError(schema, {
+      options: { template: 'private-token', count: 'private-token' },
+    })
+    expect(message).toContain('/options/template')
+    expect(message).toContain('tool, skill')
+    expect(message).toContain('/options/count')
+    expect(message).not.toContain('private-token')
+    expect(toolArgumentError(schema, { options: { template: 'tool', count: 0 } })).toContain(
+      '/options/count: outside the allowed range',
+    )
+    expect(
+      toolArgumentError(schema, { options: { template: 'tool', count: 1, 'private-token': 1 } }),
+    ).not.toContain('private-token')
+  })
   it.each([
     {},
     { ...good, count: '1' },

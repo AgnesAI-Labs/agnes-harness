@@ -68,6 +68,18 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@26.4.1)(happy-dom@20.14.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2))(tsx@4.23.13)(yaml@2.9.0))
 
+  examples/community/deliverables-gallery:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../packages/web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../packages/web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   examples/demos:
     dependencies:
       '@agnes/protocol':
@@ -1229,6 +1241,18 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  packages/package-manager/bundled-plugins/deliverables-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/package-manager/bundled-plugins/document-reader:
     devDependencies:
       '@hyzyla/pdfium':
@@ -1249,6 +1273,30 @@ importers:
       yauzl:
         specifier: 3.4.0
         version: 3.4.0
+
+  packages/package-manager/bundled-plugins/goal-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
+  packages/package-manager/bundled-plugins/interaction-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
 
   packages/plugin-runtime:
     dependencies:

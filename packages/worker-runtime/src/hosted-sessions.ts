@@ -54,7 +54,11 @@ export function sessionScopedKey(params: Readonly<Record<string, unknown>>): str
 }
 
 /** Worker-level commands whose parameters name a session; each wakes that session first. */
-export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = ['callService', 'inspectService']
+export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = [
+  'callService',
+  'inspectService',
+  'resolveService',
+]
 
 // Commands that change or run a session count as activity; reads, `ping` and a run-less `abort` do not.
 const ACTIVE_METHODS = new Set([

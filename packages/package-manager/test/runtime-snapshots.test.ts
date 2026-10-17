@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -415,12 +425,43 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
         expectedTreeIntegrity: expected.treeIntegrity,
       },
     })
+  const second = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'another-reader',
+    operationId: 'another-reader',
+    packageId: id,
+    purpose: 'turn',
+    selector: {
+      kind: 'snapshot',
+      snapshotId: pin.snapshot.snapshotId,
+      expectedIntegrity: expected.integrity,
+      expectedTreeIntegrity: expected.treeIntegrity,
+    },
+  })
+  expect((await m.listRuntimePins(profile)).map((row) => row.snapshot)).toEqual([
+    pin.snapshot,
+    second.snapshot,
+  ])
+  const dataFile = join(pin.snapshot.directory, 'data.json'),
+    original = readFileSync(dataFile, 'utf8'),
+    stamp = statSync(dataFile)
+  writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
+  utimesSync(dataFile, stamp.atime, stamp.mtime)
+  await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  writeFileSync(dataFile, original)
+  utimesSync(dataFile, stamp.atime, stamp.mtime)
   writeFileSync(join(pin.snapshot.directory, 'tampered'), 'preserve')
   await expect(m.resolveRuntimePin(profile, { pinId: pin.pinId })).rejects.toMatchObject({
     code: 'E_PACKAGE_INTEGRITY',
   })
   expect(readFileSync(join(pin.snapshot.directory, 'tampered'), 'utf8')).toBe('preserve')
   rmSync(join(pin.snapshot.directory, 'tampered'))
+  for (const item of [pin, second])
+    await m.releaseRuntimePin(profile, { pinId: item.pinId, expectedSnapshotId: item.snapshot.snapshotId })
+  expect(await m.listRuntimePins(profile)).toEqual([])
+  writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
+  // Unreferenced snapshots remain subject to verification, too.
+  await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  writeFileSync(dataFile, original)
   const unknown = join(dirname(pin.snapshot.directory), 'unknown-directory')
   mkdirSync(unknown)
   // With no writer transaction in progress the lock-free reader stays fail-closed too.

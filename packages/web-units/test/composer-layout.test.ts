@@ -56,7 +56,14 @@ function mount(overrides: Partial<ComposerProps> = {}, view: ComposerView = idle
     onPermissionSelect: async () => false,
     ...overrides,
   }
-  region.render(createElement(Composer, { ...props, ref: handle, dependencies, initialView: view }))
+  region.render(
+    createElement(Composer, {
+      ...props,
+      ref: handle,
+      dependencies: overrides.dependencies ?? dependencies,
+      initialView: view,
+    }),
+  )
   region.flush()
   const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
   if (!prompt || !handle.current) throw new Error('composer did not mount')
@@ -392,4 +399,149 @@ it('uses the normal accessible placeholder and ordinary Tab under reduced motion
   expect(host.querySelector('.composer-example-hint')).toBeNull()
   expect(prompt.placeholder).toBe(idle.input.placeholder)
   expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+})
+
+it('uses the shared ghost seam for live follow-up hints and invalidates dismissed, switched and stale turns', async () => {
+  let invalidate: (() => void) | undefined
+  const subscribeHintInvalidation = (listener: () => void) => {
+    invalidate = listener
+    return () => {
+      invalidate = undefined
+    }
+  }
+  const loads: Array<{ resolve(value: string): void; signal: AbortSignal }> = []
+  const loadHint = vi.fn(
+    (_scope, signal: AbortSignal) => new Promise<string>((resolve) => loads.push({ resolve, signal })),
+  )
+  const { host, prompt, handle, props } = mount({
+    dependencies: { ...dependencies, loadHint, subscribeHintInvalidation },
+  } as Partial<ComposerProps>)
+  expect(loads).toHaveLength(0)
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  expect(key(prompt, { key: 'Enter' }).defaultPrevented).toBe(true)
+  expect(props.onSubmit).not.toHaveBeenCalled()
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 1, completed: false } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 1, completed: true } },
+    }),
+  )
+  await act(async () => {
+    loads[0]?.resolve('What should I verify next?')
+  })
+  expect(host.querySelector('.composer-example-hint')?.textContent).toContain('What should I verify next?')
+  expect(prompt.getAttribute('aria-describedby')).toContain('composer-suggestion')
+  expect(host.querySelector('#composer-suggestion')?.textContent).toContain('What should I verify next?')
+  await act(async () => {
+    key(prompt, { key: 'Escape' })
+    prompt.blur()
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 2, completed: false } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 2, completed: true } },
+    }),
+  )
+  await act(async () => {
+    loads[1]?.resolve('Can we test this?')
+  })
+  await act(async () => {
+    key(prompt, { key: 'Tab' })
+  })
+  expect(handle.getDraft()).toBe('Can we test this?')
+  expect(prompt.selectionStart).toBe('Can we test this?'.length)
+  expect(prompt.selectionEnd).toBe('Can we test this?'.length)
+  await act(async () => {
+    handle.setDraft('')
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 3, completed: false } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'a', turn: 3, completed: true } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'b', turn: 3, completed: true } },
+    }),
+  )
+  await act(async () => {
+    loads[2]?.resolve('stale?')
+  })
+  expect(loads[2]?.signal.aborted).toBe(true)
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  expect(loadHint).toHaveBeenCalledTimes(3)
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'b', turn: 4, completed: false } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'b', turn: 4, completed: true } },
+    }),
+  )
+  await act(async () => {
+    loads[3]?.resolve('What happens next?')
+  })
+  expect(host.querySelector('.composer-example-hint')).not.toBeNull()
+  await act(async () => {
+    type(prompt, 'my own question')
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  await act(async () => {
+    type(prompt, '')
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  // A newly mounted composer treats the existing successful turn as history.
+  mount(
+    { dependencies: { ...dependencies, loadHint } },
+    { ...idle, input: { ...idle.input, hintScope: { sessionId: 'b', turn: 4, completed: true } } },
+  )
+  expect(loadHint).toHaveBeenCalledTimes(4)
+  // Settings/provider changes invalidate a displayed or pending hint without requesting another.
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'b', turn: 5, completed: false } },
+    }),
+  )
+  await act(async () =>
+    handle.render({
+      ...idle,
+      input: { ...idle.input, hintScope: { sessionId: 'b', turn: 5, completed: true } },
+    }),
+  )
+  await act(async () => {
+    loads[4]?.resolve('Can we review this?')
+  })
+  expect(host.querySelector('.composer-example-hint')).not.toBeNull()
+  await act(async () => {
+    invalidate?.()
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  expect(loadHint).toHaveBeenCalledTimes(5)
 })

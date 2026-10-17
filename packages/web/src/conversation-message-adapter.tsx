@@ -1,6 +1,7 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
+  conversationCards,
   factChainLinks,
   type LocaleService,
   type SessionService,
@@ -28,8 +29,6 @@ import {
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useCallback, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { AnsweredQuestions, QuestionAnswersNode, questionSubmission } from './intelligent-ui/question-dock.js'
-import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
 import { openPlugins } from './pages/plugins/route.js'
 import { workflowStepRecord } from './workflow-step.js'
 
@@ -86,7 +85,6 @@ function DshNodeLeaf({
             ? ['conversation.chat.assistant-actions' as const]
             : []),
           'conversation.chat.commandview',
-          'conversation.chat.turnTail',
           'conversation.message.images',
           'conversation.trajectory.images',
         ] as const)
@@ -130,66 +128,6 @@ function DshNodeLeaf({
       </div>
     </>
   )
-}
-
-/** The views a turn's ui_render calls created, named by their persisted result (`…&surface=<id>`). */
-export function renderedSurfaceIds(nodes: readonly UINode[], turn: UITurn): string[] {
-  const own = new Set(turn.nodeIds)
-  return nodes.flatMap((node) => {
-    if (node.kind !== 'tool' || node.name !== 'ui_render' || !own.has(node.id)) return []
-    const id = /[?&]surface=([A-Za-z0-9_.%-]+)/.exec(node.resultPreview ?? '')?.[1]
-    if (!id) return []
-    try {
-      return [decodeURIComponent(id)]
-    } catch {
-      return []
-    }
-  })
-}
-
-/** Each asking turn's delivered question answers: the turn rendered the question's surface. */
-export function answeredQuestions(
-  nodes: readonly UINode[],
-  turns: readonly UITurn[],
-): Map<string, { nodeId: string; submission: NonNullable<ReturnType<typeof questionSubmission>> }[]> {
-  const out = new Map<
-    string,
-    { nodeId: string; submission: NonNullable<ReturnType<typeof questionSubmission>> }[]
-  >()
-  const submissions = nodes.flatMap((node) => {
-    const submission = questionSubmission(node)
-    return submission?.surfaceId.startsWith('card-') ? [{ nodeId: node.id, submission }] : []
-  })
-  if (!submissions.length) return out
-  for (const turn of turns) {
-    const rendered = new Set(renderedSurfaceIds(nodes, turn))
-    const answered = submissions.filter((item) => rendered.has(item.submission.surfaceId))
-    if (answered.length) out.set(turn.id, answered)
-  }
-  return out
-}
-
-function foldedUserActions(nodes: readonly UINode[]): ReadonlySet<string> {
-  const folded = new Set<string>()
-  nodes.forEach((node, index) => {
-    // ui_submit runs only from a person's surface action, never as the agent's step: the reply
-    // does not show it as a tool call. The execution trace keeps it.
-    if (node.kind === 'tool' && node.name === 'ui_submit') folded.add(node.id)
-    // The ui_submit tool node itself can sit between the queued line and the delivered answers.
-    const next = nodes.slice(index + 1).find((item) => item.kind === 'user')
-    if (
-      node.kind === 'user' &&
-      node.system?.source === 'agnes/deferred-invocations' &&
-      node.system.type === 'invocation-queued' &&
-      String((node.system.data as { invocationId?: unknown } | undefined)?.invocationId ?? '').startsWith(
-        'ui:',
-      ) &&
-      next &&
-      questionSubmission(next)?.surfaceId.startsWith('card-')
-    )
-      folded.add(node.id)
-  })
-  return folded
 }
 
 /** Independent Web harness for transcript projection and interaction. */
@@ -258,12 +196,11 @@ export function WebConversationMessages({
     },
     [resources, sessionScope, session],
   )
-  // A person's surface submission is not the agent's work: fold its tool row, and the queued line
-  // before question answers (the answers say it).
-  // Answers to a question show as «answered» on the answer that asked; their node leaves the stream.
-  const answeredByTurn = answeredQuestions(nodes ?? [], turns ?? [])
-  const folded = new Set(foldedUserActions(nodes ?? []))
-  for (const answered of answeredByTurn.values()) for (const item of answered) folded.add(item.nodeId)
+  // Presentation contributions can replace native nodes with their own visible receipt.
+  useSyncExternalStore(conversationCards.subscribe, conversationCards.getSnapshot)
+  const folded = new Set(
+    conversationCards.entries().flatMap((entry) => entry.hiddenNodeIds?.(nodes ?? [], turns ?? []) ?? []),
+  )
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
     : visibleNodeIds
@@ -291,7 +228,18 @@ export function WebConversationMessages({
     ...(turns ? { turns } : {}),
     ...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {}),
     renderTurnDeliverables: (turn) => (
-      <TurnDeliverables turn={turn} surfaceIds={renderedSurfaceIds(nodes ?? [], turn)} />
+      <>
+        <RegisteredConversationCard
+          card={{
+            kind: 'conversation.turn-tail',
+            data: { turn, nodes: nodes ?? [] },
+          }}
+          context={{ t: (key) => locale?.t(key) ?? key }}
+        />
+        {registry && (
+          <SlotOutlet name="conversation.chat.turnTail" owner={{ turn, nodes: nodes ?? [] }} hideWhenEmpty />
+        )}
+      </>
     ),
     processStep: (node) => workflowStepRecord(node.text),
     renderTurnActions: (turn, finalText, settled) => {
@@ -313,9 +261,12 @@ export function WebConversationMessages({
           t={(key, vars) => locale?.t(key, vars) ?? key}
           {...(locale ? { localeTag: locale.locale } : {})}
           {...(onFork ? { onFork } : {})}
-          {...(answeredByTurn.has(turn.id)
-            ? { leading: <AnsweredQuestions answered={answeredByTurn.get(turn.id)!} /> }
-            : {})}
+          leading={
+            <RegisteredConversationCard
+              card={{ kind: 'conversation.turn-actions', data: { turn, nodes: nodes ?? [] } }}
+              context={{ t: (key) => locale?.t(key) ?? key }}
+            />
+          }
           extra={
             <>
               {rated && (
@@ -419,8 +370,13 @@ export function WebConversationMessages({
       />
     ),
     renderNode: (node, native) => {
-      const submission = questionSubmission(node)
-      const base = submission ? <QuestionAnswersNode submission={submission} native={native} /> : native
+      const base = (
+        <RegisteredConversationCard
+          card={{ kind: 'conversation.node', data: node }}
+          context={{ t: (key) => locale?.t(key) ?? key, data: native }}
+          fallback={native}
+        />
+      )
       const factAnchor =
         node.kind === 'tool'
           ? { kind: 'tool' as const, toolUseId: node.toolUseId }

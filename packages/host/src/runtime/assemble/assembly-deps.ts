@@ -32,6 +32,8 @@ export type AssembleDeps = HostPaths &
     prompter?: Prompter
     signal?: AbortSignal
     clock?: () => number
+    /** Advisory invalidation after a durable profile decision change. */
+    decisionsChanged?: (detail: { profile: string; principal: { id: string; org: string } }) => void
     netFetch?: KernelOptions['netFetch']
     /** Host-owned lookup of the currently published runtime for already-open Core sessions. */
     currentRuntime?: KernelOptions['currentRuntime']
@@ -102,6 +104,7 @@ export type AssembleDeps = HostPaths &
     /** Host-local resolved Skill snapshot. The daemon supplies it; PackageManager never does. */
     skillResources?: SkillRuntimeInput
     /** Request-only daemon bridge. Never a resource-admin client or authority. */
+    scheduling?: import('@agnes/extension-api').SchedulingBridge
     boundWakes?: (owner: string, integrity: string) => import('@agnes/extension-api').BoundWakes
     mcpManage?: import('@agnes/host-extensions/resources/mcp-manage-port').McpManageBridge
     pluginManage?: import('@agnes/host-extensions/resources/plugin-manage-port').PluginManageBridge

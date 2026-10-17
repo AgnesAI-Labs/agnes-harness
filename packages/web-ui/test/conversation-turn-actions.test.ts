@@ -5,6 +5,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { callShares, money } from '../src/conversation/turn-usage.js'
+import { installFeedbackSink, type OperationFeedback } from '../src/feedback.js'
 import { zhT } from './locale.js'
 
 function turn(id = 'turn:one', changes: Partial<UITurn> = {}): UITurn {
@@ -28,11 +29,15 @@ function turn(id = 'turn:one', changes: Partial<UITurn> = {}): UITurn {
   }
 }
 
+const outcomes: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
 let host: HTMLDivElement
 let root: Root
 let clipboardDescriptor: PropertyDescriptor | undefined
 let execDescriptor: PropertyDescriptor | undefined
 beforeEach(() => {
+  outcomes.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
   clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
   execDescriptor = Object.getOwnPropertyDescriptor(document, 'execCommand')
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
@@ -41,6 +46,7 @@ beforeEach(() => {
   root = createRoot(host)
 })
 afterEach(async () => {
+  releaseFeedback?.()
   await act(async () => root.unmount())
   host.remove()
   document.body.replaceChildren()
@@ -198,7 +204,8 @@ it('copies through clipboard, reports failure, and uses text-only fallback prese
   expect(copy.closest('.ant-actions')).not.toBeNull()
   expect(copy.dataset.copied).toBeUndefined()
   await act(async () => copy.click())
-  expect(required('.turn-feedback').textContent).toBe('已复制')
+  expect(required('.turn-feedback').textContent).toBe('')
+  expect(outcomes.at(-1)).toMatchObject({ scope: 'clipboard', outcome: 'success', message: '已复制' })
   // The glyph turns into a check while the confirmation is announced.
   expect(copy.dataset.copied).toBe('true')
   const selection = document.getSelection()
@@ -208,7 +215,8 @@ it('copies through clipboard, reports failure, and uses text-only fallback prese
   selection?.addRange(range)
   copy.focus()
   await act(async () => copy.click())
-  expect(required('.turn-feedback').textContent).toBe('已复制')
+  expect(required('.turn-feedback').textContent).toBe('')
+  expect(outcomes.at(-1)).toMatchObject({ scope: 'clipboard', outcome: 'success', message: '已复制' })
   expect(execCommand).toHaveBeenCalledWith('copy')
   expect(document.activeElement).toBe(copy)
   expect(selection?.rangeCount).toBe(1)
@@ -238,7 +246,7 @@ it('keeps fork pending local and allows retry after failure', async () => {
   await act(async () => rejectFirst(new Error('failed')))
   expect(fork.disabled).toBe(false)
   expect(required('.turn-feedback').textContent).toBe('分支失败，请重试。')
-  await act(async () => fork.click())
+  await act(async () => required<HTMLButtonElement>('.agh-banner button').click())
   expect(required('.turn-feedback').textContent).toBe('')
   expect(fork.disabled).toBe(false)
 })

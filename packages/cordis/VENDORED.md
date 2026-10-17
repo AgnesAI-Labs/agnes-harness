@@ -33,6 +33,8 @@ Cordis 核心（Context / fiber / reflect / registry / events / Service），前
 
 9. PLUGFIX：公开/prepared awaitable fiber 在稳定 PENDING 时拒绝 DEPENDENCY_UNAVAILABLE，dispose 后拒绝 INACTIVE_EFFECT；Fiber.await() 保留等待当前迁移稳定（允许 PENDING）的 Host 语义。
 
+10. 声明为 `{ required: false }` 的服务依赖在缺失时不阻止 fiber 激活，读取返回 `undefined`；服务注册、撤销时仍按依赖变化重新加载。清单中已有的 `optionalInject` 由此在公开与 prepared 生命周期中一致生效。
+
 ## 生命周期
 
 - 后续升级：取新版 npm 包源码，重做上述机械改写，diff 审查后更新本文件与棘轮值；跑 A4 同组级联用例回归。

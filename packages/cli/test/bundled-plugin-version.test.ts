@@ -96,7 +96,7 @@ it.each(['0.0.0', '0.1.0-alpha.0', '1.2.3'])(
       const example = JSON.parse(
         await readFile(join(root, 'bundled-examples/fixtures/parent-example/package.json'), 'utf8'),
       )
-      expect(shipped.version).toBe(version === '1.2.3' ? version : '0.2.0')
+      expect(shipped.version).toBe(version === '1.2.3' ? version : parent.version)
       expect(example.dependencies[parent.id]).toBe(shipped.version)
       expect(await readFile(sourceFile, 'utf8')).toBe(declared)
     } finally {

@@ -58,7 +58,13 @@ import { notifyListeners } from './events.js'
 // the running position in that session's event stream (cursor, generation), and the
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
 // and the terminal notification that precedes it.
-import { type CompactOutcome, submitCommand, submitCompactAware } from './submit.js'
+import {
+  type CompactOutcome,
+  resendPending,
+  submitCommand,
+  submitCompactAware,
+  submitInput,
+} from './submit.js'
 
 type JobControlInput<P = SessionJobsControlParams> = P extends unknown
   ? Omit<P, 'sessionId' | 'commandId'> & { commandId?: string }
@@ -859,7 +865,7 @@ export class Session {
     input: ContentBlock[] | string,
     opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
   ): Promise<number> {
-    return this.write('steer', input, opts)
+    return submitInput(this.client, this.id, 'steer', input, opts)
   }
 
   /**
@@ -874,7 +880,7 @@ export class Session {
   }
 
   control(
-    action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
+    action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'promote' | 'child-stop' | 'child-continue',
     opts: { itemId?: string; childId?: string; text?: string; commandId?: string } = {},
   ): Promise<number> {
     return submitCommand(
@@ -906,6 +912,21 @@ export class Session {
   interrupt(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
     return this.control('interrupt', { ...opts, itemId })
   }
+  /** Atomically turn this existing queued item into guidance without sending a second message. */
+  promoteQueued(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('promote', { ...opts, itemId })
+  }
+
+  /** All locally owned unresolved submissions, including commands excluded from automatic replay. */
+  pendingCommands() {
+    return this.client.journal.pending(this.id)
+  }
+
+  /** Explicit reconciliation resends only the original command, with its original identity. */
+  checkCommand(commandId: string): Promise<void> {
+    return resendPending(this.client, this.id, commandId)
+  }
+
   editQueued(
     itemId: string,
     input: ContentBlock[] | string,
@@ -924,7 +945,7 @@ export class Session {
     input: ContentBlock[] | string,
     opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
   ): Promise<number> {
-    return this.write('followUp', input, opts)
+    return submitInput(this.client, this.id, 'followUp', input, opts)
   }
 
   /** Stop the current turn and run this existing inbox item first, without re-enqueuing its content. */
@@ -955,24 +976,6 @@ export class Session {
       { sessionId: this.id, ...(instructions ? { instructions } : {}) },
       opts.commandId,
     ).then(({ compact }) => compact)
-  }
-
-  private write(
-    kind: 'steer' | 'followUp',
-    input: ContentBlock[] | string,
-    opts: { commandId?: string; references?: readonly ReferenceSelection[] },
-  ): Promise<number> {
-    return submitCommand(
-      this.client,
-      this.id,
-      kind,
-      {
-        sessionId: this.id,
-        content: toContentBlocks(input),
-        ...(opts.references?.length ? { references: opts.references } : {}),
-      },
-      opts.commandId,
-    )
   }
 
   /** Durable cancellation ends the turn and returns pending steers on the ledger. */

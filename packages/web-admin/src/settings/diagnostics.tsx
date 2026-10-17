@@ -6,15 +6,17 @@ import {
   Button,
   Dialog,
   FIRST_RUN_NAMESPACE,
+  Field,
   firstRunCatalog,
   Icon,
+  reportSuccess,
   Segmented,
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
   SettingsInput,
   SettingsItem,
-  SettingsState,
+  StatusMessage,
   trackPageRequest,
   useUiText,
 } from '@agnes/web-ui'
@@ -94,6 +96,7 @@ export function DiagnosticsPanel({
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<unknown>()
   const [notice, setNotice] = useState('')
+  const copyRetry = useRef<() => void>(() => {})
   const [reads, setReads] = useState(0)
   const alive = useRef(false)
   const controller = useRef<AbortController>()
@@ -140,6 +143,7 @@ export function DiagnosticsPanel({
     const id = query.trim()
     if (id && !uuid.test(id)) {
       setNotice('invalid')
+      document.getElementById('diagnostics-query')?.focus()
       return
     }
     await run(async () => {
@@ -167,17 +171,20 @@ export function DiagnosticsPanel({
       second: '2-digit',
       hour12: false,
     }).format(new Date(at))
-  const copy = (value: string, done: string) =>
+  const copy = (value: string, done: string) => {
+    copyRetry.current = () => copy(value, done)
+    setNotice('')
     void Promise.resolve()
       .then(() => navigator.clipboard.writeText(value))
       .then(
         () => {
-          if (alive.current) setNotice(done)
+          if (alive.current) reportSuccess('diagnostics', t(done))
         },
         () => {
           if (alive.current) setNotice('copyFailed')
         },
       )
+  }
   const failure = error instanceof DiagnosticsRequestError ? error.envelope : undefined
   const boundSessions = bundle?.generations.available
     ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
@@ -288,13 +295,14 @@ export function DiagnosticsPanel({
   )
   return (
     <>
-      {notice && (
-        <SettingsState
-          tone={notice === 'invalid' || notice === 'copyFailed' ? 'error' : 'success'}
+      {notice === 'copyFailed' && (
+        <StatusMessage
+          kind="error"
           data-testid="diagnostics-notice"
+          action={{ label: t('retry'), onSelect: () => copyRetry.current() }}
         >
           {t(notice)}
-        </SettingsState>
+        </StatusMessage>
       )}
       {doctorAvailable ? (
         <DoctorRows
@@ -328,24 +336,29 @@ export function DiagnosticsPanel({
         aria-busy={busy}
         state={error ? undefined : busy && !bundle ? 'loading' : undefined}
         actions={
-          <SettingsInput
-            id="diagnostics-query"
-            surface="surface"
-            data-testid="diagnostics-query"
-            className="agnes-settings-search"
-            aria-label={t('findById')}
-            placeholder={t('findById')}
-            value={query}
-            maxLength={36}
-            disabled={busy}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-              event.preventDefault()
-              event.stopPropagation()
-              void search()
-            }}
-          />
+          <Field label={t('findById')} error={notice === 'invalid' ? t('invalid') : undefined}>
+            <SettingsInput
+              id="diagnostics-query"
+              surface="surface"
+              data-testid="diagnostics-query"
+              className="agnes-settings-search"
+              aria-label={t('findById')}
+              placeholder={t('findById')}
+              value={query}
+              maxLength={36}
+              disabled={busy}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                if (notice === 'invalid') setNotice('')
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                event.stopPropagation()
+                void search()
+              }}
+            />
+          </Field>
         }
       >
         {error ? (
@@ -426,7 +439,7 @@ export function DiagnosticsPanel({
                   if (alive.current) {
                     download(value)
                     setExporting(false)
-                    setNotice('exported')
+                    reportSuccess('diagnostics', t('exported'))
                   }
                 })
               }

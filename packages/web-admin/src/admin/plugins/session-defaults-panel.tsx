@@ -7,6 +7,8 @@ import {
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import {
+  fallbackT,
+  reportSuccess,
   Select,
   SettingsBlock,
   SettingsChoice,
@@ -101,6 +103,7 @@ export function SessionDefaultsPanel({
   }
   const choice = useAutosave<Choice>({
     resourceKey: 'settings:session-defaults',
+    onSaved: () => reportSuccess('session-defaults', fallbackT('ui.defaultsSaved')),
     stored,
     equal: sameChoice,
     save: async (next) => {

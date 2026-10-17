@@ -1,0 +1,87 @@
+/** @vitest-environment happy-dom */
+
+import { FeedbackHost, mountRegion, type OperationFeedback, useStoreSelector } from '@agnes/web-ui'
+import { createElement } from 'react'
+import { act } from 'react-dom/test-utils'
+import { afterEach, expect, it, vi } from 'vitest'
+import { createOperationFeedback } from '../src/operation-feedback.js'
+
+let dispose: (() => void) | undefined
+afterEach(() => {
+  dispose?.()
+  dispose = undefined
+  document.body.replaceChildren()
+  vi.useRealTimers()
+})
+const result = (id: string, outcome: OperationFeedback['outcome'] = 'success'): OperationFeedback => ({
+  id,
+  scope: 'settings',
+  outcome,
+  message: 'Settings saved.',
+})
+
+it('queues operations across routes, dedupes IDs and retains one consequence per resource until its owner resolves it', () => {
+  const feedback = createOperationFeedback()
+  feedback.sink.publish(result('first', 'pending'))
+  feedback.sink.publish(result('first'))
+  feedback.sink.publish(result('first'))
+  for (const outcome of ['unknown', 'partial', 'error'] as const)
+    feedback.sink.publish(result(outcome, outcome))
+  feedback.sink.publish({
+    ...result('second'),
+    effect: { kind: 'rescan-required', message: 'Rescan to load the folders.' },
+  })
+  feedback.sink.publish({
+    ...result('third'),
+    effect: { kind: 'rescan-required', message: 'Rescan the updated folders.' },
+  })
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['first', 'second', 'third'])
+  expect(feedback.store.getSnapshot().notices.map((item) => item.id)).toEqual(['third'])
+  for (const id of ['first', 'second', 'third']) feedback.dismiss(id)
+  expect(feedback.store.getSnapshot().queue).toEqual([])
+  expect(feedback.store.getSnapshot().notices).toHaveLength(1)
+  feedback.sink.resolve('other')
+  expect(feedback.store.getSnapshot().notices).toHaveLength(1)
+  feedback.sink.resolve('settings')
+  expect(feedback.store.getSnapshot().notices).toEqual([])
+})
+
+it('shows one polite toast for 3 seconds without moving focus, then advances even for identical copy', async () => {
+  vi.useFakeTimers()
+  const feedback = createOperationFeedback()
+  const trigger = document.createElement('button')
+  document.body.append(trigger)
+  trigger.focus()
+  const host = document.createElement('div')
+  document.body.append(host)
+  function Harness() {
+    return createElement(FeedbackHost, {
+      snapshot: useStoreSelector(feedback.store, (value) => value),
+      onDismiss: feedback.dismiss,
+    })
+  }
+  dispose = mountRegion(host, createElement(Harness))
+  await act(async () => {
+    feedback.sink.publish(result('a'))
+    feedback.sink.publish(result('b'))
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1)
+  })
+  expect(document.activeElement).toBe(trigger)
+  expect(document.querySelectorAll('.agh-toast')).toHaveLength(1)
+  expect(document.querySelector('.agh-toast')?.getAttribute('aria-live')).toBe('polite')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2998)
+  })
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['a', 'b'])
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1)
+  })
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['b'])
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000)
+  })
+  expect(feedback.store.getSnapshot().queue).toEqual([])
+  expect(document.activeElement).toBe(trigger)
+})

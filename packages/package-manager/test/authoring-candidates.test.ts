@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { validatePackageAdminData } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AuthoringCandidates } from '../src/authoring-candidates.js'
@@ -57,7 +57,7 @@ const files = [
   { path: 'test/tool.test.mjs', content: '// host runner fixture\n' },
 ]
 function setup(pass = true) {
-  const root = mkdtempSync(join(tmpdir(), 'agh-authoring-'))
+  const root = mkdtempSync(join(tmpdir(), 'agh-authoring-中文 % # '))
   roots.push(root)
   const profile = join(root, 'profiles/test')
   mkdirSync(profile, { recursive: true })
@@ -85,8 +85,8 @@ function setup(pass = true) {
   }))
   return { root, profile, manager, runner, candidates: new AuthoringCandidates(manager, runner) }
 }
-async function review(s: ReturnType<typeof setup>, command = 'draft') {
-  const d = await s.candidates.create(s.profile, files, 'owner', command, origin)
+async function review(s: ReturnType<typeof setup>, command = 'draft', inputFiles = files) {
+  const d = await s.candidates.create(s.profile, inputFiles, 'owner', command, origin)
   expect(s.candidates.forCommand(s.profile, command, 'owner')).toMatchObject({
     candidateId: d.candidateId,
     origin,
@@ -235,7 +235,7 @@ it('refuses failed tests, foreign owners, unsafe files, symlinks and source edit
   const record = JSON.parse(
     readFileSync(join(s.profile, '.authoring-candidates', d.candidateId, 'record.json'), 'utf8'),
   )
-  symlinkSync('index.mjs', join(record.tree, 'link.mjs'))
+  symlinkSync(record.tree, join(record.tree, 'linked'), 'junction')
   expect(() => s.candidates.show(s.profile, d.candidateId, 'owner')).toThrow('symbolic link')
 })
 it.each(['trust failed', 'reviewed bytes changed'] as const)(
@@ -284,30 +284,67 @@ it.each(['trust failed', 'reviewed bytes changed'] as const)(
     expect(publish).toHaveBeenCalledOnce()
   },
 )
-it('reports that published executable tools are available in new sessions and preserves that guidance after reopening', async () => {
-  const s = setup()
-  const r = await review(s)
-  const published = await s.candidates.decide(
-    s.profile,
-    r.candidateId,
-    'owner',
-    r.candidateHash,
-    r.reviewHash!,
-    true,
-    async (source, value) => {
-      await s.manager.install(s.profile, source, {
-        expectedIntegrity: value.candidateHash,
-        installer: 'agent',
-      })
-    },
-  )
-  expect(published.state).toBe('published')
-  expect(published.message).toContain('new sessions')
-  expect(published.message).toContain('existing sessions keep their pins')
-  expect(new AuthoringCandidates(s.manager, s.runner).show(s.profile, r.candidateId, 'owner').message).toBe(
-    published.message,
-  )
-})
+it.each(['tool', 'skill'])(
+  'publishes a reviewed %s package and preserves publication guidance after reopening',
+  async (kind) => {
+    const s = setup()
+    const r = await review(
+      s,
+      'draft',
+      kind === 'tool'
+        ? files
+        : [
+            {
+              path: 'package.json',
+              content: JSON.stringify({
+                name: 'reviewed-skill',
+                version: '1.0.0',
+                license: 'MIT',
+                agnes: {
+                  contributions: [
+                    { kind: 'skill', id: 'reviewed-skill/review', path: './skills/review/SKILL.md' },
+                  ],
+                },
+              }),
+            },
+            {
+              path: 'skills/review/SKILL.md',
+              content:
+                '---\r\nname: 复核助手\r\ndescription: 检查已批准的变更\r\ndisable-model-invocation: true\r\n---\r\nReviewed instructions',
+            },
+            { path: 'skills/review/references/example.md', content: 'approved reference' },
+            { path: 'test/skill.test.mjs', content: '// host runner fixture\n' },
+          ],
+    )
+    const published = await s.candidates.decide(
+      s.profile,
+      r.candidateId,
+      'owner',
+      r.candidateHash,
+      r.reviewHash!,
+      true,
+      async (source, value) => {
+        await s.manager.install(s.profile, source, {
+          expectedIntegrity: value.candidateHash,
+          installer: 'agent',
+        })
+      },
+    )
+    expect(published.state).toBe('published')
+    if (kind === 'skill') {
+      const installed = (await s.manager.inventory(s.profile)).packages[0]
+      expect(installed?.contributions).toEqual([
+        { kind: 'skill', id: 'reviewed-skill/review', path: './skills/review/SKILL.md' },
+      ])
+      expect(installed?.capabilityHash).toBe(r.preview?.capabilityHash)
+    }
+    expect(published.message).toContain('new sessions')
+    expect(published.message).toContain('existing sessions keep their pins')
+    expect(new AuthoringCandidates(s.manager, s.runner).show(s.profile, r.candidateId, 'owner').message).toBe(
+      published.message,
+    )
+  },
+)
 it('detects installed baseline changes and damaged immutable snapshots before any publication', async () => {
   const s = setup()
   const r = await review(s),
@@ -316,7 +353,7 @@ it('detects installed baseline changes and damaged immutable snapshots before an
     record = JSON.parse(readFileSync(file, 'utf8'))
   await s.manager.install(
     s.profile,
-    { type: 'file', ref: 'file:' + record.tree },
+    { type: 'file', ref: 'file:' + record.tree.split(sep).join('/') },
     { expectedIntegrity: r.candidateHash },
   )
   await expect(
@@ -338,7 +375,7 @@ it('reviews capability increases against the installed hash, rejects altered rev
   )
   await s.manager.install(
     s.profile,
-    { type: 'file', ref: 'file:' + record.tree },
+    { type: 'file', ref: 'file:' + record.tree.split(sep).join('/') },
     { expectedIntegrity: initial.candidateHash },
   )
   const nextFiles = files.map((f) => {

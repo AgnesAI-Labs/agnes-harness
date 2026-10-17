@@ -1,3 +1,4 @@
+import type { UINode, UITurn } from '@agnes/protocol'
 import { notifyListeners } from '@agnes/sdk/browser'
 import type { ComponentType } from 'react'
 import type { ClientResourceService, SessionService } from './services.js'
@@ -30,6 +31,8 @@ export type SettingsSection = Readonly<{
 }>
 export type ConversationCardInput = Readonly<{ kind: string; data: unknown }>
 export type ConversationCard = Readonly<{
+  /** Optional projection of nodes folded into this contribution’s visible receipt. */
+  hiddenNodeIds?(nodes: readonly UINode[], turns: readonly UITurn[]): readonly string[]
   id: string
   order: number
   matches(input: ConversationCardInput): boolean
@@ -189,3 +192,11 @@ export class HomeNavigation {
   }
 }
 export const homeNavigation = new HomeNavigation()
+
+/** Presentation-owned composer commands. Routing is a request; server admission remains authoritative. */
+export type ComposerInputCommand = Readonly<{
+  id: string
+  order: number
+  route(input: Readonly<{ text: string; sessionId?: string; busy: boolean }>): 'handled' | 'steer' | undefined
+}>
+export const composerCommands = new UiExtensionRegistry<ComposerInputCommand>()

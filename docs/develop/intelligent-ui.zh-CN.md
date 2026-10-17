@@ -386,3 +386,40 @@ Host 发布时会对照可信的会话/lane 登记，校验完整 SHA-256、字�
 Agent 输入仍保留完整机器回执，包括已提交的值。可选 `InputPresentation` 元数据随同一个幂等输入贯穿 inbox、`UserMessage` 和用户 `UINode`；其 `kind: "ui-action"`、终态 `status`、`operation`、动作 `label` 及有界字段名列表，使 Web 无需解析回执文本即可显示本地化摘要。原始正文继续保留在执行轨迹，模型请求不变。只有后台 system/untrusted 输入承载此展示，普通 prompt RPC 不接受该字段。`AgentInputPort.deliver(key, text, signal, presentation?)` 增加可选第四参数，在服务边界校验形状，原有 actor、lane、取消及投递键授权保持不变。
 
 后台 UI 回执仍是持久待接收输入，但不会进入可编辑的发送队列；接收后在对话中显示本地化摘要。
+
+### 公开问答兼容合同与可替换呈现
+
+`UI_EVENTS` 中的持久业务事件都是公开协议：
+
+| 事件 | 必须兼容的含义 |
+| --- | --- |
+| `x/agnes/intelligent-ui/` 下的 `surface.opened`、`surface.updated`、`surface.closed` | 已记录表面的身份、版本、归属、布局和生命周期；历史读取继续有效 |
+| 同一命名空间的 `action.received`、`action.rejected`、`action.pending-approval`、`action.executing`、`action.succeeded`、`action.failed`、`action.retried`、`action.delivered` | 认证动作的命令关联、回执状态和投递；收到动作或获得批准并不代表成功 |
+| `x/agnes/interaction/requested` | 持久问题身份、工具调用、问题列表和可选 deadline |
+| 来源 `agnes/intelligent-ui`、类型 `action-result` 的已投递系统输入 | 被接纳的 `submitted.surfaceId/answers`、状态和保留认证 actor 的排队输入 |
+
+客户端 store 通知、重连提示、本地呈现选择和缓存布局是官方实现细节，不能作为答案事实。
+`source.*` 来源解析审计有单独导出的诊断合同，不授权、不完成、也不回填交互。
+
+公开合同包括 `UiSurface`、`UiSurfaceRecord`、`UiReadParams/Result`、
+`UiActionParams/Receipt`、认证后的延迟动作投递，以及问题表单标记
+`data.question.kind = "ask_user_question"`、deadline 和可选 labels。
+已有持久事件 `x/agnes/interaction/requested` 与历史会话继续可读。
+
+`@agnes/intelligent-ui-contract` 导出 `UI_ANSWER_OWNER`、`UI_SUBMIT_TOOL`、
+`UI_ANSWER_EVENTS`、`readUiAnswerFact`。历史命名空间 `x/agnes/intelligent-ui/` 和
+对应的 `ext:agnes/intelligent-ui` 来源是公开兼容身份，不是包名分派规则。
+适配器读取 `surface.opened` 的 `data.record.status/surface.id`、
+`action.received` 的 `data.record.request.commandId` 及准入后的
+`{tool:"ui_submit", args:{surfaceId,answers}}`，以及 `action.succeeded` 的
+`data.commandId`。仅收到动作不会完成问题；拒绝、失败、伪造来源和用户文字不能回填答案。
+替换服务实现须保持上述公开协议和认证来源检查；替换浏览器界面不改变协议。
+
+官方包名、DOM、本地草稿存储、布局组件及临时请求/错误文本是实现细节，不应解析它们来恢复
+答案或决定权限。官方客户端通过 `interaction` 呈现角色注册问题 dock 和回执；社区客户端
+可以使用相同 SDK 读取/动作协议及注册表替换完整体验。回答不授予执行许可。
+
+Interaction 显式声明 Intelligent UI 为可选 peer。请求先持久化；渲染器缺失或拒绝时立即
+成功返回文字降级结果，取消仍向上传播。问题投影版本 3 有界缓存 `surface.opened` 身份，
+使崩溃或渲染失败后的重试补齐确定性表单，已有持久展示事实时不重复发布。
+不引入新存储，也不迁移旧产品数据。

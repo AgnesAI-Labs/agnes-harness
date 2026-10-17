@@ -9,9 +9,9 @@ import {
   Banner,
   Button,
   Loadable,
+  reportSuccess,
   SettingsAdvanced,
   SettingsItem,
-  SettingsState,
   type Translate,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -106,7 +106,7 @@ export function ModelSlotsPanel({
   const [state, setState] = useState<ModelSlotsState>()
   const [busy, setBusy] = useState(true)
   const lifetime = useRef<AbortController>()
-  const [message, setMessage] = useState<'' | 'saved' | 'failed' | 'conflict'>('')
+  const [message, setMessage] = useState<'' | 'failed' | 'conflict'>('')
   const load = useCallback(async (signal?: AbortSignal) => {
     setBusy(true)
     try {
@@ -129,7 +129,7 @@ export function ModelSlotsPanel({
   }, [load])
   /** A choice is saved as it is made: the whole document, at the revision it was read at. */
   async function save(slots: ModelSlotsState['slots']) {
-    if (!state || !state.canSave || busy) return
+    if (!state?.canSave || busy) return
     // The choice shows at once and stays if the save is refused, so nothing has to be picked twice.
     setState({ ...state, slots })
     setMessage('')
@@ -138,7 +138,7 @@ export function ModelSlotsPanel({
       const next = await modelSlotsSettings({ revision: state.revision, slots }, lifetime.current?.signal)
       if (lifetime.current?.signal.aborted) return
       setState(next)
-      setMessage('saved')
+      reportSuccess('model-slots', t('modelSettings.slots.saved'))
       window.dispatchEvent(new Event('agnes:model-slots-changed'))
     } catch (cause) {
       if (!lifetime.current?.signal.aborted)
@@ -189,11 +189,6 @@ export function ModelSlotsPanel({
         />
       ) : (
         !message && <Loadable loading hasData={false} shape="rows" />
-      )}
-      {message === 'saved' && (
-        <SettingsState tone="success" data-testid="model-slots-status">
-          {t('modelSettings.slots.saved')}
-        </SettingsState>
       )}
       {(message === 'failed' || message === 'conflict') && (
         <Banner

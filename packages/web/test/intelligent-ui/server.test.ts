@@ -1,6 +1,6 @@
 import type { Client, Session } from '@agnes/sdk/browser'
 import { expect, it, vi } from 'vitest'
-import { intelligentUiServer } from '../../src/intelligent-ui/server.js'
+import { intelligentUiServer } from '../../../web-conversation/src/intelligent-ui/server.js'
 
 it('uses authenticated UI methods and preserves the conversation event cursor/filter', async () => {
   const listeners: Session['listeners'] = new Set()

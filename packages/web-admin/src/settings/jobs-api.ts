@@ -16,29 +16,25 @@ export interface JobsSnapshot {
   completions: SessionJob[]
   job?: SessionJob
 }
-export function sessionJobsApi(fetcher: typeof fetch = fetch) {
-  async function call(sessionId: string, service: string, input: Record<string, unknown>, effect: boolean) {
-    const response = await fetcher(effect ? '/api/client-modules/effect' : '/api/client-modules/service', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        rowId: 'web:builtin:agnes/jobs',
+export function sessionJobsApi() {
+  async function call(sessionId: string, input: Record<string, unknown>, effect: boolean) {
+    if (!sessions?.call) throw new Error('session jobs unavailable')
+    const result = await sessions.call(
+      effect ? '_agnes/v1/session.jobs.control' : '_agnes/v1/session.jobs.read',
+      {
+        ...input,
         sessionId,
-        service,
-        input,
         ...(effect ? { commandId: crypto.randomUUID() } : {}),
-      }),
-    })
-    if (!response.ok) throw new Error('session jobs unavailable')
-    const body: unknown = await response.json()
-    if (!body || typeof body !== 'object' || !('output' in body))
+      },
+    )
+    if (!effect) return result
+    if (!result || typeof result !== 'object' || !('output' in result))
       throw new Error('invalid session jobs result')
-    return body.output
+    return result.output
   }
   return {
     async read(sessionId: string, jobId?: string): Promise<JobsSnapshot> {
-      const value = await call(sessionId, 'jobs.read', jobId ? { jobId } : {}, false)
+      const value = await call(sessionId, jobId ? { jobId } : {}, false)
       if (
         !value ||
         typeof value !== 'object' ||
@@ -51,7 +47,7 @@ export function sessionJobsApi(fetcher: typeof fetch = fetch) {
       return value as JobsSnapshot
     },
     async control(sessionId: string, input: Record<string, unknown>): Promise<unknown> {
-      return call(sessionId, 'jobs.control', input, true)
+      return call(sessionId, input, true)
     },
   }
 }
@@ -59,6 +55,7 @@ export function sessionJobsApi(fetcher: typeof fetch = fetch) {
 export type JobsSessionSource = {
   list(): Promise<import('@agnes/web-ui').SessionOption[]>
   current(): string | undefined
+  call?(method: string, params: Record<string, unknown>): Promise<unknown>
 }
 let sessions: JobsSessionSource | undefined
 /** Host injects its existing authorized session client, rather than opening a second connection. */

@@ -15,6 +15,7 @@ import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
+import { runtimeSkillView } from './skill-view.js'
 import { connectSupervisor } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
 
@@ -74,6 +75,7 @@ import type {
   WorkerReplyFrame,
 } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import type { WorkerHostSkillResources } from './host-resources.js'
 import {
   HostedSessions,
   SESSION_SCOPED_WORKER_METHODS,
@@ -90,24 +92,7 @@ import { createWorkerServiceAuthority } from './service-authority.js'
 import { SharedSessionChannel } from './shared-session-channel.js'
 import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
-/** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
-export type WorkerHostSkillResources = Readonly<{
-  boundWakes?: NonNullable<HostOptions['boundWakes']>
-  mcpManage?: NonNullable<HostOptions['mcpManage']>
-  pluginManage?: NonNullable<HostOptions['pluginManage']>
-  skillInstall?: NonNullable<HostOptions['skillInstall']>
-  /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
-  requestMedia: NonNullable<HostOptions['requestMedia']>
-  skillResources?: NonNullable<HostOptions['skillResources']>
-  skillContribution?: NonNullable<HostOptions['skillContribution']>
-  runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
-  runtimePluginCatalogue?: NonNullable<HostOptions['runtimePluginCatalogue']>
-  runtimePluginSources?: NonNullable<HostOptions['runtimePluginSources']>
-  restoreGenerationExtension?: NonNullable<HostOptions['restoreGenerationExtension']>
-  managedExtensionPackageIds?: NonNullable<HostOptions['managedExtensionPackageIds']>
-  /** Trusted daemon-to-worker authority for narrowly scoped surface service calls. */
-  serviceAuthority?: NonNullable<HostOptions['serviceAuthority']>
-}>
+export type { WorkerHostSkillResources } from './host-resources.js'
 
 /** Session workers assemble a Host that owns applyRuntimeTarget. */
 export type WorkerHostLike = Host
@@ -233,6 +218,14 @@ export async function runWorker(
   }
 
   const sharedChannel = new SharedSessionChannel(send)
+  const scheduling: NonNullable<HostOptions['scheduling']> = (session, operation, input, signal) => {
+    if (session.key !== sharedChannel.currentSessionKey()) throw new Error('Scheduling session mismatch')
+    return sharedChannel.request(
+      'scheduling',
+      { operation, input, workspaceRoot: session.workspaceRoot },
+      signal,
+    )
+  }
   const boundWakes = profileWakeProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
@@ -428,8 +421,10 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           boundWakes,
+          scheduling,
           skillInstall,
           mcpManage,
           pluginManage,
@@ -458,6 +453,7 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
             restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
             profileDir,
@@ -467,6 +463,7 @@ export async function runWorker(
             log: deps.log ?? sessionLog,
             prompter,
             boundWakes,
+            scheduling,
             skillInstall,
             mcpManage,
             pluginManage,
@@ -704,6 +701,7 @@ export async function runWorker(
             workspaceRoot?: unknown
             rootKey?: unknown
             snapshotRevision?: unknown
+            skills?: unknown
             descriptor?: unknown
             validateOnly?: unknown
           }
@@ -737,6 +735,12 @@ export async function runWorker(
               snapshotRevision: p.snapshotRevision,
             })
           }
+          if (command.method === 'resourceSkillView')
+            return runtimeSkillView(
+              p,
+              workerResourcesInput.env?.AGNES_RESOURCE_SNAPSHOT ?? process.env.AGNES_RESOURCE_SNAPSHOT,
+              requireHost().runtimeSkillCandidates,
+            )
           if (command.method === 'resourceSkillRemove') {
             if (
               typeof p.workspaceRoot !== 'string' ||

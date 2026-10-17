@@ -3,7 +3,7 @@
 // open a Drawer, Dialog or Modal are listed with a ceiling that only goes down; a new file or one more
 // use fails. Removing a use needs no edit here, so windows converting pages in parallel never conflict.
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 
@@ -24,7 +24,10 @@ describe('pages open in place, not in drawers or form dialogs', () => {
   it('no file opens a new drawer or dialog, and no listed file opens more', () => {
     const over: string[] = []
     for (const file of listSourceFiles(join(root, 'packages'))) {
-      const relative = file.slice(root.length + 1)
+      const relative = file
+        .slice(root.length + 1)
+        .split(sep)
+        .join('/')
       if (!/\.tsx$/.test(file) || isTestFile(file) || PRIMITIVES.has(relative)) continue
       const uses = readFileSync(file, 'utf8').match(OVERLAY)?.length ?? 0
       const limit = allowance[relative] ?? 0
