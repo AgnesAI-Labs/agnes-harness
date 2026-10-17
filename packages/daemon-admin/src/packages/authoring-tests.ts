@@ -116,6 +116,15 @@ async function testCandidate(
         {
           name: 'authoring-public-sdk',
           setup(b) {
+            // Native SDK dependencies retain their own optional-package resolution. Candidate
+            // imports still go through the hashed-source restriction below.
+            b.onResolve({ filter: /^sharp$/ }, (args) => {
+              if (insideCandidate(args.importer)) return undefined
+              return {
+                path: pathToFileURL(require.resolve(args.path, { paths: [args.resolveDir] })).href,
+                external: true,
+              }
+            })
             b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox)/ }, (args) => {
               if (!insideCandidate(args.importer)) return undefined
               if (!Object.hasOwn(modules, args.path))
