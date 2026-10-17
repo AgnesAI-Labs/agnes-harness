@@ -34,7 +34,12 @@ export type DispatchOutcome =
 const RETHROWN = new Set(['PARKED', 'E_CLOSED', 'E_BUDGET'])
 const RELATION = new Set(['E_RELATION', 'E_ENVELOPE'])
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error !== null && typeof error === 'object' && 'message' in error && typeof error.message === 'string')
+    return error.message
+  return String(error)
+}
 
 function optionsOf(call: PendingCall): LoopToolCallOptions {
   return call.announce === 'true' ? { announce: true } : { announce: { content: call.content ?? [] } }
@@ -90,8 +95,10 @@ async function attempt(
         calls,
       }
     }
-    // Core checks the whole batch before it writes anything, so `t0` is still unused. Saving the
-    // narrowed list first means a restart replays exactly the call that was announced.
+    // A refusal before the write leaves `t0` unused; a coded error after it (an approval or policy
+    // classifier failure) leaves `t0` with a receipt. Reusing the id is safe either way: Core
+    // replays a receipted call from its receipt. Saving the narrowed list first means a restart
+    // replays exactly the call that was announced.
     const others = calls.length - 1
     const batchNote = `[runtime observation] ${others} other calls in the batch were not executed: ${handled.code} (dispatch); reason (data): ${JSON.stringify(clip(handled.message, 200))}`
     await deps.save([first])
@@ -152,7 +159,9 @@ export function observeDispatch(input: {
   escalated: boolean
 }): Observation {
   const { calls, results, ...common } = input
-  if (calls.length > 1 && calls.every((call) => call.name === 'read')) {
+  if (calls.length > 1) {
+    if (!calls.every((call) => call.name === 'read'))
+      throw new Error('Jev loop dispatch batches only read calls')
     return classifyReadBatch({
       ...common,
       calls: calls.map((call) => ({ name: call.name, args: call.args })),

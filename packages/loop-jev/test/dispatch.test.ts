@@ -26,9 +26,15 @@ function tools(behave: (calls: unknown[], options: unknown) => unknown) {
   }
   return { port: port as never, log }
 }
-const effects = (status: string) =>
+/** One status for every id, or one per call index (`jev:1:0:t<i>`). */
+const effects = (status: string | string[]) =>
   ({
-    status: async (id: string) => ({ status, invocationId: id, checkpoint: null, result: ok('recorded') }),
+    status: async (id: string) => ({
+      status: Array.isArray(status) ? status[Number(id.split(':t')[1])] : status,
+      invocationId: id,
+      checkpoint: null,
+      result: ok('recorded'),
+    }),
   }) as never
 const signal = new AbortController().signal
 const run = (calls: PendingCall[], behave: Parameters<typeof tools>[0], saved: string[] = []) => {
@@ -220,5 +226,58 @@ describe('dispatch edge cases', () => {
       status: 'succeeded',
       summary: 'read(f0) conf=0.80 [escalated]',
     })
+  })
+})
+
+describe('dispatch mixed receipts and narrowed sends', () => {
+  const replay = (calls: PendingCall[], statuses: string[]) =>
+    replayCalls(
+      calls,
+      {
+        tools: tools(() => {
+          throw coded('E_RELATION', 'unsettled')
+        }).port,
+        effects: effects(statuses),
+        save: async () => {},
+      },
+      signal,
+    )
+  it('reports an unknown outcome when any replayed call may have been sent', async () => {
+    expect(await replay([pc(0), pc(1)], ['may-have-sent', 'not-sent'])).toMatchObject({ kind: 'unknown' })
+  })
+  it('keeps a relation refusal internal when only some replayed calls responded', async () => {
+    expect(await replay([pc(0), pc(1)], ['responded', 'not-sent'])).toMatchObject({
+      kind: 'refused',
+      code: 'INTERNAL_RELATION',
+      coreCode: 'E_RELATION',
+    })
+  })
+  const narrowed = (code: string) =>
+    run([pc(0), pc(1)], (calls) => {
+      throw calls.length > 1 ? coded('TOOL_ARGS_INVALID') : coded(code)
+    }).out
+  it('maps a budget refusal of the narrowed call like a single call', async () => {
+    expect(await narrowed('BUDGET_EXCEEDED')).toMatchObject({ kind: 'budget' })
+  })
+  it('rethrows a park of the narrowed call', async () => {
+    await expect(narrowed('PARKED')).rejects.toMatchObject({ code: 'PARKED' })
+  })
+  it('reads the message of a coded error that is not an Error', async () => {
+    const o = await run([pc(0)], () => {
+      throw { code: 'TOOL_NOT_FOUND', message: 'no such tool' }
+    }).out
+    expect(o).toMatchObject({ kind: 'refused', coreCode: 'TOOL_NOT_FOUND', message: 'no such tool' })
+  })
+})
+
+describe('observeDispatch guards', () => {
+  const base = { phase: 'ACT' as const, cwd: '/w', confidence: 0.9, escalated: false }
+  it('throws when there is no result', () => {
+    expect(() => observeDispatch({ ...base, calls: [pc(0)], results: [] })).toThrow()
+  })
+  it('throws on several calls that are not all reads', () => {
+    expect(() =>
+      observeDispatch({ ...base, calls: [pc(0), pc(1, 'write')], results: [ok('a'), ok('b')] }),
+    ).toThrow()
   })
 })
