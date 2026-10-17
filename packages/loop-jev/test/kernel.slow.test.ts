@@ -203,9 +203,10 @@ describe('agnes.jev on a real Core session', () => {
   })
 
   it('stops its own work when the stop gate parks', async () => {
+    const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
     const kit = jevKernel({
       scripts: [textTurn('answer')],
-      jev: fakeJev(() => ({ pick: PICK_RESPOND })),
+      jev,
       seams: {
         verifier: {
           verify: async (scope: string) =>
@@ -223,8 +224,14 @@ describe('agnes.jev on a real Core session', () => {
     try {
       expect((await kit.run(session)).reason).toBe('parked')
       const checkpoints = (await kit.rows(session)).filter((r) => r.type === 'x/core/loop-checkpoint')
-      expect(JSON.stringify(checkpoints.at(-1)?.data)).toContain('"stage":"finish"')
+      const saved = checkpoints.at(-1)?.data as {
+        checkpoint: { state: { stage: string; endReason?: string } }
+      }
+      expect(saved.checkpoint.state.stage).toBe('finish')
+      // The loop asked to complete; the stop gate turned that into the park.
+      expect(saved.checkpoint.state.endReason).toBe('completed')
       expect(kit.provider.calls).toBe(1)
+      expect(jev.invoked).toHaveLength(1)
     } finally {
       await kit.kernel.close()
     }
@@ -240,13 +247,16 @@ describe('agnes.jev on a real Core session', () => {
       expect((await kit.run(session)).reason).toBe('completed')
       const rows = await kit.rows(session)
       expect(rows.filter((r) => r.type === 'tool/call')).toHaveLength(0)
-      expect(
-        userTexts(rows).some((t) =>
-          t.includes(
-            '[runtime observation] write was not applied: REFUSED_BY_CORE (dispatch); reason (data):',
-          ),
-        ),
-      ).toBe(true)
+      // Core's own refusal reason, quoted as data.
+      const note =
+        '[runtime observation] write was not applied: REFUSED_BY_CORE (dispatch); reason (data): "tool arguments do not match the registered schema"'
+      expect(userTexts(rows).some((t) => t.includes(JSON.stringify(note).slice(1, -1)))).toBe(true)
+      // The note went out with the request that followed the refusal.
+      expect(kit.provider.requests).toHaveLength(2)
+      const sent = kit.provider.requests[1]?.messages.flatMap((m) =>
+        Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])) : [],
+      )
+      expect(sent?.some((text) => text.startsWith(`${note}\n`))).toBe(true)
     } finally {
       await kit.kernel.close()
     }
@@ -281,8 +291,10 @@ describe('agnes.jev on a real Core session', () => {
       const reqs = kit.provider.requests
       expect(reqs).toHaveLength(3)
       for (let i = 1; i < reqs.length; i++) {
+        // Each request is a distinct, longer message list, not one array shared by reference.
+        expect(reqs[i]?.messages.length).toBeGreaterThan(reqs[i - 1]?.messages.length ?? 0)
         expect(reqs[i]?.messages.slice(0, reqs[i - 1]?.messages.length)).toEqual(reqs[i - 1]?.messages)
-        expect(reqs[i]?.tools).toEqual(reqs[0]?.tools)
+        expect(JSON.stringify(reqs[i]?.tools)).toBe(JSON.stringify(reqs[0]?.tools))
       }
     } finally {
       await kit.kernel.close()
