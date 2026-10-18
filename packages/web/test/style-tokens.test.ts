@@ -164,14 +164,14 @@ const channel = (c: number): number => {
 const luminance = (rgb: [number, number, number]): number =>
   0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
 
-function contrast(fgName: string, bgName: string, theme: Theme): number | null {
+function contrast(fgName: string, bgName: string, theme: Theme, opacity = 1): number | null {
   const fg = resolveColor(fgName, theme)
   const bg = resolveColor(bgName, theme)
   if (!fg || !bg) return null
   const surface = resolveColor('--agnes-bg-popover', theme)
   if (!surface) return null
   const background = compositeOver(bg, surface)
-  const a = luminance(compositeOver(fg, { rgb: background, alpha: 1 }))
+  const a = luminance(compositeOver({ ...fg, alpha: fg.alpha * opacity }, { rgb: background, alpha: 1 }))
   const b = luminance(background)
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
@@ -294,6 +294,13 @@ describe('style.css token 门禁', () => {
         }
         if (ratio < 4.5) failures.push(`${theme}: ${fg} on ${bg} = ${ratio.toFixed(2)}:1`)
       }
+    }
+    const timeRule = rules.find((rule) => rule.selector === '.run-status-time')
+    expect(timeRule).toBeDefined()
+    const opacity = Number(declarationsOf(timeRule as Rule).find((d) => d.property === 'opacity')?.value ?? 1)
+    for (const theme of ['light', 'dark'] as const) {
+      const ratio = contrast('--agnes-status-warning-text', '--agnes-status-warning-bg', theme, opacity)
+      expect(ratio, `${theme} approval elapsed time`).toBeGreaterThanOrEqual(4.5)
     }
     expect(failures.join('\n')).toBe('')
   })

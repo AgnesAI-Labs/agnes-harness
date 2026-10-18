@@ -490,7 +490,6 @@
   .run-status-time {
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
-    opacity: 0.75;
   }
   .run-status-action {
     display: flex;
