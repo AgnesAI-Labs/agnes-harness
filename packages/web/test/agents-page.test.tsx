@@ -47,6 +47,9 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
       sources: [{ id: 'shared/tools', version: '2.0.0', integrity: 'sha512-reviewed', source: 'local' }],
     }
     let finishPrepare: (() => void) | undefined
+    const resolveAgent = vi.fn(async () => {
+      throw new Error('must not probe launch readiness')
+    })
     const prepareAgent = vi.fn(async (_ref: string) => {
       if (outcome === 'cancel')
         await new Promise<void>((resolve) => {
@@ -80,6 +83,7 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
         readOnly: false,
       },
       api: {
+        resolveAgent,
         prepareAgent,
         startAgent,
         readAgent,
@@ -155,6 +159,8 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
       )
       expect(host.textContent).toContain('triage description')
       expect(host.textContent).toContain('acme/kit')
+      expect(resolveAgent).not.toHaveBeenCalled()
+      expect(prepareAgent).not.toHaveBeenCalled()
       const general = host.querySelector('[data-testid="general-agent"]')
       await vi.waitFor(() =>
         expect(general?.querySelector('button:not([aria-haspopup])')?.hasAttribute('disabled')).toBe(false),

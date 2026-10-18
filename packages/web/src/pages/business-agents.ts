@@ -1,4 +1,4 @@
-import type { AgentPlan, PackageCatalogDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { applicationAgents } from '@agnes/web-client'
 import { homeAdmin } from './admin-api.js'
 
@@ -16,7 +16,6 @@ export async function listBusinessAgents(
     items: readonly PackageCatalogDescriptor[]
     nextCursor?: string | null
   }>,
-  resolve?: (ref: string) => Promise<AgentPlan>,
 ): Promise<PackageCatalogDescriptor[]> {
   const rows: PackageCatalogDescriptor[] = []
   let cursor: string | undefined
@@ -32,17 +31,7 @@ export async function listBusinessAgents(
     )
     cursor = page.nextCursor ?? undefined
   } while (cursor && rows.length < 256 && pages < 32)
-  if (!resolve) return rows
-  const checked = await Promise.allSettled(
-    rows.map(async (row) => {
-      const declared = row.agents?.[0]
-      if (!declared) throw new Error('agent unavailable')
-      const plan = await resolve(declared.ref)
-      if (plan.ref !== declared.ref) throw new Error('agent selection changed')
-      return { ...row, agents: [{ ref: plan.ref, launch: plan.launch }] }
-    }),
-  )
-  return checked.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+  return rows
 }
 
 /** Suggestions retain the explicit catalog order; names do not imply agent categories. */
@@ -92,8 +81,5 @@ export function createBusinessAgentSuggestions(read: () => Promise<PackageCatalo
 
 export const businessAgentSuggestions = createBusinessAgentSuggestions(async () => {
   const { api } = await homeAdmin()
-  return listBusinessAgents(
-    (query, cursor) => api.catalog(query, cursor),
-    (ref) => api.resolveAgent(ref),
-  )
+  return listBusinessAgents((query, cursor) => api.catalog(query, cursor))
 })

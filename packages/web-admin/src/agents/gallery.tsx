@@ -63,26 +63,15 @@ function catalogKey(connect: object): string {
   return key
 }
 
-async function readyAgentRefs(
-  api: PluginAdminApi,
+function readyAgentRefs(
   rows: readonly PackageCatalogDescriptor[],
   installed: readonly PackageInstalledDescriptor[],
-): Promise<string[]> {
-  const enabled = new Set(
-    installed.filter((pkg) => pkg.trusted && pkg.desired === 'enabled').map((pkg) => pkg.id),
-  )
-  const values = await Promise.allSettled(
-    rows
-      .filter((row) => enabled.has(row.id))
-      .flatMap((row) =>
-        (row.agents ?? []).map(async (agent) => {
-          const plan = await api.resolveAgent(agent.ref)
-          if (plan.ref !== agent.ref) throw new Error('agent selection changed')
-          return plan.ref
-        }),
-      ),
-  )
-  return values.flatMap((value) => (value.status === 'fulfilled' ? [value.value] : []))
+): string[] {
+  // Readiness is a display projection. Only an explicit start enters launch admission.
+  return rows.flatMap((row) => {
+    const current = installed.find((pkg) => pkg.id === row.id && pkg.integrity === row.integrity)
+    return businessAgentState(current) === 'ready' ? (row.agents ?? []).map((agent) => agent.ref) : []
+  })
 }
 
 export function useBusinessAgents(source: BusinessAgentsSource = {}) {
@@ -105,7 +94,7 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
       rows: catalog.rows,
       installed: list.packages,
       catalogError: catalog.error,
-      readyAgents: await readyAgentRefs(api, catalog.rows, list.packages),
+      readyAgents: readyAgentRefs(catalog.rows, list.packages),
     }
   })
   const loaded = read.data
@@ -115,11 +104,11 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     if (!current) return
     void current.api
       .list()
-      .then(async (list) =>
+      .then((list) =>
         setResource<Loaded>(key, {
           ...current,
           installed: list.packages,
-          readyAgents: await readyAgentRefs(current.api, current.rows, list.packages),
+          readyAgents: readyAgentRefs(current.rows, list.packages),
         }),
       )
       .catch(() => {})

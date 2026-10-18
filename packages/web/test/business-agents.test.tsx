@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import type { AgentPlan, PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { homeNavigation, SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -77,14 +77,8 @@ it('reads every catalog page and suggests explicit agents in catalog order', asy
     ...ready,
     agents: [{ ...ready.agents![0]!, ref: 'acme/kit#unavailable' }],
   }
-  const admitted = await listBusinessAgents(
-    async () => ({ items: [ready, unavailable] }),
-    async (ref) => {
-      if (ref !== ready.agents![0]!.ref) throw new Error('unavailable source')
-      return { ref, launch: ready.agents![0]!.launch } as AgentPlan
-    },
-  )
-  expect(admitted.map((row) => row.agents?.[0]?.ref)).toEqual([ready.agents![0]!.ref])
+  const declared = await listBusinessAgents(async () => ({ items: [ready, unavailable] }))
+  expect(declared.map((row) => row.agents?.[0]?.ref)).toEqual([ready.agents![0]!.ref, 'acme/kit#unavailable'])
 })
 
 it('keeps the hero free of cards even when the business-agent catalog is available', async () => {
@@ -93,8 +87,10 @@ it('keeps the hero free of cards even when the business-agent catalog is availab
     agent('code-review', { samplePrompt: { en: 'Review the sample patch.' } }),
     agent('data-report', {}),
   ]
-  const suggestions = createBusinessAgentSuggestions(async () => rows)
-  await suggestions.refresh()
+  const read = vi.fn(async () => rows)
+  const suggestions = createBusinessAgentSuggestions(read)
+  await Promise.all([suggestions.refresh(), suggestions.refresh()])
+  expect(read).toHaveBeenCalledTimes(1)
   expect(suggestions.getSnapshot().featured).toHaveLength(2)
   vi.spyOn(businessAgentSuggestions, 'getSnapshot').mockReturnValue(suggestions.getSnapshot())
   const host = document.createElement('div')

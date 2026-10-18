@@ -205,12 +205,45 @@ describe('business agent catalog', () => {
     expect(en.tint).toBeLessThan(8)
   })
 
-  it('calls an agent ready only when its plugin is enabled and running', () => {
+  it('uses backend readiness for declarative agents and requires trust for running fallback', () => {
     expect(businessAgentState(undefined)).toBe('available')
     expect(businessAgentState(installed())).toBe('installed')
     expect(businessAgentState(installed({ desired: 'enabled', actual: 'starting' }))).toBe('installed')
-    expect(businessAgentState(installed({ desired: 'enabled', actual: 'running' }))).toBe('ready')
+    expect(businessAgentState(installed({ trusted: true, desired: 'enabled', actual: 'running' }))).toBe(
+      'ready',
+    )
     expect(businessAgentState(installed({ desired: 'enabled', actual: 'failed' }))).toBe('attention')
+    expect(businessAgentState(installed({ desired: 'enabled', actual: 'running' }))).toBe('installed')
+    expect(
+      businessAgentState(
+        installed({
+          trusted: true,
+          desired: 'enabled',
+          actual: 'not-running',
+          primaryStatus: {
+            state: 'ready',
+            reason: { en: 'Declarative agent ready', 'zh-CN': '声明智能体已就绪' },
+            reasonCode: 'ready',
+            nextAction: 'none',
+          },
+        }),
+      ),
+    ).toBe('ready')
+    expect(
+      businessAgentState(
+        installed({
+          trusted: true,
+          desired: 'enabled',
+          actual: 'running',
+          primaryStatus: {
+            state: 'blocked',
+            reason: { en: 'Missing dependency', 'zh-CN': '缺少依赖' },
+            reasonCode: 'dependency-missing',
+            nextAction: 'install-dependency',
+          },
+        }),
+      ),
+    ).toBe('attention')
     expect(businessAgentState(installed(), true)).toBe('starting')
   })
 
@@ -232,7 +265,7 @@ describe('business agent catalog', () => {
     expect(rows.map((row) => row.id)).toEqual(['@agnes-fde/a', '@agnes-fde/b'])
     expect(cursors).toEqual([undefined, 'next'])
     const agents = rows.map((row) => ({ entry: row }))
-    const ready = installed({ id: '@agnes-fde/b', desired: 'enabled', actual: 'running' })
+    const ready = installed({ id: '@agnes-fde/b', trusted: true, desired: 'enabled', actual: 'running' })
     expect(suggestedBusinessAgents(agents, [ready], 1).map((agent) => agent.entry.id)).toEqual([
       '@agnes-fde/b',
     ])

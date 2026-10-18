@@ -71,14 +71,26 @@ export function businessAgentView(entry: PackageCatalogDescriptor, locale: Local
   }
 }
 
-/** Ready means the package is enabled and its plugin is actually running. */
+/** Display the backend readiness projection; launch admission still runs on explicit start. */
 export function businessAgentState(
   installed: PackageInstalledDescriptor | undefined,
   starting = false,
 ): BusinessAgentState {
   if (starting) return 'starting'
   if (!installed) return 'available'
-  if (installed.desired === 'enabled' && installed.actual === 'running') return 'ready'
+  if (installed.primaryStatus)
+    return installed.primaryStatus.state === 'ready'
+      ? 'ready'
+      : ['blocked', 'restart-required'].includes(installed.primaryStatus.state)
+        ? 'attention'
+        : 'installed'
+  if (
+    installed.trusted &&
+    installed.desired === 'enabled' &&
+    installed.actual === 'running' &&
+    !installed.blockers.length
+  )
+    return 'ready'
   if (installed.actual === 'failed' || installed.actual === 'restart-required' || installed.blockers.length)
     return 'attention'
   return 'installed'
