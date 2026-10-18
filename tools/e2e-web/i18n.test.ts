@@ -26,8 +26,9 @@ it('finds catalog keys in visible labels, accessible names and placeholders, inc
 it('accepts translated zh/en text and literal examples while ignoring hidden content', () => {
   document.body.innerHTML = `<button aria-label="设置">Settings</button><input placeholder="搜索">
     <pre>settings.example</pre><code>shell.example</code><textarea>composer.example</textarea>
+    <span translate="no" title="review.ts">review.ts</span><span translate="no"><span>review.md</span></span>
     <span style="display:none">shell.hidden</span>`
-  expect(unresolvedLabels(['shell.hidden'])).toEqual([])
+  expect(unresolvedLabels(['shell.hidden', 'review.future'])).toEqual([])
 })
 
 it('loads nested catalogs and multiline translations without depending on product UI keys', async () => {
