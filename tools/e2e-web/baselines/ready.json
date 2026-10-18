@@ -1,5 +1,5 @@
 {
-  "uiCommit": "ddfd67c9075f4881865c405ccec29eb5878ab92e",
+  "uiCommit": "ab9ec88f9161456d85f2399d0150606c1bfdccf2",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -333,7 +333,7 @@
     "ciArchitecture": "x64"
   },
   "lastRefresh": {
-    "sourceCommit": "ddfd67c9075f4881865c405ccec29eb5878ab92e",
+    "sourceCommit": "ab9ec88f9161456d85f2399d0150606c1bfdccf2",
     "platform": "darwin",
     "specs": [
       "ui-gate",
@@ -346,7 +346,7 @@
       "prompt-trace",
       "first-run"
     ],
-    "scope": "Manually inspected selected Darwin frames only. Linux and unrelated captures retain their earlier baselines. Source commit records the final implementation and harness before image-only commits.",
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
     "previousBatch": {
       "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
       "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
@@ -363,6 +363,7 @@
   "capturePreferences": {
     "reducedMotion": "reduce for screenshots only; restored after capture",
     "focus": "new-session prompt",
-    "animations": "disabled"
+    "animations": "disabled",
+    "authoringProvenance": "Actual Trace inspector; whole-page accessibility and separate full Trace pixel gates remain enabled."
   }
 }
