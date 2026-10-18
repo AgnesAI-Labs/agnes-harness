@@ -352,7 +352,7 @@ test('stored credential rejection offers account repair and recovers without res
     expect(provider.rejectedInferenceRequests).toBe(2)
     await page.screenshot({ path: info.outputPath('credential-repair-en-light.png') })
     await repair.click()
-    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeVisible()
+    await expect(page.getByTestId('account-page-edit')).toBeVisible()
     await expect(page.locator('#config-account-name')).toHaveValue('Revoked fixture account')
     await page.locator('#config-api-key').fill(provider.apiKey)
     await expect(page.locator('#config-save')).toHaveText('Save')
@@ -361,7 +361,7 @@ test('stored credential rejection offers account repair and recovers without res
     await page.locator('#config-save').click()
     await expect.poll(async () => (await client.config.get()).revision).not.toBe(revision)
     // The revision commits before model publication; wait for the save RPC and UI completion.
-    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeHidden()
+    await expect(page.getByTestId('account-page-edit')).toBeHidden()
     await prompt(session, 'After credential correction')
     const recovered = await session.projectUI()
     expect(recovered.turns.at(-1)?.status).toBe('completed')

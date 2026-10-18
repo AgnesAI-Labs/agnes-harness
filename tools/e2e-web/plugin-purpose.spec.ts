@@ -15,20 +15,22 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(row.getByTestId('plugin-summary')).toHaveText(
       locale === 'en' ? 'Coordinates sample work queues for a team.' : '协调团队的样例任务队列。',
     )
-    await expect(row.getByTestId('plugin-provides')).toHaveText(
-      locale === 'en' ? 'Includes: Service' : '包含：服务',
+    await expect(row.getByTestId('plugin-declared-provides')).toHaveText(
+      locale === 'en' ? 'Declared: Service' : '声明提供: 服务',
     )
     const source = row.getByTestId('plugin-source-badge')
     await expect(source).toHaveAttribute('data-origin', 'local-source')
     await expect(source).toHaveText(locale === 'en' ? 'Local' : '本地')
-    await expect(row.locator('.agh-tag')).toHaveCount(1)
+    await expect(row.getByTestId('plugin-registered-provides')).toContainText(
+      locale === 'en' ? 'Registered' : '已登记',
+    )
     await page.getByTestId('plugin-add-more').click()
     await expect(page.getByTestId('plugin-install-source')).toBeVisible()
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
     await page.keyboard.press('Escape')
     await page.getByTestId('plugin-filter').click()
     const capability = page.getByRole('combobox', {
-      name: locale === 'en' ? 'Filter by capability' : '按能力筛选',
+      name: locale === 'en' ? 'Capability' : '能力',
       exact: true,
     })
     await capability.click()

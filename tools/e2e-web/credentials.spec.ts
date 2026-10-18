@@ -124,9 +124,11 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   expect(update.status()).toBe(200)
   const updateReceipt = (await update.json()) as { operationId: string }
   await expect(page.locator('#mcp-dialog')).not.toBeVisible()
-  await expect(page.locator('#resource-detail')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.locator('#resource-detail')).not.toBeVisible()
+  // A saved form returns to the MCP list. Reopen the updated service through its page.
+  await page.getByRole('button', { name: 'Credential flow service', exact: true }).click()
+  await expect(page.locator('#resource-detail')).toContainText('Credential flow service')
+  await page.getByTestId('push-back').click()
+  await expect(page.locator('#resource-detail')).toBeHidden()
   await expect
     .poll(
       async () =>
