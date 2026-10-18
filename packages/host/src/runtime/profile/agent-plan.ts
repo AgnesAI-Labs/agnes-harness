@@ -129,6 +129,13 @@ export async function sessionAdmission(
       sources.length || activePackages || options.runtimePluginSources
         ? readRuntimeBundles(sources)
         : undefined,
+      new Set(
+        [
+          ...available,
+          ...(options.runtimePluginSnapshots ?? []),
+          ...(options.runtimePluginCatalogue ?? []),
+        ].map((source) => source.snapshot.packageId),
+      ),
     ),
   }
   return { current, sources }

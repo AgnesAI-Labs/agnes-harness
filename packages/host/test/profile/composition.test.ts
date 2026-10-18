@@ -218,6 +218,7 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     env,
   )
   expect(sessionBundleCatalog(profile, {})).toEqual(catalog)
+  expect(sessionBundleCatalog(profile, {}, new Set(['acme/research']))).toEqual({})
   const installed = {
     ...profile,
     packages: [
