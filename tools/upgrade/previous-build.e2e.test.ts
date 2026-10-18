@@ -7,6 +7,7 @@ import { it } from 'vitest'
 import { distributions, ledgerRef, previousRef, run } from './distributions.mjs'
 import { provider } from './provider.mjs'
 import { runtime } from './runtime.mjs'
+import { seedRuntimeSnapshotFixture, verifyRuntimeSnapshotFixture } from './runtime-snapshot-fixture.mjs'
 
 // guards-allow-platform: Windows process identity/crash acceptance is a separate platform follow-up.
 it.skipIf(process.platform === 'win32')(
@@ -91,8 +92,12 @@ it.skipIf(process.platform === 'win32')(
             if (!process.env.AGH_UPGRADE_PREVIOUS_REF || ref === ledgerRef)
               for (const id of presentations)
                 assert.ok(!Object.hasOwn(previousReceipt.integrity, id), `${id}: must be a new default`)
+            const capturedSnapshots = await seedRuntimeSnapshotFixture(home)
             daemon = await runtime(builds.current, home, workspace)
             await scenario('verify', repository)
+            await verifyRuntimeSnapshotFixture(home, capturedSnapshots)
+            await scenario('current-declarations', repository)
+            await verifyRuntimeSnapshotFixture(home, capturedSnapshots, { afterReviewedUpdate: true })
             const upgradedReceipt = JSON.parse(await readFile(receiptFile, 'utf8'))
             assert.equal(upgradedReceipt.version, 4)
             assert.equal(upgradedReceipt.phase, 'complete')

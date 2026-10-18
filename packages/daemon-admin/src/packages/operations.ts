@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { currentStoredShape } from '@agnes/package-manager'
 import {
   jcs,
   type PackageAdminDataName,
@@ -148,7 +149,7 @@ const request = (value: unknown): value is PackageOperationRequest => {
   )
 }
 const validOperation = (value: unknown): value is PackageOperation =>
-  validatePackageAdminData('PackageOperation', value).ok
+  validatePackageAdminData('PackageOperation', currentStoredShape(value)).ok
 const clone = <T>(value: T): T => structuredClone(value)
 
 function validStoredOperation(value: unknown): value is StoredPackageOperation {

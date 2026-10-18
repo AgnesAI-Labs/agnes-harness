@@ -37,6 +37,10 @@
           "budget": 100
         }
       }
+    ],
+    "provides": [
+      "tool",
+      "skills"
     ]
   }
 }

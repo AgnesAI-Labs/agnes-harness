@@ -138,7 +138,13 @@ async function sourceProfile(root: string): Promise<ResolvedProfile> {
         packages: Object.fromEntries(
           ['@agnes/base', '@agnes/code', '@agnes/ai'].map((id) => [
             id,
-            { version: '0.0.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+            {
+              version: '0.0.0',
+              source: { type: 'builtin' as const, ref: 'builtin' },
+              integrity: 'builtin:0.0.0',
+              trust: 'builtin',
+              enabled: true,
+            },
           ]),
         ),
       },

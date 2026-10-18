@@ -93,6 +93,20 @@ it('names business agents from the catalog or their package, falls back to a sma
   expect(raw?.className).toContain('agnes-settings-id')
   // An agent whose plugin is gone is marked and can be turned off to remove it.
   expect(row('@agnes-fde/gone#gone').textContent).toContain('Unavailable')
+  // Full combination identifiers stay copyable behind an explicitly named, closed disclosure.
+  const details = row('@agnes-fde/finance-reconcile#finance-reconcile').querySelector<HTMLElement>(
+    '.agnes-settings-technical',
+  )
+  const toggleDetails = details?.querySelector<HTMLButtonElement>(':scope > button')
+  if (!details || !toggleDetails) throw new Error('combination technical details missing')
+  expect(toggleDetails.textContent).toContain('Technical details')
+  expect(toggleDetails.getAttribute('aria-expanded')).toBe('false')
+  await act(async () => toggleDetails.click())
+  expect(toggleDetails.getAttribute('aria-expanded')).toBe('true')
+  expect(details.textContent).toContain('@agnes-fde/finance-reconcile#finance-reconcile')
+  expect(
+    details.querySelector('[data-copy]') ?? details.querySelector('button[aria-label="Copy technical ID"]'),
+  ).not.toBeNull()
   // Every row has a handle; it moves only agents that are on, and only when there are two or more.
   expect(host.querySelectorAll('[data-testid="bundle-drag"]')).toHaveLength(4)
   const toggle = (id: string) =>
@@ -134,15 +148,15 @@ it('keeps a confirmed save distinct from a failed refresh', async () => {
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="bundles-save"]')?.click())
   expect(feedbackResults).toHaveLength(1)
   expect(feedbackResults[0]).toMatchObject({ outcome: 'success', effect: { kind: 'restart-required' } })
-  expect(host.textContent).toContain('Bundles saved. The latest view could not be loaded.')
-  expect(host.textContent).not.toContain('Bundles were not saved.')
+  expect(host.textContent).toContain('Combinations saved. The latest view could not be loaded.')
+  expect(host.textContent).not.toContain('Combinations were not saved.')
 })
 
-it('sends an empty list to the Agent FDE home page', async () => {
+it('sends an empty list to plugin management', async () => {
   const host = await mount(api([], []).api)
   const empty = host.querySelector('[data-testid="bundles-empty"]')
-  expect(empty?.textContent).toContain('No business agents yet')
-  expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/?page=agents')
+  expect(empty?.textContent).toContain('No agents yet')
+  expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/?page=plugins')
 })
 
 const feedbackResults: OperationFeedback[] = []

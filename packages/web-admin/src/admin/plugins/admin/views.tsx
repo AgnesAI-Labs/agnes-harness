@@ -1,4 +1,5 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
+import { presentationRoles } from '@agnes/web-client'
 import {
   Button,
   blockerText,
@@ -7,11 +8,9 @@ import {
   DetailContent,
   Field,
   Icon,
-  integrityLabel,
   Menu,
   OrphanPins,
   operationLabel,
-  PLUGIN_CATEGORIES,
   PluginList,
   Popover,
   pluginOrigin,
@@ -20,21 +19,56 @@ import {
   SettingsDetails,
   SettingsPageHeader,
   SettingsSelect,
+  SettingsTechnicalDetails,
   SourceDialogContent,
   StateSwitch,
+  StatusMessage,
   Tabs,
   UiLocaleProvider,
+  useDocumentLanguage,
 } from '@agnes/web-ui'
+import { useSyncExternalStore } from 'react'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
 import { KindFilter, pluginFailureMessage } from '../control-panel.js'
+import { PluginDetailCopy } from '../detail-copy.js'
 import { PluginOperationFeedback } from '../operation-feedback.js'
 import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
 import { PluginDetailBody } from './detail-body.js'
 import { setDialog } from './dom.js'
 import { asRuntimeView, pinPurposeLabel } from './model.js'
 import type { PluginAdminViewContext } from './page.js'
+
+/** Host diagnostics remain visible even when a presentation fails before returning cleanup. */
+function PresentationDiagnostics() {
+  const diagnostics = useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
+  const zh = useDocumentLanguage() === 'zh-CN'
+  return (
+    <>
+      {diagnostics.map((item) => (
+        <StatusMessage
+          key={item.role}
+          kind="error"
+          action={{
+            label: zh ? '重新加载' : 'Reload',
+            onSelect: () => window.location.reload(),
+          }}
+        >
+          {zh
+            ? item.reason === 'conflict'
+              ? '接管冲突'
+              : '界面显示失败；已保存的交付物可能仍然存在。请重新加载。'
+            : item.reason === 'conflict'
+              ? 'Presentation conflict'
+              : 'Display failed; saved deliverables may still exist. Reload to try again.'}
+          {`: ${item.role} · ${item.failure?.packageId ?? item.owners.join(', ')}`}
+          {item.failure && ` · ${item.failure.phase} · ${item.failure.code}`}
+        </StatusMessage>
+      ))}
+    </>
+  )
+}
 
 const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
   .filter((type) => type !== 'local')
@@ -90,7 +124,10 @@ export function renderPluginView(this: PluginAdminViewContext): void {
     // The full page draws its own status, recovery banner and layout from the same view.
     renderRegion(
       this.listHost,
-      <UiLocaleProvider source={this.locale}>{this.surface.render(this)}</UiLocaleProvider>,
+      <UiLocaleProvider source={this.locale}>
+        <PresentationDiagnostics />
+        {this.surface.render(this)}
+      </UiLocaleProvider>,
     )
     this.renderDetail()
     this.renderConfirm()
@@ -111,35 +148,39 @@ export function renderPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.orphanPinsHost,
     <UiLocaleProvider source={this.locale}>
-      <OrphanPins
-        pins={this.orphanPinList.map((pin) => ({
-          pinId: pin.pinId,
-          packageId: pin.packageId,
-          version: pin.version,
-          purpose: pinPurposeLabel(pin.purpose, this.t),
-          snapshotId: integrityLabel(pin.snapshotId),
-        }))}
-        errors={this.orphanPinErrors}
-        notice={
-          this.orphanPinNotice === undefined
-            ? undefined
-            : this.t('notice.pin-skipped', { count: this.orphanPinNotice })
-        }
-        fetchError={
-          this.orphanPinFetchError
-            ? this.orphanPinFetchError.localize
-              ? this.errorMessage(this.orphanPinFetchError.detail)
-              : this.orphanPinFetchError.detail.message
-            : undefined
-        }
-        canRelease={this.canEffect('packages.remove') && this.orphanPinList.length > 0}
-        onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
-      />
+      <SettingsTechnicalDetails>
+        <OrphanPins
+          pins={this.orphanPinList.map((pin) => ({
+            pinId: pin.pinId,
+            packageId: pin.packageId,
+            version: pin.version,
+            purpose: pinPurposeLabel(pin.purpose, this.t),
+            snapshotId: pin.snapshotId,
+          }))}
+          errors={this.orphanPinErrors}
+          notice={
+            this.orphanPinNotice === undefined
+              ? undefined
+              : this.t('notice.pin-skipped', { count: this.orphanPinNotice })
+          }
+          fetchError={
+            this.orphanPinFetchError
+              ? this.orphanPinFetchError.localize
+                ? this.errorMessage(this.orphanPinFetchError.detail)
+                : this.orphanPinFetchError.detail.message
+              : undefined
+          }
+          canRelease={this.canEffect('packages.remove') && this.orphanPinList.length > 0}
+          onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
+        />
+        <PluginDetailCopy value={JSON.stringify(this.orphanPinList, null, 2)} />
+      </SettingsTechnicalDetails>
     </UiLocaleProvider>,
   )
   renderRegion(
     this.listHost,
     <UiLocaleProvider source={this.locale}>
+      <PresentationDiagnostics />
       <SettingsHub
         api={this.api}
         canInstall={this.canEffect('packages.install')}
@@ -223,25 +264,6 @@ export function renderPluginView(this: PluginAdminViewContext): void {
                 trigger="click"
                 content={
                   <>
-                    <Field label={this.purposeText('category')} htmlFor="plugin-category">
-                      <SettingsSelect
-                        id="plugin-category"
-                        data-testid="plugin-category-filter"
-                        value={this.category}
-                        onChange={(event) => {
-                          this.category = event.target.value
-                          this.render()
-                        }}
-                      >
-                        <option value="">{this.purposeText('all')}</option>
-                        {PLUGIN_CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {this.purposeText(`category.${category}`)}
-                          </option>
-                        ))}
-                        <option value="unclassified">{this.purposeText('unclassified')}</option>
-                      </SettingsSelect>
-                    </Field>
                     <SettingsDetails title={this.t('ux.moreFilters')}>
                       <KindFilter
                         value={this.kind}
@@ -257,10 +279,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
               >
                 <Button icon={<Icon name="sliders-horizontal" />}>
                   {this.t('ux.filter')}
-                  <Count
-                    value={Number(!!this.category) + Number(!!this.kind)}
-                    label={this.t('ux.activeFilters')}
-                  />
+                  <Count value={Number(!!this.kind)} label={this.t('ux.activeFilters')} />
                 </Button>
               </Popover>
             }
@@ -308,15 +327,12 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
             tab={this.tab}
             rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
-              (item) =>
-                (!this.kind || item.kinds?.includes(this.kind)) &&
-                !item.metadata?.exampleOf &&
-                (!this.category || (item.metadata?.category ?? 'unclassified') === this.category),
+              (item) => (!this.kind || item.provides?.includes(this.kind)) && !item.metadata?.exampleOf,
             )}
             loading={loading}
             inventoryAuthoritative={this.state.inventoryAuthoritative}
             query={this.query}
-            filtered={!!this.kind || !!this.category}
+            filtered={!!this.kind}
             nextCursor={this.state.nextCursor}
             surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
             highlight={

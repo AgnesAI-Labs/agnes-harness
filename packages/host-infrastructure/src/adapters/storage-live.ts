@@ -1,6 +1,7 @@
-import { mkdirSync, realpathSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { CoreError } from '@agnes/core'
 import { type PersistenceProvider, ProviderError } from '@agnes/extension-api'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { HostPersistence } from './storage-provider.js'
 import type { TableHandle } from './storage-sqlite.js'
 
@@ -19,7 +20,7 @@ export async function retainProcessStore(
   open: () => Promise<HostPersistence>,
 ): Promise<HostPersistence> {
   mkdirSync(dataDir, { recursive: true })
-  const directory = realpathSync(dataDir)
+  const directory = nativeRealpathSync(dataDir)
   const identity = JSON.stringify([provider.id, provider.version, provider.capabilities])
   let pending = processStores.get(directory)
   if (!pending) {

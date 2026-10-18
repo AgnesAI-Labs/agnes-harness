@@ -5,6 +5,7 @@ import type { PluginAdminApi } from '../admin/plugins/api.js'
 type Locale = 'en' | 'zh-CN'
 
 export type BusinessAgent = {
+  ref: string
   entry: PackageCatalogDescriptor
   /** Last path segment of the package id: `data-report`. */
   slug: string
@@ -18,16 +19,11 @@ export type BusinessAgent = {
 }
 export type BusinessAgentState = 'available' | 'installed' | 'starting' | 'ready' | 'attention'
 
-const FDE_PREFIX = '@agnes-fde/'
 const TINTS = 8
 
-/**
- * A business agent is a package whose metadata says so. The FDE scope stays as a fallback: a copy
- * installed before the category existed still carries its old metadata.
- */
+/** Catalogue availability comes from explicit launch declarations, independently of package names. */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  if (row.metadata?.category === 'example') return false
-  return row.metadata?.category === 'business-agent' || row.id.startsWith(FDE_PREFIX)
+  return (row.agents?.length ?? 0) > 0
 }
 
 export function samplePromptOf(row: PackageCatalogDescriptor, locale: Locale): string | undefined {
@@ -55,28 +51,46 @@ function glyphOf(name: string, slug: string): string {
 }
 
 export function businessAgentView(entry: PackageCatalogDescriptor, locale: Locale): BusinessAgent {
-  const slug = entry.id.split('/').at(-1) ?? entry.id
-  const metadata = resolvePluginMetadata(entry.metadata, locale)
-  const name = metadata?.displayName ?? slug
+  const declared = entry.agents?.length === 1 ? entry.agents[0] : undefined
+  if (!declared) throw new Error('An explicit agent selection is required')
+  const launch = declared.launch
+  const ref = declared.ref
+  const packageSlug = entry.id.split('/').at(-1) ?? entry.id
+  const bundleSlug = ref.split('#')[1] ?? ''
+  const slug = packageSlug === bundleSlug ? packageSlug : `${packageSlug}-${bundleSlug}`
+  const name = launch.title[locale] ?? launch.title.en
   return {
+    ref,
     entry,
     slug,
     name,
-    summary: metadata?.summary,
-    samplePrompt: samplePromptOf(entry, locale),
+    summary: launch.description[locale] ?? launch.description.en,
+    samplePrompt: launch.prompt?.text[locale] ?? launch.prompt?.text.en,
     glyph: glyphOf(name, slug),
-    tint: hash(entry.id) % TINTS,
+    tint: hash(ref) % TINTS,
   }
 }
 
-/** Ready means the package is enabled and its plugin is actually running. */
+/** Display the backend readiness projection; launch admission still runs on explicit start. */
 export function businessAgentState(
   installed: PackageInstalledDescriptor | undefined,
   starting = false,
 ): BusinessAgentState {
   if (starting) return 'starting'
   if (!installed) return 'available'
-  if (installed.desired === 'enabled' && installed.actual === 'running') return 'ready'
+  if (installed.primaryStatus)
+    return installed.primaryStatus.state === 'ready'
+      ? 'ready'
+      : ['blocked', 'restart-required'].includes(installed.primaryStatus.state)
+        ? 'attention'
+        : 'installed'
+  if (
+    installed.trusted &&
+    installed.desired === 'enabled' &&
+    installed.actual === 'running' &&
+    !installed.blockers.length
+  )
+    return 'ready'
   if (installed.actual === 'failed' || installed.actual === 'restart-required' || installed.blockers.length)
     return 'attention'
   return 'installed'
@@ -96,7 +110,9 @@ export async function readBusinessAgents(
     for (const row of page.items) if (isBusinessAgent(row) && !result.has(row.id)) result.set(row.id, row)
     cursor = page.nextCursor ?? undefined
   } while (cursor && !signal?.aborted && result.size < 256 && pages < 32)
-  return [...result.values()]
+  return [...result.values()].flatMap((entry) =>
+    (entry.agents ?? []).map((agent) => ({ ...entry, agents: [agent] })),
+  )
 }
 
 /** Ready agents lead; the rest keep catalog order. The new-session empty state takes the first three. */

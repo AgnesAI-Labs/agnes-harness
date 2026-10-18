@@ -7,6 +7,7 @@ import type { RequestHeaderData } from '../request/derive.js'
 import { runCoreReplacement } from '../step/reentry.js'
 import type { OpContext, SessionImpl } from '../step/session.js'
 import { estimateTokens } from './model-tokens.js'
+import { recordToolAvailability } from './turn/tool-availability.js'
 
 type Usage = Extract<InferenceEvent, { type: 'usage' }>
 type Failure = Extract<InferenceEvent, { type: 'error' }>
@@ -193,6 +194,7 @@ export class ModelExecution {
         toolNames: input.wire.tools.map((tool) => tool.name),
         ...(input.retry === false ? { retry: false as const } : {}),
       }
+      recordToolAvailability(s, input.wire)
       const send = () => {
         s.loopScope.assertAlive()
         this.signal.throwIfAborted()

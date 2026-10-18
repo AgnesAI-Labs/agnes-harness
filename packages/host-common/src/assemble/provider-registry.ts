@@ -59,6 +59,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     string,
     {
       provider: T
+      lease: symbol
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
       dispose?: () => Promise<void>
     }
@@ -90,10 +91,12 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       throw this.error('E_PROVIDER_DUPLICATE', `duplicate ${this.label}: ${key}`, 'register', provider.id)
     const record: {
       provider: T
+      lease: symbol
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
       dispose?: () => Promise<void>
     } = {
       provider,
+      lease: Symbol(key),
       entry: Object.freeze({
         kind: this.definition.kind,
         id: provider.id,
@@ -215,6 +218,11 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       'resolve',
       wanted.provider,
     )
+  }
+  /** Each registration gets an unrepeatable identity, removed synchronously on revocation. */
+  lease(selection: ProviderSelection): symbol {
+    this.resolve(selection)
+    return this.entries.get(this.key(selection))!.lease
   }
   private error(
     code: ConstructorParameters<typeof ProviderError>[0],
@@ -353,6 +361,10 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
   resolve(kind: ProviderKind<ProviderIdentity>, selection: string | ProviderSelection): ProviderIdentity {
     return this.lookup(kind, 'resolve').resolve(selection)
+  }
+  /** Host-only binding guard; never exposed through the author registration port. */
+  lease<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: ProviderSelection): symbol {
+    return this.lookup(kind, 'bind').lease(selection)
   }
   /** The author path and configuration cannot touch a kind the Host owns; Host code holds the registry itself. */
   private refuseHostKind(

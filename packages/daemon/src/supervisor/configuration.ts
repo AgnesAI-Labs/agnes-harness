@@ -52,12 +52,16 @@ export async function configurationApplication(o: {
   apply(snapshot: ConfigSnapshot): Promise<ConfigSnapshot>
 }> {
   let profile = o.profile
-  let appliedRevision = (await o.service.get()).revision
+  const initial = await o.service.get()
+  let appliedRevision = initial.executionRevision ?? initial.revision
   if (o.reloadProfile && (await o.reloadProfile()).hash !== profile.hash) appliedRevision = -1
   let pending = Promise.resolve()
   const present = (snapshot: ConfigSnapshot): ConfigSnapshot => ({
     ...snapshot,
-    effect: snapshot.revision === appliedRevision ? 'new-sessions' : 'restart-required',
+    effect:
+      (snapshot.executionRevision ?? snapshot.revision) === appliedRevision
+        ? 'new-sessions'
+        : 'restart-required',
   })
   return {
     profile: () => profile,
@@ -74,7 +78,7 @@ export async function configurationApplication(o: {
         const candidate = modelProfile(profile, next)
         await o.activate(candidate)
         profile = candidate
-        appliedRevision = snapshot.revision
+        appliedRevision = snapshot.executionRevision ?? snapshot.revision
       })
       pending = operation.catch(() => undefined)
       await pending

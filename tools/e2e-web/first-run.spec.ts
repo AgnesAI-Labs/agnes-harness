@@ -30,6 +30,8 @@ for (const locale of ['en', 'zh-CN']) {
       const quality = async (frame: string) => {
         await translated(page)
         await accessible(page, info, frame)
+        // Static presentation frames have no timers to dismiss a captured success toast.
+        await expect(page.locator('.agh-toast')).toHaveCount(0)
         if (!behaviorOnly) await screen(page, info, `${frame}-${locale}-light-1440`)
         await snapshots?.capture(page, frame)
       }
@@ -62,7 +64,16 @@ for (const locale of ['en', 'zh-CN']) {
         await connection.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
-        await expect(page.getByTestId('first-run-saved')).toHaveAttribute('role', 'status')
+        // The completed progress step replaces the retired inline saved badge.
+        await expect(guide.locator('.agnes-setup-progress li').first()).toHaveAttribute(
+          'data-complete',
+          'true',
+        )
+        expect((await client.config.get()).accounts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ providerId: 'deepseek', credentialConfigured: true }),
+          ]),
+        )
         await expect(page.locator('#config-api-key')).toHaveValue('')
         await guide.locator('.agh-disclosure > .agh-disclosure-summary').click()
         await guide
@@ -104,12 +115,12 @@ for (const locale of ['en', 'zh-CN']) {
         const saved = await client.config.get()
         expect(saved.accounts?.find((a) => a.accountId === saved.defaultAccountId)?.model).toBe(model)
         expect(JSON.stringify(saved)).not.toContain(provider.apiKey)
-        // Add another account through the two-step dialog; it must reuse the restored native region.
+        // Account creation is a settings subpage that borrows the controller's existing form.
         await settings(page, locale)
         await page.getByTestId('settings-nav-model').click()
         await page.locator('#config-add-account').click()
-        const account = page.locator('#account-dialog')
-        await expect(account.locator('.account-dialog-body')).toHaveAttribute('data-account-step', 'provider')
+        const account = page.locator('.account-dialog-body[data-page="add"]')
+        await expect(account).toHaveAttribute('data-account-step', 'provider')
         await account.locator('#config-provider-choices').locator('[data-provider="deepseek"]').click()
         await expect(account.locator('#config-account-advanced')).toHaveAttribute('data-open', 'false')
         await account.locator('#config-account-advanced > :is(summary, .agh-disclosure-summary)').click()
@@ -243,7 +254,9 @@ test('first run Demo reaches a conversation without storing an account', async (
   await page.evaluate(() => document.fonts.ready)
   const height = () => composer.evaluate((input) => input.getBoundingClientRect().height)
   const restingHeight = await height()
-  await composer.fill(Array.from({ length: 8 }, (_, row) => `Demo draft line ${row + 1}`).join('\n'))
+  const multilineDraft = Array.from({ length: 8 }, (_, row) => `Demo draft line ${row + 1}`).join('\n')
+  await composer.fill(multilineDraft)
+  await expect(composer).toHaveValue(multilineDraft)
   await expect
     .poll(height, { message: 'The composer grows to show a multiline draft' })
     .toBeGreaterThan(restingHeight)

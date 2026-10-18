@@ -13,7 +13,8 @@
     "./windows-pipe": "./src/windows-pipe.ts",
     "./process-broker": "./runtime/process-broker.mjs",
     "./native": "./dist/native/agnes-system.node",
-    "./deployment-network": "./src/deployment-network.ts"
+    "./deployment-network": "./src/deployment-network.ts",
+    "./realpath": "./src/realpath.ts"
   },
   "scripts": {
     "build:native": "node scripts/build-native.mjs",

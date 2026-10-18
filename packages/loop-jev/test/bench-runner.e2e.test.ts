@@ -363,12 +363,34 @@ describe('bench runner', () => {
     const suggestions = chat.bodies.filter((b) => b.includes('follow-up question')).length
     // The host does make such calls here, so the separation above is exercised, not vacuous.
     expect(suggestions).toBeGreaterThan(0)
-    expect(report.otherSideCalls.default.count + report.otherSideCalls.jev.count).toBe(suggestions)
+    // Shutdown can settle an auxiliary intent before the provider receives it. Partition every
+    // durable side-call row exactly; received HTTP requests cannot count those interrupted intents.
+    expect(report.otherSideCalls.default.count + report.otherSideCalls.jev.count + jev.metrics.sideCall).toBe(
+      [...sideCalls('default'), ...sideCalls('jev')].length,
+    )
     // Other side calls never reach the cost the gates compare.
+    const configured = await createConfigurationService({ home, profile: 'local-dev' }).profileInput()
+    const chatPrice = configured.provider?.routes
+      ?.find((route) => route.route === 'deepseek')
+      ?.models?.find((model) => model.id === 'deepseek-flash')?.cost
+    if (!chatPrice) throw new Error('Saved chat model has no catalogue price')
     const ledgerCost = (lane: string) =>
       sideCalls(lane)
         .filter((e) => e.data.route !== 'account-jev-side')
-        .reduce((sum, e) => sum + (e.data.billing?.usdMicros ?? 0), 0)
+        .reduce((sum, e) => {
+          expect(e.data).toMatchObject({ route: 'deepseek', model: 'deepseek-flash' })
+          // Shutdown may interrupt a hint before usage arrives. The report prices its durable
+          // token estimate with the saved model catalogue instead of treating missing billing as free.
+          const tokens = e.data.tokens
+          return (
+            sum +
+            (e.data.billing?.usdMicros ??
+              tokens.input * chatPrice.input +
+                tokens.output * chatPrice.output +
+                tokens.cacheRead * chatPrice.cacheRead +
+                tokens.cacheWrite * chatPrice.cacheWrite)
+          )
+        }, 0)
     expect(report.otherSideCalls.jev.usdMicros).toBe(ledgerCost('jev'))
     const jevTurnCost = records.find((x) => x.lane === 'jev').metrics.usdMicros
     expect(report.totals.byLane.jev.usdMicros).toBe(jevTurnCost)

@@ -1,10 +1,11 @@
-import { parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
+import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
 import { UsageError } from './errors.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
 const COMMANDS = new Set<string>([
+  'app',
   'home',
   'app-server',
   'run',
@@ -43,6 +44,7 @@ const COMMANDS = new Set<string>([
 
 /** These hand their tail on to another program or another grammar; we do not read it. */
 const FORWARDED = new Set<string>([
+  'app',
   'home',
   'app-server',
   'run',
@@ -165,6 +167,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       p.positional.push(...argv.slice(i + 1))
       break
     }
+    if (a === '--agent') {
+      try {
+        p.agent = parseAgentRef(argv[++i])
+      } catch {
+        throw new UsageError('--agent expects package#agent')
+      }
+      continue
+    }
     if (a === '--loop') {
       const value = argv[++i]
       try {
@@ -216,6 +226,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // Both printing modes select the one-shot form. Only acp does not, because it is a third form
   // rather than a way of printing, and resolveMode reads it as such.
   if (p.mode === 'json' || p.mode === 'text') p.print = true
+  if (p.agent && (p.loop || p.preset))
+    throw new UsageError('--agent cannot be combined with --loop or --preset')
+  if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume' || p.key !== undefined))
+    throw new UsageError('--agent selects a new session')
   if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))
     throw new UsageError('--loop selects a new session; resumed sessions keep their pinned loop')
   if (p.newSession && (p.continue || p.resume !== undefined || p.command === 'resume'))
@@ -266,47 +280,4 @@ export function resolveMode(
   return 'tui'
 }
 
-export function usage(): string {
-  return [
-    'agh [prompt] [--profile <p>] [--preset <n>] [--cwd <dir>] [--new | --continue | --resume <id>]',
-    '      [--connect <t>] [--model <slot>=<route>/<model>] [--loop <id>@<version>]',
-    'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
-    'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
-    'agh runtime reconcile <resource> --extension <row-id> [--operation <id>] [--answer allow|reject]',
-    'agh batch start|status|follow|results|resume|cancel|list|export ... [--help]',
-    'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
-    'agh resume <id> [-p [prompt]]',
-    'agh tools [--session <key>] [--json]',
-    'agh diagnostics export [--session <id>] --out <file>',
-    'agh sessions [list [--cwd <dir>] | show <id> | migrate <key> [--profile <p>] [--json]]',
-    'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
-    'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',
-    'agh doctor [platform|network|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime] [--json]',
-    'agh doctor provider --probe [--json]  # explicit minimal-inference diagnostic',
-    'agh doctor computer-use [--json] [--include <check>] [--skip <check>]',
-    'agh computer-use status [--json] | install [--upgrade] [--json] | restart [--json]',
-    'agh computer-use rescue status|install|repair [--profile <p>] [--cwd <dir>] [--data-dir <dir>] [--json]',
-    'agh computer-use operation [operationId] [--json] | cancel <operationId> [--json]',
-    'agh computer-use permissions status|grant [--json]',
-    'agh doctor subagents [--json] [--repair]',
-    'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
-    'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> [<integrity> <capabilityHash>] [--yes]',
-    '              enable|disable|rollback|remove <id> | operation|cancel <operationId>',
-    'agh plugin test [folder] [-- <test-runner args>]  Run author tests in an isolated home',
-    'agh plugins add <url|path> [--yes] | pack <folder> [output.tgz] | trust|enable <id> [--yes]',
-    'agh install <src> [--profile <p>] [--yes]',
-    'agh dev <plugin-folder> [--profile <p>]   agh plugins reload [id] [--profile <p>]',
-    'agh plugins candidates list | show|approve|reject <id> [--candidate-hash <sha256>] [--review-hash <sha256>]',
-    'agh plugins provenance <id> [--profile <p>] [--json]',
-    'agh plugins publication-status [--profile <p>] [--json]',
-    'agh packages pins inspect | release <pinId...> [--profile <p>]',
-    'agh resources list|get|operation|cancel|enable|disable ...   agh skills list|refresh|trust ...',
-    'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools ...',
-    'agh consent DISABLED|LOCAL|ANON|FULL',
-    'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',
-    'agh config dump [--profile <name>] [--preset <name>]  Explain the desired plugin composition',
-    'agh web [--port <n>] [--home <dir>] [--profile <p>] [--cwd <dir>]   agh start (same stack)',
-    'agh daemon start|stop|status [...]  agh ext <...>  agh mcp serve [...]  agh serve model-api [...]',
-    'agh --version | --help',
-  ].join('\n')
-}
+export { usage } from './usage.js'

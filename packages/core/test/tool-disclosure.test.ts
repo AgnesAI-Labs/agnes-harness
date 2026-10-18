@@ -2,6 +2,7 @@ import { canonicalJson } from '@agnes/core-common/request/hash'
 import { type LoopFactory, loopCheckpointCodec, type ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { toolAvailability } from '../src/execution/turn/tool-availability.js'
 import { createLoopContext } from '../src/loop/ports.js'
 import { AUTO_DEFER_MAX_TOOLS, ToolRegistry } from '../src/registry/tools.js'
 import { deferredToolsSection } from '../src/request/deferred-tools.js'
@@ -66,7 +67,11 @@ it.each(['allowed-once', 'rejected'] as const)(
       JSON.parse(JSON.stringify(checked.parameters)),
     )
     const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
-    expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+    expect(results[0]?.data).toMatchObject({
+      code: 'TOOL_NOT_DISCLOSED',
+      isError: true,
+      content: [{ text: expect.stringContaining('request_selection') }],
+    })
     expect(results[2]?.data).toMatchObject({ code: 'TOOL_ARGS_INVALID', isError: true })
     expect(executed).toEqual(verdict === 'allowed-once' ? [{ amount: 1 }] : [])
     expect(approvals).toHaveLength(1)
@@ -349,6 +354,7 @@ describe('the tool catalog of a loop that names its tools', () => {
     const base = readTool() as ToolDef
     const add = (tool: ToolDef) => registry.add(tool, { source: 'test', trust: 'builtin' })
     add({ ...base, name: 'tool_search' })
+    add({ ...base, name: 'run_code' })
     add({
       ...base,
       name: 'tool_describe',
@@ -393,6 +399,47 @@ describe('the tool catalog of a loop that names its tools', () => {
     await t.ctx.model.complete(request, signal())
     return request
   }
+
+  it('projects the exact custom Loop selection, preserves deferred status within a request and refreshes after loading', async () => {
+    await withLoop(async (t) => {
+      expect(toolAvailability(t.session, 'remote_3')).toMatchObject({
+        status: 'unavailable',
+        reason: 'unknown',
+      })
+      await send(t, ['tool_search'])
+      expect(toolAvailability(t.session, 'tool_search').status).toBe('offered')
+      expect(toolAvailability(t.session, 'run_code')).toMatchObject({
+        status: 'unavailable',
+        reason: 'request_selection',
+      })
+      expect(toolAvailability(t.session, 'tool_describe')).toMatchObject({
+        status: 'unavailable',
+        reason: 'request_selection',
+      })
+      expect(toolAvailability(t.session, 'remote_3')).toMatchObject({
+        status: 'unavailable',
+        reason: 'request_selection',
+      })
+      await send(t, ['tool_search', 'tool_describe'])
+      expect(toolAvailability(t.session, 'remote_3').status).toBe('deferred')
+      await disclose(t, 'remote_3')
+      expect(toolAvailability(t.session, 'remote_3').status).toBe('deferred')
+      await send(t)
+      expect(toolAvailability(t.session, 'remote_3').status).toBe('offered')
+      expect(toolAvailability(t.session, 'run_code')).toMatchObject({ status: 'unavailable', reason: 'mode' })
+      expect(toolAvailability(t.session, 'absent')).toMatchObject({
+        status: 'unavailable',
+        reason: 'catalog',
+      })
+      const op = t.session.op()
+      if (!op) throw new Error('missing operation')
+      await t.session.rehydrateTurn(op)
+      expect(toolAvailability(t.session, 'remote_3')).toMatchObject({
+        status: 'unavailable',
+        reason: 'unknown',
+      })
+    })
+  })
 
   /** The loop calls the discovery tool, which loads a deferred schema for the rest of the turn. */
   async function disclose(t: Harness, name: string) {

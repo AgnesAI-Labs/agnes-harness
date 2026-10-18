@@ -11,6 +11,7 @@ export async function toolsCommand(boot: Booted, args: ParsedArgs, cwd: string):
         sessionKey: `agnes:local:${boot.profileName}:cli:tools:${randomUUID()}`,
         ...(args.preset ? { preset: args.preset } : {}),
         ...(args.loop ? { loop: args.loop } : {}),
+        ...(args.agent ? { agent: args.agent } : {}),
       })
   const catalog = await session.tools()
   if (args.json) return JSON.stringify(catalog, null, 2)

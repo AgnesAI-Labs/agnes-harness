@@ -28,7 +28,7 @@
         ]
       }
     ],
-    "kinds": [
+    "provides": [
       "model-adapter"
     ]
   },

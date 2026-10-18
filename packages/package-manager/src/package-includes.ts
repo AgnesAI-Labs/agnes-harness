@@ -1,5 +1,9 @@
 import type { PackageContributionSummary, PackagePresentation } from '@agnes/protocol'
-import { AGNES_PLUGIN_KINDS, type AgnesPluginKind, type AgnesPluginManifestEntry } from './plugin-manifest.js'
+import {
+  AGNES_PLUGIN_PROVIDES,
+  type AgnesPluginManifestEntry,
+  type AgnesPluginProvide,
+} from './plugin-manifest.js'
 
 export type PackageIncludes = NonNullable<PackagePresentation['includes']>
 
@@ -7,11 +11,11 @@ export type PackageIncludes = NonNullable<PackagePresentation['includes']>
  * What a package contains, read from package data alone.
  *
  * Tools, skills and MCP connections are usually registered in code, which inspection never runs.
- * A count therefore appears only where the data states it; the declared `agnes.kinds` still names
+ * A count therefore appears only where the data states it; the declared `agnes.provides` still names
  * the kind, so a client shows the kind without a number rather than a guessed one.
  */
 export function summarizePackageIncludes(input: {
-  kinds?: readonly AgnesPluginKind[] | undefined
+  provides?: readonly AgnesPluginProvide[] | undefined
   plugins: readonly AgnesPluginManifestEntry[]
   bundles?: unknown
   contributions?: readonly PackageContributionSummary[] | undefined
@@ -28,7 +32,7 @@ export function summarizePackageIncludes(input: {
       }),
     ).size,
     skills: count('skill'),
-    // No package data names an MCP connection yet; the kind comes from agnes.kinds or resources.
+    // No package data names an MCP connection yet; the kind comes from agnes.provides or resources.
     mcp: 0,
     bundles:
       input.bundles && typeof input.bundles === 'object' && !Array.isArray(input.bundles)
@@ -36,7 +40,8 @@ export function summarizePackageIncludes(input: {
         : 0,
     ui: count('client') + count('surface'),
   }
-  const proven: Record<AgnesPluginKind, boolean> = {
+  const proven: Record<AgnesPluginProvide, boolean> = {
+    service: false,
     tool: found.tools > 0,
     loop: false,
     'model-adapter': false,
@@ -45,10 +50,10 @@ export function summarizePackageIncludes(input: {
     ui: found.ui > 0,
     bundle: found.bundles > 0,
   }
-  const kinds = AGNES_PLUGIN_KINDS.filter((kind) => input.kinds?.includes(kind) || proven[kind])
-  if (!kinds.length) return undefined
+  const provides = AGNES_PLUGIN_PROVIDES.filter((kind) => input.provides?.includes(kind) || proven[kind])
+  if (!provides.length) return undefined
   const counts: PackageIncludes['counts'] = {}
   for (const [key, value] of Object.entries(found) as [keyof typeof found, number][])
     if (value > 0) counts[key] = Math.min(value, 4096)
-  return { kinds: [...kinds], counts }
+  return { provides: [...provides], counts }
 }

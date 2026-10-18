@@ -44,7 +44,6 @@
           "displayName": "Tool result panel",
           "summary": "Demonstrates an echo tool with an interactive result panel.",
           "description": "Demonstrates an echo tool with an interactive result panel.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "工具结果面板",
@@ -61,15 +60,10 @@
         "path": "./client/agnes.client.json"
       }
     ],
-    "kinds": [
-      "tool",
-      "ui"
-    ],
     "metadata": {
       "displayName": "Tool result panel",
       "summary": "Demonstrates an echo tool with an interactive result panel.",
       "description": "Demonstrates an echo tool with an interactive result panel.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "工具结果面板",
@@ -77,7 +71,11 @@
           "description": "演示一个回声工具及其交互结果面板。"
         }
       }
-    }
+    },
+    "provides": [
+      "tool",
+      "ui"
+    ]
   },
   "peerDependencies": {
     "react": "18.3.1"

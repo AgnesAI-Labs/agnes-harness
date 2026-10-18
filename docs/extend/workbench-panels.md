@@ -5,8 +5,7 @@ English | [简体中文](workbench-panels.zh-CN.md)
 A workbench panel is a presentation contribution. Import the shared `workbenchPanels` singleton from `@agnes/web-client`; do not bundle another copy. Register translations with the host locale service before rendering.
 
 ```tsx
-import { workbenchPanels } from '@agnes/web-client'
-const dispose = workbenchPanels.register({
+const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 40, edge: 'right',
   titleKey: 'example.notes.title', component: NotesPanel,
 })

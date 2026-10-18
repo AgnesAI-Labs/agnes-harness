@@ -16,6 +16,14 @@ import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
+let mountRelease: () => Promise<void>
+async function bootApp(): Promise<void> {
+  await import('../src/app.js')
+  if (!releaseRuntime) throw new Error('Client modules did not start')
+  await mountRelease()
+}
+
 const sdk = vi.hoisted(() => ({
   createClient: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
@@ -36,6 +44,8 @@ const traceBridge = vi.hoisted(() => ({
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/client-modules/boot.js')>()
+  // The mock survives resetModules; retain matching service classes and React slot contexts.
+  const { mountReleasePresentations } = await import('./release-presentations-fixture.js')
   return {
     ...actual,
     startClientModules: async (options: Parameters<typeof actual.startClientModules>[0]) => {
@@ -43,6 +53,11 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
       traceBridge.transcriptOptions = options.transcript
       traceBridge.claim = options.claim
       const runtime = await actual.startClientModules(options)
+      releaseRuntime = runtime
+      mountRelease = () => mountReleasePresentations(runtime)
+      const dispose = runtime.dispose.bind(runtime)
+      let disposing: Promise<void> | undefined
+      runtime.dispose = () => (disposing ??= dispose())
       if (runtime.trace) {
         const render = runtime.trace.render.bind(runtime.trace)
         runtime.trace.render = (nodes, turns, meta) => {
@@ -370,6 +385,8 @@ afterEach(async () => {
   await act(async () => {
     window.dispatchEvent(new Event('pagehide'))
   })
+  await releaseRuntime?.dispose()
+  releaseRuntime = undefined
   vi.resetModules()
   vi.clearAllMocks()
   binding.loadWebSession.mockReset()
@@ -439,7 +456,7 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
       session: session(id, async () => idleTimeline(id)),
       offPermission: vi.fn(),
     }))
-    await import('../src/app.js')
+    await bootApp()
     // Diagnostics run at the end of startup, after the automatic navigation decision.
     await vi.waitFor(() =>
       expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/admin/api/doctor')).toBe(true),
@@ -645,7 +662,7 @@ describe('web permission synchronization', () => {
     }
     sdk.createClient.mockReturnValue(client)
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     await vi.waitFor(() =>
       expect((document.getElementById('composer-permission') as HTMLButtonElement).disabled).toBe(false),
     )
@@ -680,7 +697,7 @@ describe('web permission synchronization', () => {
         session: { list: vi.fn(() => pending.promise), load: vi.fn() },
       }
       sdk.createClient.mockReturnValue(client)
-      await import('../src/app.js')
+      await bootApp()
       await vi.waitFor(() =>
         expect(sdk.createClient.mock.results.at(-1)?.value.session.groups).toHaveBeenCalled(),
       )
@@ -746,7 +763,7 @@ describe('web permission synchronization', () => {
       }
       sdk.createClient.mockReturnValue(client)
       binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-      await import('../src/app.js')
+      await bootApp()
       await vi.waitFor(() => expect(document.querySelector('[data-session="old"]')).not.toBeNull())
       expect(client.workspace.list).toHaveBeenCalled()
       expect(binding.loadWebSession).not.toHaveBeenCalled()
@@ -1036,7 +1053,7 @@ describe('web session selection', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     expect(traceBridge.transcriptOptions).toMatchObject({ onFork: expect.any(Function) })
     expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
@@ -1135,7 +1152,7 @@ describe('web session selection', () => {
         session: selected,
         offPermission: vi.fn(),
       }))
-      await import('../src/app.js')
+      await bootApp()
       const model = document.getElementById('model') as HTMLButtonElement
       const permission = document.getElementById('composer-permission') as HTMLButtonElement
       await vi.waitFor(() => {
@@ -1339,7 +1356,7 @@ describe('web session selection', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     const createInBeta = await vi.waitFor(() => {
       const button = document.querySelector<HTMLButtonElement>(
         '[data-workspace-new-session="/workspace/beta"]',
@@ -1385,7 +1402,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     const control = (id: string) => document.getElementById(id) as HTMLButtonElement
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
     const snapshot = {
@@ -1450,7 +1467,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     const control = (id: string) => document.getElementById(id) as HTMLButtonElement
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
 
@@ -1495,7 +1512,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     await vi.waitFor(() =>
       expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
     )
@@ -1568,7 +1585,7 @@ describe('web session selection', () => {
         },
       })
       binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-      await import('../src/app.js')
+      await bootApp()
       const modelButton = document.getElementById('model') as HTMLButtonElement
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       const beforeSave = deferred<Awaited<ReturnType<typeof apis>>>()
@@ -1638,7 +1655,7 @@ describe('web session selection', () => {
       binding.loadWebSession
         .mockRejectedValueOnce(error)
         .mockResolvedValue({ session: old, offPermission: vi.fn() })
-      await import('../src/app.js')
+      await bootApp()
       const notice = document.getElementById('notice') as HTMLElement
       await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
       if (kind === 'legacy-ledger') {
@@ -1709,7 +1726,7 @@ describe('web session selection', () => {
       binding.loadWebSession
         .mockRejectedValueOnce(error)
         .mockResolvedValue({ session: old, offPermission: vi.fn() })
-      await import('../src/app.js')
+      await bootApp()
       const notice = document.getElementById('notice') as HTMLElement
       await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
       expect(notice.textContent).toContain(
@@ -1819,7 +1836,7 @@ describe('web session selection', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     const newButton = document.getElementById('new') as HTMLButtonElement
     const prompt = document.getElementById('prompt') as HTMLTextAreaElement
     const send = document.getElementById('send') as HTMLButtonElement
@@ -1966,7 +1983,7 @@ describe('web session selection', () => {
         offPermission: vi.fn(),
       }))
 
-      await import('../src/app.js')
+      await bootApp()
       if (terminalLink) {
         await vi.waitFor(() =>
           expect(document.querySelector('.agh-toast')?.textContent).toContain('打开会话后即可使用终端'),
@@ -2052,7 +2069,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
     })
 
-    await import('../src/app.js')
+    await bootApp()
     const dialog = document.getElementById('new-session') as HTMLDialogElement
     await vi.waitFor(() => expect(dialog.open).toBe(true))
     const picker = document.getElementById('workspace-pick') as HTMLButtonElement
@@ -2110,7 +2127,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
     })
 
-    await import('../src/app.js')
+    await bootApp()
     await vi.waitFor(() =>
       expect(document.getElementById('composer-workspace')?.textContent).toContain('linked'),
     )
@@ -2148,7 +2165,7 @@ describe('web session selection', () => {
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
     })
 
-    await import('../src/app.js')
+    await bootApp()
     const picker = await vi.waitFor(() => {
       const button = document.getElementById('workspace-pick') as HTMLButtonElement
       expect(button).not.toBeNull()
@@ -2210,7 +2227,7 @@ describe('web session selection', () => {
         session: selected,
         offPermission: vi.fn(),
       }))
-      await import('../src/app.js')
+      await bootApp()
       const dialog = document.getElementById('new-session') as HTMLDialogElement
       await vi.waitFor(() => expect(dialog.open).toBe(true))
       const path = document.getElementById('new-session-cwd') as HTMLInputElement
@@ -2308,7 +2325,7 @@ describe('web session selection', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     const dialog = document.getElementById('new-session') as HTMLDialogElement
     await vi.waitFor(() => expect(dialog.open).toBe(true))
     const path = document.getElementById('new-session-cwd') as HTMLInputElement
@@ -2414,7 +2431,7 @@ describe('web session selection', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     const send = document.getElementById('send') as HTMLButtonElement
     const cancel = document.getElementById('cancel') as HTMLButtonElement
     const hint = document.getElementById('composer-hint') as HTMLParagraphElement
@@ -2627,7 +2644,7 @@ describe('queued input deletion', () => {
         session: selected,
         offPermission: vi.fn(),
       }))
-      await import('../src/app.js')
+      await bootApp()
       await vi.waitFor(() =>
         expect(document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.disabled).toBe(false),
       )
@@ -2689,7 +2706,7 @@ describe('composer draft persistence', () => {
       session: selected,
       offPermission: vi.fn(),
     }))
-    await import('../src/app.js')
+    await bootApp()
     const composer = document.getElementById('prompt') as HTMLTextAreaElement
     const draftKey = 'agnes-web-composer-draft'
     const type = (text: string) => {
@@ -2841,7 +2858,7 @@ describe('image composer submissions', () => {
       session: selected,
       offPermission: vi.fn(),
     }))
-    await import('../src/app.js')
+    await bootApp()
     const send = document.getElementById('send') as HTMLButtonElement
     await vi.waitFor(() =>
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
@@ -3062,7 +3079,7 @@ describe('web model confirmation', () => {
       offPermission: vi.fn(),
     }))
 
-    await import('../src/app.js')
+    await bootApp()
     const model = document.getElementById('model') as HTMLButtonElement
     await vi.waitFor(() => expect(model.disabled).toBe(false))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
@@ -3152,7 +3169,7 @@ describe('session action review regressions', () => {
       },
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('改名前'))
     return { old, rename, on }
   }
@@ -3239,7 +3256,7 @@ describe('sidebar recency', () => {
       session: { list, load: vi.fn(async () => old) },
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     const order = () =>
       [...document.querySelectorAll<HTMLElement>('#sessions [data-session]')].map((b) => b.dataset.session)
     await vi.waitFor(() => expect(document.getElementById('task-title')?.textContent).toBe('旧任务'))
@@ -3282,7 +3299,7 @@ describe('incremental opening', () => {
       ...clientOverrides,
     })
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-    await import('../src/app.js')
+    await bootApp()
     const emit = (event: string, payload: unknown) =>
       on.mock.calls.find(([name]) => name === event)?.[1](payload)
     return { old, list, emit }
@@ -3596,7 +3613,7 @@ it('renders Computer Use in the application and retires its late operation reply
     workspace: { list: vi.fn(async () => ({ items: [] })) },
     session: { list: vi.fn(async () => ({ items: [] })) },
   })
-  await import('../src/app.js')
+  await bootApp()
   await vi.waitFor(() =>
     expect(document.querySelector('[data-testid=computer-use-capability]')).not.toBeNull(),
   )
@@ -3705,7 +3722,7 @@ it.skipIf(!process.env.AGH_WEB_PERFORMANCE_OUTPUT).each([1, 2, 3])(
     const old = session('old', async () => idleTimeline('old'))
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
     try {
-      await import('../src/app.js')
+      await bootApp()
       await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
       const idleStart = requests
       await vi.advanceTimersByTimeAsync(60_000)
@@ -3807,7 +3824,7 @@ describe('session that cannot continue on this build', () => {
         session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })), view },
       })
       binding.loadWebSession.mockRejectedValue(error)
-      await import('../src/app.js')
+      await bootApp()
       const banner = await vi.waitFor(() => {
         const found = document.querySelector<HTMLElement>('[data-testid="session-read-only"]')
         expect(found).toBeTruthy()
@@ -3849,7 +3866,7 @@ describe('session that cannot continue on this build', () => {
       },
     })
     binding.loadWebSession.mockRejectedValue(error)
-    await import('../src/app.js')
+    await bootApp()
     const notice = document.getElementById('notice') as HTMLElement
     await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
     expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()

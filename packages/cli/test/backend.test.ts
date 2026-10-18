@@ -8,9 +8,11 @@ import * as daemon from '@agnes/daemon'
 import * as host from '@agnes/host'
 import type { Client } from '@agnes/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as sources from '../../package-manager/src/sources.js'
 import type { LaunchResources } from '../launch/resources.js'
 import { parseArgs } from '../src/args.js'
-import { ensureLocalBackend, type SpawnDaemonInput } from '../src/boot/backend.js'
+import { ensureLocalBackend, resolveLocalControlScope, type SpawnDaemonInput } from '../src/boot/backend.js'
+import * as connection from '../src/boot/connection-scope.js'
 import { bootDefault } from '../src/boot/default.js'
 import { STARTUP_DIAGNOSTIC_ENV } from '../src/boot/startup-diagnostic.js'
 import { BootError } from '../src/errors.js'
@@ -34,6 +36,11 @@ vi.mock('@agnes/daemon', async (importOriginal) => {
     resolveDaemonScope: vi.fn(),
     stopDaemon: vi.fn(),
   }
+})
+
+vi.mock('../src/boot/connection-scope.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/boot/connection-scope.js')>()
+  return { ...actual, connectionScope: vi.fn(), validateConnectionSocket: vi.fn() }
 })
 
 vi.mock('@agnes/host', async (importOriginal) => {
@@ -109,13 +116,13 @@ function fakeChild(pid = 123): FakeChild {
 
 function fakeClient(
   overrides: Partial<{
-    initialize: () => Promise<void>
+    initialize: () => Promise<unknown>
     configGet: () => Promise<unknown>
     apis: () => Promise<unknown>
   }> = {},
 ): Client {
   return {
-    initialize: overrides.initialize ?? (async () => undefined),
+    initialize: overrides.initialize ?? (async () => ({ agnesVersion: '0.0.0-test' })),
     config: { get: overrides.configGet ?? (async () => ({ profile: scope.profile })) },
     apis: overrides.apis ?? (async () => ({ profile: { name: scope.profile } })),
     close: vi.fn(async () => undefined),
@@ -124,6 +131,8 @@ function fakeClient(
 
 function setupMocks(): void {
   vi.clearAllMocks()
+  vi.mocked(connection.connectionScope).mockResolvedValue(scope)
+  vi.mocked(connection.validateConnectionSocket).mockResolvedValue(undefined)
   vi.mocked(host.defaultProcessIdentity).mockImplementation(async (pid) => ({
     state: 'alive',
     startId: `start-${pid}`,
@@ -155,6 +164,94 @@ beforeEach(() => {
 })
 
 describe('ensureLocalBackend', () => {
+  it.each([true, false])('resolves control scope without starting a daemon (ready=%s)', async (ready) => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(ready ? descriptor() : null)
+    await expect(resolveLocalControlScope()).resolves.toEqual(scope)
+    expect(daemon.resolveDaemonScope).toHaveBeenCalledTimes(ready ? 0 : 1)
+    expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
+  })
+  it.each([['sessions', '--json'], ['config'], ['tools'], ['mcp', 'status', 'example'], []])(
+    'attaches %j without full preparation and performs the authenticated readiness proof',
+    async (...argv) => {
+      const root = mkdtempSync(join(tmpdir(), 'agh-cli-light-'))
+      const actualDaemon = await vi.importActual<typeof import('@agnes/daemon')>('@agnes/daemon')
+      const actualConnection = await vi.importActual<typeof import('../src/boot/connection-scope.js')>(
+        '../src/boot/connection-scope.js',
+      )
+      vi.mocked(daemon.resolveDaemonScope).mockImplementation(actualDaemon.resolveDaemonScope)
+      vi.mocked(connection.connectionScope).mockImplementation(actualConnection.connectionScope)
+      const hash = vi.spyOn(sources, 'hashDirectory')
+      const prepare = vi.spyOn(host, 'resolveProfile')
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      const initialize = vi.fn(async () => ({ agnesVersion: '0.0.0-test' }))
+      const configGet = vi.fn(async () => ({}))
+      const apis = vi.fn(async () => ({ profile: { name: scope.profile } }))
+      const client = fakeClient({ initialize, configGet, apis })
+      const booted = await bootDefault(parseArgs(argv), {
+        home: root,
+        cwd: root,
+        env: {},
+        agnesVersion: '0.0.0-test',
+        log() {},
+        createClientImpl: () => client,
+      })
+      expect(
+        vi.mocked(daemon.resolveDaemonScope).mock.calls.every(([options]) => options?.dataDir !== undefined),
+      ).toBe(true)
+      expect(hash).not.toHaveBeenCalled()
+      expect(prepare).not.toHaveBeenCalled()
+      expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
+      expect(connection.validateConnectionSocket).toHaveBeenCalledWith(descriptor().socketPath)
+      expect(initialize).toHaveBeenCalled()
+      expect(configGet).toHaveBeenCalled()
+      expect(apis).toHaveBeenCalled()
+      await booted.close()
+      rmSync(root, { recursive: true, force: true })
+    },
+  )
+
+  it.each(['absent', 'unhealthy', 'incompatible'] as const)(
+    'runs full preparation for an %s daemon',
+    async (state) => {
+      if (state !== 'absent') vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      const initialize =
+        state === 'unhealthy'
+          ? async () => {
+              throw new Error('unhealthy endpoint')
+            }
+          : async () => ({ agnesVersion: 'older' })
+      const spawnDaemon = vi.fn(() => {
+        vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+        return fakeChild()
+      })
+      const result = ensureLocalBackend({
+        preparation: 'connect-first',
+        agnesVersion: '0.0.0-test',
+        resources: TEST_RESOURCES,
+        createClientImpl: () => (state === 'absent' ? fakeClient() : fakeClient({ initialize })),
+        spawnDaemon,
+      })
+      if (state === 'absent') await expect(result).resolves.toBeDefined()
+      else
+        await expect(result).rejects.toThrow(
+          state === 'incompatible' ? /version.*stop\/restart/ : /unhealthy/,
+        )
+      expect(daemon.resolveDaemonScope).toHaveBeenCalled()
+      expect(daemon.stopDaemon).not.toHaveBeenCalled()
+      expect(spawnDaemon).toHaveBeenCalledTimes(state === 'absent' ? 1 : 0)
+    },
+  )
+
+  it('refuses unsafe sockets before initializing or sending configuration requests', async () => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+    vi.mocked(connection.validateConnectionSocket).mockRejectedValue(new BootError('unsafe socket'))
+    const createClientImpl = vi.fn(() => fakeClient())
+    await expect(ensureLocalBackend({ preparation: 'connect-first', createClientImpl })).rejects.toThrow(
+      'unsafe socket',
+    )
+    expect(createClientImpl).not.toHaveBeenCalled()
+  })
+
   it.skipIf(process.platform === 'win32')(
     'reports unsafe short directory before spawning, but still reuses a live discovery',
     async () => {

@@ -1,17 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
-import { withLock } from '@agnes/package-manager'
+import { PackageError, withLock } from '@agnes/package-manager'
 import type {
+  AgentPlan,
   ClientModuleRosterRow,
-  ExampleLaunchDeclaration,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackagePreview,
 } from '@agnes/protocol'
 import { jcs } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
+import { readReceiptDates, saveReceiptJournal } from './receipt-journal.js'
+import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Owner = { version: string; principal: string; profile: string; row: ClientModuleRosterRow }
 type Review = {
@@ -21,12 +22,11 @@ type Review = {
   entry: PackageCatalogDescriptor
   preview: PackagePreview
   removal?: boolean
-  launch?: ExampleLaunchDeclaration
+  launch?: AgentPlan
 }
-type Operation = {
+type Operation = RetainedOperation & {
   owner: string
   digest: string
-  state: 'running' | 'completed' | 'failed' | 'unknown'
   code?: string
   sessionId?: string
   review: Review
@@ -44,10 +44,8 @@ export interface ExampleBackend {
   inspect(entry: PackageCatalogDescriptor, command: string): Promise<PackagePreview>
   enable(review: Review, command: string, check: () => Promise<void>): Promise<void>
   /** Must select this exact reviewed bundle/preset, with no model or permission fallback. */
-  open(launch: ExampleLaunchDeclaration, sessionKey: string): Promise<string>
-  /** Must use the durable session submit journal and the supplied command ID. */
-  prompt(sessionId: string, prompt: string, commandId: string): Promise<void>
-  validateLaunch(example: PackageInstalledDescriptor, launch: ExampleLaunchDeclaration): Promise<void>
+  open(plan: AgentPlan, sessionKey: string): Promise<string>
+  resolveAgent(ref: string): Promise<AgentPlan>
 }
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 function deny(code = 'CAPABILITY_DENIED'): never {
@@ -78,15 +76,10 @@ export function createExamplePackages(options: {
     if (statSync(file).size > 16 * 1024 * 1024) return deny('E_PACKAGE_INTEGRITY')
     const state = JSON.parse(readFileSync(file, 'utf8')) as State
     if (state.version !== 1 || !state.reviews || !state.operations) return deny('E_PACKAGE_INTEGRITY')
+    readReceiptDates(file, state)
     return state
   }
-  async function save(state: State) {
-    const temporary = `${file}.${randomUUID()}.tmp`
-    const body = JSON.stringify(state)
-    if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
-    writeFileSync(temporary, body, { mode: 0o600, flush: true })
-    await renameWriteThrough(temporary, file)
-  }
+  const save = (state: State) => saveReceiptJournal(file, state)
   async function owner(rowId: string): Promise<Owner> {
     const value = await backend.owner(rowId)
     if (
@@ -100,10 +93,7 @@ export function createExamplePackages(options: {
   }
   async function entries(who: Owner) {
     return (await backend.catalog()).filter(
-      (entry) =>
-        entry.compatibility === 'supported' &&
-        entry.metadata?.category === 'example' &&
-        entry.metadata.exampleOf === who.row.packageId,
+      (entry) => entry.compatibility === 'supported' && entry.metadata?.exampleOf === who.row.packageId,
     )
   }
   async function current(review: Review, who: Owner, running = false) {
@@ -119,7 +109,7 @@ export function createExamplePackages(options: {
     if (
       !entry ||
       entry.integrity !== review.entry.integrity ||
-      digest(entry.metadata) !== digest(review.entry.metadata)
+      digest([entry.metadata, entry.agents]) !== digest([review.entry.metadata, review.entry.agents])
     )
       deny('E_PACKAGE_PREVIEW_STALE')
     const installed = (await backend.installed()).find((item) => item.id === entry.id)
@@ -129,6 +119,8 @@ export function createExamplePackages(options: {
         installed.capabilityHash !== review.preview.capabilityHash ||
         installed.blockers.length)
     )
+      deny('E_PACKAGE_PREVIEW_STALE')
+    if (review.launch && (await backend.resolveAgent(review.launch.ref)).digest !== review.launch.digest)
       deny('E_PACKAGE_PREVIEW_STALE')
     return installed
   }
@@ -156,6 +148,28 @@ export function createExamplePackages(options: {
       // Receipts are atomic files and can be read while a long activation is still running.
       if (action === 'read') {
         const who = await owner(rowId)
+        // Give up acquiring the sweep lock promptly when an activation owns it.
+        const signal = AbortSignal.timeout(1)
+        let entered = false
+        try {
+          await withLock(
+            options.directory,
+            async () => {
+              entered = true
+              const state = read()
+              if (sweepReceipts(state.operations, now())) await save(state)
+            },
+            { signal },
+          )
+        } catch (error) {
+          if (
+            entered ||
+            !signal.aborted ||
+            !(error instanceof PackageError) ||
+            error.code !== 'E_PACKAGE_CANCELLED'
+          )
+            throw error
+        }
         const op = read().operations[digest([identity(who), id(request.operationId)])]
         if (!op || op.owner !== identity(who)) deny()
         return {
@@ -168,6 +182,7 @@ export function createExamplePackages(options: {
         const who = await owner(rowId)
         const scope = identity(who)
         const state = read()
+        if (sweepReceipts(state.operations, now())) await save(state)
         if (action === 'stop') {
           const entry = (await entries(who)).find((entry) => entry.id === field(request.exampleId)) ?? deny()
           const installed = (await backend.installed()).find((item) => item.id === entry.id)
@@ -223,9 +238,12 @@ export function createExamplePackages(options: {
             const installed = await current(review, who)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            review.launch =
-              entry.metadata?.launches?.find((launch) => launch.id === field(request.launchId)) ?? deny()
-            await backend.validateLaunch(installed, review.launch)
+            const launchId = field(request.launchId)
+            const declared = entry.agents?.find((agent) => agent.ref === `${entry.id}#${launchId}`) ?? deny()
+            const plan = await backend.resolveAgent(declared.ref)
+            if (plan.ref !== declared.ref || digest(plan.launch) !== digest(declared.launch))
+              deny('E_PACKAGE_PREVIEW_STALE')
+            review.launch = plan
           }
           for (const [key, item] of Object.entries(state.reviews))
             if (item.expires <= now()) delete state.reviews[key]
@@ -237,10 +255,10 @@ export function createExamplePackages(options: {
             ? {
                 launchTicket: ticket,
                 presentation: {
-                  title: review.launch?.title,
-                  bundle: review.launch?.bundle,
-                  preset: review.launch?.preset,
-                  prompt: review.launch?.prompt,
+                  ...review.launch,
+                  title: review.launch?.launch.title.en,
+                  bundle: review.launch?.ref,
+                  prompt: review.launch?.launch.prompt?.text.en ?? '',
                 },
               }
             : {
@@ -262,8 +280,20 @@ export function createExamplePackages(options: {
         let op = state.operations[operationKey]
         if (op) {
           if (op.owner !== scope || op.digest !== payload) deny('E_PACKAGE_PREVIEW_STALE')
+          await current(op.review, who, true)
+          if (op.state === 'running') {
+            op.state = 'unknown'
+            op.code = 'OUTCOME_UNKNOWN'
+            op.terminalAt = now()
+            await save(state)
+          }
           if (op.state === 'completed')
-            return action === 'start' ? { sessionId: op.sessionId } : { operationId }
+            return action === 'start'
+              ? {
+                  sessionId: op.sessionId,
+                  ...(op.review.launch?.launch.prompt ? { draft: op.review.launch.launch.prompt } : {}),
+                }
+              : { operationId }
           if (op.state === 'failed' || op.state === 'unknown') deny(op.code ?? 'OUTCOME_UNKNOWN')
         } else {
           const review =
@@ -275,7 +305,7 @@ export function createExamplePackages(options: {
             (action === 'remove') !== Boolean(review.removal)
           )
             deny()
-          if (Object.keys(state.operations).length >= 10_000) deny('OVERLOADED')
+          if (Object.keys(state.operations).length >= OPERATION_CAPACITY) deny('OVERLOADED')
           op = { owner: scope, digest: payload, state: 'running', review }
           state.operations[operationKey] = op
           await save(state)
@@ -293,15 +323,21 @@ export function createExamplePackages(options: {
             const installed = await current(review, await owner(rowId), true)
             if (!installed?.trusted || installed.desired !== 'enabled' || installed.actual !== 'running')
               deny('E_PACKAGE_STATE')
-            await backend.validateLaunch(installed, launch)
+            if ((await backend.resolveAgent(launch.ref)).digest !== launch.digest)
+              deny('E_PACKAGE_PREVIEW_STALE')
             op.sessionId = await backend.open(launch, `example:${operationKey}`)
             await save(state)
             await check()
-            await backend.prompt(op.sessionId, launch.prompt, `example-${operationKey}`)
           }
           op.state = 'completed'
+          op.terminalAt = now()
           await save(state)
-          return action === 'start' ? { sessionId: op.sessionId } : { operationId }
+          return action === 'start'
+            ? {
+                sessionId: op.sessionId,
+                ...(op.review.launch?.launch.prompt ? { draft: op.review.launch.launch.prompt } : {}),
+              }
+            : { operationId }
         } catch (error) {
           const code =
             error instanceof Error &&
@@ -312,6 +348,7 @@ export function createExamplePackages(options: {
               : 'OUTCOME_UNKNOWN'
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
+          op.terminalAt = now()
           await save(state)
           return deny(code)
         }
@@ -319,3 +356,5 @@ export function createExamplePackages(options: {
     },
   }
 }
+
+export { type AgentLaunchBackend, createAgentLaunches } from './agent-launches.js'

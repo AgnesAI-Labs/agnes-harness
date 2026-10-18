@@ -41,7 +41,7 @@ export function feedbackSkillFiles(input: unknown, feedback: FeedbackItem) {
             license: 'Apache-2.0',
             exports: './index.mjs',
             agnes: {
-              kinds: ['skills'],
+              provides: ['skills'],
               plugins: [
                 {
                   id: `ext:feedback-skill-${name}/main`,

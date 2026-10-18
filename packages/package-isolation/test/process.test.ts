@@ -16,13 +16,13 @@ describe('runIsolatedCommand', () => {
 
   it('rejects with the exit status when the command exits non-zero', async () => {
     await expect(
-      runIsolatedCommand('node', ['-e', 'process.exit(3)'], {
+      runIsolatedCommand('node', ['-e', "process.stdout.write('failed assertion'); process.exit(3)"], {
         cwd: process.cwd(),
         env: process.env,
         timeoutMs: 5000,
         maxOutputBytes: 1024,
       }),
-    ).rejects.toThrow(/exited with status 3/)
+    ).rejects.toMatchObject({ message: 'command exited with status 3', stdout: 'failed assertion' })
   })
 
   it('rejects immediately without spawning when the signal starts already aborted', async () => {
@@ -40,14 +40,21 @@ describe('runIsolatedCommand', () => {
   })
 
   it('terminates and rejects a command that runs past its timeout', async () => {
-    await expect(
-      runIsolatedCommand('node', ['-e', 'setTimeout(() => {}, 5000)'], {
+    const failure = await runIsolatedCommand(
+      'node',
+      ['-e', "process.stdout.write('waiting for query'); setTimeout(() => {}, 5000)"],
+      {
         cwd: process.cwd(),
         env: process.env,
-        timeoutMs: 50,
+        timeoutMs: 500,
         maxOutputBytes: 1024,
-      }),
-    ).rejects.toThrow(/timed out/)
+      },
+    ).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(failure).toMatchObject({ message: 'command timed out', stdout: 'waiting for query' })
+    expect(Object.keys(failure as Error)).not.toContain('stdout')
   })
 
   it('terminates and rejects a command whose output exceeds the byte limit', async () => {

@@ -144,4 +144,14 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 模型从默认账户自己的模型里按保存顺序选出：服务商公布价格时取输入加输出价格最低的；没有价格时取 ID 带轻量档标记（`flash`、`mini`、`lite`、`haiku`、`nano`、`fast`、`small`）的第一个。槽位已设置或为 `null`、没有已启用的默认账户、或两条规则都选不出模型时，结果不含 `auto.fast`，此时沿用预设自己的快速模型；Host 没有提供所选模型时也是如此。`auto` 只读：保存时接受并忽略它。验证模型从不自动选择。
 
-这两个方法属于部署本地管理权限，浏览器 SDK 禁止调用。Web 通过同源 `/admin/api/model-slots` GET/POST 管理桥接，沿用读取／激活权限和恢复只读检查。默认值写入新会话初始选择；已有会话通过 `Session.setModel({ slot, route, model })` 显式覆盖。参见[审查模型配置](../guide/security.zh-CN.md)。
+这两个方法属于部署本地管理权限，浏览器 SDK 禁止调用。Web 通过同源 `/admin/api/model-slots` GET/POST 管理桥接，沿用读取／激活权限和恢复只读检查。两个响应均只含 `{ revision, slots, auto?, canSave }`。可选模型通过 `/admin/api/model-adapters` 独立读取（读取权限），目录缓慢或不可用不阻塞已保存槽位的展示和清除。保存仍按实时目录校验所选目标一次，不会为了响应再次读取目录。默认值写入新会话初始选择；已有会话通过 `Session.setModel({ slot, route, model })` 显式覆盖。参见[审查模型配置](../guide/security.zh-CN.md)。
+
+## 智能体解析与启动
+
+SDK 支持 `client.session.new({ cwd, agent: '@acme/kit#review' })`，调用方无需了解 Bundle 组合。`client.agents.resolve(ref)`（RPC `_agnes/v1/agents.resolve`）返回精确选择、模型、权限摘要、来源身份和最终有效配置摘要；审阅过的调用可传 `agentDigest`，发生漂移即拒绝。不能同时传入 `loop`、`bundles` 或 `preset`。会话/工作区授权仍走普通创建链路；普通会话保留已有模型 fallback。
+
+宿主启动 facade 使用 prepare → review → start(ticket, operationId)。start 只返回会话 ID 和可选的已审阅草稿。草稿编辑后通过普通 submit、使用独立 commandId 提交；重试 start 不发送任何提示词。不确定或失败的 operation 不会重新派发。普通启动没有安装、信任或移除权限；示例管理仍受经依赖版本校验的 `exampleOf` 限制。
+
+审阅同时绑定包身份和已发布的执行配置，原始 row 配置保留在后台；工具摘要来自实际准入能力。启动响应丢失后，Web 保留原 ticket 和 operationId，查询原操作回执。另建会话使用独立操作，并明确提醒可能重复创建。
+
+创建自动化时，`schedules.upsert` 可在请求顶层传 `agent`，后端将其解析为原有 new-session target（loop、bundle refs、preset、model）。保存内容不包含 AgentRef 或 launch。后续运行不再读取 launch，每次按当前可信的 Bundle/Preset 和部署配置准入，再为该次会话 pin；旧 target 保持原样。

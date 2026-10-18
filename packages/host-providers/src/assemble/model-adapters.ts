@@ -1,4 +1,4 @@
-import { modelAdaptersPlugin, WireAdapter } from '@agnes/ai'
+import { createApiKeyProviderConfigs, modelAdaptersPlugin, WireAdapter } from '@agnes/ai'
 import { type Context, Service } from '@agnes/cordis'
 import type {
   ModelAdapter,
@@ -14,10 +14,12 @@ import {
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -280,18 +282,42 @@ export const builtinModelAdaptersPlugin = {
  * register into a recorder. What each takes is declared on its registration, so a process that holds
  * no adapter registry can still tell, for example, that `typesafe-systemone` answers payloads only.
  */
-export function builtinModelAdapterCatalog(): readonly Pick<
-  ModelAdapterCatalogEntry,
-  'id' | 'wireApi' | 'capabilities'
->[] {
-  const found: Pick<ModelAdapterCatalogEntry, 'id' | 'wireApi' | 'capabilities'>[] = []
-  builtinModelAdaptersPlugin.apply({
+export function builtinModelAdapterCatalog(
+  profile?: Pick<ResolvedProfile, 'packages'>,
+): readonly ModelAdapterCatalogEntry[] {
+  // Resolved profiles have already checked this closed release identity against the running
+  // build. An installed package with the same name must use current-source filtering instead.
+  if (
+    profile &&
+    !profile.packages.some(
+      (pkg) =>
+        pkg.id === '@agnes/ai' &&
+        pkg.enabled &&
+        pkg.trust === 'builtin' &&
+        pkg.source === 'builtin' &&
+        pkg.integrity === `builtin:${pkg.version}`,
+    )
+  )
+    return []
+  const found: ModelAdapterCatalogEntry[] = []
+  // The companion is installed code: only its current verified publication/active rows can
+  // describe it. Its presence also suppresses the Host's scripted fallback, as in assembly.
+  const plugin = profile?.packages.some((pkg) => pkg.id === '@agnes/model-adapters' && pkg.enabled)
+    ? modelAdaptersPlugin
+    : builtinModelAdaptersPlugin
+  plugin.apply({
     providers: {
       register: (_kind: unknown, adapter: ModelAdapter) =>
-        void found.push({ id: adapter.id, wireApi: adapter.wireApi, capabilities: adapter.capabilities }),
+        void found.push({
+          id: adapter.id,
+          version: adapter.version,
+          sourcePackage: '@agnes/ai',
+          wireApi: adapter.wireApi,
+          capabilities: adapter.capabilities,
+        }),
     },
   } as never)
-  return found
+  return [...new Map(found.map((entry) => [entry.id, entry])).values()]
 }
 
 /** Builtins use exactly the same registration contract as community plugin rows. */
@@ -331,4 +357,29 @@ export function withBuiltinModelAdapters(
 /** Read-only admin metadata, without config, credentials or factories. */
 export function modelAdapterCatalog(root: Context): readonly ModelAdapterCatalogEntry[] {
   return root.modelAdapters.catalog()
+}
+
+/** Static release metadata and configured routes; does not instantiate adapters, import community
+ * code, bind credentials, or prepare a session. Keep catalog filtering identical to buildProvider. */
+export async function builtinModelSelectionData(profile: ResolvedProfile): Promise<{
+  adapters: readonly ModelAdapterCatalogEntry[]
+  routes: readonly Pick<RouteDecl, 'route' | 'api'>[]
+  models: readonly Pick<ModelRecord, 'id' | 'route' | 'api'>[]
+}> {
+  const adapters = builtinModelAdapterCatalog(profile)
+  const declared = profile.provider.routes ?? []
+  if (!declared.length) return { adapters, routes: [], models: [] }
+  const choice = profile.composition?.providers?.['model-adapter']?.provider
+  const selected = typeof choice === 'string' ? [choice] : choice
+  const claimed = new Set(declared.map((r) => r.route))
+  const configs = (await createApiKeyProviderConfigs()).filter((config) =>
+    config.routes.every(
+      (r) =>
+        (!selected?.length || selected.includes(r.api)) &&
+        !claimed.has(r.route) &&
+        (profile.provider.catalog === undefined || profile.provider.catalog.include.includes(r.route)),
+    ),
+  )
+  const routes = [...declared, ...configs.flatMap((c) => c.routes)]
+  return { adapters, routes, models: routes.flatMap((r) => r.models ?? []) }
 }

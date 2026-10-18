@@ -225,7 +225,7 @@ describe('@ picker', () => {
         items: [{ source: 'file', id: 'fde-output/3-report.md', label: 'fde-output/3-report.md' }],
         truncated: false,
       }))
-      const { host, handle, prompt } = mount({ references })
+      const { host, handle, prompt, props } = mount({ references })
       type(prompt, '总结 @rep')
       await vi.advanceTimersByTimeAsync(150)
       const options = await vi.waitFor(() => {
@@ -236,6 +236,9 @@ describe('@ picker', () => {
       // Up and down move, Enter picks: the keyboard stays in the textarea.
       press(prompt, 'ArrowDown')
       press(prompt, 'Enter')
+      // The next Enter submits even before React commits the picker closing.
+      press(prompt, 'Enter')
+      expect(props.onSubmit).toHaveBeenCalledTimes(1)
       expect(options).toHaveLength(1)
       await vi.waitFor(() => expect(handle.getDraft()).toBe('总结 @3-report.md '))
       // A file is a chip and a link, not a content reference.

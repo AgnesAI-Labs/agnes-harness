@@ -138,18 +138,46 @@ it('generates an executable tool plugin using the current owned registration por
   )
   pluginHelper.apply({ tools })
   const guide = registered.get('plugin_helper_guide')!
-  const result = await guide.execute({ kind: 'tool' }, {} as never)
+  // The guide is readable even when the invocation has no authoring capability.
+  for (const context of [undefined, null, {}])
+    for (const kind of ['tool', 'skill', 'skin'])
+      expect(await guide.execute({ kind }, context as never)).toMatchObject({
+        structured: { authoringCapability: 'unavailable-host-capability' },
+      })
+  const request = vi.fn(async () => {
+    throw new Error('The guide must not request an operation')
+  })
+  const result = await guide.execute({ kind: 'tool' }, {
+    signal: new AbortController().signal,
+    session: { depth: 0 },
+    pluginManage: { request },
+  } as never)
+  expect(result).toMatchObject({
+    structured: { authoringCapability: 'supplied-authorization-checked-per-call' },
+  })
+  expect(request).not.toHaveBeenCalled()
   const text = result.content.find((part) => part.type === 'text')
   if (!text || text.type !== 'text') throw new Error('guide returned no text')
   const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }
   expect(data.apiVersion).toBe('4.0.0')
   const source = data.files.find((file) => file.path === 'index.mjs')!
   const { main } = await import(`data:text/javascript,${encodeURIComponent(source.content)}`)
-  main.apply({ tools, hooks: { register() {} }, self: { log: { info() {} } } })
-  const generated = registered.get('my_text_stats')!
-  expect(await generated.execute({ text: 'two words' }, {} as never)).toMatchObject({
-    structured: { characters: 9, words: 2 },
-  })
+  const packageDir = fixture()
+  const manifest = data.files.find((file) => file.path === 'package.json')
+  if (!manifest) throw new Error('guide returned no package manifest')
+  writeFileSync(join(packageDir, 'package.json'), manifest.content)
+  // Load the public test SDK at runtime: Host depends on this package, so its testkit must not
+  // become a build reference back to Host. The root test workspace supplies the SDK.
+  const authorSdk = '@agnes/host/author-testkit'
+  const { createPluginTestHost } = await import(authorSdk)
+  const host = await createPluginTestHost(main, { packageDir })
+  try {
+    expect(await host.invoke('my_text_stats', { text: 'two words' })).toMatchObject({
+      structured: { characters: 9, words: 2 },
+    })
+  } finally {
+    await host.dispose()
+  }
 })
 
 it('installs the community deliverables replacement in a throwaway home and preserves checked enable/disable/uninstall lifecycle', async () => {

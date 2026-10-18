@@ -1,6 +1,6 @@
-# 财务对账 bundle
+# 财务对账 智能体
 
-[English](README.md) | 简体中文 · [FDE 示例](../README.zh-CN.md)
+[English](README.md) | 简体中文 · [企业应用示例](../README.zh-CN.md)
 
 财务人员核对银行与账簿台账，在记录前审核建议调整分录。
 
@@ -14,7 +14,7 @@ TX-1 匹配；TX-2 相差 5000 分；银行独有 TX-3 为 7525 分；账簿独�
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.finance-reconcile`，每次决定或发送动作均要求人工审批。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。
-- Bundle：`agnes.kinds` 声明 `bundle`，`agnes.bundles.finance-reconcile` 组合 loop、Skill 和预设。
+- Bundle：`agnes.provides` 声明 `bundle`，`agnes.bundles.finance-reconcile` 组合 loop、Skill 和预设。
 
 ## 安装与运行
 
@@ -25,7 +25,7 @@ TX-1 匹配；TX-2 相差 5000 分；银行独有 TX-3 为 7525 分；账簿独�
 ```sh
 cd examples/fde/finance-reconcile
 agh plugins add .
-agh run --bundle '@agnes-fde/finance-reconcile#finance-reconcile' --preset finance-reconcile --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/finance-reconcile#finance-reconcile' -p "$(cat fixtures/prompt.txt)"
 agh serve
 ```
 
@@ -33,7 +33,7 @@ agh serve
 
 同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。差异表和金额图绑定账本数据源 `finance/differences`。本会话未注册该源时，render 以 `UI_SOURCE_UNKNOWN` 拒绝；信任未覆盖 `finance.differences.read` 时，以 `UI_SOURCE_DENIED` 拒绝。不要编造行。勾选行可标记正在审阅的差异，并在表单中编辑提案理由；确认覆盖该表单内的全部提案。点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
 
-Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@agnes-fde/finance-reconcile#finance-reconcile`，保存并按提示重启 Host。新建会话，选择 `finance-reconcile` 预设与 Demo 模型，粘贴 `fixtures/prompt.txt`。旧会话保留固定 loop。查看依据与轨迹。
+Web：打开 serve 地址，在「智能体」页选择 `@agnes-fde/finance-reconcile#finance-reconcile`，审阅启动配置并创建新会话，粘贴 `fixtures/prompt.txt`。检查交付物和业务问题卡片，工具权限仍由后端裁决。
 
 这是固定合成输入且等待人工答案的流程：提示用于启动，业务数据由夹具文件定义。内置 Demo 不推理，工具产生完整夹具成果，快速测试使用固定模型回复。真实模型补充草稿解读，不能覆盖引用、金额、发现或审批。
 
@@ -42,7 +42,7 @@ Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@
 先配置 AGH 路由与模型，再将 [real-model.bundle.json](real-model.bundle.json) 中预设 primary 路由改为已配置的标识：
 
 ```sh
-agh run --bundle ./real-model.bundle.json --preset finance-reconcile --input fixtures/prompt.txt --json
+agh --new --agent '@agnes-fde/finance-reconcile#finance-reconcile' -p "$(cat fixtures/prompt.txt)"
 ```
 
 loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契约与哈希。Web 中在用户 profile composition 配置等价预设 primary 路由，为新会话选择该模型。凭据留在包外。

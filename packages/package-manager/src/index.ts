@@ -1,5 +1,8 @@
+export * from './application-assets.js'
+export * from './application-contract.js'
 export type { PackageAuditEvent, PackageAuditSink } from './audit.js'
 export { AuthoringCandidates, type AuthoringTestRunner } from './authoring-candidates.js'
+export * from './bundle-contract.js'
 export {
   BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
@@ -56,6 +59,7 @@ export {
   verifyNpmProvenance,
   verifyOfficialCatalog,
 } from './provenance.js'
+export { publishModelAdapterCatalog, readPublishedModelAdapters } from './published-model-adapters.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,
@@ -74,6 +78,14 @@ export {
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
+export { currentStoredShape } from './stored-metadata.js'
 export * from './trust-gate.js'
+export {
+  invalidatePackageVerification,
+  verifiedDirectoryDigest,
+  verifiedDirectoryDigestAsync,
+  withoutPackageVerification,
+  withPackageVerification,
+} from './verification-operation.js'
 export * from './workspace.js'
 export * from './workspace-deployments.js'

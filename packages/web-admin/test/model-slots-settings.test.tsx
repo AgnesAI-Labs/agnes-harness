@@ -1,17 +1,21 @@
 /** @vitest-environment happy-dom */
 import {
+  createCatalogTranslator,
+  createDocumentLocaleSource,
   installFeedbackSink,
   modelSettingsLocaleCatalog,
   type OperationFeedback,
   SettingsSubpageFrame,
   setAdvancedSettingsShown,
+  UiLocaleProvider,
 } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { AutoReviewPanel } from '../src/settings/auto-review.js'
-import { ModelSlotsPanel, modelSlotOptions } from '../src/settings/model-slots.js'
+import { reviewCatalog } from '../src/settings/auto-review-locale.js'
+import { ModelSlotsPanel, modelSlotOptions, modelSlotsPanel } from '../src/settings/model-slots.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root | undefined
@@ -49,15 +53,18 @@ const writes: unknown[] = []
 let failSave = false
 const outcomes: OperationFeedback[] = []
 let releaseFeedback: (() => void) | undefined
+let releaseLocale: (() => void) | undefined
 beforeEach(() => {
   outcomes.length = 0
   releaseFeedback = installFeedbackSink({ publish: (result) => outcomes.push(result), resolve() {} })
 })
 afterEach(async () => {
   releaseFeedback?.()
+  releaseLocale?.()
   await act(async () => root?.unmount())
   root = undefined
   document.body.replaceChildren()
+  document.documentElement.lang = 'en'
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   writes.length = 0
@@ -65,7 +72,12 @@ afterEach(async () => {
   delete state.auto
   setAdvancedSettingsShown(false)
 })
-async function mount(canSave = true, slots: Record<string, unknown> = {}) {
+async function mount(
+  canSave = true,
+  slots: Record<string, unknown> = {},
+  optionsRead?: () => Promise<Response>,
+  locale: 'en' | 'zh-CN' = 'en',
+) {
   // Auxiliary models are an advanced fold: it exists only while advanced settings show.
   setAdvancedSettingsShown(true)
   state = { ...state, revision: 1, slots, canSave }
@@ -74,23 +86,30 @@ async function mount(canSave = true, slots: Record<string, unknown> = {}) {
     'fetch',
     vi.fn(async (url: string, options?: RequestInit) => {
       if (url === '/admin/api/auto-review') return new Response(JSON.stringify({ modelSlot: 'fast' }))
+      if (url === '/admin/api/model-adapters')
+        return optionsRead ? optionsRead() : Response.json({ modelAdapters: state.modelAdapters })
       if (options?.method === 'POST') {
         writes.push(JSON.parse(String(options.body)))
         if (failSave) return new Response('{}', { status: 409 })
         state = { ...state, ...JSON.parse(String(options.body)), revision: state.revision + 1 }
       }
-      return new Response(JSON.stringify(state))
+      const { modelAdapters: _options, ...snapshot } = state
+      return Response.json(snapshot)
     }),
   )
+  releaseLocale?.()
+  document.documentElement.lang = locale
+  const { source, dispose } = createDocumentLocaleSource({ '@agnes/web/auto-review': reviewCatalog })
+  releaseLocale = dispose
   const host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
   await act(async () =>
     root?.render(
       createElement(
-        'div',
-        {},
-        createElement(ModelSlotsPanel, { t: en }),
+        UiLocaleProvider,
+        { source },
+        modelSlotsPanel({ accounts: [] }, createCatalogTranslator(modelSettingsLocaleCatalog, locale)),
         createElement(SettingsSubpageFrame, { header: null }, createElement(AutoReviewPanel, { canSave })),
       ),
     ),
@@ -159,6 +178,110 @@ it('says the settings changed elsewhere, keeps the choice and reloads on request
   await choose(host, 'verifier', JSON.stringify(['local', 'reviewer']))
   expect(writes.at(-1)).toMatchObject({ revision: 7 })
 })
+it.each(['en', 'zh-CN'] as const)(
+  'shows checking availability until options load in %s, and refreshes auto review independently',
+  async (locale) => {
+    let resolveOptions!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      resolveOptions = resolve
+    })
+    const target = { route: 'local', model: 'reviewer' }
+    const host = await mount(
+      true,
+      { fast: target, verifier: target },
+      () => pending.then((response) => response.clone()),
+      locale,
+    )
+    const checking = locale === 'en' ? 'Checking availability' : '正在检查可用性'
+    const unavailable = locale === 'en' ? 'Unavailable' : '不可用'
+    const select = host.querySelector<HTMLSelectElement>('#model-slot-fast')!
+    expect(select.value).toBe(JSON.stringify(['local', 'reviewer']))
+    expect(select.disabled).toBe(false)
+    expect(select.selectedOptions[0]?.textContent).toContain(checking)
+    expect(host.querySelector('[data-testid="model-slot-fast-current"]')?.textContent).toContain(checking)
+    expect(
+      host.querySelector('[data-testid="auxiliary-models"] .agh-disclosure-meta')?.textContent,
+    ).toContain(checking)
+    expect(host.querySelector('[data-testid="auxiliary-models"]')?.textContent).not.toContain(unavailable)
+    expect(host.querySelector('[data-testid="model-slots-options-loading"]')).not.toBeNull()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="auto-review-customize"]')?.click(),
+    )
+    expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain(checking)
+    expect(host.querySelector('[data-testid="auto-review-slot-status"]')).toBeNull()
+    expect(host.querySelector('[data-testid="auto-review-options-loading"]')?.textContent).toContain(checking)
+    // Clearing a saved value still works before options are available.
+    await choose(host, 'verifier', '')
+    expect(writes).toEqual([{ revision: 1, slots: { fast: target, verifier: null } }])
+    // Only a completed catalog can establish that a saved model is absent.
+    await act(async () => resolveOptions(Response.json({ modelAdapters: [] })))
+    expect(select.selectedOptions[0]?.textContent).toContain(unavailable)
+    expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain(unavailable)
+    expect(host.querySelector('[data-testid="model-slot-fast-current"]')?.textContent).toContain(unavailable)
+    expect(
+      host.querySelector('[data-testid="auxiliary-models"] .agh-disclosure-meta')?.textContent,
+    ).toContain(unavailable)
+    expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain(
+      locale === 'en' ? 'unavailable' : '不可用',
+    )
+    await choose(host, 'fast', '')
+    expect(writes.at(-1)).toEqual({ revision: 2, slots: { verifier: null } })
+    expect(select.value).toBe('')
+    expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain(
+      locale === 'en' ? 'not set' : '还没有设置',
+    )
+  },
+)
+it.each(['en', 'zh-CN'] as const)(
+  'keeps an options failure separate from saved settings and retries the options in %s',
+  async (locale) => {
+    const optionsRead = vi.fn(async () => new Response('{}', { status: 502 }))
+    const target = { route: 'local', model: 'reviewer' }
+    const host = await mount(true, { fast: target, verifier: target }, optionsRead, locale)
+    const unknown = locale === 'en' ? 'Availability unknown' : '可用性未知'
+    expect(host.querySelector('[data-testid="model-slots-status"]')).toBeNull()
+    expect(host.querySelector('[data-testid="model-slots-options-error"]')?.textContent).toContain(
+      locale === 'en' ? 'Could not load model options' : '可选模型加载失败',
+    )
+    const select = host.querySelector<HTMLSelectElement>('#model-slot-verifier')!
+    expect(select.value).toBe(JSON.stringify(['local', 'reviewer']))
+    expect(select.selectedOptions[0]?.textContent).toContain(unknown)
+    expect(
+      host.querySelector('[data-testid="auxiliary-models"] .agh-disclosure-meta')?.textContent,
+    ).toContain(unknown)
+    expect(host.querySelector('[data-testid="model-slot-verifier-current"]')?.textContent).toContain(unknown)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="auto-review-customize"]')?.click(),
+    )
+    expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain(unknown)
+    expect(host.querySelector('[data-testid="auto-review-slot-status"]')).toBeNull()
+    expect(host.querySelector('[data-testid="auto-review-options-error"]')?.textContent).toContain(unknown)
+    expect(select.disabled).toBe(false)
+    await choose(host, 'verifier', '')
+    expect(writes).toEqual([{ revision: 1, slots: { fast: target, verifier: null } }])
+    optionsRead.mockImplementation(async () => Response.json({ modelAdapters: state.modelAdapters }))
+    const settingsReads = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => url === '/admin/api/model-slots').length
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="model-slots-options-error"] button')?.click(),
+    )
+    expect(host.querySelector('[data-testid="model-slots-options-error"]')).toBeNull()
+    expect([...select.options].map((option) => option.value)).toContain(JSON.stringify(['local', 'reviewer']))
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/admin/api/model-slots')).toHaveLength(
+      settingsReads,
+    )
+    expect(host.querySelector('#model-slot-fast-trigger')?.textContent).not.toContain(unknown)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="auto-review-options-error"] button')?.click(),
+    )
+    expect(host.querySelector('[data-testid="auto-review-options-error"]')).toBeNull()
+    expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).not.toContain(unknown)
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/admin/api/model-slots')).toHaveLength(
+      settingsReads,
+    )
+  },
+)
 it('shows the model an unset fast slot follows, and nothing automatic for the verifier', async () => {
   state.auto = { fast: { accountId: 'account-1', route: 'local', model: 'reviewer' } }
   const host = await mount()

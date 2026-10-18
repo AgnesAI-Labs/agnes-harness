@@ -63,6 +63,7 @@ type ClientDeclaration = Readonly<{
 
 type Retained = Readonly<{ revision: string; expiresAt?: string; protected?: boolean }>
 type StoredDeclaration = Readonly<{
+  id?: string
   moduleName: string
   legacyRowIds?: readonly string[]
   entry: string
@@ -75,6 +76,7 @@ type StoredDeclaration = Readonly<{
   backendRowId?: string
   intelligentComponents?: ClientContribution['intelligentComponents']
   requiresBackendRows?: ClientContribution['requiresBackendRows']
+  presentationRoles?: ClientContribution['presentationRoles']
   lifetime?: ClientContribution['lifetime']
   homeEntries?: ClientContribution['homeEntries']
   examplePages?: ClientContribution['examplePages']
@@ -247,6 +249,22 @@ function isState(value: unknown, profile: string): value is ProfileState {
         for (const [rowId, declaration] of Object.entries(declarations)) {
           if (!rowId.startsWith('web:') || !isRecord(declaration)) return false
           if (
+            (declaration.id !== undefined &&
+              (typeof declaration.id !== 'string' ||
+                !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(declaration.id))) ||
+            (declaration.presentationRoles !== undefined &&
+              (!Array.isArray(declaration.presentationRoles) ||
+                declaration.presentationRoles.some(
+                  (role) =>
+                    ![
+                      'navigation',
+                      'conversation',
+                      'composer',
+                      'goal',
+                      'interaction',
+                      'deliverables',
+                    ].includes(role),
+                ))) ||
             typeof declaration.moduleName !== 'string' ||
             (declaration.legacyRowIds !== undefined &&
               (!Array.isArray(declaration.legacyRowIds) ||
@@ -1311,14 +1329,14 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         rows.push({
           rowId: item.rowId,
           moduleName: item.moduleName,
-          ...contributionProjection(
+          ...(await contributionProjection(
             row,
             item.client,
             item.rowId,
             selectedRevision,
-            input.profile,
+            input,
             state.activations?.[row.id]?.id,
-          ),
+          )),
           packageId: row.id,
           enabled: true,
           phase: 'ready',

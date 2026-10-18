@@ -245,10 +245,8 @@ const SidebarBuiltin = forwardRef<
     <div style={{ display: 'contents' }} data-agnes-region-owner="builtin" data-agnes-region-unit="sidebar">
       <div className="sidebar-head">
         <div className="brand-lockup">
-          <span className="agnes-mark brand-mark-image" aria-hidden="true" />
-          <span className="brand-wordmark-text">{BRAND_NAME}</span>
-          {slots?.brandMark}
-          {slots?.brandName}
+          {slots?.brandMark ?? <span className="agnes-mark brand-mark-image" aria-hidden="true" />}
+          {slots?.brandName ?? <span className="brand-wordmark-text">{BRAND_NAME}</span>}
         </div>
         <IconButton
           id="sidebar-close"

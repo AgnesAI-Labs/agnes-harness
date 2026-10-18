@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Knowledge answer example",
           "summary": "Searches local sample documents and drafts an answer with source citations.",
           "description": "Searches local sample documents and drafts an answer with source citations.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "知识问答示例",
@@ -89,19 +82,28 @@
           "knowledge-qa": {
             "name": "knowledge-qa",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.knowledge-qa"
               }
             }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Knowledge answer example",
+            "zh-CN": "知识问答示例"
+          },
+          "description": {
+            "en": "Searches local sample documents and drafts an answer with source citations."
+          },
+          "preset": "knowledge-qa",
+          "prompt": {
+            "text": {
+              "en": "What is the refund window and who reviews refund requests?",
+              "zh-CN": "退款期限（refund window）是多久？退款申请由谁审核（who reviews refund requests）？"
+            },
+            "mode": "draft"
           }
         }
       }
@@ -110,7 +112,6 @@
       "displayName": "Knowledge answer example",
       "summary": "Searches local sample documents and drafts an answer with source citations.",
       "description": "Searches local sample documents and drafts an answer with source citations.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "What is the refund window and who reviews refund requests?",
         "zh-CN": "退款期限（refund window）是多久？退款申请由谁审核（who reviews refund requests）？"
@@ -122,7 +123,13 @@
           "description": "检索本地样例文档，并起草带来源引用的回答。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

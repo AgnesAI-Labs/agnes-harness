@@ -11,7 +11,7 @@ import deliverables from '../src/index.js'
 
 describe('deliverable surface', () => {
   it.each(
-    ['html', 'md'].flatMap((format) =>
+    ['html', 'md', 'tgz'].flatMap((format) =>
       ['available', 'disabled', 'rejected', 'unavailable'].map((ui) => ({ format, ui })),
     ),
   )(
@@ -74,7 +74,10 @@ describe('deliverable surface', () => {
         expect(events).toHaveLength(1)
         expect(result.structured).toMatchObject({
           deliverables: [
-            { name: `Cities.${format}`, ref: { mime: format === 'html' ? 'text/html' : 'text/markdown' } },
+            {
+              name: `Cities.${format}`,
+              ref: { mime: { html: 'text/html', md: 'text/markdown', tgz: 'application/gzip' }[format] },
+            },
           ],
           laneId: 'main',
         })
@@ -90,13 +93,34 @@ describe('deliverable surface', () => {
                   name: `Cities.${format}`,
                   description: 'City comparison',
                   artifact: {
-                    mime: format === 'html' ? 'text/html' : 'text/markdown',
+                    mime: { html: 'text/html', md: 'text/markdown', tgz: 'application/gzip' }[format],
                     size: new TextEncoder().encode('<h1>城市</h1>').byteLength,
                   },
                 },
               },
             },
           })
+        const uriFailure = await tool.execute(
+          { files: [{ path: 'artifact://synthetic/existing' }] },
+          {
+            ...ctx,
+            fs: {
+              ...ctx.fs,
+              stat: async () => {
+                throw new Error('URI must not reach filesystem')
+              },
+            },
+          },
+        )
+        expect(uriFailure.isError).toBe(true)
+        expect(uriFailure.content).toEqual([
+          expect.objectContaining({
+            text: expect.stringContaining('workspace filesystem path, not an artifact://'),
+          }),
+        ])
+        expect(uriFailure.content).toEqual([
+          expect.objectContaining({ text: expect.stringContaining('agh plugins pack') }),
+        ])
         const failure = await tool.execute(
           { files: [{ path: `cities.${format}` }, { path: 'missing.txt' }] },
           ctx,

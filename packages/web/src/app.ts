@@ -30,6 +30,7 @@ import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
+import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -246,7 +247,7 @@ const appSessionContext: AppSessionContext = {
     approvalSearchTicket = value
   },
   get beginNewDraft() {
-    return beginNewDraft
+    return beginExplicitNewDraft
   },
   get clearSessionRecovery() {
     return clearSessionRecovery
@@ -637,7 +638,7 @@ const sessionController = createSessionController(appSessionContext, sessionBind
 const turnController = createTurnController(appSessionContext)
 const readOnlyController = createReadOnlyController(appSessionContext, {
   open: (id) => open(id),
-  beginNewDraft: () => beginNewDraft(),
+  beginNewDraft: () => beginExplicitNewDraft(),
 })
 
 const composerDraftKey: string = 'agnes-web-composer-draft'
@@ -681,18 +682,25 @@ let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
   identity: () => JSON.stringify([profileName, moduleSessionId, sessionBinding.generation]),
   commit(roster) {
+    projectApplication(roster.application)
     moduleExtIds.clear()
     for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
     for (const listener of customModuleListeners) listener()
   },
   async list() {
     if (!profileName) return { revision: '', modules: [], statuses: [] }
-    const roster = await client.clientModules.list(profileName, moduleSessionId)
+    // These reads can cross an upgrade: the role registry admits only the roster binding
+    // matching the full consent identity, synchronously before every mount.
+    const [roster, application] = await Promise.all([
+      client.clientModules.list(profileName, moduleSessionId),
+      client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),
+    ])
     // `rows` is the authoritative browser lifecycle surface.  The legacy
     // `modules` compatibility projection deliberately cannot carry every
     // immutable declaration, including the per-module service allow-list.
     const modules = readyRosterModules(roster.rows ?? [])
     return {
+      ...(application ? { application } : {}),
       revision: roster.revision,
       modules,
       statuses: roster.statuses,
@@ -707,6 +715,7 @@ const references = composerReferences(prepareComposerSession, renderControls)
 
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
+homeEntries.subscribe(openApplicationHome)
 const clientModules = await startClientModules({
   agnes: client,
   presentation: {
@@ -795,12 +804,12 @@ const clientModules = await startClientModules({
   sidebar: {
     actions: {
       newSession: (workspace) => {
-        homeNavigation.close()
+        requestNewSession()
         run(() => beginNewDraft(workspace === undefined, workspace))
       },
       addWorkspace: () =>
         run(async () => {
-          homeNavigation.close()
+          requestNewSession()
           if (!draftingNew) await beginNewDraft()
           openNewSessionDialog()
         }),
@@ -962,7 +971,7 @@ const homePages = mountHomePages(hosts.homePage, {
       }),
     startDraft: (prompt) =>
       run(async () => {
-        homeNavigation.close()
+        requestNewSession()
         if (!draftingNew) await beginNewDraft(false)
         if (prompt) composerRuntime.setDraft(prompt)
         composerRuntime.focus()
@@ -995,6 +1004,7 @@ const newSessionDialog = mountNewSessionDialog(hosts.newSession, {
   pick: () => run(pickWorkspace),
   select: (workspace) => {
     selectedWorkspace = workspace
+    requestNewSession()
     closeNewSessionDialog()
     renderControls()
     composerRuntime.focus()
@@ -1306,7 +1316,7 @@ const firstRun = createFirstRunController({
   details: async () => statusCheck.open(),
   start: async () => {
     settings.close()
-    homeNavigation.close()
+    requestNewSession()
     await beginNewDraft(true)
   },
   saved: savedConfiguration,
@@ -1414,7 +1424,7 @@ function errorMessage(error: unknown): string {
       ? 'AUTH'
       : diagnostic?.code === 'TURN_ERROR'
         ? diagnostic.error?.code
-        : undefined,
+        : diagnostic?.code,
     diagnostic?.reason,
     t,
   )
@@ -1482,7 +1492,7 @@ function renderSessionRecovery(message = ''): void {
       run(() => open(id))
     },
     create() {
-      if (!recoveryDisabled()) run(() => beginNewDraft())
+      if (!recoveryDisabled()) run(() => beginExplicitNewDraft())
     },
   })
 }
@@ -1495,6 +1505,12 @@ function clearSessionRecovery(): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  const currentSessionId = clientModules.session.sessionId
+  if (currentSessionId && clientModules.session.readiness.getSnapshot().status !== 'history-only')
+    clientModules.session.setReadiness(
+      connected ? 'ready' : value === 'closed' ? 'failed' : 'connecting',
+      currentSessionId,
+    )
   if (!connected) {
     sidebarPages.reset()
     permissionConnectionEpoch++
@@ -1626,6 +1642,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     workspaceRows = [result.workspace, ...workspaceRows.filter((row) => row.path !== result.workspace.path)]
     updateWorkspaceOptions()
     await list()
+    requestNewSession()
     closeNewSessionDialog()
     composerRuntime.focus()
   } catch (error) {
@@ -1664,6 +1681,10 @@ async function pickWorkspace(): Promise<void> {
     workspacePickerBusy = false
     renderNewSessionControls()
   }
+}
+function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
+  requestNewSession()
+  return beginNewDraft(showWorkspacePicker, workspace)
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || submissions.sending) return
@@ -1873,7 +1894,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
         label: t('app.permission.useInNew', { mode: label }),
         run: () =>
           run(async () => {
-            await beginNewDraft(false)
+            await beginExplicitNewDraft(false)
             await selectPermission(mode)
           }),
       })
@@ -2287,6 +2308,7 @@ run(async () => {
   if (!sessionBinding.isCurrent(startupSelection)) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
+    requestNewSession()
     sessionPending = false
     await beginNewDraft(configured)
     if (requestedLoop) {
@@ -2325,8 +2347,10 @@ run(async () => {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page
       : await client.session.list({ q: { prefix: selected }, limit: 100 })
-    if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
-    else {
+    if (candidates.items.some((item) => item.sessionId === selected)) {
+      await open(selected)
+      if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
+    } else {
       missingSession = true
       notice.setText(t('app.session.notFound'))
       renderControls()

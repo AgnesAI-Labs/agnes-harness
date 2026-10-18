@@ -120,7 +120,7 @@ export function resolveDeployment(
     try {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
       const agnes = manifest.agnes as Record<string, unknown> | undefined
-      declared = parseAgnesPluginEntries(row.id, agnes?.plugins)
+      declared = parseAgnesPluginEntries(row.id, agnes?.plugins, { stored: true })
       version = manifest.version as string
     } catch {
       fail('deployment plugin declaration is invalid')

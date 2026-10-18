@@ -106,7 +106,19 @@ describe('rebuildDesiredFromInventory', () => {
         version: '1.0.0',
         agnes: {
           plugins: [
-            { apiRange: '^4.0.0', export: 'echo', id: 'ext:acme/echo', runtime: 'in-process', default: true },
+            {
+              apiRange: '^4.0.0',
+              export: 'echo',
+              id: 'ext:acme/echo',
+              runtime: 'in-process',
+              default: true,
+              metadata: {
+                displayName: 'Legacy echo',
+                summary: 'Synthetic fixture',
+                description: 'Persisted plugin-core row',
+                category: 'tools',
+              },
+            },
           ],
         },
       })}\n`,
@@ -411,7 +423,14 @@ it.each([false, true])(
     const intermediate = installed({
       id: 'acme/intermediate',
       directory,
-      entry: { metadata: { category: 'example', exampleOf: parent.id } } as InstalledPackage['entry'],
+      entry: {
+        metadata: {
+          displayName: 'Example',
+          summary: 'Example',
+          description: 'Example',
+          exampleOf: parent.id,
+        },
+      } as InstalledPackage['entry'],
     })
     const child = installed({
       id: 'acme/example',
@@ -421,7 +440,6 @@ it.each([false, true])(
           displayName: 'Example',
           summary: 'Example',
           description: 'Example',
-          category: 'example',
           exampleOf: nested ? intermediate.id : parent.id,
         },
       } as InstalledPackage['entry'],

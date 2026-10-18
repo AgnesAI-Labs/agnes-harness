@@ -5,8 +5,7 @@
 工作台面板是展示层贡献。通过 `@agnes/web-client` 导入共享的 `workbenchPanels` 单例，不要打包另一份实例。渲染前向宿主语言服务注册翻译。
 
 ```tsx
-import { workbenchPanels } from '@agnes/web-client'
-const dispose = workbenchPanels.register({
+const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 40, edge: 'right',
   titleKey: 'example.notes.title', component: NotesPanel,
 })

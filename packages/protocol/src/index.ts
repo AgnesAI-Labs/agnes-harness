@@ -249,14 +249,19 @@ export type {
 } from '../gen/ts/channel.js'
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
+  AgentRef,
+  ApplicationTemplate,
+  BundleLaunch,
   Capabilities,
   ClientContribution,
+  DeclaredAgent,
   ExampleLaunchDeclaration,
   ExtensionManifest,
   HomeContributionDeclaration,
-  PluginCategory,
+  PluginLocalizedText,
   PluginMetadata,
   PluginMetadataLocale,
+  PluginProvide,
   SkinContribution,
   SkinTokenValue,
   UiComponentDeclaration,
@@ -265,6 +270,14 @@ export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
 
+export type {
+  ApplicationAsset,
+  ApplicationBrand,
+  ApplicationPageRef,
+  ApplicationPresentation,
+  ApplicationRoleTarget,
+  PresentationRole,
+} from '../gen/ts/extension-manifest.js'
 export type {
   BoundWakeEnqueueParams,
   BoundWakeReadParams,
@@ -428,6 +441,18 @@ export type {
   SkinListResult,
   SkinReadParams,
   SkinReadResult,
+} from '../gen/ts/package-admin.js'
+export {
+  ApplicationAdoptParams,
+  ApplicationClearParams,
+  ApplicationConfigSnapshot,
+  ApplicationPreview,
+  ApplicationPreviewParams,
+  ApplicationSelection,
+  ApplicationState,
+  PresentationRoleSelection,
+  PresentationRoleSelections,
+  PresentationRoleState,
 } from '../gen/ts/package-admin.js'
 export type {
   PluginStreamClose,
@@ -617,6 +642,7 @@ export type {
   WorkerGeneration,
 } from '../gen/ts/worker.js'
 export * from './admin-session-selection.js'
+export * from './agents.js'
 export * from './app-server.js'
 export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
@@ -677,7 +703,7 @@ export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
 export { ARTIFACT_REGISTERED_EVENT, sessionArtifactRoots } from './session-artifacts.js'
 export * from './session-capabilities.js'
-export { parseSessionBundles } from './session-composition.js'
+export { parseAgentRef, parseSessionBundles } from './session-composition.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'
 export type {

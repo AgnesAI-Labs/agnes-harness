@@ -36,7 +36,6 @@
           "displayName": "Plan approval",
           "summary": "Lets the agent prepare a plan and request approval before leaving plan mode.",
           "description": "Lets the agent prepare a plan and request approval before leaving plan mode.",
-          "category": "safety-approval",
           "locales": {
             "zh-CN": {
               "displayName": "计划审批",
@@ -46,6 +45,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

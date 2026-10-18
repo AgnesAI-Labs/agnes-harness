@@ -2,26 +2,39 @@
 
 [English](README.md) | 简体中文
 
-**可托付的业务 Agent 平台：插件化业务、持续任务与经审阅的成长。**
+**AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**
 
-用 CLI 和 Web 跑通任务，用插件接入业务能力，用 Skills 积累方法，再为岗位打造自己的界面。从下面选择一条路径开始。
+- **插件**是安装、分发与信任单位，可以提供工具、运行方式（Loop）、模型、界面、技能、连接或服务。
+- **智能体**是带显式 `launch` 的 Bundle，引用为 `package#bundle`；它选择运行方式和预设，开始一个任务。
+- **应用**在插件中声明品牌、展示默认值与默认／可见智能体，由部署管理员预览后显式采纳。安装不会自动切换应用。
 
-[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md)
+**FDE（前线部署工程）就是为企业构建应用**：把业务工具、智能体和工作界面交付给实际使用者。会话执行与授权仍由原有后端维护。
 
+最小工具插件：从已构建的源码仓运行以下命令，把一个回显工具加入隔离环境；无需声明智能体或应用。
 
-[三个产品演示](guide/demos.zh-CN.md)
+```sh
+export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
+node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
+node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+```
+
+[五步工具教程](extend/quickstart.zh-CN.md) · [四步 Loop 教程](extend/first-loop.zh-CN.md) · [Acme 参考应用](../examples/acme/README.zh-CN.md)
+
 ## 选择你的起点
 
-| 你想做什么 | 推荐路径 | 完成后你会得到 |
+| 角色 | 从这里开始 | 目标 |
 | --- | --- | --- |
-| **体验 AGH** | [安装](guide/install.zh-CN.md) → [首次运行](guide/getting-started.zh-CN.md) → [继续会话](guide/sessions.zh-CN.md) | 跑通一个任务，并在 Web 与 CLI 中找到记录 |
-| **把业务能力交给 Agent** | [后端插件](develop/backend.zh-CN.md) · [MCP](guide/mcp.zh-CN.md) · [Skills](guide/skills.zh-CN.md) · [支持范围](guide/mcp-skills-support.zh-CN.md) | 接入工具、外部服务或团队任务方法 |
-| **做一个业务工作台** | [前端面板](develop/frontend.zh-CN.md) → [前后端联动](develop/fullstack.zh-CN.md) | 为工作台增加界面，读取后端服务结果 |
-| **研究与扩展运行时** | [架构](develop/architecture.zh-CN.md) → [源码地图](develop/source-map.zh-CN.md) → [API](reference/api.zh-CN.md) | 看清请求、扩展与持久状态的实现路径 |
+| **使用者** | [安装](guide/install.zh-CN.md) → [首次运行](guide/getting-started.zh-CN.md) → [会话](guide/sessions.zh-CN.md) | 选择智能体、完成任务、查看记录 |
+| **部署管理员** | [部署](guide/deployment.zh-CN.md) · [安全](guide/security.zh-CN.md) · [插件管理](guide/packages.zh-CN.md) · [应用](extend/applications.zh-CN.md) | 审阅能力、配置模型、采纳应用并掌握恢复 |
+| **插件作者** | [首个工具](extend/quickstart.zh-CN.md) → [首个 Loop](extend/first-loop.zh-CN.md) → [能力选择](extend/choose-a-plugin-type.zh-CN.md) | 通过公开合同交付可安装能力 |
+| **应用构建者** | [Acme](../examples/acme/README.zh-CN.md) → [应用合同](extend/applications.zh-CN.md) → [界面作者指南](develop/ui-author-guide.zh-CN.md) | 组合智能体、品牌、页面与导航 |
 
-还没有选定方向？先看[三个可运行示例](guide/demo.zh-CN.md)，再按[扩展指南](develop/plugins.zh-CN.md)选择入口。
+<a id="使用-agh"></a>
 
-## 使用 AGH
+## 使用者
 
 | 主题 | 你会学到 |
 | --- | --- |
@@ -52,6 +65,18 @@
 | [网络部署与 Linux](guide/deployment.zh-CN.md) | 出站代理、超时与 Linux 准备 |
 | [App Server stdio](reference/app-server.zh-CN.md) | 通过共享后台集成自己的客户端 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
+
+## 部署管理员
+
+[插件生命周期](guide/packages.zh-CN.md) · [模型与账号](guide/getting-started.zh-CN.md) · [网络部署](guide/deployment.zh-CN.md) · [安全与信任](guide/security.zh-CN.md) · [应用采纳与恢复](extend/applications.zh-CN.md)
+
+## 插件作者
+
+[工具五步](extend/quickstart.zh-CN.md) → [Loop 四步](extend/first-loop.zh-CN.md) → [作者工具包](extend/README.zh-CN.md) · [测试](extend/testing.zh-CN.md) · [公开导入](extend/imports.zh-CN.md)
+
+## 应用构建者
+
+[Acme 参考应用](../examples/acme/README.zh-CN.md) → [应用合同](extend/applications.zh-CN.md) · [智能体与组合](extend/bundles-and-profiles.zh-CN.md) · [界面作者指南](develop/ui-author-guide.zh-CN.md) · [工作台面板](extend/workbench-panels.zh-CN.md)
 
 ## 构建与深入了解
 

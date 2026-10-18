@@ -15,7 +15,6 @@
           "displayName": "Primary model entry example",
           "summary": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
           "description": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "主模型入口示例",
@@ -36,7 +35,6 @@
       "displayName": "Primary model entry example",
       "summary": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
       "description": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "主模型入口示例",
@@ -44,7 +42,10 @@
           "description": "演示多个插件竞争同一输入区位置时优先显示的模型入口面板。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

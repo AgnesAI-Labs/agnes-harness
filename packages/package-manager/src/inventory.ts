@@ -1,12 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import {
-  type PackageBlocker,
-  type PackageContributionSummary,
-  type PackagePresentation,
-  validatePluginMetadata,
-} from '@agnes/protocol'
-import { collectRead, collectReadAsync } from './cooperative-read.js'
+import type { PackageBlocker, PackageContributionSummary, PackagePresentation } from '@agnes/protocol'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
 import { inspectVerifiedTree } from './inspect.js'
@@ -15,15 +10,16 @@ import { reviewedContributionsMatch } from './inventory-client-compatibility.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { readPackagePresentation } from './package-presentation.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
-import type { AgnesPluginKind } from './plugin-manifest.js'
+import type { AgnesPluginProvide } from './plugin-manifest.js'
 import {
   enforceSourceConfiguration,
   officialCatalogVerifier,
   readPackageSourceConfiguration,
   recordProvenance,
 } from './provenance.js'
-import { hashDirectory, packageDir, parseSource } from './sources.js'
+import { packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
+import { validStoredMetadata } from './stored-metadata.js'
 import { verifyWorkspace } from './workspace.js'
 
 export type InstalledPackage = Readonly<{
@@ -36,7 +32,7 @@ export type InstalledPackage = Readonly<{
   capabilityHash: string
   trusted: boolean
   enabled: boolean
-  kinds?: readonly AgnesPluginKind[]
+  provides?: readonly AgnesPluginProvide[]
   contributions: readonly PackageContributionSummary[]
   blockers: readonly PackageBlocker[]
   verifiedRollbackTarget: Readonly<{
@@ -102,23 +98,23 @@ export function isRuntimePackageEligible(
 export function isSnapshotPackageEligible(row: Pick<InstalledPackage, 'trusted' | 'blockers'>): boolean {
   return row.trusted && row.blockers.length === 0
 }
-/** Cached static inspection is keyed by freshly hashed bytes, the full lock entry and ceiling.
+/** Cached static inspection is keyed by bytes verified in this operation, the full lock entry and ceiling.
  * It never caches a tree's validity, trust decision, activation state or a failed inspection. */
 type VerifiedPackageDirectory = {
   capabilityHash: string
   blockers: readonly PackageBlocker[]
-  kinds?: readonly AgnesPluginKind[]
+  provides?: readonly AgnesPluginProvide[]
 }
 export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
 
 /** Shared immutable-tree verification for installed inventory and runtime snapshots. */
-export function verifyPackageDirectory(
+function* verifyPackageDirectorySteps(
   id: string,
   entry: LockEntry,
   directory: string,
   ceiling: readonly string[],
   cache?: InventoryVerificationCache,
-): VerifiedPackageDirectory {
+): ReadSteps<VerifiedPackageDirectory> {
   capabilityHash(entry)
   if (
     entry.contributions === undefined ||
@@ -129,12 +125,24 @@ export function verifyPackageDirectory(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
-  const treeIntegrity = hashDirectory(directory, { exclude: [] })
+  const treeIntegrity = yield* directoryDigestSteps(directory, {
+    version: entry.version,
+    integrity: entry.integrity,
+    treeIntegrity: entry.treeIntegrity,
+    capabilityHash: capabilityHash(entry),
+  })
   return verifyHashedPackageDirectory(id, entry, directory, ceiling, treeIntegrity, cache)
 }
 
-/** Package-private: the caller has just hashed this directory synchronously and checked its identity.
- * Never pass a digest from an earlier request, an await boundary, or the lock's expected value. */
+export function verifyPackageDirectory(
+  ...args: Parameters<typeof verifyPackageDirectorySteps>
+): VerifiedPackageDirectory {
+  return collectRead(verifyPackageDirectorySteps(...args))
+}
+
+/** Package-private: the caller has checked this exact identity through the operation verifier
+ * or just hashed it synchronously. Never pass an earlier operation's digest or an expected lock value.
+ * Write/copy/import/publication gates must establish their own fresh observation. */
 export function verifyHashedPackageDirectory(
   id: string,
   entry: LockEntry,
@@ -181,6 +189,7 @@ export function verifyHashedPackageDirectory(
           ...(entry.releasedAt ? { releasedAt: entry.releasedAt } : {}),
         },
         ceiling,
+        stored: true,
       },
       treeIntegrity,
     )
@@ -202,6 +211,8 @@ export function verifyHashedPackageDirectory(
     !reviewedContributionsMatch(checked.preview.contributions, entry.contributions) ||
     canonical(checked.preview.dependencies) !== canonical(entry.dependencies) ||
     canonical(checked.preview.metadata) !== canonical(entry.metadata) ||
+    canonical(checked.preview.agents) !== canonical(entry.agents) ||
+    canonical(checked.preview.application) !== canonical(entry.application) ||
     canonical(checked.preview.declaredCapabilities) !== canonical(entry.declaredCapabilities)
   )
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
@@ -210,7 +221,7 @@ export function verifyHashedPackageDirectory(
   const result = freezeData({
     capabilityHash: hash,
     blockers: checked.preview.blockers,
-    ...(checked.preview.kinds === undefined ? {} : { kinds: checked.preview.kinds }),
+    ...(checked.preview.provides === undefined ? {} : { provides: checked.preview.provides }),
   })
   if (key && cache) {
     const oldest = cache.keys().next().value
@@ -219,7 +230,7 @@ export function verifyHashedPackageDirectory(
   }
   return result
 }
-function verifiedRollbackTarget(
+function* verifiedRollbackTarget(
   id: string,
   entry: LockEntry,
   options: {
@@ -228,7 +239,7 @@ function verifiedRollbackTarget(
     ceiling: readonly string[]
     verificationCache?: InventoryVerificationCache
   },
-): InstalledPackage['verifiedRollbackTarget'] {
+): ReadSteps<InstalledPackage['verifiedRollbackTarget']> {
   if (entry.previous === null) return null
   const previous = entry.previous
   if (
@@ -250,7 +261,7 @@ function verifiedRollbackTarget(
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {
-    verified = verifyPackageDirectory(
+    verified = yield* verifyPackageDirectorySteps(
       id,
       snapshot,
       previousPackageDir(options, id),
@@ -289,7 +300,7 @@ function* inventoryReadSteps(
     verificationCache?: InventoryVerificationCache
     builtinDirectory?: (id: string) => string | undefined
   },
-): Generator<void, InstalledInventory, void> {
+): ReadSteps<InstalledInventory> {
   const packages: InstalledPackage[] = [],
     paths = new Set<string>()
   const capabilityPolicy = readPluginCapabilityPolicy(options.profileDir)
@@ -316,7 +327,7 @@ function* inventoryReadSteps(
       blockers.push({ code: 'policy', references: ['workspace-packages-denied'] })
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
-    let kinds: readonly AgnesPluginKind[] | undefined
+    let provides: readonly AgnesPluginProvide[] | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
       blockers.push({ code: 'unknown-contribution', references: ['static-inventory-migration-required'] })
     else {
@@ -324,7 +335,7 @@ function* inventoryReadSteps(
         throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
           detail: { id },
         })
-      const verified = verifyPackageDirectory(
+      const verified = yield* verifyPackageDirectorySteps(
         id,
         entry,
         directory,
@@ -347,7 +358,7 @@ function* inventoryReadSteps(
       )
       if (entry.trust !== 'builtin') enforceSourceConfiguration(sourceConfig, provenance)
       hash = verified.capabilityHash
-      kinds = verified.kinds
+      provides = verified.provides
       blockers.push(
         ...verified.blockers.filter(
           (b) => !(entry.source.type === 'workspace' && b.references.includes('use-trust-workspace')),
@@ -359,9 +370,9 @@ function* inventoryReadSteps(
       const pkg = readStaticJson(join(directory, 'package.json'))
       const author = (pkg.agnes as { metadata?: unknown } | undefined)?.metadata
       if (author !== undefined) {
-        const checked = validatePluginMetadata(author)
-        if (!checked.ok) throw new PackageError('E_EXT_LOAD', 'Invalid builtin plugin metadata')
-        metadata = checked.value
+        const checked = validStoredMetadata(author)
+        if (!checked) throw new PackageError('E_EXT_LOAD', 'Invalid builtin plugin metadata')
+        metadata = author as NonNullable<LockEntry['metadata']>
       }
     }
     const trusted =
@@ -389,10 +400,10 @@ function* inventoryReadSteps(
       capabilityHash: hash,
       trusted,
       enabled: entry.state.enabled,
-      ...(kinds === undefined ? {} : { kinds }),
+      ...(provides === undefined ? {} : { provides }),
       contributions: entry.contributions ?? [],
       blockers,
-      verifiedRollbackTarget: verifiedRollbackTarget(id, entry, {
+      verifiedRollbackTarget: yield* verifiedRollbackTarget(id, entry, {
         dataDir: options.dataDir,
         profile: lock.profile,
         ceiling: options.ceiling ?? lock.policySnapshot.capabilityCeiling,

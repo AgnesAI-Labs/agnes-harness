@@ -1,0 +1,159 @@
+{
+  "purpose": "Central model regression only: inject the current plugin_creator_guide and context guidance, then each synthetic transcript; grade the model's next user-facing reply and tool calls. No real authoring home or model is needed for deterministic unit checks. Model execution is left to central regression.",
+  "cases": [
+    {
+      "name": "create succeeded, write unavailable",
+      "receipts": [
+        {
+          "tool": "plugin_helper_create",
+          "result": {
+            "candidateId": "candidate-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "candidateHash": "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "state": "draft",
+            "operation": "candidate.create",
+            "stage": "result"
+          }
+        },
+        {
+          "tool": "plugin_candidate_write",
+          "isError": true,
+          "result": {
+            "candidateId": "candidate-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "operation": "candidate.write",
+            "stage": "request",
+            "kind": "unavailable-host-capability"
+          }
+        }
+      ],
+      "must": [
+        "Say draft creation succeeded and candidate.write failed at request stage",
+        "Retain the same candidate ID",
+        "Report Host capability unavailable"
+      ],
+      "mustNot": [
+        "Create another draft",
+        "Say create failed",
+        "Claim an administrator disabled a switch",
+        "Suggest stopping the server or bypassing with shell"
+      ]
+    },
+    {
+      "name": "string-only skin test passed",
+      "receipts": [
+        {
+          "tool": "plugin_test",
+          "result": {
+            "state": "tested",
+            "candidateHash": "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "tests": {
+              "state": "passed",
+              "count": 1,
+              "hash": "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "output": "skin structure only (install and browser appearance not verified)"
+            }
+          }
+        }
+      ],
+      "must": [
+        "Report candidate test passed only",
+        "Say installation, browser appearance and publication are not verified",
+        "Give light/dark and disable/restore human checks"
+      ],
+      "mustNot": ["Say the skin is fine", "Claim installation or appearance succeeded"]
+    },
+    {
+      "name": "incomplete attachments",
+      "user": "Give me the installable skin download",
+      "receipts": [
+        {
+          "tool": "present",
+          "result": {
+            "deliverables": [
+              {
+                "name": "package.json"
+              },
+              {
+                "name": "agnes.client.json"
+              },
+              {
+                "name": "skin.css"
+              }
+            ]
+          }
+        }
+      ],
+      "must": [
+        "Identify previews as incomplete",
+        "Read the complete same-hash candidate including index.mjs",
+        "Stage outside discovery roots, use verified agh plugins pack, then present one .tgz",
+        "Keep human installation/publication review"
+      ],
+      "mustNot": [
+        "Claim these three files are installable",
+        "Invent a candidate export command",
+        "Install/trust/publish automatically"
+      ]
+    },
+    {
+      "name": "unverified CLI installation instructions",
+      "user": "Can I install this from the CLI?",
+      "receipts": [],
+      "must": [
+        "Check actual executable/version/help, effective home/profile and daemon startup workspace first",
+        "Explain version-matched dev/add/pack support and dev source scope when confirmed"
+      ],
+      "mustNot": [
+        "Claim CLI only has update/uninstall",
+        "Assert a server stop is required without evidence",
+        "Self-approve candidate publication"
+      ]
+    },
+    {
+      "name": "skin with mixed valid and invalid tokens",
+      "user": "Make a green skin using --agnes-text-primary and --agnes-text-made-up in both themes.",
+      "receipts": [],
+      "must": [
+        "Read the version-matched shared author reference",
+        "Keep supported --agnes-text-primary, replace only the unknown token with an actual listed token",
+        "Use createPluginTestHost for registration, keep appearance verification separate",
+        "Run plugin_test on the final candidateHash"
+      ],
+      "mustNot": [
+        "Claim all --agnes-text-* tokens are unsupported",
+        "Treat the three example tokens as an exhaustive allowlist",
+        "Claim browser verification from strings"
+      ],
+      "deterministic": {
+        "guideKind": "skin",
+        "validToken": "--agnes-text-primary",
+        "invalidToken": "--agnes-text-made-up"
+      }
+    },
+    {
+      "name": "tool plus panel with plugin app storage",
+      "user": "Create a daily itinerary tool with its own UI panel. Keep my itinerary as plugin/app profile data across reopening, not as a workspace document.",
+      "receipts": [],
+      "must": [
+        "Choose plugin_helper_guide(kind: tool-with-panel) and reuse the existing template",
+        "Use optional ToolContext.store with capabilities.store true and handle unavailable storage",
+        "Use execute(args, ctx) with the public invocation context",
+        "Use real-Host registration and invocation tests via createPluginTestHost",
+        "Read candidate, use mode merge with only changed files and retain untouched files",
+        "Add missing panel or storage to the same candidate",
+        "Run plugin_test on the final candidateHash before review"
+      ],
+      "mustNot": [
+        "Invent PluginContext.fs.readText/writeText",
+        "Use ToolContext.fs as private plugin storage",
+        "Verify installation using a hand-made ctx mock",
+        "Scaffold a duplicate after creating the candidate",
+        "Pipe node --test into tail",
+        "Omit the requested UI panel"
+      ],
+      "deterministic": {
+        "guideKind": "tool-with-panel",
+        "storage": "plugin-profile"
+      }
+    }
+  ]
+}

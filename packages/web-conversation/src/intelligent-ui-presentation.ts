@@ -6,8 +6,9 @@ export function apply(ctx: ClientContext) {
   return ctx.presentationRoles.register({
     role: 'interaction',
     priority: 100,
-    mount: () =>
+    mount: (ctx) =>
       mountIntelligentUi({
+        contributions: ctx,
         client: ctx.agnes,
         registry: ctx.slots,
         session: ctx.session,

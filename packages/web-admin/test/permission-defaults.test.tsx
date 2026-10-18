@@ -102,3 +102,44 @@ it.each(['en', 'zh-CN'] as const)('describes default permission boundaries in %s
     locale === 'en' ? 'installation trust confirmations' : '安装信任确认',
   )
 })
+
+it.each(['pending', 'failed'])(
+  'shows saved defaults while composition is %s without loading loops',
+  async (status) => {
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).endsWith('/context'))
+        return Response.json({
+          profile: 'local-dev',
+          clientId: 'fixture',
+          authScope: 'auth.fixture',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+        })
+      if (url === '/admin/api/defaults')
+        return Response.json({ revision: 4, defaults: { preset: 'workspace-write' } })
+      if (url === '/admin/api/composition') {
+        if (status === 'failed') throw new Error('catalog unavailable')
+        return new Promise<Response>(() => {})
+      }
+      throw new Error('unexpected catalog request')
+    })
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(PermissionDefaults, {
+            available: ['read-only', 'workspace-write', 'full-access'],
+            fetcher,
+          }),
+        ),
+      )
+      const choice = host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')!
+      expect(choice.checked).toBe(true)
+      expect(choice.disabled).toBe(false)
+      expect(fetcher.mock.calls.some(([url]) => url === '/admin/api/loops')).toBe(false)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

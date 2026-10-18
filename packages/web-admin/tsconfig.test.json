@@ -35,6 +35,9 @@
     },
     {
       "path": "../web-foundation/tsconfig.testkit.json"
+    },
+    {
+      "path": "../daemon-admin"
     }
   ]
 }

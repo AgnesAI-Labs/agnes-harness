@@ -683,12 +683,12 @@ describe('ui data source resolution', () => {
     }
   })
 
-  it('denies a uiData atom added to a development package after the snapshot was sealed', () => {
+  it('denies a uiData atom added to a development package after the snapshot was sealed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agh-ui-source-dev-'))
     const profile = join(root, 'profile')
     mkdirSync(profile, { recursive: true })
     const packageDir = fileURLToPath(new URL('../../../examples/fde/finance-reconcile/', import.meta.url))
-    const source = readDevelopmentPlugin(packageDir, 'local-dev')
+    const source = await readDevelopmentPlugin(packageDir, 'local-dev')
     const packageId = source.snapshot.packageId
     const row = createPluginRow({
       id: 'ext:finance/main',

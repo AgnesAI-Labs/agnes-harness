@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import type { ServiceContext } from '@agnes/extension-api'
+import { validateMethod } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createJobTools } from '../src/index.js'
@@ -175,6 +176,12 @@ it('keeps backend origin, isolates controls and reports slow or capped output wi
       job: { status: 'completed', code: 0 },
     })
     expect(jobs.list(tool).find((job) => job.id === agent.id)?.status).toBe('running')
+    const legacy = await jobs.openTerminal(tool, 'powershell', tool.cwd, undefined, false)
+    expect(legacy.shell).toBe('powershell')
+    const snapshot = await read!.handler({ jobId: legacy.id }, ctx)
+    expect(validateMethod('_agnes/v1/session.jobs.read', 'result', snapshot)).toMatchObject({ ok: true })
+    expect(snapshot).toMatchObject({ job: { id: legacy.id, kind: 'shell-session' } })
+    expect(snapshot).not.toHaveProperty('job.shell')
   } finally {
     await jobs.dispose()
   }

@@ -38,6 +38,7 @@ export async function runAppServer(argv: readonly string[], io: MainIO): Promise
   }
   if (!stdio) throw new UsageError('agh app-server requires --stdio or schema --out <dir>')
   const backend = await ensureLocalBackend({
+    preparation: 'connect-first',
     env: io.env,
     cwd: workspace,
     workspace,

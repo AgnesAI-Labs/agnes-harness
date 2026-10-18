@@ -44,6 +44,7 @@ function Pages({
 }) {
   const detail = useHostedDialog({
     id: 'detail',
+    returnFocus: () => document.getElementById('list'),
     ready: 0,
     owns: (segment) => segment.startsWith('item:'),
     pageOf: (host) => `item:${host.dataset.item}`,
@@ -74,7 +75,7 @@ async function mount(open: (segment: string) => HostedOpen = () => 'opened') {
       createElement(
         PushStack,
         { rootTitle: 'Plugins', route: searchParamRoute('view') },
-        createElement('p', { id: 'list' }, 'list'),
+        createElement('button', { id: 'list', type: 'button' }, 'Open item'),
         createElement(Pages, { open }),
       ),
     ),
@@ -100,6 +101,7 @@ it('shows an opened detail as a page with 返回 and its address, and 返回 clo
   await settle()
   expect(closed).toHaveBeenCalledOnce()
   expect(detail.open).toBe(false)
+  expect(document.activeElement).toBe(document.getElementById('list'))
   expect(view()).toBeNull()
   // Back where the controller keeps it once its page has gone.
   expect(document.getElementById('detail-shell')?.contains(detail)).toBe(true)
@@ -117,6 +119,7 @@ it('leaves the page when the controller closes its detail, and when the browser 
   await settle()
   expect(view()).toBeNull()
   expect(document.querySelector('[data-testid="push-page-item:a"]')).toBeNull()
+  expect(document.activeElement).toBe(document.getElementById('list'))
   // Completing the controller flow keeps its parent page and leaves no finished detail ahead.
   await act(async () => history.forward())
   await settle()

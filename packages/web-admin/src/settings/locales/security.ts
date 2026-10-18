@@ -48,7 +48,7 @@ export const securityCatalog: LocaleCatalog = {
     fullAccess: 'Full access',
     notAllowed: 'Not allowed by this profile',
     sandbox: 'Isolation method (sandbox)',
-    securityStart: 'Use this permission preset',
+    securityStart: 'Use this permission profile',
   },
   'zh-CN': {
     'platform.darwin': 'macOS',
@@ -97,6 +97,6 @@ export const securityCatalog: LocaleCatalog = {
     fullAccess: '完全访问',
     notAllowed: '当前配置档未放行',
     sandbox: '隔离方式（沙箱）',
-    securityStart: '使用此权限预设',
+    securityStart: '使用此权限方案',
   },
 }

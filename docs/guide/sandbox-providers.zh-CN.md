@@ -56,6 +56,14 @@ Docker 示例仅展示进程/网络隔离，没有完整的 Host 文件拒绝策
 
 显式 L0 覆盖不要求命令隔离，并报告 `level: none, scope: []`；文件工具的围栏独立生效。
 
+## 本机隔离中的标准设备
+
+macOS Seatbelt 配置仅为精确路径 `/dev/null` 允许读写，并为精确路径 `/dev/zero`、`/dev/random`、`/dev/urandom` 允许读取。这使 workspace-write 下的 Git 等命令能够使用空设备，读取范围受限时也适用。它不会为其他三个设备授予写入权限，也不增加 `/dev` 整棵子树、原始磁盘、临时目录写入或额外 ioctl 权限。现有控制终端 ioctl 规则保持不变。显式路径拒绝优先于设备授权，受保护路径和工作区写入边界保留原有约束。
+
+本机 stdio MCP 隔离复用同一编译器，因此 strict、workspace-write、network 配置具有相同设备例外。其运行时读取列表已经包含 `/dev/null` 和 `/dev/urandom`；仅有读取授权并不足以允许写入。
+
+Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴露宿主原始设备；其设备权限与 Seatbelt 的精确路径规则并不完全相同。目前 Landlock 仅用于 ABI 诊断，不是另一套命令隔离后端。Windows 尚无已实现的本机 L1 后端，Windows 编译器拒绝隔离请求，仅下文明确的条件启动策略可授予未实现平台例外。本次 macOS 缺陷无需调整 Linux 或 Windows 的设备策略。
+
 ## 本机条件隔离
 
 `l1Implementation` 表示实现支持状态（`implemented`、`unimplemented`、`unknown`），与命令是否可执行、工作区实际探测分别记录。缺字段为未知。只有可信内置本机后端可授予未实现例外；第三方声明不能授权回退本机执行。

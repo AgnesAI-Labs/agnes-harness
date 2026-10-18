@@ -90,7 +90,8 @@ it('picks the default permission from three cards, confirms full access, and off
   let defaults: Record<string, unknown> = { preset: 'workspace-write' }
   let revision = 3
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === '/admin/api/loops') return Response.json({ revision, defaults, loops: [] })
+    if (url === '/admin/api/defaults' && init?.method !== 'PUT')
+      return Response.json({ revision, defaults, loops: [] })
     if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
     if (url === '/admin/api/defaults') {
       const body = JSON.parse(String(init?.body))
@@ -145,13 +146,13 @@ it('names an automatic fast reviewer instead of calling it unset, and still warn
         if (init?.method === 'POST') auto = JSON.parse(String(init.body))
         return Response.json(auto)
       }
+      if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
       if (url === '/admin/api/model-slots')
         return Response.json({
           revision: 1,
           slots: { verifier: null },
           // The fast slot is unset, so it follows the default account's model.
           auto: { fast: { accountId: 'agnes', route: 'agnes', model: 'agnes-pro' } },
-          modelAdapters: [],
           canSave: true,
         })
       return Response.json({ profile: 'local-dev', clientId: 'admin', permissions: [], readOnly: false })
@@ -178,7 +179,7 @@ it('rereads the defaults on a revision conflict, keeps the chosen preset, and re
   let revision = 3
   let conflictOnce = true
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === '/admin/api/loops')
+    if (url === '/admin/api/defaults' && init?.method !== 'PUT')
       return Response.json({ revision, defaults: { preset: 'workspace-write' }, loops: [] })
     if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
     if (url === '/admin/api/defaults') {
@@ -216,10 +217,10 @@ it('rereads the defaults on a revision conflict, keeps the chosen preset, and re
   expect(saves.at(-1)).toEqual({ revision: 7, defaults: { preset: 'read-only' } })
   expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
   // Defaults saved elsewhere are read again.
-  const reads = fetcher.mock.calls.filter(([url]) => url === '/admin/api/loops').length
+  const reads = fetcher.mock.calls.filter(([url]) => url === '/admin/api/defaults').length
   await act(async () => window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed')))
   await act(async () => {})
-  expect(fetcher.mock.calls.filter(([url]) => url === '/admin/api/loops').length).toBeGreaterThan(reads)
+  expect(fetcher.mock.calls.filter(([url]) => url === '/admin/api/defaults').length).toBeGreaterThan(reads)
 })
 
 it('keeps the last auto review switch when an earlier save is slower (B01, one write at a time)', async () => {

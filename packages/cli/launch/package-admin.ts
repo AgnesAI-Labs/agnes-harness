@@ -44,6 +44,7 @@ import type { LocalBackend } from './backend.js'
 import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
+import { launchFailure } from './launch-failure.js'
 import { pluginStreamProxy } from './plugin-stream-proxy.js'
 import { profileServiceRelay } from './profile-service-relay.js'
 
@@ -130,6 +131,26 @@ export function localPackageAdmin(
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
     switch (action) {
+      case 'application/get':
+        return client.request(
+          '_agnes/v1/applications.get',
+          params as import('@agnes/protocol').PackageListParams,
+        )
+      case 'application/preview':
+        return client.request(
+          '_agnes/v1/applications.preview',
+          params as import('@agnes/protocol').ApplicationPreviewParams,
+        )
+      case 'application/adopt':
+        return client.request(
+          '_agnes/v1/applications.adopt',
+          params as import('@agnes/protocol').ApplicationAdoptParams,
+        )
+      case 'application/clear':
+        return client.request(
+          '_agnes/v1/applications.clear',
+          params as import('@agnes/protocol').ApplicationClearParams,
+        )
       case 'candidates/list':
         return client.request(
           '_agnes/v1/plugins.candidates.list',
@@ -554,7 +575,8 @@ export function localPackageAdmin(
     },
     async handleClientExamples(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       const url = new URL(request.url ?? '/', origin)
-      if (url.pathname !== '/api/client-modules/examples') return false
+      const agent = url.pathname === '/api/agents/launch'
+      if (!agent && url.pathname !== '/api/client-modules/examples') return false
       if (
         request.method !== 'POST' ||
         url.search ||
@@ -568,7 +590,7 @@ export function localPackageAdmin(
       const body = await jsonBody(request)
       if (
         !body ||
-        typeof body.rowId !== 'string' ||
+        (!agent && typeof body.rowId !== 'string') ||
         !record(body.request) ||
         Object.keys(body).some((key) => key !== 'rowId' && key !== 'request')
       ) {
@@ -576,21 +598,15 @@ export function localPackageAdmin(
         return true
       }
       try {
-        serviceReply(response, 200, await examples.call(body.rowId, body.request))
+        serviceReply(
+          response,
+          200,
+          agent
+            ? await examples.callAgent(body.request)
+            : await examples.call(typeof body.rowId === 'string' ? body.rowId : '', body.request),
+        )
       } catch (error) {
-        const code =
-          error instanceof Error &&
-          [
-            'E_PACKAGE_PREVIEW_STALE',
-            'E_PACKAGE_BLOCKED',
-            'E_PACKAGE_STATE',
-            'OUTCOME_UNKNOWN',
-            'INVALID_REQUEST',
-            'OVERLOADED',
-          ].includes(error.message)
-            ? error.message
-            : 'CAPABILITY_DENIED'
-        const status = code === 'CAPABILITY_DENIED' ? 403 : 409
+        const { code, status } = launchFailure(error)
         serviceReply(response, status, { error: httpRpcError(status, code) })
       }
       return true

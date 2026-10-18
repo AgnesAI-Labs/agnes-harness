@@ -95,7 +95,7 @@ describe('rendered sidebar region', () => {
       expect(document.body.classList.contains('sidebar-collapsed')).toBe(collapsed)
       // happy-dom does not suppress clicks on inert trees, so assert the browser gate explicitly.
       expect((sidebar as HTMLElement).inert).toBe(false)
-      for (const name of ['New session', 'Settings']) {
+      for (const name of ['New conversation', 'Settings']) {
         const button = getByRole(sidebar as HTMLElement, 'button', { name })
         flushSync(() => button.focus())
         expect(document.activeElement).toBe(button)
@@ -445,7 +445,7 @@ describe('rendered sidebar region', () => {
           placement: 'primary',
           icon: 'plug',
           titleKey: `home.entry.${id}`,
-          ...(id === 'agents' ? { subtitleKey: 'home.entry.agents.sub' } : {}),
+          ...(id === 'plugins' ? { badge: { getSnapshot: () => 2, subscribe: () => () => {} } } : {}),
           component: page,
         }),
       ),
@@ -475,21 +475,33 @@ describe('rendered sidebar region', () => {
         [...(sidebar?.querySelectorAll('[data-testid^="home-entry-"]') ?? [])].map((entry) =>
           entry.getAttribute('data-testid'),
         )
-      // The FDE entry is named "Agent"; its built-in registration adds FDE as a quiet note.
+      // Built-in pages stay above workspaces in their navigation order.
       const agents = sidebar?.querySelector('[data-testid="home-entry-agents"]')
-      expect(agents?.querySelector('.home-entry-label')?.firstChild?.textContent).toBe('Agent')
+      expect(agents?.querySelector('.home-entry-label')?.firstChild?.textContent).toBe('Agents')
       expect(ids()).toEqual([
-        'home-entry-agents',
         'home-entry-plugins',
+        'home-entry-agents',
         'home-entry-automation',
         'home-entry-primary.board',
         'home-entry-example.board',
       ])
+      expect(
+        sidebar?.querySelector('[data-testid="home-entry-plugins"]')?.closest('.sidebar-footer'),
+      ).toBeNull()
+      expect(sidebar?.querySelectorAll('.sidebar-footer .home-entry')).toHaveLength(0)
+      expect(agents?.closest('.sidebar-footer')).toBeNull()
+      expect(
+        sidebar?.querySelector('[data-testid="home-entry-plugins"] .home-entry-badge')?.textContent,
+      ).toContain('2')
       // The entries sit between the new-session action and the workspace list.
       const entries = sidebar?.querySelector('[data-testid="home-entries"]')
       expect(
-        sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ??
-          0 & Node.DOCUMENT_POSITION_FOLLOWING,
+        (sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ?? 0) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(
+        (entries?.compareDocumentPosition(sidebar?.querySelector('#sessions') as Node) ?? 0) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
       for (const collapsed of [true, false]) {
         document.getElementById('sidebar-toggle')?.click()
@@ -497,7 +509,7 @@ describe('rendered sidebar region', () => {
         expect((sidebar as HTMLElement).inert).toBe(false)
         for (const id of BUILTIN_HOME_ENTRIES) {
           const title = runtime.locale.t(`home.entry.${id}`)
-          const name = id === 'agents' ? `${title} · ${runtime.locale.t('home.entry.agents.sub')}` : title
+          const name = title
           const button = getByRole(sidebar as HTMLElement, 'button', { name })
           flushSync(() => button.focus())
           expect(document.activeElement).toBe(button)

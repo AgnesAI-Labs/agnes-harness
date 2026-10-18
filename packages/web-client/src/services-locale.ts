@@ -1,5 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
 import { notifyListeners } from '@agnes/sdk/browser'
+import { applicationBrand, applicationIdentity } from './application-identity.js'
 
 export const UI_LOCALES = ['en', 'zh-CN'] as const
 export type UiLocale = (typeof UI_LOCALES)[number]
@@ -30,6 +31,9 @@ export class LocaleService extends Service {
 
   constructor(ctx: Context, initial: string) {
     super(ctx, 'locale')
+    ctx.effect(() =>
+      applicationIdentity.subscribe(() => notifyListeners(this.listeners, 'application identity')),
+    )
     this.currentLocale = resolveUiLocale(initial)
   }
 
@@ -56,6 +60,8 @@ export class LocaleService extends Service {
    * 当前语言没有该 key 时回落英文，英文也没有则回落 key 本身。
    */
   t(key: string, vars?: LocaleVars): string {
+    if (key === 'brand.agent') return applicationBrand(this.currentLocale).assistantName
+    if (key === 'brand.harness') return applicationBrand(this.currentLocale).name
     const direct = this.lookup(this.currentLocale, key)
     const hit = direct ?? (this.currentLocale === 'en' ? undefined : this.lookup('en', key))
     return interpolate(hit ?? key, vars)

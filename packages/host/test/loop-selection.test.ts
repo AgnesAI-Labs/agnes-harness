@@ -135,8 +135,12 @@ async function fixture(
         ].map((id) => [
           id,
           {
-            version: '1.0.0',
-            integrity: source.snapshot.integrity,
+            version: id === source.snapshot.packageId ? '1.0.0' : '0.1.0',
+            source:
+              id === source.snapshot.packageId
+                ? { type: 'file' as const, ref: 'file:fixture' }
+                : { type: 'builtin' as const, ref: 'builtin' },
+            integrity: id === source.snapshot.packageId ? source.snapshot.integrity : 'builtin:0.1.0',
             trust: id === source.snapshot.packageId ? 'trusted' : 'builtin',
             enabled: true,
           },

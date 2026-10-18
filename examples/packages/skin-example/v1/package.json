@@ -14,7 +14,6 @@
           "displayName": "Appearance example",
           "summary": "Demonstrates a selectable appearance theme with light and dark variants.",
           "description": "Demonstrates a selectable appearance theme with light and dark variants.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "外观示例",
@@ -35,7 +34,6 @@
       "displayName": "Appearance example",
       "summary": "Demonstrates a selectable appearance theme with light and dark variants.",
       "description": "Demonstrates a selectable appearance theme with light and dark variants.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "外观示例",
@@ -43,7 +41,10 @@
           "description": "演示可选外观主题及其浅色、深色变体。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

@@ -27,6 +27,16 @@ import {
 // few milliseconds, but a loaded runner has taken longer than the fixed sleeps these checks used
 // before. Wait for the rendered state instead.
 const committed = { timeout: 5_000 }
+const loadExample = (path: string) => import(path)
+const profileBinding = (owner: string) => ({
+  owner,
+  lifetime: 'profile' as const,
+  availability: 'active' as const,
+  packageId: owner,
+  integrity: 'one',
+  profileId: 'fixture',
+  activationId: 'current',
+})
 
 const containers: { root: Root; el: HTMLElement }[] = []
 
@@ -231,6 +241,15 @@ describe('clientModule fiber 绑定', () => {
         },
       }),
       {
+        binding: {
+          owner: 'profile-services',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'acme/reports',
+          integrity: 'sha256-' + '0'.repeat(64),
+          profileId: 'local',
+          activationId: 'one',
+        },
         packageId: 'acme/reports',
         rowId: 'web:acme/reports',
         revision: 'r1',
@@ -561,7 +580,11 @@ describe('client command boundary', () => {
           cctx.commands.register({ id: 'demo.run', title: 'Run demo', execute: run })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1' },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+      },
     )
     await fiber
     expect(commands.list()).toEqual([{ id: 'demo.run', owner: 'pkg-demo', title: 'Run demo' }])
@@ -586,7 +609,11 @@ describe('client command boundary', () => {
           cctx.commands.register({ id: 'demo.deny', execute() {} })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1' },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+      },
     )
     await fiber
     await expect(commands.execute('demo.deny', {})).rejects.toThrow('not authorized')
@@ -613,6 +640,7 @@ describe('client command boundary', () => {
       }),
       {
         rowId: 'web:pkg-demo/panel',
+        binding: profileBinding('pkg-demo'),
         packageId: 'pkg-demo',
         revision: 'r1',
         services: ['panel.write'],
@@ -648,7 +676,12 @@ describe('client command boundary', () => {
           cctx.commands.registerEffect({ id: 'demo.denied-effect', service: 'panel.write' })
         },
       }),
-      { packageId: 'pkg-demo', revision: 'r1', services: ['panel.write'] },
+      {
+        binding: profileBinding('pkg-demo'),
+        packageId: 'pkg-demo',
+        revision: 'r1',
+        services: ['panel.write'],
+      },
     )
     await fiber
     await expect(commands.execute('demo.denied-effect', {})).rejects.toThrow('not authorized')
@@ -1005,4 +1038,376 @@ it('binds profile streams to the accepted roster and aborts pending opens on imm
     vi.unstubAllGlobals()
     await fiber.dispose()
   }
+})
+
+it('owns author pages, views, tool cards, settings and composer commands; a bad role mount reclaims partial work', async () => {
+  const api = await import('../src/index.js')
+  const { ctx, registry } = await makeRegistry()
+  let module!: ClientContext
+  const config = {
+    packageId: 'author',
+    revision: 'one',
+    clientId: 'ui',
+    rowId: 'web:author',
+    binding: { owner: 'author', lifetime: 'profile', availability: 'active' },
+    homeEntries: [{ id: 'author-page', placement: 'secondary' }],
+  }
+  const fiber = ctx.plugin(
+    clientModule({
+      apply(c) {
+        module = c
+      },
+    }),
+    config as never,
+  )
+  await fiber
+  const empty = () => null
+  module.homeEntries.register({
+    id: 'author-page',
+    order: 0,
+    icon: 'puzzle',
+    titleKey: 'author',
+    component: empty,
+  })
+  module.workbenchPanels.register({
+    id: 'author-panel',
+    order: 0,
+    edge: 'right',
+    titleKey: 'author',
+    component: empty,
+  })
+  module.conversationCards.register({ id: 'author-card', order: 0, matches: () => true, component: empty })
+  module.settingsSections.register({
+    id: 'author-settings',
+    order: 0,
+    group: 'author',
+    groupTitleKey: 'author',
+    titleKey: 'author',
+    icon: 'puzzle',
+    component: empty,
+  })
+  module.composerCommands.register({ id: 'author-command', order: 0, route: () => undefined })
+  module.fileViewerActions.register({ id: 'author-file', order: 0, component: empty })
+  expect(api.homeEntries.get('author-page')).toBeDefined()
+  expect(() =>
+    module.presentationRoles.register({
+      role: 'author-test',
+      mount(child) {
+        child.workbenchPanels.register({
+          id: 'partial-panel',
+          order: 0,
+          edge: 'right',
+          titleKey: 'author',
+          component: empty,
+        })
+        child.slots.register('workbench.panel', empty)
+        throw new Error('bad mount')
+      },
+    }),
+  ).toThrow('bad mount')
+  expect(api.workbenchPanels.get('partial-panel')).toBeUndefined()
+  expect(registry.entries('workbench.panel')).toHaveLength(0)
+  api.revokeContributionOwner('author')
+  for (const [raw, id] of [
+    [api.homeEntries, 'author-page'],
+    [api.workbenchPanels, 'author-panel'],
+    [api.conversationCards, 'author-card'],
+    [api.settingsSections, 'author-settings'],
+    [api.composerCommands, 'author-command'],
+    [api.fileViewerActions, 'author-file'],
+  ] as const) {
+    expect(raw.get(id)).toBeUndefined()
+  }
+  expect(() =>
+    module.workbenchPanels.register({
+      id: 'late-panel',
+      order: 0,
+      edge: 'right',
+      titleKey: 'late',
+      component: empty,
+    }),
+  ).toThrow('revoked')
+  const replacement = ctx.plugin(
+    clientModule({
+      apply(child) {
+        child.workbenchPanels.register({
+          id: 'author-panel',
+          order: 0,
+          edge: 'right',
+          titleKey: 'new',
+          component: empty,
+        })
+      },
+    }),
+    config as never,
+  )
+  await replacement
+  await fiber.dispose()
+  expect(api.workbenchPanels.get('author-panel')?.titleKey).toBe('new')
+  await replacement.dispose()
+})
+
+it.each(['active', 'history-only'] as const)(
+  'session %s modules cannot register global views, pages, roles, commands, settings or profile management',
+  async (availability) => {
+    const { ctx } = await makeRegistry(undefined, undefined, async () => ({ output: 'secret' }))
+    let module!: ClientContext
+    const fiber = ctx.plugin(
+      clientModule({
+        apply(c) {
+          module = c
+        },
+      }),
+      {
+        packageId: 'historical',
+        slotCatalogVersion: DSH_SLOT_CATALOG_VERSION,
+        revision: 'one',
+        services: ['query'],
+        binding: { owner: 'history', lifetime: 'session', availability },
+      } as never,
+    )
+    await fiber
+    for (const register of [
+      () => module.slots.register('workbench.panel', () => null),
+      () =>
+        module.workbenchPanels.register({
+          id: 'history-panel',
+          order: 0,
+          edge: 'right',
+          titleKey: 'h',
+          component: () => null,
+        }),
+      () =>
+        module.settingsSections.register({
+          id: 'history-settings',
+          order: 0,
+          group: 'h',
+          groupTitleKey: 'h',
+          titleKey: 'h',
+          icon: 'puzzle',
+          component: () => null,
+        }),
+      () => module.commands.register({ id: 'history-command', execute() {} }),
+      () => module.presentationRoles.register({ role: 'history-test', mount: () => () => {} }),
+      () =>
+        module.homeEntries.register({
+          id: 'history-page',
+          order: 0,
+          titleKey: 'h',
+          icon: 'puzzle',
+          component: () => null,
+        }),
+    ])
+      expect(register).toThrow()
+    ;(ctx.get('slots') as SlotRegistry).declare('conversation.view', { kind: 'list', scope: 'session' })
+    module.slots.register('conversation.view', () => null)
+    expect((ctx.get('slots') as SlotRegistry).entries('conversation.view')).toHaveLength(1)
+    await expect(module.profile.services.query('query', {})).rejects.toThrow('CAPABILITY_DENIED')
+    await expect(module.profile.streams.open('history', {})).rejects.toThrow('unavailable')
+    await fiber.dispose()
+  },
+)
+
+it('publishes readiness epochs for cold mount, rebinding and failure and rejects stale projection reads', async () => {
+  let finish!: (value: unknown) => void
+  const pending = new Promise((resolve) => {
+    finish = resolve
+  })
+  const handles = new Map(
+    ['a', 'b'].map((id) => [
+      id,
+      { id, listeners: new Set(), projectUI: () => (id === 'a' ? pending : Promise.resolve('b')) },
+    ]),
+  )
+  const { ctx } = await makeRegistry({ sessions: { get: (id: string) => handles.get(id) } } as never)
+  const session = ctx.get('session') as SessionService
+  expect(session.readiness.getSnapshot().status).toBe('no-session')
+  const identities = vi.fn()
+  const readiness = vi.fn()
+  session.subscribe(identities)
+  session.readiness.subscribe(readiness)
+  session.setReadiness('connecting', 'a')
+  const connecting = session.readiness.getSnapshot()
+  session.setSession('a')
+  expect(session.readiness.getSnapshot()).toMatchObject({ status: 'ready', sessionId: 'a' })
+  identities.mockClear()
+  session.setReadiness('connecting', 'a')
+  session.reattach('a')
+  expect(identities).not.toHaveBeenCalled()
+  expect(readiness).toHaveBeenCalled()
+  const read = session.projection.read()
+  session.setSession('b')
+  expect(identities).toHaveBeenCalledTimes(1)
+  finish('old-a')
+  expect(await read).toMatchObject({ status: 'unavailable' })
+  expect(session.readiness.getSnapshot().epoch).toBeGreaterThan(connecting.epoch)
+  session.setReadiness('history-only', 'b')
+  expect(session.readiness.getSnapshot().status).toBe('history-only')
+  session.setReadiness('failed', 'b')
+  expect(session.readiness.getSnapshot().status).toBe('failed')
+  session.setSession(undefined)
+  expect(session.readiness.getSnapshot().status).toBe('no-session')
+  await ctx.fiber.dispose()
+})
+
+it('waits for session ready in the official service example and ignores old session results', async () => {
+  const mod = await loadExample(
+    '../../../examples/packages/client-service-panel/v1/extensions/main/client/index.js',
+  )
+  const replies = new Map<string, (value: unknown) => void>()
+  const { ctx, registry } = await makeRegistry(
+    { sessions: { get: (id: string) => ({ id, listeners: new Set() }) } } as never,
+    async (_, id) => new Promise((resolve) => replies.set(id, resolve)),
+  )
+  const fiber = ctx.plugin(clientModule(mod), {
+    binding: profileBinding('example'),
+    packageId: 'example',
+    revision: 'one',
+    services: ['panel.version'],
+  })
+  await fiber
+  expect(replies.size).toBe(0)
+  const session = ctx.get('session') as SessionService
+  session.setSession('a')
+  session.setSession('b')
+  replies.get('a')?.({ version: 'stale-a' })
+  await Promise.resolve()
+  expect(registry.entries('workbench.panel')).toHaveLength(0)
+  replies.get('b')?.({ version: 'ready-b' })
+  await vi.waitFor(() => expect(registry.entries('workbench.panel')).toHaveLength(1))
+  const view = registry.entries('workbench.panel')[0]!.component as () => string
+  expect(view()).toContain('ready-b')
+  await fiber.dispose()
+  expect(registry.entries('workbench.panel')).toHaveLength(0)
+})
+
+it('runs the public component library as data-only DOM and registers the tool-result card through its scope', async () => {
+  const { renderers } = await loadExample('../../../examples/ui/component-library/src/components.js')
+  const host = document.createElement('div')
+  const dispose = renderers['@example/ui-components/note@1'](host, {
+    text: '<script>window.stolen=true</script>',
+  })
+  expect(host.querySelector('script')).toBeNull()
+  expect(host.textContent).toContain('<script>')
+  dispose()
+  expect(host.childNodes.length).toBe(0)
+  const mod = await loadExample('../../../examples/ui/tool-result-card/src/client.js')
+  const { ctx } = await makeRegistry()
+  const fiber = ctx.plugin(clientModule(mod), {
+    binding: profileBinding('tool-result-example'),
+    packageId: 'tool-result-example',
+    revision: 'one',
+  })
+  await fiber
+  const { conversationCards } = await import('../src/index.js')
+  const card = conversationCards.get('example-tool-result')!
+  expect(card.matches({ kind: 'conversation.node', data: { kind: 'tool', name: 'ui_example_ack' } })).toBe(
+    true,
+  )
+  expect(card.matches({ kind: 'conversation.node', data: { kind: 'tool', name: 'other' } })).toBe(false)
+  await fiber.dispose()
+  expect(conversationCards.get('example-tool-result')).toBeUndefined()
+})
+
+it('runs the public review Loop until authenticated action input, retaining the command id across resume', async () => {
+  const { createReviewLoop } = await loadExample('../../../examples/ui/component-library/index.mjs')
+  const loop = createReviewLoop()
+  const inputs: unknown[] = [
+    { turnId: 7, origin: 'principal' },
+    {
+      turnId: 8,
+      origin: 'principal',
+      system: {
+        source: 'agnes/intelligent-ui',
+        type: 'action-result',
+        data: { status: 'succeeded', surfaceId: 'review-7', commandId: 'forged' },
+      },
+    },
+    {
+      turnId: 9,
+      origin: 'system',
+      system: {
+        source: 'agnes/intelligent-ui',
+        type: 'action-result',
+        data: {
+          status: 'succeeded',
+          surfaceId: 'review-7',
+          commandId: 'one',
+          invocation: { tool: 'ui_example_ack' },
+        },
+      },
+    },
+  ]
+  const effects: unknown[] = [],
+    events: unknown[] = []
+  const ports = {
+    input: { accept: async () => inputs.shift() },
+    tools: {
+      execute: async (value: unknown) => {
+        effects.push(value)
+        return { content: [] }
+      },
+    },
+    checkpoints: { write: async () => {} },
+    events: {
+      finish: async () => ({ outcome: 'turn-ended', reason: 'completed' }),
+      emit: async (...args: unknown[]) => {
+        events.push(args)
+      },
+    },
+    wait: { park: async () => {} },
+  }
+  const driver = loop.create(ports)
+  const signal = new AbortController().signal
+  await driver.step(signal)
+  expect(effects).toHaveLength(1)
+  await driver.step(signal)
+  expect(events).toEqual([])
+  await driver.step(signal)
+  expect(events).toEqual([['review.completed', { commandId: 'one' }]])
+  const resumed = loop.resume(ports, driver.checkpoint())
+  inputs.push({
+    turnId: 10,
+    origin: 'system',
+    system: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      data: {
+        status: 'succeeded',
+        surfaceId: 'review-7',
+        commandId: 'one',
+        invocation: { tool: 'ui_example_ack' },
+      },
+    },
+  })
+  await resumed.step(signal)
+  expect(effects).toHaveLength(1)
+  expect(events).toHaveLength(1)
+})
+
+it('selects the public complete interaction renderer and revokes every placement on release', async () => {
+  const api = await import('../src/index.js')
+  const example = await loadExample('../../../examples/ui/interaction-renderer/src/client.js')
+  const { ctx, registry } = await makeRegistry()
+  registry.declare('conversation.view', { kind: 'list', scope: 'session' }, 'host')
+  const fiber = ctx.plugin(clientModule(example), {
+    packageId: '@example/ui-interactions',
+    clientId: 'interaction-renderer',
+    revision: 'one',
+    presentationRoles: ['interaction'],
+    slotCatalogVersion: 'dsh-client-slots/v1',
+    allowedSlots: ['conversation.view'],
+    binding: { owner: 'interaction-example', lifetime: 'profile', availability: 'active' },
+  } as never)
+  await fiber
+  expect(api.workbenchPanels.get('example-interactions')).toBeUndefined()
+  api.presentationRoles.select({
+    interaction: { packageId: '@example/ui-interactions', clientId: 'interaction-renderer' },
+  })
+  expect(api.workbenchPanels.get('example-interactions')).toBeDefined()
+  expect(registry.entries('conversation.view')).toHaveLength(1)
+  api.presentationRoles.select()
+  expect(api.workbenchPanels.get('example-interactions')).toBeUndefined()
+  expect(registry.entries('conversation.view')).toHaveLength(0)
+  await fiber.dispose()
 })

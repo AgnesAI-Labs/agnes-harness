@@ -11,9 +11,6 @@
     "LICENSE"
   ],
   "agnes": {
-    "kinds": [
-      "ui"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -26,7 +23,6 @@
         "metadata": {
           "displayName": "Deliverables gallery",
           "summary": "Community replacement for the whole deliverables experience.",
-          "category": "ui",
           "description": "Community replacement for the whole deliverables experience."
         }
       }
@@ -40,8 +36,21 @@
     "metadata": {
       "displayName": "Deliverables gallery",
       "summary": "Community replacement for the whole deliverables experience.",
-      "category": "ui",
       "description": "Community replacement for the whole deliverables experience."
+    },
+    "provides": [
+      "ui"
+    ],
+    "application": {
+      "id": "deliverables-gallery",
+      "presentation": {
+        "roles": {
+          "deliverables": {
+            "packageId": "@community/deliverables-gallery",
+            "clientId": "gallery"
+          }
+        }
+      }
     }
   },
   "peerDependencies": {

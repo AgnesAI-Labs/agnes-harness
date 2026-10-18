@@ -55,6 +55,8 @@ type SessionWorkerAcquireOptions = Readonly<{
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  agent?: string
+  agentDigest?: string
   bundles?: readonly string[]
   loop?: LoopSelection
   parent?: { key: string; boundarySeq: number }
@@ -261,6 +263,8 @@ export class WorkerPool {
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
+        ...(opts.agentDigest !== undefined ? { agentDigest: opts.agentDigest } : {}),
         ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),
         ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
@@ -744,9 +748,10 @@ export class WorkerPool {
   }
 
   /** Resource-control helpers must not block provider setup; only Host-bearing workers do. */
-  hasHostActivity(): boolean {
-    return [...this.slots.values()].some(
-      (slot) => !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
+  hasHostActivity(workerKey?: string): boolean {
+    const slots = workerKey === undefined ? [...this.slots.values()] : [this.slots.get(workerKey)]
+    return slots.some(
+      (slot) => slot && !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
     )
   }
 

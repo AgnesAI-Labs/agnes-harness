@@ -64,7 +64,7 @@ export const memoryCatalog: LocaleCatalog = {
     save: '保存',
     reload: '重新读取',
     failed: '无法载入或保存记忆。',
-    filesHelp: '查看和编辑 Agent 记住的内容。',
+    filesHelp: '查看和编辑智能体记住的内容。',
     usedShort: '已用 {used} / {limit} KB',
   },
 }

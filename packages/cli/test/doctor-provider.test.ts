@@ -83,7 +83,7 @@ it('marks an unconfigured profile as not selected without probing its bundled re
   })
   expect(probes).toBe(0)
 })
-it('fails locally for an enabled account with no usable credential without assembling or probing', async () => {
+it('warns locally for an enabled account with no usable credential without assembling or probing', async () => {
   await expect(
     doctorProvider(undefined, {
       signal: new AbortController().signal,
@@ -103,8 +103,11 @@ it('fails locally for an enabled account with no usable credential without assem
     }),
   ).resolves.toEqual({
     name: 'provider',
-    status: 'fail',
-    detail: ['enabled accounts missing usable credentials (1): missing-key'],
+    status: 'warn',
+    detail: [
+      'CONFIG_CREDENTIAL_REQUIRED: enabled accounts missing usable credentials (1): missing-key',
+      'no configured provider route selected; no credential or inference probe was run',
+    ],
   })
 })
 it('fails closed for configured routes absent from the assembled registry with a bounded summary', async () => {

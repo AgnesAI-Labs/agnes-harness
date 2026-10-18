@@ -40,11 +40,21 @@ const setup = async (over: { config?: typeof config; vault?: boolean } = {}) => 
   const p = await resolveProfile(
     {
       builtin: 'local-dev',
-      builtinPackages: ['@agnes/base', '@agnes/code', '@agnes/ai', vendor],
+      lock: {
+        packages: {
+          [vendor]: {
+            version: '1.0.0',
+            integrity: `sha256-${'a'.repeat(64)}`,
+            source: { type: 'file', ref: 'file:./vendor' },
+            trust: 'trusted',
+            enabled: true,
+          },
+        },
+      },
       user: {
         name: 'p',
         providers: { sandbox: { provider: vendorProvider } },
-        packages: [{ id: vendor, source: 'test', config: over.config ?? config }],
+        packages: [{ id: vendor, source: 'file:./vendor', config: over.config ?? config }],
         adapters: { secrets: { kind: over.vault ? 'vault' : 'env' } },
       },
     },

@@ -50,7 +50,8 @@ export function mountConversationRegion(
   options: ConversationRegionOptions = {},
 ): ConversationRegionMount {
   const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
-  registry.declare(CONVERSATION_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  if (!registry.spec(CONVERSATION_SLOT))
+    registry.declare(CONVERSATION_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
   const handle = { current: null as ConversationHandle | null }
   const removeMainConversationBuiltin = registry.register(
     {

@@ -12,14 +12,9 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
-import { MarketTab, marketTypes } from '../src/pages/plugins/market-tab.js'
+import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
-import {
-  isBusinessAgent,
-  isExperimental,
-  orderInstalled,
-  PluginsTab,
-} from '../src/pages/plugins/plugins-tab.js'
+import { isBusinessAgent, orderInstalled, PluginsTab } from '../src/pages/plugins/plugins-tab.js'
 import {
   CAPABILITIES,
   PLUGIN_TABS,
@@ -177,14 +172,28 @@ describe('plugin grouping', () => {
     ({ id, ...(metadata ? { metadata } : {}) }) as unknown as Parameters<typeof isBusinessAgent>[0]
 
   it('knows a business agent by its metadata, or by its package scope until the field exists', () => {
-    expect(isBusinessAgent(item('@acme/report', { category: 'business-agent' }))).toBe(true)
-    expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(true)
+    expect(
+      isBusinessAgent({
+        ...item('@acme/report'),
+        agents: [
+          {
+            ref: 'acme/kit#work',
+            launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+          },
+        ],
+      }),
+    ).toBe(true)
+    expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(false)
     expect(isBusinessAgent(item('@agnes/attachments', { category: 'tools' }))).toBe(false)
   })
 
   it('lists installed plugins as one run: business agents, then enabled ones, then by name', () => {
     const row = (id: string, desired: string, category: string) =>
-      ({ id, desired, metadata: { category } }) as unknown as Parameters<typeof orderInstalled>[0][number]
+      ({
+        id,
+        desired,
+        ...(category === 'business-agent' ? { agents: [{ ref: 'acme/kit#work', launch: {} }] } : {}),
+      }) as unknown as Parameters<typeof orderInstalled>[0][number]
     const rows = [
       row('zeta', 'enabled', 'tools'),
       row('beta', 'disabled', 'developer'),
@@ -199,30 +208,6 @@ describe('plugin grouping', () => {
       'zeta',
       'beta',
     ])
-  })
-
-  it('files a catalog package under every marketplace type it says it includes', () => {
-    const entry = (id: string, kinds: readonly string[], declared?: readonly string[]) =>
-      ({
-        id,
-        ...(declared ? { kinds: declared } : {}),
-        presentation: { rows: [], ...(kinds.length ? { includes: { kinds } } : {}) },
-      }) as unknown as Parameters<typeof marketTypes>[0]
-    expect(marketTypes(entry('@acme/desk', ['tool', 'skills']))).toEqual(['tool', 'skills'])
-    expect(marketTypes(entry('@acme/loop', ['loop']))).toEqual(['runtime'])
-    expect(marketTypes(entry('@acme/adapter', ['model-adapter', 'ui']))).toEqual(['ui', 'runtime'])
-    expect(marketTypes(entry('@acme/jira', ['mcp']))).toEqual(['mcp'])
-    expect(marketTypes(entry('@acme/review', ['tool', 'bundle']))).toEqual(['agent', 'tool'])
-    // What the package says wins over what its author declared; an older source has only the latter.
-    expect(marketTypes(entry('@acme/both', ['skills'], ['tool']))).toEqual(['skills'])
-    expect(marketTypes(entry('@acme/older', [], ['tool']))).toEqual(['tool'])
-    expect(marketTypes(entry('@acme/plain', []))).toEqual([])
-  })
-
-  it('treats a plugin as experimental only when its metadata says so', () => {
-    expect(isExperimental(item('a', { experimental: true }))).toBe(true)
-    expect(isExperimental(item('a', { experimental: 'yes' }))).toBe(false)
-    expect(isExperimental(item('a'))).toBe(false)
   })
 })
 
@@ -252,7 +237,6 @@ it('groups marketplace releases and opens or installs the selected release', asy
             displayName: 'Hidden example',
             summary: 'Example',
             description: 'Example',
-            category: 'example',
             exampleOf: 'acme/parent',
           },
         },
@@ -418,10 +402,11 @@ describe('skill detail', () => {
   })
 })
 
-it('keeps the bundled helper under built-ins with an enable toggle and excludes parent-owned examples while retaining FDE agents', () => {
+it('keeps all plugins in a single list with the bundled helper enable toggle', () => {
   const row = (id: string, category: string, exampleOf?: string) => ({
     id,
     version: '1.0.0',
+    ...(category === 'business-agent' ? { agents: [{ ref: 'acme/kit#work', launch: {} }] } : {}),
     source: {
       type: 'file',
       ref: `file:./${id === '@agnes/plugin-helper' ? 'bundled-plugins/plugin-helper' : 'examples/plugin'}`,
@@ -436,7 +421,6 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
       displayName: id,
       summary: id,
       description: id,
-      category,
       ...(exampleOf ? { exampleOf } : {}),
     },
   })
@@ -472,12 +456,32 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
   const root = createRoot(host)
   try {
     flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
-    const builtin = host.querySelector('[data-testid="plugin-builtin"]')!
+    const builtin = host.querySelector('[data-testid="plugin-browser"]')!
+    expect(host.querySelector('[data-testid="plugin-builtin"]')).toBeNull()
     expect(builtin.textContent).toContain('@agnes/plugin-helper')
     expect(host.querySelector('[data-testid="plugin-browser"]')?.textContent).toContain(
       '@agnes-fde/support-triage',
     )
-    expect(host.querySelector('[data-plugin-id="acme/example"]')).toBeNull()
+    expect(host.querySelector('[data-plugin-id="acme/example"]')).not.toBeNull()
+    const sourceFilter = host.querySelector<HTMLSelectElement>('select[aria-label="source.label"]')
+    if (!sourceFilter) throw new Error('source filter missing')
+    flushSync(() => {
+      sourceFilter.value = 'official'
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(
+      [...host.querySelectorAll('[data-plugin-id]')].map((row) => row.getAttribute('data-plugin-id')),
+    ).toEqual(['@agnes/plugin-helper'])
+    flushSync(() => {
+      sourceFilter.value = 'local'
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(host.querySelectorAll('[data-plugin-id]')).toHaveLength(2)
+    flushSync(() => {
+      sourceFilter.value = ''
+      sourceFilter.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
     const enable = builtin.querySelector<HTMLButtonElement>(
       '[data-plugin-id="@agnes/plugin-helper"] button[role="switch"]',
     )!
@@ -487,5 +491,119 @@ it('keeps the bundled helper under built-ins with an enable toggle and excludes 
     expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/plugin-helper' }))
   } finally {
     flushSync(() => root.unmount())
+  }
+})
+
+it('filters a single inventory by provenance source and declared capabilities independently of registered evidence', async () => {
+  const { matchesPluginFilters, pluginSource } = await import('../src/pages/plugins/plugins-tab.js')
+  const base = {
+    id: '@agnes-fde/misleading-name',
+    source: { type: 'npm', ref: 'npm:community-kit' },
+    provides: ['tool'],
+    contributions: [],
+    provenance: {
+      source: { type: 'npm', ref: 'npm:community-kit' },
+      integrity: 'sha256-test',
+      signatureVerified: false,
+      verification: 'unverified',
+    },
+  } as unknown as import('@agnes/protocol').PackageInstalledDescriptor
+  const provenance = base.provenance
+  if (!provenance) throw new Error('provenance fixture missing')
+  expect(pluginSource(base)).toBe('community')
+  expect(pluginSource({ ...base, presentation: { origin: 'official', rows: [] } })).toBe('community')
+  expect(
+    pluginSource({
+      ...base,
+      provenance: { ...provenance, source: { type: 'file', ref: 'file:./local' } },
+    }),
+  ).toBe('local')
+  expect(
+    pluginSource({
+      ...base,
+      provenance: { ...provenance, verification: 'official-ed25519', signatureVerified: true },
+    }),
+  ).toBe('official')
+  expect(matchesPluginFilters(base, 'community', 'tool')).toBe(true)
+  expect(matchesPluginFilters(base, 'official', 'tool')).toBe(false)
+  expect(matchesPluginFilters(base, 'community', 'loop')).toBe(false)
+})
+
+it('coalesces pending-review reads and rejects a response invalidated in flight', async () => {
+  const { PluginAdminApi } = await import('@agnes/web-admin/admin/plugins/api')
+  const { PluginsPage } = await import('../src/pages/plugins-page.js')
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}))
+  vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
+    profile: 'synthetic',
+    clientId: 'web',
+    permissions: ['packages.read'],
+    readOnly: false,
+  })
+  vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+  vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+  vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+  vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+  vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockResolvedValue({ orphans: [] } as never)
+  let hidden = false
+  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const reads: ((value: unknown) => void)[] = []
+  const failures: ((reason: Error) => void)[] = []
+  vi.spyOn(PluginAdminApi.prototype, 'candidatesList').mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        reads.push(resolve as (value: unknown) => void)
+        failures.push(reject)
+      }),
+  )
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    document.body.append(dialog)
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const context = {
+    t: (key: string) => key,
+    data: { call: async () => ({}), sessionId: () => undefined, openSettings() {}, startDraft() {} },
+  }
+  const badge = () => host.querySelector('[data-testid="plugins-tab-review"]')?.textContent
+  try {
+    await act(async () => root.render(createElement(PluginsPage, { context })))
+    await vi.waitFor(() => expect(reads.length).toBe(1))
+    await act(async () => reads[0]?.({ candidates: [] }))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidates-changed')))
+    await vi.waitFor(() => expect(reads.length).toBe(2))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidate-count-changed')))
+    // True invalidations are queued, never read in parallel or accepted as an older snapshot.
+    expect(reads).toHaveLength(2)
+    await act(async () => reads[1]?.({ candidates: [{ state: 'review' }] }))
+    expect(badge()).not.toContain('1')
+    await vi.waitFor(() => expect(reads).toHaveLength(3))
+    await act(async () => reads[2]?.({ candidates: [{ state: 'review' }, { state: 'review' }] }))
+    await vi.waitFor(() => expect(badge()).toContain('2'))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidates-changed')))
+    expect(reads).toHaveLength(4)
+    await act(async () => failures[3]?.(new Error('unavailable')))
+    expect(badge()).toContain('2')
+    hidden = true
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('agnes:candidates-changed'))
+    })
+    expect(reads).toHaveLength(4)
+    hidden = false
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(reads).toHaveLength(5)
+    await act(async () => reads[4]?.({ candidates: [{ state: 'review' }] }))
+    expect(badge()).toContain('1')
+  } finally {
+    await act(async () => root.unmount())
+    fetcher.mockRestore()
+    vi.restoreAllMocks()
   }
 })

@@ -15,10 +15,14 @@ export function sessionCount(read: (session: Session) => Promise<number>): Sessi
   const listeners = new Set<() => void>()
   let value: { sessionId: string; count: number } | undefined
   let asked = ''
+  let requestedSession: string | undefined
+  let epoch = 0
   const notify = () => {
     for (const listener of listeners) listener()
   }
   const set = (sessionId: string, count: number) => {
+    // Even an unchanged panel snapshot supersedes an older read for the same session.
+    if (requestedSession === sessionId) epoch++
     if (value?.sessionId === sessionId && value.count === count) return
     value = { sessionId, count }
     notify()
@@ -36,10 +40,12 @@ export function sessionCount(read: (session: Session) => Promise<number>): Sessi
       const key = `${session.id}:${timeline?.upto ?? 0}`
       if (key !== asked) {
         asked = key
+        requestedSession = session.id
+        const requested = ++epoch
         void Promise.resolve()
           .then(() => read(session))
           .then((count) => {
-            if (asked === key) set(session.id, count)
+            if (asked === key && requested === epoch) set(session.id, count)
           })
           .catch(() => undefined)
       }

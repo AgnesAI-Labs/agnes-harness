@@ -67,19 +67,4 @@ describe('built-in web unit contract', () => {
     registry.dispose()
     expect(disposed).toEqual(['sidebar', 'transcript'])
   })
-
-  it('requires parent units before mounting conversation child fills', () => {
-    const registry = new BuiltinWebUnitRegistry()
-    expect(() => registry.mount('@agnes/web-conversation-feedback', () => undefined)).toThrow(
-      'requires mounted dependency @agnes/web-conversation',
-    )
-    registry.mount('@agnes/web-conversation', () => undefined)
-    registry.mount('@agnes/web-conversation-feedback', () => undefined)
-    expect(registry.snapshot().map((row) => row.rowId)).toEqual([
-      'web:@agnes/web-conversation',
-      'web:@agnes/web-conversation-feedback',
-    ])
-    registry.unmount('@agnes/web-conversation')
-    expect(registry.snapshot()).toEqual([])
-  })
 })

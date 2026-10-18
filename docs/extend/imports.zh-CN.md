@@ -4,7 +4,7 @@
 
 [作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md) · [测试](testing.zh-CN.md)
 
-插件代码只从一个包导入：`@agnes/plugin-runtime`。它提供作者 helper，并转出 `@agnes/extension-api` 的全部合同（kind、Loop 端口、provider 类型、错误），所以下表里写 `@agnes/extension-api` 的行也都能从它导入。**作者测试统一使用 `@agnes/host/author-testkit`**。`@agnes/extension-api/host` 是 Host 的后端端口，不是作者入口。所有 kind（无论注册还是绑定）都是同一种 token 类型；只有需要某项 Host 服务时，才从对应合同包导入 token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#4-可选的构建和测试)。
+插件代码只从一个包导入：`@agnes/plugin-runtime`。它提供作者 helper，并转出 `@agnes/extension-api` 的全部合同（kind、Loop 端口、provider 类型、错误），所以下表里写 `@agnes/extension-api` 的行也都能从它导入。**作者测试统一使用 `@agnes/host/author-testkit`**。`@agnes/extension-api/host` 是 Host 的后端端口，不是作者入口。所有 kind（无论注册还是绑定）都是同一种 token 类型；只有需要某项 Host 服务时，才从对应合同包导入 token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#5-可选的构建和测试)。
 
 下文的**作者面**表示预览版支持的公开作者入口，不代表 API 已冻结。**专用合同**用于明确的合同或集成任务。**内部/旧入口——不要使用**表示新作者模板应避开该入口，现有导出仍保留。
 
@@ -31,6 +31,8 @@
 | 测试工具、Skills、Loop 和适配器 | `@agnes/host/author-testkit` | `createPluginTestHost`、`driveLoop`、`scriptedModel`、`runModelAdapter` | 作者面，仅测试文件。自动提供 Host 注册桥；轻量合同测试可显式提供服务替身。 |
 | 测试会话、代际绑定、模型回放或 HTTP/SSE 故障 | `@agnes/host/author-testkit` | `createAuthorTestkit`、`recordModelFixture`、`replayModelFixture`、`startModelFaultServer`、`ScriptedProvider`、`fakeModel`、`fakeRequest` | 作者面，仅测试文件；[测试指南](testing.zh-CN.md)解释 fixture 的边界与清理。 |
 | 检查专用 provider 生命周期合同 | `@agnes/extension-api/testkit` | `runProviderConformance`、`loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance` | 专用合同。需要真实 Host 注册/会话 probe，不是第二套 starter testkit。可选 Vitest 持久化 suites 位于 `@agnes/extension-api/testkit/persistence-contract`。 |
+
+profile 页面从 `react` 导入 React，通过 `ctx.profile.services.query/effect/readOperation` 调用已声明的后端服务，参见[浏览器作者参考](../reference/plugin-author-api.zh-CN.md)和可运行的[面板模板](../../templates/tool-with-panel/)。Node DOM 测试从 `@agnes/web-client/testkit` 导入 `createClientPanelTestHost`，仅替换 `profileCaller` 参数。`createPluginTestHost` 支持隔离的 `storeDir` 验证重建后的持久化，`invokeProfileService` 验证已注册 handler 的合同；原生准入和审批不在此轻量 fixture 范围内。
 
 ## Kind token
 
@@ -76,7 +78,6 @@ Bounded helper 仍只接受其自包含的 tool/Skill/skin 格式。它的 manif
 - [observability 包](../../packages/observability/package.json)、[智能 UI 合同包](../../packages/intelligent-ui-contract/package.json)、[Git worktree 合同包](../../packages/git-worktree-contract/package.json)。
 
 TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供根入口、`/value` 和 `/compiler`。[运行时模块表](../../packages/plugin-runtime/src/provided-externals.ts)提供相同命名空间。
-
 
 ## 会话决策
 

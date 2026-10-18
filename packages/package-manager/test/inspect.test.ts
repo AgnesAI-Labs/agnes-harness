@@ -32,7 +32,6 @@ const purpose = {
   displayName: 'File search',
   summary: 'Find project text.',
   description: 'Find text in readable project files.',
-  category: 'tools' as const,
   locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
 }
 
@@ -254,7 +253,11 @@ it('rejects bundled legacy manifests even when the package does not declare plug
 })
 it.each([
   { agnes: { unknown: [] } },
-  { agnes: { kinds: ['invalid'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
+  { agnes: { kinds: ['tool'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
+  {
+    agnes: { metadata: { ...purpose, category: 'tools' }, plugins: [{ apiRange: '^4.0.0', export: 'main' }] },
+  },
+  { agnes: { provides: ['invalid'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {
     agnes: {
@@ -504,27 +507,55 @@ it('rejects custom npm identity different from the exact source', async () => {
 })
 
 it('projects declared package kinds through preview and verified installed inventory', async () => {
-  pkg({ agnes: { kinds: ['loop', 'ui'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } })
+  pkg({ agnes: { provides: ['loop', 'ui'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } })
   const instance = manager()
   const preview = await instance.inspect(profile, source)
-  expect(preview.kinds).toEqual(['loop', 'ui'])
+  expect(preview.provides).toEqual(['loop', 'ui'])
   await instance.install(profile, source, { expectedIntegrity: preview.integrity })
   const inventory = await instance.inventory(profile)
-  expect(inventory.packages.find((item) => item.id === 'acme/pkg-a')?.kinds).toEqual(['loop', 'ui'])
+  expect(inventory.packages.find((item) => item.id === 'acme/pkg-a')?.provides).toEqual(['loop', 'ui'])
 })
 
 it('installs a static bundle package and exposes its kind without executing an entry', async () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'standard' }
   pkg({
     exports: undefined,
-    agnes: { kinds: ['bundle'], bundles: { base: { profile: { toolPolicy: { readOnly: true } } } } },
+    agnes: {
+      provides: ['bundle'],
+      bundles: { base: { profile: { toolPolicy: { readOnly: true } }, launch } },
+    },
   })
   writeFileSync(join(sourceDir, 'index.ts'), "throw new Error('bundle code must not run')")
   const instance = manager()
   const preview = await instance.inspect(profile, source)
-  expect(preview.kinds).toEqual(['bundle'])
+  expect(preview.provides).toEqual(['bundle'])
+  expect(preview.preflight).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:standard'],
+  })
   expect(preview.blockers).toEqual([])
   await instance.install(profile, source, { expectedIntegrity: preview.integrity })
   expect(
-    (await instance.inventory(profile)).packages.find((item) => item.id === 'acme/pkg-a')?.kinds,
+    (await instance.inventory(profile)).packages.find((item) => item.id === 'acme/pkg-a')?.provides,
   ).toEqual(['bundle'])
+  pkg({
+    exports: undefined,
+    agnes: {
+      provides: ['bundle'],
+      bundles: {
+        base: {
+          launch: { ...launch, preset: 'a' },
+          presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } },
+        },
+      },
+    },
+  })
+  const refusal = {
+    code: 'E_PACKAGE_STATE',
+    detail: { reason: expect.stringContaining('preset extends cycle') },
+  }
+  await expect(instance.inspect(profile, source)).rejects.toMatchObject(refusal)
+  await expect(
+    instance.install(profile, source, { expectedIntegrity: hashDirectory(sourceDir) }),
+  ).rejects.toMatchObject(refusal)
 })

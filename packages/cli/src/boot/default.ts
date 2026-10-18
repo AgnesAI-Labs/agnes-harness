@@ -3,6 +3,7 @@ import { BootError } from '../errors.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { type EnsureLocalBackendOptions, ensureLocalBackend } from './backend.js'
 import { bootConnect, bootLocalConnect, type ConnectBootDeps } from './connect.js'
+import { localPreparation } from './connection-scope.js'
 import { bootLocal, type LocalBootDeps } from './local.js'
 
 export type DefaultBootDeps = LocalBootDeps & Pick<ConnectBootDeps, 'createClientImpl'>
@@ -39,6 +40,7 @@ export async function bootDefault(
   if (options.useEmbedded || p.standalone || p.ephemeral) return bootLocal(p, deps)
 
   const backend = await ensureLocalBackend({
+    preparation: localPreparation(p),
     env: deps.env,
     cwd: p.cwd ?? deps.cwd,
     ...(deps.home ? { home: deps.home } : {}),

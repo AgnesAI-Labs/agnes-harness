@@ -9,6 +9,10 @@ import type { MethodName } from './methods.js'
 export type MethodTier = 'client' | 'admin'
 
 export const METHOD_TIERS: Record<MethodName, MethodTier> = {
+  '_agnes/v1/applications.get': 'admin',
+  '_agnes/v1/applications.preview': 'admin',
+  '_agnes/v1/applications.adopt': 'admin',
+  '_agnes/v1/applications.clear': 'admin',
   '_agnes/v1/pluginRuntime.status': 'admin',
   '_agnes/v1/pluginStreams.endpoint': 'admin',
   '_agnes/v1/admin.feedback': 'admin',
@@ -158,6 +162,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.projectUIHistory': 'client',
   '_agnes/v1/session.revealWorkspace': 'client',
   '_agnes/v1/session.runtime': 'client',
+  '_agnes/v1/agents.resolve': 'client',
   '_agnes/v1/session.tools': 'client',
   '_agnes/v1/session.jobs.read': 'client',
   '_agnes/v1/session.jobs.control': 'client',

@@ -3,6 +3,8 @@ packages:
   - packages/package-manager/bundled-plugins/document-reader
   - packages/package-manager/bundled-plugins/deliverables-ui
   - packages/package-manager/bundled-plugins/goal-ui
+  - packages/package-manager/bundled-plugins/navigation-ui
+  - packages/package-manager/bundled-plugins/conversation-ui
   - packages/package-manager/bundled-plugins/interaction-ui
   - examples/community/deliverables-gallery
   - examples/packages/cordis-greeting
@@ -10,6 +12,7 @@ packages:
   - examples/loops/dag-loop
   - examples/loops/react-loop
   - examples/loops/plan-execute-loop
+  - examples/ui/*
   - examples/demos
   - examples/persistence
   - examples/sandbox/docker

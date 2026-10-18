@@ -1,0 +1,10 @@
+{
+  "client": {
+    "id": "interaction-renderer",
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slots": ["conversation.view"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "presentationRoles": ["interaction"]
+  }
+}

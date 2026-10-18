@@ -154,18 +154,19 @@ it('validates auxiliary routes against the live catalog and denies nonlocal writ
   local.conn.initialized = true
   local.conn.authKind = 'local'
   local.conn.credentialKind = 'local'
-  registerConfiguration(local, configuration, undefined, undefined, undefined, async () => [
-    { route: 'local', id: 'reviewer' },
-  ])
+  const catalog = vi.fn(async () => [{ route: 'local', id: 'reviewer' }])
+  registerConfiguration(local, configuration, undefined, undefined, undefined, catalog)
   const remote = endpoint(false, configuration)
   try {
     expect(await request(local, '_agnes/v1/config.modelSlots.get')).toMatchObject({ result: slots })
+    expect(catalog).not.toHaveBeenCalled()
     expect(
       await request(local, '_agnes/v1/config.modelSlots.save', {
         revision: 2,
         slots: { verifier: { route: 'other', model: 'reviewer' } },
       }),
     ).toMatchObject({ error: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } } })
+    expect(catalog).toHaveBeenCalledTimes(1)
     expect(await request(remote, '_agnes/v1/config.modelSlots.save', slots)).toMatchObject({
       error: { message: 'CAPABILITY_DENIED' },
     })
@@ -179,6 +180,13 @@ it('validates auxiliary routes against the live catalog and denies nonlocal writ
     expect(await request(local, '_agnes/v1/config.modelSlots.save', slots)).toMatchObject({
       result: { revision: 3, slots: slots.slots },
     })
+    expect(catalog).toHaveBeenCalledTimes(2)
+    expect(
+      await request(local, '_agnes/v1/config.modelSlots.save', { revision: 3, slots: {} }),
+    ).toMatchObject({
+      result: { slots: {} },
+    })
+    expect(catalog).toHaveBeenCalledTimes(2)
   } finally {
     await Promise.all([local.close(), remote.close()])
   }

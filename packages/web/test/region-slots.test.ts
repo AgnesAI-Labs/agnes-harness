@@ -93,7 +93,7 @@ describe('migrated empty-state region', () => {
       expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
       // The hero is one lockup: the mark sits beside the wordmark, and the wordmark is the heading.
       const lockup = section.querySelector('.empty-state-lockup')
-      expect(lockup?.firstElementChild?.matches('.empty-brand-mark[aria-hidden="true"]')).toBe(true)
+      expect(!!lockup?.firstElementChild?.querySelector('.empty-brand-mark[aria-hidden="true"]')).toBe(true)
       expect(lockup?.lastElementChild?.id).toBe('empty-state-title')
       expect(lockup?.closest('h1, h2, h3, h4, h5, h6')).toBeTruthy()
       expect(section.querySelector('#empty-state-title')?.getAttribute('translate')).toBe('no')
@@ -178,7 +178,7 @@ describe('migrated sidebar region', () => {
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelectorAll('#new')).toHaveLength(1)
     expect(sidebar.querySelectorAll('#settings')).toHaveLength(1)
-    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新会话')
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话')
     locale.setLocale('en')
     expect(locale.getSnapshot()).toBe('en')
     expect(locale.t('sidebar.settings')).toBe('Settings')
@@ -186,11 +186,11 @@ describe('migrated sidebar region', () => {
       () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
       committed,
     )
-    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New session')
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
     expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
     locale.setLocale('zh-CN')
     await vi.waitFor(
-      () => expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新会话'),
+      () => expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话'),
       committed,
     )
     const remove = slots.register(

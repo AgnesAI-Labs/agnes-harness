@@ -4,6 +4,8 @@
     "lifetime": "profile",
     "slotCatalogVersion": "dsh-client-slots/v1",
     "slots": [],
-    "requiresBackendRows": ["ext:agnes/goal"]
+    "requiresBackendRows": ["ext:agnes/goal"],
+    "presentationRoles": ["goal"],
+    "id": "goal-ui"
   }
 }

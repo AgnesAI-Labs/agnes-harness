@@ -3,10 +3,10 @@ import { join } from 'node:path'
 import { type BundleCatalog, parsePackageBundles } from '@agnes/host-common/profile/composition'
 import {
   defaultVerifyIntegrity,
-  hashDirectory,
   type Lockfile,
   packageDir,
   type RuntimePluginSnapshot,
+  verifiedDirectoryDigestAsync,
 } from '@agnes/package-manager'
 
 /** Read only enabled, trusted package data; never import a bundle's executable entry. */
@@ -25,11 +25,14 @@ export function readInstalledBundles(lock: Lockfile, dataDir: string, profile: s
 }
 
 /** Inspect the selected immutable sources at new-session admission, including hot-installed bundles. */
-export function readRuntimeBundles(sources: readonly RuntimePluginSnapshot[]): BundleCatalog {
+export async function readRuntimeBundles(sources: readonly RuntimePluginSnapshot[]): Promise<BundleCatalog> {
   const catalog: Record<string, BundleCatalog[string]> = Object.create(null)
   for (const source of sources) {
     const { snapshot } = source
-    if (!source.trusted || hashDirectory(snapshot.directory, { exclude: [] }) !== snapshot.treeIntegrity)
+    if (
+      !source.trusted ||
+      (await verifiedDirectoryDigestAsync(snapshot.directory, snapshot)) !== snapshot.treeIntegrity
+    )
       throw new Error('E_COMPOSITION_BUNDLE_INTEGRITY: bundle source is not verified')
     const pkg = JSON.parse(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')) as {
       agnes?: { bundles?: unknown }

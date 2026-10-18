@@ -404,22 +404,27 @@ describe('installResourceServiceAdapters — Skill scan/removal over the shared 
   })
   it('refresh sends resourceSkillScan with the resolved workspace root, rootKey and current snapshot revision', async () => {
     const { snapshotPath } = snapshotFile()
-    const revisionHash = createHash('sha256').update('{"skills":[],"mcp":[]}', 'utf8').digest('hex')
+    const admittedSnapshot = '{"skills":[],"mcp":[{"serverId":"concurrently-created"}]}'
+    const revisionHash = createHash('sha256').update(admittedSnapshot, 'utf8').digest('hex')
     const { store, capturedAdapters } = fakeStoreWith({ snapshotPath })
     const calls: Array<{ method: string; params: unknown }> = []
     const candidate = {
       descriptor: fakeSkillDescriptor('skill/package/fixture'),
       capabilityHash: 'a'.repeat(64),
     }
-    const acquireSharedWorker = vi.fn(async () => ({
-      hello: Promise.resolve({}),
-      command: async (method: string, params: unknown) => {
-        calls.push({ method, params })
-        return fakeSkillScanReply({ candidates: [candidate] })
-      },
-      close: () => undefined,
-      alive: true,
-    }))
+    const acquireSharedWorker = vi.fn(async () => {
+      // MCP admission can publish newer decisions while the shared worker boots.
+      writeFileSync(snapshotPath, admittedSnapshot, 'utf8')
+      return {
+        hello: Promise.resolve({}),
+        command: async (method: string, params: unknown) => {
+          calls.push({ method, params })
+          return fakeSkillScanReply({ candidates: [candidate] })
+        },
+        close: () => undefined,
+        alive: true,
+      }
+    })
     installResourceServiceAdapters({
       store,
       pool: { acquire: vi.fn(), acquireSharedWorker } as unknown as FakePool,

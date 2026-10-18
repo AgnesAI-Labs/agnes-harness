@@ -1,8 +1,8 @@
 import type { ServiceContext, ServiceDef } from '@agnes/extension-api'
-import type { JsonValue } from '@agnes/protocol'
+import type { JsonValue, SessionJob } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { ShellSchema, SignalSchema } from './pty-tools.js'
-import type { JobOwner, ShellJobs } from './registry.js'
+import type { JobOwner, ShellJobs, ShellJobView } from './registry.js'
 
 const owner = (ctx: ServiceContext): JobOwner => {
   if (!ctx.session) throw new Error('Host has no session-bound jobs service')
@@ -57,6 +57,24 @@ const objectInput = (input: JsonValue): Record<string, JsonValue> => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('object input required')
   return input
 }
+// Registry views also carry cleanup receipts and legacy shell selectors. Only this allowlist
+// crosses the service boundary, so internal additions cannot invalidate strict RPC results.
+function publicJob(job: ShellJobView, includeOutput = false): SessionJob {
+  return {
+    id: job.id,
+    owner: job.owner,
+    ownerSessionId: job.ownerSessionId,
+    kind: job.kind,
+    command: job.command,
+    cwd: job.cwd,
+    status: job.status,
+    code: job.code,
+    truncated: job.truncated || job.stdout.length > 65536 || job.stderr.length > 65536,
+    ...(job.shell && job.shell !== 'powershell' ? { shell: job.shell } : {}),
+    ...(job.sessionId !== undefined ? { sessionId: job.sessionId } : {}),
+    ...(includeOutput ? { stdout: job.stdout.slice(-65536), stderr: job.stderr.slice(-65536) } : {}),
+  }
+}
 export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
   return [
     {
@@ -66,17 +84,12 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
         const scope = owner(ctx)
         await jobs.syncChildren({ ...scope, cwd: ctx.cwd }, ctx.childJobs)
         const result: Record<string, JsonValue> = {
-          jobs: jobs.list(scope).map(({ stdout, stderr, ...job }) => job),
-          completions: jobs.completions(scope).map((job) => ({ ...job })),
+          jobs: jobs.list(scope).map((job) => publicJob(job)),
+          completions: jobs.completions(scope).map((job) => publicJob(job)),
         }
         if (typeof input.jobId === 'string') {
           const job = await jobs.wait({ ...scope, signal: ctx.signal }, input.jobId, 0)
-          result.job = {
-            ...job,
-            truncated: job.truncated || job.stdout.length > 65536 || job.stderr.length > 65536,
-            stdout: job.stdout.slice(-65536),
-            stderr: job.stderr.slice(-65536),
-          }
+          result.job = publicJob(job, true)
         }
         return result
       },
@@ -103,7 +116,7 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
             true,
             'human',
           )
-          return { ...job }
+          return publicJob(job)
         }
         if (typeof input.jobId !== 'string') throw new Error('jobId is required')
         const job = jobs.list(scope).find((candidate) => candidate.id === input.jobId)
@@ -124,11 +137,7 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
           await jobs.signal(scope, input.jobId, input.signal)
         else if (input.operation === 'kill') {
           const killed = await jobs.kill(scope, input.jobId)
-          const { stdout, stderr, ...metadata } = killed
-          return {
-            ...metadata,
-            truncated: killed.truncated || stdout.length > 65536 || stderr.length > 65536,
-          }
+          return publicJob(killed)
         } else throw new Error('invalid job operation')
         return { ok: true }
       },

@@ -45,6 +45,7 @@ vi.mock('@agnes/host', async (original) => ({
               pkg.id,
               {
                 version: pkg.version,
+                source: { type: pkg.trust === 'builtin' ? 'builtin' : 'file', ref: pkg.source },
                 integrity: pkg.integrity,
                 trust: pkg.trust,
                 enabled: pkg.enabled,
@@ -75,7 +76,11 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     ['loop', loop, 'student-loop'],
   ] as const) {
     const replace = (value: string) =>
-      value.replaceAll('__PACKAGE_NAME__', name).replaceAll('__TOOL_NAME__', 'student_echo')
+      value
+        .replaceAll('__PACKAGE_NAME__', name)
+        .replaceAll('__SKILL_NAME__', name)
+        .replaceAll('__TOOL_NAME__', 'student_echo')
+        .replaceAll('__SERVICE_NAME__', name.replaceAll('-', ''))
     const manifest = JSON.parse(
       replace(
         await readFile(new URL(`../../../templates/${template}/package.json`, import.meta.url), 'utf8'),
@@ -90,10 +95,22 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       ),
     )
   }
-  await writeFile(
-    join(panel, 'client/agnes.client.json'),
-    await readFile(new URL('../../../templates/tool-with-panel/client/agnes.client.json', import.meta.url)),
+  const descriptor = JSON.parse(
+    (
+      await readFile(
+        new URL('../../../templates/tool-with-panel/client/agnes.client.json', import.meta.url),
+        'utf8',
+      )
+    )
+      .replaceAll('__PACKAGE_NAME__', 'student-panel')
+      .replaceAll('__SKILL_NAME__', 'student-panel')
+      .replaceAll('__SERVICE_NAME__', 'studentpanel'),
   )
+  // The template now defaults to a profile page; this fixture exercises retained session panels.
+  delete descriptor.client.homeEntries
+  descriptor.client.lifetime = 'session'
+  descriptor.client.slots = ['workbench.panel']
+  await writeFile(join(panel, 'client/agnes.client.json'), JSON.stringify(descriptor))
   await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "original"')
   const bundle = join(root, 'bundle.json')
   await writeFile(
@@ -110,7 +127,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
           home,
           cwd: root,
           env: { HOME: root },
-          agnesVersion: '0.0.0',
+          agnesVersion: '0.1.0',
           log: () => {},
         },
       )
@@ -121,14 +138,14 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     const roots = localPluginRoots(home, root)
     const manager = createPackageManager({
       dataDir: dataDir(home),
-      agnesVersion: '0.0.0',
+      agnesVersion: '0.1.0',
       localPlugins: roots,
     })
     const reviewWorkspace = () =>
       manager.trustWorkspace(
         profileDir,
         root,
-        localWorkspaceTrustHash(roots, readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' })),
+        localWorkspaceTrustHash(roots, readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.1.0' })),
       )
     expect(initialHost.kernel.loops.catalog()).not.toContainEqual(
       expect.objectContaining({ id: 'student-loop' }),

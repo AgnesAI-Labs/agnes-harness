@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [插件类型](README.zh-CN.md) · [包管理](../guide/packages.zh-CN.md)
 
-Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 打包成静态数据。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
+部署执行 Profile 从插件装配运行能力；Bundle 把可复用的 profile 补丁和权限方案（Preset）打包成静态数据。应用展示由管理员另行采纳，本期不提供执行 Profile 模板采纳。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
 
 ## 会话工具可见范围
 
@@ -12,11 +12,11 @@ Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 
 
 编译后的工具归属范围随 composition 和代码 generation 固定，实时资源沿用现有过滤规则。旧保存绑定保留原范围；新建会话可应用隔离。resolved profile 新增可选的 Host 生成字段 `compositionToolScope`，不属于用户 manifest 设置。
 
-Web 设置 → 组合包与预设中的会话信息列出实际工具组及启用原因。示例工具明确标注其打包 fixture 来源；工作区问题应使用工作区文件读取工具。
+Web 设置 → 高级 → 运行配置 → 技术详情 → 所有对话附加组合 → 技术详情中的会话信息列出实际工具组及启用原因。示例工具明确标注其打包 fixture 来源；工作区问题应使用工作区文件读取工具。
 
 ## 格式与选择
 
-在 `package.json` 声明 `agnes.kinds: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
+在 `package.json` 声明 `agnes.provides: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
 
 在用户 profile 中选择：
 
@@ -94,3 +94,9 @@ Surface listener 根据默认 preset 在部署启动时选择。`surfaces: []` �
 完整 runtime target 仍由 generation runtime 管理。composition 将目录投影为各容器的树，并保留 resource-owned 行；全部容器收敛后才确认 delivery，旧会话继续使用固定 generation。`Host.compositionSessions()` 和本地查看接口提供活动 provider 元数据。
 
 只读策略在每次调用时检查工具元数据与精确名称，也包括 loop 调度的调用。未知元数据不满足只读条件；策略不会放宽已有审批、sandbox、资源信任或网络权限。配置更改不会重写已有会话绑定的 loop 或重新打开存储。
+
+## 智能体审阅启动回执
+
+普通智能体启动和受限的示例管理 facade 使用有效期为 300 秒的审阅票据。响应不确定时，重试须保留相同的 `operationId` 和请求内容：在回执保留窗口内，已完成操作返回原回执；不同内容会被拒绝，failed 或 unknown 操作不会再次执行。
+
+回执自进入终态起保留七天，且至少保留到审阅票据失效。中断的 running 操作在票据失效后转为 unknown，再保留七天。没有完成时间的已有终态记录从首次观察起获得七天窗口。prepare/start 写入和读取回执时的机会性清理沿用已有状态锁，每次最多扫描 10,000 条操作。启动或激活持有写锁期间，智能体和示例回执仍可读取。若保留时间戳会让日志超过 16 MiB，则将时间戳写入上限 2 MiB 的 `.dates` 伴随文件，并绑定各条记录的精确内容；复制存储时应同时保留伴随文件。写入中断最多保守延长保留期，不会套用不匹配的时间戳。10,000 条操作的准入上限保持不变；保留记录占满存储时仍以 `OVERLOADED` 拒绝新操作。回执清理后，重试对应的过期票据会被拒绝；新操作需要重新审阅。

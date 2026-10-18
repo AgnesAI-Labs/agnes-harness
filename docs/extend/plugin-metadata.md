@@ -1,75 +1,75 @@
-# Plugin purpose metadata
+# Plugin metadata and declared capabilities
 
 English | [简体中文](plugin-metadata.zh-CN.md)
 
-[Plugin author kit](README.md) · [Content inventory](plugin-presentation/CONTENT.md) · [Page design](plugin-presentation/DESIGN.md)
-
-Explain the user outcome in the public `PluginMetadata` contract exported by `@agnes/extension-api`. Use it as `package.json.agnes.metadata` or `package.json.agnes.plugins[].metadata`. A package overview describes the package; a row's complete metadata object describes that row and takes precedence over the overview when a row is displayed. Metadata is optional, including for third-party packages.
+A plugin package declares optional display text in `agnes.metadata` and capability labels in `agnes.provides`. Labels describe the package; they never grant authority. Runtime permissions still come from row capabilities and Host admission.
 
 ```json
 {
   "agnes": {
+    "provides": ["tool", "ui"],
     "metadata": {
-      "displayName": "Project file search",
-      "summary": "Lets the agent find project files and search their contents.",
-      "description": "Find files by name and search readable project text to locate the information needed for a task.",
-      "category": "tools",
-      "docsUrl": "https://example.org/docs/file-search",
-      "locales": {
-        "zh-CN": {
-          "displayName": "项目文件搜索",
-          "summary": "让 Agent 查找项目文件并检索文件内容。",
-          "description": "按名称查找文件并检索可读项目文本，定位任务需要的信息。"
-        }
-      }
+      "displayName": "Project search",
+      "summary": "Find readable project text.",
+      "description": "Search files available to the session.",
+      "docsUrl": "https://example.org/docs",
+      "locales": { "zh-CN": { "displayName": "项目搜索" } }
     }
   }
 }
 ```
 
-When present, `displayName`, `summary`, `description` and `category` are required. Name (1–80), summary (1–240), description (1–1,200) and optional docs URL (1–2,048) are bounded in Unicode code points. Text must be trimmed, printable and a single line/paragraph; control characters and Unicode line separators are rejected. Write a summary as one sentence about the problem solved. Descriptions may add scope or prerequisites. The schema uses a code-point-bounded pattern and a UTF-16 ceiling so its generated validator also accepts supplementary Unicode characters within the limit.
+`provides` accepts a unique set of `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`, and `service`. It is optional; a Loop-only plugin needs no Bundle or agent. This package label set is separate from an extension's `provides` seam declaration and a row's `provide` service names. `metadata.category` and `agnes.kinds` are rejected; there is no old-manifest compatibility layer.
 
-Category is one of `agent-loop`, `tools`, `safety-approval`, `memory-context`, `collaboration`, `integrations`, `observability`, `ui`, `developer`, `business-agent`. It is an editorial grouping, not a runtime kind or permission. Clients read the category from `agnes.metadata` only, so a package has one category; give each row the same value. What a package contains is declared separately as `agnes.kinds`; see [Choose a plugin type by role](choose-a-plugin-type.md). Use `business-agent` for a bundle that delivers one business workflow; clients list those packages as business agents. `docsUrl` must be an absolute HTTPS URL without credentials, whitespace or control characters. `locales` accepts only `en` and `zh-CN`; either may partially override name, summary, description and docs URL. Unknown keys are rejected. Each complete metadata block is limited to 24 KiB of UTF-8 JSON.
-
-Two optional fields describe how a package is offered:
-
-```json
-{
-  "category": "business-agent",
-  "samplePrompt": {
-    "en": "Review the sample supplier contract clause by clause.",
-    "zh-CN": "逐条审查示例供应商合同。"
-  },
-  "experimental": true
-}
-```
-
-`samplePrompt` is a prompt a person can send as written to try the package. `en` is required and `zh-CN` is optional; a client shows the current language and falls back to `en`. Each value is one paragraph of 1–600 code points under the same text rules as the summary. `experimental: true` marks a package whose behavior may still change; clients list it apart from stable packages. Omit it otherwise. Both fields are display data with no effect on loading or authorization.
-
-Installation inspection validates package and row metadata without importing plugin code. Extension admission uses the same protocol schema. Validated package metadata travels with previews, catalog entries, lock entries and immutable runtime snapshots; version changes follow the existing integrity, trust and pin rules. Metadata grants no capability and does not affect the capability hash, loading, authorization or enable/disable semantics.
-
-The page resolves each localized field independently, then falls back to its base value. Without metadata it displays the full ID, known kinds, an uncategorized label and “No description provided”. Author text is rendered as text. Documentation opens only after an explicit click. Official/example labels come from existing provenance/catalog sources, never from author text or a package namespace.
-
-“Provides” and “Where it appears” use existing readable registrations and inventory. An author summary or capability declaration is not proof of a registered tool. Unloaded or unavailable contributions remain unavailable rather than being inferred from their IDs. See the approved design's Phase B scope for the small presentation projection.
+When metadata is present, `displayName`, `summary`, and `description` are required. Their limits are 80, 240, and 1,200 Unicode code points; text must be trimmed, printable and single-line. Optional `docsUrl` is credential-free HTTPS, at most 2,048 code points. `locales.en` and `locales.zh-CN` may override those fields independently. Missing translations fall back per field. A complete metadata block is limited to 24 KiB of UTF-8 JSON. Optional `samplePrompt` has required English fallback and optional Chinese text, at most 600 code points each; `experimental` is a boolean. Author text is rendered as text, and links open only on an explicit click.
 
 <a id="what-a-package-includes"></a>
 
-`PackagePresentation.includes` states what a package contains, for the “Includes” labels on a row and the marketplace type filter:
+Rows may carry their own metadata for their settings descriptions. Source labels come from verified provenance, never from a package name or author label. The static presentation summary can count explicitly declared tools, skill files, Bundles and UI contributions; absent counts mean unknown. Static declarations and runtime registration remain distinct evidence.
+
+## Agents are Bundles with launch information
 
 ```json
-{ "kinds": ["tool", "loop", "skills", "ui", "bundle"], "counts": { "bundles": 1, "ui": 1 } }
+{
+  "agnes": {
+    "provides": ["bundle"],
+    "bundles": {
+      "review": {
+        "presets": { "safe": { "name": "safe", "extends": "standard" } },
+        "launch": {
+          "title": { "en": "Review", "zh-CN": "审查" },
+          "description": { "en": "Review a document.", "zh-CN": "审查文档。" },
+          "preset": "safe",
+          "prompt": { "text": { "en": "Review this document." }, "mode": "draft" }
+        }
+      },
+      "reuse": { "extends": ["acme/reviewer#review"] }
+    }
+  }
+}
 ```
 
-`kinds` joins the declared `agnes.kinds` with what package data proves: a bundle under `agnes.bundles`, a client descriptor or surface (`ui`), a `skill` contribution or `skill` resource capability (`skills`), an `mcp` resource capability (`mcp`), and declared tool names (`tool`). It is listed in the fixed order `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`. `counts` holds `tools`, `skills`, `mcp`, `bundles` and `ui`, each present only when package data states the number: distinct names under `capabilities.tools.names`, `skill` contributions, entries in `agnes.bundles`, and client descriptors plus surfaces. An absent count means the number is decided in plugin code, which inspection never runs; it does not mean zero. No package data names an MCP connection today, so `mcp` is never counted. The field is absent when a package declares no kinds and none can be proven. A client shows one label per kind and adds the number only when it is present.
+An agent reference is `package#bundle`. `launch.title`, `description`, and `preset` are required; localized text has required `en` and optional `zh-CN`. Optional `pages` lists profile pages declared by the same package. Draft prompt text is bounded to 16 KiB per language and cannot contain secret references. `launch` is **not inherited**: `reuse` above is a reusable Bundle, not an agent. A child can declare its own complete launch block and use inherited presets. `extends` takes unique full references. There is no inline composition syntax.
 
-`PackagePresentation.presets` summarizes what each bundle preset's policy guarantees, so a client can state them before installation:
+Static preflight reports `structural`, `static-references`, `deployment-dependent`, or `refused`, with reasons and a next step. It validates full presets, inheritance, launch references and known runtime restrictions without importing plugin code. Declared dependency definitions and runtime exports may require deployment validation. Preset inheritance is checked after parent-to-child Bundle overrides. Fully known cycles are refused; missing inheritance definitions or a launch preset supplied by deployment are deployment-dependent. Deployment admission must validate that explicit preset and its allowed list; there is no launch default fallback. Passing installation inspection does not mean ready; mount, binding, session creation and recovery retain their checks. Ordinary isolated plugin rows are currently refused before import.
 
-```json
-{ "bundle": "acme/research#research", "id": "research", "toolPolicy": "default", "readOnly": "yes", "confirmBeforeActions": "no", "network": "none" }
-```
+Launch declarations participate in `capabilityHash` for every package. Changing a launch requires a new trust review. `metadata.launches` is rejected. `metadata.exampleOf` remains a separate, dependency-version-checked relation for restricted example management; optional `pageEntry` requires this relation and a declared profile example page. Capability labels do not give ordinary agents example-management privileges.
 
-The backend derives every field from package data without running plugin code; an author cannot write it. Read-only patches follow runtime precedence: the preset first, then session bundles and their parents in declaration order, applying each parent once; an explicit `false` overrides an earlier `true`. `readOnly` is `yes` when the resulting platform `toolPolicy.readOnly` is true, under any policy provider. Otherwise it is `no` for a known false value under the default provider and `unknown` for a custom provider or unresolved external bundle. An explicit patch after an external bundle can establish the value again.
+## Assembly through the same Acme example
 
-`confirmBeforeActions` is `no` under the default tool-policy provider, where confirmation follows the session's permission mode and the preset promises nothing; it is `unknown` for a custom provider. `network` reads the package's declared capabilities: `allowed` when any plugin names a host, `none` when every plugin declares capabilities and none names a host, and `unknown` when declarations are incomplete and no host is named. A client should promise only a `yes` or a `none` and otherwise list the declared capabilities.
+Deployment profile → plugin → agent → application presentation each has a distinct job:
 
-The optional `PackagePresentation` read field on preview, inventory and catalog DTOs carries bounded row IDs, author metadata, optional public extension source IDs and config-schema presence. Inventory/catalog origin is derived by the backend. These static declarations are not registrations and do not participate in targets, capability hashes or activation. The page combines them with existing runtime/provider and composition tool catalogs, browser slots, surface links and verified resource descriptors. Global settings sections, commands and events without readable package ownership are not attributed. Existing catalog pagination and lifecycle blockers/pins remain unchanged.
+| Layer | Acme example | Who chooses it and when it applies |
+| --- | --- | --- |
+| Deployment execution profile | `AGNES_PROFILE=local-dev`: model, permission ceilings, default Loop and runtime services | The deployer configures execution; application adoption does not modify it |
+| Plugin | `@acme/operations`: `acme_status`, the page, the `desk` Bundle and application declaration | Installation, trust review and enablement make capabilities available as candidates |
+| Agent | `@acme/operations#desk`: its own `launch.preset=acme`, tool scope and editable prompt draft | Launch review binds the final running mode, model, permissions and sources; the session retains its execution binding |
+| Application presentation | `acme-operations`: Acme brand, Ava assistant name, `@acme/operations#acme-overview` page, hidden Automation entry and default/visible agents | An admin previews and explicitly adopts it in Settings → Application; it selects presentation defaults only |
+
+This release **does not distribute or adopt execution profile templates**. An application is not an execution template. Deployers continue to configure profiles independently; changing presentation does not reconfigure saved sessions. See the [Acme reference application](../../examples/acme/README.md) for installation, preview and launch commands.
+
+## Application declaration
+
+See [Applications](applications.md) for the complete identity, raster asset, presentation role and explicit adoption contracts. Installing an application only creates a candidate; presentation selection stays outside execution resolution.
+
+The fixed author backbone has 29 slots: 9 package-envelope fields, 14 plugin-row fields, 2 client-binding fields and 4 Bundle fields. Relative to the prior 27: remove `agnes.kinds`; add `agnes.provides`, `agnes.application`, and `bundles.*.launch`. Nested metadata and launch fields are outside this denominator. The first tool and first Loop need no new required steps.

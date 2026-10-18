@@ -33,7 +33,6 @@
           "displayName": "Current time context",
           "summary": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
           "description": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
-          "category": "memory-context",
           "locales": {
             "zh-CN": {
               "displayName": "当前时间上下文",

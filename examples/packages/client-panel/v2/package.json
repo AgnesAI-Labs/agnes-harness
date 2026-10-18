@@ -15,7 +15,6 @@
           "displayName": "Workbench panel example",
           "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
           "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "工作台面板示例",
@@ -36,7 +35,6 @@
       "displayName": "Workbench panel example",
       "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
       "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "工作台面板示例",
@@ -44,7 +42,10 @@
           "description": "演示从版本化浏览器插件加载工作台面板。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

@@ -19,6 +19,9 @@ it('lets permission options scroll inside the viewport-clamped popover', async (
 
   expect(panel).toContain('overflow-y: auto')
   expect(panel).toContain('overscroll-behavior-y: contain')
+  const help = ruleBody(css, '.permission-picker > a')
+  expect(help).toContain('min-height: var(--control-height-touch)')
+  expect(help).toContain('align-items: center')
 })
 
 it('keeps the permission popover compact and never wider than the viewport', async () => {

@@ -91,6 +91,7 @@ describe('testkit', () => {
         p.id,
         {
           version: p.version,
+          source: { type: 'builtin' as const, ref: 'builtin' },
           integrity: p.integrity,
           trust: p.trust,
           enabled: p.enabled,

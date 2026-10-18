@@ -39,7 +39,6 @@
           "displayName": "Files and commands",
           "summary": "Lets the agent read and edit files, run shell commands and maintain a task list.",
           "description": "Lets the agent read and edit files, run shell commands and maintain a task list.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "文件与命令",
@@ -49,6 +48,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

@@ -118,8 +118,8 @@ export function projectPluginPrimaryStatus(
     'blocked',
     'not-running',
     'none',
-    'Enabled in configuration, but the runtime is not ready.',
-    '配置中已启用，但运行环境尚未就绪。',
+    'Enabled in configuration, but not running. Start a session when needed.',
+    '配置中已启用，当前未运行，需要时请启动会话。',
   )
 }
 

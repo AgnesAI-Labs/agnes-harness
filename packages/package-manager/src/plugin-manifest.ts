@@ -12,6 +12,8 @@ import {
   validatePluginMetadata,
 } from '@agnes/protocol'
 
+import { validStoredMetadata } from './stored-metadata.js'
+
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 
 /** A package author attempted to claim a row namespace owned by the daemon. */
@@ -147,7 +149,7 @@ function validRowId(value: string): boolean {
 export function parseAgnesPluginEntries(
   packageId: string,
   input: unknown,
-  options: { readonly bundled?: boolean } = {},
+  options: { readonly bundled?: boolean; readonly stored?: boolean } = {},
 ): readonly Readonly<AgnesPluginManifestEntry>[] {
   if (input === undefined) return Object.freeze([])
   if (!Array.isArray(input)) fail('list', 'must be an array')
@@ -216,7 +218,10 @@ export function parseAgnesPluginEntries(
       if (raw.config !== undefined && validate(raw.config).length)
         fail(`entry ${index} config`, 'does not satisfy configSchema (secret fields require references)')
     }
-    if (raw.metadata !== undefined && !validatePluginMetadata(raw.metadata).ok)
+    if (
+      raw.metadata !== undefined &&
+      !(options.stored ? validStoredMetadata(raw.metadata) : validatePluginMetadata(raw.metadata).ok)
+    )
       fail(`entry ${index} metadata`, 'must satisfy the public PluginMetadata contract')
     let capabilities: PluginCapabilities | undefined
     if (raw.capabilities !== undefined) {
@@ -269,19 +274,28 @@ export function parseAgnesPluginEntries(
   return Object.freeze(entries)
 }
 
-/** Optional package-level agnes.kinds declaration; absence does not imply a kind. */
-export const AGNES_PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
-export type AgnesPluginKind = (typeof AGNES_PLUGIN_KINDS)[number]
-export function parseAgnesPluginKinds(value: unknown): readonly AgnesPluginKind[] | undefined {
+/** Optional package-level agnes.provides declaration; absence does not imply a kind. */
+export const AGNES_PLUGIN_PROVIDES = [
+  'tool',
+  'loop',
+  'model-adapter',
+  'mcp',
+  'skills',
+  'ui',
+  'bundle',
+  'service',
+] as const
+export type AgnesPluginProvide = (typeof AGNES_PLUGIN_PROVIDES)[number]
+export function parseAgnesPluginProvides(value: unknown): readonly AgnesPluginProvide[] | undefined {
   if (value === undefined) return undefined
   if (
     !Array.isArray(value) ||
-    value.length > AGNES_PLUGIN_KINDS.length ||
-    value.some((kind) => !AGNES_PLUGIN_KINDS.includes(kind)) ||
+    value.length > AGNES_PLUGIN_PROVIDES.length ||
+    value.some((kind) => !AGNES_PLUGIN_PROVIDES.includes(kind)) ||
     new Set(value).size !== value.length
   )
-    throw new TypeError('invalid agnes.kinds: expected unique supported plugin kinds')
-  return Object.freeze([...value]) as readonly AgnesPluginKind[]
+    throw new TypeError('invalid agnes.provides: expected unique supported plugin provides')
+  return Object.freeze([...value]) as readonly AgnesPluginProvide[]
 }
 
 /** Validate a persisted override against the installed author contract before publication. */

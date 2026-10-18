@@ -1,7 +1,9 @@
 /** @vitest-environment happy-dom */
+import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { readUiCss } from '../../../tools/web-style-source.mjs'
 import {
   Button,
   CompletionCheck,
@@ -25,6 +27,7 @@ const cleanups: (() => void)[] = []
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
   document.body.replaceChildren()
+  document.documentElement.removeAttribute('data-agnes-input')
 })
 function render(element: Parameters<typeof mountRegion>[1]) {
   const host = document.createElement('div')
@@ -148,6 +151,14 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
   const host = render(
     createElement(IconButton, { name: 'search', label: 'Search sessions', shortcut: ['⌘', 'K'] }),
   )
+  const style = document.createElement('style')
+  // happy-dom lacks cascade layers; apply the real hint hit-testing rule on its own.
+  style.textContent =
+    readUiCss(resolve(__dirname, '../src/components.css')).match(
+      /\.agh-tooltip,\s*\.agh-tooltip \*\s*\{[^}]+\}/,
+    )?.[0] ?? ''
+  document.head.append(style)
+  cleanups.push(() => style.remove())
   const button = host.querySelector('button')!
   // The accessible name is the action; the shortcut is only shown.
   expect(button.getAttribute('aria-label')).toBe('Search sessions')
@@ -158,10 +169,15 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
     return found!
   })
   expect(tooltip.firstChild?.textContent).toBe('Search sessions')
+  // A hint may overlap an adjacent action while focus or hover moves through navigation.
+  expect(getComputedStyle(document.querySelector('[role=tooltip]')!).pointerEvents).toBe('none')
   expect([...tooltip.querySelectorAll('kbd.agh-kbd .agh-kbd-key')].map((cap) => cap.textContent)).toEqual([
     '⌘',
     'K',
   ])
+  // Activating navigation must dismiss its focused hint before it can cover the next action.
+  button.click()
+  await vi.waitFor(() => expect(button.getAttribute('aria-describedby')).toBeNull())
 })
 it('announces success without stealing focus and cleans up the expiry on unmount', async () => {
   const dismiss = vi.fn()
@@ -306,20 +322,29 @@ it('sorts Table records without changing caller data and retains its labelled so
 })
 
 it('returns focus to the anchored Popover trigger on Escape', async () => {
-  const { Popover } = await import('../src/index.js')
-  const host = render(
+  const { Popover, renderRegion } = await import('../src/index.js')
+  const picker = () => (
     <Popover trigger="click" content={<Button>Choose</Button>}>
       <Button>Picker</Button>
-    </Popover>,
+    </Popover>
   )
+  document.documentElement.setAttribute('data-agnes-input', 'keyboard')
+  const host = render(picker())
   const trigger = host.querySelector('button')!
   trigger.focus()
   trigger.click()
   await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover button')).not.toBeNull())
+  expect(document.querySelector('.agnes-ui-popover--keyboard')).not.toBeNull()
+  document.documentElement.setAttribute('data-agnes-input', 'pointer')
+  renderRegion(host, picker())
+  await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover--keyboard')).not.toBeNull())
+  expect(document.querySelector('.agnes-ui-popover--pointer')).toBeNull()
   const choice = document.querySelector<HTMLElement>('.agnes-ui-popover button')!
   choice.focus()
   key(choice, 'Escape')
   await vi.waitFor(() => expect(document.activeElement).toBe(trigger))
+  trigger.click()
+  await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover--pointer')).not.toBeNull())
 })
 
 it('keeps DataList row actions independent from opening a row and renders caller empty content', async () => {

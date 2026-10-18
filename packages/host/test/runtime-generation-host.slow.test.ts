@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
 import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -17,7 +18,7 @@ import {
   writeLock,
 } from '@agnes/package-manager'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
-import { createPluginRow } from '@agnes/plugin-runtime/host'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { DecisionSnapshot } from '@agnes/protocol'
 import {
   createSkillCandidateRegistry,
@@ -104,6 +105,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       version: source.snapshot.version,
       source: { type: 'file', ref: 'file:fixture' },
       integrity: source.snapshot.integrity,
+      treeIntegrity: source.snapshot.treeIntegrity,
       trust: 'trusted',
       license: 'MIT',
       apiRange: '^4.0.0',
@@ -150,6 +152,28 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
   const providers: ScriptedProvider[] = []
   const options = {
     dataDir: root,
+    packages: {
+      '@agnes/base': {
+        plugins: [
+          {
+            export: 'defaultLoopPlugin',
+            id: 'loop:agnes.default',
+            inject: ['loops'],
+            entry: defaultLoopPlugin,
+          },
+          { export: 'memoryPlugin', id: 'memory:file', inject: ['providers'], entry: memoryPlugin },
+        ].map(({ entry, ...declaration }) => ({
+          declaration: {
+            ...declaration,
+            apiRange: '^4.0.0',
+            default: true,
+            provide: [],
+            runtime: 'in-process' as const,
+          },
+          entry: normalizePluginExport(entry),
+        })),
+      },
+    },
     limits: { 'worker.generation_idle_close_ms': 25 },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     skillResources: {
@@ -248,10 +272,9 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ],
         resources: { mcp: [], skills: {} },
       }).target
-    await host.applyRuntimeTarget(target(one))
+    await expect(host.applyRuntimeTarget(target(one))).resolves.toMatchObject({ ok: true })
     const a = await host.createSession({ key: 'session-a', cwd: root })
     const kernelAdmission = host.kernel.session
-    const pinnedHost = hostInspectionSource(host)
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
     const firstId = a.pluginGenerationId
     await a.enqueue('next-turn', { actor: a.d.actor, content: [{ type: 'text', text: 'run the old code' }] })
@@ -267,26 +290,27 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     expect(reload.changed).toBe(true)
     expect(await required(host.reloadPlugin)('acme/generation')).toEqual({ ...reload, changed: false })
     // A new, unbound container must also accept subsequent installed code publications.
-    await host.applyRuntimeTarget(target(one))
-    await host.applyRuntimeTarget(target(two))
+    await expect(host.applyRuntimeTarget(target(one))).resolves.toMatchObject({ ok: true })
+    await expect(host.applyRuntimeTarget(target(two))).resolves.toMatchObject({ ok: true })
     const b = await host.createSession({ key: 'session-b', cwd: root })
-    const pinnedMemory = vi.spyOn(pinnedHost, 'memory').mockImplementation(() => {
-      throw new Error('pinned memory provider')
-    })
-    try {
-      expect(() => host!.memory(root, a.key)).toThrow('pinned memory provider')
-    } finally {
-      pinnedMemory.mockRestore()
-    }
+    // Compositions can own different Hosts. Inspect the bound session's public memory view.
+    const pinnedMemory = required(a.d.memory)
+    const inspectedMemory = required(host.memory(root, a.key))
+    expect(inspectedMemory.root).toBe(pinnedMemory.root)
+    expect(await inspectedMemory.inspect()).toEqual(await pinnedMemory.inspect())
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
     expect(b.currentTools().resolve('skill_read')).toBeDefined()
     expect(a.pluginGenerationId).toBe(firstId)
     const oldRuntime = required(host.sessionRuntime)(a.key)
+    const newerId = required(oldRuntime.generation?.newer?.id)
+    expect(
+      host.pluginGenerationStatus?.().generations.find((entry) => entry.id === newerId)?.packages,
+    ).toContainEqual({ id: 'acme/generation', version: '2.0.0' })
     expect(oldRuntime.generation).toEqual({
       id: firstId,
       current: false,
       state: 'draining',
-      newer: { id: b.pluginGenerationId, effect: 'new-sessions' },
+      newer: { id: newerId, effect: 'new-sessions' },
     })
     expect(required(host.sessionRuntime)(b.key).generation).toEqual({
       id: b.pluginGenerationId,
@@ -339,16 +363,19 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       (item) => item.state === 'failed',
     )
     expect(failed?.boundSessions).toBe(0)
-    expect(required(host.pluginGenerationStatus?.()).currentGenerationId).toBe(b.pluginGenerationId)
+    const status = required(host.pluginGenerationStatus?.())
+    expect(
+      status.generations.find((entry) => entry.id === status.currentGenerationId)?.packages,
+    ).toContainEqual({ id: 'acme/generation', version: '2.0.0' })
     expect(() =>
       new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev')).read(required(failed).id),
     ).toThrow('E_GENERATION_SNAPSHOT_MISSING')
     expect(await execute(b)).toMatchObject({ content: [{ text: '2.0.0' }] })
     writeFileSync(join(two.snapshot.directory, 'index.js'), '2.0.0')
     // A pinned v1 accepts live 100 -> 10, then v2 publishes a different config schema.
-    await host.applyRuntimeTarget(target(one))
+    await expect(host.applyRuntimeTarget(target(one))).resolves.toMatchObject({ ok: true })
     expect(await execute(a)).toMatchObject({ structured: { limit: 100 } })
-    await host.applyRuntimeTarget(target(one, { limit: 10 }))
+    await expect(host.applyRuntimeTarget(target(one, { limit: 10 }))).resolves.toMatchObject({ ok: true })
     expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
     const acceptedStore = new RuntimeGenerationSnapshotStore(profileDir)
     const acceptedBefore = required(acceptedStore.liveConfig(required(firstId)))
@@ -375,10 +402,10 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     ).rejects.toThrow('E_RUNTIME_TARGET_PLUGIN')
     expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
     expect(acceptedStore.liveConfig(required(firstId))?.digest).toBe(acceptedBefore.digest)
-    await host.applyRuntimeTarget(target(two))
+    await expect(host.applyRuntimeTarget(target(two))).resolves.toMatchObject({ ok: true })
     expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
     expect(await execute(b)).toMatchObject({ structured: { limit: 2 } })
-    await host.applyRuntimeTarget(target())
+    await expect(host.applyRuntimeTarget(target())).resolves.toMatchObject({ ok: true })
     const unbound = await host.createSession({ key: 'session-disabled', cwd: root })
     expect(unbound.currentTools().resolve('generation_value')).toBeUndefined()
     expect(required(host.pluginGenerationStatus?.()).plugins).toContainEqual({
@@ -722,8 +749,13 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     const migration = await required(host.migrateSessionGeneration)('session-a')
     expect(migration).toEqual({
       previousGenerationId: firstId,
-      generationId: host.pluginGenerationStatus?.().currentGenerationId,
+      generationId: store.session('session-a')?.generationId,
       changed: true,
+    })
+    expect(migration.generationId).not.toBe(firstId)
+    expect(store.read(migration.generationId).packages).not.toContainEqual({
+      id: 'acme/generation',
+      version: '1.0.0',
     })
     expect(store.session('session-a')?.loop).toEqual(savedPin?.loop)
     expect(store.session('session-a')?.generationId).toBe(migration.generationId)
@@ -771,6 +803,16 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
         'E_GENERATION_UNTRUSTED',
       )
+    }
+    for (const changed of [{ treeIntegrity: `sha256-${'f'.repeat(64)}` }, { version: '9.0.0' }]) {
+      persistTrust(two)
+      const lock = readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+      Object.assign(required(lock.packages['acme/generation']), changed)
+      writeLock(profileDir, lock)
+      await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
+        'E_GENERATION_UNTRUSTED',
+      )
+      expect(store.session('session-b')?.generationId).toBe(secondId)
     }
     expect(host.kernel.get('session-b')).toBeUndefined()
     expect(host.extensions().some((entry) => entry.id === 'acme/generation/main' && entry.loaded)).toBe(false)

@@ -49,11 +49,12 @@ export async function runTui(
             sessionKey: freshTuiSessionKey(booted.profileName),
             ...(p.preset ? { preset: p.preset } : {}),
             ...(p.loop ? { loop: p.loop } : {}),
+            ...(p.agent ? { agent: p.agent } : {}),
           })
     // A fresh session takes the last model and full-permission choice, unless -m names a model.
     // Resume keeps the historical session's own model and does not read the preference file.
     const inherited =
-      resumeId === undefined
+      resumeId === undefined && !p.agent
         ? await inheritFreshSession(session, io.composerSelectionPath, p.model, resolveLocale(io.env))
         : undefined
     // Rendering is bounded by BrandingCache: a slow or unavailable control plane yields the shared

@@ -59,7 +59,7 @@ async function mount(node: ReturnType<typeof createElement>) {
 const item = {
   id: '@acme/plugin',
   version: '1.0.0',
-  kinds: ['loop', 'ui'],
+  provides: ['loop', 'ui'],
   desired: 'enabled',
   actual: 'running',
 } as PackageInstalledDescriptor
@@ -233,7 +233,7 @@ it('shows declared kinds and observable states without guessing draining or rest
     }),
   )
   expect(removed.querySelector('[data-testid=plugin-drain-summary]')?.textContent).toBe(
-    'Updated. 3 ongoing sessions are unaffected.',
+    '3 ongoing sessions keep their pinned backend tools.',
   )
   expect(removed.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
   expect(removed.textContent).toContain('Friendly plugin')
@@ -268,7 +268,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   )
   expect(historyBadge.textContent).toBe('Saved sessions use an older version')
   expect(historyBadge.querySelector('[role=note]')?.getAttribute('aria-label')).toContain(
-    'New sessions use the current version',
+    'New sessions use only enabled plugins',
   )
   expect(historyBadge.querySelector('[role=note]')?.getAttribute('tabindex')).toBe('0')
   const builtins = await mount(
@@ -291,7 +291,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   )
   expect(builtins.textContent).toBe('')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
-  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by kind')
+  expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Capability')
   expect(sessionLoopSelection({})).toBeUndefined()
   expect(sessionLoopSelection({ loop: { id: 'old-session-loop', version: '1.0.0' } })).toEqual({
     id: 'old-session-loop',
@@ -372,7 +372,7 @@ it('loads catalog choices and saves their exact identities and revision', async 
     [...host.querySelectorAll('[data-testid="session-defaults"] .agnes-settings-item-label')].map(
       (label) => label.textContent,
     ),
-  ).toEqual(['How the agent works', 'Model', 'Model adapter'])
+  ).toEqual(['Running mode', 'Model', 'Model adapter'])
   expect(host.textContent).not.toContain('Permissions')
   // Nothing to press: there is no save button.
   expect(host.querySelector('[data-testid="session-defaults-save"]')).toBeNull()

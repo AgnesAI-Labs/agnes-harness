@@ -17,7 +17,7 @@ const preview = {
   declaredCapabilities: { exec: ['node'] },
   license: 'MIT',
   provenance: { source, integrity, signatureVerified: false },
-  kinds: ['tool' as const],
+  provides: ['tool' as const],
   contributions: [],
   capabilityDiff: {
     added: [],

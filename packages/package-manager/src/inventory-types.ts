@@ -5,6 +5,7 @@ export type LockState = {
   packages: Record<
     string,
     {
+      source?: { type: string; ref: string }
       version: string
       integrity: string
       trust: LockEntry['trust']

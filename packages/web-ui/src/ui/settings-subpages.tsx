@@ -194,8 +194,14 @@ function RowCopy({
 /** The explanation a row no longer prints: an ⓘ beside the name, read on hover or focus. */
 export function SettingsInfo({ text }: { text: string }) {
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
-    <span className="agnes-settings-info" tabIndex={0} title={text} aria-label={text} role="note">
+    <span
+      className="agnes-settings-info agh-touch-target"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
+      tabIndex={0}
+      title={text}
+      aria-label={text}
+      role="note"
+    >
       <Icon name="info" />
     </span>
   )

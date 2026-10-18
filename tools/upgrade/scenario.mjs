@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { verifyCurrentDeclarations } from './current-declarations.mjs'
 import { packageId, writePackage } from './fixture.mjs'
 import { connect, eventually, packages } from './runtime.mjs'
 
@@ -90,6 +91,8 @@ try {
             module: import.meta.resolve('@agnes/host-infrastructure/adapters/process-identity-default'),
           }
         : undefined,
+      !!JSON.parse(await readFile(join(source, 'packages/protocol/schema/extension-manifest.json'), 'utf8'))
+        .$defs.PluginMetadata.properties.category,
     )
     const packageSource = { type: 'file', ref: `file:${directory}` }
     const preview = (
@@ -248,6 +251,8 @@ try {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner
     await verifyManaged(state)
+  } else if (phase === 'current-declarations') {
+    await verifyCurrentDeclarations(sdk, admin, workspace)
   } else {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner
@@ -256,8 +261,11 @@ try {
       assert.deepEqual(rows.get(`${row.session_key}:${row.seq}`), row, 'historical event was rewritten')
     const { effect: _currentEffect, ...currentConfig } = await sdk.config.get()
     const { effect: _previousEffect, ...previousConfig } = state.config
-    // `effect` describes this runtime's application strategy, not persisted account data.
-    assert.deepEqual(currentConfig, previousConfig)
+    // `effect` is runtime strategy. Older stores derive the new execution revision from their revision.
+    assert.deepEqual(currentConfig, {
+      ...previousConfig,
+      executionRevision: previousConfig.executionRevision ?? previousConfig.revision,
+    })
     const prompt = await sdk.call('_agnes/v1/systemPrompt.get', {})
     assert.equal(prompt.config.personaSuffix, state.prompt.config.personaSuffix)
     const schedules = await sdk.call('_agnes/v1/schedules.list', { scope: 'all', includeArchived: true })
@@ -406,10 +414,12 @@ try {
       (row) => row.packageId === packageId,
     )
     const previousRows = state.roster.rows.filter((row) => row.packageId === packageId)
-    const stableRow = ({ binding: _binding, ...row }) => row
+    const stableRow = ({ binding: _binding, clientId: _clientId, ...row }) => row
     assert.deepEqual(currentRows.map(stableRow), previousRows.map(stableRow))
     for (const row of currentRows) {
       const prior = previousRows.find((old) => old.rowId === row.rowId)
+      // The current roster adds an explicit client identity; this fixture has no authored id.
+      assert.equal(row.clientId, prior.clientId ?? prior.rowId)
       if (prior.binding) assert.deepEqual(row.binding, prior.binding)
       else
         assert.deepEqual(

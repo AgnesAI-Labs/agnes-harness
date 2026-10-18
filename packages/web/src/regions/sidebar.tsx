@@ -1,4 +1,11 @@
-import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
+import {
+  applicationBrand,
+  applicationIdentity,
+  type LocaleService,
+  SlotOutlet,
+  type SlotRegistry,
+  SlotsProvider,
+} from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
 import {
   EMPTY_SIDEBAR_STATE,
@@ -9,6 +16,7 @@ import {
   type SidebarState,
 } from '@agnes/web-units/shell'
 import type { ReactNode } from 'react'
+import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { SessionNavigation } from '../navigation.js'
 import {
@@ -45,6 +53,8 @@ export function SidebarDshFrame({
   dependencies: SidebarDependencies
   profileApprovals?: ReactNode
 }) {
+  const identity = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const brand = applicationBrand(document.documentElement.lang)
   const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty />
   return (
     <Sidebar
@@ -61,8 +71,24 @@ export function SidebarDshFrame({
         ),
         sectionLabel: <SessionListLabel t={dependencies.translate} />,
         sessionTools: <SessionListTools t={dependencies.translate} />,
-        brandMark: outlet('sidebar.brand.mark'),
-        brandName: outlet('sidebar.brand.name'),
+        brandMark: (
+          <SlotOutlet
+            name={'sidebar.brand.mark' as never}
+            fallback={
+              identity?.assets.mark ? (
+                <img src={identity.assets.mark} alt="" className="brand-mark-image" />
+              ) : (
+                <span className="agnes-mark brand-mark-image" aria-hidden="true" />
+              )
+            }
+          />
+        ),
+        brandName: (
+          <SlotOutlet
+            name={'sidebar.brand.name' as never}
+            fallback={<span className="brand-wordmark-text">{brand.name}</span>}
+          />
+        ),
         panellist: outlet('sidebar.panellist'),
         footerAction: outlet('sidebar.footer.action'),
         settings: outlet('sidebar.settings'),
@@ -96,7 +122,8 @@ export function mountSidebarRegion(
       <SessionNavigation options={options} t={(key, vars) => locale.t(key, vars)} />
     ),
   }
-  registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
+  if (!registry.spec(SIDEBAR_SLOT))
+    registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
   const handle = { current: null as SidebarHandle | null }
   const removeDshBuiltin = registry.register(

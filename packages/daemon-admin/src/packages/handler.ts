@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
+import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import type {
   AuthoringTestRunner,
   CatalogRead,
@@ -18,6 +19,7 @@ import {
   bundledExampleSource,
   bundledPluginSource,
   collectSkinRoster,
+  currentStoredShape,
   parseSource,
   publicPluginFailureReason,
   resolveSkinAsset,
@@ -30,6 +32,7 @@ import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/
 import {
   type AuthoringCandidate,
   type AuthoringFile,
+  type AuthoringWriteParams,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -58,6 +61,7 @@ import {
 } from '@agnes/protocol'
 import { classifyPackageContributions } from '../package-readiness.js'
 import { pluginTreeList } from '../plugin-tree-surface.js'
+import { type Applications, createApplications } from './applications.js'
 import { createAuthoringTestRunner, runAuthoringTests } from './authoring-tests.js'
 import { callBuiltinClientQuery } from './builtin-client-services.js'
 import {
@@ -71,6 +75,8 @@ import {
   dependentUpdatesApplied,
   reviewedUpdateOptions,
 } from './dependent-updates.js'
+import { metadataView } from './metadata-view.js'
+import { operationError } from './operation-error.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -88,6 +94,7 @@ import {
 import { PluginConfiguration } from './plugin-config.js'
 import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-status.js'
 import type { PackageProfileDirectory } from './project.js'
+import { packageReadOperation } from './read-operation.js'
 import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
 export type PackageActivationActual = PackageInstalledDescriptor['actual']
@@ -270,6 +277,7 @@ function packageError(error: unknown): PackageAdminError {
     code,
     safeMessage: safeMessage[code],
     blockers,
+    diagnostics: safeAuthoringDiagnostics(detail?.diagnostics),
     ...pluginFailureHelp(
       blockers.some((b) => b.references.includes('capability-blocked'))
         ? 'capability blocked'
@@ -288,10 +296,6 @@ function operationWithHelp(operation: PackageOperation): PackageOperation {
     value.error = { ...value.error, ...help }
   }
   return value
-}
-
-function operationError(error: PackageAdminError): never {
-  throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
 }
 
 function projectSource(value: unknown): PackageInstalledDescriptor['source'] {
@@ -351,7 +355,9 @@ function projectPackage(
     integrity: row.entry.integrity,
     trusted: row.trusted,
     ...(row.entry.provenance ? { provenance: row.entry.provenance } : {}),
-    ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
+    ...(row.entry.agents ? { agents: row.entry.agents } : {}),
+    ...(row.entry.application ? { application: row.entry.application } : {}),
+    ...(row.provides === undefined ? {} : { provides: [...row.provides] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
     // A pending local scan is not a restart requirement. The generation owner decides
     // whether the replacement is running, activating, failed, or genuinely needs a restart.
@@ -377,7 +383,7 @@ function projectPackage(
       ...structuredClone({ rows: [], ...row.presentation }),
       origin: packageOrigin(row.entry.source, row.entry.provenance, row.entry.trust === 'builtin'),
     },
-    ...(row.entry.metadata ? { metadata: structuredClone(row.entry.metadata) } : {}),
+    ...(row.entry.metadata ? { metadata: metadataView(row.entry.metadata) } : {}),
     blockers: safeBlockers(row.blockers),
     ...(row.localFailure || observation.actual === 'failed' || row.blockers.length
       ? {
@@ -453,6 +459,7 @@ function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatal
 }
 
 class Service implements PackageAdminService {
+  private readonly applications: Applications
   private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
   private readonly tails = new Map<string, Promise<void>>()
@@ -490,6 +497,7 @@ class Service implements PackageAdminService {
       clock: () => string
     },
   ) {
+    this.applications = createApplications(options)
     this.configuration = new PluginConfiguration({
       manager: options.manager,
       profileDirectory: options.profileDirectory,
@@ -594,192 +602,204 @@ class Service implements PackageAdminService {
     params: unknown,
     authority: PackageAdminAuthority | undefined,
   ): Promise<unknown> {
-    const granted = requirePackageAdmin(method, authority)
-    const checked = validatePackageAdminCall(method, 'params', params)
-    if (!checked.ok) throw rpcError('INVALID_PARAMS', { code: 'INVALID' })
-    const data = checked.value as Record<string, unknown>
-    if (method === '_agnes/v1/packages.update' && ('activation' in data || 'dependents' in data))
-      requirePackageAdminPermissions(method, granted, [
-        'packages.install',
-        'packages.trust',
-        'packages.activate',
-      ])
-    if (method === '_agnes/v1/packages.rollback' && 'activation' in data)
-      requirePackageAdminPermissions(method, granted, [
-        'packages.remove',
-        'packages.trust',
-        'packages.activate',
-      ])
-    await this.boot
-    // `recoveryError` is set only when recoverPending() -- reading the *operations store*'s pending
-    // ledger -- fails on boot. `pins.inspect`/`pins.release` never read or write that store (no
-    // `operations.admit()`, not in `kindByMethod`, see below): they read CompositeTargetStore pins
-    // through `options.runtimePins`. Deliberately NOT gating pins.* on `this.recoveryError` here: a
-    // corrupt operations ledger does not make the pin set untrustworthy, and gating on it would refuse
-    // a separately-verified read/effect for an unrelated failure.
-    if (
-      this.recoveryError &&
-      (method === '_agnes/v1/packages.list' ||
-        // skins.list reads the same profile lockfile packages.list does, so a corrupt operations
-        // ledger makes its answer equally untrustworthy.
-        method === '_agnes/v1/skins.list' ||
-        method === '_agnes/v1/skins.read' ||
-        method === '_agnes/v1/clientModules.list' ||
-        method === '_agnes/v1/clientModules.read' ||
-        // callService/callEffect rebuild the identical roster via clientModules.list(...) before
-        // dispatching into extension backend code, so they share its exact untrustworthy-during-
-        // recovery risk.
-        method === '_agnes/v1/clientModules.callService' ||
-        method === '_agnes/v1/clientModules.callEffect' ||
-        method === '_agnes/v1/packages.operation.get' ||
-        method === '_agnes/v1/packages.operation.cancel' ||
-        // packages.trustWorkspace: unlike pins.*, this destructively rewrites the profile lock
-        // (dropping every workspace-sourced entry), so it must not run while pending operations are
-        // unknown -- gated here even though it never reads the operations store itself.
-        method === '_agnes/v1/packages.trustWorkspace' ||
-        kindByMethod[method] !== undefined)
-    )
-      operationError(this.recoveryError)
-    try {
-      if (method.startsWith('_agnes/v1/plugins.config.')) {
-        if (this.recoveryError) operationError(this.recoveryError)
-        if (method === '_agnes/v1/plugins.config.get')
-          return await this.configuration.get(data as import('@agnes/protocol').PluginConfigGetParams)
-        if (method === '_agnes/v1/plugins.config.validate')
-          return await this.configuration.validate(
-            data as import('@agnes/protocol').PluginConfigValidateParams,
-          )
-        if (data.clientId !== granted.clientId) throw rpcError('CAPABILITY_DENIED')
-        return await this.configuration.save(
-          data as import('@agnes/protocol').PluginConfigSaveParams,
-          granted,
-        )
-      }
-      if (method.startsWith('_agnes/v1/plugins.candidates.')) {
-        if (this.recoveryError) operationError(this.recoveryError)
-        return await this.authoring(method, data, granted)
-      }
-      if (method === '_agnes/v1/packages.catalog.list')
-        return await this.catalogList(
-          data as { profile: string; query?: string; cursor?: string; limit?: number },
-        )
-      if (method === '_agnes/v1/packages.catalog.get')
-        return await this.catalogGet(data as { profile: string; id: string; version?: string })
-      if (method === '_agnes/v1/plugins.publicationStatus') {
-        await this.options.profileDirectory(data.profile as string)
-        if (!this.options.activation?.publicationStatus)
-          throw new Error('E_PACKAGE_STATE: publication status unavailable')
-        const result = await this.options.activation.publicationStatus(data.profile as string)
-        // Exceptions from plugin code can include private configuration; only expose a safe projection.
-        const projected = {
-          publication: result.publication && {
-            operation: result.publication.operation,
-            ok: result.publication.ok,
-            recovery: result.publication.recovery,
-            containers: result.publication.containers.map((row) => ({
-              compositionHash: row.compositionHash,
-              status: row.status,
-              ...(row.error ? { error: 'Publication failed; retry the same input.' } : {}),
-            })),
-          },
+    return packageReadOperation(method, async () => {
+      const granted = requirePackageAdmin(method, authority)
+      const checked = validatePackageAdminCall(method, 'params', params)
+      if (!checked.ok) throw rpcError('INVALID_PARAMS', { code: 'INVALID' })
+      const data = checked.value as Record<string, unknown>
+      if (method === '_agnes/v1/packages.update' && ('activation' in data || 'dependents' in data))
+        requirePackageAdminPermissions(method, granted, [
+          'packages.install',
+          'packages.trust',
+          'packages.activate',
+        ])
+      if (method === '_agnes/v1/packages.rollback' && 'activation' in data)
+        requirePackageAdminPermissions(method, granted, [
+          'packages.remove',
+          'packages.trust',
+          'packages.activate',
+        ])
+      if (method.startsWith('_agnes/v1/applications.')) {
+        if (method !== '_agnes/v1/applications.get' && method !== '_agnes/v1/applications.clear') {
+          await this.boot
+          if (this.recoveryError) operationError(this.recoveryError)
         }
-        if (!validatePackageAdminCall(method, 'result', projected).ok)
-          throw new Error('E_PACKAGE_STATE: invalid publication status')
-        return projected
+        return this.applications.call(method, data, granted)
       }
-      if (method === '_agnes/v1/sessions.migrate') {
-        const params = data as import('@agnes/protocol').SessionGenerationMigrationParams
-        this.requireBoundClient(method, params, granted)
-        await this.options.profileDirectory(params.profile)
-        if (!this.options.activation?.migrateSession)
-          throw new Error('E_PACKAGE_STATE: session migration unavailable')
-        try {
-          const result = await this.options.activation.migrateSession(
-            params.profile,
-            params.sessionId,
-            granted.principalId,
-            params.repin ? { repin: params.repin } : undefined,
+      await this.boot
+      // `recoveryError` is set only when recoverPending() -- reading the *operations store*'s pending
+      // ledger -- fails on boot. `pins.inspect`/`pins.release` never read or write that store (no
+      // `operations.admit()`, not in `kindByMethod`, see below): they read CompositeTargetStore pins
+      // through `options.runtimePins`. Deliberately NOT gating pins.* on `this.recoveryError` here: a
+      // corrupt operations ledger does not make the pin set untrustworthy, and gating on it would refuse
+      // a separately-verified read/effect for an unrelated failure.
+      if (
+        this.recoveryError &&
+        (method === '_agnes/v1/packages.list' ||
+          // skins.list reads the same profile lockfile packages.list does, so a corrupt operations
+          // ledger makes its answer equally untrustworthy.
+          method === '_agnes/v1/skins.list' ||
+          method === '_agnes/v1/skins.read' ||
+          method === '_agnes/v1/clientModules.list' ||
+          method === '_agnes/v1/clientModules.read' ||
+          // callService/callEffect rebuild the identical roster via clientModules.list(...) before
+          // dispatching into extension backend code, so they share its exact untrustworthy-during-
+          // recovery risk.
+          method === '_agnes/v1/clientModules.callService' ||
+          method === '_agnes/v1/clientModules.callEffect' ||
+          method === '_agnes/v1/packages.operation.get' ||
+          method === '_agnes/v1/packages.operation.cancel' ||
+          // packages.trustWorkspace: unlike pins.*, this destructively rewrites the profile lock
+          // (dropping every workspace-sourced entry), so it must not run while pending operations are
+          // unknown -- gated here even though it never reads the operations store itself.
+          method === '_agnes/v1/packages.trustWorkspace' ||
+          kindByMethod[method] !== undefined)
+      )
+        operationError(this.recoveryError)
+      try {
+        if (method.startsWith('_agnes/v1/plugins.config.')) {
+          if (this.recoveryError) operationError(this.recoveryError)
+          if (method === '_agnes/v1/plugins.config.get')
+            return await this.configuration.get(data as import('@agnes/protocol').PluginConfigGetParams)
+          if (method === '_agnes/v1/plugins.config.validate')
+            return await this.configuration.validate(
+              data as import('@agnes/protocol').PluginConfigValidateParams,
+            )
+          if (data.clientId !== granted.clientId) throw rpcError('CAPABILITY_DENIED')
+          return await this.configuration.save(
+            data as import('@agnes/protocol').PluginConfigSaveParams,
+            granted,
           )
-          if (!validatePackageAdminCall(method, 'result', result).ok)
-            throw new Error('E_PACKAGE_STATE: invalid session migration')
-          return result
-        } catch (error) {
-          const message =
-            error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
-              ? error.message
-              : ''
-          const reason = message.match(
-            /E_GENERATION_[A-Z_]+|E_COMPOSITION_BINDING_MISSING|E_SEAM_PIN_CHANGE/,
-          )?.[0]
-          if (
-            reason &&
-            [
-              'E_GENERATION_SESSION_OPEN',
-              'E_GENERATION_PIN_MISSING',
-              'E_GENERATION_SNAPSHOT_MISSING',
-              'E_GENERATION_INCOMPATIBLE',
-              'E_GENERATION_LOOP_INCOMPATIBLE',
-              'E_COMPOSITION_BINDING_MISSING',
-              'E_SEAM_PIN_CHANGE',
-            ].includes(reason)
+        }
+        if (method.startsWith('_agnes/v1/plugins.candidates.')) {
+          if (this.recoveryError) operationError(this.recoveryError)
+          return await this.authoring(method, data, granted)
+        }
+        if (method === '_agnes/v1/packages.catalog.list')
+          return await this.catalogList(
+            data as { profile: string; query?: string; cursor?: string; limit?: number },
           )
-            throw rpcError('SEMANTIC_REJECTED', { reason })
+        if (method === '_agnes/v1/packages.catalog.get')
+          return await this.catalogGet(data as { profile: string; id: string; version?: string })
+        if (method === '_agnes/v1/plugins.publicationStatus') {
+          await this.options.profileDirectory(data.profile as string)
+          if (!this.options.activation?.publicationStatus)
+            throw new Error('E_PACKAGE_STATE: publication status unavailable')
+          const result = await this.options.activation.publicationStatus(data.profile as string)
+          // Exceptions from plugin code can include private configuration; only expose a safe projection.
+          const projected = {
+            publication: result.publication && {
+              operation: result.publication.operation,
+              ok: result.publication.ok,
+              recovery: result.publication.recovery,
+              containers: result.publication.containers.map((row) => ({
+                compositionHash: row.compositionHash,
+                status: row.status,
+                ...(row.error ? { error: 'Publication failed; retry the same input.' } : {}),
+              })),
+            },
+          }
+          if (!validatePackageAdminCall(method, 'result', projected).ok)
+            throw new Error('E_PACKAGE_STATE: invalid publication status')
+          return projected
+        }
+        if (method === '_agnes/v1/sessions.migrate') {
+          const params = data as import('@agnes/protocol').SessionGenerationMigrationParams
+          this.requireBoundClient(method, params, granted)
+          await this.options.profileDirectory(params.profile)
+          if (!this.options.activation?.migrateSession)
+            throw new Error('E_PACKAGE_STATE: session migration unavailable')
+          try {
+            const result = await this.options.activation.migrateSession(
+              params.profile,
+              params.sessionId,
+              granted.principalId,
+              params.repin ? { repin: params.repin } : undefined,
+            )
+            if (!validatePackageAdminCall(method, 'result', result).ok)
+              throw new Error('E_PACKAGE_STATE: invalid session migration')
+            return result
+          } catch (error) {
+            const message =
+              error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+                ? error.message
+                : ''
+            const reason = message.match(
+              /E_GENERATION_[A-Z_]+|E_COMPOSITION_BINDING_MISSING|E_SEAM_PIN_CHANGE/,
+            )?.[0]
+            if (
+              reason &&
+              [
+                'E_GENERATION_SESSION_OPEN',
+                'E_GENERATION_PIN_MISSING',
+                'E_GENERATION_SNAPSHOT_MISSING',
+                'E_GENERATION_INCOMPATIBLE',
+                'E_GENERATION_LOOP_INCOMPATIBLE',
+                'E_COMPOSITION_BINDING_MISSING',
+                'E_SEAM_PIN_CHANGE',
+              ].includes(reason)
+            )
+              throw rpcError('SEMANTIC_REJECTED', { reason })
+            throw error
+          }
+        }
+        if (method === '_agnes/v1/plugins.generations') {
+          await this.options.profileDirectory(data.profile as string)
+          if (!this.options.activation?.generations)
+            throw new Error('E_PACKAGE_STATE: generation status unavailable')
+          const status = await this.options.activation.generations(data.profile as string)
+          if (!validatePackageAdminCall(method, 'result', status).ok)
+            throw new Error('E_PACKAGE_STATE: invalid generation status')
+          return status
+        }
+        if (method === '_agnes/v1/packages.provenance')
+          return await this.options.manager.provenance(
+            await this.options.profileDirectory(data.profile as string),
+            data.id as string,
+          )
+        if (method === '_agnes/v1/packages.sourcePolicy')
+          return this.options.manager.sourcePolicy(
+            await this.options.profileDirectory(data.profile as string),
+          )
+        if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
+        if (method === '_agnes/v1/plugins.tree.get')
+          return this.pluginTreeView(data as { profile: string }, true)
+        if (method === '_agnes/v1/plugins.tree.list')
+          return this.pluginTreeView(data as { profile: string }, false)
+        if (method === '_agnes/v1/plugins.tree.apply')
+          return this.pluginTreeApplyCall(data as { artifact: RuntimeTargetArtifact })
+        if (method === '_agnes/v1/plugins.tree.rollback') return this.pluginTreeRollbackCall()
+        if (method === '_agnes/v1/skins.list') return await this.skinsList(data as { profile: string })
+        if (method === '_agnes/v1/skins.read')
+          return await this.skinsRead(data as { profile: string; path: string })
+        if (method === '_agnes/v1/clientModules.list')
+          return await this.clientModulesList(data as { profile: string; sessionId?: string })
+        if (method === '_agnes/v1/clientModules.read')
+          return await this.clientModulesRead(data as { profile: string; path: string })
+        if (method === '_agnes/v1/clientModules.callService')
+          return await this.clientModulesCallService(data as ClientModuleServiceCallParams)
+        if (method === '_agnes/v1/clientModules.callEffect')
+          return await this.clientModulesCallEffect(data as ClientModuleEffectCallParams, granted)
+        if (method === '_agnes/v1/packages.operation.get')
+          return await this.operationGet(data as { profile: string; operationId: string }, granted)
+        if (method === '_agnes/v1/packages.operation.cancel')
+          return await this.cancel(data as EffectParams & { operationId: string }, granted)
+        if (method === '_agnes/v1/packages.trustWorkspace')
+          return await this.trustWorkspace(data as TrustParams, granted)
+        // Not gated by `this.recoveryError` above -- see the comment on that check for why.
+        if (method === '_agnes/v1/packages.pins.inspect')
+          return await this.pinsInspect(data as { profile: string })
+        if (method === '_agnes/v1/packages.pins.release')
+          return await this.pinsRelease(data as EffectParams & { pinIds: string[] }, granted)
+        const kind = kindByMethod[method]
+        if (!kind) throw rpcError('METHOD_NOT_FOUND', { method })
+        return await this.effect(method, kind, data as EffectParams, granted)
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'number')
           throw error
-        }
+        operationError(packageError(error))
       }
-      if (method === '_agnes/v1/plugins.generations') {
-        await this.options.profileDirectory(data.profile as string)
-        if (!this.options.activation?.generations)
-          throw new Error('E_PACKAGE_STATE: generation status unavailable')
-        const status = await this.options.activation.generations(data.profile as string)
-        if (!validatePackageAdminCall(method, 'result', status).ok)
-          throw new Error('E_PACKAGE_STATE: invalid generation status')
-        return status
-      }
-      if (method === '_agnes/v1/packages.provenance')
-        return await this.options.manager.provenance(
-          await this.options.profileDirectory(data.profile as string),
-          data.id as string,
-        )
-      if (method === '_agnes/v1/packages.sourcePolicy')
-        return this.options.manager.sourcePolicy(await this.options.profileDirectory(data.profile as string))
-      if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
-      if (method === '_agnes/v1/plugins.tree.get')
-        return this.pluginTreeView(data as { profile: string }, true)
-      if (method === '_agnes/v1/plugins.tree.list')
-        return this.pluginTreeView(data as { profile: string }, false)
-      if (method === '_agnes/v1/plugins.tree.apply')
-        return this.pluginTreeApplyCall(data as { artifact: RuntimeTargetArtifact })
-      if (method === '_agnes/v1/plugins.tree.rollback') return this.pluginTreeRollbackCall()
-      if (method === '_agnes/v1/skins.list') return await this.skinsList(data as { profile: string })
-      if (method === '_agnes/v1/skins.read')
-        return await this.skinsRead(data as { profile: string; path: string })
-      if (method === '_agnes/v1/clientModules.list')
-        return await this.clientModulesList(data as { profile: string; sessionId?: string })
-      if (method === '_agnes/v1/clientModules.read')
-        return await this.clientModulesRead(data as { profile: string; path: string })
-      if (method === '_agnes/v1/clientModules.callService')
-        return await this.clientModulesCallService(data as ClientModuleServiceCallParams)
-      if (method === '_agnes/v1/clientModules.callEffect')
-        return await this.clientModulesCallEffect(data as ClientModuleEffectCallParams, granted)
-      if (method === '_agnes/v1/packages.operation.get')
-        return await this.operationGet(data as { profile: string; operationId: string }, granted)
-      if (method === '_agnes/v1/packages.operation.cancel')
-        return await this.cancel(data as EffectParams & { operationId: string }, granted)
-      if (method === '_agnes/v1/packages.trustWorkspace')
-        return await this.trustWorkspace(data as TrustParams, granted)
-      // Not gated by `this.recoveryError` above -- see the comment on that check for why.
-      if (method === '_agnes/v1/packages.pins.inspect')
-        return await this.pinsInspect(data as { profile: string })
-      if (method === '_agnes/v1/packages.pins.release')
-        return await this.pinsRelease(data as EffectParams & { pinIds: string[] }, granted)
-      const kind = kindByMethod[method]
-      if (!kind) throw rpcError('METHOD_NOT_FOUND', { method })
-      return await this.effect(method, kind, data as EffectParams, granted)
-    } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'number') throw error
-      operationError(packageError(error))
-    }
+    })
   }
 
   private async authoring(
@@ -816,7 +836,7 @@ class Service implements PackageAdminService {
           authority.authoringOrigin!,
         )
       if (action === 'write')
-        return this.candidates.write(directory, id, owner, expected, params.files as AuthoringFile[])
+        return this.candidates.writeRequest(directory, id, owner, params as AuthoringWriteParams)
       if (action === 'test')
         return this.candidates.test(
           directory,
@@ -1303,7 +1323,7 @@ class Service implements PackageAdminService {
     // prevents one authenticated administrator from observing another administrator's operation.
     if (!found || found.identity.principalId !== authority.principalId)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
-    return operationWithHelp(found.operation)
+    return operationWithHelp(currentStoredShape(found.operation) as PackageOperation)
   }
 
   private async effect(
@@ -2072,7 +2092,7 @@ class Service implements PackageAdminService {
     })
     for (const listener of this.listeners) {
       try {
-        listener(structuredClone(value.operation))
+        listener(structuredClone(currentStoredShape(value.operation)) as PackageOperation)
       } catch {
         // Observation cannot change the durable operation result.
       }

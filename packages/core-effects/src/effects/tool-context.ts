@@ -130,6 +130,7 @@ export type ToolContextDeps = {
     opts: { signal?: AbortSignal; depth: number; parentEffectId?: string },
   ): Promise<ToolResult>
   listTools(): ToolDef[]
+  toolAvailability?: ToolContext['tools']['availability']
   discloseTool?(name: string, signal: AbortSignal): Promise<void>
   appendPlan(items: PlanItem[]): Promise<Seq>
   requestCompaction(instructions?: string): void
@@ -331,6 +332,7 @@ export function buildToolContext(
         return d.invoke(name, args, { signal, depth: d.depth + 1 })
       },
       list: () => d.listTools(),
+      ...(d.toolAvailability ? { availability: d.toolAvailability } : {}),
       ...(d.discloseTool ? { disclose: (name: string) => d.discloseTool!(name, call.signal) } : {}),
     },
     artifacts: {

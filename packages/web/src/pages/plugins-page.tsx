@@ -25,32 +25,56 @@ import { useCapabilitySummaries } from './plugins/summaries.js'
 function usePendingReviews(api: PluginView['api']) {
   const [count, setCount] = useState(0)
   useEffect(() => {
+    setCount(0)
     if (!api) return
     let alive = true
-    const read = () =>
-      void api.candidatesList().then(
-        (value) => {
-          if (alive) setCount(value.candidates.filter((item) => item.state === 'review').length)
-        },
-        () => undefined,
-      )
-    if (document.visibilityState !== 'hidden') read()
-    const wake = () => {
-      if (document.visibilityState !== 'hidden') read()
+    let epoch = 0
+    let dirty = false
+    let pending: Promise<void> | undefined
+    const visible = () => document.visibilityState !== 'hidden'
+    const read = () => {
+      if (!alive || !visible() || pending) return
+      pending = Promise.resolve().then(async () => {
+        try {
+          if (!alive || !visible()) return
+          do {
+            dirty = false
+            const requested = epoch
+            try {
+              const value = await api.candidatesList()
+              if (alive && requested === epoch)
+                setCount(value.candidates.filter((item) => item.state === 'review').length)
+            } catch {
+              // Retain the last confirmed count; a later invalidation can retry.
+            }
+          } while (alive && dirty && visible())
+        } finally {
+          pending = undefined
+        }
+      })
     }
-    window.addEventListener('agnes:plugins-invalidated', wake)
-    window.addEventListener('agnes:candidate-count-changed', wake)
-    window.addEventListener('agnes:candidates-changed', wake)
+    const invalidate = () => {
+      epoch++
+      dirty = true
+      read()
+    }
+    const wake = () => read()
+    read()
+    window.addEventListener('agnes:plugins-invalidated', invalidate)
+    window.addEventListener('agnes:candidate-count-changed', invalidate)
+    window.addEventListener('agnes:candidates-changed', invalidate)
+    window.addEventListener('focus', wake)
     document.addEventListener('visibilitychange', wake)
     return () => {
       alive = false
-      window.removeEventListener('agnes:plugins-invalidated', wake)
-      window.removeEventListener('agnes:candidate-count-changed', wake)
-      window.removeEventListener('agnes:candidates-changed', wake)
+      window.removeEventListener('agnes:plugins-invalidated', invalidate)
+      window.removeEventListener('agnes:candidate-count-changed', invalidate)
+      window.removeEventListener('agnes:candidates-changed', invalidate)
+      window.removeEventListener('focus', wake)
       document.removeEventListener('visibilitychange', wake)
     }
   }, [api])
-  return [count, setCount] as const
+  return count
 }
 
 /**
@@ -81,7 +105,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     })
     return () => clearTimeout(timer)
   }, [moved, data])
-  const [pending, setPending] = usePendingReviews(view?.api)
+  const pending = usePendingReviews(view?.api)
   const computerUse = useMemo(() => createComputerUsePaneController({ call: data.call }), [data])
   useEffect(() => () => computerUse.dispose(), [computerUse])
   // The controller keeps one list: the installed inventory, or the catalog behind the marketplace.
@@ -161,7 +185,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     ) : !view ? null : tab === 'plugins' ? (
       <PluginsTab view={view} t={t} summaries={summaries} />
     ) : tab === 'review' ? (
-      <ReviewTab view={view} t={t} pending={pending} sources={sources} onPendingCount={setPending} />
+      <ReviewTab view={view} t={t} pending={pending} sources={sources} />
     ) : (
       <MarketTab view={view} t={t} />
     )

@@ -54,6 +54,10 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('window', window)
   vi.stubGlobal('getComputedStyle', window.getComputedStyle.bind(window))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json({}, { status: 503 })),
+  )
   disposeMarkup = renderSettingsMarkup(window.document.getElementById('config') as unknown as HTMLElement)
   const snapshot: ConfigSnapshot = {
     profile: 'local-dev',
@@ -213,6 +217,25 @@ it('colours the account indicator by enablement first, then credential health', 
   expect(status(0)).toBe('ready')
   expect(status(1)).toBe('inactive')
   expect(status(2)).toBe('missing')
+  const broken = h.doc.querySelectorAll('.config-account')[2]
+  if (!broken) throw new Error('missing unavailable account')
+  expect(broken.textContent).toContain('需要重新填写 API key')
+  const repair = [...broken.querySelectorAll('button')].find(
+    (node) => node.textContent === '重新填写 API key',
+  )
+  if (!repair) throw new Error('missing key re-entry action')
+  ;(repair as unknown as HTMLButtonElement).click()
+  await vi.waitFor(() => expect(h.input('config-base-url').value).toBe('https://broken.example/v1'))
+  expect(h.input('config-api-key').value).toBe('')
+  h.input('config-api-key').value = 'test-enter-key'
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  expect(h.config.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      accountId: 'broken',
+      apiKey: 'test-enter-key',
+    }),
+  )
   h.controller.close()
 })
 
@@ -332,7 +355,8 @@ it('updates the empty state after saving the first account and removing the last
   h.config.save.mockResolvedValue({ ...(await h.config.get()), revision: 5, accounts: [account('work')] })
   expect(h.doc.querySelector('.agnes-settings-page-header #config-add-account')).toBeNull()
   expect(h.doc.getElementById('config-add-account')).toBeNull()
-  expect(h.doc.querySelector('[aria-disabled="true"]')?.textContent).toContain('添加账户后可设置')
+  // Auxiliary models load independently; the account's empty state owns the connection guidance.
+  expect(h.doc.querySelector('.config-accounts-welcome')?.textContent).toContain(zhT('accounts.empty'))
   const newSession = h.doc.createElement('button')
   newSession.id = 'new'
   const begin = vi.fn()

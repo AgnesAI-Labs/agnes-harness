@@ -11,7 +11,6 @@ import { modelProfileDeployment } from '@agnes/host-common/profile/model-compati
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
-import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import {
   type CompositionBinding,
   CompositionSessionStore,
@@ -22,11 +21,12 @@ import {
   RuntimePluginCatalogue,
 } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
+import { pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -43,14 +43,25 @@ import {
 } from '../lifecycle/host-routing.js'
 import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
+import {
+  activeAgentPackages,
+  assertAgentRequest,
+  createAgentResolver,
+  sessionAdmission,
+  verifyAgentPin,
+} from './agent-plan.js'
 import { compositionPresets } from './composition-presets.js'
-import { profileForComposition } from './composition-selection.js'
-import { admitSessionBundlePresets, sessionBundleCatalog } from './session-bundle-presets.js'
-import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
+import {
+  type CompositionContainer as Container,
+  profileForComposition,
+  projectCompositionRows,
+} from './composition-selection.js'
+import { modelCatalogPublisher } from './model-catalog-publication.js'
+import { admitSessionBundlePresets } from './session-bundle-presets.js'
+import { resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
-type Container = { host: Host; tree: ResolvedComposition; draining?: boolean }
 
 /** Composition selects a container; W7 continues to own generations, leases and durable pins. */
 export async function createCompositionHost(
@@ -69,6 +80,7 @@ export async function createCompositionHost(
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
   store.sweepOrphans((digest) => generations.pinFileState(digest))
   const containers = new Map<string, Container>()
+  const builtinRows = new WeakMap<Host, readonly PluginRow[]>()
   const opening = new Map<string, Promise<Container>>()
   const idleSince = new Map<Container, number>()
   const idleMs = generationIdleMs(profile.limits)
@@ -98,6 +110,7 @@ export async function createCompositionHost(
   let closed = false
   let closing: Promise<void> | undefined
   const calls = createHostCallQueue(() => closed)
+  let bootTarget: Host['runtimeTargetSnapshot']
   let latestTarget: RuntimeTarget | undefined
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
@@ -105,44 +118,14 @@ export async function createCompositionHost(
     rows: readonly T[],
     tree: ResolvedComposition,
     host?: Host,
-  ): T[] => {
-    // Skills are live resources. A replayed target can carry a row from an earlier worker boot.
-    // Use this container's prepared row so its mount identity matches its current importer.
-    const consumers = new Map(
-      host?.extensionRows
-        .current()
-        .filter((row) => row.liveResources?.length)
-        .map((row) => [row.id, row]),
+  ): T[] =>
+    projectCompositionRows(
+      rows,
+      tree,
+      host,
+      host ? (builtinRows.get(host) ?? []) : [],
+      [...containers.values()].flatMap((container) => builtinRows.get(container.host) ?? []),
     )
-    const candidates = rows.map((row) => {
-      const live = consumers.get(row.id)
-      return live && live.plugin === row.plugin && live.entryRevision === row.entryRevision
-        ? (live as T)
-        : row
-    })
-    const plugins = resolveSessionCapabilities({
-      composition: tree,
-      installed: {
-        plugins: candidates.map((row) => ({
-          id: row.id,
-          enabled: !row.disabled,
-          packageId:
-            pluginSnapshotIdentity(row.plugin)?.packageId ??
-            (row.plugin.startsWith('builtin:')
-              ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
-              : undefined),
-        })),
-      },
-    }).plugins
-    return candidates.map((row) => {
-      const override = tree.selection.plugins?.[row.id]
-      return Object.freeze({
-        ...row,
-        ...(override?.config === undefined ? {} : { config: override.config }),
-        disabled: !capabilityEnabled(plugins, row.id),
-      })
-    })
-  }
   const draining = (rows: readonly PluginRow[], tree: ResolvedComposition, host?: Host) => {
     const loop = tree.selection.loop
     const source =
@@ -185,28 +168,31 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     }).target
   }
+  const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (binding: CompositionBinding): Promise<Container> => {
-    const found = containers.get(binding.tree.hash)
+    const identity = containerKey(binding)
+    const found = containers.get(identity)
     if (found) {
       idleSince.delete(found)
       return found
     }
-    const pending = opening.get(binding.tree.hash)
+    const pending = opening.get(identity)
     if (pending) return pending
     const started = (async () => {
+      const target = latestTarget ?? bootTarget?.()
       const pinned = generations.session(binding.sessionKey)
       const skills = currentSkills
       // A newly opened composition must not import boot-time pins retired by a later update.
       // Existing sessions bootstrap from their own durable code snapshot instead.
       const sources = pinned
         ? generations.read(pinned.generationId).sources
-        : latestTarget
+        : target
           ? new RuntimePluginCatalogue(
               (await options.runtimePluginSources?.()) ??
                 options.runtimePluginCatalogue ??
                 options.runtimePluginSnapshots ??
                 [],
-            ).select(project(latestTarget, binding.tree))
+            ).select(project(target, binding.tree))
           : options.runtimePluginSnapshots
       if (sources)
         await assertGenerationTrust(
@@ -221,7 +207,15 @@ export async function createCompositionHost(
         ...(sources
           ? {
               packages: [
-                ...binding.profile.packages.filter((pkg) => pkg.trust === 'builtin' || !pkg.enabled),
+                // Unselected packages remain composition vocabulary, without executable authority.
+                // Match cold generation restoration: only selected sources may enable their code.
+                ...binding.profile.packages
+                  .filter(
+                    (pkg) =>
+                      pkg.trust === 'builtin' ||
+                      !sources.some((source) => source.snapshot.packageId === pkg.id),
+                  )
+                  .map((pkg) => (pkg.trust === 'builtin' ? pkg : { ...pkg, enabled: false })),
                 ...sources.map(({ snapshot }) => ({
                   ...binding.profile.packages.find((pkg) => pkg.id === snapshot.packageId),
                   id: snapshot.packageId,
@@ -244,25 +238,12 @@ export async function createCompositionHost(
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
           ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
-          ...(latestTarget && !pinned
+          ...(target && !pinned
             ? {
-                ordinaryPluginLayers: {
-                  ...options.ordinaryPluginLayers,
-                  workspace: {
-                    ...options.ordinaryPluginLayers?.workspace,
-                    ...Object.fromEntries(
-                      projectRows(latestTarget.tree.rows, binding.tree)
-                        .filter((row) => pluginSnapshotIdentity(row.plugin))
-                        .map((row) => [
-                          row.id,
-                          {
-                            enabled: !row.disabled,
-                            ...(row.config === undefined ? {} : { config: row.config }),
-                          },
-                        ]),
-                    ),
-                  },
-                },
+                ordinaryPluginLayers: pluginWorkspaceLayers(
+                  projectRows(target.tree.rows, binding.tree),
+                  options.ordinaryPluginLayers,
+                ),
               }
             : {}),
           ...(sources
@@ -286,6 +267,12 @@ export async function createCompositionHost(
             },
           }),
       )
+      builtinRows.set(
+        host,
+        [...(host.runtimeTargetSnapshot?.()?.tree.rows ?? []), ...host.extensionRows.current()].filter(
+          (row) => row.plugin.startsWith('builtin:'),
+        ),
+      )
       try {
         const rows = new Map(host.extensionRows.current().map((row) => [row.id, row]))
         for (const input of prepared.values()) {
@@ -297,8 +284,8 @@ export async function createCompositionHost(
           const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
-        if (latestTarget) {
-          const report = await host.applyRuntimeTarget(project(latestTarget, binding.tree, host))
+        if (target) {
+          const report = await host.applyRuntimeTarget(project(target, binding.tree, host))
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
         }
@@ -311,37 +298,44 @@ export async function createCompositionHost(
         const container = {
           host,
           tree: binding.tree,
-          draining: latestTarget ? draining(latestTarget.tree.rows, binding.tree, host) : false,
+          draining: target ? draining(target.tree.rows, binding.tree, host) : false,
         }
-        containers.set(binding.tree.hash, container)
+        containers.set(identity, container)
         return container
       } catch (error) {
         await host.close()
         throw error
       }
     })()
-    opening.set(binding.tree.hash, started)
+    opening.set(identity, started)
     try {
       return await started
     } finally {
-      opening.delete(binding.tree.hash)
+      opening.delete(identity)
     }
   }
-  const initialTree = resolveComposition(profile, {
+  const { current: bootProfile } = await sessionAdmission(
+    profile,
+    modelProfile,
+    { ...options, runtimePluginSources: async () => options.runtimePluginSnapshots ?? [] },
+    undefined,
+  )
+  const initialTree = resolveComposition(bootProfile, {
     preset: resolvePreset(profile.presets.default, presets, { limits: profile.limits }).doc,
   })
   const initial = await open({
     sessionKey: '',
     tree: initialTree,
-    profile: profileForComposition(profile, initialTree),
+    profile: profileForComposition(bootProfile, initialTree),
   }).catch((error) => {
     writer.close()
     throw error
   })
+  bootTarget = initial.host.runtimeTargetSnapshot
   const owner = (key: string, coldRead = true): Container => {
     const binding = store.readIfValid(key)
     const active = binding
-      ? containers.get(binding.tree.hash)
+      ? containers.get(containerKey(binding))
       : (sessionOwners.get(key) ??
         [...containers.values()].find((container) => container.host.kernel.get(key)))
     if (active) return active
@@ -394,13 +388,13 @@ export async function createCompositionHost(
       rows: [...rows.values()],
     }
   }
-  const enqueue = calls.enqueue
   const collectIdle = () => collectIdleContainers(containers, initial, idleSince, idleMs)
   let collectionQueued = false
   const scheduleCollection = () => {
     if (closed || collectionQueued) return
     collectionQueued = true
-    void enqueue(collectIdle)
+    void calls
+      .enqueue(collectIdle)
       .catch((error) => options.log.warn('Composition collection failed', { error: String(error) }))
       .finally(() => {
         collectionQueued = false
@@ -433,6 +427,8 @@ export async function createCompositionHost(
     if (legacyPublication && failure) throw failure
     return lastPublication
   }
+  const publishAdapters = modelCatalogPublisher(initial.host, options, () => modelProfile)
+  await publishAdapters()
   const sessions = createSessionMapFacade(
     initial.host.kernel.sessions,
     (key) => owner(key).host.kernel.sessions,
@@ -444,7 +440,24 @@ export async function createCompositionHost(
     (key, coldRead = false) => owner(key, coldRead).host.kernel,
     sessions,
   )
+  const admission = () =>
+    sessionAdmission(
+      profile,
+      modelProfile,
+      options,
+      activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
+    )
+  const prepareAgent = createAgentResolver({
+    profile,
+    admission,
+    host: initial.host,
+    packageDirs: options.packageDirs ?? new Map(),
+    adminLoop: () => readAdminLoopDefault(configuration),
+    open,
+  })
   const overrides: HostFacadeOverrides = {
+    resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
+    sessionBundleCatalog: () => calls.enqueue(async () => (await admission()).current.bundleCatalog),
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -464,128 +477,101 @@ export async function createCompositionHost(
     },
     compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>
-      enqueue(async () => {
-        const key =
-          input.key ??
-          input.binding?.sessionKey ??
-          sessionKey(
-            profile,
-            await initial.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
-            input.cwd ?? options.workspaceRoot,
-          )
-        try {
-          let binding = store.read(key)
-          if (!binding) {
-            const parent = input.parent ? store.read(input.parent.key) : undefined
-            const sources =
-              latestTarget && !parent
-                ? new RuntimePluginCatalogue(
-                    (await options.runtimePluginSources?.()) ??
-                      options.runtimePluginCatalogue ??
-                      options.runtimePluginSnapshots ??
-                      [],
-                  ).select(latestTarget)
-                : []
-            const admissionProfile = {
-              ...profile,
-              // Admission uses the published code catalog, including packages installed after boot.
-              // Persist it with the composition so cold opens can mount its loop before Kernel creation.
-              packages: [
-                ...profile.packages.filter(
-                  (pkg) => !sources.some((source) => source.snapshot.packageId === pkg.id),
-                ),
-                ...sources.map(({ snapshot, trusted }) => ({
-                  ...profile.packages.find((pkg) => pkg.id === snapshot.packageId),
-                  id: snapshot.packageId,
-                  version: snapshot.version,
-                  integrity: snapshot.integrity,
-                  source:
-                    profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.source ??
-                    'runtime-snapshot',
-                  trust: 'trusted' as const,
-                  enabled:
-                    trusted &&
-                    (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
-                })),
-              ],
-              bundleCatalog: sessionBundleCatalog(
-                profile,
-                latestTarget ? readRuntimeBundles(sources) : undefined,
-              ),
-            }
-            const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
-            const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
-            const tree =
-              parent?.tree ??
-              resolveComposition(
-                { ...profile, ...admitted.scope },
-                {
-                  packageCatalog: admissionProfile.packages,
-                  preset: admitted.preset,
-                  ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
-                  ...(input.loop ? { session: loopPatch(input.loop) } : {}),
-                  ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
-                },
-              )
-            const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
-            if (
-              !parent &&
-              selectedLoop &&
-              !initial.host.kernel.loops
-                .catalog()
-                .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
+      calls.enqueue(() =>
+        withPackageVerification(async () => {
+          const key =
+            input.key ??
+            input.binding?.sessionKey ??
+            sessionKey(
+              profile,
+              await initial.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
+              input.cwd ?? options.workspaceRoot,
             )
-              throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', {
-                loop: selectedLoop,
-              })
-            binding = store.pin({
-              sessionKey: key,
-              tree,
-              profile: parent?.profile ?? profileForComposition(admitted.profile, tree),
-            })
-          }
-          if (
-            input.bundles !== undefined &&
-            JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
-          )
-            throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
           try {
-            const container = await open(binding)
-            if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-            const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
-            if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
-              throw new Error(
-                'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
+            const agent = input.agent !== undefined ? await prepareAgent(input.agent) : undefined
+            let binding = store.read(key)
+            assertAgentRequest(input, agent, binding)
+            if (!binding && agent)
+              binding = store.pin({ sessionKey: key, tree: agent.tree, profile: agent.profile })
+            if (!binding) {
+              const parent = input.parent ? store.read(input.parent.key) : undefined
+              const { current: admissionProfile } = await admission()
+              const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
+              const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
+              const tree =
+                parent?.tree ??
+                resolveComposition(
+                  { ...profile, ...admitted.scope },
+                  {
+                    packageCatalog: admissionProfile.packages,
+                    preset: admitted.preset,
+                    ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
+                    ...(input.loop ? { session: loopPatch(input.loop) } : {}),
+                    ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
+                  },
+                )
+              const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
+              if (
+                !parent &&
+                selectedLoop &&
+                !initial.host.kernel.loops
+                  .catalog()
+                  .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
               )
-            const session = await container.host.createSession({
-              ...input,
-              key,
-              preset: binding.tree.preset,
-              ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
-            })
-            sessionOwners.set(key, container)
-            const close = session.close.bind(session)
-            session.close = async () => {
-              try {
-                await close()
-              } finally {
-                sessionOwners.delete(key)
-                scheduleCollection()
-                publish()
-              }
+                throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', {
+                  loop: selectedLoop,
+                })
+              binding = store.pin({
+                sessionKey: key,
+                tree,
+                profile: parent?.profile ?? profileForComposition(admitted.profile, tree),
+              })
             }
-            publish()
-            return session
+            if (
+              input.bundles !== undefined &&
+              JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
+            )
+              throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
+            try {
+              const container = await open(binding)
+              if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+              const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
+              if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
+                throw new Error(
+                  'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
+                )
+              const session = await container.host.createSession({
+                ...input,
+                ...(agent ? { strict: true } : {}),
+                key,
+                preset: binding.tree.preset,
+                ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
+              })
+              if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
+              sessionOwners.set(key, container)
+              const close = session.close.bind(session)
+              session.close = async () => {
+                try {
+                  await close()
+                } finally {
+                  sessionOwners.delete(key)
+                  scheduleCollection()
+                  publish()
+                }
+              }
+              publish()
+              return session
+            } catch (error) {
+              if (!generations.session(key)) store.release(key)
+              throw error
+            }
           } catch (error) {
-            if (!generations.session(key)) store.release(key)
-            throw error
+            throw translateSessionFailure(error, key)
           }
-        } catch (error) {
-          throw translateSessionFailure(error, key)
-        }
-      }),
+        }),
+      ),
     releaseSessionGeneration: (key) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const container = owner(key)
         await container.host.releaseSessionGeneration?.(key)
         store.release(key)
@@ -594,7 +580,7 @@ export async function createCompositionHost(
         publish()
       }),
     migrateSessionGeneration: (key, context) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const binding = store.read(key)
         if (!binding) {
           // Pre-composition durable generation pins retain the generation owner's migration checks.
@@ -609,7 +595,7 @@ export async function createCompositionHost(
         return result
       }),
     collectPluginGenerations: () =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         for (const { host } of containers.values()) await host.collectPluginGenerations?.()
         await collectIdle()
       }),
@@ -704,27 +690,30 @@ export async function createCompositionHost(
       }
     },
     setSessionPreset: (key, name) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const result = await owner(key, false).host.setSessionPreset(key, name)
         publish()
         return result
       }),
     applyRuntimeTarget: (target) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         await refreshTrust()
-        latestTarget = target
-        latestRows = undefined
-        await broadcast('runtime-target', async (container) => {
+        const publication = await broadcast('runtime-target', async (container) => {
           const report = await container.host.applyRuntimeTarget(
             project(target, container.tree, container.host),
           )
           container.draining = draining(target.tree.rows, container.tree, container.host)
           return report
         })
+        if (publication.ok) {
+          latestTarget = target
+          latestRows = undefined
+          await publishAdapters()
+        }
         return convergence(target)
       }),
     refreshSkillRow: (fresh) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         currentSkills = fresh
         return broadcast('skills', (container) => container.host.refreshSkillRow(fresh))
       }),
@@ -741,7 +730,7 @@ export async function createCompositionHost(
       return result
     },
     applyModelProfile: (next) =>
-      enqueue(async () => {
+      calls.enqueue(async () => {
         const deployment = modelProfileDeployment(next)
         if (
           ![profile, modelProfile, ...[...containers.values()].map(({ host }) => host.profile)].some(
@@ -750,7 +739,7 @@ export async function createCompositionHost(
         )
           throw new HostError('E_SEAM_IMMUTABLE', 'non-model configuration requires restart')
         modelProfile = next
-        return broadcast('models', (container) =>
+        const report = await broadcast('models', (container) =>
           container.host.applyModelProfile(
             profileForComposition(
               {
@@ -762,6 +751,8 @@ export async function createCompositionHost(
             ),
           ),
         )
+        if (report.ok) await publishAdapters()
+        return report
       }),
     extensionRows: {
       ...initial.host.extensionRows,
@@ -775,7 +766,7 @@ export async function createCompositionHost(
         return result!
       },
       apply: (rows) =>
-        enqueue(async () => {
+        calls.enqueue(async () => {
           await refreshTrust()
           latestRows = rows
           const selected = new Set(rows.map((row) => row.id))

@@ -138,6 +138,13 @@ export class ServiceBindings {
     kind: BindableKind<S, P>,
     descriptor: ServiceDescriptor,
     origins?: RowOriginLookup,
+    claimPublic?: (
+      context: Context,
+      rowId: string,
+      source: string,
+      provider: ServiceProvider<S, P>,
+      register: () => () => Promise<void>,
+    ) => () => Promise<void>,
   ): void {
     const existing = this.installed.get(kind.kind)
     if (existing && existing.kind !== kind)
@@ -154,9 +161,18 @@ export class ServiceBindings {
     let registry!: ProviderRegistry<ServiceProvider<S, P>>
     registry = installProviderRegistry(ctx, kind, (owner, source, provider) => {
       const verified = providerSource(owner, origins, source)
-      return registry.register(verified, provider, owner, async () => {
-        await provider.dispose?.()
-      })
+      const register = () =>
+        registry.register(verified, provider, owner, async () => {
+          await provider.dispose?.()
+        })
+      for (let fiber = owner.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
+        const origin = origins?.lookup(fiber)
+        if (!origin) continue
+        if (origin.packageId !== verified && origin.ownerPackage !== verified)
+          throw closed(kind.kind, 'register')
+        return claimPublic ? claimPublic(owner, origin.rowId, verified, provider, register) : register()
+      }
+      return register()
     })
     const registries = this.registries.get(ctx) ?? new Map()
     registries.set(kind, registry)
@@ -254,6 +270,8 @@ export class ServiceBindings {
     assertCall(kind, call)
     const descriptor = installed.descriptor
     const provider = this.choose(kind, call, descriptor)
+    const selection = { provider: provider.id, version: provider.version }
+    const lease = this.current().lease(kind, selection)
     const binding = snapshot(call)
     const lifetime = new ProviderLifetime(kind.kind, provider.id)
     let disposeOnce: Promise<void> | undefined
@@ -266,6 +284,11 @@ export class ServiceBindings {
     }
     const open = (live: Live): boolean => {
       if (disposeOnce || lifetime.signal.aborted || call.signal.aborted) return false
+      try {
+        if (this.current().lease(kind, selection) !== lease) return false
+      } catch {
+        return false
+      }
       if (!live?.active || live.owner !== call.owner) return false
       return binding.generationId === undefined || live.generationId === binding.generationId
     }
@@ -499,17 +522,8 @@ function buildPorts(
   enter: (operation: string) => void,
   lifetime: ProviderLifetime,
 ): ServicePorts {
-  const guard = (operation: string, run: () => unknown) => {
-    enter(operation)
-    const result = run()
-    if (!isPromise(result)) return result
-    return lifetime.track(
-      Promise.resolve(result).then((value) => {
-        enter(operation)
-        return value
-      }),
-    )
-  }
+  const guard = (operation: string, run: () => unknown) =>
+    guardedCall(run, descriptor, [], operation, enter, lifetime)
   let decisions: DecisionPort | undefined
   let ledger: OwnerLedgerPort | undefined
   let input: AgentInputPort | undefined
@@ -593,17 +607,13 @@ function buildPorts(
     ...(input === undefined ? {} : { input }),
     ...(projections === undefined ? {} : { projections }),
     ...(capabilities === undefined ? {} : { capabilities }),
-    now: () => {
-      enter('now')
-      return factories.now?.() ?? Date.now()
-    },
+    now: () => guard('now', () => factories.now?.() ?? Date.now()) as number,
   }
   if (grants.has('ledger')) {
     Object.defineProperty(ports, 'lastSeq', {
       enumerable: true,
       get() {
-        enter('lastSeq')
-        return factories.lastSeq?.(call) ?? (call.watermark as number)
+        return guard('lastSeq', () => factories.lastSeq?.(call) ?? call.watermark) as number
       },
     })
   }
@@ -619,13 +629,28 @@ function guardedCall(
   lifetime: ProviderLifetime,
 ): unknown {
   enter(operation)
-  const result = Reflect.apply(fn, thisArg, args)
-  if (!isPromise(result)) return result
+  let result: unknown
+  try {
+    result = Reflect.apply(fn, thisArg, args)
+  } catch (error) {
+    enter(operation)
+    throw error
+  }
+  if (!isPromise(result)) {
+    enter(operation)
+    return result
+  }
   return lifetime.track(
-    Promise.resolve(result).then((value) => {
-      enter(operation)
-      return value
-    }),
+    Promise.resolve(result).then(
+      (value) => {
+        enter(operation)
+        return value
+      },
+      (error) => {
+        enter(operation)
+        throw error
+      },
+    ),
   )
 }
 
@@ -693,15 +718,7 @@ function facade<S extends ServiceInstance>(
     const fn = (raw as Record<string, unknown>)[key]
     if (typeof fn !== 'function') continue
     target[key] = (...args: unknown[]) => {
-      enter(key)
-      const result = Reflect.apply(fn, raw, args)
-      if (!isPromise(result)) return result
-      return lifetime.track(
-        Promise.resolve(result).then((value) => {
-          enter(key)
-          return value
-        }),
-      )
+      return guardedCall(fn as (...args: unknown[]) => unknown, raw, args, key, enter, lifetime)
     }
   }
   target.dispose = () => {

@@ -348,6 +348,10 @@ describe('usage', () => {
 
   it('mentions every accepted flag spelling, so the grammar and the help text cannot drift', () => {
     const text = usage()
+    expect(text.split('Advanced:')[0]).toContain('--agent <package#agent>')
+    expect(text.split('Advanced:')[0]).not.toMatch(/--bundle|--preset|FDE/)
+    expect(usage('zh-CN')).toContain('智能体')
+    expect(usage('zh-CN')).toContain('应用恢复：agh app clear')
     for (const flag of [
       '--profile',
       '--preset',
@@ -431,4 +435,17 @@ it('keeps candidate review digests supplied by the human instead of selecting th
   ).toMatchObject({ command: 'plugins', candidateHash, reviewHash })
   for (const flag of ['--candidate-hash', '--review-hash'])
     expect(() => parseArgs(['plugins', 'candidates', 'approve', flag])).toThrow(UsageError)
+})
+
+it('selects an explicit agent without exposing bundle knowledge and refuses conflicting or resumed targets', () => {
+  expect(parseArgs(['-p', 'hello', '--agent', '@acme/kit#review']).agent).toBe('@acme/kit#review')
+  for (const argv of [
+    ['--agent'],
+    ['--agent', 'missing-ref'],
+    ['--agent', '@acme/kit#review', '--loop', 'dag@1'],
+    ['--agent', '@acme/kit#review', '--preset', 'safe'],
+    ['--continue', '--agent', '@acme/kit#review'],
+    ['tools', '--session', 'existing', '--agent', '@acme/kit#review'],
+  ])
+    expect(() => parseArgs(argv)).toThrow()
 })

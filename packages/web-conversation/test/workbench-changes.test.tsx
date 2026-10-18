@@ -179,3 +179,55 @@ it('lists changed files in one row each and opens a numbered diff with versions 
     host.remove()
   }
 })
+
+it.each([false, true])(
+  'pauses changes polling and catches up once (read in flight: %s)',
+  async (inFlight) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let hidden = false
+    const visibility = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+    let finish: (() => void) | undefined
+    const workspaceChanges = vi.fn(async () => {
+      if (inFlight && !finish)
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      return { scope: 'session', files: [], revision: 'r', observedAt: '2026-10-18T00:00:00Z' }
+    })
+    const session = { id: 'synthetic', workspaceChanges } as unknown as Session
+    const host = document.body.appendChild(document.createElement('div'))
+    try {
+      renderRegion(host, <ChangesPanel context={{ t: (key) => key, data: { session, mention: vi.fn() } }} />)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(workspaceChanges).toHaveBeenCalledTimes(1)
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(9000)
+      expect(workspaceChanges).toHaveBeenCalledTimes(1)
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(0)
+      if (inFlight) {
+        expect(workspaceChanges).toHaveBeenCalledTimes(1)
+        finish?.()
+        await vi.advanceTimersByTimeAsync(0)
+      }
+      expect(workspaceChanges).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(workspaceChanges).toHaveBeenCalledTimes(3)
+      unmountRegion(host)
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(9000)
+      expect(workspaceChanges).toHaveBeenCalledTimes(3)
+    } finally {
+      unmountRegion(host)
+      host.remove()
+      visibility.mockRestore()
+      vi.useRealTimers()
+    }
+  },
+)

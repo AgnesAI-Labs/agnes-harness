@@ -8,6 +8,10 @@ export function registerWorkerSessionReads(
   pool: Pick<WorkerPool, 'acquireSharedWorker'>,
   requireOwner: (method: string, sessionId: string, context: CallContext) => void,
 ): void {
+  endpoint.register('_agnes/v1/agents.resolve', async (params) => {
+    const link = await pool.acquireSharedWorker()
+    return link.command('agents.resolve', params as { ref: string })
+  })
   endpoint.register('_agnes/v1/session.runtime', async (params, context) => {
     const input = params as SessionRuntimeParams
     requireOwner('session.runtime', input.sessionId, context)

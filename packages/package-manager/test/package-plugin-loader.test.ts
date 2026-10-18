@@ -9,6 +9,7 @@ import {
   createPackageSnapshotVerifier,
   installedRuntimeSnapshotId,
   loadPackagePlugins,
+  runtimePluginDataSourcesFromInventory,
   runtimePluginSnapshotsFromInventory,
   runtimePluginSnapshotsFromPins,
 } from '../src/package-plugin-loader.js'
@@ -72,6 +73,12 @@ describe('package plugin loader', () => {
     const { snapshot } = packageSnapshot([])
     const pkg = {
       id: snapshot.packageId,
+      entry: {
+        version: snapshot.version,
+        integrity: snapshot.integrity,
+        treeIntegrity: snapshot.treeIntegrity,
+      },
+      capabilityHash: snapshot.capabilityHash,
       trusted: true,
       blockers: [],
     } as unknown as InstalledPackage
@@ -86,9 +93,61 @@ describe('package plugin loader', () => {
       { snapshot: { directory: snapshot.directory, snapshotId: snapshot.integrity }, trusted: true },
     ])
     expect(runtimePluginSnapshotsFromPins(inventory, [{ ...active, purpose: 'candidate' }])).toEqual([])
+    for (const changed of [
+      { treeIntegrity: `sha256-${'f'.repeat(64)}` },
+      { capabilityHash: 'f'.repeat(64) },
+      { version: '9.0.0' },
+    ])
+      expect(() =>
+        runtimePluginSnapshotsFromPins(inventory, [{ ...active, snapshot: { ...snapshot, ...changed } }]),
+      ).toThrow('active runtime pin differs from installed snapshot')
+    const historical = { ...snapshot, integrity: `sha256-${'a'.repeat(64)}` }
+    expect(
+      runtimePluginSnapshotsFromPins(inventory, [
+        { ...active, pinId: activeRuntimePinId(historical), snapshot: historical },
+      ]),
+    ).toMatchObject([{ snapshot: { directory: snapshot.directory }, enabled: false, trusted: true }])
     expect(
       runtimePluginSnapshotsFromPins({ ...inventory, packages: [{ ...pkg, trusted: false }] }, [active]),
     ).toEqual([])
+  })
+  it('offers trusted enabled bundle-only packages as data without requiring or importing an executable row', async () => {
+    const { snapshot } = packageSnapshot([], {
+      bundles: { base: { profile: { toolPolicy: { readOnly: true } } } },
+    })
+    const pkg = {
+      id: snapshot.packageId,
+      directory: snapshot.directory,
+      enabled: true,
+      trusted: true,
+      blockers: [],
+      capabilityHash: snapshot.capabilityHash,
+      contributions: [],
+      verifiedRollbackTarget: null,
+      entry: {
+        version: snapshot.version,
+        integrity: snapshot.integrity,
+        treeIntegrity: snapshot.treeIntegrity,
+      },
+    } as unknown as InstalledPackage
+    const inventory = { profile: snapshot.profile, hash: 'fixture', packages: [pkg] } as InstalledInventory
+    const sources = runtimePluginDataSourcesFromInventory(inventory)
+    expect(sources).toMatchObject([
+      { enabled: true, trusted: true, snapshot: { packageId: pkg.id, integrity: snapshot.integrity } },
+    ])
+    const importModule = async () => {
+      throw new Error('declarative packages must not import code')
+    }
+    expect(await loadPackagePlugins({ snapshot: sources[0]!.snapshot, generation: 1, importModule })).toEqual(
+      [],
+    )
+    for (const changed of [{ enabled: false }, { trusted: false }, { blockers: [{ code: 'dependency' }] }])
+      expect(
+        runtimePluginDataSourcesFromInventory({
+          ...inventory,
+          packages: [{ ...pkg, ...changed } as InstalledPackage],
+        }),
+      ).toEqual([])
   })
   it('loads only statically declared named exports and normalizes them for Host', async () => {
     const { snapshot } = packageSnapshot([

@@ -206,6 +206,16 @@ describe('bench metrics', () => {
       reconciled: true,
     })
     expect(m.purposes).toEqual({ inference: 1, 'side-call': 3 })
+    const { billing: _billing, ...unbilled } = on('chat', 50).data
+    expect(
+      turnMetrics([...events, { type: 'cost/ledger', data: { ...unbilled, interrupted: true } }], () => 23, {
+        jevRoute: 'jev',
+      }),
+    ).toMatchObject({
+      sideCall: 1,
+      usdMicros: 107,
+      otherSideCalls: { count: 3, usdMicros: 123, tokens: { input: 30, output: 3, cacheRead: 15 } },
+    })
     // Without a Jev route every side-call row is another one; left out, every row counts as Jev.
     expect(turnMetrics(events, undefined, { jevRoute: null })).toMatchObject({
       sideCall: 0,

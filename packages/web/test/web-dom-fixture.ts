@@ -12,6 +12,7 @@ import {
 import { mountNewSessionDialog } from '../src/new-session-dialog.js'
 import type { SettingsRegionOptions } from '../src/region-slots.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
+import { mountReleasePresentations } from './release-presentations-fixture.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
@@ -82,6 +83,8 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     settingsPaneContainer: hosts.settings,
     ...(options.settings ? { settings: options.settings } : {}),
   })
+
+  await mountReleasePresentations(runtime)
 
   const workspaceDialog = mountNewSessionDialog(hosts.newSession, {
     translate: (key, vars) => runtime.locale.t(key, vars),

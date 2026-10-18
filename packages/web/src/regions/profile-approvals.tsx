@@ -1,10 +1,17 @@
 import type { DecisionSnapshot } from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { Button, Icon, Tooltip } from '@agnes/web-ui'
-import { Approval } from '@agnes/web-units/shell'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 type WaitingRun = { sessionId: string; title: string }
+
+/** Update the shared unit through its handle so disabling preserves the card and retry focus. */
+function ProfileApproval({ view }: { view: ApprovalView }) {
+  const approval = useRef<ApprovalHandle>(null)
+  useLayoutEffect(() => approval.current?.render(view), [view])
+  return <Approval ref={approval} initialView={view} />
+}
 
 /** Read backend-owned automation history; the link opens the ordinary session approval surface. */
 async function waitingAutomation(client: HostAgnesClient): Promise<WaitingRun[] | undefined> {
@@ -39,6 +46,7 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
   const [decisions, setDecisions] = useState<DecisionSnapshot[]>([])
   const [automation, setAutomation] = useState<WaitingRun[]>([])
   const [busy, setBusy] = useState(false)
+  const answering = useRef(false)
   const [error, setError] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
   const refresh = useRef<() => Promise<void>>(async () => {})
@@ -109,6 +117,8 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
     }
   }, [client])
   const answer = async (snapshot: DecisionSnapshot, option: string) => {
+    if (answering.current) return
+    answering.current = true
     setBusy(true)
     setError(false)
     try {
@@ -123,6 +133,7 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
     } catch {
       setError(true)
     } finally {
+      answering.current = false
       setBusy(false)
     }
   }
@@ -174,9 +185,9 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
           </ul>
         )}
         {decisions.map((snapshot) => (
-          <Approval
-            key={`${snapshot.handle.id}:${snapshot.revision}:${busy}`}
-            initialView={{
+          <ProfileApproval
+            key={snapshot.handle.id}
+            view={{
               key: snapshot.handle.id,
               title: snapshot.request.owner,
               summary: snapshot.request.spec.prompt,

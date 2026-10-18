@@ -12,9 +12,6 @@
     "NOTICE"
   ],
   "agnes": {
-    "kinds": [
-      "ui"
-    ],
     "plugins": [
       {
         "id": "ext:interaction-ui/main",
@@ -27,7 +24,6 @@
         "metadata": {
           "displayName": "Interaction presentation",
           "summary": "Question docks, answer receipts and Intelligent UI surfaces.",
-          "category": "ui",
           "description": "Question docks, answer receipts and Intelligent UI surfaces."
         }
       }
@@ -41,9 +37,11 @@
     "metadata": {
       "displayName": "Interaction presentation",
       "summary": "Question docks, answer receipts and Intelligent UI surfaces.",
-      "category": "ui",
       "description": "Question docks, answer receipts and Intelligent UI surfaces."
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",

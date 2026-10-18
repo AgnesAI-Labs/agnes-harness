@@ -136,6 +136,7 @@ export function ResourcesTab({
   })
   const form = useHostedDialog({
     id: 'mcp-dialog',
+    returnFocus: () => create.current,
     ready: loaded,
     owns: (segment) => tab === 'mcp' && segment === 'add-mcp',
     pageOf: () => 'add-mcp',

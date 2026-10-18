@@ -138,7 +138,6 @@
           "displayName": "Jobs and terminal controls",
           "summary": "Connects Web job and terminal controls to the session's background processes.",
           "description": "Connects Web job and terminal controls to the session's background processes.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "任务与终端控制",

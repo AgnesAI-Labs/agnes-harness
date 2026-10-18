@@ -1,10 +1,12 @@
 import { tmpdir } from 'node:os'
+import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createShellTool } from '../../tools-core/src/tools/shell.js'
 import { createJobTools } from '../src/index.js'
 import { legacyProcess } from '../src/legacy-process.js'
 import { ShellJobs } from '../src/registry.js'
+import { createJobsServices } from '../src/services.js'
 
 const context = (sessionKey = 'jobs') => {
   const ctx = fakeToolContext({ cwd: tmpdir(), sessionKey, timeoutMs: 1000 })
@@ -12,45 +14,64 @@ const context = (sessionKey = 'jobs') => {
   return ctx
 }
 describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
-  it('keeps the same job beyond the foreground timeout, isolates ownership, reads output and kills it', async () => {
-    const jobs = new ShellJobs()
-    const ctx = context()
-    // The foreground deadline may elapse before the child gets scheduled. Observe actual output
-    // before asserting its contents, while keeping the same real process and short deadline.
-    let ready!: () => void
-    const outputReady = new Promise<void>((resolve) => {
-      ready = resolve
-    })
-    let stopObserving: (() => void) | undefined
-    ctx.sandbox.openProcess = async ({ argv, cwd }) => {
-      const handle = await legacyProcess(ctx, [...argv], cwd ?? ctx.cwd)
-      stopObserving = handle.onOutput((chunk) => {
-        if (chunk.stream === 'stdout' && chunk.text.includes('ready')) ready()
+  it.each([undefined, 0, 2])(
+    'keeps a real job beyond the timeout and projects cleanup receipt %s',
+    async (stoppedProcesses) => {
+      const jobs = new ShellJobs()
+      const ctx = context()
+      // The foreground deadline may elapse before the child gets scheduled. Observe actual output
+      // before asserting its contents, while keeping the same real process and short deadline.
+      let ready!: () => void
+      const outputReady = new Promise<void>((resolve) => {
+        ready = resolve
       })
-      return handle
-    }
-    try {
-      const result = await createShellTool(jobs).execute(
-        { command: 'echo ready; sleep 30', timeoutMs: 10 },
-        ctx,
-      )
-      expect(result.isError).toBeUndefined()
-      expect(JSON.stringify(result)).toContain('same process continues')
-      const id = jobs.list(ctx)[0]!.id
-      const [list, output, kill] = createJobTools(jobs)
-      expect(JSON.stringify(await list!.execute({}, ctx))).toContain(id)
-      await outputReady
-      expect(JSON.stringify(await output!.execute({ jobId: id }, ctx))).toContain('ready')
-      expect((await output!.execute({ jobId: id }, context('other'))).isError).toBe(true)
-      await kill!.execute({ jobId: id }, ctx)
-      expect(jobs.list(ctx)[0]?.status).toBe('killed')
-      await jobs.closeSession(ctx.session.key, ctx.session.lane)
-      expect(jobs.list(ctx)).toEqual([])
-    } finally {
-      stopObserving?.()
-      await jobs.dispose()
-    }
-  })
+      let stopObserving: (() => void) | undefined
+      ctx.sandbox.openProcess = async ({ argv, cwd }) => {
+        const handle = await legacyProcess(ctx, [...argv], cwd ?? ctx.cwd)
+        stopObserving = handle.onOutput((chunk) => {
+          if (chunk.stream === 'stdout' && chunk.text.includes('ready')) ready()
+        })
+        // The child is real; supply the optional receipt metadata reported by platform process ports.
+        return {
+          ...handle,
+          exited: handle.exited.then((receipt) => ({
+            ...receipt,
+            ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }),
+          })),
+        }
+      }
+      try {
+        const result = await createShellTool(jobs).execute(
+          { command: 'echo ready; sleep 30', timeoutMs: 10 },
+          ctx,
+        )
+        expect(result.isError).toBeUndefined()
+        expect(JSON.stringify(result)).toContain('same process continues')
+        const id = jobs.list(ctx)[0]!.id
+        const [list, output, kill] = createJobTools(jobs)
+        expect(JSON.stringify(await list!.execute({}, ctx))).toContain(id)
+        await outputReady
+        expect(JSON.stringify(await output!.execute({ jobId: id }, ctx))).toContain('ready')
+        expect((await output!.execute({ jobId: id }, context('other'))).isError).toBe(true)
+        await kill!.execute({ jobId: id }, ctx)
+        expect(jobs.list(ctx)[0]?.status).toBe('killed')
+        expect(jobs.list(ctx)[0]?.stoppedProcesses).toBe(stoppedProcesses)
+        const [read] = createJobsServices(jobs)
+        const snapshot = await read!.handler({ jobId: id }, { ...ctx, source: 'test', requestId: 'r' })
+        expect(validateMethod('_agnes/v1/session.jobs.read', 'result', snapshot)).toMatchObject({ ok: true })
+        expect(snapshot).toMatchObject({
+          jobs: [{ id, status: 'killed' }],
+          completions: [{ id, status: 'killed' }],
+          job: { id, stdout: expect.stringContaining('ready'), status: 'killed' },
+        })
+        await jobs.closeSession(ctx.session.key, ctx.session.lane)
+        expect(jobs.list(ctx)).toEqual([])
+      } finally {
+        stopObserving?.()
+        await jobs.dispose()
+      }
+    },
+  )
   it('launches explicit background jobs, adopts a repeated call and cleans running jobs on session end', async () => {
     const jobs = new ShellJobs()
     const ctx = context('close')

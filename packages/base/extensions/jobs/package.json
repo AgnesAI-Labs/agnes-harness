@@ -40,7 +40,6 @@
           "displayName": "Background jobs",
           "summary": "Lets the agent inspect and control background commands and interactive terminals.",
           "description": "Lets the agent inspect and control background commands and interactive terminals.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "后台任务",
@@ -50,6 +49,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

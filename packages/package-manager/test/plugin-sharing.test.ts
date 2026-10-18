@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
+import { inspectStaged } from '../src/inspect.js'
 import { packPlugin } from '../src/plugin-pack.js'
 import { fetchSource, parseSource } from '../src/sources.js'
 
@@ -71,4 +72,39 @@ it('shares a bundled third-party dependency into an isolated receiving folder', 
   const browser = readFileSync(join(receiver, 'client.js'), 'utf8')
   for (const specifier of ['react', '@agnes/web-client', '@agnes/web-ui'])
     expect(browser).toContain(specifier)
+})
+
+it('packs a complete skin candidate for download, retaining entry, descriptor and relative assets', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-skin-sharing-'))
+  roots.push(root)
+  const source = join(root, 'candidate-copy'),
+    receiver = join(root, 'receiver')
+  const { skinFiles } = await import(
+    new URL('../bundled-plugins/plugin-helper/src/skin.mjs', import.meta.url).href
+  )
+  const files: { path: string; content: string }[] = skinFiles()
+  for (const file of files) {
+    mkdirSync(dirname(join(source, file.path)), { recursive: true })
+    writeFileSync(join(source, file.path), file.content)
+  }
+  // A preview made of only the former three attachments cannot be packed as a plugin.
+  renameSync(join(source, 'index.mjs'), join(root, 'saved-entry.mjs'))
+  await expect(packPlugin(source, join(root, 'incomplete.tgz'))).rejects.toThrow()
+  renameSync(join(root, 'saved-entry.mjs'), join(source, 'index.mjs'))
+  const archive = await packPlugin(source, join(root, 'skin.tgz'))
+  await expect(packPlugin(source, archive)).rejects.toThrow('new archive path')
+  rmSync(source, { recursive: true, force: true })
+  const sourceRef = parseSource('file:' + archive.split(sep).join('/'))
+  const fetched = await fetchSource(sourceRef, receiver, { cwd: root })
+  const inspected = await inspectStaged({
+    dir: receiver,
+    source: sourceRef,
+    fetched,
+  })
+  expect(inspected.preview.blockers).toEqual([])
+  const pkg = JSON.parse(readFileSync(join(receiver, 'package.json'), 'utf8'))
+  const entry = await import(pathToFileURL(join(receiver, pkg.exports)).href)
+  expect(typeof entry.main.apply).toBe('function')
+  for (const file of files.filter((file) => file.path !== 'package.json'))
+    expect(readFileSync(join(receiver, file.path), 'utf8')).toBe(file.content)
 })

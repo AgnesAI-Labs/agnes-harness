@@ -21,7 +21,7 @@ import { previousPackageDir } from '../src/store.js'
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const roots: string[] = []
 
-function currentFixture() {
+async function currentFixture() {
   const root = mkdtempSync(join(tmpdir(), 'agnes-inventory-round-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -72,7 +72,7 @@ function currentFixture() {
   )
   const tree = hashDirectory(directory, { exclude: [] })
   const source = { type: 'file' as const, ref: 'file:./round' }
-  const checked = inspectStaged({
+  const checked = await inspectStaged({
     dir: directory,
     source,
     ceiling: ['ui', 'streams'],
@@ -128,7 +128,7 @@ function currentFixture() {
 }
 
 it('shares an ordinary in-flight read, then verifies bytes again even without a manager mutation', async () => {
-  const f = currentFixture()
+  const f = await currentFixture()
   const [first, second] = await Promise.all([
     f.manager.inventory(f.profileDir),
     f.manager.inventory(f.profileDir),
@@ -149,7 +149,7 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
 })
 
 it('cuts read boundaries on mutations, fresh verification and administrator policy changes', async () => {
-  const f = currentFixture()
+  const f = await currentFixture()
   const before = f.manager.inventory(f.profileDir)
   const disable = f.manager.enable(f.profileDir, f.id, false)
   const during = f.manager.inventory(f.profileDir)
@@ -188,7 +188,7 @@ it('cuts read boundaries on mutations, fresh verification and administrator poli
   })
 })
 
-it('blocks one package with removed package-level agnes.capabilities without aborting inventory', () => {
+it('blocks one package with removed package-level agnes.capabilities without aborting inventory', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-inventory-isolation-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -205,7 +205,7 @@ it('blocks one package with removed package-level agnes.capabilities without abo
   for (const [id, agnes] of [
     [
       'acme/stale-skill',
-      { kinds: ['skills'], capabilities: {}, plugins: [{ export: 'main', apiRange: '^4.0.0' }] },
+      { provides: ['skills'], capabilities: {}, plugins: [{ export: 'main', apiRange: '^4.0.0' }] },
     ],
     ['acme/good', { plugins: [{ export: 'main', apiRange: '^4.0.0' }] }],
   ] as const) {
@@ -350,7 +350,7 @@ it.each([
 
 // The immutable tree is unchanged; older normalization lost only the client stream grants.
 it('opens an earlier reviewed snapshot without granting newly discovered streams, then requires a reviewed update', async () => {
-  const f = currentFixture()
+  const f = await currentFixture()
   const entry = f.lock.packages[f.id]
   assert(entry?.contributions && entry.trustDecision)
   entry.contributions = entry.contributions.map((row) => {

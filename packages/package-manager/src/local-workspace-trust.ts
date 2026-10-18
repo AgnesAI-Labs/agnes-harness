@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { PackageError } from './errors.js'
 import { canonical, own, readStaticJson } from './integrity.js'
 import { discoverLocalPlugins, type LocalPluginRoots } from './local-source.js'
@@ -9,12 +10,13 @@ import type { Lockfile } from './lockfile.js'
 import type { WorkspaceDeployment } from './workspace-deployments.js'
 
 const trustFile = (profileDir: string) => join(profileDir, 'workspace-code-trust.json')
-export const localWorkspaceRoot = (roots: LocalPluginRoots) => realpathSync(dirname(dirname(roots.workspace)))
+export const localWorkspaceRoot = (roots: LocalPluginRoots) =>
+  nativeRealpathSync(dirname(dirname(roots.workspace)))
 export function workspaceHooksDigest(workspace: string): string | undefined {
   const file = join(workspace, AGH_DIR, 'hooks.json')
   if (!existsSync(file)) return undefined
   if (
-    realpathSync(file) !== file ||
+    nativeRealpathSync(file) !== file ||
     lstatSync(file).isSymbolicLink() ||
     !lstatSync(file).isFile() ||
     lstatSync(file).size > 256 * 1024
@@ -83,7 +85,7 @@ export function confirmLocalWorkspace(
 /** A snapshot digest, not the presence of a repository file, authorizes automatic hooks. */
 export function isWorkspaceHooksTrusted(profileDir: string, workspace: string, digest: string): boolean {
   try {
-    return decisions(profileDir)[realpathSync(workspace)]?.hooksDigest === digest
+    return decisions(profileDir)[nativeRealpathSync(workspace)]?.hooksDigest === digest
   } catch {
     return false
   }

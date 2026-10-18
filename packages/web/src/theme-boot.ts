@@ -9,6 +9,7 @@ import {
   applySkinTokens,
   readSkinCache,
   SKIN_STORAGE_KEY,
+  type SkinCache,
   type SkinSheetState,
   selectedSkin,
   skinOverride,
@@ -41,7 +42,9 @@ import {
 const storage = safeThemeStorage(window)
 let currentLocale = readLocalePreference(storage)
 /** 一次性覆盖（`?skin=none|<id>`）只在本次加载生效，不写缓存。 */
-const override = skinOverride(window.location.search)
+const recovery = new URLSearchParams(window.location.search).has('admin')
+const override = recovery ? 'none' : skinOverride(window.location.search)
+let applicationSkin: SkinCache | null = null
 let writtenSkinTokens: Set<string> = new Set()
 let skinSheet: SkinSheetState = { sheet: undefined, css: undefined }
 
@@ -54,7 +57,22 @@ let skinSheet: SkinSheetState = { sheet: undefined, css: undefined }
  * 引擎不支持这一能力时只放弃样式表部分；token 与深浅色照常，不让可选能力阻断加载。
  */
 const paintSkin = (mode: ResolvedTheme): void => {
-  const skin = selectedSkin(readSkinCache(storage), override)
+  let user: string | null = null
+  try {
+    user = storage.getItem('agnes-skin-preference')
+  } catch {
+    /* Storage can be unavailable. */
+  }
+  const cached = readSkinCache(storage)
+  const preferred =
+    override !== null
+      ? cached?.id === override
+        ? cached
+        : applicationSkin
+      : user === 'none'
+        ? null
+        : (cached ?? applicationSkin)
+  const skin = selectedSkin(preferred, override)
   writtenSkinTokens = applySkinTokens(document.documentElement, skin, mode, writtenSkinTokens)
   if (typeof CSSStyleSheet !== 'function' || !('adoptedStyleSheets' in document)) return
   try {
@@ -72,7 +90,7 @@ const paintLocale = (): void => {
 
 /** 每次都重读偏好：这样系统主题变化时能按「当时的」偏好决定是否跟随。 */
 const paint = (): void => {
-  const mode = resolveTheme(readThemePreference(storage), systemPrefersDark(window))
+  const mode = resolveTheme(recovery ? 'system' : readThemePreference(storage), systemPrefersDark(window))
   applyTheme(document.documentElement, mode)
   // 字号同样在首帧前定好，避免先按 100% 排一次版再跳。
   applyFontScale(document.documentElement, readFontScale(storage))
@@ -112,4 +130,10 @@ window.addEventListener('agnes:locale-changed', (event) => {
   if (!isUiLocale(next)) return
   currentLocale = next
   paintLocale()
+})
+
+window.addEventListener('agnes:application-skin', (event) => {
+  if (recovery) return
+  applicationSkin = (event as CustomEvent<SkinCache | null>).detail
+  paint()
 })

@@ -58,6 +58,12 @@ export async function linkLocal(destination) {
     )
     await writeFile(join(published, 'package.json'), JSON.stringify({ ...metadata, exports }, null, 2))
   }
+  if (dependencies['@agnes/web-client'])
+    await link(
+      join(repo, 'packages/web-client/node_modules/react'),
+      join(target, 'node_modules/react'),
+      'dir',
+    )
   if (dependencies['@agnes/host'])
     await link(join(repo, 'packages/host'), join(target, 'node_modules/@agnes/host'), 'dir')
   await mkdir(join(target, 'node_modules/@sinclair'), { recursive: true })

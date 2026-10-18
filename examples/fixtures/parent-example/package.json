@@ -10,7 +10,6 @@
       "displayName": "Report example",
       "summary": "Synthetic report",
       "description": "Synthetic report",
-      "category": "example",
       "exampleOf": "@agnes/plugin-helper"
     },
     "plugins": [

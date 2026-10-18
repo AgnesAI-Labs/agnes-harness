@@ -6,22 +6,24 @@ export function resultText(block) {
 }
 
 export function apply(ctx, config) {
-  const remove = ctx.slots.register(
-    { name: 'tool.call.toolview', key: 'plugin_tool_panel', id: 'echo-result' },
-    function EchoResultPanel({ owner }) {
-      const block = owner?.block
-      return createElement(
-        'section',
-        { 'aria-label': config?.publicConfig?.label ?? 'Echo result' },
-        createElement('strong', null, 'Echo result'),
-        createElement('p', { role: 'status' }, block?.status ?? 'planned'),
-        createElement(
-          'pre',
-          { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } },
-          resultText(block),
-        ),
-      )
-    },
+  const remove = ctx.slots.inject('tool.call.toolview', () =>
+    ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'plugin_tool_panel', id: 'echo-result' },
+      function EchoResultPanel({ owner }) {
+        const block = owner?.block
+        return createElement(
+          'section',
+          { 'aria-label': config?.publicConfig?.label ?? 'Echo result' },
+          createElement('strong', null, 'Echo result'),
+          createElement('p', { role: 'status' }, block?.status ?? 'planned'),
+          createElement(
+            'pre',
+            { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } },
+            resultText(block),
+          ),
+        )
+      },
+    ),
   )
   ctx.effect(() => remove)
 }

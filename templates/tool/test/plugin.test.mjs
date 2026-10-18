@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { createPluginTestHost } from '@agnes/host/author-testkit'
 import { echo, main } from '../dist/index.js'
 
 test('register, invoke, reject invalid inputs and unload', async () => {
-  const host = await createPluginTestHost(main)
+  const host = await createPluginTestHost(main, {
+    packageDir: fileURLToPath(new URL('../', import.meta.url)),
+  })
   try {
     assert.deepEqual((await host.invoke(echo.name, { message: 'hello' })).structured, { message: 'hello' })
     assert.equal((await host.invoke(echo.name, { message: '' })).isError, true)

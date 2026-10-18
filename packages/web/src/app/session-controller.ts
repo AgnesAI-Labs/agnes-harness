@@ -135,6 +135,7 @@ export function createSessionController(
           permissionContext.signal.addEventListener('abort', reject, { once: true })
           context.render()
         })
+      context.clientModules.session.setReadiness('connecting', id)
       if (!options.created) void context.readOnlyController.preview(id, epoch).catch(() => undefined)
       const binding = options.created
         ? bindWebSession(options.created, permission)
@@ -293,6 +294,7 @@ export function createSessionController(
           if (context.sessionBinding.isCurrent(epoch)) context.showError(error)
         })
     } catch (error) {
+      if (context.sessionBinding.isCurrent(epoch)) context.clientModules.session.setReadiness('failed', id)
       if (!context.sessionBinding.isCurrent(epoch)) return
       if (!selectionReady) {
         context.readOnlyController.clear()

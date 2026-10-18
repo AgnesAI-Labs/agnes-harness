@@ -55,6 +55,7 @@ export function AuxiliaryModelFields({
   prefix = 'model-slot',
   allowUnset = true,
   unsetLabel,
+  unavailableLabel = t('modelSettings.slots.unavailable'),
 }: {
   slots: AuxiliaryModelSlots
   models: readonly AuxiliaryModelOption[]
@@ -65,6 +66,8 @@ export function AuxiliaryModelFields({
   prefix?: string
   /** What the empty choice of a slot reads as, when it is more than "not set": "Automatic · <model>". */
   unsetLabel?: Partial<Record<'fast' | 'verifier', string>>
+  /** Describe unknown availability when the option catalog is still loading or failed. */
+  unavailableLabel?: string
 }) {
   return (
     <SettingsGroup>
@@ -90,7 +93,7 @@ export function AuxiliaryModelFields({
                 >
                   {stale ? (
                     <Badge tone="warn">
-                      {target.route} / {target.model} · {t('modelSettings.slots.unavailable')}
+                      {target.route} / {target.model} · {unavailableLabel}
                     </Badge>
                   ) : target ? (
                     `${target.route} / ${target.model}`
@@ -120,7 +123,7 @@ export function AuxiliaryModelFields({
               </option>
               {stale && (
                 <option value={value} disabled>
-                  {target.route} / {target.model} · {t('modelSettings.slots.unavailable')}
+                  {target.route} / {target.model} · {unavailableLabel}
                 </option>
               )}
               {models.map((model) => (

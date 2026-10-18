@@ -44,7 +44,7 @@ const { runWorker } = await import('../src/worker/main.js')
 const gateFd = Number(env.AGNES_GATE_FD ?? 3)
 const gate = Number.isInteger(gateFd) && gateFd >= 0 ? createReadStream('', { fd: gateFd }) : null
 
-function permissionFixture(dataDir: string): Partial<TestHostOptions> {
+async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptions>> {
   if (env.AGNES_FAKE_WORKER_PERMISSION !== '1') return {}
   const packageId = '@fixture/permission'
   const directory = join(dataDir, 'permission-plugin')
@@ -72,7 +72,7 @@ function permissionFixture(dataDir: string): Partial<TestHostOptions> {
       },
     }),
   )
-  const source = { ...readDevelopmentPlugin(directory, 'local-dev'), trusted: true }
+  const source = { ...(await readDevelopmentPlugin(directory, 'local-dev')), trusted: true }
   const plugin = {
     inject: ['tools'],
     apply(ctx: Context) {
@@ -104,7 +104,13 @@ function permissionFixture(dataDir: string): Partial<TestHostOptions> {
       packages: Object.fromEntries([
         ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
           id,
-          { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+          {
+            version: '0.1.0',
+            source: { type: 'builtin', ref: 'builtin' },
+            integrity: 'builtin:0.1.0',
+            trust: 'builtin',
+            enabled: true,
+          },
         ]),
         [
           packageId,
@@ -145,7 +151,7 @@ void runWorker(
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
-        ...permissionFixture(profile.dataDir),
+        ...(await permissionFixture(profile.dataDir)),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
           ? {
               provider: {

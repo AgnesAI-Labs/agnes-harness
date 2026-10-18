@@ -22,9 +22,8 @@ Compose settings with `SettingsSection`, `SettingsGroup` / `SettingsItem` (a set
 ## Workbench registration
 
 ```tsx
-import { workbenchPanels } from '@agnes/web-client'
 
-const dispose = workbenchPanels.register({
+const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 50, edge: 'right',
   titleKey: 'example.notes.title', icon: 'file',
   visibility: 'contextual',
@@ -48,3 +47,12 @@ Give each surface a useful `title` and a one-sentence `summary` (up to 1,024 cha
 Use semantic `var(--agnes-*)` colors and shared spacing (`--s4/8/12/16/24/32/48`), radii (`--radius-control/card/surface/pill`), font weights and motion tokens. Keep raw colors in the palette or a skin's paired light/dark overrides. Brand marks the main action, selection, links and focus; status colors accompany text. Do not write private button styles or use `!important` to override shared controls. Preserve `data-agnes-region` hooks.
 
 Before shipping, check both languages and themes at desktop and 390px. Keep Tab order natural, focus visible, dialog/drawer close focus on the opener, and narrow hit targets at least 44px. Shared buttons expand their hit area without enlarging icon visuals; leave room between adjacent actions. Compact custom pointer controls can use `.agh-touch-target` for the same expanded area; read-only code scrollports retain their keyboard scrolling. F6/Shift+F6 cycles visible task regions and leaves modal focus intact. Check loading, empty, failure/retry and success; respect reduced motion. Validate color pairs with the [token contrast test](../../packages/web-ui/test/token-contrast.test.ts), then run the affected behaviour and accessibility checks.
+
+## Offer a standard presentation role
+
+A profile client can declare `presentationRoles: ["deliverables"]` (or `navigation`, `conversation`,
+`composer`, `goal`, `interaction`) in its descriptor and register that role through the scoped client
+facade. Use a stable `client.id`. An administrator chooses the implementation in **Settings →
+Application → Interface implementations**, after a consent preview. Installing or registering a
+provider does not select it. No application declaration is required; choices can override one role
+while preserving the adopted application's brand and other defaults. See [applications](../extend/applications.md).

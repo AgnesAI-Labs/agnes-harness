@@ -15,6 +15,7 @@ import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
 import type { DisposerBag } from './disposers.js'
 import type { Lease } from './lease.js'
 import { mapResult } from './map-result.js'
+import { type BoundPluginManage, pluginManageForCall } from './plugin-manage-binding.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { adaptProjection } from './projections.js'
@@ -23,6 +24,7 @@ import { capabilityToolContext } from './tool-context-capabilities.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
 type Options = {
+  pluginManage?: BoundPluginManage
   manifest: ExtensionManifest
   /** Resolved package identity/version supplied by Host inventory, never by extension code. */
   packageIdentity: string
@@ -144,7 +146,30 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
           alive()
           if (!lease.allows('toolPrefix', name)) refuse('tool outside lease scope')
           lease.consume()
-          return execute(args, capabilityToolContext(m, { ...tctx, projections }))
+          if (!input.pluginManage) return execute(args, capabilityToolContext(m, { ...tctx, projections }))
+          let finished = false
+          const lifetime = new AbortController()
+          const callSignal = AbortSignal.any([tctx.signal, signal, lifetime.signal])
+          try {
+            return await execute(
+              args,
+              capabilityToolContext(m, {
+                ...tctx,
+                signal: callSignal,
+                projections,
+                pluginManage: pluginManageForCall(
+                  input.pluginManage,
+                  tctx,
+                  lease,
+                  callSignal,
+                  () => finished,
+                ),
+              }),
+            )
+          } finally {
+            finished = true
+            lifetime.abort()
+          }
         },
       }
       return bag.add(ports.tools.add(wrapped, toolMeta))

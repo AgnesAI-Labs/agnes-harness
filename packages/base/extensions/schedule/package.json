@@ -121,6 +121,13 @@
                     "pattern": "^sched_[0-9a-f]{16}$",
                     "type": "string"
                   },
+                  "agent": {
+                    "$id": "AgentRef",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 384,
+                    "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9-]{0,63}$"
+                  },
                   "title": {
                     "minLength": 1,
                     "maxLength": 120,
@@ -551,7 +558,6 @@
           "displayName": "Scheduled tasks",
           "summary": "Lets the agent create and manage tasks that run at scheduled times.",
           "description": "Lets the agent create and manage tasks that run at scheduled times.",
-          "category": "integrations",
           "locales": {
             "zh-CN": {
               "displayName": "定时任务",
@@ -561,6 +567,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

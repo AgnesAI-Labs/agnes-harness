@@ -4,8 +4,19 @@ import AxeBuilder from '@axe-core/playwright'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { localeKeys, unresolvedLabels } from './i18n.js'
+import { normalizeTraceVisual } from './trace-visual.js'
 
 let keys: Promise<string[]> | undefined
+async function scrollConversation(page: Page, start = false) {
+  await page
+    .getByRole('region', { name: /^(Conversation|对话)$/, exact: true })
+    .evaluate((viewport, start) => {
+      const behavior = viewport.style.scrollBehavior
+      viewport.style.scrollBehavior = 'auto'
+      viewport.scrollTop = start ? 0 : viewport.scrollHeight
+      viewport.style.scrollBehavior = behavior
+    }, start)
+}
 export async function settled(page: Page) {
   await expect
     .poll(
@@ -72,14 +83,11 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
     .toEqual([])
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
+  const reportFrame = /^narrow-workbench-.*-768$/.test(name)
+  await page.mouse.move(0, 0)
+  if (name.startsWith('new-session-')) await page.locator('#prompt').focus()
   await settled(page)
-  if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
-    info.annotations.push({
-      type: 'pixel-snapshot-deferred',
-      description: `${name}: deferred to consolidated visual acceptance`,
-    })
-    return
-  }
+  await expect(page.locator('.agh-toast')).toHaveCount(0)
   // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
   if (name.startsWith('tool-row-')) {
     await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
@@ -90,10 +98,15 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
     await page.mouse.move(0, 0)
   }
-  // Frame runtime status at its lower edge independently of the self-check block.
+  // Frame the health status together with its service footer.
   if (name.startsWith('diagnostics-status-'))
-    await page.getByTestId('diagnostics-runtime').evaluate((card) => {
+    await page.getByTestId('diagnostics-doctor').evaluate((card) => {
       card.scrollIntoView({ block: 'end', behavior: 'instant' })
+    })
+  // Inspecting the auxiliary fields can scroll the Models page. Frame its account heading and CTA.
+  if (name.startsWith('accounts-'))
+    await page.locator('.config-accounts-welcome').evaluate((card) => {
+      for (let parent = card.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
     })
   // Candidate navigation can retain the plugin pane's browser scroll anchor. The review
   // baseline frames its heading and actions from the top, independent of the previous list.
@@ -107,11 +120,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   }
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
+  // Normalize the leaf text, preserving the disclosure marker, layout wrappers and React-owned DOM.
   // File read clocks vary by runtime; keep the localized label and normalize only its time.
   const metadata =
     name.startsWith('workbench-') || name.startsWith('narrow-workbench-')
-      ? page.locator('[data-testid="turn-metadata"], [data-testid="file-meta"] time')
-      : page.getByTestId('turn-metadata')
+      ? page.locator('[data-testid="turn-metadata"] .turn-meta-facts, [data-testid="file-meta"] time')
+      : page.getByTestId('turn-metadata').locator('.turn-meta-facts')
   // Empty-process turns show the same elapsed time outside the process toggle.
   // Normalize only its runtime numbers, preserving the localized status and duration units.
   const durations = page.locator('.turn-status[data-agnes-dynamic="turn-process"]')
@@ -129,7 +143,9 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       row.textContent = new Date(2026, 9, 11, 12).toLocaleString(document.documentElement.lang || 'en')
     }
   })
-  const disk = page.getByTestId('doctor-space')
+  const disk = page
+    .getByTestId('doctor-space')
+    .or(page.getByTestId('doctor-check-disk').getByTestId('doctor-check-value'))
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {
     for (const row of rows) {
@@ -203,18 +219,24 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
   if (
     name.startsWith('workbench-') ||
-    name.startsWith('fact-artifact-') ||
+    (name.startsWith('fact-artifact-') &&
+      !(await page.locator('#view-trace[aria-selected="true"]').count())) ||
     name.startsWith('narrow-workbench-')
   ) {
     // Frame the latest completed conversation consistently after dock/viewport reflow.
-    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
-      const behavior = viewport.style.scrollBehavior
-      viewport.style.scrollBehavior = 'auto'
-      viewport.scrollTop = viewport.scrollHeight
-      viewport.style.scrollBehavior = behavior
-    })
+    await scrollConversation(page)
     const latest = page.getByRole('button', { name: /^(New content|有新内容)$/, exact: true })
     await expect(latest).toBeHidden()
+    if (reportFrame) {
+      // Earlier tool output can add fractional-height lines. Frame the report's stable start,
+      // retaining both the tail-follow check above and the real history-reading affordance.
+      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+      await scrollConversation(page, true)
+      const report = page.getByTestId('conversation-turn').first()
+      await expect(report).toBeInViewport()
+      await expect(report).toContainText('report.md')
+      await expect(latest).toBeVisible()
+    }
     await page.mouse.move(0, 0)
   }
   // The new workspace step can show its manual path. Normalize only the isolated
@@ -226,16 +248,56 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       node.value = '/workspace/w'
     }
   })
-  const options = { animations: 'disabled' as const, fullPage: true, mask }
+  const workspaceChoices = page.locator(
+    '.workspace-option-path, #memory-workspace option, [data-testid="memory-root"]',
+  )
+  await workspaceChoices.evaluateAll((nodes) => {
+    for (const node of nodes) {
+      if (node.childElementCount) continue
+      const original = node.textContent ?? ''
+      const normalized = original.replace(/(?:\/private)?\/tmp\/agh-e2e-[^/\s]+\/w/g, '/workspace/w')
+      if (normalized === original) continue
+      node.setAttribute('data-e2e-workspace-choice-original', original)
+      node.textContent = normalized
+    }
+  })
+  // Screenshots disable CSS motion; use the public reduced-motion preference for JS hints too.
+  const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(page.locator('.composer-example-hint')).toHaveCount(0)
+  await settled(page)
+  const restoreTrace = await normalizeTraceVisual(page)
+  // Authoring provenance owns this frame. Live clock-hook records can vary outside its inspector;
+  // full Trace layout and record controls retain their separate fact-chain/request pixel gates.
+  const inspector = name.startsWith('fact-authoring-')
+  const target = inspector ? page.locator('.trace-inspector') : page
+  const options = { animations: 'disabled' as const, mask, ...(inspector ? {} : { fullPage: true }) }
   try {
-    await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
+    await target.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
+    if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
+      info.annotations.push({
+        type: 'pixel-snapshot-deferred',
+        description: `${name}: deferred to consolidated visual acceptance`,
+      })
+      return
+    }
     if (manifest.pending[name]) {
       info.annotations.push({ type: 'visual-baseline-pending', description: manifest.pending[name] })
       return
     }
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
-    await expect(page).toHaveScreenshot(`${name}.png`, options)
+    await expect(target).toHaveScreenshot(`${name}.png`, options)
   } finally {
+    if (reportFrame) await scrollConversation(page)
+    await restoreTrace()
+    await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
+    await workspaceChoices.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        const original = node.getAttribute('data-e2e-workspace-choice-original')
+        if (original !== null) node.textContent = original
+        node.removeAttribute('data-e2e-workspace-choice-original')
+      }
+    })
     await workspacePaths.evaluateAll((nodes) => {
       for (const node of nodes as HTMLInputElement[]) {
         node.value = node.getAttribute('data-e2e-workspace-path-original') ?? ''

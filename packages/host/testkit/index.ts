@@ -345,7 +345,13 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   const packages = Object.fromEntries(
     ids.map((id) => [
       id,
-      { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin' as const, enabled: true },
+      {
+        version: '0.1.0',
+        source: { type: 'builtin', ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin' as const,
+        enabled: true,
+      },
     ]),
   )
   const template = o.template ?? 'local-dev'

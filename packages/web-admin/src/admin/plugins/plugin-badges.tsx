@@ -1,9 +1,27 @@
 import type { PackageInstalledDescriptor, PluginGenerationStatus } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { Disclosure, Field, Select, Tag, type TagTone, Tooltip } from '@agnes/web-ui'
+import {
+  Disclosure,
+  Field,
+  Select,
+  SettingsTechnicalDetails,
+  Tag,
+  type TagTone,
+  Tooltip,
+} from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
+import { PluginDetailCopy } from './detail-copy.js'
 
-export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
+export const PLUGIN_KINDS = [
+  'tool',
+  'loop',
+  'model-adapter',
+  'mcp',
+  'skills',
+  'ui',
+  'bundle',
+  'service',
+] as const
 export type PluginKind = (typeof PLUGIN_KINDS)[number]
 
 /** Keep author declarations and host/browser observations separate. */
@@ -146,10 +164,14 @@ export function GenerationDrainSummary({
                               ? generation.boundSessions
                               : generation.openSessions,
                         })}
-                        <br />
-                        <code>
-                          {plugin.id} · {generation.id}
-                        </code>
+                        <SettingsTechnicalDetails>
+                          <code>
+                            {plugin.id} · {generation.id}
+                          </code>
+                          <PluginDetailCopy
+                            value={JSON.stringify({ packageId: plugin.id, generationId: generation.id })}
+                          />
+                        </SettingsTechnicalDetails>
                       </li>
                     )),
                 )}

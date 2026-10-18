@@ -1,5 +1,5 @@
 import { type Context, FiberState } from '@agnes/cordis'
-import { clientModule } from '@agnes/web-client'
+import { clientModule, isRuntimeSupportedDshSlot } from '@agnes/web-client'
 import type {
   PluginRuntimeError,
   PluginRuntimePhase,
@@ -54,6 +54,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
     rowId: string,
   ): Promise<void> {
     if (!fiber) return
+    removeOwner(rowId)
     try {
       await withTimeout(Promise.resolve(fiber.dispose()), timeouts.dispose, `dispose ${rowId}`)
     } catch {
@@ -61,14 +62,6 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
       // validated upstream rather than here, so browser diagnostics expose no plugin-controlled
       // values at all; runtime-status carries the safe code for the affected row.
       console.warn('[client-modules] 回收未提交的 fiber 失败')
-    } finally {
-      // A failed/stale disposer is not allowed to leave slots visible. This is deliberately
-      // idempotent and also covers a fiber whose apply registered entries before rejecting.
-      try {
-        removeOwner(rowId)
-      } catch {
-        console.warn('[client-modules] 回收模块注册项失败')
-      }
     }
   }
 
@@ -93,6 +86,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
 
   async function disposeCleanup(rowId: string, state: PackageState): Promise<boolean> {
     if (!state.cleanupPending) return true
+    let drainFailed = false
     let fiber = state.cleanup.fiber
     let styles = state.cleanup.styles
     if (fiber) {
@@ -100,7 +94,10 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         await drainFiber(state, fiber, rowId)
         fiber = undefined
       } catch {
-        // Keep the fiber for a later retry, but continue with independent host resources below.
+        // Authority was synchronously revoked. Quarantine an uncooperative disposer;
+        // its identity-bound registrations cannot remove or revive the replacement.
+        drainFailed = true
+        fiber = undefined
       }
     }
     if (styles) {
@@ -127,7 +124,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
     } catch {
       console.warn('[client-modules] 名册撤回后回收模块注册项失败')
     }
-    return true
+    return !drainFailed
   }
 
   function applyTarget(rowId: string, state: PackageState, target: ReadyClientModule): Promise<void> {
@@ -145,12 +142,10 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           if (current()) fail(rowId, state, 'dispose')
           return
         }
-        // A timed-out disposer may still be unwinding.  Do not let the next retry mount a new
-        // fiber until that old fiber has actually settled; removing its registrations is not a
-        // substitute for draining its asynchronous work.
-        await state.draining?.catch(() => undefined)
         const catalogError = validateCatalogContract(target)
-        const unsupportedSlot = target.slots.find((slot) => registry?.spec && !registry.spec(slot))
+        const unsupportedSlot = target.slots.find(
+          (slot) => registry?.spec && !registry.spec(slot) && !isRuntimeSupportedDshSlot(slot),
+        )
         if (catalogError !== undefined || unsupportedSlot !== undefined) {
           if (current()) fail(rowId, state, 'unsupported-slot')
           return
@@ -231,17 +226,9 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           try {
             await lifecycle('drain', rowId)
             await drainFiber(state, old, rowId)
-          } catch (error) {
-            stagedStyles.dispose()
-            state.cleanup = { fiber: old, styles: oldStyles }
-            state.cleanupPending = Boolean(old || oldStyles)
-            if (current())
-              fail(
-                rowId,
-                state,
-                error instanceof Error && error.message.includes('timeout') ? 'timeout' : 'dispose',
-              )
-            return
+          } catch {
+            // The old scope has no authority. A failed drain must not block a fresh mount.
+            console.warn('[client-modules] retired fiber disposal failed')
           }
         }
         await lifecycle('remove-styles', rowId)
@@ -267,6 +254,11 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
             ...(target.exampleOf ? { exampleOf: target.exampleOf } : {}),
             ...(target.pageEntry ? { pageEntry: target.pageEntry } : {}),
             ...(target.binding ? { binding: target.binding } : {}),
+            ...(target.clientId ? { clientId: target.clientId } : {}),
+            ...(target.presentationRoleBindings
+              ? { presentationRoleBindings: target.presentationRoleBindings }
+              : {}),
+            ...(target.presentationRoles ? { presentationRoles: target.presentationRoles } : {}),
             ...(target.homeEntries ? { homeEntries: target.homeEntries } : {}),
             ...(target.examplePages ? { examplePages: target.examplePages } : {}),
             rowId,

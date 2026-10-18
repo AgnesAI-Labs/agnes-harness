@@ -29,7 +29,7 @@ describe('plugin scaffolder', () => {
         }
         expect(manifest.scripts).toHaveProperty('build')
         expect(manifest.scripts).toHaveProperty('test')
-        expect(manifest.agnes.kinds).toEqual(
+        expect(manifest.agnes.provides).toEqual(
           {
             tool: ['tool'],
             'tool-with-panel': ['tool', 'ui'],
@@ -39,7 +39,7 @@ describe('plugin scaffolder', () => {
           }[kind],
         )
         expect(manifest.agnes.plugins[0].capabilities).toEqual(
-          kind === 'tool-with-panel' ? { ui: true } : kind === 'loop' ? { model: true } : {},
+          kind === 'tool-with-panel' ? { ui: true, store: true } : kind === 'loop' ? { model: true } : {},
         )
         expect(Object.values(manifest.dependencies)).not.toContain('workspace:*')
         const local = await scaffold(kind, 'local-plugin', join(temp, `local-${kind}`), { local: true })
@@ -61,7 +61,9 @@ describe('plugin scaffolder', () => {
         'name: hello-world',
       )
       const panel = JSON.parse(await readFile(join(temp, 'tool-with-panel/client/agnes.client.json'), 'utf8'))
-      expect(panel.client.slots).toEqual(['ui:sidebar'])
+      expect(panel.client.slots).toEqual([])
+      expect(panel.client.lifetime).toBe('profile')
+      expect(panel.client.homeEntries[0].id).toBe('hello-world')
     } finally {
       await rm(temp, { recursive: true, force: true })
     }

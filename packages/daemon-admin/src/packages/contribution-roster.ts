@@ -7,6 +7,8 @@ import {
   jcs,
 } from '@agnes/protocol'
 
+import { clientRoleBindings } from './role-selection.js'
+
 type Activations = Readonly<Record<string, { identity: string; id: string; active: boolean }>>
 export function reconcileContributionActivations(
   previousActivations: Activations | undefined,
@@ -27,25 +29,37 @@ export function reconcileContributionActivations(
     if (!packages.some((row) => row.id === packageId)) delete activations[packageId]
   return activations
 }
-export function contributionProjection(
+export async function contributionProjection(
   row: InstalledPackage,
   client: ClientContribution,
   owner: string,
   integrity: string,
-  profileId: string,
+  context: { profile: string; inventory: InstalledInventory },
   activationId: string | undefined,
-): Partial<ClientModuleRosterRow> {
+): Promise<Partial<ClientModuleRosterRow>> {
   return {
-    ...(row.entry.metadata?.category === 'example' && row.entry.metadata.exampleOf
-      ? { exampleOf: row.entry.metadata.exampleOf }
-      : {}),
+    ...(row.entry.metadata?.exampleOf ? { exampleOf: row.entry.metadata.exampleOf } : {}),
     ...(row.entry.metadata?.pageEntry ? { pageEntry: row.entry.metadata.pageEntry } : {}),
+    clientId: client.id ?? owner,
+    ...(client.presentationRoles?.length
+      ? {
+          presentationRoleBindings: await clientRoleBindings(
+            context.inventory.packages,
+            context.profile,
+            row,
+            client,
+            integrity,
+            client.id ?? owner,
+          ),
+        }
+      : {}),
+    ...(client.presentationRoles ? { presentationRoles: client.presentationRoles } : {}),
     binding: {
       lifetime: client.lifetime ?? 'session',
       owner,
       packageId: row.id,
       integrity,
-      profileId,
+      profileId: context.profile,
       activationId: activationId ?? integrity,
       availability: 'active',
     },
@@ -121,12 +135,20 @@ export function combineContributionRosters(
 /** Reviewed client declarations retained with an immutable asset snapshot and reprojected on restore. */
 export function clientContributionDeclarations(
   client: {
-    [K in 'requiresBackendRows' | 'lifetime' | 'homeEntries' | 'examplePages' | 'assets' | 'streams']?:
-      | ClientContribution[K]
-      | undefined
+    [K in
+      | 'id'
+      | 'presentationRoles'
+      | 'requiresBackendRows'
+      | 'lifetime'
+      | 'homeEntries'
+      | 'examplePages'
+      | 'assets'
+      | 'streams']?: ClientContribution[K] | undefined
   },
 ) {
   return {
+    ...(client.id ? { id: client.id } : {}),
+    ...(client.presentationRoles ? { presentationRoles: client.presentationRoles } : {}),
     ...(client.requiresBackendRows ? { requiresBackendRows: [...client.requiresBackendRows] } : {}),
     ...(client.lifetime ? { lifetime: client.lifetime } : {}),
     ...(client.homeEntries ? { homeEntries: client.homeEntries } : {}),

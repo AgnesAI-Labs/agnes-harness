@@ -43,6 +43,18 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
           expect(catalog.en['settings-shell.jobs']).toBe('Jobs')
           expect(catalog['zh-CN']?.['settings-shell.jobs']).toBe('作业')
         }
+        for (const [language, entries] of Object.entries(catalog)) {
+          if (!entries || typeof entries !== 'object') continue
+          for (const [key, text] of Object.entries(entries)) {
+            if (typeof text !== 'string') continue
+            // Only this explanation, rendered inside Technical details, names the wire concepts.
+            const technical =
+              ['settingsCatalog', 'shellCatalog'].includes(name) && key === 'compositionDetailsHelp'
+            expect(text, `${name}/${language}/${key}`).not.toMatch(
+              technical ? /\bFDE\b/ : /\b(?:FDE|Bundle|Preset)s?\b/,
+            )
+          }
+        }
         count += 1
         discovered.add(name)
         expect(Object.keys(catalog.en), `${pkg}/${name}: nonempty English keys`).not.toHaveLength(0)
@@ -79,8 +91,8 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
   const { settingsCatalog } = await import('../src/settings/locales.js')
   const { adminListLocaleCatalog } = await import('@agnes/web-ui')
   for (const [locale, execution, edit, leftover] of [
-    ['en', 'How the agent works (Agent Loop)', 'Edit workspace', 'Leftover usage'],
-    ['zh-CN', '执行方式（Agent Loop）', '可修改工作区', '遗留占用'],
+    ['en', 'Running mode', 'Edit workspace', 'Leftover usage'],
+    ['zh-CN', '运行方式', '可修改工作区', '遗留占用'],
   ] as const) {
     expect(settingsCatalog[locale]['provider.loop']).toBe(execution)
     expect(settingsCatalog[locale]['choice.workspace-write']).toBe(edit)

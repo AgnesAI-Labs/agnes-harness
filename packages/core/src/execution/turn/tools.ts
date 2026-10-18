@@ -47,6 +47,7 @@ import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { preflightError } from './preflight-error.js'
 import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
+import { modelCapabilityUnavailable, toolAvailability } from './tool-availability.js'
 import {
   deliverToolDecision,
   requestToolDecision,
@@ -328,12 +329,7 @@ export async function approveAndExecute(
   if (!def) return { result: await refuse(s, call.toolUseId, 'TOOL_NOT_FOUND', `unknown tool ${call.name}`) }
   if (!o.resumeDispatch && !modelAllowsTool(def, s.computerUseAllowed()))
     return {
-      result: await refuse(
-        s,
-        call.toolUseId,
-        'TOOL_NOT_DISCLOSED',
-        'tool is unavailable to the current primary model',
-      ),
+      result: await refuse(s, call.toolUseId, 'TOOL_NOT_DISCLOSED', modelCapabilityUnavailable.message),
     }
   if (!hasAuthenticToolPolicyHash(call))
     return {
@@ -1180,6 +1176,7 @@ export async function approveAndExecute(
           log: s.d.logger,
           invoke: invokeNested,
           discloseTool: (name, signal) => discloseTool(s, name, signal),
+          toolAvailability: (name) => toolAvailability(s, name),
           listTools: () =>
             t.snapshot.defs.filter((definition) => modelVisibleTool(definition, computerUseAllowed)),
           appendPlan: (items) =>

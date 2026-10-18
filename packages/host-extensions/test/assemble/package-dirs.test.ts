@@ -37,8 +37,8 @@ afterEach(() => {
 
 // This package's own root: @agnes/host depends on every builtin package, so createRequire from its
 // package.json resolves them exactly the way cli's hostRootFrom() root does in production.
-const HOST_PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const REPO_ROOT = join(HOST_PKG_ROOT, '..', '..')
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
+const HOST_PKG_ROOT = join(REPO_ROOT, 'packages', 'host')
 
 const workspaceEntry = (ref: string): Lockfile['packages'][string] => ({
   version: '0.1.0',
@@ -105,7 +105,7 @@ describe('packageDirs', () => {
     ).toThrowError(/E_DEP_MISSING/)
   })
 
-  it('still resolves a builtin to the shipped copy when its lock entry is npm', () => {
+  it('binds builtin admission to release source and integrity and always uses the shipped directory', () => {
     const lock: Lockfile = {
       ...emptyLock('local-dev', '0.0.0'),
       packages: {
@@ -131,6 +131,20 @@ describe('packageDirs', () => {
     expect(realpathSync(out.get('@agnes/code') as string)).toBe(
       realpathSync(join(REPO_ROOT, 'packages', 'code')),
     )
+    for (const over of [
+      { source: 'file:external' },
+      { source: 'git:external' },
+      { source: 'npm:@agnes/code@0.1.0' },
+      { integrity: 'sha256-unverified' },
+    ])
+      expect(() =>
+        packageDirs(profile([pkg('@agnes/code', over)]), {
+          dataDir: dir(),
+          profileDir: dir(),
+          lock,
+          hostRoot: HOST_PKG_ROOT,
+        }),
+      ).toThrow(/invalid release package identity/)
   })
 
   it('sends a non-builtin package with no lock entry to the per-profile packages cache', () => {

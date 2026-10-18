@@ -22,7 +22,6 @@
           "displayName": "Task graph Loop",
           "summary": "Runs a validated task graph, allowing independent tools to execute in parallel.",
           "description": "Runs a validated task graph, allowing independent tools to execute in parallel.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "任务图 Loop",
@@ -37,7 +36,6 @@
       "displayName": "Task graph Loop",
       "summary": "Runs a validated task graph, allowing independent tools to execute in parallel.",
       "description": "Runs a validated task graph, allowing independent tools to execute in parallel.",
-      "category": "agent-loop",
       "locales": {
         "zh-CN": {
           "displayName": "任务图 Loop",
@@ -45,6 +43,9 @@
           "description": "按经过校验的任务图执行，允许独立工具并行运行。"
         }
       }
-    }
+    },
+    "provides": [
+      "loop"
+    ]
   }
 }

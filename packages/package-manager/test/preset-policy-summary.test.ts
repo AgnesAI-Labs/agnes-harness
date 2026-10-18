@@ -133,7 +133,7 @@ it('gives an installed package the same summary, read from its own directory', (
         name: 'acme/kit',
         version: '1.0.0',
         agnes: {
-          kinds: ['bundle'],
+          provides: ['bundle'],
           bundles: {
             safe: { profile: { toolPolicy: { readOnly: true } }, presets: { safe: preset('safe') } },
           },

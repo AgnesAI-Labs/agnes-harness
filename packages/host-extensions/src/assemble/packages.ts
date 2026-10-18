@@ -362,6 +362,7 @@ export function createJitiPackageLoader(loader: {
         pluginDeclarations = parseAgnesPluginEntries(
           id,
           (pkg.agnes as Readonly<Record<string, unknown>> | undefined)?.plugins,
+          { stored: true },
         )
       } catch (error) {
         if (error instanceof ProviderError) throw error
@@ -448,7 +449,9 @@ export function packageDirs(
   for (const p of profile.packages) {
     if (!p.enabled) continue
     const entry = opts.lock.packages[p.id]
-    if (p.trust === 'builtin' && (!entry || entry.source.type === 'npm')) {
+    if (p.trust === 'builtin') {
+      if (p.source !== 'builtin' || p.integrity !== `builtin:${p.version}`)
+        throw new HostError('E_LOCK_MISMATCH', `${p.id}: invalid release package identity`)
       out.set(p.id, builtinDir(require, p.id))
       continue
     }

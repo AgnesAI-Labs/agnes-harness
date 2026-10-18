@@ -5,13 +5,21 @@ import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { type BundleCatalog, sessionBundlePresets } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
-/** A published catalog replaces installed boot-time bundles; only builtin bundles stay static. */
-export function sessionBundleCatalog(profile: ResolvedProfile, published?: BundleCatalog): BundleCatalog {
+/** Replace installed boot-time bundles while retaining builtin and explicit transient bundle data. */
+export function sessionBundleCatalog(
+  profile: ResolvedProfile,
+  published?: BundleCatalog,
+  runtimePackages: ReadonlySet<string> = new Set(),
+): BundleCatalog {
   if (!published) return profile.bundleCatalog ?? {}
-  const builtin = new Set(profile.packages.filter((pkg) => pkg.trust === 'builtin').map((pkg) => pkg.id))
+  const installed = new Map(profile.packages.map((pkg) => [pkg.id, pkg.trust]))
   return {
     ...Object.fromEntries(
-      Object.entries(profile.bundleCatalog ?? {}).filter(([, entry]) => builtin.has(entry.sourcePackage)),
+      Object.entries(profile.bundleCatalog ?? {}).filter(
+        ([, entry]) =>
+          (!installed.has(entry.sourcePackage) && !runtimePackages.has(entry.sourcePackage)) ||
+          installed.get(entry.sourcePackage) === 'builtin',
+      ),
     ),
     ...published,
   }
@@ -47,7 +55,7 @@ function withoutModel(doc: PresetDoc): PresetDoc {
 export function admitSessionBundlePresets<P extends ResolvedProfile>(
   admission: P,
   host: { presets: Record<string, PresetDoc> },
-  input: { preset?: string; bundles?: readonly string[] },
+  input: { preset?: string; bundles?: readonly string[]; strict?: boolean },
 ): {
   /** The session's own profile, carrying the bundle presets it may use. */
   profile: P
@@ -59,7 +67,9 @@ export function admitSessionBundlePresets<P extends ResolvedProfile>(
   const offered = Object.fromEntries(
     Object.entries(
       input.bundles?.length ? sessionBundlePresets(input.bundles, admission.bundleCatalog ?? {}) : {},
-    ).map(([name, doc]) => [name, routesServed(doc, served) ? doc : withoutModel(doc)]),
+    ).map(([name, doc]) => {
+      return [name, input.strict || routesServed(doc, served) ? doc : withoutModel(doc)]
+    }),
   )
   const names = Object.keys(offered)
   const merged = (base: Record<string, PresetDoc> | undefined) => ({

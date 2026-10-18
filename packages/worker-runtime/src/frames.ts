@@ -62,6 +62,7 @@ export type WorkerMethod =
   | 'pluginGenerations.collect'
   | 'configuration.apply'
   | 'session.catalog'
+  | 'agents.resolve'
   | 'session.runtime'
   | 'session.view'
   | 'systemPrompt.defaults'
@@ -188,7 +189,14 @@ export type WorkerReplyFrame = {
   kind: 'reply'
   requestId: string
   result?: unknown
-  error?: RpcError | { code: string; message: string; reason?: string }
+  error?:
+    | RpcError
+    | {
+        code: string
+        message: string
+        reason?: string
+        diagnostics?: import('@agnes/protocol').PackageAdminError['diagnostics']
+      }
 }
 export type SessionReplyFrame = WorkerReplyFrame & { sessionKey: string }
 export type RequestFrame = {
@@ -223,6 +231,8 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     resume?: boolean

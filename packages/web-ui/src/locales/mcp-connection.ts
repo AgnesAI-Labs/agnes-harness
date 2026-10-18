@@ -5,7 +5,7 @@ export const mcpConnectionCatalog = {
     connectionFailed: 'Connection failed',
     local: 'Local command',
     mine: 'Added by me',
-    preset: 'Preset',
+    preset: 'Permission profile',
     remote: 'Remote service',
     actions: 'Actions',
     edit: 'Edit',

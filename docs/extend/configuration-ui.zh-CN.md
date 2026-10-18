@@ -41,7 +41,6 @@ const schema: ConfigSchema = {
 `createSchemaSettingsComponent` 将 schema、读取、保存、测试和权限声明转换为现有设置 registry 的组件；无需再建导航或手写表单。适配器由插件提供，通过已声明的服务或 effect 调用执行。读取返回 `{ values, revision? }`；保存接收同一修订号并返回权威的新文档，后端继续负责冲突和权限判断。
 
 ```tsx
-import { settingsSections } from '@agnes/web-client'
 import { createSchemaSettingsComponent } from '@agnes/web-ui'
 
 const component = createSchemaSettingsComponent({
@@ -52,7 +51,7 @@ const component = createSchemaSettingsComponent({
   save: (document, context, signal) => saveConfiguration(document, context, signal),
   test: (document, context, signal) => testConfiguration(document, context, signal),
 })
-const unregister = settingsSections.register({
+const unregister = ctx.settingsSections.register({
   group: 'plugins', groupTitleKey: 'example.group', id: 'example-config', titleKey: 'example.settings',
   icon: 'settings', order: 50, component,
 })

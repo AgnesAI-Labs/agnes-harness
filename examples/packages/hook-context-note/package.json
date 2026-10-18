@@ -17,7 +17,6 @@
           "displayName": "Context hook example",
           "summary": "Demonstrates adding a context note through a plugin-owned observation hook.",
           "description": "Demonstrates adding a context note through a plugin-owned observation hook.",
-          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "上下文钩子示例",
@@ -32,7 +31,6 @@
       "displayName": "Context hook example",
       "summary": "Demonstrates adding a context note through a plugin-owned observation hook.",
       "description": "Demonstrates adding a context note through a plugin-owned observation hook.",
-      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "上下文钩子示例",
@@ -40,6 +38,9 @@
           "description": "演示通过归属插件的观察钩子加入上下文说明。"
         }
       }
-    }
+    },
+    "provides": [
+      "service"
+    ]
   }
 }

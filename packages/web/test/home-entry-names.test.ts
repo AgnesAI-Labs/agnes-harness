@@ -1,13 +1,22 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import { homeEntries } from '@agnes/web-client'
+import {
+  applicationIdentity,
+  homeEntries,
+  homeNavigation,
+  reserveHomeEntry,
+  resolveHomeEntry,
+} from '@agnes/web-client'
+import { fireEvent, waitFor } from '@testing-library/dom'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { openApplicationHome } from '../src/application.js'
 import { createReconciler, type ReadyClientModule } from '../src/client-modules/reconcile.js'
 import { deferHomePage } from '../src/pages/deferred.js'
 import { registerBuiltinHomeEntries } from '../src/pages/entries.js'
+import { activeHomeEntry } from '../src/pages/host.js'
 import { HomeEntriesNav } from '../src/regions/home-entries.js'
 import { enT, zhLocaleService, zhT } from './helpers/locale.js'
 
@@ -18,20 +27,17 @@ vi.mock('../src/pages/admin-api.js', () => ({
 describe('home entry names', () => {
   let dispose: (() => void) | undefined
   afterEach(() => {
+    homeNavigation.close()
+    applicationIdentity.set(undefined)
     dispose?.()
     dispose = undefined
   })
 
-  it('names the FDE entry and its page "Agent FDE" in both languages', () => {
-    for (const t of [enT, zhT]) {
-      expect(t('home.entry.agents')).toBe('Agent')
-      expect(t('home.entry.agents.sub')).toBe('FDE')
-    }
+  it('names the agents page in both languages without a secondary category', () => {
+    expect(enT('home.entry.agents')).toBe('Agents')
+    expect(zhT('home.entry.agents')).toBe('智能体')
     dispose = registerBuiltinHomeEntries()
-    const agents = homeEntries.get('agents')
-    // The sidebar entry and the page title read the same two keys: the name, then FDE in the quiet note.
-    expect(agents?.titleKey).toBe('home.entry.agents')
-    expect(agents?.subtitleKey).toBe('home.entry.agents.sub')
+    expect(homeEntries.get('agents')?.subtitleKey).toBeUndefined()
   })
   it('loads a selected page and forwards the current context after it becomes available', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -109,12 +115,42 @@ describe('home entry names', () => {
           await reconciler.reconcileNow()
           root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) }))
         })
-        for (const id of ['agents', 'plugins', 'automation', 'console'])
+        for (const id of ['plugins', 'agents', 'automation', 'console'])
           expect(host.querySelector(`[data-testid="home-entry-${id}"]`)).toBeTruthy()
         expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
           language === 'zh-CN' ? '控制台' : 'Console',
         )
         expect(importer).not.toHaveBeenCalled()
+        await act(async () => {
+          applicationIdentity.set({
+            revision: 1,
+            selection: null,
+            status: 'active',
+            assets: {},
+            candidates: [],
+            effective: {
+              id: 'console',
+              presentation: {
+                navigation: {
+                  entries: ['acme/console#console'],
+                  hideBuiltin: ['plugins'],
+                },
+              },
+            },
+          })
+        })
+        expect(
+          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
+            node.getAttribute('data-testid'),
+          ),
+        ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation'])
+        expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
+        await act(async () => applicationIdentity.set(undefined))
+        expect(
+          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
+            node.getAttribute('data-testid'),
+          ),
+        ).toEqual(['home-entry-plugins', 'home-entry-agents', 'home-entry-automation', 'home-entry-console'])
         modules = []
         await act(async () => {
           await reconciler.invalidate()
@@ -126,6 +162,55 @@ describe('home entry names', () => {
         })
         expect(host.querySelector('[data-testid="home-entry-console"]')).toBeTruthy()
         expect(importer).not.toHaveBeenCalled()
+        await act(async () => {
+          applicationIdentity.set({
+            revision: 1,
+            status: 'active',
+            selection: null,
+            candidates: [],
+            assets: {},
+            effective: {
+              id: 'a',
+              presentation: {
+                home: 'acme/console#console',
+                navigation: { entries: ['acme/console#console'] },
+              },
+            },
+          })
+          openApplicationHome()
+        })
+        expect(homeNavigation.getSnapshot()?.pageRef).toBe('acme/console#console')
+        await waitFor(() => expect(reconciler.snapshot().get('web:acme/console')?.phase).toBe('failed'))
+        expect(resolveHomeEntry('acme/console#console')).toBeUndefined()
+        const foreign = () => null
+        const removeForeign = reserveHomeEntry(
+          'foreign',
+          { id: 'console', placement: 'primary', titleKey: 'B', icon: 'cpu', order: 40, component: foreign },
+          'b',
+        )
+        try {
+          expect(homeEntries.get('console')?.component).toBe(foreign)
+          expect(activeHomeEntry()).toBeUndefined()
+          await waitFor(() =>
+            expect(host.querySelector('[data-testid^="home-entry-"]')?.getAttribute('data-testid')).toBe(
+              'home-entry-plugins',
+            ),
+          )
+          const ordinary = host.querySelector('[data-testid="home-entry-console"]')
+          expect(ordinary?.getAttribute('aria-current')).toBeNull()
+          if (!ordinary) throw new Error('ordinary page missing')
+          await act(async () => {
+            fireEvent.click(ordinary)
+          })
+          expect(homeNavigation.getSnapshot()?.pageRef).toBeUndefined()
+          expect(activeHomeEntry()?.component).toBe(foreign)
+          homeNavigation.close()
+          openApplicationHome()
+          expect(homeNavigation.getSnapshot()).toBeUndefined()
+          expect(resolveHomeEntry('b#console')?.component).toBe(foreign)
+        } finally {
+          removeForeign()
+        }
       } finally {
         await act(async () => {
           root.unmount()

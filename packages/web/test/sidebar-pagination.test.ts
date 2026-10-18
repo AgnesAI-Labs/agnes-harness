@@ -18,7 +18,7 @@ const deferred = <T>() => {
   })
   return { promise, resolve, reject }
 }
-function setup() {
+function setup(changed = () => {}) {
   let revision = 'v1',
     ready = true
   const groups = vi.fn(
@@ -47,11 +47,7 @@ function setup() {
       }
     },
   )
-  const ui = createSidebarPagination(
-    { groups, list },
-    () => {},
-    () => 'Failed',
-  )
+  const ui = createSidebarPagination({ groups, list }, changed, () => 'Failed')
   return {
     ui,
     groups,
@@ -261,9 +257,42 @@ it('rereads metadata on focus even when the paging revision is unchanged', async
   })
 })
 
-it('waits for changes received during a summary read and preserves a queued metadata refresh', async () => {
+it('shares focus and visibility refreshes through both summary and row reads without using an old cursor', async () => {
   const s = setup()
   await s.ui.refresh()
+  const summary = deferred<SessionGroupsResult>(),
+    page = deferred<PageSessionMeta>()
+  const initialSummary = await s.groups()
+  s.groups.mockClear()
+  s.groups.mockImplementationOnce(() => summary.promise)
+  s.list.mockImplementationOnce(() => page.promise)
+  const focus = s.ui.refresh(true)
+  const visible = s.ui.refresh(true)
+  expect(visible).toBe(focus)
+  expect(s.ui.snapshot().groups[0]?.loading).toBe(true)
+  const more = s.ui.action('a', 'more')
+  await Promise.resolve()
+  expect(s.list).toHaveBeenCalledTimes(1)
+  summary.resolve(initialSummary)
+  await vi.waitFor(() => expect(s.list).toHaveBeenCalledTimes(2))
+  expect(s.ui.refresh(true)).toBe(focus)
+  const moreDuringRows = s.ui.action('a', 'more')
+  page.resolve({ items: s.ui.rows(), total: 17, revision: 'v2', next: 'fresh-cursor' })
+  await Promise.all([focus, visible, more, moreDuringRows])
+  expect(s.groups).toHaveBeenCalledTimes(1)
+  expect(s.list).toHaveBeenCalledTimes(2)
+  expect(s.list.mock.calls.every(([input]) => input.cursor === undefined)).toBe(true)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ loading: false, next: 'fresh-cursor' })
+  s.list.mockResolvedValueOnce({ items: [row(5)], total: 17, revision: 'v2' })
+  await s.ui.action('a', 'more')
+  expect(s.list).toHaveBeenLastCalledWith({ sidebar: { groupId: 'a' }, limit: 5, cursor: 'fresh-cursor' })
+})
+
+it('waits for changes received during a summary read and preserves a queued metadata refresh', async () => {
+  const loading: boolean[] = []
+  const s = setup(() => loading.push(s.ui.snapshot().groups[0]?.loading === true))
+  await s.ui.refresh()
+  loading.length = 0
   const late = deferred<SessionGroupsResult>()
   s.groups.mockImplementationOnce(() => late.promise)
   const pending = s.ui.refresh()
@@ -277,6 +306,8 @@ it('waits for changes received during a summary read and preserves a queued meta
   expect(s.ui.rows()).toEqual([row(99)])
   expect(s.ui.snapshot().loading).toBe(false)
   expect(s.ui.snapshot().groups[0]).toMatchObject({ loading: false, stale: false, revision: 'v2' })
+  expect(loading.at(-1)).toBe(false)
+  expect(loading.slice(0, -1).every(Boolean)).toBe(true)
 })
 
 it('opens the created session group without rereading a freshly loaded first page', async () => {

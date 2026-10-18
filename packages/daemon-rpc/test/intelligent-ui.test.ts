@@ -2,8 +2,10 @@ import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { rpcError, type UiActionParams, type UiSurfaceRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { CommandQueue } from '../src/local/command-queue.js'
+import { createFollowUpRunner } from '../src/local/follow-up-runner.js'
 import type { AgnesContext } from '../src/local/methods/agnes.js'
 import { registerIntelligentUi } from '../src/local/methods/intelligent-ui.js'
+import type { SessionEntry } from '../src/local/sessions.js'
 
 it('checks session ownership before state/dedupe, binds the actor and repairs a cold session via existing ports', async () => {
   const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'operator' })
@@ -45,10 +47,16 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
   }
   const result = { sessionId: 'owned', lastSeq: 4, surfaces: [], actions: [receipt] }
   const entry = {
+    key: 'owned',
+    ac: new AbortController(),
+    inflight: null as SessionEntry['inflight'],
     submitUiAction: undefined as
       | undefined
       | ((input: unknown, credential: unknown) => Promise<typeof receipt>),
     session: {
+      scan: async () => [],
+      controls: { state: async () => ({ paused: false }) },
+      projectUI: async () => ({ opState: null }),
       get intelligentUi() {
         return enabled
           ? {
@@ -134,6 +142,24 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
       input: { ...request, commandId: 'remote' },
       credential: endpoint.conn.credential,
     })
+    const activity: { kind: string; sessionId: string }[] = []
+    cx.onPromptStart = (sessionId) => activity.push({ kind: 'start', sessionId })
+    cx.onPromptEnd = (sessionId) => activity.push({ kind: 'end', sessionId })
+    cx.continueFollowUps = createFollowUpRunner(cx, async () => {})
+    // A polling read must not announce prompt activity when it has nothing left to resume.
+    for (const actions of [[], [{ ...receipt, status: 'succeeded' }]]) {
+      result.actions = actions
+      expect((await call('_agnes/v1/ui.read', { sessionId: 'owned' })).result).toEqual(result)
+      expect(activity).toEqual([])
+    }
+    // A durable received action still repairs its wake through the ordinary runner.
+    result.actions = [receipt]
+    expect((await call('_agnes/v1/ui.read', { sessionId: 'owned' })).result).toEqual(result)
+    await new Promise<void>((done) => setImmediate(done))
+    expect(activity).toEqual([
+      { kind: 'start', sessionId: 'owned' },
+      { kind: 'end', sessionId: 'owned' },
+    ])
     entry.submitUiAction = undefined
     enabled = false
     expect((await call('_agnes/v1/ui.action', request)).error?.data?.code).toBe('CAPABILITY_DENIED')

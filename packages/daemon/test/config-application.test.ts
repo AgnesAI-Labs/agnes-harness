@@ -116,3 +116,28 @@ it('still activates provider setup after the package lock changed in-process', a
   expect(application.profile().composition).toBeUndefined()
   expect(application.profile().bundleCatalog).toBeUndefined()
 })
+
+it('acknowledges presentation-only CAS revisions without activating an execution profile or reporting restart', async () => {
+  const profile = { hash: 'original' } as ResolvedProfile
+  let revision = 2
+  const snapshot = () => ({
+    profile: 'local-dev',
+    revision,
+    executionRevision: 2,
+    configured: false,
+    provider: null,
+    effect: 'new-sessions' as const,
+  })
+  const service = { get: async () => snapshot() } as ConfigurationService
+  const application = await configurationApplication({
+    service,
+    profile,
+    activate: async () => {
+      throw new Error('presentation must not activate execution')
+    },
+  })
+  revision = 3
+  expect(application.present(snapshot()).effect).toBe('new-sessions')
+  expect(application.profile()).toBe(profile)
+  expect(application.present({ ...snapshot(), executionRevision: 3 }).effect).toBe('restart-required')
+})

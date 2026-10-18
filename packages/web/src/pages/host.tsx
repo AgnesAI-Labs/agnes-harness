@@ -1,5 +1,11 @@
 import type { PluginAdminSources } from '@agnes/web-admin/admin/plugins/admin'
-import { homeEntries, homeNavigation, type LocaleService, type UiExtensionContext } from '@agnes/web-client'
+import {
+  homeEntries,
+  homeNavigation,
+  type LocaleService,
+  resolveHomeEntry,
+  type UiExtensionContext,
+} from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
   createRegionRenderer,
@@ -33,7 +39,11 @@ export type HomePageData = Readonly<{
 /** The entry whose page is showing: requested and still registered. */
 export function activeHomeEntry() {
   const requested = homeNavigation.getSnapshot()
-  return requested ? homeEntries.get(requested.id) : undefined
+  return requested?.pageRef
+    ? resolveHomeEntry(requested.pageRef)
+    : requested
+      ? homeEntries.get(requested.id)
+      : undefined
 }
 
 export function HomePageHost({
@@ -50,7 +60,7 @@ export function HomePageHost({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
-  const entry = requested ? homeEntries.get(requested.id) : undefined
+  const entry = activeHomeEntry()
   // A synchronous unload/reload can be batched into one render. A new registration owns a new
   // component lifetime even when it reuses the same ID and component function.
   const mounted = useRef({ entry, version: 0 })
@@ -111,6 +121,13 @@ export function mountHomePages(
   }
 }
 
+const LEGACY_PAGES: Readonly<Record<string, string>> = {
+  'business-agents': 'agents',
+  'business-agent': 'agents',
+  'agent-fde': 'agents',
+  fde: 'agents',
+}
+
 const PAGE_ID = /^[a-z][a-z0-9.-]*$/
 
 /**
@@ -126,7 +143,15 @@ export function bindHomeRouting(): () => void {
     try {
       if (page && PAGE_ID.test(page)) {
         const tab = params.get('tab')
-        homeNavigation.open(page, tab ? { tab } : undefined)
+        const owner = params.get('pagePackage')
+        const destination = !owner && Object.hasOwn(LEGACY_PAGES, page) ? (LEGACY_PAGES[page] ?? page) : page
+        if (destination !== page) {
+          const url = new URL(location.href)
+          url.searchParams.set('page', destination)
+          history.replaceState(history.state, '', preserveRouteParams(url))
+        }
+        if (owner) homeNavigation.openRef(`${owner}#${destination}`, tab ? { tab } : undefined)
+        else homeNavigation.open(destination, tab ? { tab } : undefined)
       } else homeNavigation.close()
     } finally {
       restoring = false
@@ -136,6 +161,8 @@ export function bindHomeRouting(): () => void {
   const stop = homeNavigation.subscribe(() => {
     if (restoring) return
     const requested = homeNavigation.getSnapshot()
+    // App defaults are transient presentation, not explicit URL/user choices.
+    if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
     const url = new URL(location.href)
     const before = url.href
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
@@ -147,6 +174,9 @@ export function bindHomeRouting(): () => void {
       url.searchParams.delete('view')
     if (requested) url.searchParams.set('page', requested.id)
     else url.searchParams.delete('page')
+    if (requested?.pageRef)
+      url.searchParams.set('pagePackage', requested.pageRef.slice(0, requested.pageRef.indexOf('#')))
+    else url.searchParams.delete('pagePackage')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
     const address = preserveRouteParams(url)

@@ -29,6 +29,8 @@ import { publishProbedRuntimeTarget } from './runtime-target-publisher.js'
 export type CompositeTargetActivationOptions = Readonly<{
   store: CompositeTargetStore
   workerGeneration?: () => number | undefined
+  /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
+  workerStarting?: () => boolean
   /** Produce the complete desired artifact after lockfile enable/disable/update. */
   desiredFor?(input: {
     packageIds?: readonly string[]
@@ -157,6 +159,7 @@ function dropUnpinnedLastGood(
 function observation(
   options: CompositeTargetActivationOptions,
   packageId?: string,
+  observeDormancy = false,
 ): PackageActivationObservation {
   const view = pluginTreeActual(options.store, options.workerGeneration?.())
   if (!view) return { actual: 'not-running' }
@@ -175,11 +178,19 @@ function observation(
     const desiredSurfaceRevision = options.desiredSurfaceRevision?.(packageId)
     const reportRows = options.store.report()?.rows ?? []
     const hasBackendRows = [...packageRowIds(options.store, packageId)].some((id) => !id.startsWith('web:'))
+    // Static Skill declarations have no executable row. Their activation proof is the validated,
+    // trusted and enabled inventory, plus the same qualified target required below for all backends.
+    const staticSkillsEligible =
+      !hasBackendRows &&
+      contributions.length > 0 &&
+      contributions.every((row) => row.kind === 'skill') &&
+      options.lifecycleEligible?.(packageId) === true
     const readinessClass = classifyPackageContributions(contributions, hasBackendRows)
     // A package the tree does not want running, with nothing left running it, is simply not running.
     // Reporting it as starting would block removing a disabled package, which needs not-running.
     if (
       readinessClass === 'extension-only' &&
+      !staticSkillsEligible &&
       packageStopped(options.store, options.workerGeneration?.(), packageId)
     )
       return { actual: 'not-running' }
@@ -188,16 +199,32 @@ function observation(
       desiredPublished: Boolean(options.store.desired()),
       treeQualified: view.actual,
       extensionRowsActive:
-        options.extensionRowsActive?.(packageId) ??
-        packageExtensionRowsActive(packageId, reportRows, packageRowIds(options.store, packageId)),
+        staticSkillsEligible ||
+        (options.extensionRowsActive?.(packageId) ??
+          packageExtensionRowsActive(packageId, reportRows, packageRowIds(options.store, packageId))),
       ...(surfaceRunningRevision === undefined ? {} : { surfaceRunningRevision }),
       ...(desiredSurfaceRevision === undefined ? {} : { desiredSurfaceRevision }),
       clientRosterMatch: options.clientRosterMatch?.(packageId) ?? false,
     })
+    if (
+      !ready &&
+      (readinessClass === 'extension-only' || readinessClass === 'mixed') &&
+      observeDormancy &&
+      dormant(options)
+    )
+      return { actual: 'not-running' }
     return withPackageIdentity(options, packageId, ready ? 'running' : 'starting')
   }
   if (view.actual) return withPackageIdentity(options, packageId, 'running')
-  return { actual: 'starting' }
+  return observeDormancy && dormant(options) ? { actual: 'not-running' } : { actual: 'starting' }
+}
+
+function dormant(options: CompositeTargetActivationOptions): boolean {
+  return (
+    options.workerGeneration !== undefined &&
+    options.workerGeneration() === undefined &&
+    !options.workerStarting?.()
+  )
 }
 
 function withPackageIdentity(
@@ -256,7 +283,7 @@ export function createCompositeTargetActivation(
       await options.collectGenerations?.()
     },
     async actual(_profile, packageId) {
-      return observation(options, packageId)
+      return observation(options, packageId, true)
     },
     async stopped(_profile, packageId) {
       return packageStopped(options.store, options.workerGeneration?.(), packageId)

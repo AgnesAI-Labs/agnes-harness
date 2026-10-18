@@ -58,6 +58,9 @@ import {
   webUnitsLocaleCatalog,
 } from '@agnes/web-units/shell'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
+import { archivedSessions } from '../archived-sessions.js'
+import { LoopPicker } from '../loop-picker.js'
+import { businessAgentSuggestions } from '../pages/business-agents.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -73,13 +76,10 @@ import type {
 import {
   CONVERSATION_CHILD_SLOTS,
   mountApprovalRegion,
-  mountComposerRegion,
-  mountConversationRegion,
   mountDshShellRegion,
   mountEmptyStateRegion,
   mountRightbarRegion,
   mountSettingsPaneRegion,
-  mountSidebarRegion,
   mountTopbarRegion,
   mountTraceRegion,
   mountTranscriptRegion,
@@ -165,7 +165,8 @@ export async function startClientModules(options: {
   claim?: ClaimResolver | undefined
 }): Promise<ClientModulesRuntime> {
   const ctx = new Context()
-  new PresentationService(ctx, options.presentation)
+  const presentation: PresentationHost = { ...options.presentation }
+  new PresentationService(ctx, presentation)
   await ctx.plugin(SlotRegistry)
   const builtinUnits = new BuiltinWebUnitRegistry()
   const pref = readThemePreference(safeThemeStorage())
@@ -197,6 +198,13 @@ export async function startClientModules(options: {
     }
   ).slots
   const dshShell: DshShellRegionMount = mountDshShellRegion(registry)
+  // Seats belong to the host; default occupants arrive through the release roster.
+  for (const name of ['ui:sidebar', 'ui:conversation', 'ui:transcript', 'ui:composer'])
+    registry.declare(
+      name,
+      { kind: 'single', scope: name === 'ui:sidebar' ? 'root' : 'session-maybe' },
+      'web-shell',
+    )
   // 主题：监听既有外观系统的三个变化入口（不改宿主内部：storage/system + 显式事件）。
   prefersDark.addEventListener('change', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
@@ -257,16 +265,7 @@ export async function startClientModules(options: {
       builtinUnits.unmount('@agnes/web-empty-state')
       transcriptDelegate.current = null
       const emptyState = mountEmptyStateRegion(registry, children.emptyState, { session, locale })
-      const transcript = mountTranscriptRegion(registry, children.transcript, {
-        ...options.transcript,
-        ...(options.claim ? { claim: options.claim } : {}),
-        newContentButton: children.newContentButton,
-        session,
-        locale,
-        resources,
-      })
       builtinUnits.mount('@agnes/web-empty-state', () => emptyState.dispose())
-      builtinUnits.mount('@agnes/web-transcript', () => transcript.dispose())
       const childUnits = [
         [
           '@agnes/web-conversation-message-actions',
@@ -286,7 +285,6 @@ export async function startClientModules(options: {
         )
         builtinUnits.mount(packageId, () => root.unmount())
       }
-      transcriptDelegate.current = transcript
     })
   }
   const unmountConversationChildren = (): void => {
@@ -298,15 +296,44 @@ export async function startClientModules(options: {
       unmountConversationChildUnits()
     })
   }
-  const conversation = options.conversationContainer
-    ? mountConversationRegion(registry, options.conversationContainer, {
-        session,
-        locale,
-        onMount: mountConversationChildren,
-        onUnmount: unmountConversationChildren,
-      })
+  let conversationView: ConversationRegionMount | undefined
+  let emptyVisible = true
+  if (options.conversationContainer)
+    presentation.conversation = {
+      container: options.conversationContainer,
+      onMount: mountConversationChildren,
+      onUnmount: unmountConversationChildren,
+      attach(handle) {
+        const attached = { ...handle, dispose() {} }
+        conversationView = attached
+        handle.setEmptyStateVisible(emptyVisible)
+        return () => {
+          if (conversationView === attached) conversationView = undefined
+        }
+      },
+      transcript: {
+        ...options.transcript,
+        ...(options.claim ? { claim: options.claim } : {}),
+        attach(handle) {
+          const attached = { ...handle, dispose() {} }
+          transcriptDelegate.current = attached
+          if (lastTranscript) handle.render(...lastTranscript)
+          return () => {
+            if (transcriptDelegate.current === attached) transcriptDelegate.current = null
+          }
+        },
+      },
+    }
+  const conversation: ConversationRegionMount | undefined = options.conversationContainer
+    ? {
+        setEmptyStateVisible(visible) {
+          emptyVisible = visible
+          conversationView?.setEmptyStateVisible(visible)
+        },
+        isTranscriptNearBottom: () => conversationView?.isTranscriptNearBottom() ?? false,
+        dispose() {},
+      }
     : undefined
-  if (conversation) builtinUnits.mount('@agnes/web-conversation', () => conversation.dispose())
   const topbar = options.topbarContainer
     ? mountTopbarRegion(registry, options.topbarContainer, locale)
     : undefined
@@ -315,23 +342,82 @@ export async function startClientModules(options: {
     ? mountApprovalRegion(registry, options.approvalContainer)
     : undefined
   if (approval) builtinUnits.mount('@agnes/web-approval', () => approval.dispose())
-  const composer = options.composerContainer
-    ? mountComposerRegion(
-        registry,
-        options.composerContainer,
-        options.composer ?? {
-          onCancel: () => undefined,
-          onDraftChange: () => undefined,
-          onError: () => undefined,
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit: () => undefined,
-          onWorkspace: () => undefined,
+  let composerView: ComposerRegionMount | undefined
+  let composerState: Parameters<ComposerRegionMount['render']>[0] | undefined
+  let composerDraft = options.composer?.initialDraft ?? ''
+  let composerImages: ReturnType<ComposerRegionMount['getImageBlocks']> = []
+  let composerAttachments: ReturnType<ComposerRegionMount['getAttachmentBlocks']> = []
+  let composerSessionId = session.getSnapshot()
+  ctx.effect(() =>
+    session.subscribe(() => {
+      const next = session.getSnapshot()
+      if (next === composerSessionId) return
+      composerSessionId = next
+      composerImages = []
+      composerAttachments = []
+    }),
+  )
+  if (options.composerContainer)
+    presentation.composer = {
+      container: options.composerContainer,
+      controls: { LoopPicker, suggestions: businessAgentSuggestions },
+      options: options.composer ?? {
+        onCancel() {},
+        onDraftChange() {},
+        onError() {},
+        onModelSelect: async () => false,
+        onPermissionSelect: async () => false,
+        onSubmit() {},
+        onWorkspace() {},
+      },
+      attach(handle) {
+        const attached = { ...handle, dispose() {} }
+        composerView = attached
+        handle.setDraft(composerDraft)
+        handle.restoreImageBlocks(composerImages)
+        handle.restoreAttachmentBlocks(composerAttachments)
+        if (composerState) handle.render(composerState)
+        return () => {
+          if (composerView !== attached) return
+          composerDraft = handle.getDraft()
+          composerImages = handle.getImageBlocks()
+          composerAttachments = handle.getAttachmentBlocks()
+          composerView = undefined
+        }
+      },
+    }
+  const composer: ComposerRegionMount | undefined = options.composerContainer
+    ? {
+        focus: () => composerView?.focus(),
+        getDraft: () => composerView?.getDraft() ?? composerDraft,
+        getImageBlocks: () => composerView?.getImageBlocks() ?? composerImages,
+        getAttachmentBlocks: () => composerView?.getAttachmentBlocks() ?? composerAttachments,
+        hasPendingImages: () => composerView?.hasPendingImages() ?? false,
+        render(value) {
+          composerState = value
+          composerView?.render(value)
         },
-        locale,
-      )
+        setDraft(value) {
+          composerDraft = value
+          composerView?.setDraft(value)
+        },
+        clearImageBlocks() {
+          composerImages = []
+          composerAttachments = []
+          composerView?.clearImageBlocks()
+        },
+        restoreImageBlocks(value) {
+          composerImages = value
+          composerView?.restoreImageBlocks(value)
+        },
+        restoreAttachmentBlocks(value) {
+          composerAttachments = value
+          composerView?.restoreAttachmentBlocks(value)
+        },
+        mention: (value) => composerView?.mention(value),
+        dispose() {},
+      }
     : undefined
-  if (composer) builtinUnits.mount('@agnes/web-composer', () => composer.dispose())
   const trace =
     options.traceContainer && options.trace
       ? mountTraceRegion(registry, options.traceContainer, options.trace)
@@ -360,18 +446,43 @@ export async function startClientModules(options: {
   // The sidebar keeps its existing document-level navigation binding; let the component-owned
   // topbar commit its toggle button before that root discovers the shared control.
   if (topbar) await topbar.ready
+  let sidebarView: import('../regions/sidebar.js').SidebarRegionMount | undefined
+  let sidebarState = options.sidebar?.state
+  let running: readonly string[] = []
+  if (options.sidebarContainer)
+    presentation.navigation = {
+      container: options.sidebarContainer,
+      history: archivedSessions,
+      initial: {
+        ...options.sidebar,
+        profileApprovals: <ProfileApprovals client={options.agnes} locale={locale} />,
+      },
+      attach(handle) {
+        const attached = { ...handle, dispose() {} }
+        sidebarView = attached
+        if (sidebarState) handle.update(sidebarState)
+        handle.setRunning(running)
+        return () => {
+          if (sidebarView === attached) sidebarView = undefined
+        }
+      },
+    }
   const sidebar = options.sidebarContainer
-    ? mountSidebarRegion(
-        registry,
-        options.sidebarContainer,
-        {
-          ...options.sidebar,
-          profileApprovals: <ProfileApprovals client={options.agnes} locale={locale} />,
+    ? {
+        update(value: SidebarState) {
+          sidebarState = value
+          sidebarView?.update(value)
         },
-        locale,
-      )
+        setRunning(value: readonly string[]) {
+          running = value
+          sidebarView?.setRunning(value)
+        },
+        close: () => sidebarView?.close(),
+        dismiss: () => sidebarView?.dismiss(),
+        focusNew: () => sidebarView?.focusNew(),
+        dispose() {},
+      }
     : undefined
-  if (sidebar) builtinUnits.mount('@agnes/web-sidebar', () => sidebar.dispose())
   const transcript =
     !conversation && options.transcriptContainer
       ? mountTranscriptRegion(registry, options.transcriptContainer, {
@@ -383,12 +494,15 @@ export async function startClientModules(options: {
         })
       : undefined
   if (transcript) builtinUnits.mount('@agnes/web-transcript', () => transcript.dispose())
+  let lastTranscript: Parameters<TranscriptRegionMount['render']> | undefined
   const transcriptRuntime = conversation
     ? ({
         render(nodes, turns, meta) {
+          lastTranscript = [nodes, turns, meta]
           transcriptDelegate.current?.render(nodes, turns, meta)
         },
         reset() {
+          lastTranscript = undefined
           transcriptDelegate.current?.reset()
         },
         pinToBottom() {
@@ -429,6 +543,7 @@ export async function startClientModules(options: {
     ...(rightbar ? { rightbar } : {}),
     ...(settingsPane ? { settings: settingsPane } : {}),
     dispose: async () => {
+      conversationChildrenGeneration++
       for (const root of panelRoots) root.unmount()
       builtinUnits.dispose()
       dshShell.dispose()

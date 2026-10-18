@@ -36,6 +36,7 @@ const pages = [
   'jobs',
   'schedules',
   'security',
+  'application',
   'history',
   'archived',
   'computer-use',
@@ -83,11 +84,14 @@ for (const locale of ['en', 'zh-CN'])
       }
       await quality('first-run', true)
       await chooseWorkspace(page, runtime, locale)
-      const suggestions = page.getByTestId('agent-suggestion')
-      await expect(suggestions).toHaveCount(3)
-      await expect(suggestions.first().locator('.empty-state-agent-line')).not.toHaveText('')
-      await page.getByTestId('agent-suggestions-all').click()
+      // The hero now offers one composer hint; browse the same agents from the sidebar gallery.
+      await page.getByTestId('home-entry-agents').click()
       await expect(page.getByTestId('home-page-agents')).toBeVisible()
+      for (const id of ['code-review', 'knowledge-qa', 'data-report']) {
+        const card = page.locator(`[data-agent-ref="@agnes-fde/${id}#${id}"]`)
+        await expect(card.locator('h3')).not.toHaveText('')
+        await expect(card.getByRole('button')).toBeEnabled()
+      }
       await closeSettings(page, locale)
       await expect(page.locator('#empty-state')).toBeVisible()
       await advanced(page)
@@ -104,31 +108,23 @@ for (const locale of ['en', 'zh-CN'])
       await page.keyboard.press('Escape')
       await settings(page, locale)
       await section(page, 'model')
-      const add = page.getByRole('button', {
-        name: locale === 'en' ? 'Add account' : '添加账户',
-        exact: true,
-      })
+      const add = page.locator('.config-accounts-welcome [data-provider="deepseek"]')
       await expect(add).toBeEnabled()
       await expand(page.getByTestId('auxiliary-models'))
       await expect(page.getByTestId('model-slot-fast')).toHaveValue('')
       await expect(page.getByTestId('model-slot-verifier')).toHaveValue('')
       await quality('accounts', true)
       await add.click()
-      const account = page.getByRole('dialog', {
-        name: locale === 'en' ? 'Add account' : '添加账户',
-        exact: true,
-      })
+      const account = page.getByTestId('account-page-add')
       await expect(account).toBeVisible()
       await quality('add-account', true)
-      await account
-        .getByRole('button', {
-          name: locale === 'en' ? 'Close account details' : '关闭账户详情',
-          exact: true,
-        })
-        .click()
-      await expect(add).toBeFocused()
+      await page.locator('#config-account-cancel').click()
+      await page.locator('#config-account-discard-confirm').click()
+      await expect(account).toBeHidden()
+      await expect(add).toBeVisible()
       let fieldSurface = ''
       let popupSurface = ''
+      let inputSurface = ''
       for (const id of pages) {
         if (id === 'jobs') {
           await closeSettings(page, locale)
@@ -136,16 +132,11 @@ for (const locale of ['en', 'zh-CN'])
         }
         await section(page, id)
         await expect(sectionSurface(page, id)).toBeVisible()
-        const catalogPage = [
-          'models',
-          'bundles',
-          'system-prompt',
-          'context',
-          'security',
-          'providers',
-        ].includes(id)
-        if (catalogPage) await expect(page.getByTestId('settings-refresh')).toBeVisible()
-        else await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
+        // Catalogue reads refresh on page entry/focus; the redesign removed the universal
+        // refresh button. Keep the loaded, error-free guarantee for every actual page.
+        await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
+        await expect(sectionSurface(page, id)).not.toHaveAttribute('aria-busy', 'true')
+        await expect(page.getByTestId('settings-catalog-state')).toHaveCount(0)
         if (id === 'plugins') {
           await expect(page.getByTestId('plugin-candidates')).toHaveCount(0)
           fieldSurface = await page
@@ -154,6 +145,14 @@ for (const locale of ['en', 'zh-CN'])
           popupSurface = await page.getByTestId('home-page-plugins').evaluate((owner) => {
             const probe = document.createElement('div')
             probe.style.background = 'var(--agnes-bg-control)'
+            owner.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          inputSurface = await page.getByTestId('home-page-plugins').evaluate((owner) => {
+            const probe = document.createElement('div')
+            probe.style.background = 'var(--agnes-input-surface)'
             owner.appendChild(probe)
             const color = getComputedStyle(probe).backgroundColor
             probe.remove()
@@ -180,13 +179,37 @@ for (const locale of ['en', 'zh-CN'])
           await advanced(page)
           await section(page, 'memory')
           await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+          const workspaceField = page.getByTestId('memory-workspace')
+          await expect(workspaceField).toBeVisible()
+          await expect(workspaceField).toHaveCSS('background-color', inputSurface)
           await page.getByTestId('memory-open').click()
           await expect(page.getByTestId('memory-content')).toBeVisible()
-          for (const control of ['memory-workspace', 'memory-mode', 'memory-file', 'memory-content']) {
-            const field = page.getByTestId(control)
-            const popup = await field.evaluate((node) => node.tagName === 'SELECT')
-            await expect(field).toHaveCSS('background-color', popup ? popupSurface : fieldSurface)
-          }
+          const mode = page.getByTestId('memory-mode')
+          await expect(mode).toHaveRole('radiogroup')
+          const trackSurface = await mode.evaluate((node) => {
+            const probe = document.createElement('div')
+            probe.style.background = 'var(--agnes-segment-track)'
+            node.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          await expect(mode).toHaveCSS('background-color', trackSurface)
+          await expect(mode.locator('.agh-segmented-thumb')).toHaveCSS('background-color', popupSurface)
+          await expect(page.getByTestId('memory-actions')).toContainText('MEMORY.md')
+          const editor = page.getByTestId('memory-content')
+          const codeSurface = await editor.evaluate((node) => {
+            const probe = document.createElement('div')
+            probe.style.backgroundColor = getComputedStyle(node).getPropertyValue('--agnes-bg-fill')
+            node.parentElement!.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          await page.mouse.move(0, 0)
+          await expect(editor).toHaveCSS('background-color', codeSurface)
+          await editor.focus()
+          await expect(editor).toHaveCSS('background-color', inputSurface)
         }
         if (id === 'mcp') {
           await page
@@ -215,7 +238,7 @@ for (const locale of ['en', 'zh-CN'])
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
           }
-          await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', popupSurface)
+          await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', inputSurface)
           await accessible(page, info, 'mcp-advanced')
           await page.locator('#mcp-secret-kind-trigger').click()
           await page.locator('#mcp-secret-kind-listbox-0').click()
@@ -237,7 +260,7 @@ for (const locale of ['en', 'zh-CN'])
           await quality('mcp-local-connection')
           await page.locator('#mcp-cancel').click()
           await expect(page.getByTestId('mcp-create')).toBeFocused()
-          await expect(page.locator('#resource-detail')).toBeHidden()
+          await expect(page.getByRole('dialog', { name: 'Synthetic MCP', exact: true })).toBeHidden()
         }
         if (id === 'providers') {
           const disclosures = page.getByTestId('provider-technical-details')
@@ -265,7 +288,9 @@ for (const locale of ['en', 'zh-CN'])
         }
         if (id === 'discover') {
           await quality('discover-duplicate-versions')
-          const packageRow = page.locator('article[data-plugin-id="@agnes-examples/client-multi-panel"]')
+          const packageRow = page
+            .getByTestId('market-card')
+            .and(page.locator('[data-plugin-id="@agnes-examples/client-multi-panel"]'))
           await expect(packageRow).toHaveCount(1)
           await expect(packageRow.getByRole('heading')).toHaveCount(1)
           const versions = packageRow.getByTestId('plugin-other-versions')
@@ -275,6 +300,8 @@ for (const locale of ['en', 'zh-CN'])
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
           await versions.locator('.agh-disclosure-summary').click()
           await expect(packageRow.locator('.plugin-source')).toHaveCount(0)
+          await packageRow.scrollIntoViewIfNeeded()
+          await expect(packageRow).toBeInViewport({ ratio: 1 })
           await screen(page, info, `discover-version-picker-${locale}-${theme}`)
           const picker = packageRow.getByTestId('plugin-version-picker')
           await expect(picker).toHaveClass(/agnes-ui-select/)
@@ -330,8 +357,8 @@ test('live language switching updates sidebar and cached skin options without re
     await selectValue(page, 'locale-select', locale)
     await expect(page.locator('html')).toHaveAttribute('lang', locale)
     await expect(page.locator('#settings')).toHaveText(en ? 'Settings' : '设置')
-    await expect(page.locator('#new')).toHaveAccessibleName(en ? 'New session' : '新会话')
-    await expect(page.locator('#new')).toContainText(en ? 'New session' : '新会话')
+    await expect(page.locator('#new')).toHaveAccessibleName(en ? 'New conversation' : '新对话')
+    await expect(page.locator('#new')).toContainText(en ? 'New conversation' : '新对话')
     await expect(page.locator('#skin-select option').first()).toHaveText(en ? 'AGH default' : 'AGH 默认')
     await expect(page.locator('#skin-select')).toHaveValue('')
     await closeSettings(page, locale)

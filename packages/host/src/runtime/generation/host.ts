@@ -63,10 +63,11 @@ import {
   codeRow,
   liveResource,
   liveResourceRow,
+  pluginWorkspaceLayers,
   registryCodeRevision,
   targetRows,
 } from './target-code.js'
-import { assertGenerationTrust } from './trust.js'
+import { generationAuthoringAuthority, generationSourceReader } from './trust.js'
 
 export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string
@@ -112,6 +113,11 @@ export async function createRuntimeGenerationHost(
   let latestSkills = options.skillResources
   const bindings = new Map<Host, { id: string }>()
   const developmentSources = new Map<string, RuntimePluginSnapshot>()
+  const runtimeSources = generationSourceReader(options, developmentSources)
+  const authoring = generationAuthoringAuthority(options, profile.name, (key) => {
+    const pin = store.session(key)
+    return pin ? live.get(pin.generationId)?.snapshot.sources : undefined
+  })
   const developmentDirectories = new Map(options.developmentPluginDirectories)
   const basePackages = new Set<string>()
   const failures = new Map<string, string>()
@@ -122,7 +128,9 @@ export async function createRuntimeGenerationHost(
   const initialSkills = createGenerationSkills(options.skillResources)
   const initial = await factory(profile, {
     ...options,
+    ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
     profileAuthorityPublication: 'retained',
+    runtimePluginSources: runtimeSources,
     ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
     onGenerationBasePackages: (ids) => {
       for (const id of ids) basePackages.add(id)
@@ -260,13 +268,7 @@ export async function createRuntimeGenerationHost(
       ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
       snapshotSeams: snapshot.seams,
     })
-    await assertGenerationTrust(
-      snapshot.sources,
-      options.profileDir,
-      profile.name,
-      options.agnesVersion ?? '0.0.0',
-      options.runtimePluginSources,
-    )
+    await authoring.assertTrust(snapshot.sources)
     const skills = latestSkills
     const archivedTarget = decodeRuntimeTargetArtifact(snapshot.artifact)
     const acceptedConfig = store.liveConfig(snapshot.id)
@@ -325,8 +327,10 @@ export async function createRuntimeGenerationHost(
       { ...profile, packages, seams },
       {
         ...generationOptions,
+        ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
         profileAuthorityPublication: 'retained',
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
+        ordinaryPluginLayers: pluginWorkspaceLayers(targetRows(target), options.ordinaryPluginLayers),
         onGenerationBasePackages: (ids) => {
           for (const id of ids) basePackages.add(id)
           options.onGenerationBasePackages?.(ids)
@@ -335,7 +339,7 @@ export async function createRuntimeGenerationHost(
         packageDirs,
         runtimePluginSnapshots: snapshot.sources,
         // Target identities still pin imports; an unbound container may receive newer targets.
-        runtimePluginSources: options.runtimePluginSources ?? (async () => snapshot.sources),
+        runtimePluginSources: runtimeSources,
         activationBarrier: createExtensionActivationBarrier(),
         sessionGeneration: (key) => store.session(key)?.generationId ?? binding.id,
         onGenerationSessionBinding: (key) => {
@@ -439,13 +443,7 @@ export async function createRuntimeGenerationHost(
   const resolve = async (id: string): Promise<LiveGeneration> => {
     const found = live.get(id)
     if (found) {
-      await assertGenerationTrust(
-        found.snapshot.sources,
-        options.profileDir,
-        profile.name,
-        options.agnesVersion ?? '0.0.0',
-        options.runtimePluginSources,
-      )
+      await authoring.assertTrust(found.snapshot.sources)
       return found
     }
     const pending = opening.get(id)
@@ -998,9 +996,10 @@ export async function createRuntimeGenerationHost(
           available.find((source) => source.snapshot.packageId === id)?.snapshot.directory ??
           options.packageDirs?.get(id)
         if (!path) throw new Error(`E_PLUGIN_RELOAD_SOURCE_MISSING: register a local directory for ${id}`)
-        const source = readDevelopmentPlugin(resolvePath(options.workspaceRoot, path), profile.name)
+        const source = await readDevelopmentPlugin(resolvePath(options.workspaceRoot, path), profile.name)
         if (source.snapshot.packageId !== id)
           throw new Error('E_PLUGIN_RELOAD_IDENTITY: local package name differs from the requested id')
+        await authoring.assertTrust([source])
         const target =
           head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
         const oldRows = [

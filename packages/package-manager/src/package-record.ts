@@ -116,3 +116,16 @@ export function entryFrom(
     })
   return { ...common, source: { type: source.type, ref: source.ref } }
 }
+
+/** Copy the data bound by capabilityHash, independently from execution seam declarations. */
+export function applyReviewedContract(
+  entry: LockEntry,
+  preview: import('@agnes/protocol').PackagePreview,
+): void {
+  for (const key of ['agents', 'application'] as const) {
+    if (preview[key] !== undefined) Object.assign(entry, { [key]: structuredClone(preview[key]) })
+    else delete entry[key]
+  }
+  if (preview.provides) entry.declaredProvides = [...preview.provides]
+  else delete entry.declaredProvides
+}

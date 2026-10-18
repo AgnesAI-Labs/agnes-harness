@@ -40,7 +40,6 @@
           "displayName": "Deliverables",
           "summary": "Makes the agent's output files available to open or download from the conversation.",
           "description": "Makes the agent's output files available to open or download from the conversation.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "交付成果",
@@ -50,6 +49,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   },
   "peerDependencies": {

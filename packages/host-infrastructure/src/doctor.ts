@@ -123,7 +123,9 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
           store.enforcement.level === 'full' &&
           !(snapshot.accounts ?? []).some((a) => a.enabled && !a.credentialConfigured)
             ? 'ok'
-            : 'fail',
+            : store.enforcement.level === 'full'
+              ? 'warn'
+              : 'fail',
       }
     },
     sandbox: async () => {
@@ -148,12 +150,12 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
     accounts: async () => {
       const accounts = (await config.get()).accounts?.filter((a) => a.enabled) ?? []
       if (!accounts.length) return { status: 'warn', count: 0, probed: false }
-      if (accounts.some((a) => !a.credentialConfigured))
-        return { status: 'fail', count: accounts.length, probed: false }
+      const usable = accounts.filter((a) => a.credentialConfigured)
+      if (!usable.length) return { status: 'warn', count: accounts.length, probed: false }
       if (options.probeAccounts) {
         const timeout = AbortSignal.timeout(45_000)
         const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
-        for (const account of accounts) {
+        for (const account of usable) {
           signal.throwIfAborted()
           const result = await config.test(
             { providerId: account.providerId, accountId: account.accountId, model: account.model },
@@ -163,7 +165,11 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
           if (!result.verified) return { status: 'fail', count: accounts.length, probed: true }
         }
       }
-      return { status: 'ok', count: accounts.length, probed: options.probeAccounts === true }
+      return {
+        status: usable.length === accounts.length ? 'ok' : 'warn',
+        count: accounts.length,
+        probed: options.probeAccounts === true,
+      }
     },
     plugins: async () => {
       const lock = readLock(join(options.home, 'profiles', options.profile), {

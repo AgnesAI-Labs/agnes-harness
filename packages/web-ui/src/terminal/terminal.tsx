@@ -91,7 +91,8 @@ export function TerminalScreen(props: TerminalScreenProps) {
     theme()
     terminal.textarea?.setAttribute('aria-label', current.current.label)
     // Roving tab navigation keeps focus on the selected tab; launching/attaching focuses input.
-    if (!node.ownerDocument.activeElement?.closest('[role="tablist"]')) terminal.focus()
+    if (!node.ownerDocument.activeElement?.closest('[role="tablist"], [role="listbox"], [role="toolbar"]'))
+      terminal.focus()
     blink()
     return () => {
       resize?.disconnect()

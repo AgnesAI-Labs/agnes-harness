@@ -13,6 +13,9 @@
       "path": "../host/tsconfig.testkit.json"
     },
     {
+      "path": "../base/tsconfig.testkit.json"
+    },
+    {
       "path": "../ai"
     },
     {

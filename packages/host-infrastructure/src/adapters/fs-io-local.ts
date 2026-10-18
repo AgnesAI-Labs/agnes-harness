@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { close, fstat, ftruncate, read, readFile, realpathSync, writeFile } from 'node:fs'
+import { close, fstat, ftruncate, read, readFile, writeFile } from 'node:fs'
 import { promisify } from 'node:util'
 import { canonicalFs, openCanonicalFileSync, openCanonicalWritableFileSync } from '@agnes/system-node'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { FsIo } from './fs-io.js'
 import { createWin32Platform } from './platform.js'
 
@@ -92,5 +93,5 @@ export function createLocalFsIo(windows: boolean = onWindows): FsIo {
 export const localFsIo: FsIo = createLocalFsIo()
 /** Initialization canonicalization only; never used to reopen an authorized operation. */
 export function localRealpathSync(path: string): string {
-  return onWindows ? realpathSync.native(path) : realpathSync(path)
+  return nativeRealpathSync(path)
 }

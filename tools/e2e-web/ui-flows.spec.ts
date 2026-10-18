@@ -6,11 +6,12 @@ import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import type { Runtime } from './runtime.js'
-import { install, toolResult } from './sdk.js'
+import { install, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
   expand,
+  expandActivityGroups,
   fresh,
   openGoal,
   pluginTab,
@@ -20,6 +21,7 @@ import {
   send,
   settings,
   turn,
+  workbenchTab,
 } from './ui.js'
 
 async function open(page: Page, runtime: Runtime) {
@@ -38,11 +40,18 @@ async function current(page: Page, runtime: Runtime) {
 }
 function surfaceCard(page: Page, title: string) {
   return page
-    .getByTestId('intelligent-ui-inline')
-    .locator('[data-testid^="ui-surface-"]')
-    .filter({ hasText: title })
+    .getByRole('article', { name: title, exact: true })
+    .and(page.locator('[data-placement="inline"]'))
 }
 async function workbenchSurface(page: Page, title: string) {
+  if (title === 'Deliverables') {
+    const tail = page.getByTestId('turn-deliverables').last()
+    await expect(tail).toBeVisible()
+    await tail.locator('.agh-list-row-title').first().click()
+    const files = page.getByTestId('workbench-deliverables')
+    await expect(files).toBeVisible()
+    return files
+  }
   const panel = page
     .getByTestId('intelligent-ui-panel')
     .locator('[data-testid^="ui-surface-"]')
@@ -67,7 +76,12 @@ async function workbenchSurface(page: Page, title: string) {
     }
     if ((await inline.getAttribute('data-kind')) === 'deliverables')
       await inline.getByTestId('deliverable-open').first().click()
-    else await inline.getByTestId('ui-expand').click()
+    else {
+      if (!(await inline.getByTestId('ui-expand').count())) {
+        await inline.locator('header .agh-menu-anchor button').click()
+        await page.getByTestId('ui-expand').click()
+      } else await inline.getByTestId('ui-expand').click()
+    }
   }
   await expect(panel).toBeVisible()
   return panel
@@ -90,22 +104,22 @@ async function quality(page: Page, info: Parameters<typeof accessible>[1], name:
   await translated(page)
   await accessible(page, info, name)
 }
-async function detail(page: Page, tool: string) {
+async function detail(page: Page, tool: string, summary = tool) {
   await page.getByRole('textbox', { name: 'Task content', exact: true }).click()
   await settled(page)
   const session = page.getByTestId('conversation-turn').last()
   const process = session.getByTestId('turn-process-toggle')
-  const toggle = session.getByTestId('tool-detail-toggle')
+  const card = session.locator(`[data-tool-name="${tool}"]`).last()
+  const toggle = card.getByTestId('tool-detail-toggle')
   if (!(await process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true')))
     await process.click()
   await expect
     .poll(() => process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true'))
     .toBe(true)
+  await expandActivityGroups(session)
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-  await expect(
-    session.getByRole('article').filter({ has: page.getByTestId('tool-detail-toggle') }),
-  ).toContainText(tool)
-  return session.getByTestId('tool-detail-text')
+  await expect(card).toContainText(summary)
+  return card.getByTestId('tool-detail-text')
 }
 
 test('UI first run, Agent selection, demo read/cancel, account save and restart persistence', async ({
@@ -119,7 +133,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   await turn(page, 'call read {"path":"report.md"}')
   const demo = await current(page, runtime)
   expect(JSON.stringify(await toolResult(demo, 'read'))).toContain('Synthetic delivery')
-  await expect(await detail(page, 'report.md')).toContainText('Synthetic delivery')
+  await expect(await detail(page, 'read', 'report.md')).toContainText('Synthetic delivery')
   // Cancellation must exercise an in-flight tool even when the OS command sandbox is unavailable.
   await install(await runtime.connect(), 'tools/e2e-web/fixtures/cancel-tool')
   await fresh(page)
@@ -136,20 +150,26 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   const provider = await startProviderFixture('UI_CREDENTIAL_PERSISTED', undefined, model)
   try {
     await settings(page)
+    await page.getByTestId('settings-nav-model').click()
     await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'empty')
-    await page.getByRole('button', { name: 'Add account', exact: true }).click()
-    const dialog = page.locator('#account-dialog')
-    await expect(dialog).toHaveAccessibleName('Add account')
-    await dialog.locator('[data-provider="deepseek"]').click()
-    await expect(dialog).toHaveAccessibleName('Connect DeepSeek')
+    await page.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
+    const dialog = page.locator('.account-dialog-body[data-page="add"]')
+    await expect(page.getByRole('heading', { name: 'Add account', exact: true })).toBeVisible()
+    await expect(dialog).toHaveAttribute('data-account-step', 'connection')
+    await expect(dialog.locator('#config-provider-trigger')).toContainText('DeepSeek')
     await expand(dialog.locator('#config-account-advanced'))
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-    await dialog.getByTestId('account-network-details').locator('summary, .agh-disclosure-summary').click()
-    await dialog.getByTestId('account-network-requestMs').fill('90000')
-    await dialog.getByTestId('account-network-connectMs').fill('4000')
-    await dialog.getByTestId('account-network-streamIdleMs').fill('15000')
+    for (const [key, seconds] of [
+      ['requestMs', '90'],
+      ['connectMs', '4'],
+      ['streamIdleMs', '15'],
+    ]) {
+      await selectValue(page, `account-network-${key}`, 'custom')
+      await dialog.getByTestId(`account-network-${key}-custom`).fill(seconds!)
+      await dialog.getByTestId(`account-network-${key}-custom`).blur()
+    }
     await expect(dialog.locator('#config-state')).toContainText('Connected.')
     await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: 'Save', exact: true }).click()
@@ -218,9 +238,10 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
   if (!model) throw new Error('The local provider catalog must contain a model')
   const provider = await startProviderFixture(
     'E2E_SKILL_RESPONSE',
-    { name: 'mcp__e2e__echo', args: { text: 'UI_MCP_STDIO' } },
+    { name: 'tool_describe', args: { name: 'mcp__e2e__echo' } },
     model,
   )
+  provider.queueTool({ name: 'mcp__e2e__echo', args: { text: 'UI_MCP_STDIO' } })
   try {
     const config = await client.config.get()
     await client.config.save({
@@ -236,6 +257,8 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
     await open(page, runtime)
     await turn(page, 'Invoke the configured MCP stdio fixture')
     const session = await current(page, runtime)
+    expect(JSON.stringify(await toolResult(session, 'tool_describe'))).toContain('mcp__e2e__echo')
+    expect(provider.requests.some(({ tools }) => tools.includes('mcp__e2e__echo'))).toBe(true)
     expect((await toolResult(session, 'mcp__e2e__echo'))?.content).toEqual([
       { type: 'text', text: 'UI_MCP_STDIO' },
     ])
@@ -245,6 +268,11 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
     await expect(page.getByRole('switch', { name: /E2E stdio/ })).toBeChecked()
     await quality(page, info, 'mcp-enabled')
     await section(page, 'skills')
+    await page.getByRole('button', { name: 'Refresh skills', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Confirm action', exact: true })
+      .getByRole('button', { name: 'Confirm', exact: true })
+      .click()
     await expect(
       page.getByRole('button', { name: 'View details for e2e-playbook', exact: true }),
     ).toBeVisible()
@@ -263,6 +291,40 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
   }
 })
 
+// Uses the built CLI/browser payload and a durable synthetic session, without live providers.
+test('bundled deliverables survive a cold browser start and repeated reloads', async ({ page, runtime }) => {
+  const client = await runtime.connect()
+  const session = await client.session.new({ cwd: runtime.workspace, preset: 'full-access' })
+  await session.attach()
+  session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  await prompt(session, 'call present {"files":[{"path":"report.md","name":"Cold-start report.md"}]}')
+  const saved = await toolResult(session, 'present')
+  expect(saved?.artifactRefs).toHaveLength(1)
+  await preferences(page)
+  const url = new URL(runtime.url)
+  url.searchParams.set('session', session.id)
+  const entries: string[] = []
+  page.on('response', (response) => {
+    if (/\/plugins\/.*deliverables-ui.*\/client\.js(?:\?|$)/.test(response.url())) {
+      expect(response.ok()).toBe(true)
+      entries.push(response.url())
+    }
+  })
+  for (let boot = 0; boot < 3; boot++) {
+    if (boot === 0) await page.goto(url.href)
+    else await page.reload()
+    const tail = page.getByTestId('turn-deliverables').filter({ hasText: 'Cold-start report.md' })
+    await expect(tail).toHaveCount(1)
+    await expect(tail.getByTestId('deliverable-file')).toHaveCount(1)
+    await tail.locator('.agh-list-row-title').click()
+    await expect(page.getByTestId('workbench-deliverables')).toContainText('Synthetic delivery')
+    expect((await toolResult(session, 'present'))?.artifactRefs).toEqual(saved?.artifactRefs)
+  }
+  // Loading an immutable plugin URL proves this exercised the deployed package rather than source imports.
+  expect(entries.length).toBeGreaterThanOrEqual(3)
+  expect(new Set(entries.map((entry) => entry.split('?')[0])).size).toBe(1)
+})
+
 test('UI ask, plan approval, deliverable, child and goal cards perform their actions', async ({
   page,
   runtime,
@@ -273,13 +335,13 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     'call ask_user_question {"questions":[{"id":"channel","question":"Choose a delivery channel","options":["Web","Email"],"allowFreeText":true}]}',
   )
-  const question = await workbenchSurface(page, 'Questions / 问题')
+  const question = page.getByTestId('question-card')
+  await expect(question).toContainText('Choose a delivery channel')
   await question.getByRole('radio', { name: 'Web', exact: true }).check()
   await quality(page, info, 'ask-card')
-  await question.getByTestId('ui-action-submit').click()
-  await question.getByTestId('ui-confirm').click()
-  await expect(question.getByTestId('ui-action-submit')).toBeDisabled()
-  await expect(question.getByRole('radio', { name: 'Web', exact: true })).toBeDisabled()
+  await question.getByTestId('question-submit').click()
+  await expect(question).toBeHidden()
+  await expect(page.getByTestId('question-answers')).toContainText('Web')
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
   const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
   await composer.fill('/plan Inspect the workspace before writing')
@@ -314,6 +376,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   await expect(card).toContainText('report.md')
   expect(await artifactText(page, runtime)).toContain('Synthetic delivery')
   await quality(page, info, 'deliverable-surface')
+  await turn(page, 'call tool_describe {"name":"subagent_spawn"}')
   await turn(
     page,
     `call subagent_spawn ${JSON.stringify({ task: 'call read {"path":"report.md"}', isolation: 'shared' })}`,
@@ -324,20 +387,37 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   const childKey = receipt?.type === 'text' ? /^started (\S+);/.exec(receipt.text)?.[1] : undefined
   if (!childKey) throw new Error('Child spawn must return a durable child key')
   await expect(page.getByTestId('child-agent-card')).toBeVisible()
+  await turn(page, 'call tool_describe {"name":"subagent_collect"}')
   await turn(page, `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`)
   expect(JSON.stringify(await toolResult(session, 'subagent_collect'))).toContain('Synthetic delivery')
   await quality(page, info, 'child-card')
   await openGoal(page)
   await page.getByTestId('goal-objective').fill('E2E finish the inspected delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
+  const goalPhase = async () => {
+    const timeline = await session.projectUI(undefined, { surface: 'web' })
+    const fill = timeline.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')
+    return (fill?.payload as { goal?: { phase: string } } | undefined)?.goal?.phase
+  }
+  const goalForm = page.getByTestId('goal-card').locator('form')
+  await settled(page)
+  expect(await goalForm.evaluate((form) => form instanceof HTMLFormElement && form.checkValidity())).toBe(
+    true,
+  )
   await page.getByTestId('goal-save').click()
-  await expect(page.getByTestId('goal-toggle')).toContainText('Blocked goal')
+  await expect.poll(goalPhase).toBe('blocked')
+  await page.keyboard.press('Escape')
+  await workbenchTab(page, 'goal')
+  await expect(page.getByTestId('goal-panel-phase')).toHaveAttribute('data-phase', 'blocked')
+  await expect(page.getByTestId('goal-panel-objective')).toHaveText('E2E finish the inspected delivery')
   await openGoal(page)
   await expect(page.getByTestId('goal-complete')).toBeEnabled()
   await quality(page, info, 'goal-card')
   await page.getByTestId('goal-complete').click()
-  await expect(page.getByTestId('goal-toggle')).toContainText('Complete')
   await expect(page.getByTestId('goal-complete')).toHaveCount(0)
+  await expect.poll(goalPhase).toBe('complete')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('goal-panel-phase')).toHaveAttribute('data-phase', 'complete')
 })
 
 test('UI background jobs and schedule cards persist observable results', async ({ page, runtime }, info) => {
@@ -346,9 +426,11 @@ test('UI background jobs and schedule cards persist observable results', async (
   await turn(page, 'call shell {"command":"printf E2E_JOB_OK","background":true}')
   const session = await current(page, runtime)
   await toolResult(session, 'shell')
+  await turn(page, 'call tool_describe {"name":"job_list"}')
   await turn(page, 'call job_list {}')
   await expect(page.getByTestId('background-job-card').first()).toBeVisible()
   await quality(page, info, 'background-job-card')
+  await turn(page, 'call tool_describe {"name":"schedule_create"}')
   await turn(
     page,
     'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","target":"current_session","selector":{"every_seconds":86400}}',
@@ -359,9 +441,16 @@ test('UI background jobs and schedule cards persist observable results', async (
   await section(page, 'jobs')
   const terminal = page.getByTestId('terminal-panel')
   await expect(terminal).toBeVisible()
-  await terminal.getByRole('button', { name: /^Attach.*E2E_JOB_OK/ }).click()
-  await expect(terminal.getByRole('status')).toContainText('Completed')
-  await expect(page.getByTestId('workbench-terminal-output')).toHaveValue(/E2E_JOB_OK/)
+  await terminal.getByTestId('terminal-tab').filter({ hasText: 'E2E_JOB_OK' }).click()
+  const job = (await session.jobsRead()).jobs.find((row) => row.command.includes('E2E_JOB_OK'))
+  if (!job) throw new Error('Completed agent job required')
+  expect(job.status).toBe('completed')
+  await expect(
+    page.getByTestId('workbench-terminal-output').locator('.xterm-accessibility-tree'),
+  ).toContainText(`Process exited (${job.code})`)
+  await expect(
+    page.getByTestId('workbench-terminal-output').locator('.xterm-accessibility-tree'),
+  ).toContainText('E2E_JOB_OK')
   // The interactive PTY flow is covered in workbench.spec.ts, where terminals now live.
   await section(page, 'schedules')
   await expect(page.getByTestId('schedules-row')).toContainText('E2E tool reminder')
@@ -401,8 +490,8 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('textbox', { name: 'Source reference', exact: true })
     .fill(`file:${resolve('examples/packages/hot-tool-plugin')}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
-  const review = page.locator('#plugin-confirm')
-  await expect(review.getByRole('heading', { name: 'What it gets', exact: true })).toBeVisible()
+  const review = page.getByTestId('install-review')
+  await expect(review).toContainText('What it gets')
   await expect(review).toContainText('Text statistics tool')
   await expect(review).toContainText('sha256-')
   const client = await runtime.connect()
@@ -414,10 +503,8 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   await quality(page, info, 'capability-review')
   await review.getByRole('button', { name: 'Install only', exact: true }).click()
   await expect(review).toBeHidden()
-  await page
-    .getByRole('dialog', { name: 'Plugin details', exact: true })
-    .getByRole('button', { name: /Close/ })
-    .click()
+  const detailPage = page.locator('#plugin-detail')
+  if (await detailPage.isVisible()) await page.getByTestId('push-back').click()
   await page
     .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
     .getByRole('switch')
@@ -426,10 +513,15 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('dialog', { name: 'Enable “Text statistics tool”', exact: true })
     .getByRole('button', { name: 'Trust and enable', exact: true })
     .click()
-  // Completion opens a modal: its background controls are intentionally inaccessible.
-  const enabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
-  await expect(enabledDetails).toContainText('Enable: Completed')
-  await enabledDetails.getByRole('button', { name: /Close/ }).click()
+  await expect
+    .poll(
+      async () =>
+        (await client.packages.list({ profile: 'local-dev' })).packages.find(
+          (row) => row.id === '@agnes-examples/hot-tool-plugin',
+        )?.actual,
+    )
+    .toBe('running')
+  if (await detailPage.isVisible()) await page.getByTestId('push-back').click()
   const toggle = page
     .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
     .getByRole('switch')
@@ -454,9 +546,15 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('dialog', { name: 'Disable “Text statistics tool”?', exact: true })
     .getByRole('button', { name: 'Disable', exact: true })
     .click()
-  const disabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
-  await expect(disabledDetails).toContainText('Disable: Completed')
-  await disabledDetails.getByRole('button', { name: /Close/ }).click()
+  await expect
+    .poll(
+      async () =>
+        (await client.packages.list({ profile: 'local-dev' })).packages.find(
+          (row) => row.id === '@agnes-examples/hot-tool-plugin',
+        )?.desired,
+    )
+    .toBe('installed-disabled')
+  if (await detailPage.isVisible()) await page.getByTestId('push-back').click()
   await expect(
     page.locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]').getByRole('switch'),
   ).not.toBeChecked()
@@ -487,14 +585,13 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
       .fill('hot-tool-plugin')
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
-    const chip = page.getByRole('note', { name: new RegExp(locale === 'en' ? '^In use' : '^正在使用') })
-    await chip.focus()
-    await expect(
-      page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'The update is ready' : '新版本已就绪' }),
-    ).toBeVisible()
-    await page
-      .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
-      .focus()
+    const row = page.locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
+    const retained = (await client.packages.list({ profile: 'local-dev' })).packages.find(
+      (item) => item.id === '@agnes-examples/hot-tool-plugin',
+    )
+    expect(retained?.primaryStatus?.state).toBe('historical-only')
+    await expect(row.getByTestId('plugin-primary-status')).toHaveAttribute('data-state', 'historical-only')
+    await expect(row.getByTestId('plugin-status-reason')).toHaveText(retained!.primaryStatus!.reason[locale])
     await page.mouse.move(0, 0)
     await quality(page, info, `plugin-old-version-${locale}-${theme}`)
     await screen(page, info, `plugin-old-version-${locale}-${theme}`)
@@ -514,12 +611,12 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     const summary = page.getByTestId('plugin-drain-summary')
     await expect(summary).toHaveCount(1)
     await expect(summary).toContainText(
-      locale === 'en' ? /Updated. 1 ongoing session/ : /已更新，1 个进行中的会话不受影响/,
+      locale === 'en' ? '1 open sessions retain their versions.' : '1 个已打开的会话继续保留各自版本。',
     )
     await expect(summary).not.toContainText('@agnes/')
     const details = page.getByTestId('plugin-drain-details')
     await expect(details).toHaveAttribute('data-open', 'false')
-    await details.locator('summary, .agh-disclosure-summary').click()
+    await expand(details)
     await expect(details).toContainText('hot-tool-plugin')
     expect(
       (await details.locator('code').allTextContents()).some((text) =>
@@ -534,7 +631,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await pluginTab(page, 'versions').click()
     const helperSummary = page.getByTestId('plugin-drain-summary')
     await expect(helperSummary).toHaveCount(1)
-    await page.getByTestId('plugin-drain-details').locator('summary, .agh-disclosure-summary').click()
+    await expand(page.getByTestId('plugin-drain-details'))
     await expect(page.getByTestId('plugin-drain-details')).toContainText(
       locale === 'en' ? 'Plugin helper' : '插件助手',
     )
@@ -550,10 +647,9 @@ test('UI local rescan preserves old/new code through a daemon restart', async ({
     await runtime.localTool(version)
     await settings(page)
     await section(page, 'diagnostics')
-    if (!(await page.getByTestId('local-plugins-toggle').isVisible()))
-      await page.getByTestId('plugin-diagnostics-toggle').click()
-    if (!(await page.getByTestId('reload-local-plugins').isVisible()))
-      await page.getByTestId('local-plugins-toggle').click()
+    await expand(page.getByTestId('plugin-diagnostics'))
+    await expand(page.getByTestId('runtime-local'))
+    await expand(page.getByTestId('local-plugins'))
     await page.getByTestId('reload-local-plugins').click()
     await expect(page.getByTestId('reload-local-plugins')).toBeEnabled()
     await closeSettings(page)

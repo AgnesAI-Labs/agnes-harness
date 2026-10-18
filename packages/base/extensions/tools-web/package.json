@@ -29,7 +29,6 @@
           "displayName": "Web research",
           "summary": "Lets the agent search the web and fetch readable page content.",
           "description": "Lets the agent search the web and fetch readable page content.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "网页检索",
@@ -39,6 +38,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

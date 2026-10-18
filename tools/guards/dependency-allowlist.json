@@ -1,4 +1,5 @@
 {
+  "@agnes/authoring-eval": ["@agnes/ai", "@agnes/sdk"],
   "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol", "@agnes/observability"],
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
@@ -7,7 +8,13 @@
   "@agnes/plugin-runtime": ["@agnes/cordis", "@agnes/cordis-loader", "@agnes/extension-api"],
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
-  "@agnes/web-client": ["@agnes/cordis", "@agnes/web-slots", "@agnes/protocol", "@agnes/sdk"],
+  "@agnes/web-client": [
+    "@agnes/web-units",
+    "@agnes/cordis",
+    "@agnes/web-slots",
+    "@agnes/protocol",
+    "@agnes/sdk"
+  ],
   "@agnes/web-units": ["@agnes/protocol", "@agnes/protocol-validation", "@agnes/web-slots", "@agnes/web-ui"],
   "@agnes/resource-control-contracts": [],
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
@@ -287,6 +294,7 @@
     "@agnes/sdk"
   ],
   "@agnes/daemon-admin": [
+    "@agnes/error-sanitization",
     "@agnes/base",
     "@agnes/daemon-foundation",
     "@agnes/history-index",
@@ -347,6 +355,8 @@
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
   "@agnes/goal-ui": ["@agnes/web-client", "@agnes/web-ui"],
+  "@agnes/navigation-ui": ["@agnes/web-client", "@agnes/web-ui"],
+  "@agnes/conversation-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/interaction-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/mcp-helper": [],
   "@agnes/plugin-helper": [],

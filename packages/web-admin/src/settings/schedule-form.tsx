@@ -97,7 +97,11 @@ export function draftOf(row: ScheduleRow, choices: ScheduleChoices, now: number)
   const mode =
     target.kind === 'new-session' && target.loop
       ? (choices.modes.find(
-          (item) => item.loop.id === target.loop?.id && item.loop.version === target.loop?.version,
+          (item) =>
+            item.loop.id === target.loop?.id &&
+            item.loop.version === target.loop?.version &&
+            JSON.stringify(item.bundles) === JSON.stringify(target.bundles ?? []) &&
+            (!item.preset || item.preset === target.preset),
         )?.key ?? `${target.loop.id}@${target.loop.version}`)
       : ''
   const model =
@@ -196,13 +200,17 @@ export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): Schedu
     ? before.model
     : model
       ? { route: model.route, model: model.model }
-      : undefined
+      : !keepMode
+        ? mode?.model
+        : undefined
   return {
     kind: 'new-session',
     cwd: draft.cwd,
     ...(draft.unattendedApproval ? { unattendedApproval: draft.unattendedApproval } : {}),
     ...execution,
-    ...(draft.preset ? { preset: draft.preset } : {}),
+    ...((!keepMode && mode?.preset) || draft.preset
+      ? { preset: (!keepMode && mode?.preset) || draft.preset }
+      : {}),
     ...(chosenModel ? { model: chosenModel } : {}),
   }
 }

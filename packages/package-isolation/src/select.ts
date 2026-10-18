@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 
 type Profile = Readonly<{
   seams: Record<string, string | { provider: string }>
@@ -50,7 +50,7 @@ export function selectIsolatedPackages<T extends Installed>(
       row.blockers.length ||
       row.entry.version !== pkg.version ||
       row.entry.integrity !== pkg.integrity ||
-      realpathSync(row.directory) !== realpathSync(dir) ||
+      nativeRealpathSync(row.directory) !== nativeRealpathSync(dir) ||
       row.contributions.some(
         (contribution) => contribution.kind !== 'extension' && contribution.kind !== 'surface',
       )

@@ -12,5 +12,5 @@ export {
   type UiLocale,
 } from './services-locale.js'
 export { ClientResourceReclaimedError, ClientResourceService } from './services-resources.js'
-export { SessionService } from './services-session.js'
+export { type SessionReadiness, SessionService } from './services-session.js'
 export { type ResolvedTheme, ThemeService } from './services-theme.js'

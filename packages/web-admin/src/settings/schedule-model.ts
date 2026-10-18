@@ -1,3 +1,4 @@
+import type { AgentPlan } from '@agnes/protocol'
 /** Scheduled tasks as the automation page reads them; every field is checked before it is shown. */
 
 export type ScheduleTarget =
@@ -125,13 +126,15 @@ export const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).
 
 /**
  * Execution modes and models a new-session task may name, read from the same admin catalog as a new
- * chat. A business agent is a loop whose package also brings bundles; they go with it.
+ * chat. Agent choices carry the exact selection returned by the backend resolver.
  */
 export type ExecutionChoice = {
   key: string
   label: string
   loop: { id: string; version: string }
   bundles: string[]
+  preset?: string
+  model?: { route: string; model: string }
   businessAgent: boolean
 }
 export type ModelChoice = { key: string; label: string; route: string; model: string }
@@ -161,6 +164,7 @@ export type ScheduleAccount = {
 }
 
 export function scheduleChoices(input: {
+  agents?: readonly AgentPlan[]
   loops?: readonly LoopEntry[]
   presets?: readonly string[]
   bundles?: readonly { id: string; sourcePackage?: string }[]
@@ -169,15 +173,12 @@ export function scheduleChoices(input: {
   accounts?: readonly ScheduleAccount[]
 }): ScheduleChoices {
   const modes = (input.loops ?? []).map((loop) => {
-    const bundles = (input.bundles ?? [])
-      .filter((bundle) => bundle.sourcePackage === loop.sourcePackage)
-      .map((bundle) => bundle.id)
     return {
       key: `${loop.id}@${loop.version}`,
       label: loop.label || loop.id,
       loop: { id: loop.id, version: loop.version },
-      bundles,
-      businessAgent: loop.sourcePackage.startsWith('@agnes-fde/'),
+      bundles: [] as string[],
+      businessAgent: false,
     }
   })
   const accounts = new Map((input.accounts ?? []).map((account) => [account.route, account]))
@@ -204,7 +205,18 @@ export function scheduleChoices(input: {
   // Agnes AI comes first in every provider and model list.
   models.sort((a, b) => Number(b.agnes) - Number(a.agnes))
   return {
-    modes: modes.sort((a, b) => Number(a.businessAgent) - Number(b.businessAgent)),
+    modes: [
+      ...modes,
+      ...(input.agents ?? []).map((agent) => ({
+        key: agent.ref,
+        label: agent.launch.title.en,
+        loop: agent.loop,
+        bundles: agent.bundles,
+        preset: agent.preset,
+        model: agent.model,
+        businessAgent: true,
+      })),
+    ].sort((a, b) => Number(a.businessAgent) - Number(b.businessAgent)),
     presets: [...(input.presets ?? [])],
     models: models.map(({ agnes: _agnes, ...model }) => model),
   }

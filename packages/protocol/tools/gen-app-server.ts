@@ -9,6 +9,7 @@ import * as App from '../gen/ts/app-server.js'
 import * as ProfileServices from '../gen/ts/extension-service.js'
 import * as Ui from '../gen/ts/intelligent-ui.js'
 import * as Packages from '../gen/ts/package-admin.js'
+import * as Agents from '../src/agents.js'
 import { METHODS } from '../src/methods.js'
 import * as ModelSlots from '../src/model-slots.js'
 import * as Runtime from '../src/runtime-admin.js'
@@ -26,6 +27,7 @@ export function appServerArtifacts() {
     ['./agnes-v1.js', Agnes],
     ['./package-admin.js', Packages],
     ['@agnes/resource-control-contracts/schema', Resources],
+    ['../../src/agents.js', Agents],
     ['../../src/model-slots.js', ModelSlots],
     ['../../src/runtime-admin.js', Runtime],
     ['../../src/schedules.js', Schedules],

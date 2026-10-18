@@ -163,7 +163,13 @@ describe('Task20 validates actual host profile assets and resolver output', () =
           packages: Object.fromEntries(
             ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
               id,
-              { version: '0.1.0', integrity: `sha256-${'a'.repeat(64)}`, trust: 'builtin', enabled: true },
+              {
+                version: '0.0.0',
+                source: { type: 'builtin', ref: 'builtin' },
+                integrity: 'builtin:0.0.0',
+                trust: 'builtin',
+                enabled: true,
+              },
             ]),
           ),
         },

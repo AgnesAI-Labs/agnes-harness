@@ -16,7 +16,10 @@ import {
   IntelligentPanel,
   type UiPlacementBinding,
 } from '../../../packages/web-conversation/src/intelligent-ui/placements.js'
-import { QuestionDock } from '../../../packages/web-conversation/src/intelligent-ui/question-dock.js'
+import {
+  QuestionAnswersNode,
+  QuestionDock,
+} from '../../../packages/web-conversation/src/intelligent-ui/question-dock.js'
 import { attachIntelligentBinding } from '../../../packages/web-conversation/src/intelligent-ui/turn-views.js'
 import type { IntelligentUiServer } from '../../../packages/web-conversation/src/intelligent-ui/types.js'
 
@@ -145,6 +148,8 @@ function Fixture() {
   useEffect(() => setDockReady(true), [])
   useSyncExternalStore(client.subscribe, client.getVersion)
   useSyncExternalStore(binding.subscribe, binding.getVersion)
+  const completed = client.getSnapshot().receipts.find((receipt) => receipt.status === 'succeeded')
+  const answers = state.requests.find((request) => request.commandId === completed?.commandId)?.input?.answers
   return (
     <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
       <div id="fixture-controls" className="session-tabs-bar">
@@ -155,6 +160,9 @@ function Fixture() {
       <div className="conversation-shell">
         <QuestionDock />
         <IntelligentInline binding={binding} />
+        {completed && answers && typeof answers === 'object' && !Array.isArray(answers) && (
+          <QuestionAnswersNode submission={{ surfaceId: surface.id, answers }} native={null} />
+        )}
         <output data-testid="fixture-requests">{JSON.stringify(state.requests)}</output>
         <button
           type="button"

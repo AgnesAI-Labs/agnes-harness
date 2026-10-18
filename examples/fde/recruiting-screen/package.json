@@ -28,12 +28,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -48,7 +42,6 @@
           "displayName": "Recruiting review example",
           "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
           "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "招聘审核示例",
@@ -89,19 +82,28 @@
           "recruiting-screen": {
             "name": "recruiting-screen",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.recruiting-screen"
               }
             }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Recruiting review example",
+            "zh-CN": "招聘审核示例"
+          },
+          "description": {
+            "en": "Scores synthetic applications against a fixed rubric and prepares a report for human review."
+          },
+          "preset": "recruiting-screen",
+          "prompt": {
+            "text": {
+              "en": "Compare the sample resumes with the job rubric using job-skill evidence only, list what is unknown for each candidate, and ask me to confirm the follow-up step.",
+              "zh-CN": "只依据岗位技能证据，把示例简历与岗位评分标准逐项对照，列出每位候选人的未知项，并请我确认后续步骤。"
+            },
+            "mode": "draft"
           }
         }
       }
@@ -110,7 +112,6 @@
       "displayName": "Recruiting review example",
       "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
       "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Compare the sample resumes with the job rubric using job-skill evidence only, list what is unknown for each candidate, and ask me to confirm the follow-up step.",
         "zh-CN": "只依据岗位技能证据，把示例简历与岗位评分标准逐项对照，列出每位候选人的未知项，并请我确认后续步骤。"
@@ -122,7 +123,13 @@
           "description": "按固定标准评估模拟申请材料，并生成供人工审核的报告。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

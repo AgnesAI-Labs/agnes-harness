@@ -49,9 +49,13 @@ it('resolves the conversation layer from the shared vendor instead of bundling a
   const output = resolve(web, 'dist/web')
   const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'), 'utf8')
   expect(license).toContain('Copyright (c) 2015-present Ant UED')
-  const app = await readFile(resolve(output, 'app.js'), 'utf8')
-  // Production minification may omit whitespace after `from`; the shared import stays external.
-  expect(/\bfrom\s*["']@agnes\/web-ui\/conversation["']/.test(app)).toBe(true)
+  // The presentation can move to a shared chunk; every app module still uses the vendor import.
+  const appModules = await Promise.all(
+    (await readdir(output))
+      .filter((file) => file.endsWith('.js'))
+      .map((file) => readFile(resolve(output, file), 'utf8')),
+  )
+  expect(appModules.some((source) => /\bfrom\s*["']@agnes\/web-ui\/conversation["']/.test(source))).toBe(true)
 
   const appMaps = (await readdir(output)).filter((file) => file.endsWith('.js.map'))
   const duplicated = []

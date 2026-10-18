@@ -1,4 +1,4 @@
-import type { PluginMetadata } from '@agnes/protocol'
+import type { BundleLaunch, PluginMetadata } from '@agnes/protocol'
 
 export type ExampleView = Readonly<{
   id: string
@@ -19,6 +19,7 @@ export type ExampleOperation = Readonly<{
   state: 'running' | 'completed' | 'failed' | 'unknown'
   code?: string
   sessionId?: string
+  draft?: BundleLaunch['prompt']
 }>
 export type ExampleRequest =
   | { action: 'list' }
@@ -44,7 +45,10 @@ export interface ExamplePackages {
 }
 export interface ExampleLaunches {
   prepare(exampleId: string, launchId: string): Promise<{ launchTicket: string; presentation: unknown }>
-  start(launchTicket: string, operationId: string): Promise<{ sessionId: string }>
+  start(
+    launchTicket: string,
+    operationId: string,
+  ): Promise<{ sessionId: string; draft?: BundleLaunch['prompt'] }>
 }
 
 /** Browser and Node consumers use the same owner-bound, authenticated transport. */
@@ -74,7 +78,10 @@ export function createExampleClient(transport: ExampleTransport): {
           presentation: unknown
         },
       start: async (launchTicket, operationId) =>
-        (await transport({ action: 'start', launchTicket, operationId })) as { sessionId: string },
+        (await transport({ action: 'start', launchTicket, operationId })) as {
+          sessionId: string
+          draft?: BundleLaunch['prompt']
+        },
     },
   }
 }

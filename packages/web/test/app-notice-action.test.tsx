@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { presentationRoles } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -34,6 +35,33 @@ it('offers the next step beside a notice and drops it when the next notice arriv
   ).toEqual(['Retry stop', 'Force end'])
   await act(async () => appNotice.setText('Stopped.'))
   expect(host.querySelector('[data-testid="notice-stop-action"]')).toBeNull()
+  const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {})
+  try {
+    await act(async () => {
+      expect(() =>
+        presentationRoles.register(
+          'synthetic-owner',
+          {
+            role: 'synthetic-display',
+            mount() {
+              throw new Error('file:///private/token=secret')
+            },
+          },
+          { packageId: 'synthetic-ui', revision: 'one' },
+        ),
+      ).toThrow()
+    })
+    const failure = host.querySelector('[data-testid=presentation-failure]')
+    expect(failure?.textContent).toContain('saved deliverables may still exist')
+    expect(failure?.textContent).toContain(
+      'synthetic-display · synthetic-ui · mount · PRESENTATION_MOUNT_FAILED',
+    )
+    expect(failure?.textContent).not.toMatch(/secret|private|file:/)
+    await act(async () => failure?.querySelector<HTMLButtonElement>('button')?.click())
+    expect(reload).toHaveBeenCalledTimes(1)
+  } finally {
+    reload.mockRestore()
+  }
   await act(async () => root.unmount())
   host.remove()
 })

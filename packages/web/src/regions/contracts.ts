@@ -50,8 +50,6 @@ export const DSH_ROOT_CHILDREN = Object.freeze({
 } as const)
 
 export const DSH_MAIN_CONVERSATION_CHILDREN = Object.freeze({
-  'conversation.composer': { kind: 'chain', scope: 'session' },
-  'conversation.composer.bar': { kind: 'single', scope: 'session-maybe' },
   'conversation.session': { kind: 'single', scope: 'session' },
 } as const)
 

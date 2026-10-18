@@ -10,7 +10,10 @@ import {
 import { Approval } from '@agnes/web-units'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Dock } from '../../../packages/web/src/workbench/dock.js'
-import { financeRecord, uiPage } from '../../../packages/web/test/intelligent-ui/fixture.js'
+import {
+  financeRecord as baseFinanceRecord,
+  uiPage,
+} from '../../../packages/web/test/intelligent-ui/fixture.js'
 import { IntelligentUiClient } from '../../../packages/web-conversation/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
@@ -22,9 +25,16 @@ import type { IntelligentUiServer } from '../../../packages/web-conversation/src
 // Browser-only fake App Server with persisted synthetic facts. Real catalog, shared client,
 // placements, dock and approval component; never executes a business tool or grants permission.
 const key = 'intelligent-ui-fixture'
+// These renderer flows exercise the workbench and its conversation chip explicitly. The default
+// inline placement now belongs inside the producing turn and has separate TurnViews coverage.
+const financeRecord = (revision = 1) => {
+  const record = baseFinanceRecord(revision)
+  record.surface.placement.preferred = 'workbench'
+  return record
+}
 const state: { page: UiReadResult; requests: UiActionParams[] } = JSON.parse(
   localStorage.getItem(key) ?? 'null',
-) ?? { page: uiPage(), requests: [] }
+) ?? { page: uiPage(financeRecord()), requests: [] }
 const sourceMode = new URL(location.href).searchParams.has('source')
 let sourceRefreshes = 0
 if (sourceMode) {

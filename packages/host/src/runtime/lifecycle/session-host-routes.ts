@@ -48,6 +48,9 @@ export function sessionHostRoutes(
     sessionCapabilities: current().sessionCapabilities
       ? (key) => owner(key).sessionCapabilities!(key)
       : undefined,
+    executionIdentity: current().executionIdentity
+      ? (key) => (key ? owner(key) : current()).executionIdentity!()
+      : undefined,
     setSessionPreset: (key, name) => owner(key).setSessionPreset(key, name),
     validatePresetSwitch: (name, key) => (key ? owner(key) : current()).validatePresetSwitch(name, key),
     validateModelSwitch: (selection, key) =>

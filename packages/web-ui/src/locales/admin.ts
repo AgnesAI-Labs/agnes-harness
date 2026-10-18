@@ -16,7 +16,7 @@ export const adminLocaleCatalog: LocaleCatalog = {
     'contribution.provider': 'Provider',
     'contribution.runtime': 'Runtime',
     'contribution.skill': 'Skill',
-    'contribution.preset': 'Preset',
+    'contribution.preset': 'Permission profile',
     'contribution.surface': 'Surface',
     'contribution.none': 'No contributions reported',
     'contribution.more': 'and {count} more',

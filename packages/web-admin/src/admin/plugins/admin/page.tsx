@@ -161,12 +161,7 @@ export class PluginAdminPage {
       set kind(value) {
         page.#kind = value
       },
-      get category() {
-        return page.#category
-      },
-      set category(value: string) {
-        page.#category = value
-      },
+
       get purposeText() {
         return createUiTranslator(page.#locale, PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
       },
@@ -382,7 +377,6 @@ export class PluginAdminPage {
     connection: 'loading',
   })
   #kind: PluginKind | '' = ''
-  #category = ''
   #presentationRuntime: RuntimeAdminSnapshot | undefined
   #presentationComposition: CompositionCapabilitySnapshot | undefined
   #api: PluginAdminApi | undefined
@@ -1480,16 +1474,14 @@ export class PluginAdminPage {
   }
 
   filteredInstalled(): readonly PackageInstalledDescriptor[] {
-    return this.#state.installed.filter(
-      (item) =>
-        !item.metadata?.exampleOf &&
-        matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
-          createUiTranslator(
-            this.#locale,
-            PLUGIN_PRESENTATION_NAMESPACE,
-            pluginPresentationCatalog,
-          )(`provide.${kind}`),
-        ),
+    return this.#state.installed.filter((item) =>
+      matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
+        createUiTranslator(
+          this.#locale,
+          PLUGIN_PRESENTATION_NAMESPACE,
+          pluginPresentationCatalog,
+        )(`provide.${kind}`),
+      ),
     )
   }
 

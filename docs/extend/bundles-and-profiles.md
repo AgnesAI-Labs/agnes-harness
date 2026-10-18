@@ -4,7 +4,7 @@ English | [简体中文](bundles-and-profiles.zh-CN.md)
 
 [Documentation](../README.md) · [Plugin kinds](README.md) · [Package management](../guide/packages.md)
 
-A profile selects an application built from plugins. A bundle packages reusable profile patches and presets as static data. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
+A deployment execution profile assembles runtime capabilities from plugins. A Bundle packages reusable profile patches and permission profiles (Presets) as static data. Application presentation is adopted separately; this release does not adopt execution profile templates. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
 
 ## Session tool visibility
 
@@ -12,18 +12,18 @@ Enabling a package that publishes bundles makes its providers available for sele
 
 The compiled ownership scope is pinned with the composition and code generation. Live resources retain their existing filters. Older saved bindings keep their prior scope; create a new session to apply isolation. The resolved profile adds the optional Host-generated `compositionToolScope` field; this is not a user manifest setting.
 
-In Web Settings → Bundles & Presets, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
+In Web Settings → Advanced → Run configuration → Technical details → Additional combinations for all conversations → Technical details, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
 
 ## Publish a bundle
 
-Declare `agnes.kinds: ["bundle"]` and an `agnes.bundles` map in `package.json`. Bundle identifiers are `<package-id>#<bundle-name>`; names use lowercase letters, digits and hyphens and start with a letter. A package can publish several bundles. Each document accepts `extends`, `profile` and `presets`:
+Declare `agnes.provides: ["bundle"]` and an `agnes.bundles` map in `package.json`. Bundle identifiers are `<package-id>#<bundle-name>`; names use lowercase letters, digits and hyphens and start with a letter. A package can publish several bundles. Each document accepts `extends`, `profile` and `presets`:
 
 ```json
 {
   "name": "acme/research",
   "version": "1.0.0",
   "agnes": {
-    "kinds": ["bundle"],
+    "provides": ["bundle"],
     "bundles": {
       "base": { "profile": { "toolPolicy": { "readOnly": true } } },
       "research": {
@@ -120,3 +120,9 @@ Surface listeners are deployment choices resolved from the default preset at sta
 Complete runtime target deliveries remain owned by the generation runtime. Composition projects that catalog into each container, preserving resource-owned rows. Delivery is acknowledged only after all containers converge; retained sessions continue using their pinned generations. Live provider metadata is available through `Host.compositionSessions()` and the local inspection endpoints.
 
 The read-only policy checks tool metadata and exact names at invocation, including loop-scheduled calls. It adds a refusal and does not widen existing approvals, sandbox limits, resource trust or network permissions. Unknown metadata does not satisfy read-only policy. Changing composition does not rewrite an existing session’s pinned loop or reopen its persistence store.
+
+## Reviewed agent launch receipts
+
+Ordinary agent launches and the restricted example-management facade use review tickets valid for 300 seconds. Keep the same `operationId` and payload when retrying an uncertain response: during the receipt retention window, a completed operation returns its original receipt; a different payload is refused, and failed or unknown operations are never dispatched again.
+
+Receipts are retained for seven days after reaching a terminal state, and at least until the review ticket expires. An interrupted running operation becomes unknown once its ticket expires and is then retained for seven days. Existing terminal records without a completion timestamp receive a seven-day window from their first observation. Prepare/start writes and opportunistic receipt reads prune eligible records under the existing state lock, scanning at most 10,000 operations per call. Agent and example receipt reads remain available while a start or activation holds that lock. When retention timestamps would overflow the 16 MiB journal, they are persisted in a bounded 2 MiB `.dates` companion, bound to each exact record; keep the companion with the journal when copying the store. Interrupted writes can conservatively extend retention, never apply an unmatched timestamp. The 10,000-operation admission limit still refuses new work with `OVERLOADED` if retained records fill the store. Once a receipt is pruned, retrying its expired ticket is refused; prepare a new review for a new operation.

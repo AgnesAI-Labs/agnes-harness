@@ -1,3 +1,4 @@
+import { presentationRoles } from '@agnes/web-client'
 import { tr as t } from '@agnes/web-foundation/locale-bridge'
 import {
   Banner,
@@ -6,10 +7,11 @@ import {
   FeedbackHost,
   installFeedbackSink,
   Notifications,
+  StatusMessage,
   useDocumentLanguage,
   useStoreSelector,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createOperationFeedback } from './operation-feedback.js'
 import type { ReconnectPhase } from './reconnect.js'
 
@@ -115,10 +117,29 @@ export function AppNotice() {
   const view = useStoreSelector(store, (value) => value)
   const outcomes = useStoreSelector(feedback, (value) => value)
   const notifications = useStoreSelector(errors, (value) => value)
-  useDocumentLanguage()
+  const zh = useDocumentLanguage() === 'zh-CN'
+  const diagnostics = useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
   return (
     <>
       <FeedbackHost snapshot={outcomes} onDismiss={dismissFeedback} noticeContainer={noticeContainer} />
+      {diagnostics
+        .filter((item) => item.failure)
+        .map((item) => (
+          <StatusMessage
+            key={item.role}
+            kind="error"
+            data-testid="presentation-failure"
+            action={{
+              label: zh ? '重新加载' : 'Reload',
+              onSelect: () => window.location.reload(),
+            }}
+          >
+            {zh
+              ? '界面显示失败；已保存的交付物可能仍然存在。'
+              : 'Display failed; saved deliverables may still exist.'}
+            {` · ${item.role} · ${item.failure?.packageId ?? item.owners.join(', ')} · ${item.failure?.phase} · ${item.failure?.code}`}
+          </StatusMessage>
+        ))}
       <Notifications
         items={notifications}
         onDismiss={dismissError}

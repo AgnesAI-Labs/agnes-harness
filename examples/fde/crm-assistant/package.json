@@ -29,13 +29,6 @@
     "@agnes/protocol": "0.0.0"
   },
   "agnes": {
-    "kinds": [
-      "bundle",
-      "loop",
-      "tool",
-      "skills",
-      "mcp"
-    ],
     "plugins": [
       {
         "export": "main",
@@ -50,7 +43,6 @@
           "displayName": "CRM follow-up example",
           "summary": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
           "description": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
-          "category": "business-agent",
           "locales": {
             "zh-CN": {
               "displayName": "CRM 跟进示例",
@@ -94,19 +86,28 @@
           "crm-assistant": {
             "name": "crm-assistant",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.crm-assistant"
               }
             }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "CRM follow-up example",
+            "zh-CN": "CRM 跟进示例"
+          },
+          "description": {
+            "en": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval."
+          },
+          "preset": "crm-assistant",
+          "prompt": {
+            "text": {
+              "en": "Look up the sample account's health and open tickets, draft a renewal follow-up note from the renewal playbook, and ask me before saving it to the CRM.",
+              "zh-CN": "查询示例客户的健康度和未结工单，按续约手册起草一条续约跟进记录，写入 CRM 前先问我。"
+            },
+            "mode": "draft"
           }
         }
       }
@@ -115,7 +116,6 @@
       "displayName": "CRM follow-up example",
       "summary": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
       "description": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
-      "category": "business-agent",
       "samplePrompt": {
         "en": "Look up the sample account's health and open tickets, draft a renewal follow-up note from the renewal playbook, and ask me before saving it to the CRM.",
         "zh-CN": "查询示例客户的健康度和未结工单，按续约手册起草一条续约跟进记录，写入 CRM 前先问我。"
@@ -127,7 +127,14 @@
           "description": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。"
         }
       }
-    }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills",
+      "mcp"
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

@@ -72,6 +72,18 @@ describe('lockfile', () => {
     expect(back.packages['@agnes/base']?.integrity).toBe('sha512-x')
     expect(back.resolvedProfileHash).toBe(HASH)
     expect(existsSync(`${lockPath(dir)}.tmp`)).toBe(false)
+
+    const capturedText = readFileSync(
+      new URL('./fixtures/runtime-snapshots-v1/home/profiles/local-dev/agnes-lock.json', import.meta.url),
+      'utf8',
+    )
+    const captured = JSON.parse(capturedText)
+    writeFileSync(lockPath(dir), capturedText)
+    const legacy = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+    expect(legacy).toEqual(captured)
+    expect(readFileSync(lockPath(dir), 'utf8')).toBe(capturedText)
+    writeLock(dir, legacy)
+    expect(readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages).toEqual(captured.packages)
   })
 
   it('rejects a lock that is not JSON, and one that does not validate, with E_LOCK_MISMATCH', () => {
@@ -97,6 +109,17 @@ describe('lockfile', () => {
     })()
     expect(isPackageError(b, 'E_LOCK_MISMATCH')).toBe(true)
     expect((b as { detail?: unknown }).detail).toMatchObject({ reason: 'invalid' })
+
+    const legacy = JSON.parse(
+      readFileSync(
+        new URL('./fixtures/runtime-snapshots-v1/home/profiles/local-dev/agnes-lock.json', import.meta.url),
+        'utf8',
+      ),
+    )
+    legacy.packages['acme/legacy'].metadata.category = 'unknown-category'
+    writeFileSync(lockPath(dir), JSON.stringify(legacy))
+    expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow()
+    expect(() => writeLock(dir, legacy)).toThrow()
   })
 
   it('replaces an existing lock and preserves it if the next temporary write fails', () => {

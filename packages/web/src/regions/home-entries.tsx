@@ -1,9 +1,12 @@
 import {
+  applicationIdentity,
+  effectiveApplication,
   type HomeEntry,
   type HomeEntryBadge,
   homeEntries,
   homeEntryGroups,
   homeNavigation,
+  resolveHomeEntry,
 } from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
@@ -38,10 +41,31 @@ export function HomeEntriesNav({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
-  const entries = homeEntries.entries()
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const nav = effectiveApplication()?.presentation?.navigation
+  let entries = homeEntries.entries().filter((entry) => !nav?.hideBuiltin?.some((id) => id === entry.id))
+  const references = new Map(
+    (nav?.entries ?? []).flatMap((ref) => {
+      const entry = resolveHomeEntry(ref)
+      return entry ? [[entry.id, ref] as const] : []
+    }),
+  )
+  const order = [...references.keys()]
+  entries = entries
+    .sort((a, b) => {
+      const x = order.indexOf(a.id),
+        y = order.indexOf(b.id)
+      return (x < 0 ? 1000 : x) - (y < 0 ? 1000 : y)
+    })
+    .map((entry, order) => ({ ...entry, order }))
   const { inline, more } = homeEntryGroups(entries)
+  const isCurrent = (entry: HomeEntry) =>
+    requested?.id === entry.id &&
+    (!requested.pageRef || resolveHomeEntry(requested.pageRef) === homeEntries.get(entry.id))
   const open = (entry: HomeEntry) => {
-    homeNavigation.open(entry.id)
+    const ref = references.get(entry.id)
+    if (ref) homeNavigation.openRef(ref)
+    else homeNavigation.open(entry.id)
     onSelect?.()
   }
   if (!entries.length && !children) return null
@@ -54,7 +78,7 @@ export function HomeEntriesNav({
             className="home-entry"
             data-testid={`home-entry-${entry.id}`}
             aria-label={entryLabel(entry, t)}
-            aria-current={requested?.id === entry.id ? 'page' : undefined}
+            aria-current={isCurrent(entry) ? 'page' : undefined}
             onClick={() => open(entry)}
           >
             <Icon name={entryIcon(entry)} />
@@ -83,7 +107,7 @@ export function HomeEntriesNav({
                 className="home-entry"
                 data-testid="home-entry-more"
                 aria-label={t('home.entry.more')}
-                aria-current={more.some((entry) => entry.id === requested?.id) ? 'page' : undefined}
+                aria-current={more.some(isCurrent) ? 'page' : undefined}
               >
                 <Icon name="ellipsis" />
                 <span className="home-entry-label">{t('home.entry.more')}</span>

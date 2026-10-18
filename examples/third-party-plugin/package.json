@@ -32,7 +32,6 @@
           "displayName": "Echo service example",
           "summary": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
           "description": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
-          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "回声服务示例",
@@ -47,7 +46,6 @@
       "displayName": "Echo service example",
       "summary": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
       "description": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
-      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "回声服务示例",
@@ -55,7 +53,10 @@
           "description": "演示在受信任的进程内插件行中运行可配置的回声服务。"
         }
       }
-    }
+    },
+    "provides": [
+      "service"
+    ]
   },
   "license": "Apache-2.0"
 }

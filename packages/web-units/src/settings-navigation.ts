@@ -14,6 +14,9 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   // Subpages of 运行配置 open from their rows.
   'prompt-preview': ['models', 'prompt-preview'],
   'agent-fde': ['models', 'bundles'],
+  'runtime-config': ['models', 'models'],
+  'runtime-configuration': ['models', 'models'],
+  'additional-combinations': ['models', 'bundles'],
   'session-slots': ['models', 'session-slots'],
   // The loop is chosen in 新会话默认 → 执行方式; memory and instructions are the General page's 个性化.
   execution: ['models', 'session-loop'],
@@ -69,7 +72,7 @@ export function settingsMoved(id: string): SettingsMoveTarget | undefined {
   return Object.hasOwn(SETTINGS_MOVED, id) ? SETTINGS_MOVED[id] : undefined
 }
 
-export const SETTINGS_EVERYDAY_GROUPS = ['general', 'accounts', 'security'] as const
+export const SETTINGS_EVERYDAY_GROUPS = ['general', 'accounts', 'security', 'application'] as const
 
 export function settingsGroup(group: string): string {
   if (group === 'advanced') return group

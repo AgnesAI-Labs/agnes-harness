@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BEDROCK_API,
   materializeRoutes,
+  pinPresetModelDefaults,
   pinPresetRoutes,
   sweepAwsDestination,
   verifyRoutes,
@@ -296,6 +297,14 @@ describe('pinPresetRoutes', () => {
     const v = pinPresetRoutes(withRoute({ route: { primary: 'default', fast: 'default' } }), routes)
     expect(v.model.route).toEqual({ primary: 'gw', fast: 'alt' })
     expect(v.model.id).toEqual({ primary: 'm1', fast: 'm2' })
+    const effective = pinPresetModelDefaults(
+      withRoute({ route: { primary: 'default' }, thinking: { primary: 'high', fast: 'low' } }),
+      { primary: routes.primary },
+      [{ ...model('m1', 'gw'), defaultSettings: { thinking: 'low', contextWindow: 100000 } }],
+    )
+    expect(effective.model.thinking).toMatchObject({ primary: 'high' })
+    expect(effective.model.thinking.fast).toBeUndefined()
+    expect(effective.model.contextWindow?.primary).toBe(100000)
   })
   // core's resolveModel is `route[slot] ?? 'default'` and `model: pinned ?? catalogue ?? route`. The
   // pin is what keeps both halves off the sentinel, so it is asserted against that reading and not

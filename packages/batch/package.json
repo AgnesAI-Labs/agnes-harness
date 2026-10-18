@@ -373,8 +373,7 @@
         "metadata": {
           "displayName": "File batches",
           "summary": "Processes immutable file inputs with bounded, recoverable item attempts.",
-          "description": "Runs visible public SDK sessions in item-only workspaces with durable recovery.",
-          "category": "developer"
+          "description": "Runs visible public SDK sessions in item-only workspaces with durable recovery."
         }
       }
     ]

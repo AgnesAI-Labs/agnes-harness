@@ -7,6 +7,8 @@ import {
   SessionAuxiliaryModels,
   type SessionAuxiliarySnapshot,
   SettingsInput,
+  Tooltip,
+  type Translate,
 } from '@agnes/web-ui'
 import { type KeyboardEvent, type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SessionModelSettings } from './model-picker/session-settings.js'
@@ -34,13 +36,13 @@ const PANEL_ALIGN = { overflow: { shiftX: true, adjustX: true, adjustY: true } }
  * 立即提交，没有「应用」按钮。
  */
 export function ModelPickerControl(props: ModelPickerProps): ReactElement {
-  const { state } = props
+  const { state, t = tr } = props
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const refocus = useRef(false)
   const disabled = state.disabled || state.pending || state.options.length === 0
-  const badge = thinkingBadge(state.settings, tr)
+  const badge = thinkingBadge(state.settings, t)
 
   // 宿主在请求期间会禁用按钮；等它恢复可用再把焦点交回去，否则焦点落到 body 上。
   useEffect(() => {
@@ -73,7 +75,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
         // Outside clicks leave focus where the pointer went; Escape restores it in the shared popover.
         else if (!busy) close(false)
       }}
-      content={<ModelPanel {...props} close={close} onBusy={setBusy} />}
+      content={<ModelPanel {...props} t={t} close={close} onBusy={setBusy} />}
     >
       <Button
         ref={trigger}
@@ -103,12 +105,14 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
 }
 
 type PanelProps = ModelPickerProps & {
+  t: Translate
   close(returnFocus: boolean): void
   onBusy(busy: boolean): void
 }
 
 function ModelPanel({
   state,
+  t,
   onSelect,
   onSettingsChange,
   onAuxiliaryRead,
@@ -125,7 +129,7 @@ function ModelPanel({
   const [query, setQuery] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [failure, setFailure] = useState<'select' | 'settings'>()
-  const groups = groupModels(state.options, query, tr('settings.modelPicker.configuredAccount'))
+  const groups = groupModels(state.options, query, t('settings.modelPicker.configuredAccount'))
   const visible = flatModels(groups)
   const [active, setActive] = useState(() =>
     Math.max(
@@ -168,9 +172,9 @@ function ModelPanel({
     setPanel(next)
   }
   const titles = {
-    thinking: tr('modelSettings.thinkingLabel'),
-    context: tr('modelSettings.windowLabel'),
-    auxiliary: tr('modelSettings.slots.title'),
+    thinking: t('modelSettings.thinkingLabel'),
+    context: t('modelSettings.windowLabel'),
+    auxiliary: t('modelSettings.slots.title'),
   }
   const capacity = state.settings ? contextBudgetLabel(state.settings.capacity) : ''
   const followsDefaults =
@@ -184,24 +188,24 @@ function ModelPanel({
   settingsAddress.set('settings', 'auxiliary-models')
   const values = {
     thinking:
-      thinkingChoices(state.settings, tr).find((choice) => choice.value === (state.settings?.thinking ?? ''))
+      thinkingChoices(state.settings, t).find((choice) => choice.value === (state.settings?.thinking ?? ''))
         ?.label ??
       state.settings?.thinking ??
-      tr('modelSettings.presetAuto'),
+      t('modelSettings.presetAuto'),
     context:
       state.settings?.contextWindow === undefined || state.settings.contextWindow === state.settings.capacity
-        ? `${tr('modelSettings.presetAuto')} · ${capacity}`
+        ? `${t('modelSettings.presetAuto')} · ${capacity}`
         : contextBudgetLabel(state.settings.contextWindow),
     auxiliary: !auxiliaryAvailable
-      ? tr('modelSettings.slots.follow')
+      ? t('modelSettings.slots.follow')
       : auxiliaryFailed
-        ? tr('modelSettings.slots.unavailable')
+        ? t('modelSettings.slots.unavailable')
         : !auxiliary
-          ? tr('modelSettings.slots.loading')
+          ? t('modelSettings.slots.loading')
           : followsDefaults
-            ? tr('modelSettings.slots.follow')
+            ? t('modelSettings.slots.follow')
             : (['fast', 'verifier'] as const)
-                .map((slot) => auxiliary[slot]?.model ?? tr('modelSettings.slots.unset'))
+                .map((slot) => auxiliary[slot]?.model ?? t('modelSettings.slots.unset'))
                 .join(' · '),
   }
 
@@ -276,7 +280,7 @@ function ModelPanel({
     <section
       id="model-picker-popover"
       className="model-picker"
-      aria-label={panel ? titles[panel] : tr('settings.modelPicker.aria')}
+      aria-label={panel ? titles[panel] : t('settings.modelPicker.aria')}
       onKeyDown={(event) => {
         if (event.defaultPrevented || event.nativeEvent.isComposing || !panel) return
         if (
@@ -300,8 +304,8 @@ function ModelPanel({
               autoComplete="off"
               spellCheck={false}
               value={query}
-              placeholder={tr('settings.modelPicker.search')}
-              aria-label={tr('settings.modelPicker.searchAria')}
+              placeholder={t('settings.modelPicker.search')}
+              aria-label={t('settings.modelPicker.searchAria')}
               aria-expanded={true}
               aria-controls="model-listbox"
               aria-autocomplete="list"
@@ -316,7 +320,7 @@ function ModelPanel({
         ) : null}
         {state.selected ? null : (
           <p className="model-picker-help" data-model-picker-help="">
-            {tr('settings.modelPicker.help')}
+            {t('settings.modelPicker.help')}
           </p>
         )}
         <div
@@ -325,7 +329,7 @@ function ModelPanel({
           className="model-picker-list"
           role="listbox"
           tabIndex={-1}
-          aria-label={tr('settings.modelPicker.listAria')}
+          aria-label={t('settings.modelPicker.listAria')}
           aria-busy={busy}
           aria-activedescendant={activeId}
           onKeyDown={(event) => listKeys(event, false)}
@@ -369,36 +373,36 @@ function ModelPanel({
         </div>
         {visible.length ? null : (
           <p className="model-picker-empty" role="status">
-            {tr('settings.modelPicker.noMatch', { query: query.trim() })}
+            {t('settings.modelPicker.noMatch', { query: query.trim() })}
           </p>
         )}
         {(state.settings && onSettingsChange) || auxiliaryAvailable ? (
           <div className="model-picker-session">
-            <p className="model-picker-group-title">{tr('modelSettings.session')}</p>
+            <p className="model-picker-group-title">{t('modelSettings.session')}</p>
             {(['thinking', 'context', 'auxiliary'] as const).map((kind) => (
-              <Button
-                key={kind}
-                id={`model-picker-${kind}`}
-                appearance="ghost"
-                className="model-picker-nav"
-                title={values[kind]}
-                disabled={
-                  state.disabled ||
-                  busy ||
-                  (kind === 'auxiliary' ? !auxiliaryAvailable : !state.settings || !onSettingsChange)
-                }
-                onClick={() => enter(kind)}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowRight' || event.key === 'Enter') {
-                    event.preventDefault()
-                    enter(kind)
+              <Tooltip key={kind} title={values[kind]}>
+                <Button
+                  id={`model-picker-${kind}`}
+                  appearance="ghost"
+                  className="model-picker-nav"
+                  disabled={
+                    state.disabled ||
+                    busy ||
+                    (kind === 'auxiliary' ? !auxiliaryAvailable : !state.settings || !onSettingsChange)
                   }
-                }}
-              >
-                <span>{titles[kind]}</span>
-                <span className="model-picker-value">{values[kind]}</span>
-                <Icon name="chevron-right" />
-              </Button>
+                  onClick={() => enter(kind)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowRight' || event.key === 'Enter') {
+                      event.preventDefault()
+                      enter(kind)
+                    }
+                  }}
+                >
+                  <span>{titles[kind]}</span>
+                  <span className="model-picker-value">{values[kind]}</span>
+                  <Icon name="chevron-right" />
+                </Button>
+              </Tooltip>
             ))}
           </div>
         ) : null}
@@ -419,6 +423,7 @@ function ModelPanel({
           key={JSON.stringify([state.selected?.route, state.selected?.id, state.settings])}
           panel={panel}
           settings={state.settings}
+          t={t}
           disabled={state.disabled || busy}
           commit={(next) => run('settings', () => onSettingsChange(next))}
           close={close}
@@ -426,7 +431,7 @@ function ModelPanel({
       ) : null}
       <p className="model-picker-error" role="alert">
         {failure
-          ? tr(failure === 'select' ? 'settings.modelPicker.failed' : 'settings.modelPicker.settingsFailed')
+          ? t(failure === 'select' ? 'settings.modelPicker.failed' : 'settings.modelPicker.settingsFailed')
           : ''}
       </p>
       {auxiliaryAvailable ? (
@@ -438,16 +443,16 @@ function ModelPanel({
               save={onAuxiliarySelect}
               onSaved={(slot, target) => setAuxiliary((current) => ({ ...current, [slot]: target }))}
               disabled={state.disabled || busy}
-              t={tr}
+              t={t}
             />
           ) : (
             <p className="model-picker-hint" role={auxiliaryFailed ? 'alert' : 'status'}>
               {values.auxiliary}
             </p>
           )}
-          <p className="model-picker-hint">{tr('modelSettings.slots.sessionHelp')}</p>
+          <p className="model-picker-hint">{t('modelSettings.slots.sessionHelp')}</p>
           <a className="model-picker-defaults-link" href={`?${settingsAddress}`}>
-            {tr('modelSettings.slots.editDefaults')}
+            {t('modelSettings.slots.editDefaults')}
           </a>
         </div>
       ) : null}

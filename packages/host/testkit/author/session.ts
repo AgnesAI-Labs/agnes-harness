@@ -94,6 +94,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
   const directory = await mkdtemp(join(tmpdir(), 'agh-author-'))
   const id = options.packageId ?? '@author/plugin'
   const sources: RuntimePluginSnapshot[] = []
+  let activeSource: RuntimePluginSnapshot | undefined
   const modules = new Map<string, { main: Plugin }>()
   const results = new Map<string, ToolResult>()
   let host: Host | undefined
@@ -151,7 +152,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
       await writeFile(join(folder, 'client', file), next.clientModule.code)
     }
     const integrity = hashDirectory(folder, { exclude: [] })
-    const inspected = next.clientModule ? readDevelopmentPlugin(folder, 'local-dev') : undefined
+    const inspected = next.clientModule ? await readDevelopmentPlugin(folder, 'local-dev') : undefined
     const source: RuntimePluginSnapshot = {
       snapshot: {
         packageId: id,
@@ -163,6 +164,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         treeIntegrity: integrity,
         capabilityHash: inspected?.snapshot.capabilityHash ?? createHash('sha256').update(id).digest('hex'),
         contributions: inspected?.snapshot.contributions ?? [],
+        ...(inspected?.snapshot.agents ? { agents: inspected.snapshot.agents } : {}),
+        ...(inspected?.snapshot.application ? { application: inspected.snapshot.application } : {}),
         ...(inspected?.snapshot.dependencies === undefined
           ? {}
           : { dependencies: inspected.snapshot.dependencies }),
@@ -205,6 +208,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
   })
   try {
     const first = await snapshot(options)
+    activeSource = first
     const skills = createSkillCandidateRegistry({
       barrier: { quiesce: async (_id, publish) => publish({}) },
     })
@@ -269,7 +273,13 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           packages: Object.fromEntries([
             ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((name) => [
               name,
-              { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+              {
+                version: '0.1.0',
+                source: { type: 'builtin', ref: 'builtin' },
+                integrity: 'builtin:0.1.0',
+                trust: 'builtin',
+                enabled: true,
+              },
             ]),
             [
               id,
@@ -285,7 +295,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         packageDirs: { ...options.packageDirs, [id]: first.snapshot.directory },
         runtimePluginSnapshots: [first],
         runtimePluginCatalogue: [first],
-        runtimePluginSources: async () => sources,
+        runtimePluginSources: async () =>
+          sources.map((source) => ({ ...source, enabled: source === activeSource })),
         extensionLoader: {
           async import(file) {
             const module = modules.get(await readFile(file, 'utf8'))
@@ -525,6 +536,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         mutation = true
         try {
           const source = await snapshot(next)
+          const previousSource = activeSource
           const current = owner.runtimeTargetSnapshot?.()
           if (!current) throw new Error('Host runtime target unavailable')
           try {
@@ -538,6 +550,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
               }).target,
             )
             if (!report.ok) throw new Error('Author plugin publication failed')
+            activeSource = source
             // Catalog changes can select a different composition from the initial Host.
             // Admit with the same defaults as openSession and read its actual code pin.
             const key = `author-reload-${randomUUID()}`
@@ -555,7 +568,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
               }
             }
           } catch (error) {
-            // A rejected candidate must not remain the catalog for future admissions.
+            // Retain archived code for old pins without admitting a rejected candidate.
+            activeSource = previousSource
             const restored = await owner.applyRuntimeTarget(current)
             if (!restored.ok) throw new AggregateError([error], 'Author plugin publication recovery failed')
             throw error

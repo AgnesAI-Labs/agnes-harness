@@ -105,6 +105,8 @@ describe('Intelligent UI session projection and commands', () => {
     const store = storage(),
       { client, server, id, action } = await setup(store)
     server.next = new Error('transport lost')
+    client.setInput(id, 'adjustment', { reason: 'Submitted before reload' })
+    client.setSelection(id, 'differences', ['txn-1'])
     client.choose(id, action)
     await client.confirm(id)
     expect(client.getSnapshot().error).toBe('ui.transport')
@@ -113,6 +115,8 @@ describe('Intelligent UI session projection and commands', () => {
     const restored = new IntelligentUiClient('session-finance', server, store)
     await restored.start()
     expect(restored.locked(id)).toBe(true)
+    expect(restored.draft(id).input).toEqual(original?.input)
+    expect(restored.draft(id).selection).toEqual(original?.selection)
     server.next = uiReceipt('pending-approval', { duplicate: true })
     await restored.resend(id)
     expect(server.submitted[1]).toEqual(original)
@@ -122,6 +126,10 @@ describe('Intelligent UI session projection and commands', () => {
       approvalId: 'approval-1',
       duplicate: true,
     })
+    server.page = uiPage(financeRecord(2), [], 20)
+    await restored.refresh()
+    expect(restored.draft(id).input.adjustment).toEqual({ reason: 'Updated difference' })
+    expect(restored.draft(id).selection).toEqual({})
     restored.dispose()
   })
 

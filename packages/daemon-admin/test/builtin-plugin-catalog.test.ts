@@ -63,7 +63,7 @@ it.each([
     if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
     const catalog = await discoverLocalExamples(root)
     const result = await catalog.read({ offline: true })
-    expect(result.entries).toHaveLength(optional ? 25 : 24)
+    expect(result.entries).toHaveLength(optional ? 27 : 26)
     if (!optional) expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
     expect(
       result.entries
@@ -110,6 +110,12 @@ it.each([
       version: '0.1.0',
       source: { ref: 'file:./bundled-plugins/deliverables-ui' },
     })
+    for (const id of ['navigation-ui', 'conversation-ui'])
+      expect(result.entries.find((entry) => entry.id === `@agnes/${id}`)).toMatchObject({
+        id: `@agnes/${id}`,
+        version: '0.1.0',
+        source: { ref: `file:./bundled-plugins/${id}` },
+      })
     expect(result.entries.find((entry) => entry.id === '@agnes/document-reader')).toMatchObject({
       id: '@agnes/document-reader',
       version: '0.1.2',

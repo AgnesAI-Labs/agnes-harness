@@ -25,7 +25,9 @@ already installed executable for local debugging; CI uses the pinned Playwright 
 ## Runtime and SDK coverage
 
 Each real-runtime test receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
-starts `node agnes.mjs serve --port PORT` **from the repository root**. It
+starts `node agnes.mjs serve --port PORT` **from its synthetic workspace**. CLI commands use the same
+isolated working directory. The catalog matrix explicitly copies the public `examples/packages` fixtures
+into that workspace instead of depending on the checkout as the daemon working directory. It
 uses the first-run keyless demo model, synthetic workspace data, a loopback OpenAI-compatible
 provider and a dependency-free stdio MCP fixture. Child environments allow only the required
 path/home/profile/origin values; real provider keys, proxy settings and user configuration are
@@ -167,6 +169,11 @@ ready image fail. Only an explicit reviewed update writes baselines:
 AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
 ```
 
+For a capture-only review, `AGH_SKIP_PIXEL_SNAPSHOTS=1` writes the same normalized PNGs to the
+run's output directory and annotates each deferred comparison. Inspect those images before
+updating a baseline; a capture-only run is not a passing visual gate. Rerun without that flag
+and without update mode to verify the reviewed images.
+
 Review PNG changes and the manifest together with the pinned Chromium on the target platform.
 Linux provisions real bwrap filesystem/process/network namespaces. On Ubuntu CI, a dedicated
 AppArmor profile grants user namespaces only to `/usr/bin/bwrap`; global sysctls and AppArmor
@@ -182,7 +189,19 @@ Each failed check remains a failed job even when later steps collect Web evidenc
 0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.
 Only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
 hidden; the metadata clock is normalized to 12:00 while its model label stays visible.
+Unified Trace captures use the real Record order menu and normalize only the isolated runtime context
+path, current clock and elapsed numbers, retaining localized units, records, controls and statuses.
 The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
+Screenshots temporarily use the public reduced-motion preference for JavaScript example hints,
+then restore the original preference; CSS motion is disabled by Playwright.
+Read-only first-run frames settle that same preference before cloning the production DOM.
+Authoring provenance frames capture the real Trace inspector, including its header, controls, version,
+test and review facts. Separate fact-chain and request gates retain full Trace coverage; live clock-hook
+record counts are not rewritten to make the authoring frame deterministic.
+Tablet file-workbench frames show the initial report-reading turn alongside the file pane. The capture
+still checks tail-follow first, then verifies the report and history-reading affordance, and restores
+the tail afterwards. Earlier tool output can change the fractional height of a long transcript, so its
+last-line position is not the visual anchor for this file-preview frame.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.
 
@@ -223,3 +242,5 @@ Any new excess fails the check and is also appended to the job summary. Re-measu
 uses the guard's `countLines` and exact source-path matching; no report-only switch or
 spare allocation bypasses the ceiling. Structural, dependency, counting-regression
 and functional assertions remain hard gates.
+
+The runtime launches both serve and CLI children from its synthetic workspace. Agent launch tickets inherit the server workspace, so a test must never start them from the repository checkout.

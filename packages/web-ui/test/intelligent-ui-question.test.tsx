@@ -226,10 +226,10 @@ describe('question card', () => {
 
   it('names whether the agent is waiting, and collapses to one progress line', async () => {
     await mount({ form: { ...questionForm(surface(5000))! } })
-    expect(q('[data-testid="question-status"]')?.textContent).toBe('Agent 在等你回答')
+    expect(q('[data-testid="question-status"]')?.textContent).toBe('智能体在等你回答')
     await act(async () => host!.remove())
     await mount({ initial: { days: '2 天 1 晚' } })
-    expect(q('[data-testid="question-status"]')?.textContent).toBe('Agent 在继续工作，答完会收到')
+    expect(q('[data-testid="question-status"]')?.textContent).toBe('智能体在继续工作，答完会收到')
     await click(q('[data-testid="question-toggle"]'))
     expect(q('h3')?.textContent).toBe('需要你确认 · 1 / 4 已答')
     expect(q('.agnes-question-body')).toBeNull()

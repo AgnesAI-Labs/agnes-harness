@@ -63,12 +63,36 @@ function toolTurn(args: Record<string, string>, result: string, name = 'shell', 
 }
 
 it('keeps tool previews of astral characters within the published limits', async () => {
-  const timeline = await projectUI(toolTurn({ cmd: EMOJI.repeat(1100) }, EMOJI.repeat(3000)), {
+  const events = toolTurn({ cmd: EMOJI.repeat(1100) }, EMOJI.repeat(3000))
+  const review = {
+    scopePreview: { args: 'printf reviewed', cwd: '/synthetic', mode: 'workspace-write' },
+    model: 'demo',
+    promptHash: 'a'.repeat(64),
+    argsHash: 'b'.repeat(64),
+    scopeHash: 'c'.repeat(64),
+    decision: 'deny',
+    risk: 'high',
+    reason: 'Human rejected after reviewer budget exhaustion',
+    latencyMs: 0,
+    cost: 0,
+    costSource: 'unavailable',
+    source: 'human-override',
+  }
+  for (const event of events.slice(3)) event.seq += 1
+  events.splice(3, 0, {
+    ...events[2]!,
+    seq: 4,
+    type: 'x/approval/review',
+    sourceEventSeqs: [3],
+    data: { toolUseId: 'tool-1', review },
+  })
+  const timeline = await projectUI(events, {
     sessionKey: 'bounds',
   })
   const tool = timeline.nodes.find((node) => node.kind === 'tool')
   expect(tool?.kind === 'tool' && tool.argsPreview?.length).toBeLessThanOrEqual(2048)
   expect(tool?.kind === 'tool' && tool.resultPreview?.length).toBeLessThanOrEqual(4096)
+  expect(tool?.kind === 'tool' && tool.review).toEqual(review)
   expectPublishable(timeline)
 })
 

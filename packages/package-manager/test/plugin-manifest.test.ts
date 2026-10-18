@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseAgnesPluginEntries, parseAgnesPluginKinds } from '../src/plugin-manifest.js'
+import { parseApplicationContract } from '../src/application-contract.js'
+import { parsePackageBundleContract, preflightPackageBundles } from '../src/bundle-contract.js'
+import { parseAgnesPluginEntries, parseAgnesPluginProvides } from '../src/plugin-manifest.js'
 
 const purpose = {
   displayName: 'File search',
   summary: 'Find project text.',
   description: 'Find text in readable project files.',
-  category: 'tools' as const,
   locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
 }
 
@@ -195,8 +196,8 @@ describe('package.json agnes.plugins', () => {
 })
 
 it('accepts multiple declared package kinds, preserves absence and rejects unsupported or duplicate kinds', () => {
-  expect(parseAgnesPluginKinds(undefined)).toBeUndefined()
-  expect(parseAgnesPluginKinds(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'])).toEqual([
+  expect(parseAgnesPluginProvides(undefined)).toBeUndefined()
+  expect(parseAgnesPluginProvides(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui'])).toEqual([
     'tool',
     'loop',
     'model-adapter',
@@ -204,7 +205,234 @@ it('accepts multiple declared package kinds, preserves absence and rejects unsup
     'skills',
     'ui',
   ])
-  expect(Object.isFrozen(parseAgnesPluginKinds(['tool', 'ui']))).toBe(true)
+  expect(Object.isFrozen(parseAgnesPluginProvides(['tool', 'ui']))).toBe(true)
   for (const input of [null, 'tool', ['tool', 'tool'], ['unknown'], [1]])
-    expect(() => parseAgnesPluginKinds(input)).toThrow('agnes.kinds')
+    expect(() => parseAgnesPluginProvides(input)).toThrow('agnes.provides')
+})
+
+it('validates explicit launch blocks without inheriting them and reports static preflight stages', () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work safely' }, preset: 'safe' }
+  const bundles = {
+    base: { presets: { safe: { name: 'safe' } }, launch },
+    child: { extends: ['acme/kit#base'] },
+  }
+  const input = { packageId: 'acme/kit', bundles }
+  expect(
+    parsePackageBundleContract(input.packageId, bundles)['acme/kit#child']?.document.launch,
+  ).toBeUndefined()
+  expect(preflightPackageBundles({ ...input, stage: 'structural' }).level).toBe('structural')
+  expect(preflightPackageBundles(input).level).toBe('static-references')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { base: { ...bundles.base, launch: { ...launch, preset: 'deployment' } } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:deployment'],
+    next: 'validate-deployment',
+  })
+  expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'in-process' }] }).level).toBe(
+    'deployment-dependent',
+  )
+  for (const invalid of [
+    { base: { ...bundles.base, launch: { ...launch, preset: undefined } } },
+    { base: { extends: ['base'] } },
+    { base: { extends: ['acme/kit#missing'] } },
+    { base: { extends: ['acme/kit#base'] } },
+    { base: { presets: { safe: { name: 'safe', invented: true } } } },
+    { base: { ...bundles.base, launch: { ...launch, pages: ['undeclared'] } } },
+    {
+      base: {
+        ...bundles.base,
+        launch: { ...launch, prompt: { text: { en: 'secret://credential' }, mode: 'draft' } },
+      },
+    },
+    {
+      base: {
+        ...bundles.base,
+        launch: { ...launch, prompt: { text: { en: '😀'.repeat(4097) }, mode: 'draft' } },
+      },
+    },
+  ])
+    expect(preflightPackageBundles({ ...input, bundles: invalid }).level).toBe('refused')
+  expect(preflightPackageBundles({ ...input, runtime: [{ runtime: 'isolated' }] }).level).toBe('refused')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { dependent: { extends: ['other/pkg#base'] } },
+      dependencies: { 'other/pkg': '^1' },
+    }).level,
+  ).toBe('deployment-dependent')
+  const dependency = parsePackageBundleContract('other/pkg', { base: bundles.base })
+  for (const dependent of [
+    { extends: ['other/pkg#base'] },
+    { presets: { safe: { name: 'safe', bundles: ['other/pkg#base'] } } },
+  ])
+    expect(
+      preflightPackageBundles({
+        ...input,
+        bundles: { dependent },
+        catalog: dependency,
+      }).level,
+    ).toBe('refused')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { dependent: { extends: ['other/pkg#base'], launch } },
+      catalog: dependency,
+      dependencies: { 'other/pkg': '^1' },
+    }).level,
+  ).toBe('static-references')
+})
+
+it('checks effective preset inheritance after parent-to-child overrides and defers unknown chains', () => {
+  const launch = { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'a' }
+  const input = { packageId: 'acme/kit' }
+  for (const runtime of [undefined, [{ runtime: 'in-process' }]]) {
+    for (const bundles of [
+      {
+        work: {
+          presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } },
+          launch,
+        },
+      },
+      {
+        parent: { presets: { a: { name: 'a', extends: 'b' }, b: { name: 'b' } } },
+        work: {
+          extends: ['acme/kit#parent'],
+          // Omitting a.extends preserves the parent link; overriding b creates the cycle.
+          presets: { a: { name: 'a' }, b: { name: 'b', extends: 'a' } },
+          launch,
+        },
+      },
+    ])
+      expect(preflightPackageBundles({ ...input, bundles, ...(runtime ? { runtime } : {}) })).toMatchObject({
+        level: 'refused',
+        reasons: [expect.stringContaining('preset extends cycle')],
+        next: 'fix-declaration',
+      })
+  }
+  expect(
+    preflightPackageBundles({
+      ...input,
+      bundles: { work: { presets: { a: { name: 'a', extends: 'deployment' } }, launch } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['preset-inheritance-definition-required:deployment'],
+  })
+  const catalog = parsePackageBundleContract('other/pkg', {
+    common: { presets: { a: { name: 'a', extends: 'deployment' }, b: { name: 'b' } } },
+    left: { extends: ['other/pkg#common'], presets: { a: { name: 'a', extends: 'b' } } },
+    right: { extends: ['other/pkg#common'] },
+  })
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: { work: { extends: ['other/pkg#left', 'other/pkg#right'], launch } },
+    }).level,
+  ).toBe('static-references')
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: { work: { extends: ['other/pkg#missing'], presets: { a: { name: 'a' } }, launch } },
+    }),
+  ).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: expect.arrayContaining(['preset-inheritance-definition-required:a']),
+  })
+  const cycle = { a: { name: 'a', extends: 'b' }, b: { name: 'b', extends: 'a' } }
+  const cyclicParent = parsePackageBundleContract('other/pkg', { base: { presets: cycle } })
+  // A child can repair an inherited cycle; checking raw parents before their overrides is wrong.
+  expect(
+    preflightPackageBundles({
+      ...input,
+      catalog: cyclicParent,
+      dependencies: { 'other/pkg': '^1' },
+      bundles: {
+        work: {
+          extends: ['other/pkg#base'],
+          presets: { b: { name: 'b', extends: 'c' }, c: { name: 'c' } },
+          launch,
+        },
+      },
+    }).level,
+  ).toBe('static-references')
+  // An unknown later parent might repair the cycle, but explicit later edges prove it again.
+  for (const [presets, level] of [
+    [{}, 'deployment-dependent'],
+    [cycle, 'refused'],
+  ] as const)
+    expect(
+      preflightPackageBundles({
+        ...input,
+        catalog: cyclicParent,
+        dependencies: { 'other/pkg': '^1' },
+        bundles: { work: { extends: ['other/pkg#base', 'other/pkg#missing'], presets, launch } },
+      }).level,
+    ).toBe(level)
+})
+
+it('validates application identity and explicit agent, page and role references', () => {
+  const bundles = parsePackageBundleContract('acme/kit', {
+    work: {
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      presets: { safe: { name: 'safe' } },
+    },
+  })
+  const app = { id: 'acme', defaultAgent: 'acme/kit#work', agents: ['acme/kit#work'] }
+  expect(parseApplicationContract(app, 'acme/kit', bundles, {}).application).toEqual(app)
+  for (const value of [
+    { ...app, brand: { unknown: 'no' } },
+    { ...app, presentation: { roles: { unknown: { packageId: 'acme/kit', clientId: 'ui' } } } },
+    { ...app, presentation: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } } },
+    { ...app, presentation: { home: 'acme/kit#unknown' } },
+    { ...app, defaultAgent: 'acme/kit#missing' },
+    { ...app, agents: [] },
+  ])
+    expect(() => parseApplicationContract(value, 'acme/kit', bundles, {})).toThrow()
+  expect(
+    parseApplicationContract({ id: 'acme', agents: ['other/pkg#work'] }, 'acme/kit', bundles, {
+      'other/pkg': '^1',
+    }).deploymentDependent,
+  ).toBe(true)
+})
+
+it('resolves local application home/navigation and only statically declared profile roles', () => {
+  const client = {
+    kind: 'client' as const,
+    id: 'ui-row',
+    rowId: 'ext:acme/ui',
+    path: './client.json',
+    client: {
+      id: 'ui',
+      entry: './ui.js',
+      lifetime: 'profile' as const,
+      homeEntries: [{ id: 'home.details', placement: 'primary' as const }],
+      presentationRoles: ['navigation' as const],
+    },
+  }
+  const app = {
+    id: 'acme',
+    brand: { name: { en: 'Acme' } },
+    presentation: {
+      home: 'acme/kit#home.details',
+      navigation: { entries: ['acme/kit#home.details'] },
+      roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } },
+    },
+  }
+  expect(parseApplicationContract(app, 'acme/kit', {}, {}, [client])).toMatchObject({
+    application: app,
+    deploymentDependent: false,
+  })
+  for (const contribution of [
+    { ...client, client: { ...client.client, presentationRoles: [] } },
+    { ...client, client: { ...client.client, lifetime: 'session' as const } },
+  ])
+    expect(() => parseApplicationContract(app, 'acme/kit', {}, {}, [contribution])).toThrow()
 })

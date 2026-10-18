@@ -64,6 +64,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      agent: string | null
       bundles: string | null
       loop: string | null
       binding: WorkspaceBinding | undefined
@@ -89,6 +90,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown
@@ -102,6 +105,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.historySignal ? { historySignal: o.historySignal } : {}),
       ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.agent !== undefined ? { agent: o.agent } : {}),
+      ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
@@ -110,6 +115,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     if (request.key) {
       const existing = this.entries.get(request.key)
       if (existing) {
+        if (o.agent !== undefined) await this.host.createSession(request)
         if (
           existing.session.d.cwd !== request.cwd ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
@@ -127,6 +133,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== request.cwd ||
           pending.preset !== (request.preset ?? null) ||
+          pending.agent !==
+            (request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest])) ||
           pending.bundles !== (request.bundles === undefined ? null : JSON.stringify(request.bundles)) ||
           pending.loop !== (request.loop ? JSON.stringify(request.loop) : null) ||
           !sameBinding(pending.binding, request.binding)
@@ -138,6 +146,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       this.opening.set(request.key, {
         cwd: request.cwd,
         preset: request.preset ?? null,
+        agent: request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest]),
         bundles: request.bundles === undefined ? null : JSON.stringify(request.bundles),
         loop: request.loop ? JSON.stringify(request.loop) : null,
         binding: request.binding,
@@ -157,6 +166,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     loop?: LoopSelection
     credential?: unknown

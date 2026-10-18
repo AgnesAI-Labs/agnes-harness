@@ -1,7 +1,8 @@
+import { readFile } from 'node:fs/promises'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences } from './ui.js'
+import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences, traceSequence } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -37,75 +38,72 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('tool-detail-toggle')).toHaveAttribute('aria-expanded', 'true')
       const entry = page.getByTestId('tool-fact-chain').last()
       await entry.click()
-      const facts = page.getByTestId('fact-chain')
-      await expect(facts.locator('[data-fact-kind="receipt"]')).toContainText(
-        locale === 'en' ? 'Result received' : '收到结果',
+      const facts = page.locator('.trace-inspector')
+      await expect(facts).toHaveAttribute('data-kind', 'tool')
+      await expect(facts.locator('[data-link="receipt"]')).toContainText(
+        locale === 'en' ? 'Completed' : '已完成',
       )
-      await expect(facts).toContainText(locale === 'en' ? 'External completion: unknown' : '外部是否已完成')
-      await expect(facts.locator('.agh-disclosure')).toHaveAttribute('data-open', 'false')
-      await expect(facts.locator('ol')).not.toContainText(/[a-f0-9]{64}/)
+      await expect(facts.getByTestId('trace-readonly')).toContainText(
+        locale === 'en'
+          ? 'cannot prove an external action ran exactly once'
+          : '不能证明外部操作恰好执行了一次',
+      )
+      await expect(facts.getByTestId('trace-provenance')).not.toContainText(/[a-f0-9]{64}/)
       await translated(page)
       await accessible(page, info, `fact-tool-${locale}-${theme}`)
+      await traceSequence(page)
       await screen(page, info, `fact-tool-${locale}-${theme}`)
-      await page.getByTestId('workbench-tab-facts').press('Escape')
-      await expect(entry).toBeFocused()
+      await page.locator('#view-chat').click()
+      await expect(entry).toBeVisible()
       await expect(facts).toBeHidden()
 
       await page.locator('#view-trace').click()
-      await page.locator('#trace-timeline-mode').selectOption('sequence')
-      await page.locator('.trace-type-filter').selectOption('assistant')
+      await traceSequence(page)
+      await page.locator('.trace-chip[data-kind="assistant"]').click()
       await page.locator('.trace-row').last().click()
-      await page.getByTestId('trace-fact-chain').click()
-      await expect(facts.locator('[data-fact-kind="request"]')).toBeVisible()
-      await expect(facts.locator('[data-fact-kind="attempt"]').first()).toBeVisible()
-      await page.getByTestId('request-trace-pane').selectOption('tools')
-      await expect(page.getByTestId('request-trace-content')).toBeVisible()
+      await page.locator('.trace-tab[data-pane="source"]').click()
+      await expect(facts.locator('[data-link="model"]')).toContainText('demo-model')
+      await expect(facts.locator('[data-link="attempt"]')).toBeVisible()
+      await page.locator('.trace-tab[data-pane="request"]').click()
+      await expand(page.getByTestId('request-trace-section-tools'))
+      await expect(page.getByTestId('request-trace-content')).toContainText('read')
       await accessible(page, info, `fact-request-${locale}-${theme}`)
+      await page.locator('.trace-inspector-body').evaluate((body) => {
+        body.scrollTop = 0
+      })
       await screen(page, info, `fact-request-${locale}-${theme}`, [
-        page.locator('.trace-stats .trace-stat').first(),
-        page.getByTestId('request-trace').locator('time'),
+        page.locator('.trace-stats .trace-stat'),
+        page.locator('.trace-inspector-meta'),
       ])
       await page.locator('#view-chat').click()
-      await page.getByTestId('workbench-tab-facts').press('Escape')
 
       await send('call present {"files":[{"path":"report.md","name":"report.md"}]}')
       const artifactTurn = page.getByTestId('conversation-turn').last()
       await expand(artifactTurn.getByTestId('turn-process-toggle').locator('..'))
       await expandActivityGroups(artifactTurn)
-      const artifactEntry = page
-        .getByTestId('conversation-turn')
-        .last()
-        .getByRole('article', { name: /\bpresent\b/ })
-        .getByTestId('tool-fact-chain')
-      await artifactEntry
-        .locator('xpath=ancestor::*[contains(@class, "timeline-node")][1]')
-        .getByTestId('tool-detail-toggle')
-        .click()
-      await artifactEntry.click()
-      await facts
-        .locator('[data-fact-kind=artifact]')
-        .getByRole('button', { name: locale === 'en' ? 'View related records' : '查看关联记录', exact: true })
-        .click()
-      await expect(facts.locator('[data-fact-kind="artifact"]')).toContainText(
-        locale === 'en' ? 'Provided by the linked call' : '由关联调用提供',
-      )
-      await expect(facts.locator('[data-fact-kind="invocation"]')).toBeVisible()
+      const tool = artifactTurn.getByRole('article', { name: /\bpresent\b/ })
+      await tool.getByTestId('tool-detail-toggle').click()
+      await tool.getByTestId('tool-fact-chain').click()
+      await expect(facts).toHaveAttribute('data-kind', 'tool')
+      await expect(facts.getByTestId('trace-artifact')).toContainText('text/')
+      await expect(facts.locator('[data-link="receipt"]')).toBeVisible()
+      const download = page.waitForEvent('download')
+      await facts.getByTestId('artifact-download').click()
+      const file = await download
+      const path = await file.path()
+      if (!path) throw new Error('The linked artifact must be downloadable')
+      expect(await readFile(path, 'utf8')).toContain('Synthetic delivery')
       await translated(page)
       await accessible(page, info, `fact-artifact-${locale}-${theme}`)
-      // Opening the dock reflows the conversation; frame the final turn independently of scroll anchoring.
-      await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
-        viewport.style.scrollBehavior = 'auto'
-        viewport.scrollTop = viewport.scrollHeight
-      })
-      await page.mouse.move(0, 0)
-      await screen(page, info, `fact-artifact-${locale}-${theme}`)
-      await facts.locator('[data-fact-kind="invocation"]').getByRole('button').click()
-      await facts.getByRole('button', { name: locale === 'en' ? 'Back' : '返回', exact: true }).click()
-      await expect(facts.locator('[data-fact-kind="artifact"]')).toBeVisible()
+      await screen(page, info, `fact-artifact-${locale}-${theme}`, [page.locator('.trace-inspector-meta')])
       await page.setViewportSize({ width: 390, height: 740 })
-      await expect(page.getByTestId('workbench-tab-facts')).toBeInViewport()
-      await page.getByTestId('workbench-tab-facts').press('Escape')
-      await expect(artifactEntry).toBeFocused()
+      await expect(facts).toBeInViewport()
+      const selectedId = await page
+        .locator('.trace-row[aria-current="true"]')
+        .getAttribute('data-trace-row-id')
+      await facts.locator('.trace-inspector-close').press('Escape')
+      await expect(facts).toBeHidden()
+      await expect(page.locator(`.trace-row[data-trace-row-id="${selectedId}"]`)).toBeFocused()
     })
 
 for (const locale of ['en', 'zh-CN'])
@@ -181,16 +179,36 @@ for (const locale of ['en', 'zh-CN'])
         await expect(turns.last()).toContainText('ui_render')
       }
       fixture.queueTool({ name: 'ui_render', args: { surface } })
+      const publishedTurns = page.getByTestId('conversation-turn')
+      const beforePublish = await publishedTurns.count()
       await composer.fill('call ui_render ' + JSON.stringify({ surface }))
       await composer.press('Enter')
-      const inline = page.getByTestId('intelligent-ui-inline')
-      await expect(inline.getByTestId('ui-surface-evidence-review')).toHaveAttribute('data-revision', '1')
-      await expect(inline.getByTestId('ui-action-read-report')).toHaveCount(0)
+      await expect(publishedTurns).toHaveCount(beforePublish + 1)
+      const publishedTurn = publishedTurns.last()
+      await expect(publishedTurn).toHaveAttribute('data-status', 'completed')
+      await expand(publishedTurn.getByTestId('turn-process-toggle').locator('..'))
+      await expandActivityGroups(publishedTurn)
+      await publishedTurn.getByTestId('tool-detail-toggle').click()
+      const inline = page
+        .getByTestId('ui-surface-evidence-review')
+        .and(page.locator('[data-placement="inline"]'))
+      await expect(inline).toHaveAttribute('data-revision', '1')
+      await expect(inline.getByTestId('ui-action-read-report')).toBeEnabled()
+      await expect(inline.getByTestId('ui-confirm')).toHaveCount(0)
+      const sourceSession = await client.session.load(new URL(page.url()).searchParams.get('session')!, {
+        cwd: runtime.workspace,
+      })
+      expect(
+        (await sourceSession.projectUI()).nodes.some((node) => node.kind === 'tool' && node.name === 'read'),
+      ).toBe(false)
       await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
         timeout: 25_000,
       })
       await expect(composer).toBeEnabled()
-      await inline.getByTestId('ui-expand').click()
+      if (!(await inline.getByTestId('ui-expand').count())) {
+        await inline.locator('header .agh-menu-anchor button').click()
+        await page.getByTestId('ui-expand').click()
+      } else await inline.getByTestId('ui-expand').click()
       const card = page.getByTestId('intelligent-ui-panel')
       await card.getByTestId('ui-action-read-report').click()
       await card.getByTestId('ui-confirm').click()
@@ -202,19 +220,12 @@ for (const locale of ['en', 'zh-CN'])
       await expandActivityGroups(actionTurn)
       await actionTool.getByTestId('tool-detail-toggle').click()
       await actionTool.getByTestId('tool-fact-chain').click()
-      const facts = page.getByTestId('fact-chain')
-      await expect(
-        facts
-          .getByTestId('ui-fact-chain-node')
-          .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' }),
-      ).toBeVisible()
-      await expect(
-        facts
-          .getByTestId('ui-fact-chain-node')
-          .filter({ hasText: locale === 'en' ? 'Revision 1' : '修订 1' })
-          .first(),
-      ).toBeVisible()
-      await page.locator('#view-trace').click()
+      const facts = page.locator('.trace-inspector')
+      await expect(facts.locator('[data-link="ui"]')).toContainText(
+        locale === 'en' ? 'Action succeeded' : '动作成功',
+      )
+      await expect(facts.locator('[data-link="ui"]')).toContainText(locale === 'en' ? 'revision 1' : '修订 1')
+      await expect(page.locator('#view-trace')).toHaveAttribute('aria-selected', 'true')
       await expect(
         page
           .locator('.trace-row')

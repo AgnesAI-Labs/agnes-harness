@@ -8,11 +8,15 @@ Open **Workbench** in the session header to inspect **Files**, **Changes**, the 
 
 If the terminal screen fails to load, use **Retry** inside its tab. Workbench tabs, expand and close remain available when panel content fails.
 
+Changes and Terminal pause UI polling while the browser page is hidden and catch up when you return. Background jobs and terminal processes continue running.
+
 ## Inspect files
 
-The built-in file panel lazily lists the admitted session workspace, honoring the supported `.gitignore`/`.aghignore` subset. The tree fills the panel until you open a file for a read-only preview. The A/M badges explain session-created and session-modified files in their tooltips. Open **… → File visibility rules** in the panel header to inspect the supported ignore rules. Mentioning a file inserts a quoted relative path into the composer without sending a message. Git badges are best effort; an unavailable badge does not mean a clean repository.
+The built-in file panel lazily lists the admitted session workspace, honoring the supported `.gitignore`/`.aghignore` subset. The tree fills the panel until you open a file for a read-only preview. The A/M badges explain session-created and session-modified files in their tooltips. Open **… → File visibility rules** in the panel header to inspect the supported ignore rules. Mentioning a file inserts a quoted relative path into the composer without sending a message. Git badges are best effort; an unavailable badge does not mean a clean repository. Ordinary repositories, linked worktrees and submodules with a valid `.git` pointer file are supported. Symlinked or malformed Git metadata is unavailable. This status read disables repository hooks and external content filters; files that rely on those filters may have different badges from a manual Git command.
 
 Previews are capped at 1 MiB. Binary/oversized files, symlinks and the installation home are refused or labelled without pretending to show their contents. A revision describes the bytes that were read, not a guarantee that a later edit has not changed them. The panel offers no arbitrary filesystem or restore authority.
+
+A background refresh keeps the current file visible while reading; an unchanged revision preserves the preview. Switching files or losing read access clears the previous content.
 
 ## Read workflow results
 

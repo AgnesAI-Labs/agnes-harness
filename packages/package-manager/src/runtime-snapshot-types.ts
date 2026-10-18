@@ -23,6 +23,8 @@ export type RuntimeSnapshot = Readonly<{
   treeIntegrity: string
   capabilityHash: string
   directory: string
+  agents?: NonNullable<LockEntry['agents']>
+  application?: NonNullable<LockEntry['application']>
   metadata?: PluginMetadata
   contributions: readonly PackageContributionSummary[]
   /** Sealed with capabilityHash at trust or development load. Pins leave these unset. */
@@ -53,7 +55,9 @@ export type RuntimeSnapshotCollection = Readonly<{
 export type RuntimeSnapshotStore = PackageStore
 
 export type SnapshotRecord = {
-  version: 1
+  /** Missing/1 retains the original identity; 2 includes the record format in its identity.
+   * Early builds with agents/application also wrote 1 and remain readable. */
+  version?: 1 | 2
   snapshotId: string
   packageId: string
   packageVersion: string
@@ -64,6 +68,8 @@ export type SnapshotRecord = {
   license: string
   releasedAt: string | null
   dependencies: Record<string, string>
+  agents?: NonNullable<LockEntry['agents']>
+  application?: NonNullable<LockEntry['application']>
   metadata?: PluginMetadata
   contributions: PackageContributionSummary[]
   declaredCapabilities?: NonNullable<LockEntry['declaredCapabilities']>

@@ -8,7 +8,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Approval rules',
     summary: 'Decides which tool actions need approval under the selected session policy.',
     description: 'Decides which tool actions need approval under the selected session policy.',
-    category: 'safety-approval',
     locales: {
       'zh-CN': {
         displayName: '审批规则',
@@ -21,7 +20,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Task telemetry',
     summary: 'Exports configured task telemetry to help operators diagnose execution and usage.',
     description: 'Exports configured task telemetry to help operators diagnose execution and usage.',
-    category: 'observability',
     locales: {
       'zh-CN': {
         displayName: '任务遥测',
@@ -36,7 +34,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       'Provides the default approval prompts, identity, usage accounting, checkpoints, artifact storage and progress checks.',
     description:
       'Provides the default approval prompts, identity, usage accounting, checkpoints, artifact storage and progress checks.',
-    category: 'agent-loop',
     locales: {
       'zh-CN': {
         displayName: '核心运行服务',
@@ -49,7 +46,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Default Agent Loop',
     summary: 'Runs the default agent workflow through model calls, tools, approvals and continuation.',
     description: 'Runs the default agent workflow through model calls, tools, approvals and continuation.',
-    category: 'agent-loop',
     locales: {
       'zh-CN': {
         displayName: '默认 Agent Loop',
@@ -64,7 +60,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       'Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.',
     description:
       'Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.',
-    category: 'agent-loop',
     locales: {
       'zh-CN': {
         displayName: 'Jev Agent Loop',
@@ -78,7 +73,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Codex child agents',
     summary: 'Uses a configured Codex process to handle delegated coding tasks.',
     description: 'Uses a configured Codex process to handle delegated coding tasks.',
-    category: 'collaboration',
     locales: {
       'zh-CN': {
         displayName: 'Codex 子 Agent',
@@ -91,7 +85,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Claude Code child agents',
     summary: 'Uses a configured Claude Code process to handle delegated coding tasks.',
     description: 'Uses a configured Claude Code process to handle delegated coding tasks.',
-    category: 'collaboration',
     locales: {
       'zh-CN': {
         displayName: 'Claude Code 子 Agent',
@@ -104,7 +97,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Built-in child agents',
     summary: "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
     description: "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
-    category: 'collaboration',
     locales: {
       'zh-CN': {
         displayName: '内置子 Agent',
@@ -119,7 +111,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       'Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.',
     description:
       'Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.',
-    category: 'memory-context',
     locales: {
       'zh-CN': {
         displayName: '工作区记忆',
@@ -132,7 +123,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Remembering playbook',
     summary: 'Supplies a reusable playbook for reviewing and recording workspace preferences.',
     description: 'Supplies a reusable playbook for reviewing and recording workspace preferences.',
-    category: 'memory-context',
     locales: {
       'zh-CN': {
         displayName: '偏好记忆手册',
@@ -145,7 +135,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Plan mode controls',
     summary: 'Provides shared plan mode controls for Web and terminal clients.',
     description: 'Provides shared plan mode controls for Web and terminal clients.',
-    category: 'safety-approval',
     locales: {
       'zh-CN': {
         displayName: '计划模式控制',
@@ -158,7 +147,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
     displayName: 'Conversation references',
     summary: 'Resolves supported file and session references attached to a conversation.',
     description: 'Resolves supported file and session references attached to a conversation.',
-    category: 'memory-context',
     locales: {
       'zh-CN': {
         displayName: '对话引用',

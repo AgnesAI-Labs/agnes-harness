@@ -1,11 +1,19 @@
 import type { ToolDef } from '@agnes/extension-api'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import type { KernelPorts } from '@agnes/host-extensions/ext-host/ports'
-import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
+import {
+  createRowExtensionHost,
+  type RowExtensionHostOptions,
+} from '@agnes/host-extensions/ext-host/row-extension-host'
+import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import type { PluginTestRegistration } from '@agnes/plugin-runtime/testkit'
 
-/** The production row-registration bridge with in-memory downstream ports and no native storage. */
-export function createPluginTestRegistration(): PluginTestRegistration {
+/** The production row-registration bridge with tool and service registries; persistence is supplied explicitly. */
+export function createPluginTestRegistration(
+  options: Pick<RowExtensionHostOptions, 'store' | 'describePackage'> = {},
+): PluginTestRegistration & { serviceRegistry: ServiceRegistry } {
+  const serviceRegistry = new ServiceRegistry()
   const tools = new Map<string, ToolDef>()
   const registrations = new Map<string, Set<string>>()
   const record = (source: string, key: string, cleanup: () => void = () => {}) => {
@@ -19,7 +27,7 @@ export function createPluginTestRegistration(): PluginTestRegistration {
     }
   }
   const unsupported = () => {
-    throw new Error('This test host supports tools and hooks only')
+    throw new Error('This test host supports tools, hooks and services only')
   }
   const ports: KernelPorts = {
     tools: {
@@ -32,18 +40,22 @@ export function createPluginTestRegistration(): PluginTestRegistration {
       },
     },
     hooks: { on: (event, _handler, meta) => record(meta.source, `hook:${event}`) },
-    services: { register: unsupported, registerRow: unsupported },
+    services: serviceRegistry,
     projections: { register: unsupported, read: unsupported },
     slots: { register: unsupported },
     resources: { register: unsupported },
     extEvents: { append: unsupported },
-    registrations: (source) => [...(registrations.get(source) ?? [])],
+    registrations: (source) => [
+      ...(registrations.get(source) ?? []),
+      ...serviceRegistry.registrations(source),
+    ],
   }
   const host = createRowExtensionHost({
     info: { agnesVersion: '0.0.0', apiVersion: '1.4.0', profileName: 'author-test' },
     log: { debug() {}, info() {}, warn() {}, error() {} },
     order: createExtensionOrder(),
     describePackage: () => ({ version: '1.0.0' }),
+    ...options,
   })
   host.activate({
     ports,
@@ -52,9 +64,16 @@ export function createPluginTestRegistration(): PluginTestRegistration {
     reservedTool: () => false,
     governance: new Map(),
   })
+  const rowServices = createRowServiceHost(options.describePackage ?? (() => ({ version: '1.0.0' })))
+  rowServices.activate(ports)
   return {
     tools,
-    install: (root, origins) => host.installRoot(root, origins),
+    serviceRegistry,
+    install(root, origins) {
+      host.installRoot(root, origins)
+      rowServices.installRoot(root, origins)
+      rowServices.publishRoot(root)
+    },
     assertLoaded() {
       const failed = host.statusEntries().find((entry) => !entry.status.loaded || entry.status.error)
       if (failed) throw new Error(failed.status.error?.message ?? 'Plugin did not load')

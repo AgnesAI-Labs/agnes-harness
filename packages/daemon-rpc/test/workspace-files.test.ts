@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -10,9 +12,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { devNull, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
-import { readWorkspace } from '@agnes/worker-runtime'
+import { listWorkspace, readWorkspace } from '@agnes/worker-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import {
   compileIgnore,
@@ -308,3 +310,148 @@ it('refuses an intermediate path swapped to a symlink after authority validation
     rmSync(outside, { recursive: true, force: true })
   }
 })
+
+it.each(['directory', 'worktree', 'submodule'] as const)(
+  'reads status from a real %s checkout without running repository-configured programs',
+  async (kind) => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), 'agh-git-status-')))
+    const repo = join(base, 'repo')
+    mkdirSync(repo)
+    const git = (cwd: string, args: string[]) => {
+      const result = spawnSync('git', ['-c', `core.hooksPath=${devNull}`, ...args], {
+        cwd,
+        encoding: 'utf8',
+        timeout: 10_000,
+        env: {
+          PATH: process.env.PATH,
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_CONFIG_GLOBAL: devNull,
+          GIT_TERMINAL_PROMPT: '0',
+        },
+      })
+      expect(result.status, result.stderr).toBe(0)
+      return result.stdout.trim()
+    }
+    const authority = { stat: async () => ({}) }
+    try {
+      git(repo, ['init'])
+      writeFileSync(join(repo, 'tracked.txt'), 'before\n')
+      git(repo, ['add', '--', 'tracked.txt'])
+      git(repo, [
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.invalid',
+        'commit',
+        '--no-gpg-sign',
+        '-m',
+        'Fixture',
+      ])
+      let workspace = repo
+      if (kind === 'worktree') {
+        workspace = join(base, 'linked worktree')
+        git(repo, ['worktree', 'add', '--detach', workspace])
+      } else if (kind === 'submodule') {
+        const parent = join(base, 'parent')
+        mkdirSync(parent)
+        git(parent, ['init'])
+        git(parent, ['-c', 'protocol.file.allow=always', 'submodule', 'add', repo, 'module'])
+        workspace = join(parent, 'module')
+      }
+      const marker = join(base, 'executed')
+      const script = join(base, 'probe.cjs')
+      writeFileSync(script, "require('node:fs').writeFileSync(process.argv[2], 'executed')\n")
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+      const command = [process.execPath, script, marker].map(quote).join(' ')
+      // Same byte length forces index refresh to compare content, including any clean filter.
+      writeFileSync(join(workspace, 'tracked.txt'), 'after!\n')
+      writeFileSync(join(workspace, 'new.txt'), 'new\n')
+      const expectStatus = async () => {
+        const status = await listWorkspace(workspace, '', authority)
+        expect(existsSync(marker)).toBe(false)
+        expect(status.gitStatus).toBe('available')
+        expect(status.entries.find((entry) => entry.name === 'tracked.txt')?.git).toBe('modified')
+        expect(status.entries.find((entry) => entry.name === 'new.txt')?.git).toBe('untracked')
+        expect(status.entries.some((entry) => entry.name === '.git')).toBe(false)
+      }
+      await expectStatus()
+      git(workspace, ['config', 'extensions.worktreeConfig', 'true'])
+      git(workspace, ['config', '--worktree', 'core.fsmonitor', command])
+      await expectStatus()
+      // Refreshing status can hash through clean/process filters, even without a patch or a fetch.
+      for (const name of [
+        'diff.external',
+        'diff.hazard.command',
+        'diff.hazard.textconv',
+        'filter.hazard.clean',
+        'filter.hazard.smudge',
+        'filter.hazard.process',
+        'core.sshCommand',
+        'core.gitProxy',
+        'core.alternateRefsCommand',
+      ])
+        git(workspace, ['config', '--worktree', name, command])
+      git(workspace, ['config', '--worktree', 'filter.hazard.required', 'true'])
+      git(workspace, ['config', 'credential.helper', `!${command}`])
+      git(workspace, ['config', 'remote.origin.url', `ext::${command}`])
+      git(workspace, ['config', 'protocol.ext.allow', 'always'])
+      writeFileSync(join(workspace, '.gitattributes'), 'tracked.txt filter=hazard diff=hazard\n')
+      await expectStatus()
+
+      if (kind === 'directory') {
+        git(workspace, ['config', 'filter.bad=driver.clean', command])
+        expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
+        expect(existsSync(marker)).toBe(false)
+      }
+      if (kind === 'worktree') {
+        const pointer = join(workspace, '.git')
+        const original = readFileSync(pointer, 'utf8')
+        const gitdir = original.slice('gitdir: '.length).trim()
+        // Relative gitfiles (the absorbed submodule above uses one) and CRLF are also supported.
+        writeFileSync(pointer, `gitdir: ${relative(workspace, gitdir)}\r\n`)
+        await expectStatus()
+        const relativePath = relative(workspace, gitdir)
+        const padding = 1024 - Buffer.byteLength(`gitdir: ${relativePath}`)
+        const boundary = `gitdir: ${'./'.repeat(Math.floor(padding / 2))}${relativePath}${padding % 2 ? '\n' : ''}`
+        expect(Buffer.byteLength(boundary)).toBe(1024)
+        writeFileSync(pointer, boundary)
+        await expectStatus()
+        const linkedDir = join(base, 'linked-gitdir')
+        symlinkSync(gitdir, linkedDir, 'dir')
+        const notDir = join(base, 'not-a-directory')
+        writeFileSync(notDir, 'text')
+        for (const contents of [
+          'garbage',
+          '',
+          'gitdir: \n',
+          'gitdir: nope\ngitdir: nope\n',
+          `gitdir: ${gitdir}\n\n`,
+          `\ufeffgitdir: ${gitdir}\n`,
+          `gitdir: ${'x'.repeat(1024)}`,
+          'gitdir: missing\n',
+          `gitdir: ${notDir}\n`,
+          `gitdir: ${linkedDir}\n`,
+          'gitdir: x\0y\n',
+        ]) {
+          writeFileSync(pointer, contents)
+          const rejected = await listWorkspace(workspace, '', authority)
+          expect(rejected.gitStatus, contents.slice(0, 60)).toBe('unavailable')
+          expect(rejected.entries.every((entry) => entry.git === undefined)).toBe(true)
+        }
+        rmSync(pointer)
+        symlinkSync(gitdir, pointer, 'dir')
+        expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
+        rmSync(pointer)
+        const externalPointer = join(base, 'gitfile')
+        writeFileSync(externalPointer, original)
+        symlinkSync(externalPointer, pointer, 'file')
+        expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
+        rmSync(pointer)
+        writeFileSync(pointer, original)
+        await expectStatus()
+      }
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
+  },
+)

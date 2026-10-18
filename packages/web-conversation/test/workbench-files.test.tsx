@@ -6,6 +6,7 @@ import type { Session } from '@agnes/sdk/browser'
 import { fileViewerActions } from '@agnes/web-client'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { HTML_PREVIEW_FRAME } from '@agnes/web-ui/conversation'
+import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewFileAction } from '../src/workbench/changes-panel.js'
@@ -582,4 +583,136 @@ describe('separate folder and file read results', () => {
     click('[data-path="main.ts"]')
     expect(q('[data-testid="file-read-loading"]')?.textContent).toContain('Reading this file')
   })
+})
+
+it.each(['source', 'preview'] as const)(
+  'preserves %s content during an unchanged ledger refresh',
+  async (mode) => {
+    const session = fakeSession()
+    const context = mount(session, { data: { session, timeline: { upto: 1 }, mention: vi.fn() } })
+    await open('portal.html')
+    if (mode === 'preview') click('[data-testid="file-view-preview"]')
+    const selector = mode === 'preview' ? 'iframe' : '[data-testid="file-preview"]'
+    await vi.waitFor(() => expect(q(selector)).not.toBeNull())
+    const previous = q(selector)
+    if (!previous) throw new Error('Missing file preview')
+    let finish!: (value: unknown) => void
+    vi.mocked(session.workspaceRead).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve as typeof finish
+        }),
+    )
+    await act(async () =>
+      renderRegion(
+        host,
+        <FilesPanel context={{ ...context, data: { session, timeline: { upto: 2 }, mention: vi.fn() } }} />,
+      ),
+    )
+    expect(finish).toBeTypeOf('function')
+    const remainedWhileReading = previous.isConnected
+    await act(async () =>
+      finish({
+        path: 'portal.html',
+        revision: 'rev-portal.html',
+        observedAt: '2026-10-14T09:05:00Z',
+        size: 2048,
+        binary: false,
+        truncated: false,
+        text: TEXT['portal.html'],
+      }),
+    )
+    await vi.waitFor(() => expect(q(selector)).not.toBeNull())
+    expect({ remainedWhileReading, sameNodeAfterRead: q(selector) === previous }).toEqual({
+      remainedWhileReading: true,
+      sameNodeAfterRead: true,
+    })
+    vi.mocked(session.workspaceRead).mockResolvedValueOnce({
+      path: 'portal.html',
+      revision: 'changed',
+      observedAt: '2026-10-18T00:00:00Z',
+      size: 20,
+      binary: false,
+      truncated: false,
+      text: '<h1>Changed</h1>',
+    })
+    await act(async () =>
+      renderRegion(
+        host,
+        <FilesPanel context={{ ...context, data: { session, timeline: { upto: 3 }, mention: vi.fn() } }} />,
+      ),
+    )
+    expect(q('[data-testid="file-meta"] time')?.title).toBe('changed')
+    if (mode === 'preview') expect(q('iframe')).not.toBe(previous)
+    else expect(q(selector)?.textContent).toContain('Changed')
+  },
+)
+
+it('clears a switched or unreadable file and ignores superseded reads', async () => {
+  const session = fakeSession()
+  const context = mount(session, { data: { session, timeline: { upto: 1 }, mention: vi.fn() } })
+  await open('portal.html')
+  const read = vi.mocked(session.workspaceRead)
+  let finish!: (value: Awaited<ReturnType<Session['workspaceRead']>>) => void
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  await act(async () =>
+    renderRegion(
+      host,
+      <FilesPanel context={{ ...context, data: { session, timeline: { upto: 2 }, mention: vi.fn() } }} />,
+    ),
+  )
+  const oldFile = await read.mock.results[0]?.value
+  if (!oldFile) throw new Error('Missing initial file read')
+  read.mockImplementationOnce(() => new Promise(() => {}))
+  click('[data-path="main.ts"]')
+  expect(q('[data-testid="file-preview"]')).toBeNull()
+  expect(q('[data-testid="file-read-loading"]')).not.toBeNull()
+  await act(async () => finish(oldFile))
+  expect(q('[data-testid="file-preview"]')).toBeNull()
+  // Return to the first path and let a newer read supersede an older successful response.
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  click('[data-path="portal.html"]')
+  read.mockResolvedValueOnce({ ...oldFile, revision: 'new', text: '<h1>New</h1>' })
+  await act(async () =>
+    renderRegion(
+      host,
+      <FilesPanel context={{ ...context, data: { session, timeline: { upto: 3 }, mention: vi.fn() } }} />,
+    ),
+  )
+  await act(async () => finish(oldFile))
+  expect(q('[data-testid="file-preview"]')?.textContent).toContain('New')
+  read.mockRejectedValueOnce(new Error('Permission revoked or file deleted'))
+  await act(async () =>
+    renderRegion(
+      host,
+      <FilesPanel context={{ ...context, data: { session, timeline: { upto: 4 }, mention: vi.fn() } }} />,
+    ),
+  )
+  expect(q('[data-testid="file-preview"]')).toBeNull()
+  expect(q('[data-testid="file-read-error"]')).not.toBeNull()
+  read.mockResolvedValueOnce(oldFile)
+  click('[data-testid="file-read-retry"]')
+  await vi.waitFor(() => expect(q('[data-testid="file-preview"]')).not.toBeNull())
+  // A different read authority must also clear cached bytes, even with the same session id/path.
+  const replacement = fakeSession()
+  vi.mocked(replacement.workspaceRead).mockImplementation(() => new Promise(() => {}))
+  await act(async () =>
+    renderRegion(
+      host,
+      <FilesPanel
+        context={{ ...context, data: { session: replacement, timeline: { upto: 4 }, mention: vi.fn() } }}
+      />,
+    ),
+  )
+  expect(q('[data-testid="file-preview"]')).toBeNull()
 })

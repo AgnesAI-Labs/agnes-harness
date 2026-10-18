@@ -685,7 +685,11 @@ describe('client reconciler（WC10 前端状态机）', () => {
       packageId: 'a',
       revision: undefined,
       phase: 'failed',
-      error: { code: 'CLIENT_MODULE_IMPORT_FAILED', message: '插件 UI 入口加载失败，可重试' },
+      error: {
+        code: 'CLIENT_MODULE_IMPORT_FAILED',
+        phase: 'import',
+        message: '插件 UI 入口加载失败，可重试',
+      },
     })
     expect(updates.map((state) => state.phase)).toContain('loading')
     expect(updates.at(-1)?.phase).toBe('failed')
@@ -870,7 +874,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
       source: {
         list: async () =>
           roster([
-            { ...mod('bad', 'v1'), slots: ['ui:sidebar'] },
+            { ...mod('bad', 'v1'), slots: ['ui:sidebar'], presentationRoles: ['deliverables'] },
             { ...mod('good', 'v1'), slots: ['ui:topbar'] },
           ]),
       },
@@ -878,13 +882,20 @@ describe('client reconciler（WC10 前端状态机）', () => {
         apply(pluginCtx: { slots: SlotRegistry }) {
           const slot = url.includes('/bad/') ? 'ui:sidebar' : 'ui:topbar'
           pluginCtx.slots.register(slot as never, () => createElement('div', {}, url), { priority: -1 })
-          if (url.includes('/bad/') && fail) throw new Error('fixture apply failure')
+          if (url.includes('/bad/') && fail)
+            throw new Error('file:///private/token=secret/fixture apply failure')
         },
       }),
     })
 
     await reconciler.reconcileNow()
-    expect(reconciler.snapshot().get('bad')).toMatchObject({ phase: 'failed', revision: undefined })
+    expect(reconciler.snapshot().get('bad')).toMatchObject({
+      packageId: 'bad',
+      phase: 'failed',
+      revision: undefined,
+      error: { code: 'CLIENT_MODULE_APPLY_FAILED', phase: 'apply', roles: ['deliverables'] },
+    })
+    expect(JSON.stringify(reconciler.snapshot().get('bad'))).not.toMatch(/secret|private|file:/)
     expect(reconciler.snapshot().get('good')).toMatchObject({ phase: 'active', revision: 'v1' })
     expect(slots.entriesOfSlot('ui:sidebar').map((entry) => entry.owner)).toEqual(['@agnes/web-sidebar'])
     expect(slots.entriesOfSlot('ui:topbar').map((entry) => entry.owner)).toEqual(['good'])
@@ -1037,11 +1048,11 @@ describe('client reconciler（WC10 前端状态机）', () => {
     current = roster([mod('update-cleanup', 'v2')])
     await reconciler.invalidate()
     expect(disposed).toEqual(['v1'])
-    expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'failed', revision: 'v1' })
+    expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
 
     failOldDispose = false
     await reconciler.invalidate()
-    expect(disposed).toEqual(['v1', 'v1'])
+    expect(disposed).toEqual(['v1'])
     expect(applied).toEqual(['v1', 'v2'])
     expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
   })
@@ -1085,106 +1096,47 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(log.loaded).toEqual(['apply:a', 'apply:a'])
   })
 
-  it('dispose 失败后再次 invalidate 会重试清理并保留真实 packageId，最终回到 idle', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    const disposedStyles: string[] = []
-    stubPlugin(h.ctx, log)
-    let failDispose = true
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          log.disposed.push(`dispose:${id}`)
-          if (failDispose) throw new Error('dispose failed')
-        },
+  it.each(['throws', 'times-out'] as const)(
+    'quarantines a disposer that %s and remounts the same id before the old promise settles',
+    async (mode) => {
+      const h = await harness()
+      let release!: () => void
+      const pending = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const applied: string[] = []
+      ;(h.ctx as unknown as { plugin: unknown }).plugin = (_: unknown, config: { revision: string }) => {
+        applied.push(config.revision)
+        const fiber = {
+          async dispose() {
+            if (config.revision === 'v1') {
+              if (mode === 'throws') throw new Error('dispose failed')
+              await pending
+            }
+          },
+        }
+        return Object.assign(Promise.resolve(fiber), fiber)
       }
-      return Object.assign(Promise.resolve(fiber), fiber)
-    }
-    let current = roster([styledMod('cleanup-failure', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-      prepareStyles: async (target) => ({
-        activate() {},
-        dispose() {
-          disposedStyles.push(target.revision)
-        },
-      }),
-    })
-
-    await reconciler.reconcileNow()
-    current = roster([])
-    await reconciler.invalidate()
-    expect(reconciler.snapshot().get('cleanup-failure')).toMatchObject({
-      packageId: 'cleanup-failure',
-      revision: 'v1',
-      phase: 'failed',
-    })
-    expect(disposedStyles).toEqual(['v1'])
-
-    failDispose = false
-    await reconciler.invalidate()
-    expect(log.disposed).toEqual(['dispose:cleanup-failure', 'dispose:cleanup-failure'])
-    expect(reconciler.snapshot().get('cleanup-failure')).toMatchObject({
-      packageId: 'cleanup-failure',
-      revision: 'v1',
-      phase: 'idle',
-    })
-  })
-
-  it('dispose 超时后再次 invalidate 会重新调用清理并最终回到 idle', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    let releaseDispose!: () => void
-    const pendingDispose = new Promise<void>((resolve) => {
-      releaseDispose = resolve
-    })
-    let disposeCount = 0
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          disposeCount += 1
-          log.disposed.push(`dispose:${id}`)
-          if (disposeCount === 1) await pendingDispose
-        },
-      }
-      return Object.assign(Promise.resolve(fiber), fiber)
-    }
-    let current = roster([mod('cleanup-timeout', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-      timeouts: { dispose: 10 },
-    })
-
-    await reconciler.reconcileNow()
-    current = roster([])
-    await reconciler.invalidate()
-    expect(reconciler.snapshot().get('cleanup-timeout')).toMatchObject({
-      packageId: 'cleanup-timeout',
-      revision: 'v1',
-      phase: 'failed',
-    })
-
-    const retry = reconciler.invalidate()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    releaseDispose()
-    await retry
-    expect(log.disposed).toEqual(['dispose:cleanup-timeout', 'dispose:cleanup-timeout'])
-    expect(reconciler.snapshot().get('cleanup-timeout')).toMatchObject({
-      packageId: 'cleanup-timeout',
-      revision: 'v1',
-      phase: 'idle',
-    })
-  })
+      let current = roster([mod('cleanup', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => current },
+        importer: h.importer,
+        timeouts: { dispose: 10 },
+      })
+      await reconciler.reconcileNow()
+      current = roster([])
+      await reconciler.invalidate()
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'failed' })
+      current = roster([mod('cleanup', 'v2')])
+      await reconciler.invalidate()
+      expect(applied).toEqual(['v1', 'v2'])
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
+      release()
+      await Promise.resolve()
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
+    },
+  )
 
   it.each(['withdrawal', 'profile', 'session'] as const)(
     'disposes an obsolete mount after %s without committing it',

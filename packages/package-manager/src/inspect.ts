@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import { API_VERSION, checkManifest, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
 import {
   type PackageCapabilityDiff,
@@ -10,6 +11,9 @@ import {
   validatePluginMetadata,
   validateSurfacePackageMetadata,
 } from '@agnes/protocol'
+import { readApplicationAssets } from './application-assets.js'
+import { parseApplicationContract } from './application-contract.js'
+import { parsePackageBundleContract, preflightPackageBundles } from './bundle-contract.js'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
@@ -26,19 +30,26 @@ import {
 import {
   isReservedPluginRowIdError,
   parseAgnesPluginEntries,
-  parseAgnesPluginKinds,
+  parseAgnesPluginProvides,
 } from './plugin-manifest.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
 
-function invalid(reason: string): never {
-  throw new PackageError('E_EXT_LOAD', 'package static metadata is invalid', { detail: { reason } })
+import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
+
+function invalid(reason: string, diagnostics: unknown[] = []): never {
+  throw new PackageError('E_EXT_LOAD', 'package static metadata is invalid', {
+    detail: { reason, ...(diagnostics.length ? { diagnostics: safeAuthoringDiagnostics(diagnostics) } : {}) },
+  })
 }
-function contribution(value: unknown): PackageContributionSummary {
-  const checked = validatePackageAdminData('PackageContributionSummary', value)
+function checkedContribution(value: unknown, stored = false): PackageContributionSummary {
+  const checked = validatePackageAdminData(
+    'PackageContributionSummary',
+    stored ? currentStoredShape(value) : value,
+  )
   if (!checked.ok) invalid('contribution')
-  return checked.value as PackageContributionSummary
+  return value as PackageContributionSummary
 }
 function array(value: unknown): unknown[] {
   if (value === undefined) return []
@@ -124,15 +135,34 @@ type InspectionInput = {
   ceiling?: readonly string[]
   capabilityPolicy?: PluginCapabilityPolicy
   signal?: AbortSignal
+  /** Only durable trees whose recorded digest the caller has just verified. */
+  stored?: boolean
 }
 
-export function inspectStaged(input: InspectionInput): { preview: PackagePreview; treeIntegrity: string } {
+export async function inspectStaged(
+  input: InspectionInput,
+): Promise<{ preview: PackagePreview; treeIntegrity: string }> {
   checkCancelled(input.signal)
   const treeIntegrity = hashDirectory(input.dir, {
     exclude: [],
     ...(input.signal ? { signal: input.signal } : {}),
   })
-  return inspectVerifiedTree(input, treeIntegrity)
+  const result = inspectVerifiedTree(input, treeIntegrity)
+  if (result.preview.application) {
+    try {
+      await readApplicationAssets(input.dir, result.preview.application)
+    } catch (error) {
+      invalid(error instanceof Error ? error.message : 'application')
+    }
+    // Pixel decoding yields; never publish a tree digest captured before changed package bytes.
+    if (
+      hashDirectory(input.dir, { exclude: [], ...(input.signal ? { signal: input.signal } : {}) }) !==
+      treeIntegrity
+    )
+      invalid('application-assets-changed')
+  }
+  checkCancelled(input.signal)
+  return result
 }
 
 /** Internal same-round reuse only: the caller must have just hashed this directory synchronously.
@@ -143,6 +173,7 @@ export function inspectVerifiedTree(
 ): { preview: PackagePreview; treeIntegrity: string } {
   checkCancelled(input.signal)
   const pkg = readStaticJson(join(input.dir, 'package.json'))
+  const contribution = (value: unknown) => checkedContribution(value, input.stored)
   const fetched = input.fetched
   if (input.source.type === 'npm') {
     const ref = input.source.ref.slice(4),
@@ -179,7 +210,9 @@ export function inspectVerifiedTree(
           'plugins',
           'surfaces',
           'clientDescriptors',
-          'kinds',
+          'provides',
+          ...(input.stored ? ['kinds'] : []),
+          'application',
           'bundles',
           'hostProvidedExternals',
         ].includes(k),
@@ -188,8 +221,23 @@ export function inspectVerifiedTree(
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
   const displayMetadata =
-    metadata.metadata === undefined ? undefined : validatePluginMetadata(metadata.metadata)
+    metadata.metadata === undefined
+      ? undefined
+      : input.stored && validStoredMetadata(metadata.metadata)
+        ? { ok: true as const, value: metadata.metadata }
+        : validatePluginMetadata(metadata.metadata)
   if (displayMetadata && !displayMetadata.ok) invalid('plugin-metadata')
+  if (
+    input.stored &&
+    metadata.kinds !== undefined &&
+    (!Array.isArray(metadata.kinds) ||
+      metadata.kinds.length > 7 ||
+      metadata.kinds.some(
+        (kind) => !['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'].includes(kind),
+      ) ||
+      new Set(metadata.kinds).size !== metadata.kinds.length)
+  )
+    invalid('agnes-kinds')
   const bundles = metadata.bundles
   if (
     bundles !== undefined &&
@@ -200,13 +248,16 @@ export function inspectVerifiedTree(
       Object.keys(bundles).length > 64)
   )
     invalid('bundles')
-  let kinds: ReturnType<typeof parseAgnesPluginKinds>
+  let provides: ReturnType<typeof parseAgnesPluginProvides>
   let declaredCapabilities: ReturnType<typeof mergePluginCapabilities>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
-    kinds = parseAgnesPluginKinds(metadata.kinds)
-    if (bundles !== undefined && !kinds?.includes('bundle')) invalid('bundles-kind')
-    plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
+    provides = parseAgnesPluginProvides(metadata.provides)
+    plugins = parseAgnesPluginEntries(
+      String(pkg.name),
+      metadata.plugins,
+      input.stored ? { stored: true } : {},
+    )
     declaredCapabilities = mergePluginCapabilities(plugins.map((entry) => entry.capabilities))
   } catch (error) {
     if (isReservedPluginRowIdError(error))
@@ -285,7 +336,30 @@ export function inspectVerifiedTree(
       },
       pkg.name as string,
     )
-    if (!synthetic.ok) invalid('client-descriptor-content')
+    if (!synthetic.ok)
+      invalid(
+        'client-descriptor-content',
+        synthetic.problems.map((problem) => {
+          const token =
+            /^(contributes\.skins\.[A-Za-z0-9_-]+\.tokens): (--[A-Za-z0-9_-]+) is not a themeable semantic token$/.exec(
+              problem,
+            )
+          const rawField = problem
+            .split(':')[0]!
+            .replace(/^contributes\./, '')
+            .replace(/^\//, '')
+            .replaceAll('/', '.')
+          const field = /^[A-Za-z0-9_.$[\]-]{1,160}$/.test(rawField) ? rawField : 'descriptor'
+          return token
+            ? {
+                code: 'unknown-theme-token',
+                path: item.path,
+                field: token[1]!.replace(/^contributes\./, ''),
+                name: token[2],
+              }
+            : { code: 'invalid-field', path: item.path, field, name: '' }
+        }),
+      )
     const manifest = synthetic.value
     const client = manifest.contributes?.client
     const directory = dirname(descriptorPath)
@@ -322,7 +396,7 @@ export function inspectVerifiedTree(
       containedEntry(input.dir, c.descriptor.artifact.entry, 'file', 'package.json')
     contributions.push(c)
   }
-  if (displayMetadata?.ok && displayMetadata.value.category === 'example') {
+  if (displayMetadata?.ok && displayMetadata.value.exampleOf !== undefined) {
     const example = displayMetadata.value
     if (
       !example.exampleOf ||
@@ -330,18 +404,6 @@ export function inspectVerifiedTree(
       !fetched.dependencies[example.exampleOf]
     )
       invalid('example-dependency')
-    const presentation = presentPluginRows(plugins, {
-      packageId: String(pkg.name),
-      bundles,
-      ...(kinds ? { kinds } : {}),
-    })
-    for (const launch of example.launches ?? [])
-      if (
-        !presentation.presets?.some(
-          (preset) => preset.bundle === launch.bundle && preset.id === launch.preset,
-        )
-      )
-        invalid('example-launch')
     if (
       example.pageEntry &&
       !contributions.some(
@@ -352,6 +414,54 @@ export function inspectVerifiedTree(
       )
     )
       invalid('example-page')
+  }
+  const old = input.stored && (legacyMetadata(metadata.metadata) || metadata.kinds !== undefined)
+  if (old && legacyMetadata(metadata.metadata) && metadata.metadata.category === 'example') {
+    const presets = presentPluginRows(plugins, { packageId: String(pkg.name), bundles }).presets ?? []
+    for (const raw of metadata.metadata.launches ?? []) {
+      const launch = raw as { bundle: string; preset: string }
+      if (!presets.some((preset) => preset.bundle === launch.bundle && preset.id === launch.preset))
+        invalid('example-launch')
+    }
+  }
+  let preflight = old
+    ? { level: 'structural' as const, reasons: [], next: 'review-trust' as const }
+    : preflightPackageBundles({
+        packageId: String(pkg.name),
+        bundles,
+        dependencies: fetched.dependencies,
+        pages: contributions.flatMap((item) =>
+          'client' in item && item.client?.lifetime === 'profile'
+            ? [...(item.client.examplePages ?? []), ...(item.client.homeEntries ?? []).map((page) => page.id)]
+            : [],
+        ),
+        runtime: plugins,
+      })
+  if (preflight.level === 'refused') invalid(preflight.reasons.join('; '))
+  const agents = old
+    ? []
+    : Object.values(parsePackageBundleContract(String(pkg.name), bundles))
+        .flatMap((entry) => (entry.document.launch ? [{ ref: entry.id, launch: entry.document.launch }] : []))
+        .sort((a, b) => compare(a.ref, b.ref))
+
+  let application: import('@agnes/protocol').ApplicationTemplate | undefined
+  try {
+    const parsed = parseApplicationContract(
+      metadata.application,
+      String(pkg.name),
+      old ? {} : parsePackageBundleContract(String(pkg.name), bundles),
+      fetched.dependencies,
+      contributions,
+    )
+    application = parsed.application
+    if (parsed.deploymentDependent)
+      preflight = {
+        level: 'deployment-dependent',
+        reasons: [...preflight.reasons, 'application-dependency-definitions-required'],
+        next: 'validate-deployment',
+      }
+  } catch (error) {
+    invalid(error instanceof Error ? error.message : 'application')
   }
   contributions.sort((a, b) => compare(`${a.kind}:${a.id}`, `${b.kind}:${b.id}`))
   if (new Set(contributions.map((c) => `${c.kind}:${c.id}`)).size !== contributions.length)
@@ -396,7 +506,7 @@ export function inspectVerifiedTree(
       code: 'service-grant-change',
       safeMessage: 'Surface service requirements were added or changed.',
     })
-  const result = validatePackageAdminData('PackagePreview', {
+  const preview = {
     id: pkg.name,
     version: pkg.version,
     source: input.source,
@@ -409,23 +519,37 @@ export function inspectVerifiedTree(
       ...(fetched.provenance ?? {}),
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
+    preflight,
+    ...(application ? { application } : {}),
+    ...(agents.length ? { agents } : {}),
     contributions,
-    presentation: presentPluginRows(plugins, { packageId: String(pkg.name), bundles, kinds, contributions }),
+    presentation: presentPluginRows(plugins, {
+      packageId: String(pkg.name),
+      bundles,
+      provides,
+      contributions,
+    }),
     ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
-    ...(kinds === undefined ? {} : { kinds }),
+    ...(provides === undefined ? {} : { provides }),
     dependencies,
     capabilityDiff,
     capabilityHash: capabilityHash({
       ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
       contributions,
+      agents,
+      ...(application ? { application } : {}),
       dependencies: fetched.dependencies,
       ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     }),
     warnings,
     blockers,
-  })
+  }
+  const result = validatePackageAdminData(
+    'PackagePreview',
+    input.stored ? currentStoredShape(preview) : preview,
+  )
   if (!result.ok) invalid('preview-contract')
   checkCancelled(input.signal)
-  return { preview: freezeData(result.value as PackagePreview), treeIntegrity }
+  return { preview: freezeData(preview as PackagePreview), treeIntegrity }
 }
