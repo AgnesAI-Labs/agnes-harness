@@ -67,6 +67,30 @@ describe('PM4 management contracts', () => {
   })
 
   it('validates all checked-in contracts through production entry points', () => {
+    const write = valid('_agnes/v1/plugins.candidates.write')
+    for (const mode of ['replace', 'merge']) {
+      expect(
+        validatePackageAdminCall('_agnes/v1/plugins.candidates.write', 'params', {
+          ...write,
+          mode,
+          files: [],
+          remove: [],
+        }).ok,
+      ).toBe(true)
+      expect(
+        validatePackageAdminCall('_agnes/v1/plugins.candidates.write', 'params', {
+          ...write,
+          mode,
+          expectedHash: undefined,
+        }).ok,
+      ).toBe(false)
+    }
+    expect(
+      validatePackageAdminCall('_agnes/v1/plugins.candidates.write', 'params', {
+        ...write,
+        mode: 'patch',
+      }).ok,
+    ).toBe(false)
     const result = runFixtureFiles([file])
     expect(result.failed).toEqual([])
     // 380 -> 382 added the skin roster samples (S5/S15); 382 -> 390 adds the skin read DTOs, their

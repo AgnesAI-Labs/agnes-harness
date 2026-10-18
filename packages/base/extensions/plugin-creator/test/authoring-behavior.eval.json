@@ -138,7 +138,7 @@
         "Use optional ToolContext.store with capabilities.store true and handle unavailable storage",
         "Use execute(args, ctx) with the public invocation context",
         "Use real-Host registration and invocation tests via createPluginTestHost",
-        "Read candidate, modify sourceFiles programmatically and write the complete tree retaining unchanged files",
+        "Read candidate, use mode merge with only changed files and retain untouched files",
         "Add missing panel or storage to the same candidate",
         "Run plugin_test on the final candidateHash before review"
       ],

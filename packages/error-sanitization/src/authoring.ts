@@ -2,6 +2,9 @@ import { DEFAULT_RULES, redactText } from './redact.js'
 import { looksLikeSecret } from './secret-shapes.js'
 
 const hints = {
+  'conflicting-write-path': 'A path cannot be in both files and remove. / 同一路径不能同时写入和删除。',
+  'missing-remove-path':
+    'Remove only a path present in the current candidate. / 只能删除当前候选中存在的路径。',
   'unknown-theme-token': 'Use a supported semantic theme token. / 请使用受支持的语义主题 token。',
   'invalid-field': 'Correct this field using the package contract. / 请按插件合同修正此字段。',
   'missing-required-file':

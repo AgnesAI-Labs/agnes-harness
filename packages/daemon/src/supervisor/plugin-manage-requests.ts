@@ -104,7 +104,8 @@ export function createPluginManageRequests(options: {
         action,
       ) ||
       Object.keys(input).some(
-        (k) => !['action', 'files', 'proposalId', 'candidateId', 'expectedHash'].includes(k),
+        (k) =>
+          !['action', 'files', 'proposalId', 'candidateId', 'expectedHash', 'mode', 'remove'].includes(k),
       )
     )
       throw rpcError('INVALID_PARAMS')
@@ -272,7 +273,13 @@ export function createPluginManageRequests(options: {
         ...command(),
         candidateId: id,
         expectedHash,
-        ...(action === 'write' ? { files: input.files } : {}),
+        ...(action === 'write'
+          ? {
+              files: input.files,
+              ...(input.mode !== undefined ? { mode: input.mode } : {}),
+              ...(input.remove !== undefined ? { remove: input.remove } : {}),
+            }
+          : {}),
       })) as AuthoringCandidate
       return legacy ? { ...result, proposalId: id } : result
     } finally {

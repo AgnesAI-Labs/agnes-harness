@@ -65,6 +65,39 @@ export function authoringFiles(value: readonly AuthoringFile[], draft = false): 
   if (!draft && !value.some((f) => f.path === 'package.json')) requireCompleteCandidate(value)
   return value.map((f) => ({ ...f })).sort((a, b) => a.path.localeCompare(b.path))
 }
+/** Merge deltas before the ordinary full-tree validation; never mutate the saved tree in place. */
+export function authoringWriteFiles(
+  current: readonly AuthoringFile[],
+  files: readonly AuthoringFile[],
+  mode: 'replace' | 'merge' = 'replace',
+  remove: readonly string[] = [],
+): AuthoringFile[] {
+  const refusal = (
+    code: 'conflicting-write-path' | 'missing-remove-path' | 'invalid-field',
+    path: string,
+  ): never => {
+    throw new PackageError('E_DEP_MISSING', 'Candidate write delta is invalid', {
+      detail: { diagnostics: [{ code, path, field: 'remove', name: path }] },
+    })
+  }
+  if (mode !== 'merge') {
+    if (mode !== 'replace' || remove.length) refusal('invalid-field', 'package.json')
+    return authoringFiles(files, true)
+  }
+  const edits = authoringFiles(files, true)
+  authoringFiles(
+    remove.map((path) => ({ path, content: '' })),
+    true,
+  )
+  const next = new Map(current.map((file) => [file.path, file]))
+  for (const path of remove) {
+    if (edits.some((file) => file.path.toLowerCase() === path.toLowerCase()))
+      refusal('conflicting-write-path', path)
+    if (!next.delete(path)) refusal('missing-remove-path', path)
+  }
+  for (const file of edits) next.set(file.path, file)
+  return authoringFiles([...next.values()], true)
+}
 export function writeAuthoringFiles(directory: string, files: readonly AuthoringFile[]): void {
   authoringDirectory(directory)
   const dirs = new Set([directory])

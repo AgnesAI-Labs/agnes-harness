@@ -9,6 +9,7 @@ import {
   type AuthoringFile,
   type AuthoringOrigin,
   type AuthoringTests,
+  type AuthoringWriteParams,
   jcs,
   validatePackageAdminData,
 } from '@agnes/protocol'
@@ -22,6 +23,7 @@ import {
   authoringError,
   authoringFiles,
   authoringHash,
+  authoringWriteFiles,
   readAuthoringFiles,
   saveAuthoringRecord,
   writeAuthoringFiles,
@@ -251,12 +253,18 @@ export class AuthoringCandidates {
       }
     }
   }
+  /** Typed adapter for the validated admin write contract; legacy internal callers retain replace. */
+  writeRequest(profileDir: string, id: string, owner: string, input: AuthoringWriteParams) {
+    return this.write(profileDir, id, owner, input.expectedHash, input.files, input.mode, input.remove)
+  }
   async write(
     profileDir: string,
     id: string,
     owner: string,
     expected: string,
     files: readonly AuthoringFile[],
+    mode: 'replace' | 'merge' = 'replace',
+    remove: readonly string[] = [],
   ) {
     const record = this.load(profileDir, id, owner)
     this.verify(record, expected)
@@ -265,7 +273,7 @@ export class AuthoringCandidates {
     const tree = join(this.root(profileDir), id, 'trees', randomUUID())
     let saved = false
     try {
-      const checked = authoringFiles(files, true)
+      const checked = authoringWriteFiles(readAuthoringFiles(record.tree), files, mode, remove)
       const summary = candidateWriteSummary(readAuthoringFiles(record.tree), checked)
       const status = candidateTreeStatus(checked)
       writeAuthoringFiles(tree, checked)

@@ -32,6 +32,7 @@ import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/
 import {
   type AuthoringCandidate,
   type AuthoringFile,
+  type AuthoringWriteParams,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -835,7 +836,7 @@ class Service implements PackageAdminService {
           authority.authoringOrigin!,
         )
       if (action === 'write')
-        return this.candidates.write(directory, id, owner, expected, params.files as AuthoringFile[])
+        return this.candidates.writeRequest(directory, id, owner, params as AuthoringWriteParams)
       if (action === 'test')
         return this.candidates.test(
           directory,

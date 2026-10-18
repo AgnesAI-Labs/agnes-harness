@@ -1,6 +1,6 @@
 import { authoringGuidance, verification } from './src/authoring.mjs'
 import { panelFiles } from './src/panel.generated.mjs'
-import { array, enumeration, object, string } from './src/schema.mjs'
+import { array, enumeration, object, optional, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
 import { skinTest } from './src/skin-test.mjs'
 import { toolSource } from './src/templates.mjs'
@@ -34,6 +34,27 @@ const result = (value, action) => {
     ],
     structured: data,
   }
+}
+// The Host already sanitizes RPC diagnostics; project only merge refusal codes and relative paths.
+const writeDiagnostics = (error) => {
+  const hints = {
+    'conflicting-write-path': 'A path cannot be in both files and remove. / 同一路径不能同时写入和删除。',
+    'missing-remove-path': 'Remove only an existing candidate path. / 只能删除候选中的已有路径。',
+  }
+  const items = error?.data?.diagnostics ?? error?.diagnostics
+  return Array.isArray(items)
+    ? items
+        .slice(0, 16)
+        .flatMap(({ code, path }) =>
+          Object.hasOwn(hints, code) &&
+          typeof path === 'string' &&
+          path.length <= 240 &&
+          /^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/.test(path) &&
+          !path.split('/').includes('..')
+            ? [{ code, path, field: 'remove', name: path, hint: hints[code] }]
+            : [],
+        )
+    : []
 }
 const meta = (readOnly, approval = 'never') => ({
   isReadOnly: readOnly,
@@ -72,14 +93,17 @@ export const pluginHelper = {
                 ...result({
                   state: 'failed',
                   code,
+                  diagnostics: writeDiagnostics(error),
                   operation:
                     definition.name === 'plugin_helper_create'
                       ? 'candidate.create'
-                      : { test: 'candidate.test', commit: 'candidate.submit', status: 'candidate.show' }[
-                          args.action
-                        ],
+                      : definition.name === 'plugin_helper_write'
+                        ? 'candidate.write'
+                        : { test: 'candidate.test', commit: 'candidate.submit', status: 'candidate.show' }[
+                            args.action
+                          ],
                   stage: context?.pluginManage ? 'request' : 'host-capability',
-                  candidateId: args.proposalId ?? null,
+                  candidateId: args.candidateId ?? args.proposalId ?? null,
                   message:
                     '操作未完成；复述 operation、stage、candidateId，保留同一草稿，不编造设置开关。 / Report operation, stage and candidateId; keep the same draft, never invent settings/switches. Do not bypass denial with shell/config edits.',
                 }),
@@ -108,7 +132,7 @@ export const pluginHelper = {
             guidance:
               'Working tool-with-panel scaffold: a shared to-do tool/owner store, profile list query and add/toggle effect, and a React ESM page calling ctx.profile.services. Rename package, row, tool, service and client IDs together. Extend this SAME candidate using the author reference, not Host/installed source searches; private install dirs are denied by design. Inherited tests exercise DOM interactions/errors and Host restart retention; real-browser appearance and installation still need verification. / 可读写待办模板：工具与 profile query/effect 共享 owner store，页面从 react 导入 React 并调用 ctx.profile.services。在同一候选扩展，保持服务等名称一致，使用作者参考，不翻查私有安装源码猜 API。继承测试覆盖 DOM 交互、错误及 Host 重建后的数据保留；安装与真实浏览器外观仍须验证。',
             initialCandidate:
-              'Do not reconstruct the template from previewFiles. If plugin_scaffold is in the current catalog, call plugin_scaffold({template:"tool-with-panel",name:"my-agh-plugin"}) ONCE to save the complete canonical tree, including manifest, client and tests. Otherwise, use run_code: const guide = await tools.plugin_helper_guide({kind:"tool-with-panel"}); const created = await tools.plugin_helper_create({files:guide.files}); return {candidateId:created.candidateId,candidateHash:created.candidateHash}; Then read/edit that SAME candidate with run_code and retain all files. / 不要从预览手抄或重建模板；优先调用现有 plugin_scaffold 一次保存完整模板（包含清单、客户端和测试），之后用 run_code 在同一候选中读改完整树。',
+              'Do not reconstruct the template from previewFiles. If plugin_scaffold is in the current catalog, call plugin_scaffold({template:"tool-with-panel",name:"my-agh-plugin"}) ONCE to save the complete canonical tree, including manifest, client and tests. Otherwise, ONLY IF run_code is offered in this request, use it: const guide = await tools.plugin_helper_guide({kind:"tool-with-panel"}); const created = await tools.plugin_helper_create({files:guide.files}); return {candidateId:created.candidateId,candidateHash:created.candidateHash}; Then read that SAME candidate and use mode: merge with changed files only. / 不要从预览手抄或重建模板；优先调用现有 plugin_scaffold 一次保存完整模板（包含清单、客户端和测试），之后读取同一候选，用 mode: merge 只写改动文件。',
             files: panelFiles,
           }
           // Keep the model-visible guide valid JSON within the default 32 KiB output budget.
@@ -126,7 +150,7 @@ export const pluginHelper = {
                     ['src/index.ts', 'client/index.js', 'client/agnes.client.json'].includes(file.path),
                   ),
                   templateRead:
-                    'Preview only, not a complete candidate tree. Full files are in structured.files. Use plugin_helper_create once, then plugin_candidate_read to assemble ALL files at one hash before a full-tree write. / 此处仅预览，不能当作完整候选写回。完整模板在 structured.files；创建一次后用 plugin_candidate_read 按同一摘要读齐全部文件再编辑。',
+                    'Preview only, not a complete candidate tree. Full files are in structured.files. Use plugin_helper_create once, then plugin_candidate_read to read the current hash, then mode: merge with changed files only. / 此处仅预览，不能当作完整候选写回。完整模板在 structured.files；创建一次后用 plugin_candidate_read 读取当前摘要，再用 mode: merge 只写变化文件。',
                 }),
               },
             ],
@@ -206,6 +230,22 @@ export const pluginHelper = {
           throw new Error('PLUGIN_FILES_INVALID')
         const value = await port(ctx).request({ action: 'candidate.create', files })
         return result({ ...value, proposalId: value.candidateId }, 'candidate.create')
+      },
+    })
+    api.register({
+      name: 'plugin_helper_write',
+      description:
+        'Alias of plugin_candidate_write: read the same candidate, then mode: merge with changed files and optional remove paths. Untouched files remain; default replace rewrites the entire tree. expectedHash is required. Every edit invalidates tests and review.',
+      parameters: object({
+        candidateId: string(80),
+        expectedHash: string(71),
+        files: array(object({ path: string(240), content: string(128 * 1024, 0) }), 64),
+        mode: optional(enumeration('replace', 'merge')),
+        remove: optional(array(string(240), 64)),
+      }),
+      meta: meta(false, 'always'),
+      async execute(input, ctx) {
+        return result(await port(ctx).request({ action: 'candidate.write', ...input }), 'candidate.write')
       },
     })
     api.register({

@@ -125,9 +125,15 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_candidate_write',
     description:
-      'Replace the complete candidate text tree. Build in <=8 KiB new-text steps; use run_code to read/modify/write the full tree without re-emitting unchanged files. After truncation, read the same candidate. Changes invalidate tests and review.',
+      'Read first, then use mode: merge with changed files only and optional remove paths. Untouched files remain. Default replace rewrites the complete tree. expectedHash is required; edits invalidate tests and review. Keep new text <=8 KiB; after truncation read the same candidate.',
     parameters: Type.Object(
-      { candidateId, expectedHash, files: Type.Array(file, { minItems: 1, maxItems: 64 }) },
+      {
+        candidateId,
+        expectedHash,
+        files: Type.Array(file, { maxItems: 64 }),
+        mode: Type.Optional(Type.Union([Type.Literal('replace'), Type.Literal('merge')])),
+        remove: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 64 })),
+      },
       { additionalProperties: false },
     ),
     meta,

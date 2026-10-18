@@ -200,7 +200,7 @@ it('reads the bundled creator skill without executing commands and fails closed 
   const guide = (result.content[0] as { text: string }).text
   expect(guide).toContain('8 KiB')
   expect(guide).toContain('After OUTPUT_LIMIT')
-  expect(pluginCreatorTools[4].description).toContain('run_code')
+  expect(pluginCreatorTools[4].description).toContain('mode: merge')
   let sections: { content: string }[] = []
   extensionFactoryOf(pluginCreator)({
     registerTool: () => () => {},
@@ -245,11 +245,13 @@ it('reads the bundled creator skill without executing commands and fails closed 
           candidateId: string
           expectedHash?: string
           files: typeof sourceFiles
+          mode?: string
         }
         expect(args.candidateId).toBe(candidateId)
         if (args.action === 'candidate.show') return { candidateId, candidateHash, sourceFiles }
         expect(args.action).toBe('candidate.write')
         expect(args.expectedHash).toBe(candidateHash)
+        expect(args.mode).toBe('merge')
         saved = args.files
         return { candidateId, candidateHash: `sha256-${'c'.repeat(64)}`, sourceFiles: saved }
       },
@@ -273,11 +275,7 @@ it('reads the bundled creator skill without executing commands and fails closed 
     candidateId,
     candidateHash: `sha256-${'c'.repeat(64)}`,
   })
-  expect(saved).toEqual([
-    sourceFiles[0],
-    { path: sourceFiles[1]!.path, content: '# Example\nA complete small section.\n' },
-    sourceFiles[2],
-  ])
+  expect(saved).toEqual([{ path: sourceFiles[1]!.path, content: '# Example\nA complete small section.\n' }])
   expect(await pluginCreatorTools[1].execute({ template: 'skill', name: 'review-demo' }, ctx)).toMatchObject({
     isError: true,
   })
@@ -382,6 +380,33 @@ it('keeps the created draft and reports write as the failing operation without i
   })
   expect(JSON.stringify(written.content)).toContain('keep the existing draft')
   expect(JSON.stringify(written.content)).not.toMatch(/admin|switch|create.*failed/i)
+  const alias = tools.get('plugin_helper_write')!
+  const delta = {
+    candidateId,
+    expectedHash: candidateHash,
+    mode: 'merge',
+    files: sourceFiles,
+    remove: ['old.md'],
+  }
+  const requests: unknown[] = []
+  const portContext = {
+    ...ctx,
+    pluginManage: {
+      request: async (input: unknown) => {
+        requests.push(input)
+        return { candidateId, candidateHash, state: 'draft', tests: null }
+      },
+    },
+  } as unknown as ToolContext
+  for (const tool of [pluginCreatorTools[4], alias]) {
+    const receipt = await tool.execute(delta, portContext)
+    expect(receipt).toMatchObject({ structured: { candidateId, candidateHash } })
+  }
+  expect(requests).toEqual([
+    { action: 'candidate.write', ...delta },
+    { action: 'candidate.write', ...delta },
+  ])
+  expect(alias.parameters.required).toContain('expectedHash')
   const builtinGuide = await pluginCreatorTools[0].execute({}, ctx)
   const { authorReference } = await import(
     new URL(

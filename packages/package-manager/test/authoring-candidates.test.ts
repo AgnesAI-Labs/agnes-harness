@@ -154,10 +154,13 @@ it('keeps drafts outside discovery and binds tests, diffs, capabilities and prov
     r.candidateId,
     'owner',
     r.candidateHash,
-    files.map((f) => (f.path === 'index.mjs' ? { ...f, content: f.content + '// edit\n' } : f)),
+    [{ ...files[1]!, content: files[1]!.content + '// edit\n' }],
+    'merge',
   )
   expect(next).toMatchObject({ state: 'draft', tests: null, reviewHash: null })
   expect(next.candidateHash).not.toBe(r.candidateHash)
+  expect(next.sourceFiles).toEqual(expect.arrayContaining([files[0], files[2]]))
+  expect(next.writeSummary).toMatchObject({ added: [], removed: [], changed: ['index.mjs'] })
   const publish = vi.fn(async () => {})
   await expect(
     s.candidates.decide(s.profile, r.candidateId, 'owner', r.candidateHash, r.reviewHash!, true, publish),
@@ -219,6 +222,39 @@ it('refuses failed tests, foreign owners, unsafe files, symlinks and source edit
         { path, content: '' },
       ]),
     ).rejects.toThrow()
+  const write = (delta: typeof files, remove: string[] = [], hash = d.candidateHash) =>
+    s.candidates.write(s.profile, d.candidateId, 'owner', hash, delta, 'merge', remove)
+  await expect(write([], [], `sha256-${'0'.repeat(64)}`)).rejects.toThrow('Candidate changed')
+  for (const [delta, remove, code, path] of [
+    [[files[1]!], ['index.mjs'], 'conflicting-write-path', 'index.mjs'],
+    [[], ['absent.md'], 'missing-remove-path', 'absent.md'],
+  ] as const) {
+    await expect(write([...delta], [...remove])).rejects.toMatchObject({
+      detail: { diagnostics: [{ code, path, field: 'remove', name: path }] },
+    })
+  }
+  // Deltas individually fit: the resulting tree still must pass all ordinary validation.
+  for (const delta of [
+    [{ path: '../escape', content: '' }],
+    [{ path: 'INDEX.mjs', content: '' }],
+    [{ path: 'index.mjs/child', content: '' }],
+    [{ path: 'binary.txt', content: '\0' }],
+    [{ path: 'large.txt', content: 'x'.repeat(131073) }],
+    Array.from({ length: 62 }, (_, i) => ({ path: `extra-${i}.txt`, content: '' })),
+    [
+      { path: 'a.txt', content: 'x'.repeat(131072) },
+      { path: 'b.txt', content: 'x'.repeat(131072) },
+    ],
+  ])
+    await expect(write(delta)).rejects.toThrow()
+  await expect(write([], ['../escape'])).rejects.toThrow()
+  expect(s.candidates.show(s.profile, d.candidateId, 'owner').candidateHash).toBe(d.candidateHash)
+  const added = await write([{ path: 'notes.md', content: 'temporary' }])
+  const removed = await write([], ['notes.md'], added.candidateHash)
+  expect(removed.candidateHash).toBe(d.candidateHash)
+  expect(removed.sourceFiles).toEqual(expect.arrayContaining(files))
+  expect(removed.sourceFiles).toHaveLength(files.length)
+  expect(removed.writeSummary).toMatchObject({ removed: ['notes.md'] })
   s.runner.mockImplementationOnce(async () => {
     const record = JSON.parse(
       readFileSync(join(s.profile, '.authoring-candidates', d.candidateId, 'record.json'), 'utf8'),
@@ -533,7 +569,9 @@ it('retains incomplete replacement drafts with exact missing-file diagnostics an
     panel.candidateId,
     'owner',
     panel.candidateHash,
-    panelFiles.filter((f) => f.path !== 'client/index.js'),
+    [],
+    'merge',
+    ['client/index.js'],
   )
   expect(dropped).toMatchObject({
     diagnostics: [expect.objectContaining({ name: 'client/index.js', field: 'client.entry' })],

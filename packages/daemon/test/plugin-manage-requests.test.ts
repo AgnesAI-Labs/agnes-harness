@@ -458,7 +458,7 @@ it.each(['tool', 'tool-with-panel', 'skill', 'skin'])(
     })
     const text = result.content.find((part) => part.type === 'text')
     if (text?.type !== 'text') throw new Error('guide returned no text')
-    const generated = JSON.parse(text.text)
+    const generated = result.structured as { files: unknown[] }
     const create = tools.find((t) => t.name === 'plugin_helper_create')
     if (!create) throw new Error('create missing')
     const created = await create.execute({ files: generated.files }, context)
@@ -659,10 +659,44 @@ it('continues a helper draft through real builtin registration and dispatch into
       isError: true,
       structured: { kind: 'stale-hash', operation: 'candidate.write', candidateId: p.candidateId },
     })
+    for (const name of ['plugin_candidate_write', 'plugin_helper_write']) {
+      for (const [delta, remove, code, path] of [
+        [[files[1]], [files[1]!.path], 'conflicting-write-path', files[1]!.path],
+        [[], ['absent.md'], 'missing-remove-path', 'absent.md'],
+      ] as const) {
+        const rejected = await call(name, { ...args, mode: 'merge', files: delta, remove })
+        expect(rejected, name).toMatchObject({
+          isError: true,
+          structured: { diagnostics: [{ code, path }] },
+        })
+      }
+      expect(
+        await call(name, { ...args, expectedHash: `sha256-${'0'.repeat(64)}`, mode: 'merge', files: [] }),
+      ).toMatchObject({
+        isError: true,
+        structured: { code: 'PLUGIN_CANDIDATE_STALE' },
+      })
+    }
     const changed = [...files, { path: 'notes.md', content: 'same candidate, builtin edit' }]
-    const written = await call('plugin_candidate_write', { ...args, files: changed })
-    const hash = written.structured.candidateHash
-    expect(hash).not.toBe(p.candidateHash)
+    const written = await call('plugin_candidate_write', {
+      ...args,
+      mode: 'merge',
+      files: [changed[changed.length - 1]],
+    })
+    let hash = written.structured.candidateHash
+    expect(
+      (await call('plugin_candidate_read', { candidateId: p.candidateId })).structured.sourceFiles,
+    ).toEqual(expect.arrayContaining([...files]))
+    const alias = await call('plugin_helper_write', {
+      ...args,
+      expectedHash: hash,
+      mode: 'merge',
+      files: [],
+      remove: ['notes.md'],
+    })
+    hash = alias.structured.candidateHash
+    expect(hash).toBe(p.candidateHash)
+    expect(written.structured.candidateHash).not.toBe(p.candidateHash)
     expect(written.structured.candidateId).toBe(p.candidateId)
     s.testRunner.mockResolvedValueOnce({
       state: 'failed',
@@ -687,7 +721,7 @@ it('continues a helper draft through real builtin registration and dispatch into
       packageId: '@agnes/plugin-helper',
       rowId: 'ext:plugin-helper/main',
     })
-    for (const invocation of invocations.slice(1))
+    for (const invocation of invocations.slice(1).filter((entry) => entry.packageId === '@agnes/base'))
       expect(invocation).toMatchObject({
         packageId: '@agnes/base',
         rowId: 'ext:agnes/plugin-creator',

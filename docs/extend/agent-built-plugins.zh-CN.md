@@ -14,11 +14,11 @@ macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可
 
 选择 API 或 token 前，先读两条指南共用的[源码生成作者参考](../reference/plugin-author-api.zh-CN.md)。`apply(ctx)` 使用 PluginContext 登记能力，`execute(args, ctx)` 才接收 ToolContext。工作区文件用 `ctx.fs.read/write`（字节或字符串），插件或应用 profile 数据用声明 `capabilities.store: true` 后的可选 `ctx.store`。不存在 `PluginContext.fs.readText/writeText`。
 
-工具需要自带 UI 面板时选 `tool-with-panel`，复用已有模板。当前目录提供该工具时，优先用 `plugin_scaffold({template: "tool-with-panel", name: "my-agh-plugin"})` 初始化一次，保存完整清单、客户端和测试。指南的 `previewFiles` 缺少部分文件，不能手抄为候选文件树；也可通过 `run_code` 将指南中完整的 `files` 数组传给 `plugin_helper_create`。候选已经存在时，在同一候选补齐 client、描述符和测试。读取同一摘要的全部候选分页，程序修改 `sourceFiles`，再写回包含未改文件的完整树；creator 指南提供可执行 cell 示例。每次修改都会清空旧测试，最终证据必须是最终 `candidateHash` 的 `plugin_test`。
+工具需要自带 UI 面板时选 `tool-with-panel`，复用已有模板。当前目录提供该工具时，优先用 `plugin_scaffold({template: "tool-with-panel", name: "my-agh-plugin"})` 初始化一次，保存完整清单、客户端和测试。指南的 `previewFiles` 缺少部分文件，不能手抄为候选文件树；仅当本次请求实际提供 `run_code` 时，也可通过它将指南中完整的 `files` 数组传给 `plugin_helper_create`。候选已经存在时，在同一候选补齐 client、描述符和测试。读取候选后，用 `mode: "merge"` 仅写变化文件，未改清单、客户端与测试自动保留；creator 指南提供可执行 cell 示例。每次修改都会清空旧测试，最终证据必须是最终 `candidateHash` 的 `plugin_test`。
 
 使用 `@agnes/host/author-testkit` 的 `createPluginTestHost(main)` 做真实 Host 登记及 `host.invoke(name, args)` 调用测试，需要 I/O 时通过 `options.context` 提供明确的调用端口。手造 PluginContext mock 不能证明安装成功。使用受控候选 runner；`node --test` 管道接 `tail` 会隐藏测试退出码。后端测试不能证明浏览器外观。
 
-`tool-with-panel` 是完整的小型待办示例：React ESM 导入、profile 页面、声明的 query/effect 服务，以及共享 owner store 持久化。继承的测试通过真实客户端门面验证 DOM 添加、勾选与错误，并验证 Host 重建后数据保留。请用[作者参考](../reference/plugin-author-api.zh-CN.md)和模板，不要翻查宿主或安装源码猜 API；私有安装目录按设计禁止访问。浏览器没有 `ctx.tools.invoke`，应使用 `ctx.profile.services` 并在 `client.services` 声明精确名称。`present` 接受工作区文件系统路径，不能传 `artifact://` 引用。
+`tool-with-panel` 是完整的小型待办示例：React ESM 导入、profile 页面、声明的 query/effect 服务，以及共享 owner store 持久化。继承的测试通过真实客户端门面验证 DOM 添加、勾选与错误，并验证 Host 重建后数据保留。请用[作者参考](../reference/plugin-author-api.zh-CN.md)和模板，只用公开作者 API、授权工作区文件及 artifact 引用；禁止翻查宿主或安装源码、其他工作区、环境变量和凭据，不做全盘搜索。浏览器没有 `ctx.tools.invoke`，应使用 `ctx.profile.services` 并在 `client.services` 声明精确名称。`present` 接受工作区文件系统路径，不能传 `artifact://` 引用。
 
 ## 免密钥 Demo 练习
 
@@ -33,7 +33,7 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 确认候选为 `state: review`、`tests.state: passed` 且 `tests.count >= 1` 后，再使用下方 CLI 审阅命令。`draft` 的 `reviewHash` 为 `null`，不能直接批准。发布后在新会话提交 `call my_text_stats {"text":"hello world"}`，预期结果为 `{"characters":11,"words":2}`。也可按[成长演示](../../examples/demos/growing-skills/README.zh-CN.md)运行独立的离线练习。
 
-默认 **Plugin Helper** 提供三个工具：
+默认 **Plugin Helper** 提供四个工具：
 
 1. `plugin_helper_guide`（`kind: tool|tool-with-panel|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
 2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。创建沿用内置 scaffold 的文本候选合同，支持其 TypeScript 面板模板；不会执行生命周期脚本。
@@ -41,7 +41,9 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。
 
-内置 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
+4. `plugin_helper_write` 是 `plugin_candidate_write` 的别名，接受相同的 `candidateId`、必填 `expectedHash`、`mode`、`files` 和可选 `remove`。
+
+内置 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须以旧 `candidateHash` 为 `expectedHash`；推荐 `mode: "merge"` 保留未改文件，默认 `replace` 替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
 
 两组工具共用同一个由 Host 绑定的候选服务：`plugin_helper_create` 创建的草稿可以继续由 `plugin_candidate_read` 和 `plugin_candidate_write` 编辑，沿用原候选 ID 与当前哈希。Host 记录真实调用包、代码快照（内置工具使用该会话固定的代码代际）、行与行级 lease，并检查每次工具调用的生命期。子代理、已取消或过期的调用以及缺少当前 owner 授权的调用不能使用此端口。内置作者工具的错误回执标明操作、阶段、候选 ID，并区分宿主能力不可用、权限拒绝、哈希过期和验证失败。能力不可用不表示管理员关闭了作者功能；保留草稿并报告实际失败的操作。
 
@@ -76,7 +78,7 @@ agh plugins pack <staging-folder> <new-output.tgz>
 
 更新后的 Host 重新装配工具时才获得此绑定。已经运行的 worker 在正常重启前继续使用原装配能力；保留会话仍沿用原代码 pin，重新打开不会改写 pin 或升级固定的工具代码。原候选与哈希保持可读，helper 创建的草稿也适用。本次更新不会清理草稿或自动发布。
 
-大包分步构建，每次回复的新文件文本最多 8 KiB，每次完成一个文件或带唯一标记的完整段落。写入仍替换完整树，不能只发送变化文件。存在 `run_code` 时，在 cell 内读取当前候选，程序化更新 `sourceFiles`，用新摘要写入完整数组，仅输出返回的摘要；内置 `plugin_creator_guide` 提供小型 cell 示例。没有代码工具时，将完整草稿控制在输出额度内，或配置服务商支持的更高 `model.max_tokens`。发生 `OUTPUT_LIMIT` 后，读取原候选并用更小片段接续：未完成调用已被丢弃。最终摘要必须重新测试才能提交审阅；部分草稿或输出额度提示不是测试通过的证据。
+大包分步构建，每次回复的新文件文本最多 8 KiB，每次完成一个文件。读取同一候选后，用 `mode: "merge"` 仅写变化文件，`remove` 显式删除。只有本次请求实际提供 `run_code` 时才可用它自动编辑；目录元数据不能证明可用性。发生 `OUTPUT_LIMIT` 后，读取原候选并用更小片段接续，未完成调用已被丢弃。最终摘要须重新测试后再提交审阅。
 
 在 **设置 → 插件 → 候选** 从列表选择草稿；状态标签区分待审阅、已拒绝和已发布。摘要显示插件、来源会话与轮次、测试结果及新增权限。逐个展开文件查看新增和删除行，长文件在差异区域内滚动。默认收起的 **技术详情** 包含候选、已安装基线、审阅和测试运行的摘要，原始能力变化、会话／工具 ID 及测试输出。检查改动时，审阅页底部保持 **批准发布** 和 **拒绝** 可见。
 
@@ -103,6 +105,8 @@ Markdown Skill 是包内数据，全文与插件快照一起审阅。Skill 提�
 
 Web 优先显示待处理候选，已发布、已拒绝和已中断的审阅放在折叠历史中。发布成功后关闭详情，并显示已安装技能或插件的链接。终态详情保留文件与来源，不再显示批准/拒绝按钮。
 
-作者回执通过有界、白名单化的 `diagnostics` 提供原因代码、包内相对路径、字段、出错名称与修正提示。校验与测试失败会在普通工具文本中展示可操作的诊断；测试输出经过脱敏，超限带有 `[truncated]` 标记。通过 `run_code` 读取同一候选可检查完整但仍受长度限制的 `tests.output`；测试通过时回执保持简洁。超时和进程非零退出会通过相同脱敏路径保留有界的部分输出；即使其中包含通过的 TAP 文本，也仍记为测试失败。
+作者回执通过有界、白名单化的 `diagnostics` 提供原因代码、包内相对路径、字段、出错名称与修正提示。校验与测试失败会在普通工具文本中展示可操作的诊断；测试输出经过脱敏，超限带有 `[truncated]` 标记。读取同一候选（仅在实际提供时可通过 `run_code`）可检查完整但仍受长度限制的 `tests.output`；测试通过时回执保持简洁。超时和进程非零退出会通过相同脱敏路径保留有界的部分输出；即使其中包含通过的 TAP 文本，也仍记为测试失败。
 
-`candidate.write` 仍替换完整文件树，`writeSummary` 列出新增、删除、修改文件以及声明的后端／客户端入口和缺失文件。草稿可以不完整；删除 `package.json` 或声明入口会产生明确警告，test/submit 以同一缺文件原因拒绝。写入时必须保留所有未修改文件。重复提交相同内容或遭遇相同拒绝时，回执提示先读取候选／诊断，不设全局重试上限。每次编辑仍使测试及人工审阅证据失效。
+`candidate.write` 支持显式 `mode: "merge"`：`files` 中的文件新增或替换，`remove: [paths]` 删除已有文件，其他文件保留。`files: []` 支持仅删除。同一路径同时出现在两组中，或删除不存在的路径，分别以 `conflicting-write-path`、`missing-remove-path` 及包内路径拒绝。必填 `expectedHash` 绑定当前完整树，返回新的完整树摘要；所有路径、文本、文件数及字节上限仍应用于合并后的树。默认 `mode: "replace"` 保留整树替换兼容性，不接受删除列表，须包含所有要保留的文件。
+
+`writeSummary` 列出新增、删除、修改文件及声明入口、缺失文件。草稿可以不完整；删除清单或入口会警告，test/submit 拒绝。重复内容或拒绝提示先读候选／诊断，不设重试上限。每次成功写入仍清空测试和人工审阅证据。
