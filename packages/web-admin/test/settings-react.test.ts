@@ -13,7 +13,7 @@ import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { type SettingsAdmin, SettingsPages } from '../src/settings/pages.js'
 import { createSettingsController } from '../src/settings.js'
@@ -35,6 +35,11 @@ function styleRule(css: string, selector: string): string {
   expect(match, `missing rule ${selector}`).not.toBeNull()
   return match?.[1] ?? ''
 }
+
+beforeEach(() => {
+  // Independent panels also fetch here. Unhandled endpoints must still obey fetch's Promise contract.
+  diagnosticsFetch.mockReset().mockImplementation(async () => Response.json({}, { status: 503 }))
+})
 
 afterEach(() => {
   clearResources()

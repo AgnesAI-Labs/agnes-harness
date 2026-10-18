@@ -26,6 +26,21 @@ import { snapshotHash } from '../src/integrity.js'
 import { readBundledManifest } from '../src/manifest.js'
 
 const roots: string[] = []
+const missingClientFile = (entry: string) =>
+  expect.objectContaining({
+    code: 'E_PACKAGE_STATE',
+    detail: expect.objectContaining({
+      reason: 'entry-escape',
+      diagnostics: [
+        expect.objectContaining({
+          code: 'missing-required-file',
+          path: 'package.json',
+          field: 'entry',
+          name: entry,
+        }),
+      ],
+    }),
+  })
 function makePackage(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-client-'))
   roots.push(dir)
@@ -176,7 +191,7 @@ describe('client asset resolution', () => {
   it('rejects an entry that does not exist in the install tree', () => {
     const dir = makePackage()
     expect(() => resolveClientAssets(dir, manifestWith({ entry: 'dist/client/missing.js' }))).toThrow(
-      /cannot be resolved/,
+      missingClientFile('dist/client/missing.js'),
     )
   })
   it('rejects an entry that only reaches the package through a symlink', () => {
@@ -206,7 +221,7 @@ describe('client asset resolution', () => {
         }),
       ),
     )
-    expect(() => readBundledManifest(dir)).toThrow(/cannot be resolved/)
+    expect(() => readBundledManifest(dir)).toThrow(missingClientFile('dist/client/index.js'))
     writeClientFiles(dir)
     expect(readBundledManifest(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
   })
@@ -516,6 +531,6 @@ describe('client capability hash integration', () => {
         },
         {},
       ),
-    ).rejects.toThrow(/cannot be resolved/)
+    ).rejects.toMatchObject(missingClientFile('./client/index.js'))
   })
 })

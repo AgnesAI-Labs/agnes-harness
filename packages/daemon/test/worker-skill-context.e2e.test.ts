@@ -22,7 +22,8 @@ const roots: string[] = []
 // Candidate source reads now advertise bounded pages with offset and expectedHash.
 // ui_render/ui_update retain their contracts with the reviewed slim model guidance.
 // plugin_test now describes its single hash-bound confirmation and OS-isolation requirement.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'b169d90f1cee945deb4281802737eb2a49d40495b5108349367ef8dd6c9d7607'
+// Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '5be0b99632729b51f249d7355c94dde45af23d1358583ee80c35282b575377c4'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

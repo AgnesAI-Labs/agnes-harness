@@ -108,6 +108,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
     packages: {
       'fixture/review': {
         version: '1.0.0',
+        treeIntegrity: source.snapshot.treeIntegrity,
         source: { type: 'file', ref: 'file:fixture' },
         integrity,
         trust: 'trusted',
