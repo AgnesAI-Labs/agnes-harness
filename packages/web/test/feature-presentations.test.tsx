@@ -13,25 +13,31 @@ import {
   workbenchPanels,
 } from '@agnes/web-client'
 import { renderSessionActions } from '@agnes/web-conversation/session-actions'
-import { unmountRegion } from '@agnes/web-ui'
+import { intelligentUiCatalog, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 // @ts-expect-error Generated shipped ESM is exercised directly without a release build.
 import * as goal from '../../package-manager/bundled-plugins/goal-ui/src/client.js'
 // @ts-expect-error Generated shipped ESM is exercised directly without a release build.
 import * as interaction from '../../package-manager/bundled-plugins/interaction-ui/src/client.js'
+import { expectLocalizedDom } from './helpers/localized-dom.js'
 
 it.each([
-  ['goal', goal, 'goal', 'goal'],
-  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views'],
+  ['goal', goal, 'goal', 'goal', 'en'],
+  ['goal', goal, 'goal', 'goal', 'zh-CN'],
+  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views', 'en'],
+  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views', 'zh-CN'],
 ] as const)(
   'registers, yields, restores and revokes the complete %s presentation',
-  async (role, official, panelId, cardId) => {
+  async (role, official, panelId, cardId, language) => {
     const ctx = new Context(),
       slots = new SlotRegistry(ctx),
       roles = new PresentationRoleRegistry()
     const session = new SessionService(ctx)
-    const locale = new LocaleService(ctx, 'en')
+    const previousLanguage = document.documentElement.lang
+    document.documentElement.lang = language
+    const locale = new LocaleService(ctx, language)
     const client = { sessions: { get: () => undefined } }
     // Services are non-enumerable just as on a real Cordis client fiber.
     const services: ClientContext = Object.create(
@@ -103,7 +109,12 @@ it.each([
         await vi.waitFor(() => expect(document.body.textContent).toContain('Historical goal'))
         flushSync(() => document.querySelector<HTMLButtonElement>('[data-testid="goal-resume"]')!.click())
         expect(command).toHaveBeenCalledWith('/goal resume')
+      } else {
+        const Panel = workbenchPanels.get(panelId)!.component
+        flushSync(() => renderRegion(host, createElement(Panel, { context: { t: (key) => locale.t(key) } })))
+        expect(host.textContent).toContain(intelligentUiCatalog[language]['ui.empty'])
       }
+      expectLocalizedDom(document.body)
       stopReplacement = roles.register('replacement', {
         role,
         priority: 0,
@@ -139,6 +150,7 @@ it.each([
       stop()
       unmountRegion(host)
       host.remove()
+      document.documentElement.lang = previousLanguage
     }
   },
 )

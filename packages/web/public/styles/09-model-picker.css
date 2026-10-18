@@ -155,17 +155,26 @@
     text-align: start;
     justify-content: flex-start;
   }
+  .model-picker-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto;
+  }
+  .model-picker-nav > span:first-child {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
   .model-picker-nav > span:first-child,
   .model-picker-choice > span:first-child {
     flex: 1;
     min-width: 0;
   }
   .model-picker-value {
+    text-align: end;
     color: var(--agnes-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 60%;
+    min-width: 0;
   }
   .model-picker-back {
     font-weight: 600;

@@ -9,9 +9,11 @@ import { expect, it, vi } from 'vitest'
 import { startClientModules } from '../src/client-modules/boot.js'
 import { createReconciler } from '../src/client-modules/reconcile.js'
 import { LoopPicker, loadNewSessionCatalog, updateLoopPicker } from '../src/loop-picker.js'
+import { bundledPresentation } from './helpers/bundled-presentation.js'
 import { enT } from './helpers/locale.js'
+import { expectLocalizedDom } from './helpers/localized-dom.js'
 
-;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 it('loads exact new-session defaults and renders the selected/stale Loop accessibly', async () => {
   const loop = { id: 'workflow', version: '1.2.0', sourcePackage: '@acme/workflow', capabilities: ['resume'] }
@@ -209,11 +211,136 @@ it('mounts an installed UI package panel and reports a subsequent loader failure
   }
 })
 
+it.each(['en', 'zh-CN'] as const)(
+  'localizes shipped composer model settings and live locale changes (%s)',
+  async (language) => {
+    const conversationUi = await bundledPresentation('conversation')
+    const { clientModule } = await import('@agnes/web-client')
+    const { webUiLocaleCatalog } = await import('@agnes/web-ui')
+    const host = document.body.appendChild(document.createElement('section'))
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 403 }))
+    let runtime!: Awaited<ReturnType<typeof startClientModules>>
+    let fiber: ReturnType<typeof runtime.ctx.plugin> | undefined
+    const previousLanguage = document.documentElement.lang
+    const longModel = `deepseek-${'long-model-name-'.repeat(10)}`
+    try {
+      await act(async () => {
+        runtime = await startClientModules({
+          agnes: { sessions: { get: () => undefined } } as never,
+          composerContainer: host,
+          composer: {
+            onCancel() {},
+            onDraftChange() {},
+            onError() {},
+            onSubmit() {},
+            onWorkspace() {},
+            onModelSelect: async () => true,
+            onPermissionSelect: async () => true,
+            onModelSettingsChange: async () => true,
+            onAuxiliaryRead: async () => ({ fast: { route: 'deepseek', model: longModel } }),
+            onAuxiliarySelect: async () => true,
+          },
+        })
+        fiber = runtime.ctx.plugin(clientModule(conversationUi), {
+          packageId: '@agnes/conversation-ui',
+          revision: 'locale-test',
+          clientId: 'conversation-ui',
+          presentationRoles: ['conversation', 'composer'],
+          slotCatalogVersion: 'dsh-client-slots/v1',
+          binding: { owner: 'locale-test', lifetime: 'profile', availability: 'active' },
+        } as never)
+        await fiber
+        runtime.composer?.render({
+          cancel: { disabled: true, hidden: true, label: 'Stop' },
+          connected: true,
+          configured: true,
+          hasSession: true,
+          loading: false,
+          hint: { kind: 'shortcut', text: 'Enter' },
+          input: { disabled: false, placeholder: 'Task' },
+          permission: { disabled: false, pending: false, selected: 'workspace' },
+          sending: false,
+          stopping: false,
+          usage: undefined,
+          send: { disabled: false, label: 'Send', mode: 'idle', title: 'Send' },
+          workspace: { disabled: false, label: 'workspace', title: 'workspace' },
+          model: {
+            accessibleName: 'DeepSeek',
+            label: 'deepseek-v4-pro',
+            options: [{ route: 'deepseek', id: 'deepseek-v4-pro', label: 'DeepSeek' }],
+            selected: { route: 'deepseek', id: 'deepseek-v4-pro' },
+            disabled: false,
+            pending: false,
+            auxiliaryAvailable: true,
+          },
+          modelSettings: {
+            settings: {},
+            contextWindow: 128000,
+            thinkingLevelMap: { low: 'low', high: 'high' },
+          },
+        })
+      })
+      await vi.waitFor(() => expect(host.querySelector<HTMLButtonElement>('#model')?.disabled).toBe(false))
+      await act(async () => host.querySelector<HTMLButtonElement>('#model')!.click())
+      await vi.waitFor(() => expect(document.querySelector('#model-picker-popover')).toBeTruthy())
+      for (const current of [language, language === 'en' ? 'zh-CN' : 'en'] as const) {
+        await act(async () => {
+          document.documentElement.lang = current
+          runtime.locale.setLocale(current)
+        })
+        const panel = document.querySelector<HTMLElement>('#model-picker-popover')!
+        await vi.waitFor(() =>
+          expect(panel.querySelector('.model-picker-session .model-picker-group-title')?.textContent).toBe(
+            runtime.locale.t('modelSettings.session'),
+          ),
+        )
+        expectLocalizedDom(panel)
+        // Check every shared model-settings message as well as the rendered branches below.
+        for (const [key, text] of Object.entries(webUiLocaleCatalog[current]).filter(([key]) =>
+          key.startsWith('modelSettings.'),
+        ))
+          expect(runtime.locale.t(key)).toBe(text)
+        const row = panel.querySelector<HTMLButtonElement>('#model-picker-auxiliary')!
+        await vi.waitFor(() => expect(row.textContent).toContain(longModel))
+        await act(async () => row.focus())
+        await vi.waitFor(() =>
+          expect(document.getElementById(row.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+            `${longModel} · ${runtime.locale.t('modelSettings.slots.unset')}`,
+          ),
+        )
+        for (const kind of ['thinking', 'context', 'auxiliary']) {
+          await act(async () => panel.querySelector<HTMLButtonElement>(`#model-picker-${kind}`)!.click())
+          expectLocalizedDom(panel)
+          if (kind === 'context') {
+            await act(async () =>
+              [...panel.querySelectorAll<HTMLButtonElement>('#session-model-budget button')]
+                .find((button) => button.textContent === runtime.locale.t('modelSettings.custom'))!
+                .click(),
+            )
+            expectLocalizedDom(panel)
+          }
+          await act(async () => panel.querySelector<HTMLButtonElement>('.model-picker-back')!.click())
+        }
+      }
+      await act(async () => document.body.click())
+    } finally {
+      await act(async () => {
+        await fiber?.dispose()
+        await runtime?.dispose()
+      })
+      document.documentElement.lang = previousLanguage
+      host.remove()
+      fetcher.mockRestore()
+    }
+  },
+)
+
 it('switches the bundled conversation to an IDE and back, reclaiming partial mounts and preserving host work', async () => {
-  const { apply } = await import('../src/presentations/conversation.js')
+  const { apply } = await bundledPresentation('conversation')
   const { presentationRoles, clientModule, conversationCards } = await import('@agnes/web-client')
   const conversation = document.createElement('section')
   const composer = document.createElement('section')
+  const previousLanguage = document.documentElement.lang
   const originalBlobURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:preview' })
   const cancel = vi.fn()
@@ -243,6 +370,18 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
       await builtin
     })
     await vi.waitFor(() => expect(conversation.querySelector('#transcript')).toBeTruthy())
+    for (const language of ['en', 'zh-CN']) {
+      await act(async () => {
+        document.documentElement.lang = language
+        runtime.locale.setLocale(language)
+        runtime.transcript?.render([
+          { kind: 'user', id: 'question', seq: 1, content: [{ type: 'text', text: 'Question' }] },
+          { kind: 'assistant', id: 'answer', seq: 2, text: 'Answer' },
+        ])
+      })
+      await vi.waitFor(() => expect(conversation.textContent).toContain('Answer'))
+      expectLocalizedDom(conversation)
+    }
     runtime.composer?.setDraft('Keep this draft')
     const composerInput = composer.querySelector('textarea')
     const { createRegionRenderer } = await import('@agnes/web-ui')
@@ -314,6 +453,7 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
       await runtime.dispose()
     })
     conversation.remove()
+    document.documentElement.lang = previousLanguage
     composer.remove()
     if (originalBlobURL) Object.defineProperty(URL, 'createObjectURL', originalBlobURL)
     else Reflect.deleteProperty(URL, 'createObjectURL')
@@ -322,7 +462,7 @@ it('switches the bundled conversation to an IDE and back, reclaiming partial mou
 })
 
 it('mounts the release navigation through its public port and retains mobile focus and skin hooks', async () => {
-  const { apply } = await import('../src/presentations/navigation.js')
+  const { apply } = await bundledPresentation('navigation')
   const { clientModule } = await import('@agnes/web-client')
   const aside = document.createElement('aside')
   aside.className = 'sidebar'
@@ -362,6 +502,10 @@ it('mounts the release navigation through its public port and retains mobile foc
     expect(document.activeElement?.id).toBe('new')
     expect(aside.getAttribute('data-agnes-region')).toBe('sidebar')
     expect(aside.querySelector('nav')?.getAttribute('aria-label')).toBeTruthy()
+    for (const language of ['en', 'zh-CN']) {
+      await act(async () => runtime.locale.setLocale(language))
+      expectLocalizedDom(aside)
+    }
     await act(async () => {
       await fiber?.dispose()
     })

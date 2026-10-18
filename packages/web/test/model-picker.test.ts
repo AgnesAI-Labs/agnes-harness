@@ -1,4 +1,6 @@
 /** @vitest-environment happy-dom */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ModelSettings } from '@agnes/protocol'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createRegionRenderer, installFeedbackSink, type RegionRenderer } from '@agnes/web-ui'
@@ -688,5 +690,17 @@ describe('model picker', () => {
       await closed()
       expect(document.activeElement).toBe(trigger)
     },
+  )
+})
+
+it('keeps model settings labels and long values in separate shrinkable columns', () => {
+  const css = readFileSync(resolve(__dirname, '../public/styles/09-model-picker.css'), 'utf8')
+  const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split('}')[0] ?? ''
+  expect(rule('  .model-picker-nav')).toMatch(
+    /display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1.5fr\) auto/,
+  )
+  expect(rule('  .model-picker-nav > span:first-child')).toContain('overflow-wrap: anywhere')
+  expect(rule('  .model-picker-value')).toMatch(
+    /overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;[\s\S]*min-width: 0/,
   )
 })

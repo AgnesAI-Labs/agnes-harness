@@ -18,6 +18,7 @@ import {
 } from '@agnes/web-units/shell'
 import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
+import { ModelPickerControl } from '../model-picker.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
@@ -114,6 +115,10 @@ export function mountComposerRegion(
   // Render-time lookup: the injected translate reads whatever locale is current on each render.
   const composerDependencies: ComposerDependencies = {
     ...COMPOSER_DEPENDENCIES,
+    ModelPicker: function ComposerModelPicker(props) {
+      useSyncExternalStore(locale.subscribe, locale.getSnapshot)
+      return <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />
+    },
     loadHint: loadReplySuggestion,
     subscribeHintInvalidation: (listener) => {
       const events = ['agnes:packages-changed', 'agnes:session-configuration-changed', 'agnes:settings-route']

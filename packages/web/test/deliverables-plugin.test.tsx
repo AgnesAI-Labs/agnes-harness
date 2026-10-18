@@ -19,6 +19,7 @@ import { expect, it, vi } from 'vitest'
 import * as gallery from '../../../examples/community/deliverables-gallery/src/client.js'
 // @ts-expect-error Shipped browser ESM is tested directly, without a release build.
 import * as official from '../../package-manager/bundled-plugins/deliverables-ui/src/client.js'
+import { expectLocalizedDom } from './helpers/localized-dom.js'
 
 const artifact = { sha256: 'a'.repeat(64), size: 6, mime: 'text/plain' }
 
@@ -94,6 +95,7 @@ it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale)
       root.render(createElement(panel.component, { context: { t: (key) => key } }))
     })
     await vi.waitFor(() => expect(host.textContent).toContain('report.txt'))
+    expectLocalizedDom(host)
     if (id === 'deliverables')
       expect(host.querySelector('.workbench-deliverables-group h4')?.textContent).toBe(
         locale === 'zh-CN' ? '文件' : 'Files',
@@ -111,6 +113,7 @@ it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale)
       ),
     )
     await vi.waitFor(() => expect(host.textContent).toContain('report.txt'))
+    expectLocalizedDom(host)
     await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
     await renderPanel('deliverables')
     expect(resources.documents.load).toHaveBeenCalledWith({ laneId: 'main', artifact, kind: 'text' })
@@ -169,6 +172,7 @@ it.each(['en', 'zh-CN'])('switches authorized deliverables (%s)', async (locale)
       for (const listener of listeners) listener()
     })
     await vi.waitFor(() => expect(host.textContent).toContain('report.txt'))
+    expectLocalizedDom(host)
   } finally {
     await act(async () => {
       root.unmount()
