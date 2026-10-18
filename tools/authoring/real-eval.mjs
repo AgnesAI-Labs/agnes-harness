@@ -19,6 +19,11 @@ const observed = new Set()
 
 async function run(input, label, answerQuestions) {
   const session = await rt.session()
+  await rt.save('active-run.json', {
+    sessionId: session.id,
+    label,
+    model: process.env.AGH_DEMO_MODEL ?? 'deepseek/deepseek-flash',
+  })
   const events = []
   session.listeners.add((method, params) => {
     if (method === '_agnes/v1/session.event') {
@@ -120,11 +125,7 @@ try {
   if (mode === 'behavior') {
     Object.assign(summary, await runBehavior(rt))
   } else {
-    const data = await run(
-      `${scenarios[mode]}\n验收边界：只使用公开作者接口和工具返回的 artifact 引用；普通文件访问限当前隔离工作区。不要读取环境变量、凭据或宿主/其他工作区源码，不做全盘搜索。`,
-      mode,
-      true,
-    )
+    const data = await run(scenarios[mode], mode, true)
     const candidates = await rt.client.request('_agnes/v1/plugins.candidates.list', { profile: 'local-dev' })
     await rt.save('candidates.json', candidates)
     for (const item of candidates.candidates) {

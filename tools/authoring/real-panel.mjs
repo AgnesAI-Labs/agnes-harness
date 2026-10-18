@@ -100,8 +100,10 @@ try {
     await page
       .getByRole('listitem')
       .filter({ hasText: itemText })
-      .getByRole('button', { name: plan.remove, exact: true })
+      .getByRole('button', { name: plan.remove })
       .click()
+    if (plan.confirmRemove)
+      await page.getByRole('dialog').getByRole('button', { name: plan.confirmRemove, exact: true }).click()
     await page.getByText(itemText, { exact: true }).waitFor({ state: 'detached' })
     evidence.checks.push('delete')
   }

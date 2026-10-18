@@ -25,11 +25,13 @@ export async function runBehavior(rt) {
     pricing: { creditsPerUsd: 1 },
   })
   const catalogSession = await rt.session()
-  const catalog = (await catalogSession.tools()).tools.map(({ name, description, parameters }) => ({
-    name,
-    description,
-    parameters,
-  }))
+  const catalog = (await catalogSession.tools()).tools
+    .filter((tool) => tool.name !== 'run_code')
+    .map(({ name, description, parameters }) => ({
+      name,
+      description,
+      parameters,
+    }))
   const corpus = JSON.parse(
     await readFile('packages/base/extensions/plugin-creator/test/authoring-behavior.eval.json', 'utf8'),
   )
@@ -82,7 +84,7 @@ export async function runBehavior(rt) {
   for (const [index, test] of corpus.cases.entries()) {
     const output = await infer(
       `behavior-${index + 1}`,
-      `${authoringContextGuidance}\n${authoringGuidance}\nThis is an inert continuation evaluation. Return ONLY JSON {"reply": string, "toolCalls": [{"name": string, "arguments": object}], "plan": string[]}. Choose the next available tool(s) and describe subsequent steps in plan. No tools are executed; never claim a planned action already happened. The supplied synthetic receipts are authoritative. Available tool catalog:\n${JSON.stringify(catalog)}`,
+      `${authoringContextGuidance}\n${authoringGuidance}\nThis is an inert continuation evaluation. Return ONLY JSON {"reply": string, "toolCalls": [{"name": string, "arguments": object}], "plan": string[]}. Choose the next available tool(s) and describe subsequent steps in plan. No tools are executed; never claim a planned action already happened. The supplied synthetic receipts are authoritative. Synthetic tools-mode catalog (run_code is unavailable in this mode; this inert evaluation offers no actual execution):\n${JSON.stringify(catalog)}`,
       JSON.stringify({ user: test.user ?? 'Continue the plugin authoring task.', receipts: test.receipts }),
     )
     const judgment = await infer(
