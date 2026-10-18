@@ -1,5 +1,6 @@
 import type { ClientContext } from './client-module.js'
 import { ownContribution, scopedHomeEntries } from './contribution-scope.js'
+import { getDshSlotDefinition } from './dsh-slot-catalog.js'
 import { scopedExamplePages } from './example-pages.js'
 import { factChainLinks, workbenchNavigation } from './fact-chain-links.js'
 import { scopedPresentationRoles } from './presentation-roles.js'
@@ -48,7 +49,10 @@ export function bindContributions(
   ctx: ClientContext,
   module: ModuleIdentity,
   registry: SlotRegistry,
-  bindSlots: (effect: (off: () => void) => void, assert: (name?: string) => void) => SlotRegistry,
+  bindSlots: (
+    effect: (off: () => void) => void,
+    assert: (name?: string, deferred?: boolean) => void,
+  ) => SlotRegistry,
   registerCommand: ClientContext['commands']['register'],
   effect: (off: () => void) => void,
 ): void {
@@ -88,12 +92,17 @@ export function bindContributions(
   const locale = Object.create(ctx.locale) as ClientContext['locale']
   locale.register = bind(ctx.locale.register.bind(ctx.locale))
   Object.defineProperty(ctx, 'locale', { value: locale, configurable: true })
-  const slots = bindSlots(scope.effect, (name) => {
+  const slots = bindSlots(scope.effect, (name, deferred) => {
     scope.assert()
+    // A reviewed session slot can be awaited before its owning presentation mounts.
+    // Registration itself still requires the live declaration in SlotRegistry.
+    const slot = name
+      ? (registry.spec(name) ?? (deferred ? getDshSlotDefinition(name) : undefined))
+      : undefined
     if (
       (ctx.availability.getSnapshot()?.lifetime === 'session' ||
         ctx.availability.getSnapshot()?.availability === 'history-only') &&
-      (!name || registry.spec(name)?.scope !== 'session')
+      (!name || slot?.scope !== 'session')
     )
       throw new Error('Session contributions render recorded session data only')
   })
