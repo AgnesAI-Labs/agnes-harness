@@ -1568,6 +1568,36 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": ["unknown-theme-token", "invalid-field", "missing-required-file", "no-progress"]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
         "code": {
           "enum": [
             "E_PACKAGE_SOURCE",
@@ -3469,6 +3499,86 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": ["unknown-theme-token", "invalid-field", "missing-required-file", "no-progress"]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
+        "writeSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "removed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "changed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "entries": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "missing": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "unchanged": {
+              "type": "boolean"
+            }
+          },
+          "required": ["added", "removed", "changed", "entries", "missing", "unchanged"]
+        },
         "candidateId": {
           "type": "string",
           "pattern": "^candidate-[a-f0-9]{32}$"
