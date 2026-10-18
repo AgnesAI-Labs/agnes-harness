@@ -1,4 +1,4 @@
-import { resolvePluginMetadata } from '@agnes/protocol'
+import { defaultLoop, resolvePluginMetadata } from '@agnes/protocol'
 import {
   AGENTS_NAMESPACE,
   agentsCatalog,
@@ -48,7 +48,7 @@ function AgentList({
   const [loop, setLoop] = useState<string>()
   const loops = useResource(data.api ? scopedResourceKey(data.api, 'agents:loops') : undefined, async () => {
     if (!data.api) throw new Error('Admin unavailable')
-    return (await data.api.loops()).loops
+    return data.api.loops()
   })
   const starter = useAgentLaunch(data)
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
@@ -96,8 +96,12 @@ function AgentList({
     linkHandled.current = linkedPage
     starter.start(linked)
   }, [linkedPage, linked, navigation, starter])
-  const chosenLoop =
-    loop === undefined ? loops.data?.[0] : loops.data?.find((item) => `${item.id}@${item.version}` === loop)
+  const initialLoop = loops.data && (defaultLoop(loops.data.defaults) ?? loops.data.loops[0])
+  const chosenLoop = loops.data?.loops.find((item) =>
+    loop === undefined
+      ? item.id === initialLoop?.id && item.version === initialLoop.version
+      : `${item.id}@${item.version}` === loop,
+  )
   return (
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
@@ -119,7 +123,7 @@ function AgentList({
                 value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
                 aria-label={t('runningMode')}
                 onChange={setLoop}
-                options={(loops.data ?? []).map((item) => ({
+                options={(loops.data?.loops ?? []).map((item) => ({
                   value: `${item.id}@${item.version}`,
                   label: item.label ?? item.id,
                 }))}

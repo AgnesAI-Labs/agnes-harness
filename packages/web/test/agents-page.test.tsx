@@ -18,7 +18,7 @@ afterEach(() => {
   history.replaceState(null, '', '/')
 })
 
-it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable'] as const)(
+it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inherited'] as const)(
   'lists explicit agents, starts the plain Loop and uses a reviewed AgentRef ticket (%s)',
   async (outcome) => {
     const loops = [
@@ -107,7 +107,14 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable'] as co
           return { operationId: 'enable-kit' }
         },
         operation: async () => ({ state: 'completed' }),
-        loops: async () => ({ loops }),
+        loops: async () => ({
+          loops,
+          revision: 1,
+          defaults:
+            outcome === 'inherited'
+              ? {}
+              : { providers: { loop: { provider: 'acme.chat', version: '2.0.0' } } },
+        }),
         runtime: async () => ({
           bundles: [
             { id: 'acme/kit#triage', sourcePackage: 'acme/kit' },
@@ -152,19 +159,29 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable'] as co
       await vi.waitFor(() =>
         expect(general?.querySelector('button:not([aria-haspopup])')?.hasAttribute('disabled')).toBe(false),
       )
+      const initialStart = [...(general?.querySelectorAll('button') ?? [])].find(
+        (button) => button.textContent === 'Start now',
+      )
+      await act(async () => initialStart?.click())
+      expect(assign).toHaveBeenCalledWith(
+        outcome === 'inherited' ? '/?new=1&loop=acme.workflow%401.0.0' : '/?new=1&loop=acme.chat%402.0.0',
+      )
+      assign.mockClear()
       // The picker is a native public Select: keyboard choice selects the requested provider.
       await act(async () =>
         general?.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
       )
       const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
-        (item) => item.textContent === 'Chat',
+        (item) => item.textContent === (outcome === 'inherited' ? 'Chat' : 'Workflow'),
       )
       await act(async () => option?.click())
       const start = [...(general?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === 'Start now',
       )
       await act(async () => start?.click())
-      expect(assign).toHaveBeenCalledWith('/?new=1&loop=acme.chat%402.0.0')
+      expect(assign).toHaveBeenCalledWith(
+        outcome === 'inherited' ? '/?new=1&loop=acme.chat%402.0.0' : '/?new=1&loop=acme.workflow%401.0.0',
+      )
       await act(async () =>
         host.querySelector<HTMLButtonElement>('[data-agent-ref="acme/kit#reply"] button')?.click(),
       )
@@ -256,7 +273,7 @@ it('reacts to the effective application for catalog and installed agents, includ
           },
         ],
       }),
-      loops: async () => ({ loops: [] }),
+      loops: async () => ({ loops: [], revision: 1, defaults: {} }),
     },
   })
   const state: ApplicationState = {
