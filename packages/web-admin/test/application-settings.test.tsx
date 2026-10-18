@@ -214,7 +214,7 @@ it('previews a declared role without adopting an application and resets stale co
   expect(document.body.textContent).not.toContain('使用此实现')
 })
 
-it.each(['focus', 'poll', 'manual', 'visibility'])(
+it.each(['focus', 'agnes:plugins-invalidated', 'agnes:packages-changed', 'manual', 'visibility'])(
   'refreshes externally installed application and interface candidates via %s without losing them on a failed read',
   async (trigger) => {
     document.documentElement.lang = 'en'
@@ -248,8 +248,7 @@ it.each(['focus', 'poll', 'manual', 'visibility'])(
       ],
     }
     await act(async () => {
-      if (trigger === 'poll') await vi.advanceTimersByTimeAsync(5_000)
-      else if (trigger === 'focus') window.dispatchEvent(new Event('focus'))
+      if (trigger === 'focus' || trigger.startsWith('agnes:')) window.dispatchEvent(new Event(trigger))
       else if (trigger === 'visibility') {
         const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
         await vi.advanceTimersByTimeAsync(5_000)
@@ -268,8 +267,37 @@ it.each(['focus', 'poll', 'manual', 'visibility'])(
     expect(document.body.textContent).toContain('community/gallery#ui')
     await act(async () => root.unmount())
     stop = undefined
-    // Polling is scoped to the mounted panel and releases its timer on close.
-    await act(async () => vi.advanceTimersByTimeAsync(10_000))
-    expect(vi.getTimerCount()).toBe(0)
+    // Closing the panel removes both notification and return-to-page subscriptions.
+    api.application.mockClear()
+    await act(async () => {
+      window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+      window.dispatchEvent(new Event('agnes:packages-changed'))
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+    expect(api.application).not.toHaveBeenCalled()
   },
 )
+
+it('makes no periodic application requests while the mounted page is idle', async () => {
+  document.documentElement.lang = 'en'
+  vi.useFakeTimers()
+  const state: ApplicationState = {
+    revision: 1,
+    selection: null,
+    status: 'host',
+    effective: null,
+    assets: {},
+    candidates: [],
+  }
+  const api = { application: vi.fn(async () => state) }
+  const root = createRegionRenderer(document.body)
+  stop = () => root.unmount()
+  await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
+  expect(document.body.textContent).toContain('Current application: Agnes Harness')
+  expect(getByRole(document.body, 'heading', { name: 'Interface implementations' })).toBeDefined()
+  // Count requests to the public client boundary after the initial page read has settled.
+  api.application.mockClear()
+  await act(async () => vi.advanceTimersByTimeAsync(60_000))
+  expect(api.application).not.toHaveBeenCalled()
+})

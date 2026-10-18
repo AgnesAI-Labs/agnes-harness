@@ -36,12 +36,18 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
   const [error, setError] = useState('')
   const refresh = resource.reload
   useEffect(() => {
-    if (!api || busy || resource.loading) return
-    const timer = setInterval(() => {
+    if (!api) return
+    // Host daemon notices and completed plugin-admin operations already publish these hints.
+    // Re-read the authoritative candidates; an event itself never supplies trusted data.
+    const invalidate = () => {
       if (document.visibilityState !== 'hidden') refresh()
-    }, 5_000)
-    return () => clearInterval(timer)
-  }, [api, busy, resource.loading, refresh])
+    }
+    const events = ['agnes:plugins-invalidated', 'agnes:packages-changed']
+    for (const event of events) window.addEventListener(event, invalidate)
+    return () => {
+      for (const event of events) window.removeEventListener(event, invalidate)
+    }
+  }, [api, refresh])
   const run = async (action: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
