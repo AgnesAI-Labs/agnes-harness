@@ -45,6 +45,7 @@ test('selects workspace file chips and versioned session references and links th
   await composer.pressSequentially('Compare these references.')
   await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
   await expect(page.getByTestId('reference-option')).toHaveCount(0)
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 30_000,

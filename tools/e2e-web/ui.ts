@@ -43,7 +43,8 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 
 export async function settings(page: Page, locale = 'en') {
   // A settings deep link opens its modal before the lazy form has attached.
-  if (await page.locator('#config[open]').count()) await expect(page.locator('#config-form')).toBeVisible()
+  if (new URL(page.url()).searchParams.has('settings') || (await page.locator('#config[open]').count()))
+    await expect(page.locator('#config-form')).toBeVisible()
   if (!(await page.locator('#config-form').isVisible())) {
     await sidebar(page)
     await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
@@ -98,8 +99,13 @@ export async function sidebar(page: Page) {
 }
 
 export async function homePage(page: Page, id: string, tab?: string) {
-  if (await page.locator('#config[open]').count()) await expect(page.locator('#config-form')).toBeVisible()
-  if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
+  if (new URL(page.url()).searchParams.has('settings') || (await page.locator('#config[open]').count()))
+    await expect(page.locator('#config-form')).toBeVisible()
+  if (
+    (await page.locator('#config-form').isVisible()) ||
+    (await page.getByTestId('settings-back').isVisible())
+  )
+    await dismissSettings(page)
   const dock = page.getByTestId('workbench-right-toggle')
   if ((await dock.isVisible()) && (await dock.getAttribute('aria-expanded')) === 'true')
     await dismissWorkbench(page)
@@ -228,7 +234,17 @@ export async function section(page: Page, id: string) {
     const [entry, tab] = target
     await homePage(page, entry, tab?.startsWith('plugins.') ? undefined : tab)
     if (tab?.startsWith('plugins.')) {
-      await page.getByTestId(`builtin-${tab.slice(8)}`).click()
+      const capability = tab.slice(8)
+      const zh = (await page.locator('html').getAttribute('lang')) === 'zh-CN'
+      const labels: Record<string, readonly [string, string]> = {
+        search: ['Web search', '网页搜索'],
+        subagents: ['Subagents', '子代理'],
+        'computer-use': ['Computer use', '电脑操作'],
+      }
+      await page
+        .getByTestId('plugin-capability-settings')
+        .getByRole('button', { name: new RegExp(`^${labels[capability]![zh ? 1 : 0]}(?: ·|$)`) })
+        .click()
       await expect(page.getByTestId(`home-page-plugins-${tab.slice(8)}`)).toBeVisible()
     }
     if (id === 'feedback')
@@ -239,7 +255,11 @@ export async function section(page: Page, id: string) {
     return
   }
   if (id === 'history' || id === 'archived') {
-    if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
+    if (
+      (await page.locator('#config-form').isVisible()) ||
+      (await page.getByTestId('settings-back').isVisible())
+    )
+      await dismissSettings(page)
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
       await sidebar(page)
@@ -290,6 +310,15 @@ export async function openGoal(page: Page) {
   await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 
+/** Select the stable record-order view through the trace's actual menu. */
+export async function traceSequence(page: Page) {
+  await page.getByTestId('trace-toolbar-more').click()
+  await page.getByTestId('trace-timeline-sequence').click()
+  await page.getByTestId('trace-toolbar-more').click()
+  await expect(page.getByTestId('trace-timeline-sequence')).toHaveText(/^✓ /)
+  await page.keyboard.press('Escape')
+}
+
 /** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
 export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
   const toggle = page.getByTestId('workbench-right-toggle')
@@ -332,7 +361,11 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('session-search')).toBeHidden()
   }
-  if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
+  if (
+    (await page.locator('#config-form').isVisible()) ||
+    (await page.getByTestId('settings-back').isVisible())
+  )
+    await dismissSettings(page)
   if (await page.locator('#home-page').isVisible()) {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
@@ -417,6 +450,7 @@ export async function send(page: Page, input: string) {
   })
   await expect(composer).toBeEnabled()
   await composer.fill(input)
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
   // Child receipts can add a system turn while the prompt is being submitted. Follow
   // the new user input, rather than treating the next turn count as its identity.

@@ -14,12 +14,18 @@ import {
 } from '@agnes/sdk'
 
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
-export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
+export async function isolatedRuntime(
+  launcher: 'root' | 'installed' = 'root',
+  options: { localExamples?: boolean } = {},
+) {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const root = await mkdtemp(join(sep === '\\' ? tmpdir() : '/tmp', 'agh-e2e-'))
   const home = join(root, 'h')
   const workspace = join(root, 'w')
   await mkdir(workspace)
+  // The catalog matrix explicitly owns these public fixtures; the daemon still runs in its isolated workspace.
+  if (options.localExamples)
+    await cp(resolve('examples/packages'), join(workspace, 'examples/packages'), { recursive: true })
   await writeFile(join(workspace, 'report.md'), '# Synthetic delivery\nOffline E2E evidence.\n')
   await mkdir(join(workspace, AGH_DIR, 'skills/e2e-playbook'), { recursive: true })
   await writeFile(

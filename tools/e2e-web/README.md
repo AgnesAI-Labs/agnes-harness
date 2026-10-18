@@ -25,7 +25,9 @@ already installed executable for local debugging; CI uses the pinned Playwright 
 ## Runtime and SDK coverage
 
 Each real-runtime test receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
-starts `node agnes.mjs serve --port PORT` **from the repository root**. It
+starts `node agnes.mjs serve --port PORT` **from its synthetic workspace**. CLI commands use the same
+isolated working directory. The catalog matrix explicitly copies the public `examples/packages` fixtures
+into that workspace instead of depending on the checkout as the daemon working directory. It
 uses the first-run keyless demo model, synthetic workspace data, a loopback OpenAI-compatible
 provider and a dependency-free stdio MCP fixture. Child environments allow only the required
 path/home/profile/origin values; real provider keys, proxy settings and user configuration are
@@ -187,6 +189,8 @@ Each failed check remains a failed job even when later steps collect Web evidenc
 0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.
 Only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
 hidden; the metadata clock is normalized to 12:00 while its model label stays visible.
+Unified Trace captures use the real Record order menu and normalize only the isolated runtime context
+path, current clock and elapsed numbers, retaining localized units, records, controls and statuses.
 The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.

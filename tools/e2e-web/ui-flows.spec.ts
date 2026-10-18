@@ -21,6 +21,7 @@ import {
   send,
   settings,
   turn,
+  workbenchTab,
 } from './ui.js'
 
 async function open(page: Page, runtime: Runtime) {
@@ -268,6 +269,10 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
     await quality(page, info, 'mcp-enabled')
     await section(page, 'skills')
     await page.getByRole('button', { name: 'Refresh skills', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Confirm action', exact: true })
+      .getByRole('button', { name: 'Confirm', exact: true })
+      .click()
     await expect(
       page.getByRole('button', { name: 'View details for e2e-playbook', exact: true }),
     ).toBeVisible()
@@ -389,14 +394,28 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   await openGoal(page)
   await page.getByTestId('goal-objective').fill('E2E finish the inspected delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
+  const goalPhase = async () => {
+    const timeline = await session.projectUI(undefined, { surface: 'web' })
+    const fill = timeline.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')
+    return (fill?.payload as { goal?: { phase: string } } | undefined)?.goal?.phase
+  }
+  const goalForm = page.getByTestId('goal-card').locator('form')
+  await settled(page)
+  expect(await goalForm.evaluate((form) => form.checkValidity())).toBe(true)
   await page.getByTestId('goal-save').click()
-  await expect(page.getByTestId('goal-toggle')).toContainText('Blocked goal')
+  await expect.poll(goalPhase).toBe('blocked')
+  await page.keyboard.press('Escape')
+  await workbenchTab(page, 'goal')
+  await expect(page.getByTestId('goal-panel-phase')).toHaveAttribute('data-phase', 'blocked')
+  await expect(page.getByTestId('goal-panel-objective')).toHaveText('E2E finish the inspected delivery')
   await openGoal(page)
   await expect(page.getByTestId('goal-complete')).toBeEnabled()
   await quality(page, info, 'goal-card')
   await page.getByTestId('goal-complete').click()
-  await expect(page.getByTestId('goal-toggle')).toContainText('Complete')
   await expect(page.getByTestId('goal-complete')).toHaveCount(0)
+  await expect.poll(goalPhase).toBe('complete')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('goal-panel-phase')).toHaveAttribute('data-phase', 'complete')
 })
 
 test('UI background jobs and schedule cards persist observable results', async ({ page, runtime }, info) => {
@@ -420,7 +439,7 @@ test('UI background jobs and schedule cards persist observable results', async (
   await section(page, 'jobs')
   const terminal = page.getByTestId('terminal-panel')
   await expect(terminal).toBeVisible()
-  await terminal.getByRole('option').filter({ hasText: 'E2E_JOB_OK' }).click()
+  await terminal.getByTestId('terminal-tab').filter({ hasText: 'E2E_JOB_OK' }).click()
   const job = (await session.jobsRead()).jobs.find((row) => row.command.includes('E2E_JOB_OK'))
   if (!job) throw new Error('Completed agent job required')
   expect(job.status).toBe('completed')
@@ -590,12 +609,12 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     const summary = page.getByTestId('plugin-drain-summary')
     await expect(summary).toHaveCount(1)
     await expect(summary).toContainText(
-      locale === 'en' ? /Updated. 1 ongoing session/ : /已更新，1 个进行中的会话不受影响/,
+      locale === 'en' ? '1 open sessions retain their versions.' : '1 个已打开的会话继续保留各自版本。',
     )
     await expect(summary).not.toContainText('@agnes/')
     const details = page.getByTestId('plugin-drain-details')
     await expect(details).toHaveAttribute('data-open', 'false')
-    await details.locator('summary, .agh-disclosure-summary').click()
+    await expand(details)
     await expect(details).toContainText('hot-tool-plugin')
     expect(
       (await details.locator('code').allTextContents()).some((text) =>
@@ -610,7 +629,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await pluginTab(page, 'versions').click()
     const helperSummary = page.getByTestId('plugin-drain-summary')
     await expect(helperSummary).toHaveCount(1)
-    await page.getByTestId('plugin-drain-details').locator('summary, .agh-disclosure-summary').click()
+    await expand(page.getByTestId('plugin-drain-details'))
     await expect(page.getByTestId('plugin-drain-details')).toContainText(
       locale === 'en' ? 'Plugin helper' : '插件助手',
     )

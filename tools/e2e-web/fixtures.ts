@@ -13,6 +13,7 @@ export const test = base.extend<{
   runtime: async ({ page, screenshot }, use, info) => {
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
+      { localExamples: info.file.endsWith('/ui-gate.spec.ts') },
     )
     try {
       await runtime.start()

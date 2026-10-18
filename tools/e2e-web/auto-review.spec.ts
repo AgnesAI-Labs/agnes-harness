@@ -60,7 +60,9 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   await reviewedTool.getByTestId('tool-fact-chain').click()
   await expect(page.getByTestId('review-evidence')).toContainText('human approval')
   await page.getByTestId('review-future-ask').click()
-  await expect(page.getByRole('status').filter({ hasText: 'Explicit future rule saved' })).toBeVisible()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Rule saved. Applies to future identical calls' }),
+  ).toBeVisible()
   await expect.poll(async () => (await client.autoReview.get()).overrides?.length).toBe(1)
   await preferences(page, 'zh-CN', 'dark')
   await page.reload()
@@ -70,13 +72,12 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   await expect(page.getByTestId('auto-review-enabled')).toBeChecked()
   await expand(page.getByTestId('auto-review-customize'))
   await expect(page.getByTestId('auto-review-maxReviews')).toHaveValue('0')
-  const rules = page
-    .getByTestId('auto-review-clear-overrides')
-    .locator(
-      'xpath=ancestor::*[contains(@class, "agnes-settings-item") and not(contains(@class, "-control"))][1]',
-    )
-  await expect(rules.locator('.agnes-settings-item-label')).toHaveText('你在审批时添加的规则')
-  await expect(rules.locator('.agnes-settings-item-description')).toHaveText('1 条')
+  await page.getByTestId('settings-subpage-back').click()
+  const rules = page.getByTestId('auto-review-overrides')
+  await expect(rules).toContainText('审批规则')
+  await expect(rules).toContainText('1 条')
+  await expand(rules)
+  await expect(page.getByTestId('auto-review-clear-overrides')).toBeEnabled()
   // Leaving the settings application closes its transport after React has released the controls.
   // The browser-health fixture must still observe no console errors during that teardown.
   await page.goto('about:blank')
