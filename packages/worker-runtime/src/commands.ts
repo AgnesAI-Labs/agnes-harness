@@ -11,6 +11,7 @@ import {
   type ResolvedProfile,
 } from '@agnes/host'
 import { exporterHealth } from '@agnes/observability'
+import { withPackageVerification } from '@agnes/package-manager'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -803,6 +804,17 @@ export async function handleServiceCommand(
       return host.systemPromptPreview(p.config as import('@agnes/protocol').SystemPromptConfig)
     case 'session.catalog': {
       if (!host) throw new Error('session catalog requires an assembled Host')
+      if (p.modelsOnly === true)
+        return {
+          modelAdapters: conversationModelAdapters(
+            host.modelAdapterCatalog(),
+            host.provider.models(),
+            host.profile.provider.routes ?? [],
+          ),
+          sources: (host.runtimeTargetSnapshot?.()?.tree.rows ?? [])
+            .filter((row) => !row.disabled)
+            .map(({ plugin, entryRevision }) => ({ plugin, entryRevision })),
+        }
       const publication = host.compositionPublicationStatus?.()
       return {
         ...(publication
@@ -892,7 +904,7 @@ export async function handleServiceCommand(
       return exporterHealth()
     case 'pluginGenerations.status':
       if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
-      return host.pluginGenerationStatus()
+      return withPackageVerification(async () => host.pluginGenerationStatus!())
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

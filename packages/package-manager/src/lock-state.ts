@@ -5,7 +5,8 @@ import { PackageError } from './errors.js'
 import { capabilityHash } from './integrity.js'
 import type { LockState, PolicySnapshotInput } from './inventory-types.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
-import { hashDirectory, packageDir } from './sources.js'
+import { packageDir } from './sources.js'
+import { verifiedDirectoryDigest } from './verification-operation.js'
 import { readDeployManifest, readProfileFragment, verifyWorkspace } from './workspace.js'
 
 export type LockAudit = {
@@ -29,7 +30,15 @@ export function defaultVerifyIntegrity(
     const dir = packageDir(dataDir, profile, id)
     try {
       if (!existsSync(dir)) throw new Error('package directory missing')
-      if (entry.treeIntegrity !== undefined && hashDirectory(dir, { exclude: [] }) !== entry.treeIntegrity)
+      if (
+        entry.treeIntegrity !== undefined &&
+        verifiedDirectoryDigest(dir, {
+          version: entry.version,
+          integrity: entry.integrity,
+          treeIntegrity: entry.treeIntegrity,
+          capabilityHash: capabilityHash(entry),
+        }) !== entry.treeIntegrity
+      )
         throw new Error('package tree changed')
       if (entry.source.type === 'npm' || entry.source.type === 'market') {
         const value: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
@@ -43,7 +52,14 @@ export function defaultVerifyIntegrity(
           throw new Error('package identity changed')
         return
       }
-      if (hashDirectory(dir) !== entry.integrity) throw new Error('package tree changed')
+      if (
+        verifiedDirectoryDigest(
+          dir,
+          { version: entry.version, integrity: entry.integrity, capabilityHash: '' },
+          true,
+        ) !== entry.integrity
+      )
+        throw new Error('package tree changed')
     } catch {
       throw new PackageError('E_LOCK_MISMATCH', `${id} installed package differs from agnes-lock.json`, {
         detail: { id, reason: 'integrity' },

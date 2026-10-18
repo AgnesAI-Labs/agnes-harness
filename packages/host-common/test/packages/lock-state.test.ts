@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { withoutPackageVerification, withPackageVerification } from '@agnes/package-manager'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as sources from '../../../package-manager/src/sources.js'
 import { HostError } from '../../src/errors.js'
 import {
   defaultVerifyIntegrity,
@@ -158,7 +160,7 @@ describe('default boot integrity', () => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
   })
 
-  it('accepts a pinned file tree and refuses it after mutation', () => {
+  it('accepts both pinned digests once per operation and refuses an excluded-file mutation', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-integrity-'))
     roots.push(dataDir)
     const dir = packageDir(dataDir, 'local-dev', 'acme/file')
@@ -174,7 +176,23 @@ describe('default boot integrity', () => {
       dependencies: {},
       previous: null,
     }
-    expect(() => defaultVerifyIntegrity(dataDir, 'local-dev')('acme/file', entry)).not.toThrow()
+    mkdirSync(join(dir, 'node_modules'))
+    writeFileSync(join(dir, 'node_modules', 'ignored'), 'original')
+    entry.treeIntegrity = hashDirectory(dir, { exclude: [] })
+    const verify = defaultVerifyIntegrity(dataDir, 'local-dev')
+    const hash = vi.spyOn(sources, 'hashDirectory')
+    try {
+      await withPackageVerification(async () => {
+        verify('acme/file', entry)
+        verify('acme/file', entry)
+        expect(hash.mock.calls.map(([, opts]) => opts?.exclude)).toEqual([[], undefined])
+        writeFileSync(join(dir, 'node_modules', 'ignored'), 'tampered')
+        expect(() => withoutPackageVerification(() => verify('acme/file', entry))).toThrow(/E_LOCK_MISMATCH/)
+      })
+    } finally {
+      hash.mockRestore()
+    }
+
     writeFileSync(join(dir, 'changed.ts'), 'export {}\n')
     expect(() =>
       verifyLockIntegrity(

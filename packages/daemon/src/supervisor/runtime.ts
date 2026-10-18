@@ -213,10 +213,11 @@ import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
 import { describeGenerationSessions } from './generation-sessions.js'
+import { readRunningGenerationStatus } from './generation-status-read.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
-import { sharedSessionCatalog, supervisorAdapterLookup } from './model-adapter-lookup.js'
+import { readModelSelectionCatalog, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
@@ -1448,12 +1449,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
             generationStatus: async () => {
-              const worker = await pool.acquireSharedWorker()
-              const status = (await worker.command(
-                'pluginGenerations.status',
-                {},
-                { timeoutMs: o.config.limits.workerStartupMs },
-              )) as import('@agnes/protocol').PluginGenerationStatus
+              const status = await readRunningGenerationStatus(pool, o.config.limits.workerStartupMs)
               const running = (key: string) => registry.get(key)?.session.running === true
               return describeGenerationSessions(status, { lister, running })
             },
@@ -1744,7 +1740,17 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
-    const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
+    const modelCatalog = readModelSelectionCatalog({
+      worker: () => pool.businessWorker()?.link,
+      profile: () => host.profile,
+      profileDir: o.profileDir,
+      sources: () => o.packageRuntime?.manager.runtimePluginSnapshots(o.profileDir) ?? Promise.resolve([]),
+    })
+    const sessionSelection = sessionSelectionProvider(
+      o.configuration,
+      () => sharedSessionCatalog(pool),
+      modelCatalog,
+    )
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const sidebarSessions = jobTables
       ? new SidebarSessions(
@@ -1976,10 +1982,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
     })
     automationEvents.triggers = appServerAdmin.observeTriggerSession
-    // The supervisor holds no adapter registry. `apis.list` learns which adapters take payloads only
-    // from the built-in registrations, and from the shared worker if it is already running. One
-    // lookup serves every connection, so the catalog it last read is shared.
-    const adapterLookup = supervisorAdapterLookup(host, pool)
+    // Display queries read release registrations and source-bound published descriptions.
+    // Each request verifies the current files and grants; none starts a worker for its catalog.
+    const adapterLookup = modelCatalog
     const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
       // `local` is the Unix identity and only a pre-auth placeholder for WSS. The lifecycle bearer
       // admits an HTTP upgrade but establishes no application principal; authGate replaces this value

@@ -44,6 +44,7 @@ import {
   writeGenerationResources,
 } from './runtime-snapshots-resources.js'
 import { hashDirectory } from './sources.js'
+import { verifiedDirectoryDigest, withoutPackageVerification } from './verification-operation.js'
 
 // Durable record publication is shared by every module that keeps recoverable state beside generations.
 export { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
@@ -218,45 +219,50 @@ export class RuntimeGenerationSnapshotStore {
     resources?: RuntimeGenerationResourceInput,
     seams?: GenerationSeams,
   ): PluginGenerationSnapshot {
-    const id = randomUUID(),
-      directory = this.directory(id)
-    mkdirDurablySync(directory, this.#anchor)
-    try {
-      // Written first so collection can tell a live creator from a dead one before generation.json exists.
-      writeFileSync(join(directory, OWNER_FILE), JSON.stringify(this.#holder()), { mode: 0o600, flush: true })
-      const copied = sources.map((source, index) => {
-        if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
-        const destination = join(directory, String(index))
-        copyPackageTreeSync(source.snapshot.directory, destination)
-        if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
-          throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
-        syncTreeSync(destination)
-        return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
-      })
-      const resourcesDigest = resources
-        ? writeGenerationResources(join(directory, 'resources'), resources)
-        : undefined
-      publishFileDurablySync(
-        join(directory, 'generation.json'),
-        JSON.stringify({
-          version: seams ? GENERATION_SNAPSHOT_VERSION : resources ? 2 : 1,
-          ...(seams ? { seams } : {}),
-          id,
-          artifact: encodeRuntimeTargetArtifact(target),
-          sources: copied,
-          packages,
-          compatibility,
-          ...(resourcesDigest ? { resourcesDigest } : {}),
-        }),
-        { replace: true },
-      )
-      this.#created.add(id)
-      this.#adopt(id)
-      return this.read(id)
-    } catch (error) {
-      rmSync(directory, { recursive: true, force: true })
-      throw error
-    }
+    return withoutPackageVerification(() => {
+      const id = randomUUID(),
+        directory = this.directory(id)
+      mkdirDurablySync(directory, this.#anchor)
+      try {
+        // Written first so collection can tell a live creator from a dead one before generation.json exists.
+        writeFileSync(join(directory, OWNER_FILE), JSON.stringify(this.#holder()), {
+          mode: 0o600,
+          flush: true,
+        })
+        const copied = sources.map((source, index) => {
+          if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
+          const destination = join(directory, String(index))
+          copyPackageTreeSync(source.snapshot.directory, destination)
+          if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
+            throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
+          syncTreeSync(destination)
+          return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
+        })
+        const resourcesDigest = resources
+          ? writeGenerationResources(join(directory, 'resources'), resources)
+          : undefined
+        publishFileDurablySync(
+          join(directory, 'generation.json'),
+          JSON.stringify({
+            version: seams ? GENERATION_SNAPSHOT_VERSION : resources ? 2 : 1,
+            ...(seams ? { seams } : {}),
+            id,
+            artifact: encodeRuntimeTargetArtifact(target),
+            sources: copied,
+            packages,
+            compatibility,
+            ...(resourcesDigest ? { resourcesDigest } : {}),
+          }),
+          { replace: true },
+        )
+        this.#created.add(id)
+        this.#adopt(id)
+        return this.read(id)
+      } catch (error) {
+        rmSync(directory, { recursive: true, force: true })
+        throw error
+      }
+    })
   }
 
   read(id: string): PluginGenerationSnapshot {
@@ -271,7 +277,7 @@ export class RuntimeGenerationSnapshotStore {
     const record = decodeGenerationRecord(parseRecord(text, file), id, file, GENERATION_SNAPSHOT_VERSION)
     const sources = record.sources.map((source, index) => {
       const snapshot = { ...source.snapshot, directory: join(directory, String(index)) }
-      if (hashDirectory(snapshot.directory, { exclude: [] }) !== snapshot.treeIntegrity)
+      if (verifiedDirectoryDigest(snapshot.directory, snapshot) !== snapshot.treeIntegrity)
         throw corrupt(file, `package snapshot ${index} is unavailable or changed`)
       return Object.freeze({ ...source, snapshot: Object.freeze(snapshot) })
     })

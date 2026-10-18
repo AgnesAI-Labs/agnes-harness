@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -24,6 +24,7 @@ import {
   withLock,
   writeLock,
 } from '../src/index.js'
+import * as sourceModule from '../src/sources.js'
 
 const id = 'acme/runtime-snapshot'
 const source = parseSource('file:./source')
@@ -133,7 +134,11 @@ it('lets a worker read validated active snapshots while a package effect owns th
     },
   })
   await withLock(profile, async () => {
-    const sources = await m.runtimePluginSnapshots(profile)
+    const hash = vi.spyOn(sourceModule, 'hashDirectory')
+    const sourcesRead = await m.runtimePluginSnapshots(profile)
+    expect(hash.mock.calls.length).toBe(2)
+    hash.mockRestore()
+    const sources = sourcesRead
     expect(sources).toHaveLength(1)
     expect(sources[0]?.snapshot.integrity).toBe(selected.integrity)
     expect(sources[0]?.snapshot.agents).toEqual([{ ref: `${id}#work`, launch }])

@@ -94,6 +94,7 @@ import {
 } from './store.js'
 import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
 import { dependentUpdateBlockers, updatePackages } from './update.js'
+import { withoutPackageVerification, withPackageVerification } from './verification-operation.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 export type PackageStatus = {
@@ -129,7 +130,7 @@ export interface PackageManager {
   trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
   untrust(profileDir: string, id: string, decision: TrustDecision): Promise<LockEntry>
   /** Ordinary concurrent reads share only their in-flight scan. Publication/authorization reads
-   * use fresh to establish a new verification boundary. Nothing is cached after a scan. */
+   * use fresh to establish a new verification boundary. Completed inventories are never retained. */
   inventory(profileDir: string, opts?: Readonly<{ fresh?: boolean }>): Promise<InstalledInventory>
   /** Lock-free, validated snapshot read for a worker while daemon package effects hold the lock. */
   runtimePluginSnapshots(profileDir: string): Promise<readonly RuntimePluginSnapshot[]>
@@ -379,15 +380,19 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   ): Promise<T> => {
     const key = profileKey(profileDir)
     if (!ordinaryRead) inventoryReads.delete(key)
-    return withLock(
-      profileDir,
-      async () => {
-        recoverPackageStore(storeFor(profileDir))
-        await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
-        recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
-        return fn()
-      },
-      op,
+    return (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
+      withLock(
+        profileDir,
+        async () => {
+          if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
+            withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
+          }
+          await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
+          recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
+          return fn()
+        },
+        op,
+      ),
     ).finally(() => {
       if (!ordinaryRead) inventoryReads.delete(key)
     })
@@ -685,46 +690,50 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       await locked(profileDir, async () => {})
     },
     async inventory(profileDir, opts = {}) {
-      const key = profileKey(profileDir)
-      const boundary = readBoundary(profileDir)
-      if (opts.fresh) inventoryReads.delete(key)
-      const existing = inventoryReads.get(key)
-      if (existing?.boundary === boundary) return existing.promise
-      let reading: Promise<InstalledInventory>
-      const clear = () => {
-        if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
-      }
-      const read = async () => {
-        try {
-          const lock = load(profileDir)
-          return projectLocal(
-            await readInventoryAsync(lock, {
-              ...storeFor(profileDir),
-              ceiling: ceiling(lock),
-              ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
-            }),
-          )
-        } finally {
-          // No reader may join a finished verification, even before Promise settlement is observed.
-          clear()
+      return (opts.fresh ? withoutPackageVerification : withPackageVerification)(async () => {
+        const key = profileKey(profileDir)
+        const boundary = readBoundary(profileDir)
+        if (opts.fresh) inventoryReads.delete(key)
+        const existing = inventoryReads.get(key)
+        if (existing?.boundary === boundary) return existing.promise
+        let reading: Promise<InstalledInventory>
+        const clear = () => {
+          if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
         }
-      }
-      const scan = async () => {
-        // Let requests already arriving together join before the synchronous tree walk starts.
-        await setImmediate()
-        return read()
-      }
-      reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, true) : scan()).finally(clear)
-      if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
-      return reading
+        const read = async () => {
+          try {
+            const lock = load(profileDir)
+            return projectLocal(
+              await readInventoryAsync(lock, {
+                ...storeFor(profileDir),
+                ceiling: ceiling(lock),
+                ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
+              }),
+            )
+          } finally {
+            // No reader may join a finished verification, even before Promise settlement is observed.
+            clear()
+          }
+        }
+        const scan = async () => {
+          // Let requests already arriving together join before the synchronous tree walk starts.
+          await setImmediate()
+          return read()
+        }
+        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, true) : scan()).finally(clear)
+        if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
+        return reading
+      })
     },
     async runtimePluginSnapshots(profileDir) {
-      return readRuntimePluginSnapshots(profileDir, {
-        store: storeFor(profileDir),
-        load: () => load(profileDir),
-        ceiling,
-        verificationCache: inventoryVerifications,
-      })
+      return withPackageVerification(() =>
+        readRuntimePluginSnapshots(profileDir, {
+          store: storeFor(profileDir),
+          load: () => load(profileDir),
+          ceiling,
+          verificationCache: inventoryVerifications,
+        }),
+      )
     },
     async pinRuntimeSnapshot(profileDir, request) {
       const frozen = structuredClone(request)
@@ -760,7 +769,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir)))
+      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir)), {}, true)
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

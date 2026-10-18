@@ -21,7 +21,7 @@ import {
   RuntimePluginCatalogue,
 } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
@@ -56,6 +56,7 @@ import {
   profileForComposition,
   projectCompositionRows,
 } from './composition-selection.js'
+import { modelCatalogPublisher } from './model-catalog-publication.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
@@ -426,6 +427,8 @@ export async function createCompositionHost(
     if (legacyPublication && failure) throw failure
     return lastPublication
   }
+  const publishAdapters = modelCatalogPublisher(initial.host, options, () => modelProfile)
+  await publishAdapters()
   const sessions = createSessionMapFacade(
     initial.host.kernel.sessions,
     (key) => owner(key).host.kernel.sessions,
@@ -474,97 +477,99 @@ export async function createCompositionHost(
     },
     compositionPublicationStatus: () => lastPublication,
     createSession: (input) =>
-      calls.enqueue(async () => {
-        const key =
-          input.key ??
-          input.binding?.sessionKey ??
-          sessionKey(
-            profile,
-            await initial.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
-            input.cwd ?? options.workspaceRoot,
-          )
-        try {
-          const agent = input.agent !== undefined ? await prepareAgent(input.agent) : undefined
-          let binding = store.read(key)
-          assertAgentRequest(input, agent, binding)
-          if (!binding && agent)
-            binding = store.pin({ sessionKey: key, tree: agent.tree, profile: agent.profile })
-          if (!binding) {
-            const parent = input.parent ? store.read(input.parent.key) : undefined
-            const { current: admissionProfile } = await admission()
-            const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
-            const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
-            const tree =
-              parent?.tree ??
-              resolveComposition(
-                { ...profile, ...admitted.scope },
-                {
-                  packageCatalog: admissionProfile.packages,
-                  preset: admitted.preset,
-                  ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
-                  ...(input.loop ? { session: loopPatch(input.loop) } : {}),
-                  ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
-                },
-              )
-            const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
-            if (
-              !parent &&
-              selectedLoop &&
-              !initial.host.kernel.loops
-                .catalog()
-                .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
+      calls.enqueue(() =>
+        withPackageVerification(async () => {
+          const key =
+            input.key ??
+            input.binding?.sessionKey ??
+            sessionKey(
+              profile,
+              await initial.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
+              input.cwd ?? options.workspaceRoot,
             )
-              throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', {
-                loop: selectedLoop,
-              })
-            binding = store.pin({
-              sessionKey: key,
-              tree,
-              profile: parent?.profile ?? profileForComposition(admitted.profile, tree),
-            })
-          }
-          if (
-            input.bundles !== undefined &&
-            JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
-          )
-            throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
           try {
-            const container = await open(binding)
-            if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-            const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
-            if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
-              throw new Error(
-                'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
+            const agent = input.agent !== undefined ? await prepareAgent(input.agent) : undefined
+            let binding = store.read(key)
+            assertAgentRequest(input, agent, binding)
+            if (!binding && agent)
+              binding = store.pin({ sessionKey: key, tree: agent.tree, profile: agent.profile })
+            if (!binding) {
+              const parent = input.parent ? store.read(input.parent.key) : undefined
+              const { current: admissionProfile } = await admission()
+              const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
+              const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
+              const tree =
+                parent?.tree ??
+                resolveComposition(
+                  { ...profile, ...admitted.scope },
+                  {
+                    packageCatalog: admissionProfile.packages,
+                    preset: admitted.preset,
+                    ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
+                    ...(input.loop ? { session: loopPatch(input.loop) } : {}),
+                    ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
+                  },
+                )
+              const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
+              if (
+                !parent &&
+                selectedLoop &&
+                !initial.host.kernel.loops
+                  .catalog()
+                  .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
               )
-            const session = await container.host.createSession({
-              ...input,
-              ...(agent ? { strict: true } : {}),
-              key,
-              preset: binding.tree.preset,
-              ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
-            })
-            if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
-            sessionOwners.set(key, container)
-            const close = session.close.bind(session)
-            session.close = async () => {
-              try {
-                await close()
-              } finally {
-                sessionOwners.delete(key)
-                scheduleCollection()
-                publish()
-              }
+                throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', {
+                  loop: selectedLoop,
+                })
+              binding = store.pin({
+                sessionKey: key,
+                tree,
+                profile: parent?.profile ?? profileForComposition(admitted.profile, tree),
+              })
             }
-            publish()
-            return session
+            if (
+              input.bundles !== undefined &&
+              JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
+            )
+              throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
+            try {
+              const container = await open(binding)
+              if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+              const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
+              if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
+                throw new Error(
+                  'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
+                )
+              const session = await container.host.createSession({
+                ...input,
+                ...(agent ? { strict: true } : {}),
+                key,
+                preset: binding.tree.preset,
+                ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
+              })
+              if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
+              sessionOwners.set(key, container)
+              const close = session.close.bind(session)
+              session.close = async () => {
+                try {
+                  await close()
+                } finally {
+                  sessionOwners.delete(key)
+                  scheduleCollection()
+                  publish()
+                }
+              }
+              publish()
+              return session
+            } catch (error) {
+              if (!generations.session(key)) store.release(key)
+              throw error
+            }
           } catch (error) {
-            if (!generations.session(key)) store.release(key)
-            throw error
+            throw translateSessionFailure(error, key)
           }
-        } catch (error) {
-          throw translateSessionFailure(error, key)
-        }
-      }),
+        }),
+      ),
     releaseSessionGeneration: (key) =>
       calls.enqueue(async () => {
         const container = owner(key)
@@ -703,6 +708,7 @@ export async function createCompositionHost(
         if (publication.ok) {
           latestTarget = target
           latestRows = undefined
+          await publishAdapters()
         }
         return convergence(target)
       }),
@@ -733,7 +739,7 @@ export async function createCompositionHost(
         )
           throw new HostError('E_SEAM_IMMUTABLE', 'non-model configuration requires restart')
         modelProfile = next
-        return broadcast('models', (container) =>
+        const report = await broadcast('models', (container) =>
           container.host.applyModelProfile(
             profileForComposition(
               {
@@ -745,6 +751,8 @@ export async function createCompositionHost(
             ),
           ),
         )
+        if (report.ok) await publishAdapters()
+        return report
       }),
     extensionRows: {
       ...initial.host.extensionRows,

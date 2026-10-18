@@ -223,8 +223,12 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
     capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
   })
   let currentBundles = {}
+  let forbidAdmission = false
   const host = {
-    sessionBundleCatalog: async () => currentBundles,
+    sessionBundleCatalog: async () => {
+      if (forbidAdmission) throw new Error('metadata queries cannot prepare sessions')
+      return currentBundles
+    },
     profile: {
       presets: { default: 'standard', allowed: ['standard'] },
       bundleCatalog: {},
@@ -257,6 +261,20 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
     ['typesafe-systemone', []],
     ['mixed', [{ id: 'mixed-1', route: 'mixed-route' }]],
   ])
+  forbidAdmission = true
+  await expect(
+    handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'models-only',
+        method: 'session.catalog',
+        params: { modelsOnly: true },
+      },
+      new Map(),
+    ),
+  ).resolves.toMatchObject({ modelAdapters: catalog.modelAdapters, sources: [] })
+  forbidAdmission = false
   currentBundles = { 'hot#work': { id: 'hot#work', sourcePackage: 'hot' } }
   const frame = { kind: 'command' as const, requestId: 'hot', method: 'session.catalog' as const, params: {} }
   expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({

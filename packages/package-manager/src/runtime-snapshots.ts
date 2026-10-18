@@ -42,6 +42,7 @@ import type {
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
+import { invalidatePackageVerification, verifiedDirectoryDigest } from './verification-operation.js'
 
 export type {
   RuntimePin,
@@ -293,7 +294,10 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  const treeIntegrity = hashDirectory(actual, { exclude: [] })
+  const treeIntegrity = verifiedDirectoryDigest(actual, {
+    ...checkedRecord,
+    version: checkedRecord.packageVersion,
+  })
   if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
@@ -533,6 +537,7 @@ function clearJournal(s: RuntimeSnapshotStore): void {
   rmSync(journalPath(s))
   rmSync(`${journalPath(s)}.tmp`, { force: true })
   syncDirectory(s.profileDir)
+  invalidatePackageVerification()
   s.runtimeCheckpoint?.('runtime-finished')
 }
 
@@ -545,6 +550,7 @@ function* runtimeRecoverySteps(s: RuntimeSnapshotStore): Generator<void, void, v
     yield* knownRuntimeDirectoryReadSteps(s, readState(s))
     return
   }
+  invalidatePackageVerification()
   const state = readState(s),
     journal = readJournal(s),
     trash = join(root, `.trash-${journal.transactionId}`)

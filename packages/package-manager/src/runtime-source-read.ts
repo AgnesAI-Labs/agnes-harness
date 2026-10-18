@@ -10,6 +10,7 @@ import {
   runtimePluginSnapshotsFromPins,
 } from './package-plugin-loader.js'
 import { listRuntimePinsStoreAsync, type RuntimeSnapshotStore } from './runtime-snapshots.js'
+import { invalidatePackageVerification } from './verification-operation.js'
 
 /** Retry torn reads, but keep unexplained byte/policy changes fatal. */
 export async function readRuntimePluginSnapshots(
@@ -30,6 +31,7 @@ export async function readRuntimePluginSnapshots(
       existsSync(join(profileDir, file)),
     )
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) invalidatePackageVerification()
     const boundary = committed()
     try {
       const beforeLock = load()
@@ -45,7 +47,7 @@ export async function readRuntimePluginSnapshots(
         ceiling: ceiling(afterLock),
         verificationCache,
       })
-      if (before.hash === after.hash) {
+      if (before.hash === after.hash && committed() === boundary && !transacting()) {
         const pinned = runtimePluginSnapshotsFromPins(after, pins)
         const identities = new Set(
           pinned.map(({ snapshot }) => `${snapshot.packageId}\0${snapshot.integrity}`),
@@ -60,6 +62,7 @@ export async function readRuntimePluginSnapshots(
     } catch (error) {
       // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
       if (!transacting() && committed() === boundary) throw error
+      invalidatePackageVerification()
       await delay(50 * (attempt + 1))
     }
   }

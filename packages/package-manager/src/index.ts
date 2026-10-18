@@ -59,6 +59,7 @@ export {
   verifyNpmProvenance,
   verifyOfficialCatalog,
 } from './provenance.js'
+export { publishModelAdapterCatalog, readPublishedModelAdapters } from './published-model-adapters.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,
@@ -79,5 +80,11 @@ export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
 export { currentStoredShape } from './stored-metadata.js'
 export * from './trust-gate.js'
+export {
+  invalidatePackageVerification,
+  verifiedDirectoryDigest,
+  withoutPackageVerification,
+  withPackageVerification,
+} from './verification-operation.js'
 export * from './workspace.js'
 export * from './workspace-deployments.js'

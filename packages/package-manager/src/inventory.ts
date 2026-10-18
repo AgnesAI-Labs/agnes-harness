@@ -17,9 +17,10 @@ import {
   readPackageSourceConfiguration,
   recordProvenance,
 } from './provenance.js'
-import { hashDirectory, packageDir, parseSource } from './sources.js'
+import { packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { validStoredMetadata } from './stored-metadata.js'
+import { verifiedDirectoryDigest } from './verification-operation.js'
 import { verifyWorkspace } from './workspace.js'
 
 export type InstalledPackage = Readonly<{
@@ -98,7 +99,7 @@ export function isRuntimePackageEligible(
 export function isSnapshotPackageEligible(row: Pick<InstalledPackage, 'trusted' | 'blockers'>): boolean {
   return row.trusted && row.blockers.length === 0
 }
-/** Cached static inspection is keyed by freshly hashed bytes, the full lock entry and ceiling.
+/** Cached static inspection is keyed by bytes verified in this operation, the full lock entry and ceiling.
  * It never caches a tree's validity, trust decision, activation state or a failed inspection. */
 type VerifiedPackageDirectory = {
   capabilityHash: string
@@ -125,12 +126,18 @@ export function verifyPackageDirectory(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
-  const treeIntegrity = hashDirectory(directory, { exclude: [] })
+  const treeIntegrity = verifiedDirectoryDigest(directory, {
+    version: entry.version,
+    integrity: entry.integrity,
+    treeIntegrity: entry.treeIntegrity,
+    capabilityHash: capabilityHash(entry),
+  })
   return verifyHashedPackageDirectory(id, entry, directory, ceiling, treeIntegrity, cache)
 }
 
-/** Package-private: the caller has just hashed this directory synchronously and checked its identity.
- * Never pass a digest from an earlier request, an await boundary, or the lock's expected value. */
+/** Package-private: the caller has checked this exact identity through the operation verifier
+ * or just hashed it synchronously. Never pass an earlier operation's digest or an expected lock value.
+ * Write/copy/import/publication gates must establish their own fresh observation. */
 export function verifyHashedPackageDirectory(
   id: string,
   entry: LockEntry,
