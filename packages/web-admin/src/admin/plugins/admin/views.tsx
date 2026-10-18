@@ -47,15 +47,23 @@ function PresentationDiagnostics() {
   return (
     <>
       {diagnostics.map((item) => (
-        <StatusMessage key={item.role} kind="error">
+        <StatusMessage
+          key={item.role}
+          kind="error"
+          action={{
+            label: zh ? '重新加载' : 'Reload',
+            onSelect: () => window.location.reload(),
+          }}
+        >
           {zh
             ? item.reason === 'conflict'
               ? '接管冲突'
-              : '接管挂载失败，已恢复默认'
+              : '界面显示失败；已保存的交付物可能仍然存在。请重新加载。'
             : item.reason === 'conflict'
               ? 'Presentation conflict'
-              : 'Presentation mount failed; default restored'}
-          {`: ${item.role} · ${item.owners.join(', ')}`}
+              : 'Display failed; saved deliverables may still exist. Reload to try again.'}
+          {`: ${item.role} · ${item.failure?.packageId ?? item.owners.join(', ')}`}
+          {item.failure && ` · ${item.failure.phase} · ${item.failure.code}`}
         </StatusMessage>
       ))}
     </>

@@ -463,14 +463,16 @@ export function mountPresentation(ctx) {
   const stops = []
   try {
     stops.push(
-      ctx.slots.register(
-        {
-          name: 'conversation.chat.turnTail',
-          id: 'deliverables-tail',
-          priority: 0,
-          select: (owner) => (owner?.turn ? owner : null),
-        },
-        Tail,
+      ctx.slots.inject('conversation.chat.turnTail', () =>
+        ctx.slots.register(
+          {
+            name: 'conversation.chat.turnTail',
+            id: 'deliverables-tail',
+            priority: 0,
+            select: (owner) => (owner?.turn ? owner : null),
+          },
+          Tail,
+        ),
       ),
     )
     stops.push(

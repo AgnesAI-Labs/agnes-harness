@@ -144,13 +144,15 @@ export function apply(ctx) {
       const stops = []
       try {
         stops.push(
-          ctx.slots.register(
-            {
-              name: 'conversation.chat.turnTail',
-              id: 'gallery-tail',
-              select: (owner) => (owner?.turn ? owner : null),
-            },
-            ({ value }) => h(Gallery, { turn: value.turn }),
+          ctx.slots.inject('conversation.chat.turnTail', () =>
+            ctx.slots.register(
+              {
+                name: 'conversation.chat.turnTail',
+                id: 'gallery-tail',
+                select: (owner) => (owner?.turn ? owner : null),
+              },
+              ({ value }) => h(Gallery, { turn: value.turn }),
+            ),
           ),
         )
         stops.push(

@@ -3,8 +3,10 @@ function BrokenModelPickerA() {
 }
 
 export function apply(ctx) {
-  ctx.slots.register(
-    { name: 'conversation.input.model', id: 'dsh-model-picker-a', priority: 10 },
-    BrokenModelPickerA,
+  return ctx.slots.inject('conversation.input.model', () =>
+    ctx.slots.register(
+      { name: 'conversation.input.model', id: 'dsh-model-picker-a', priority: 10 },
+      BrokenModelPickerA,
+    ),
   )
 }

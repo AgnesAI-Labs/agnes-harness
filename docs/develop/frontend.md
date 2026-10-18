@@ -46,6 +46,10 @@ export function apply(ctx, config) {
 
 This view position appends a workbench panel. Disabling the contribution synchronously removes it. This profile contribution follows the current activation; use a separate session descriptor for pinned recorded renderers. Use a presentation takeover only when replacing an entire experience. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
+If a view position is declared by another region when it mounts, wrap registration in `ctx.slots.inject(name, () => ctx.slots.register(...))` and retain the returned cleanup. The factory returns the registration cleanup; removing the parent revokes the entry, and rebuilding it registers the current owner again. A supported slot name is not proof that its outlet currently exists. Keep independent panels and data subscriptions outside the factory, and dispose the injection when its role is replaced. Unknown or unauthorized slots remain refused.
+
+Browser failure diagnostics retain a safe error code, package, presentation role and failure phase, without plugin exception text. A display failure does not mean saved deliverables are absent. Reload retries the currently authorized presentation; it does not grant trust or choose another package.
+
 `publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Use the host platform externals for React and shared Agnes packages; bundle only other dependencies into browser artifacts.
 
 The browser singleton allowlist is [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts): `react`, `react/jsx-runtime`, `@agnes/web-client` and the root `@agnes/web-ui`. These exact imports resolve through the HTML import map; an external package name does not imply that arbitrary subpaths are mapped. Distribution packaging checks emitted client imports against that map and rejects unresolved externals.

@@ -42,6 +42,10 @@ export function apply(ctx, config) {
 
 该视图位置追加工作台内容，不接管导航。撤销时同步移除；需要替换整组呈现时使用公开接管角色，不能依赖宿主私有 DOM/CSS。
 
+如果视图位置由另一区域在挂载时声明，用 `ctx.slots.inject(name, () => ctx.slots.register(...))` 包裹注册并保留其清理函数。工厂返回注册项的清理函数；父区域移除时撤销注册，重建时只注册当前 owner。目录支持某个名称，不代表它的出口此刻存在。独立面板和数据订阅放在工厂外，角色被替换时注销 injection。未知或未授权的槽位仍然拒绝。
+
+浏览器失败诊断保留安全错误码、包、接管角色和失败阶段，不包含插件异常原文。显示失败不代表已保存的交付物不存在；重新加载会重试当前已授权的呈现，不授予新信任，也不选择其他插件。
+
 `publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。React 与共享 Agnes 包使用宿主的平台 externals，仅将其它依赖打入浏览器产物。
 
 浏览器共享单例白名单是 [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts)：`react`、`react/jsx-runtime`、`@agnes/web-client` 和根入口 `@agnes/web-ui`。这些精确说明符通过 HTML import map 解析；包名被 external 并不表示任意子路径都有映射。发行打包会对照该 map 检查客户端产物的导入，拒绝无法解析的 external。

@@ -6,7 +6,7 @@ import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import type { Runtime } from './runtime.js'
-import { install, toolResult } from './sdk.js'
+import { install, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
@@ -261,6 +261,40 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
   } finally {
     await provider.close()
   }
+})
+
+// Uses the built CLI/browser payload and a durable synthetic session, without live providers.
+test('bundled deliverables survive a cold browser start and repeated reloads', async ({ page, runtime }) => {
+  const client = await runtime.connect()
+  const session = await client.session.new({ cwd: runtime.workspace, preset: 'full-access' })
+  await session.attach()
+  session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  await prompt(session, 'call present {"files":[{"path":"report.md","name":"Cold-start report.md"}]}')
+  const saved = await toolResult(session, 'present')
+  expect(saved?.artifactRefs).toHaveLength(1)
+  await preferences(page)
+  const url = new URL(runtime.url)
+  url.searchParams.set('session', session.id)
+  const entries: string[] = []
+  page.on('response', (response) => {
+    if (/\/plugins\/.*deliverables-ui.*\/client\.js(?:\?|$)/.test(response.url())) {
+      expect(response.ok()).toBe(true)
+      entries.push(response.url())
+    }
+  })
+  for (let boot = 0; boot < 3; boot++) {
+    if (boot === 0) await page.goto(url.href)
+    else await page.reload()
+    const tail = page.getByTestId('turn-deliverables').filter({ hasText: 'Cold-start report.md' })
+    await expect(tail).toHaveCount(1)
+    await expect(tail.getByTestId('deliverable-file')).toHaveCount(1)
+    await tail.locator('.agh-list-row-title').click()
+    await expect(tail).toContainText('Synthetic delivery')
+    expect((await toolResult(session, 'present'))?.artifactRefs).toEqual(saved?.artifactRefs)
+  }
+  // Loading an immutable plugin URL proves this exercised the deployed package rather than source imports.
+  expect(entries.length).toBeGreaterThanOrEqual(3)
+  expect(new Set(entries.map((entry) => entry.split('?')[0])).size).toBe(1)
 })
 
 test('UI ask, plan approval, deliverable, child and goal cards perform their actions', async ({

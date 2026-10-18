@@ -224,6 +224,11 @@ export function PluginDetailBody({
       {failureReason && (
         <SettingsState tone="error">
           {pluginFailureMessage(failureReason, t, runtime?.error?.code)}
+          {runtime?.error && (
+            <span>{` · ${runtime.error.code} · ${runtime.error.phase ?? runtime.phase}${
+              runtime.error.roles?.length ? ` · ${runtime.error.roles.join(', ')}` : ''
+            }`}</span>
+          )}
           {uiRetry && (
             <Button disabled={uiRetry.disabled} onClick={() => void uiRetry.run()}>
               {uiRetry.label}
