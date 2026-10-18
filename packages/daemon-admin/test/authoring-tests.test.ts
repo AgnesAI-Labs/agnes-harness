@@ -63,6 +63,18 @@ it('retains redacted assertion details, package-relative locations and bounded c
   expect(compile).toMatchObject({ state: 'failed', count: 0 })
   expect(compile.output).toContain('CompileError: Unexpected token (./test/fail.test.mjs:3:2)')
   expect(compile.output).not.toContain(privateHome)
+  build.mockResolvedValue({})
+  exec.mockRejectedValue(
+    Object.assign(new Error('command timed out'), {
+      stdout: `not ok 1 - profile panel\n  error: query never completed\n  location: file://${directory}/test/fail.test.mjs:4:1\n  private: ${privateHome}/private/data.json\n# tests 1\n# pass 1\n# fail 0\n# authoring-exit 0`,
+    }),
+  )
+  const timedOut = await runAuthoringTests(directory, files, new AbortController().signal)
+  expect(timedOut).toMatchObject({ state: 'failed', count: 0 })
+  expect(timedOut.output).toContain('query never completed')
+  expect(timedOut.output).toContain('./test/fail.test.mjs:4:1')
+  expect(timedOut.output).toContain('command timed out')
+  expect(timedOut.output).not.toContain(privateHome)
   const ac = new AbortController()
   build.mockImplementation(async () => {
     ac.abort(new Error('stopped'))

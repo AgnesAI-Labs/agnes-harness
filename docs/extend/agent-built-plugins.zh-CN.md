@@ -14,7 +14,7 @@ macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可
 
 选择 API 或 token 前，先读两条指南共用的[源码生成作者参考](../reference/plugin-author-api.zh-CN.md)。`apply(ctx)` 使用 PluginContext 登记能力，`execute(args, ctx)` 才接收 ToolContext。工作区文件用 `ctx.fs.read/write`（字节或字符串），插件或应用 profile 数据用声明 `capabilities.store: true` 后的可选 `ctx.store`。不存在 `PluginContext.fs.readText/writeText`。
 
-工具需要自带 UI 面板时选 `tool-with-panel`，复用已有模板。候选已经存在时，在同一候选补齐 client、描述符和测试。读取同一摘要的全部候选分页，程序修改 `sourceFiles`，再写回包含未改文件的完整树；creator 指南提供可执行 cell 示例。每次修改都会清空旧测试，最终证据必须是最终 `candidateHash` 的 `plugin_test`。
+工具需要自带 UI 面板时选 `tool-with-panel`，复用已有模板。当前目录提供该工具时，优先用 `plugin_scaffold({template: "tool-with-panel", name: "my-agh-plugin"})` 初始化一次，保存完整清单、客户端和测试。指南的 `previewFiles` 缺少部分文件，不能手抄为候选文件树；也可通过 `run_code` 将指南中完整的 `files` 数组传给 `plugin_helper_create`。候选已经存在时，在同一候选补齐 client、描述符和测试。读取同一摘要的全部候选分页，程序修改 `sourceFiles`，再写回包含未改文件的完整树；creator 指南提供可执行 cell 示例。每次修改都会清空旧测试，最终证据必须是最终 `candidateHash` 的 `plugin_test`。
 
 使用 `@agnes/host/author-testkit` 的 `createPluginTestHost(main)` 做真实 Host 登记及 `host.invoke(name, args)` 调用测试，需要 I/O 时通过 `options.context` 提供明确的调用端口。手造 PluginContext mock 不能证明安装成功。使用受控候选 runner；`node --test` 管道接 `tail` 会隐藏测试退出码。后端测试不能证明浏览器外观。
 
@@ -47,7 +47,7 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 ## 按证据报告并交付完整包
 
-推荐路径为 **指南 → 创建一次 → 读取／编辑同一候选 → 精确摘要测试 → 提交人工审阅**：先用 `plugin_helper_guide`、`plugin_helper_create`，再用当前工具目录中的 `plugin_candidate_read/write`、`plugin_test`、`plugin_install_local`。`plugin_creator_guide` 提供相同路径；helper 不可用时，`plugin_scaffold` 是初始模板步骤的替代入口。`plugin_helper_install test/commit/status` 保留为同一服务的兼容别名，`proposalId` 就是原候选 ID；commit 只提交审阅。指南中的 Host 端口 supplied 仅表示已提供端口，每次调用仍须授权。
+推荐路径为 **指南 → 创建一次 → 读取／编辑同一候选 → 精确摘要测试 → 提交人工审阅**：先用 `plugin_helper_guide`、`plugin_helper_create`，再用当前工具目录中的 `plugin_candidate_read/write`、`plugin_test`、`plugin_install_local`。`plugin_creator_guide` 提供相同路径；`plugin_scaffold` 是初始模板步骤的替代入口；当前目录提供它时，也推荐用它保存完整面板模板。`plugin_helper_install test/commit/status` 保留为同一服务的兼容别名，`proposalId` 就是原候选 ID；commit 只提交审阅。指南中的 Host 端口 supplied 仅表示已提供端口，每次调用仍须授权。
 
 复述实际回执的 `operation`、`stage`、`candidateId`。创建成功、随后 write 返回 `unavailable-host-capability` 时，应说草稿已创建、**write** 失败，保留同一草稿并在继续前读取当前摘要。后续阶段失败不意味着创建失败；除非人工明确要求新草稿，否则不要重复创建。不得推测“管理员关闭”或编造设置开关，也不得用 shell／配置修改绕过拒绝。
 
@@ -103,6 +103,6 @@ Markdown Skill 是包内数据，全文与插件快照一起审阅。Skill 提�
 
 Web 优先显示待处理候选，已发布、已拒绝和已中断的审阅放在折叠历史中。发布成功后关闭详情，并显示已安装技能或插件的链接。终态详情保留文件与来源，不再显示批准/拒绝按钮。
 
-作者回执通过有界、白名单化的 `diagnostics` 提供原因代码、包内相对路径、字段、出错名称与修正提示。校验与测试失败会在普通工具文本中展示可操作的诊断；测试输出经过脱敏，超限带有 `[truncated]` 标记。通过 `run_code` 读取同一候选可检查完整但仍受长度限制的 `tests.output`；测试通过时回执保持简洁。
+作者回执通过有界、白名单化的 `diagnostics` 提供原因代码、包内相对路径、字段、出错名称与修正提示。校验与测试失败会在普通工具文本中展示可操作的诊断；测试输出经过脱敏，超限带有 `[truncated]` 标记。通过 `run_code` 读取同一候选可检查完整但仍受长度限制的 `tests.output`；测试通过时回执保持简洁。超时和进程非零退出会通过相同脱敏路径保留有界的部分输出；即使其中包含通过的 TAP 文本，也仍记为测试失败。
 
 `candidate.write` 仍替换完整文件树，`writeSummary` 列出新增、删除、修改文件以及声明的后端／客户端入口和缺失文件。草稿可以不完整；删除 `package.json` 或声明入口会产生明确警告，test/submit 以同一缺文件原因拒绝。写入时必须保留所有未修改文件。重复提交相同内容或遭遇相同拒绝时，回执提示先读取候选／诊断，不设全局重试上限。每次编辑仍使测试及人工审阅证据失效。
