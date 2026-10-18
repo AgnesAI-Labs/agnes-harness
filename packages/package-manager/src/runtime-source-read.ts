@@ -38,7 +38,7 @@ export async function readRuntimePluginSnapshots(
         ceiling: ceiling(beforeLock),
         verificationCache,
       })
-      const pins = await listRuntimePinsStoreAsync(store)
+      const pins = await listRuntimePinsStoreAsync(store, beforeLock)
       const afterLock = load()
       const after = await readInventoryAsync(afterLock, {
         ...store,

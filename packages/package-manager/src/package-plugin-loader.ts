@@ -146,6 +146,18 @@ export function runtimePluginSnapshotsFromPins(
       !trusted.has(pin.snapshot.packageId)
     )
       continue
+    const current = inventory.packages.find((pkg) => pkg.id === pin.snapshot.packageId)
+    // A historical identity keeps its own bytes; reusing the installed identity must keep
+    // its verified tree and capability binding too. Store reads additionally bind source/ref.
+    if (
+      current?.entry.integrity === pin.snapshot.integrity &&
+      (current.entry.version !== pin.snapshot.version ||
+        current.entry.treeIntegrity !== pin.snapshot.treeIntegrity ||
+        current.capabilityHash !== pin.snapshot.capabilityHash)
+    )
+      throw new PackageError('E_LOCK_MISMATCH', 'active runtime pin differs from installed snapshot', {
+        detail: { reason: 'active-pin-installed-binding' },
+      })
     const key = `${pin.snapshot.packageId}\0${pin.snapshot.integrity}`
     const existing = sources.get(key)
     if (existing && existing.snapshot.treeIntegrity !== pin.snapshot.treeIntegrity)

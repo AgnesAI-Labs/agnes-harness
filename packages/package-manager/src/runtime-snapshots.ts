@@ -23,6 +23,7 @@ import {
   verifyPackageDirectory,
 } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
 import type {
   CreateJournal,
   GcJournal,
@@ -277,14 +278,6 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
       : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
   }
 }
-function trusted(entry: LockEntry, record: SnapshotRecord): boolean {
-  return (
-    entry.trust === 'builtin' ||
-    (entry.state.trusted !== null &&
-      entry.trustDecision?.integrity === entry.integrity &&
-      entry.trustDecision.capabilityHash === record.capabilityHash)
-  )
-}
 function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
@@ -358,9 +351,11 @@ function pinView(
   state: RuntimeState,
   pin: PinRecord,
   verified?: RuntimeSnapshot,
+  current?: LockEntry,
 ): RuntimePin {
   const record = state.snapshots[pin.snapshotId]
   if (!record) integrityFailure('pin-snapshot-missing')
+  assertCurrentBinding(record, current)
   return freezeData({
     pinId: pin.pinId,
     operationId: pin.operationId,
@@ -425,6 +420,7 @@ function select(
   if (request.selector.kind === 'snapshot') {
     const record = state.snapshots[request.selector.snapshotId]
     if (!record || record.packageId !== request.packageId) stateFailure('snapshot-not-found')
+    assertCurrentBinding(record, live.entry)
     if (
       record.integrity !== request.selector.expectedIntegrity ||
       record.treeIntegrity !== request.selector.expectedTreeIntegrity
@@ -456,7 +452,7 @@ function select(
     directory = previousPackageDir(s, request.packageId)
   }
   const record = recordFromEntry(request.packageId, entry)
-  if (!trusted(entry, record))
+  if (!hasSnapshotTrust(entry, record))
     throw new PackageError('E_WORKSPACE_UNTRUSTED', 'runtime snapshot has no valid trust decision')
   if (
     record.integrity !== request.selector.expectedIntegrity ||
@@ -645,7 +641,7 @@ export function pinRuntimeSnapshotStore(
       prior.purpose !== request.purpose
     )
       integrityFailure('pin-id-reused')
-    return pinView(s, state, prior)
+    return pinView(s, state, prior, undefined, own(lock.packages, prior.packageId))
   }
   if (Object.keys(state.pins).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
   const selected = select(s, lock, state, request, installedPackage, ceiling),
@@ -723,7 +719,7 @@ export function resolveRuntimePinStore(
     if (current.state.trusted === null || (packageEligible && !packageEligible(pin.packageId)))
       stateFailure('package-not-eligible')
   }
-  return pinView(s, state, pin)
+  return pinView(s, state, pin, undefined, lock && own(lock.packages, pin.packageId))
 }
 
 export function releaseRuntimePinStore(
@@ -752,21 +748,21 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-function* runtimePinReadSteps(s: RuntimeSnapshotStore): Generator<void, RuntimePin[], void> {
+function* runtimePinReadSteps(s: RuntimeSnapshotStore, lock?: Lockfile): Generator<void, RuntimePin[], void> {
   const state = readState(s)
   const verified = yield* knownRuntimeDirectoryReadSteps(s, state)
   const pins: RuntimePin[] = []
   for (const pin of Object.values(state.pins)) {
     yield
-    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId)))
+    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId), lock && own(lock.packages, pin.packageId)))
   }
   return pins
 }
 export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
   return collectRead(runtimePinReadSteps(s))
 }
-export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore): Promise<RuntimePin[]> {
-  return collectReadAsync(runtimePinReadSteps(s))
+export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore, lock?: Lockfile): Promise<RuntimePin[]> {
+  return collectReadAsync(runtimePinReadSteps(s, lock))
 }
 
 export function collectRuntimeSnapshotsStore(

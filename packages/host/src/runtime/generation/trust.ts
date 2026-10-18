@@ -26,7 +26,10 @@ export async function assertGenerationTrust(
         (source) =>
           source.trusted &&
           source.snapshot.packageId === snapshot.packageId &&
+          source.snapshot.snapshotId === snapshot.snapshotId &&
+          source.snapshot.version === snapshot.version &&
           source.snapshot.integrity === snapshot.integrity &&
+          source.snapshot.treeIntegrity === snapshot.treeIntegrity &&
           source.snapshot.capabilityHash === snapshot.capabilityHash,
       )
     )
@@ -40,7 +43,9 @@ export async function assertGenerationTrust(
       entry.trustDecision?.integrity !== entry.integrity ||
       entry.trustDecision.capabilityHash !== capabilityHash(entry) ||
       (entry.integrity === snapshot.integrity &&
-        entry.trustDecision.capabilityHash !== snapshot.capabilityHash)
+        (entry.version !== snapshot.version ||
+          entry.treeIntegrity !== snapshot.treeIntegrity ||
+          entry.trustDecision.capabilityHash !== snapshot.capabilityHash))
     )
       throw new HostError(
         'E_WORKSPACE_UNTRUSTED',

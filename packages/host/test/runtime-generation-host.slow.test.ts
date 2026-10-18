@@ -105,6 +105,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       version: source.snapshot.version,
       source: { type: 'file', ref: 'file:fixture' },
       integrity: source.snapshot.integrity,
+      treeIntegrity: source.snapshot.treeIntegrity,
       trust: 'trusted',
       license: 'MIT',
       apiRange: '^4.0.0',
@@ -802,6 +803,16 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
         'E_GENERATION_UNTRUSTED',
       )
+    }
+    for (const changed of [{ treeIntegrity: `sha256-${'f'.repeat(64)}` }, { version: '9.0.0' }]) {
+      persistTrust(two)
+      const lock = readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+      Object.assign(required(lock.packages['acme/generation']), changed)
+      writeLock(profileDir, lock)
+      await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
+        'E_GENERATION_UNTRUSTED',
+      )
+      expect(store.session('session-b')?.generationId).toBe(secondId)
     }
     expect(host.kernel.get('session-b')).toBeUndefined()
     expect(host.extensions().some((entry) => entry.id === 'acme/generation/main' && entry.loaded)).toBe(false)

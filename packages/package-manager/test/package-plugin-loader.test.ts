@@ -73,6 +73,12 @@ describe('package plugin loader', () => {
     const { snapshot } = packageSnapshot([])
     const pkg = {
       id: snapshot.packageId,
+      entry: {
+        version: snapshot.version,
+        integrity: snapshot.integrity,
+        treeIntegrity: snapshot.treeIntegrity,
+      },
+      capabilityHash: snapshot.capabilityHash,
       trusted: true,
       blockers: [],
     } as unknown as InstalledPackage
@@ -87,6 +93,20 @@ describe('package plugin loader', () => {
       { snapshot: { directory: snapshot.directory, snapshotId: snapshot.integrity }, trusted: true },
     ])
     expect(runtimePluginSnapshotsFromPins(inventory, [{ ...active, purpose: 'candidate' }])).toEqual([])
+    for (const changed of [
+      { treeIntegrity: `sha256-${'f'.repeat(64)}` },
+      { capabilityHash: 'f'.repeat(64) },
+      { version: '9.0.0' },
+    ])
+      expect(() =>
+        runtimePluginSnapshotsFromPins(inventory, [{ ...active, snapshot: { ...snapshot, ...changed } }]),
+      ).toThrow('active runtime pin differs from installed snapshot')
+    const historical = { ...snapshot, integrity: `sha256-${'a'.repeat(64)}` }
+    expect(
+      runtimePluginSnapshotsFromPins(inventory, [
+        { ...active, pinId: activeRuntimePinId(historical), snapshot: historical },
+      ]),
+    ).toMatchObject([{ snapshot: { directory: snapshot.directory }, enabled: false, trusted: true }])
     expect(
       runtimePluginSnapshotsFromPins({ ...inventory, packages: [{ ...pkg, trusted: false }] }, [active]),
     ).toEqual([])
