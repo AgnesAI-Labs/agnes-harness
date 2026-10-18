@@ -293,11 +293,11 @@ export function RequestContent({ state }: { state: RequestTraceState }) {
             const before = comparing && previous ? sectionText(previous, section) : undefined
             return (
               <SettingsDetails
-                key={section}
+                key={`${snapshot.id}:${section}:${compare}:${previous?.id ?? ''}`}
                 data-testid={`request-trace-section-${section}`}
                 className="request-trace-section"
                 compact
-                open={section === 'system' || (before !== undefined && before !== text)}
+                defaultOpen={section === 'system' || (before !== undefined && before !== text)}
                 title={t(section)}
                 summary={before === undefined ? meta(section) : t(before === text ? 'unchanged' : 'changed')}
               >
@@ -309,7 +309,7 @@ export function RequestContent({ state }: { state: RequestTraceState }) {
                       <SettingsDetails
                         key={part.id}
                         compact
-                        open={part.id !== 'core:untrusted-envelope'}
+                        defaultOpen={part.id !== 'core:untrusted-envelope'}
                         title={
                           <span data-testid="request-trace-source" title={`${part.id} · ${part.source}`}>
                             {promptSourceLabel(part.id, part.source, state.locale)}
