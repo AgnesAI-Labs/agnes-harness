@@ -13,7 +13,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Kind | Starter | Contribution |
 | --- | --- | --- |
 | Tool | [tool](../../templates/tool/) | TypeBox input/result schemas, execution signal and unload cleanup |
-| Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | The same tool plus an additional profile page |
+| Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | Shared to-do tool/store, profile services and an interactive React page |
 | MCP and Skills | [mcp-skills](../../templates/mcp-skills/) | MCP definition and a packaged Skill registered through the Skills service |
 | Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `ctx.providers.register` |
 | Loop | [loop](../../templates/loop/) | Official staged business workflow with confirmation and checkpoint recovery |

@@ -18,6 +18,8 @@ Choose `tool-with-panel` for a tool with its own UI panel; it reuses the existin
 
 Use `@agnes/host/author-testkit` and `createPluginTestHost(main)` for real Host registration and `host.invoke(name, args)` tests. Supply explicit invocation I/O ports through `options.context` when needed; a hand-made PluginContext mock does not verify installation. Use the controlled candidate runner; piping `node --test` into `tail` hides its exit status. Backend tests never establish browser appearance.
 
+The `tool-with-panel` starter is a complete small to-do example: React ESM imports, a profile page, declared query/effect services and shared owner-store persistence. Its inherited tests exercise DOM add/toggle/errors through the real client facade and data retention after Host recreation. Use the [author reference](../reference/plugin-author-api.md) and template instead of searching Host/installed source; private install directories are denied by design. There is no browser `ctx.tools.invoke`; use `ctx.profile.services` with exact names in `client.services`. `present` accepts a workspace filesystem path, never an `artifact://` reference.
+
 ## Keyless Demo exercise
 
 Use the isolated home and workspace from the [quickstart](quickstart.md). Create a **Demo** session in Web, submit `create a plugin`, and confirm the tool approval to save its candidate. Demo copies the version-matched text statistics example; it does not design new code for your request. `agh -p` has no interactive permission handler and rejects the authoring call; do not bypass this by weakening policy.

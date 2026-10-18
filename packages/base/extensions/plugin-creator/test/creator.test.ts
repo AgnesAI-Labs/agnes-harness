@@ -177,7 +177,7 @@ it('scaffolds complete inert text through the host rather than reading virtual a
     expect(pkg.agnes.plugins[0].inject).toEqual(
       {
         tool: ['tools'],
-        'tool-with-panel': ['tools'],
+        'tool-with-panel': ['tools', 'services'],
         'mcp-skills': ['skills'],
         'model-adapter': ['providers'],
         loop: ['tools', 'providers', 'skills'],

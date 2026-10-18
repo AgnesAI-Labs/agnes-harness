@@ -6,7 +6,7 @@
     "publicConfig": {
       "label": "__PACKAGE_NAME__"
     },
-    "services": [],
+    "services": ["__SERVICE_NAME__.list", "__SERVICE_NAME__.change"],
     "projections": [],
     "id": "__SKILL_NAME__",
     "lifetime": "profile",

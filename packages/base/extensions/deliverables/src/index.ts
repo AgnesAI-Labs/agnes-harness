@@ -53,7 +53,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'present',
           description:
-            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Automatically displays the files as artifact-file cards; do not call ui_render again for these files. Does not create files. For an authored plugin download, first pack the complete candidate tree with agh plugins pack and present the resulting .tgz; loose CSS/JSON cards are source previews, not installable packages. Presentation does not install or publish. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
+            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Automatically displays the files as artifact-file cards; do not call ui_render again for these files. Does not create files. files[].path must be a workspace filesystem path, not an artifact:// reference or URL. For an authored plugin download, first pack the complete candidate tree with agh plugins pack and present the resulting .tgz; loose CSS/JSON cards are source previews, not installable packages. Presentation does not install or publish. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
           parameters: Type.Object(
             {
               files: Type.Array(
@@ -82,6 +82,10 @@ export default defineAgnesPlugin({
           },
           async execute(args, ctx) {
             try {
+              if (args.files.some((file) => /^[a-z][a-z0-9+.-]*:\/\//i.test(file.path)))
+                throw new Error(
+                  'present requires a workspace filesystem path, not an artifact:// reference or URL. Pass the path of an existing readable workspace file; for a plugin, pack the complete candidate with agh plugins pack and pass the resulting .tgz path. / 请传入工作区文件路径，不能传 artifact:// 引用或网址；插件须先打包完整候选，再传生成的 .tgz 路径。',
+                )
               const previous = await ctx.projections.readOwn<State>('presented')
               if (previous.status !== 'available') throw new Error('deliverable persistence unavailable')
               if (

@@ -56,6 +56,7 @@ The linker is safe to repeat and uses the checkout's dependencies and built decl
   const replacements = {
     __PACKAGE_NAME__: name,
     __TOOL_NAME__: toolName,
+    __SERVICE_NAME__: toolName.replaceAll('_', ''),
     __SKILL_NAME__: skillName,
     __SETUP_GUIDE__: setupGuide,
   }

@@ -32,6 +32,8 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 | Test sessions, generation pins, model replay or HTTP/SSE faults | `@agnes/host/author-testkit` | `createAuthorTestkit`, `recordModelFixture`, `replayModelFixture`, `startModelFaultServer`, `ScriptedProvider`, `fakeModel`, `fakeRequest` | Author, test files only; [testing guide](testing.md) explains fixture limits and cleanup. |
 | Check specialist provider lifecycle contracts | `@agnes/extension-api/testkit` | `runProviderConformance`, `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance`, `childAgentConformance` | Specialist. Requires a real Host registration/session probe; this is not a second starter testkit. Optional Vitest persistence suites live at `@agnes/extension-api/testkit/persistence-contract`. |
 
+For profile pages, import React from `react` and call your declared backend through `ctx.profile.services.query/effect/readOperation`; see the [browser author reference](../reference/plugin-author-api.md) and working [panel template](../../templates/tool-with-panel/). For Node DOM tests, import `createClientPanelTestHost` from `@agnes/web-client/testkit` and stub only its `profileCaller` argument. `createPluginTestHost` accepts an isolated `storeDir` for restart retention and exposes `invokeProfileService` for registered handler contracts; native admission/approvals are outside this lightweight fixture.
+
 ## Kind tokens
 
 A kind is one token made with `defineKind`. It declares whether it supports `ctx.providers.register`, `ctx.providers.bindOwn`, or both (a `bind` option adds binding). `ctx.providers.register(kind, provider)` and `ctx.providers.bindOwn(kind)` take the same token type, and the Host refuses an operation the kind does not declare.
@@ -76,7 +78,6 @@ The package `exports` maps select the entry; the entry's exports select the symb
 - [observability package](../../packages/observability/package.json), [Intelligent UI contract package](../../packages/intelligent-ui-contract/package.json), and [Git worktree contract package](../../packages/git-worktree-contract/package.json).
 
 TypeBox is the declared `@sinclair/typebox` dependency; its own package exports provide the root, `/value` and `/compiler` entries. The [runtime module list](../../packages/plugin-runtime/src/provided-externals.ts) supplies those same namespaces.
-
 
 ## Session decisions
 

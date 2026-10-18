@@ -20,8 +20,8 @@ function block(source, from) {
   }
   throw new Error('Unclosed source declaration')
 }
-function iface(path, name) {
-  const source = read(`packages/extension-api/src/${path}.ts`)
+function iface(path, name, pkg = 'extension-api') {
+  const source = read(`packages/${pkg}/src/${path}.ts`)
   const start = source.indexOf(`export interface ${name}`)
   if (start < 0) throw new Error(`Missing public interface ${name}`)
   const body = block(source, start)
@@ -54,6 +54,14 @@ export function generateReference() {
   const fs = tool.find((m) => m.name === 'fs').text
   const execute = iface('tool', 'ToolDef').find((m) => m.name === 'execute').text
   const store = declarations(iface('profile-services', 'OwnedStore'))
+  const browserContext = declarations(
+    iface('client-module', 'ClientContext', 'web-client').filter((m) =>
+      ['homeEntries', 'profile'].includes(m.name),
+    ),
+  )
+  const browserServices = declarations(iface('service-contracts', 'ClientProfileServices', 'web-client'))
+  const importSource = read('packages/protocol/src/client-platform-imports.ts')
+  const browserImports = [...importSource.matchAll(/^ {2}'([^']+)'/gm)].map((m) => m[1])
   const schema = JSON.parse(read('packages/protocol/schema/extension-manifest.json'))
   const skinModes = schema.$defs.SkinContribution.properties.tokens.additionalProperties.required
   const darkClass = /root\.classList\.toggle\('([^']+)', theme === 'dark'\)/.exec(
@@ -70,6 +78,9 @@ export function generateReference() {
     fs,
     execute,
     store,
+    browserContext,
+    browserServices,
+    browserImports,
     skinModes,
     darkClass,
   }
@@ -90,6 +101,15 @@ Choose data ownership first / 先确定数据归属:
 - Session facts: eventLog.append and projections for session ledger state, not arbitrary private files; artifacts for output blobs. External business data belongs behind an explicitly declared service/provider. / 会话事实用事件日志与投影，输出用 artifacts，外部业务数据走明确声明的服务或 provider。
 OwnedStore is bounded JSON; transaction callbacks are synchronous, promises abort. / OwnedStore 存储有限 JSON，事务回调必须同步。
 ${code(store.join('\n'))}
+
+Browser profile pages / 浏览器 profile 页面:
+Import React from 'react'; use React.createElement for plain .js (no JSX compilation), or compile JSX before delivery. The Host import map supplies exactly: ${browserImports.join(', ')}. These are ESM imports, NOT globalThis.React or an injected h prop. / 从 react 导入 React；普通 JS 用 createElement，JSX 须先编译；不要猜测全局 React 或 h 注入。
+${code(browserContext.join('\n'))}
+ctx.homeEntries.register(entry) registers a declared homeEntries id and matching placement on an active profile-lifetime client. Returns a disposer; the Host also cleans it up on unload. entry.component is a React component receiving {context: {t, data?, selection?, ...}}; capture ClientContext from apply(ctx, config) for service access. No session is required. / 注册活动 profile 页面须匹配描述符的 id 和 placement；卸载自动清理。页面组件收到 context 呈现属性，服务上下文从 apply 闭包取得。
+${code(browserServices.join('\n'))}
+Declare exact backend names in client.services (agnes.client.json) and register scope: 'profile' services through backend ctx.services.register (inject services). Service names use lowercase alphanumeric dot segments, not npm hyphens. Service metadata/schemas must be plain JSON; strip TypeBox Kind symbols when reusing a tool schema. query resolves the output itself. effect returns a receipt with state and requires a stable operationId; readOperation reads that same id. Completed receipts are replayed; running/unknown outcomes must be inspected/reconciled, never blindly retried with a new id. Approval-required effects need the Host Approvals UI, then resubmission with the SAME id/input. Current activation, service allowlist and server authorization remain authoritative. / 服务名用小写字母数字点分段，不能含 npm 名称中的连字符；服务元数据须为纯 JSON，复用工具 schema 时先去除 TypeBox Kind 符号；query 直接返回 output，effect 返回含 state 的回执；保留 operationId，未知结果先查询核对，不盲目新建操作，审批由宿主完成。
+There is no ctx.tools.invoke from the browser; call your own declared profile service. ctx.agnes.services.call is session-bound and is not a substitute for a profile page. / 浏览器没有 ctx.tools.invoke；调用自己声明的 profile service。不要把需要当前会话的 call 当作 profile 页面接口。
+Use the tool-with-panel template and this version-matched reference before editing. Do not search Host/installed source or private install directories to guess APIs; private install dirs are denied by design. Keep queries/effects, loading/error states, owner-store and inherited interaction/restart tests together. / 先用本版本作者参考与模板；不要翻查宿主或安装源码猜 API，私有安装目录按设计禁止访问；保留交互、持久化与错误测试。
 
 Skin tokens / 完整皮肤 token 白名单 (${tokens.length}):
 ${code(tokens.join('\n'))}

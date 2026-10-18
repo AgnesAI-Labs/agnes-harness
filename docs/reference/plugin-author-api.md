@@ -54,6 +54,31 @@ delete(key: string): void
 transaction<T>(work: () => T): T
 ```
 
+Browser profile pages / 浏览器 profile 页面:
+Import React from 'react'; use React.createElement for plain .js (no JSX compilation), or compile JSX before delivery. The Host import map supplies exactly: react, react/jsx-runtime, @agnes/web-client, @agnes/web-ui. These are ESM imports, NOT globalThis.React or an injected h prop. / 从 react 导入 React；普通 JS 用 createElement，JSX 须先编译；不要猜测全局 React 或 h 注入。
+```ts
+profile: Readonly<{
+    streams: ReturnType<typeof scopedProfileStreams>
+    services: import('./service-contracts.js').ClientProfileServices
+    examples: ExamplePackages
+    launch: ExampleLaunches & { openPage(exampleId: string): void }
+  }>
+homeEntries: ReturnType<typeof scopedHomeEntries>
+```
+ctx.homeEntries.register(entry) registers a declared homeEntries id and matching placement on an active profile-lifetime client. Returns a disposer; the Host also cleans it up on unload. entry.component is a React component receiving {context: {t, data?, selection?, ...}}; capture ClientContext from apply(ctx, config) for service access. No session is required. / 注册活动 profile 页面须匹配描述符的 id 和 placement；卸载自动清理。页面组件收到 context 呈现属性，服务上下文从 apply 闭包取得。
+```ts
+query(
+    service: string,
+    input: Record<string, unknown>,
+    options?: { sessionReads?: readonly string[] },
+  ): Promise<unknown>
+effect(service: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
+readOperation(service: string, operationId: string): Promise<unknown>
+```
+Declare exact backend names in client.services (agnes.client.json) and register scope: 'profile' services through backend ctx.services.register (inject services). Service names use lowercase alphanumeric dot segments, not npm hyphens. Service metadata/schemas must be plain JSON; strip TypeBox Kind symbols when reusing a tool schema. query resolves the output itself. effect returns a receipt with state and requires a stable operationId; readOperation reads that same id. Completed receipts are replayed; running/unknown outcomes must be inspected/reconciled, never blindly retried with a new id. Approval-required effects need the Host Approvals UI, then resubmission with the SAME id/input. Current activation, service allowlist and server authorization remain authoritative. / 服务名用小写字母数字点分段，不能含 npm 名称中的连字符；服务元数据须为纯 JSON，复用工具 schema 时先去除 TypeBox Kind 符号；query 直接返回 output，effect 返回含 state 的回执；保留 operationId，未知结果先查询核对，不盲目新建操作，审批由宿主完成。
+There is no ctx.tools.invoke from the browser; call your own declared profile service. ctx.agnes.services.call is session-bound and is not a substitute for a profile page. / 浏览器没有 ctx.tools.invoke；调用自己声明的 profile service。不要把需要当前会话的 call 当作 profile 页面接口。
+Use the tool-with-panel template and this version-matched reference before editing. Do not search Host/installed source or private install directories to guess APIs; private install dirs are denied by design. Keep queries/effects, loading/error states, owner-store and inherited interaction/restart tests together. / 先用本版本作者参考与模板；不要翻查宿主或安装源码猜 API，私有安装目录按设计禁止访问；保留交互、持久化与错误测试。
+
 Skin tokens / 完整皮肤 token 白名单 (120):
 ```ts
 --agnes-brand-primary

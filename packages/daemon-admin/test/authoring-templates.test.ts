@@ -9,6 +9,8 @@ import * as authorTestkit from '@agnes/host/author-testkit'
 import { createPackageManager, parseSource } from '@agnes/package-manager'
 import * as runtime from '@agnes/plugin-runtime'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
+import * as clientTestkit from '@agnes/web-client/testkit'
+import { React } from '@agnes/web-client/testkit'
 import { build } from 'esbuild'
 import { expect, it } from 'vitest'
 
@@ -24,7 +26,21 @@ async function guide(kind: string) {
   expect(
     definition.parameters.properties.kind.anyOf.map((choice: { const: string }) => choice.const),
   ).toContain(kind)
-  return (await definition.execute({ kind }, {})).structured as {
+  const receipt = await definition.execute({ kind }, {})
+  if (kind === 'tool-with-panel') {
+    const text = receipt.content[0].text
+    expect(Buffer.byteLength(text)).toBeLessThan(32768)
+    const modelGuide = JSON.parse(text)
+    expect(modelGuide.templateRead).toContain('plugin_candidate_read')
+    expect(modelGuide.previewFiles.map((file: Source) => file.path).sort()).toEqual([
+      'client/agnes.client.json',
+      'client/index.js',
+      'src/index.ts',
+    ])
+    expect(modelGuide.files).toBeUndefined()
+    expect(receipt.structured.files.map((file: Source) => file.path)).toEqual(modelGuide.templateFiles)
+  }
+  return receipt.structured as {
     files: Source[]
     authoringPath: string
   }
@@ -36,6 +52,8 @@ async function runTemplateTests(directory: string, files: Source[]) {
   const cases: { name: string; body: () => Promise<void> }[] = []
   const sdk: Record<string, unknown> = {
     '@agnes/plugin-runtime': runtime,
+    react: { ...React, default: React },
+    '@agnes/web-client/testkit': clientTestkit,
     ...providedExternalModules,
     '@agnes/host/author-testkit': {
       ...authorTestkit,
@@ -113,7 +131,7 @@ it.each(['tool', 'tool-with-panel', 'skin', 'skill', 'scaffold-tool', 'scaffold-
         dataDir,
         agnesVersion: '0.1.0',
         cwd: directory,
-        ceiling: ['ui'],
+        ceiling: ['ui', 'store'],
       }).inspect(join(dataDir, 'profiles/local-dev'), parseSource(`file:${directory}`))
       expect(preview.blockers).toEqual([])
       if (kind.endsWith('tool-with-panel'))

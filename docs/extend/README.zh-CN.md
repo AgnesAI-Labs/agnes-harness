@@ -13,7 +13,7 @@
 | 类型 | 模板 | 提供的能力 |
 | --- | --- | --- |
 | 工具 | [tool](../../templates/tool/) | TypeBox 输入和结果 schema、取消信号、卸载清理 |
-| 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 相同工具与追加的 Profile 页面 |
+| 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 共享存储的待办工具、profile 服务与可交互 React 页面 |
 | MCP 与 Skills | [mcp-skills](../../templates/mcp-skills/) | MCP 定义与通过 Skills 服务注册的包内 Skill |
 | 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `ctx.providers.register` 注册的结构化适配器 |
 | 循环 | [loop](../../templates/loop/) | 官方分阶段业务工作流、确认与 checkpoint 恢复 |

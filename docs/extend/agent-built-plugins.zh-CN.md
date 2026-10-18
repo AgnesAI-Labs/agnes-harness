@@ -18,6 +18,8 @@ macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可
 
 使用 `@agnes/host/author-testkit` 的 `createPluginTestHost(main)` 做真实 Host 登记及 `host.invoke(name, args)` 调用测试，需要 I/O 时通过 `options.context` 提供明确的调用端口。手造 PluginContext mock 不能证明安装成功。使用受控候选 runner；`node --test` 管道接 `tail` 会隐藏测试退出码。后端测试不能证明浏览器外观。
 
+`tool-with-panel` 是完整的小型待办示例：React ESM 导入、profile 页面、声明的 query/effect 服务，以及共享 owner store 持久化。继承的测试通过真实客户端门面验证 DOM 添加、勾选与错误，并验证 Host 重建后数据保留。请用[作者参考](../reference/plugin-author-api.zh-CN.md)和模板，不要翻查宿主或安装源码猜 API；私有安装目录按设计禁止访问。浏览器没有 `ctx.tools.invoke`，应使用 `ctx.profile.services` 并在 `client.services` 声明精确名称。`present` 接受工作区文件系统路径，不能传 `artifact://` 引用。
+
 ## 免密钥 Demo 练习
 
 沿用[快速上手](quickstart.zh-CN.md)的独立 home 和工作区，在 Web 新建 **Demo** 会话，提交 `create a plugin` 并确认保存候选的工具审批。Demo 复制版本匹配的文本统计示例，不会根据需求设计新代码。`agh -p` 没有交互审批处理器，创作调用会被拒绝；不要通过放宽策略绕过。

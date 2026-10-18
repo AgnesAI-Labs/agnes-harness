@@ -99,16 +99,37 @@ export const pluginHelper = {
         const authoringCapability = ctx?.pluginManage
           ? 'supplied-authorization-checked-per-call'
           : 'unavailable-host-capability'
-        if (kind === 'tool-with-panel')
-          return result({
+        if (kind === 'tool-with-panel') {
+          const guide = {
             host: 'Agnes Harness',
             apiVersion: '4.0.0',
             authoringCapability,
             authoringPath: authoringGuidance,
             guidance:
-              'Existing tool-with-panel scaffold: backend tool plus a profile-lifetime client page and descriptor. Rename package, row, tool and client IDs together. The starter page prompts a tool call; implement the requested interactions and persistence on this same candidate. Candidate tests verify registration/invocation and descriptor structure, not browser appearance. / 复用工具加面板模板，在同一候选补齐所需交互和持久化；候选测试不代表浏览器验收。',
+              'Working tool-with-panel scaffold: a shared to-do tool/owner store, profile list query and add/toggle effect, and a React ESM page calling ctx.profile.services. Rename package, row, tool, service and client IDs together. Extend this SAME candidate using the author reference, not Host/installed source searches; private install dirs are denied by design. Inherited tests exercise DOM interactions/errors and Host restart retention; real-browser appearance and installation still need verification. / 可读写待办模板：工具与 profile query/effect 共享 owner store，页面从 react 导入 React 并调用 ctx.profile.services。在同一候选扩展，保持服务等名称一致，使用作者参考，不翻查私有安装源码猜 API。继承测试覆盖 DOM 交互、错误及 Host 重建后的数据保留；安装与真实浏览器外观仍须验证。',
             files: panelFiles,
-          })
+          }
+          // Keep the model-visible guide valid JSON within the default 32 KiB output budget.
+          // The structured receipt retains the complete canonical template, including its tests.
+          const { files, ...info } = guide
+          return {
+            ...result(guide),
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ...info,
+                  templateFiles: files.map((file) => file.path),
+                  previewFiles: files.filter((file) =>
+                    ['src/index.ts', 'client/index.js', 'client/agnes.client.json'].includes(file.path),
+                  ),
+                  templateRead:
+                    'Preview only, not a complete candidate tree. Full files are in structured.files. Use plugin_helper_create once, then plugin_candidate_read to assemble ALL files at one hash before a full-tree write. / 此处仅预览，不能当作完整候选写回。完整模板在 structured.files；创建一次后用 plugin_candidate_read 按同一摘要读齐全部文件再编辑。',
+                }),
+              },
+            ],
+          }
+        }
         if (kind === 'skin')
           return result({
             host: 'Agnes Harness',

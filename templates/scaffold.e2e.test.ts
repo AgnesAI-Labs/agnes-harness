@@ -39,7 +39,7 @@ describe('plugin scaffolder', () => {
           }[kind],
         )
         expect(manifest.agnes.plugins[0].capabilities).toEqual(
-          kind === 'tool-with-panel' ? { ui: true } : kind === 'loop' ? { model: true } : {},
+          kind === 'tool-with-panel' ? { ui: true, store: true } : kind === 'loop' ? { model: true } : {},
         )
         expect(Object.values(manifest.dependencies)).not.toContain('workspace:*')
         const local = await scaffold(kind, 'local-plugin', join(temp, `local-${kind}`), { local: true })

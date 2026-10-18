@@ -27,6 +27,7 @@ const panelFiles = Object.entries(files)
     content: content
       .replaceAll('__PACKAGE_NAME__', 'my-agh-plugin')
       .replaceAll('__TOOL_NAME__', 'plugin_my_agh_plugin')
+      .replaceAll('__SERVICE_NAME__', 'pluginmyaghplugin')
       .replaceAll('__SKILL_NAME__', 'my-agh-plugin')
       .replaceAll('__SETUP_GUIDE__', 'Test the final candidate hash and submit human review.')
       .replaceAll('../dist/index.js', '../src/index.ts'),

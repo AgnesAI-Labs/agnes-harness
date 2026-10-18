@@ -32,6 +32,8 @@
 | 测试会话、代际绑定、模型回放或 HTTP/SSE 故障 | `@agnes/host/author-testkit` | `createAuthorTestkit`、`recordModelFixture`、`replayModelFixture`、`startModelFaultServer`、`ScriptedProvider`、`fakeModel`、`fakeRequest` | 作者面，仅测试文件；[测试指南](testing.zh-CN.md)解释 fixture 的边界与清理。 |
 | 检查专用 provider 生命周期合同 | `@agnes/extension-api/testkit` | `runProviderConformance`、`loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance` | 专用合同。需要真实 Host 注册/会话 probe，不是第二套 starter testkit。可选 Vitest 持久化 suites 位于 `@agnes/extension-api/testkit/persistence-contract`。 |
 
+profile 页面从 `react` 导入 React，通过 `ctx.profile.services.query/effect/readOperation` 调用已声明的后端服务，参见[浏览器作者参考](../reference/plugin-author-api.zh-CN.md)和可运行的[面板模板](../../templates/tool-with-panel/)。Node DOM 测试从 `@agnes/web-client/testkit` 导入 `createClientPanelTestHost`，仅替换 `profileCaller` 参数。`createPluginTestHost` 支持隔离的 `storeDir` 验证重建后的持久化，`invokeProfileService` 验证已注册 handler 的合同；原生准入和审批不在此轻量 fixture 范围内。
+
 ## Kind token
 
 kind 是用 `defineKind` 创建的同一种 token，自己声明支持 `ctx.providers.register`、`ctx.providers.bindOwn` 还是两者都支持（带 `bind` 选项即可绑定）。`ctx.providers.register(kind, provider)` 与 `ctx.providers.bindOwn(kind)` 接受同一种 token 类型，Host 会拒绝 kind 未声明的操作。
@@ -76,7 +78,6 @@ Bounded helper 仍只接受其自包含的 tool/Skill/skin 格式。它的 manif
 - [observability 包](../../packages/observability/package.json)、[智能 UI 合同包](../../packages/intelligent-ui-contract/package.json)、[Git worktree 合同包](../../packages/git-worktree-contract/package.json)。
 
 TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供根入口、`/value` 和 `/compiler`。[运行时模块表](../../packages/plugin-runtime/src/provided-externals.ts)提供相同命名空间。
-
 
 ## 会话决策
 

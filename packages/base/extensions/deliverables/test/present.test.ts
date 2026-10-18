@@ -100,6 +100,27 @@ describe('deliverable surface', () => {
               },
             },
           })
+        const uriFailure = await tool.execute(
+          { files: [{ path: 'artifact://synthetic/existing' }] },
+          {
+            ...ctx,
+            fs: {
+              ...ctx.fs,
+              stat: async () => {
+                throw new Error('URI must not reach filesystem')
+              },
+            },
+          },
+        )
+        expect(uriFailure.isError).toBe(true)
+        expect(uriFailure.content).toEqual([
+          expect.objectContaining({
+            text: expect.stringContaining('workspace filesystem path, not an artifact://'),
+          }),
+        ])
+        expect(uriFailure.content).toEqual([
+          expect.objectContaining({ text: expect.stringContaining('agh plugins pack') }),
+        ])
         const failure = await tool.execute(
           { files: [{ path: `cities.${format}` }, { path: 'missing.txt' }] },
           ctx,
