@@ -105,12 +105,10 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   function fail(rowId: string, state: PackageState, stage: RuntimeErrorStage): void {
     navigation.remove(rowId)
     revokeContributionOwner(registrationOwner(rowId, state))
-    setPhase(
-      rowId,
-      state,
-      'failed',
-      normalizeRuntimeError(stage, undefined, (key) => locale?.t(key) ?? key),
-    )
+    setPhase(rowId, state, 'failed', {
+      ...normalizeRuntimeError(stage, undefined, (key) => locale?.t(key) ?? key),
+      ...(state.target?.presentationRoles ? { roles: [...state.target.presentationRoles] } : {}),
+    })
   }
 
   function registrationOwner(rowId: string, state: PackageState): string {

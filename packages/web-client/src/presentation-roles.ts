@@ -40,14 +40,39 @@ export class PresentationRoleRegistry {
     role: string
     owners: readonly string[]
     reason: 'conflict' | 'mount-failed'
+    failure?: Readonly<{ code: string; packageId?: string; phase: 'mount' | 'dispose'; summary: string }>
   }>[] = []
   getSnapshot = () => this.diagnostics
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
-  private diagnose(role: string, owners: string[], reason: 'conflict' | 'mount-failed') {
-    this.diagnostics = [...this.diagnostics.filter((item) => item.role !== role), { role, owners, reason }]
+  private diagnose(
+    role: string,
+    owners: string[],
+    reason: 'conflict' | 'mount-failed',
+    source?: Candidate,
+    phase: 'mount' | 'dispose' = 'mount',
+  ) {
+    // Only host-authored summaries cross this boundary; plugin exceptions may contain secrets.
+    const failure =
+      reason === 'mount-failed'
+        ? {
+            code: phase === 'mount' ? 'PRESENTATION_MOUNT_FAILED' : 'PRESENTATION_DISPOSE_FAILED',
+            ...(source?.module ? { packageId: source.module.packageId } : {}),
+            phase,
+            summary: 'The presentation failed. Saved results may still exist.',
+          }
+        : undefined
+    this.diagnostics = [
+      ...this.diagnostics.filter((item) => item.role !== role),
+      {
+        role,
+        owners,
+        reason,
+        ...(failure ? { failure } : {}),
+      },
+    ]
     notifyListeners(this.listeners, 'presentation diagnostics')
   }
   private readonly active = new Map<string, { entry: Candidate; stop: () => void }>()
@@ -154,7 +179,7 @@ export class PresentationRoleRegistry {
     try {
       previous?.stop()
     } catch {
-      this.diagnose(role, previous ? [previous.entry.owner] : [], 'mount-failed')
+      this.diagnose(role, previous ? [previous.entry.owner] : [], 'mount-failed', previous?.entry, 'dispose')
     }
     this.active.delete(role)
     if (next) {
@@ -162,7 +187,7 @@ export class PresentationRoleRegistry {
         this.active.set(role, { entry: next, stop: next.provider.mount() })
       } catch (error) {
         this.failed.add(next)
-        this.diagnose(role, [next.owner], 'mount-failed')
+        this.diagnose(role, [next.owner], 'mount-failed', next)
         this.reconcile(role)
         throw error
       }

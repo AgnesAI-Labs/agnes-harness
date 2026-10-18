@@ -685,7 +685,11 @@ describe('client reconciler（WC10 前端状态机）', () => {
       packageId: 'a',
       revision: undefined,
       phase: 'failed',
-      error: { code: 'CLIENT_MODULE_IMPORT_FAILED', message: '插件 UI 入口加载失败，可重试' },
+      error: {
+        code: 'CLIENT_MODULE_IMPORT_FAILED',
+        phase: 'import',
+        message: '插件 UI 入口加载失败，可重试',
+      },
     })
     expect(updates.map((state) => state.phase)).toContain('loading')
     expect(updates.at(-1)?.phase).toBe('failed')
@@ -870,7 +874,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
       source: {
         list: async () =>
           roster([
-            { ...mod('bad', 'v1'), slots: ['ui:sidebar'] },
+            { ...mod('bad', 'v1'), slots: ['ui:sidebar'], presentationRoles: ['deliverables'] },
             { ...mod('good', 'v1'), slots: ['ui:topbar'] },
           ]),
       },
@@ -878,13 +882,20 @@ describe('client reconciler（WC10 前端状态机）', () => {
         apply(pluginCtx: { slots: SlotRegistry }) {
           const slot = url.includes('/bad/') ? 'ui:sidebar' : 'ui:topbar'
           pluginCtx.slots.register(slot as never, () => createElement('div', {}, url), { priority: -1 })
-          if (url.includes('/bad/') && fail) throw new Error('fixture apply failure')
+          if (url.includes('/bad/') && fail)
+            throw new Error('file:///private/token=secret/fixture apply failure')
         },
       }),
     })
 
     await reconciler.reconcileNow()
-    expect(reconciler.snapshot().get('bad')).toMatchObject({ phase: 'failed', revision: undefined })
+    expect(reconciler.snapshot().get('bad')).toMatchObject({
+      packageId: 'bad',
+      phase: 'failed',
+      revision: undefined,
+      error: { code: 'CLIENT_MODULE_APPLY_FAILED', phase: 'apply', roles: ['deliverables'] },
+    })
+    expect(JSON.stringify(reconciler.snapshot().get('bad'))).not.toMatch(/secret|private|file:/)
     expect(reconciler.snapshot().get('good')).toMatchObject({ phase: 'active', revision: 'v1' })
     expect(slots.entriesOfSlot('ui:sidebar').map((entry) => entry.owner)).toEqual(['@agnes/web-sidebar'])
     expect(slots.entriesOfSlot('ui:topbar').map((entry) => entry.owner)).toEqual(['good'])

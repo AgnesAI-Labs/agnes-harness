@@ -157,7 +157,7 @@ it('reports conflict sources and restores the release default after an applicati
       role: 'conversation',
       priority: 0,
       mount() {
-        throw new Error('bad mount')
+        throw new Error('file:///private/token=secret/bad mount')
       },
     },
     { packageId: 'custom', clientId: 'ui', revision: 'one' },
@@ -168,7 +168,14 @@ it('reports conflict sources and restores the release default after an applicati
     role: 'conversation',
     owners: ['broken-source'],
     reason: 'mount-failed',
+    failure: {
+      code: 'PRESENTATION_MOUNT_FAILED',
+      packageId: 'custom',
+      phase: 'mount',
+      summary: 'The presentation failed. Saved results may still exist.',
+    },
   })
+  expect(JSON.stringify(roles.getSnapshot())).not.toMatch(/secret|private|file:/)
   const provider = { role: 'custom-role', mount: () => () => {} }
   roles.register('source-a', provider)
   expect(() => roles.register('source-b', provider)).toThrow('source-a, source-b')

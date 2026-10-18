@@ -3,6 +3,8 @@ export type PluginRuntimePhase = 'idle' | 'loading' | 'active' | 'stopping' | 'f
 export interface PluginRuntimeError {
   readonly code: string
   readonly message: string
+  readonly phase?: RuntimeErrorStage
+  readonly roles?: readonly string[]
 }
 
 export interface PluginRuntimeState {
@@ -56,7 +58,7 @@ export function normalizeRuntimeError(
   _error: unknown,
   t: (key: string) => string = (key) => key,
 ): PluginRuntimeError {
-  return { code: ERROR_CODES[stage], message: t(ERROR_KEYS[stage]) }
+  return { code: ERROR_CODES[stage], phase: stage, message: t(ERROR_KEYS[stage]) }
 }
 
 function copyState(state: PluginRuntimeState): PluginRuntimeState {
@@ -64,7 +66,9 @@ function copyState(state: PluginRuntimeState): PluginRuntimeState {
     packageId: state.packageId,
     revision: state.revision,
     phase: state.phase,
-    ...(state.error === undefined ? {} : { error: { ...state.error } }),
+    ...(state.error === undefined
+      ? {}
+      : { error: { ...state.error, ...(state.error.roles ? { roles: [...state.error.roles] } : {}) } }),
   }
 }
 
