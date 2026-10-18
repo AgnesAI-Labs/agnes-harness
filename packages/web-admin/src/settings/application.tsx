@@ -1,68 +1,47 @@
-import { resolveApplicationBrand } from '@agnes/web-client'
-
 const clearCommand = 'agh app clear'
 const recoveryPath = '/?admin'
 
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
-import { Button, SettingsBlock, SettingsPageDescription, useDocumentLanguage } from '@agnes/web-ui'
+import {
+  Button,
+  SettingsBlock,
+  SettingsCode,
+  SettingsPageDescription,
+  SettingsTechnicalDetails,
+  scopedResourceKey,
+  setResource,
+  useDocumentLanguage,
+  useResource,
+} from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { ApplicationPreviewSummary } from './application-preview.js'
 import { InterfaceImplementations } from './interface-implementations.js'
-
-function PreviewBrand({ preview }: { preview: ApplicationPreview }) {
-  const [mark, setMark] = useState<string>()
-  const language = useDocumentLanguage()
-  useEffect(() => {
-    const match = /^data:(image\/(?:png|jpeg|webp|gif|x-icon));base64,([A-Za-z0-9+/=]+)$/.exec(
-      preview.assets.mark ?? '',
-    )
-    if (!match?.[1] || !match[2]) {
-      setMark(undefined)
-      return
-    }
-    const bytes = Uint8Array.from(atob(match[2]), (c) => c.charCodeAt(0))
-    const url = URL.createObjectURL(new Blob([bytes], { type: match[1] }))
-    setMark(url)
-    return () => URL.revokeObjectURL(url)
-  }, [preview])
-  const brand = resolveApplicationBrand(preview.declaration, language)
-  return (
-    <p>
-      {mark ? (
-        <img src={mark} alt="" width={32} height={32} onError={() => setMark(undefined)} />
-      ) : (
-        <span className="agnes-mark" aria-hidden="true" />
-      )}{' '}
-      {brand.name} · {brand.title} · {brand.assistantName}
-    </p>
-  )
-}
 
 /** Minimal application settings. Backend owns preview validation and compare-and-swap. */
 export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | undefined; canSave: boolean }) {
   const language = useDocumentLanguage()
   const tr = useCallback((en: string, zh: string) => (language === 'zh-CN' ? zh : en), [language])
-  const [state, setState] = useState<ApplicationState>()
+  const resourceKey = api ? scopedResourceKey(api, 'settings:application') : undefined
+  const resource = useResource(resourceKey, async () => {
+    if (!api) throw new Error('Admin unavailable')
+    return api.application()
+  })
+  const state = resource.data
+  const setState = (next: ApplicationState) => {
+    if (resourceKey) setResource(resourceKey, next)
+  }
   const [preview, setPreview] = useState<ApplicationPreview>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const refresh = async () => {
-    if (api) setState(await api.application())
-  }
+  const refresh = resource.reload
   useEffect(() => {
-    let live = true
-    void api
-      ?.application()
-      .then((state) => {
-        if (live) setState(state)
-      })
-      .catch(() => {
-        if (live) setError(tr('Could not load applications.', '无法加载应用。'))
-      })
-    return () => {
-      live = false
-    }
-  }, [api, tr])
+    if (!api || busy || resource.loading) return
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') refresh()
+    }, 5_000)
+    return () => clearInterval(timer)
+  }, [api, busy, resource.loading, refresh])
   const run = async (action: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
@@ -76,7 +55,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           '应用已变更或不可用，请重新加载、预览并确认。',
         ),
       )
-      await refresh().catch(() => undefined)
+      refresh()
       setPreview(undefined)
     } finally {
       setBusy(false)
@@ -91,10 +70,16 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         )}
       </SettingsPageDescription>
       <SettingsBlock
-        state={!state ? (error ? 'error' : 'loading') : undefined}
-        onReload={() => void run(refresh)}
+        state={!state ? (error || resource.error ? 'error' : 'loading') : undefined}
+        onReload={refresh}
       >
         {error && state && <p role="alert">{error}</p>}
+        {resource.error && state ? (
+          <p role="alert">{tr('Could not refresh applications. Retry.', '无法刷新应用，请重试。')}</p>
+        ) : null}
+        <Button disabled={!api || busy || resource.loading} onClick={refresh}>
+          {tr('Refresh candidates', '刷新候选')}
+        </Button>
         <p>
           {tr('Current application', '当前应用')}: {state?.selection?.applicationId ?? 'Agnes Harness'}
         </p>
@@ -108,13 +93,14 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           {state?.effective?.defaultAgent ?? tr('General assistant', '通用助手')}
         </p>
         {state?.effective && (
-          <pre>
-            {JSON.stringify(
-              { brand: state.effective.brand, presentation: state.effective.presentation },
-              null,
-              2,
-            )}
-          </pre>
+          <SettingsTechnicalDetails title={tr('Technical details', '技术详情')}>
+            <SettingsCode
+              label={tr('Current presentation', '当前展示')}
+              copy={JSON.stringify(state.effective, null, 2)}
+            >
+              {JSON.stringify(state.effective, null, 2)}
+            </SettingsCode>
+          </SettingsTechnicalDetails>
         )}
         {state?.candidates.map((candidate) => (
           <p key={candidate.packageId}>
@@ -122,7 +108,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
               {candidate.applicationId} · {candidate.packageId}@{candidate.version}
             </span>{' '}
             <Button
-              disabled={busy || !candidate.available || !canSave}
+              disabled={busy || resource.loading || !candidate.available || !canSave}
               onClick={() =>
                 void run(async () => {
                   if (api) setPreview(await api.previewApplication(candidate.packageId))
@@ -136,48 +122,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         {preview && (
           <section aria-label={tr('Application consent preview', '应用采纳预览')}>
             <h3>{tr('Review application', '审阅应用')}</h3>
-            <PreviewBrand preview={preview} />
-            <p>
-              {tr('Visible agents', '可见智能体')}:{' '}
-              {preview.declaration.agents?.join(', ') ?? tr('All available agents', '全部可用智能体')}
-            </p>
-            <p>
-              {tr('Default agent', '默认智能体')}:{' '}
-              {preview.declaration.defaultAgent ?? tr('General assistant', '通用助手')}
-            </p>
-            <p>
-              {tr('Home / skin', '主页 / 皮肤')}:{' '}
-              {preview.declaration.presentation?.home ?? tr('Host default', '宿主默认')} /{' '}
-              {preview.declaration.presentation?.skin ?? tr('Host default', '宿主默认')}
-            </p>
-            <p>
-              {tr('Source and signature', '来源与签名')}: {preview.source.ref} · {preview.signature}
-            </p>
-            <p>
-              {preview.packageId}@{preview.version} · {preview.integrity}
-            </p>
-            <pre>{JSON.stringify(preview.declaration, null, 2)}</pre>
-            <h4>{tr('Replaced roles and code sources', '替换的接管角色与代码来源')}</h4>
-            <pre>{JSON.stringify(preview.replacedRoles, null, 2)}</pre>
-            <h4>{tr('Dependencies, permissions and changes', '依赖、权限和变化')}</h4>
-            {preview.dependencyDiff &&
-              typeof preview.dependencyDiff === 'object' &&
-              !Array.isArray(preview.dependencyDiff) &&
-              preview.dependencyDiff.status === 'unknown' && (
-                <p role="status">
-                  {tr(
-                    'The previously consented dependency closure is unavailable. Changes are unknown.',
-                    '无法恢复此前已同意的依赖闭包，依赖差异未知。',
-                  )}
-                </p>
-              )}
-            <pre>
-              {JSON.stringify(
-                { dependencies: preview.dependencies, changes: preview.dependencyDiff },
-                null,
-                2,
-              )}
-            </pre>
+            <ApplicationPreviewSummary preview={preview} application />
             <p>
               {tr(
                 'Applies to product identity, navigation, presentation and the agent catalogue. Trusted JavaScript is not a sandbox.',
@@ -189,7 +134,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
               <code>{clearCommand}</code>
             </p>
             <Button
-              disabled={busy || !canSave || !state}
+              disabled={busy || resource.loading || !canSave || !state}
               onClick={() =>
                 void run(async () => {
                   if (!api || !state) return
@@ -205,7 +150,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         )}
         <Button
           disabled={
-            busy || !canSave || (!state?.selection && !Object.keys(state?.roleSelections ?? {}).length)
+            busy ||
+            resource.loading ||
+            !canSave ||
+            (!state?.selection && !Object.keys(state?.roleSelections ?? {}).length)
           }
           onClick={() =>
             void run(async () => {
@@ -222,7 +170,12 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         </p>
       </SettingsBlock>
       {state && (
-        <InterfaceImplementations api={api} state={state} canSave={canSave && !busy} onChange={setState} />
+        <InterfaceImplementations
+          api={api}
+          state={state}
+          canSave={canSave && !busy && !resource.loading}
+          onChange={setState}
+        />
       )}
     </>
   )

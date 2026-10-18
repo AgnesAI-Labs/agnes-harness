@@ -3,17 +3,10 @@ import { presentationRoles, STANDARD_PRESENTATION_ROLES, selectPresentationRoles
 import { Button, reportSuccess, SettingsBlock, StatusMessage, useDocumentLanguage } from '@agnes/web-ui'
 import { useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { ApplicationPreviewSummary, PRESENTATION_ROLE_LABELS as labels } from './application-preview.js'
 
 const recoveryPath = '/?admin'
 const clearCommand = 'agh app clear'
-const labels = {
-  navigation: ['Navigation', '导航'],
-  conversation: ['Conversation', '对话'],
-  composer: ['Composer', '输入框'],
-  goal: ['Goal', '目标'],
-  interaction: ['Interaction', '交互'],
-  deliverables: ['Deliverables', '交付物'],
-} satisfies Record<PresentationRole, [string, string]>
 const reasons: Record<string, [string, string]> = {
   'inventory-unavailable': ['Plugin inventory unavailable', '插件清单不可用'],
   removed: ['Package removed', '插件已移除'],
@@ -196,18 +189,7 @@ export function InterfaceImplementations({
           <h4>
             {tr('Review replacement', '审阅替换')} · {tr(...labels[review.role])}
           </h4>
-          <p>
-            {`${review.preview.packageId}#${review.clientId}`} · {review.preview.version} ·{' '}
-            {review.preview.integrity}
-          </p>
-          <p>
-            {tr('Source and signature', '来源与签名')}: {review.preview.source.ref} ·{' '}
-            {review.preview.signature}
-          </p>
-          <p>{tr('Visible parts replaced', '将替换的可见部分')}</p>
-          <pre>{JSON.stringify(review.preview.replacedRoles, null, 2)}</pre>
-          <p>{tr('Code and dependency trust surface', '代码与依赖信任范围')}</p>
-          <pre>{JSON.stringify(review.preview.dependencies, null, 2)}</pre>
+          <ApplicationPreviewSummary preview={review.preview} />
           <p>
             {tr(
               'Presentation only. No execution change. Trusted JavaScript is not a sandbox.',
