@@ -177,6 +177,10 @@ it('opens the trace on the linked request with its source tab, never a workbench
   expect(panel.isOpen()).toBe(true)
   expect(selected(root)).toBe('a1')
   expect(pane(root)?.getAttribute('data-pane')).toBe('source')
+  const tabs = root.querySelectorAll('.trace-inspector-tabs [role="tab"]')
+  expect(tabs.length).toBeGreaterThan(1)
+  for (const tab of tabs) expect(tab.hasAttribute('aria-pressed')).toBe(false)
+  expect(root.querySelector('.trace-tab[aria-selected="true"]')?.getAttribute('data-pane')).toBe('source')
   await vi.waitFor(() =>
     expect(readFactChain).toHaveBeenCalledWith(
       { sessionId: 's', laneId: 'main', anchor: { kind: 'request', callId } },

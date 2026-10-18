@@ -429,7 +429,6 @@ function InspectorView({
             role="tab"
             data-pane={id}
             aria-selected={pane === id}
-            aria-pressed={pane === id ? 'true' : 'false'}
             onClick={() => selectPane(id)}
           >
             {traceText(PANE_KEY[id])}
