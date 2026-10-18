@@ -14,8 +14,11 @@ export AGH_HOME="$(mktemp -d /tmp/agh-acme.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
 node agnes.mjs plugins add "$AGH_SOURCE/examples/acme"
+node agnes.mjs daemon stop
 node agnes.mjs serve --port 4198
 ```
+
+`plugins add` may already start a daemon in this home, so run the `daemon stop` above before selecting the Web port. Alternatively, start `serve --port 4198` in another terminal before installing, so installation reuses the selected origin. Every terminal must use the same home and profile. If an existing daemon has a different origin, startup intentionally refuses with `local daemon Web origin does not match the selected origin`. Run `node agnes.mjs daemon stop`, then retry `serve` with the selected port; no home deletion or authentication changes are needed.
 
 Confirm after reviewing the install preview’s capabilities, source and integrity. An unattended synthetic trial may add `--yes` to `plugins add`. Installation/trust/enable only adds a candidate; it does not change the selected application. Open the printed URL, select Acme under **Settings → Application**, inspect the consent preview, then adopt: identity/assets, home, hidden Automation entry, visible/default agent, role replacements, source/signature/integrity, dependency permission diff, scope and recovery. No takeover role is declared, so host navigation and conversation presentation remain available. The additional page leaves the sidebar intact.
 

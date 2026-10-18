@@ -14,8 +14,11 @@ export AGH_HOME="$(mktemp -d /tmp/agh-acme.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
 node agnes.mjs plugins add "$AGH_SOURCE/examples/acme"
+node agnes.mjs daemon stop
 node agnes.mjs serve --port 4198
 ```
+
+`plugins add` 可能已启动同一 home 的 daemon，因此在选择 Web 端口前先执行上面的 `daemon stop`。若希望安装时复用选定的 origin，也可先在另一终端运行 `serve --port 4198`，再安装。所有终端须使用相同 home 和 profile。已有 daemon 的 origin 不同时，启动会按预期拒绝：`local daemon Web origin does not match the selected origin`；执行 `node agnes.mjs daemon stop` 后重新运行选定端口的 `serve` 即可恢复，不必删除 home 或修改鉴权配置。
 
 审阅安装预览的能力、来源与完整性后确认；无人值守的合成试用可给 `plugins add` 加 `--yes`。安装／信任／启用只增加候选，不会改变当前应用。打开打印的地址，在 **设置 → 应用** 选择 Acme，检查同意预览后采纳：品牌与资产、主页、隐藏的自动化入口、可见／默认智能体、角色替换、来源／签名／完整性、依赖权限差异、影响范围和恢复方法。未声明接管角色，因此宿主导航和对话呈现保持可用；追加页面不替换侧栏。
 
