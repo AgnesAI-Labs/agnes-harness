@@ -112,6 +112,9 @@ describe('trace region layout', () => {
     expect(declarations('.trace-gantt')).toContain('grid-row: 3')
     expect(declarations('.trace-body')).toContain('grid-row: 4')
     expect(declarations('.trace-empty')).toContain('grid-row: 4')
+    const overlay = '[data-agnes-region="trace"]:has(.trace-inspector:not([hidden]))'
+    expect(declarations(overlay)).toContain('grid-template-rows: minmax(0, 1fr)')
+    expect(declarations(`${overlay} .trace-body`)).toContain('grid-row: 1')
   })
 
   it('keeps shared control retuning out of the trace', () => {

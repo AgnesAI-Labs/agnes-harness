@@ -279,6 +279,9 @@
     [data-agnes-region="trace"]:has(.trace-inspector:not([hidden])) {
       grid-template-rows: minmax(0, 1fr);
     }
+    [data-agnes-region="trace"]:has(.trace-inspector:not([hidden])) .trace-body {
+      grid-row: 1;
+    }
     [data-agnes-region="trace"]:has(.trace-inspector:not([hidden]))
       :is(.trace-toolbar, .trace-gantt, .trace-list) {
       display: none;
