@@ -109,11 +109,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   }
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
+  // Normalize the leaf text, preserving the disclosure marker, layout wrappers and React-owned DOM.
   // File read clocks vary by runtime; keep the localized label and normalize only its time.
   const metadata =
     name.startsWith('workbench-') || name.startsWith('narrow-workbench-')
-      ? page.locator('[data-testid="turn-metadata"], [data-testid="file-meta"] time')
-      : page.getByTestId('turn-metadata')
+      ? page.locator('[data-testid="turn-metadata"] .turn-meta-facts, [data-testid="file-meta"] time')
+      : page.getByTestId('turn-metadata').locator('.turn-meta-facts')
   // Empty-process turns show the same elapsed time outside the process toggle.
   // Normalize only its runtime numbers, preserving the localized status and duration units.
   const durations = page.locator('.turn-status[data-agnes-dynamic="turn-process"]')
