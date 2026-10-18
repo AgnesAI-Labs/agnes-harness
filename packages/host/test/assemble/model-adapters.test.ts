@@ -451,5 +451,6 @@ it('reads release adapter identities and capabilities without assembling a Host'
   })
   expect(data.adapters.find((a) => a.id === 'openai-completions')?.sourcePackage).toBe('@agnes/ai')
   for (const id of ['scripted', 'replay', 'local-openai'])
-    expect(data.adapters.find((a) => a.id === id)?.sourcePackage).toBe('@agnes/model-adapters')
+    expect(data.adapters.find((a) => a.id === id)).toBeUndefined()
+  expect(builtinModelAdapterCatalog().find((a) => a.id === 'scripted')?.sourcePackage).toBe('@agnes/ai')
 })

@@ -39,6 +39,7 @@ export async function readRunningModelCatalog(
       if (
         builtin.some(
           (entry) =>
+            entry.sourcePackage === '@agnes/ai' &&
             entry.id === adapter.id &&
             entry.version === adapter.version &&
             entry.sourcePackage === adapter.sourcePackage,

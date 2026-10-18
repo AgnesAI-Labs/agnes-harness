@@ -16,7 +16,7 @@ import {
 } from '@agnes/host-common/assemble/provider-registry'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
-import { modelAdaptersPlugin as companionModelAdaptersPlugin, scriptedAdapter } from '@agnes/model-adapters'
+import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
@@ -285,8 +285,27 @@ export const builtinModelAdaptersPlugin = {
 export function builtinModelAdapterCatalog(
   profile?: Pick<ResolvedProfile, 'packages'>,
 ): readonly ModelAdapterCatalogEntry[] {
+  // Resolved profiles have already checked this closed release identity against the running
+  // build. An installed package with the same name must use current-source filtering instead.
+  if (
+    profile &&
+    !profile.packages.some(
+      (pkg) =>
+        pkg.id === '@agnes/ai' &&
+        pkg.enabled &&
+        pkg.trust === 'builtin' &&
+        pkg.source === 'builtin' &&
+        pkg.integrity === `builtin:${pkg.version}`,
+    )
+  )
+    return []
   const found: ModelAdapterCatalogEntry[] = []
-  builtinModelAdaptersPlugin.apply({
+  // The companion is installed code: only its current verified publication/active rows can
+  // describe it. Its presence also suppresses the Host's scripted fallback, as in assembly.
+  const plugin = profile?.packages.some((pkg) => pkg.id === '@agnes/model-adapters' && pkg.enabled)
+    ? modelAdaptersPlugin
+    : builtinModelAdaptersPlugin
+  plugin.apply({
     providers: {
       register: (_kind: unknown, adapter: ModelAdapter) =>
         void found.push({
@@ -298,20 +317,6 @@ export function builtinModelAdapterCatalog(
         }),
     },
   } as never)
-  if (profile?.packages.some((pkg) => pkg.id === '@agnes/model-adapters' && pkg.enabled))
-    companionModelAdaptersPlugin.apply({
-      providers: {
-        register: (_kind: unknown, adapter: ModelAdapter) => {
-          found.push({
-            id: adapter.id,
-            version: adapter.version,
-            sourcePackage: '@agnes/model-adapters',
-            wireApi: adapter.wireApi,
-            capabilities: adapter.capabilities,
-          })
-        },
-      },
-    } as never)
   return [...new Map(found.map((entry) => [entry.id, entry])).values()]
 }
 

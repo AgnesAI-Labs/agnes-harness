@@ -30,6 +30,7 @@ import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import * as sources from '../../package-manager/src/sources.js'
 import { readRunningGenerationStatus } from '../src/supervisor/generation-status-read.js'
 import { readModelSelectionCatalog } from '../src/supervisor/model-adapter-lookup.js'
+import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -37,7 +38,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true })
 })
 
-async function fixture() {
+async function fixture(companion = false) {
   const root = mkdtempSync(join(tmpdir(), 'agh-query-verification-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -60,7 +61,7 @@ async function fixture() {
   writeLock(profileDir, lock)
   const pins = []
   for (let i = 0; i < 9; i++) {
-    const id = `@fixture/query-${i}`,
+    const id = companion && i === 0 ? '@agnes/model-adapters' : `@fixture/query-${i}`,
       dir = join(root, `source-${i}`)
     mkdirSync(dir)
     writeFileSync(
@@ -154,7 +155,7 @@ async function fixture() {
     profileDir,
     sources: () => m.runtimePluginSnapshots(profileDir),
   })
-  return { root, profileDir, m, admin, modelList, profile, artifact, close: () => tables.close() }
+  return { root, profileDir, m, admin, modelList, profile, artifact, store, close: () => tables.close() }
 }
 
 it('bounds each light query to one installed tree and one exact referenced snapshot, on cold and warm reads', async () => {
@@ -235,6 +236,50 @@ it('reads a community model description only with a current exact source grant, 
   }
 })
 
+it.each(['untrust', 'disable'] as const)(
+  'review: current real manager %s hides companion adapter descriptions despite a stale boot profile',
+  async (operation) => {
+    const f = await fixture(true)
+    const id = '@agnes/model-adapters'
+    const source = (await f.m.runtimePluginSnapshots(f.profileDir)).find((s) => s.snapshot.packageId === id)!
+    const profile = {
+      ...f.profile,
+      packages: [
+        ...f.profile.packages,
+        {
+          id,
+          version: source.snapshot.version,
+          integrity: source.snapshot.integrity,
+          source: 'file:./source-0',
+          trust: 'trusted' as const,
+          enabled: true,
+        },
+      ],
+    }
+    const read = readModelSelectionCatalog({
+      profile: () => profile,
+      profileDir: f.profileDir,
+      sources: () => f.m.runtimePluginSnapshots(f.profileDir),
+    })
+    try {
+      if (operation === 'untrust')
+        await f.m.untrust(f.profileDir, id, {
+          integrity: source.snapshot.integrity,
+          capabilityHash: source.snapshot.capabilityHash,
+        })
+      else await f.m.setEnabled(f.profileDir, id, false)
+      expect(
+        (await f.m.runtimePluginSnapshots(f.profileDir)).filter(
+          (s) => s.snapshot.packageId === id && s.trusted && s.enabled !== false,
+        ),
+      ).toEqual([])
+      expect((await read()).filter((a) => a.sourcePackage === id)).toEqual([])
+    } finally {
+      await f.close()
+    }
+  },
+)
+
 it('opens a real Host session with bounded source verification and still refuses later tampering', async () => {
   const f = await fixture()
   const runtimePluginSources = () => f.m.runtimePluginSnapshots(f.profileDir)
@@ -252,6 +297,7 @@ it('opens a real Host session with bounded source verification and still refuses
   try {
     await host.applyRuntimeTarget(decodeRuntimeTargetArtifact(f.artifact))
     const hash = vi.spyOn(sources, 'hashDirectory')
+    const asyncHash = vi.spyOn(sources, 'hashDirectoryAsync')
     const start = performance.now()
     const session = await host.createSession({ key: 'verify-session', cwd: f.root })
     console.log(
@@ -273,6 +319,9 @@ it('opens a real Host session with bounded source verification and still refuses
     // Creating/publishing a new code archive intentionally ends the preceding read phase.
     // Independent copy validation and the publication reader retain fresh verification.
     expect(hash.mock.calls.length).toBeLessThanOrEqual(99)
+    // Review probe: the original asynchronous import/use gates remain independent of the memo.
+    console.log('review async use gates', asyncHash.mock.calls.length)
+    expect(asyncHash.mock.calls.length).toBeGreaterThanOrEqual(45)
     await session.close()
     const file = join(packageDir(f.root, 'local-dev', '@fixture/query-0'), 'index.js')
     writeFileSync(file, readFileSync(file, 'utf8').replace('apply', 'throw'))
@@ -291,3 +340,43 @@ it('a package status read does not start a worker to decorate inventory', async 
   await expect(readRunningGenerationStatus(pool, 3000)).rejects.toThrow('without a running worker')
   expect(acquireSharedWorker).not.toHaveBeenCalled()
 })
+
+it.each([false, true])(
+  'review: package list observes whether a worker is actually starting (%s)',
+  async (starting) => {
+    const f = await fixture()
+    const inventory = await f.m.inventory(f.profileDir)
+    const activation = createCompositeTargetActivation({
+      store: f.store,
+      workerGeneration: () => undefined,
+      workerStarting: () => starting,
+      contributions: (id) => inventory.packages.find((p) => p.id === id)?.contributions,
+      generationStatus: () => readRunningGenerationStatus({ businessWorker: () => undefined }, 3000),
+    })
+    const admin = createPackageAdminService({
+      manager: f.m,
+      profileDirectory: () => f.profileDir,
+      operations: new FilePackageOperationStore(join(f.root, 'read-review-operations')),
+      pluginTree: f.store,
+      workerGeneration: () => undefined,
+      activation,
+    })
+    try {
+      const listed = (await admin.call(
+        '_agnes/v1/packages.list',
+        { profile: 'local-dev' },
+        { audience: 'admin', principalId: 'test', clientId: 'test', permissions: ['packages.read'] },
+      )) as {
+        packages: { actual: string; primaryStatus?: { reasonCode: string; reason: { en: string } } }[]
+      }
+      expect(listed.packages).toHaveLength(9)
+      expect(
+        listed.packages.every((p) => p.primaryStatus?.reasonCode === (starting ? 'starting' : 'not-running')),
+      ).toBe(true)
+      if (!starting)
+        expect(listed.packages[0]!.primaryStatus?.reason.en).toContain('Start a session when needed')
+    } finally {
+      await f.close()
+    }
+  },
+)

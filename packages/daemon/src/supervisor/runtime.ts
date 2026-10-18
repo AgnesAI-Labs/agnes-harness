@@ -1483,6 +1483,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 )
             },
             workerGeneration: () => pool.businessWorker()?.generation,
+            workerStarting: () => pool.hasHostActivity('@shared'),
             desiredFor: async ({ packageId, operation, packageIds = [] }) => {
               latestInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
               let previous = runtimeStore.desired()

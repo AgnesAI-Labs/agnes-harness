@@ -192,3 +192,45 @@ it('probes and publishes one reviewed target for a parent and its dependent', as
   expect(store.desired()?.digest).toBe(next.digest)
   expect(delivered?.digest).toBe(next.digest)
 })
+
+it.each(['extension-only', 'mixed', 'surface-only', 'client-only'] as const)(
+  'observes dormant backend runtime without suppressing independent %s readiness',
+  async (kind) => {
+    const backend = kind === 'extension-only' || kind === 'mixed'
+    const artifact = target(backend ? [pluginRow('ext:pkg/main', `pkg@${snap1}/main`, snap1)] : [])
+    const store = new CompositeTargetStore(sqliteTables().table('dormant'), 'default')
+    store.publishDesired(artifact)
+    const activation = createCompositeTargetActivation({
+      store,
+      workerGeneration: () => undefined,
+      workerStarting: () => false,
+      contributions: () =>
+        kind === 'client-only'
+          ? [{ kind: 'extension', client: {}, capabilities: { ui: true } }]
+          : kind === 'extension-only'
+            ? []
+            : [{ kind: 'surface' }],
+      surfaceRunningRevision: () => 'surface',
+      desiredSurfaceRevision: () => 'surface',
+      clientRosterMatch: () => true,
+      probe: async () => {},
+      deliver: async () => {},
+    })
+    expect(await activation.actual?.('default', 'pkg')).toMatchObject({
+      actual: backend ? 'not-running' : 'running',
+    })
+    if (backend) {
+      // A non-settling write keeps its existing pending result after delivery; only reads
+      // distinguish a dormant worker. Settling/reconcile ownership remains unchanged.
+      expect(
+        await activation.reconcile({
+          profile: 'default',
+          packageId: 'pkg',
+          operation: 'enable',
+          operationId: 'op',
+          signal: new AbortController().signal,
+        }),
+      ).toMatchObject({ actual: 'starting' })
+    }
+  },
+)

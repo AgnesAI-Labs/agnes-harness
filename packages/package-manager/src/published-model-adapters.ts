@@ -1,8 +1,8 @@
-import { lstatSync, readFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
 import { type AdminModelAdapter, isAdminModelAdapter } from '@agnes/protocol'
 import { publishFileDurablySync } from '@agnes/system-node'
-import { canonical, readStaticJson } from './integrity.js'
+import { canonical } from './integrity.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 
 const fileName = '.agnes-published-model-adapters.json'
@@ -41,10 +41,24 @@ export function readPublishedModelAdapters(
   profileHash: string,
   sources: readonly RuntimePluginSnapshot[],
 ): readonly Entry[] {
+  let handle: number | undefined
   try {
     const file = join(profileDir, fileName)
-    if (lstatSync(file).isSymbolicLink()) return []
-    const value = readStaticJson(file)
+    const initial = lstatSync(file)
+    if (!initial.isFile() || initial.isSymbolicLink() || initial.size > 1048576) return []
+    handle = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    if (!sameFile(initial, fstatSync(handle))) return []
+    const bytes = Buffer.alloc(initial.size + 1)
+    let length = 0
+    while (length < bytes.length) {
+      const count = readSync(handle, bytes, length, bytes.length - length, null)
+      if (!count) break
+      length += count
+    }
+    if (length !== initial.size) return []
+    const text = bytes.subarray(0, length).toString('utf8')
+    const value = JSON.parse(text)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
     if (value.version !== 1 || value.profileHash !== profileHash || !Array.isArray(value.entries)) return []
     const current = new Set(
       sources.filter((s) => s.trusted && s.enabled !== false).map((s) => canonical(identity(s))),
@@ -56,9 +70,29 @@ export function readPublishedModelAdapters(
       if (current.has(canonical(row.source))) entries.push(row.adapter)
     }
     // Do not accept a file replaced during the read.
-    if (readFileSync(file, 'utf8') !== JSON.stringify(value)) return []
+    if (
+      text !== JSON.stringify(value) ||
+      !sameFile(initial, fstatSync(handle)) ||
+      !sameFile(initial, lstatSync(file))
+    )
+      return []
     return entries
   } catch {
     return []
+  } finally {
+    if (handle !== undefined) closeSync(handle)
   }
+}
+
+/** lstat on the pathname must still identify the regular file we opened without following links. */
+function sameFile(before: Stats, after: Stats): boolean {
+  return (
+    after.isFile() &&
+    !after.isSymbolicLink() &&
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.size === after.size &&
+    before.mtimeMs === after.mtimeMs &&
+    before.ctimeMs === after.ctimeMs
+  )
 }

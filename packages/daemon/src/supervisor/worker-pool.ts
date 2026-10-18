@@ -748,9 +748,10 @@ export class WorkerPool {
   }
 
   /** Resource-control helpers must not block provider setup; only Host-bearing workers do. */
-  hasHostActivity(): boolean {
-    return [...this.slots.values()].some(
-      (slot) => !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
+  hasHostActivity(workerKey?: string): boolean {
+    const slots = workerKey === undefined ? [...this.slots.values()] : [this.slots.get(workerKey)]
+    return slots.some(
+      (slot) => slot && !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
     )
   }
 

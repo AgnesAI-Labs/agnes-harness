@@ -1,6 +1,9 @@
+import { AsyncResource } from 'node:async_hooks'
+import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MessageChannel } from 'node:worker_threads'
 import { afterEach, expect, it, vi } from 'vitest'
 import { verifiedDirectoryDigest, withoutPackageVerification, withPackageVerification } from '../src/index.js'
 import * as sources from '../src/sources.js'
@@ -25,6 +28,86 @@ function fixture() {
     },
   }
 }
+
+// Review probes: inherited async resources must lose the observation at both exit paths.
+it.each(['resolve', 'reject'] as const)(
+  'closes inherited timers, promises, emitters and ports after %s',
+  async (exit) => {
+    const { dir, identity } = fixture()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let deferred!: Promise<unknown[]>
+    let emit!: () => void
+    let post!: () => void
+    let ports!: MessageChannel
+    const operation = withPackageVerification(async () => {
+      verifiedDirectoryDigest(dir, identity)
+      const emitter = new EventEmitter()
+      ports = new MessageChannel()
+      deferred = Promise.all([
+        gate.then(() => verifiedDirectoryDigest(dir, identity)),
+        gate.then(
+          () =>
+            new Promise<string>((resolve) =>
+              setTimeout(() => resolve(verifiedDirectoryDigest(dir, identity)), 0),
+            ),
+        ),
+        new Promise<string>((resolve) =>
+          emitter.once('next', () => resolve(verifiedDirectoryDigest(dir, identity))),
+        ),
+        new Promise<string>((resolve) =>
+          ports.port1.once('message', () => resolve(verifiedDirectoryDigest(dir, identity))),
+        ),
+      ])
+      emit = AsyncResource.bind(() => {
+        emitter.emit('next')
+      })
+      post = () => ports.port2.postMessage('next')
+      if (exit === 'reject') throw new Error('probe exit')
+    })
+    if (exit === 'reject') await expect(operation).rejects.toThrow('probe exit')
+    else await operation
+    writeFileSync(join(dir, 'payload'), 'other')
+    release()
+    emit()
+    post()
+    try {
+      for (const digest of await deferred) expect(digest).not.toBe(identity.treeIntegrity)
+    } finally {
+      ports.port1.close()
+      ports.port2.close()
+    }
+  },
+)
+
+it('isolates overlapping top-level requests even while the first memo is alive', async () => {
+  const { dir, identity } = fixture()
+  let release!: () => void
+  let started!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const first = withPackageVerification(async () => {
+    verifiedDirectoryDigest(dir, identity)
+    started()
+    await gate
+  })
+  await ready
+  writeFileSync(join(dir, 'payload'), 'other')
+  try {
+    await withPackageVerification(async () =>
+      expect(verifiedDirectoryDigest(dir, identity)).not.toBe(identity.treeIntegrity),
+    )
+  } finally {
+    release()
+    await first
+  }
+})
 
 it('reuses only an exact identity in one operation, never a different version, digest or next operation', async () => {
   const { dir, identity } = fixture(),
