@@ -12,6 +12,12 @@ macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可
 
 完全访问仍要求明确确认候选、插件及 Skill 的安装、信任、启用，以及能力范围变更；不会跳过「写入前询问」模式的记忆写入审批或凭据管理确认。保护路径保留原有硬拒绝，完全访问不能批准普通文件工具访问凭据或应用私有状态。Skill 导入安装和 MCP 注册／启动的审批保持不变；人工维护的本地插件和可信磁盘 Skill 仍遵循各自文档中的信任路径。
 
+选择 API 或 token 前，先读两条指南共用的[源码生成作者参考](../reference/plugin-author-api.zh-CN.md)。`apply(ctx)` 使用 PluginContext 登记能力，`execute(args, ctx)` 才接收 ToolContext。工作区文件用 `ctx.fs.read/write`（字节或字符串），插件或应用 profile 数据用声明 `capabilities.store: true` 后的可选 `ctx.store`。不存在 `PluginContext.fs.readText/writeText`。
+
+工具需要自带 UI 面板时选 `tool-with-panel`，复用已有模板。候选已经存在时，在同一候选补齐 client、描述符和测试。读取同一摘要的全部候选分页，程序修改 `sourceFiles`，再写回包含未改文件的完整树；creator 指南提供可执行 cell 示例。每次修改都会清空旧测试，最终证据必须是最终 `candidateHash` 的 `plugin_test`。
+
+使用 `@agnes/host/author-testkit` 的 `createPluginTestHost(main)` 做真实 Host 登记及 `host.invoke(name, args)` 调用测试，需要 I/O 时通过 `options.context` 提供明确的调用端口。手造 PluginContext mock 不能证明安装成功。使用受控候选 runner；`node --test` 管道接 `tail` 会隐藏测试退出码。后端测试不能证明浏览器外观。
+
 ## 免密钥 Demo 练习
 
 沿用[快速上手](quickstart.zh-CN.md)的独立 home 和工作区，在 Web 新建 **Demo** 会话，提交 `create a plugin` 并确认保存候选的工具审批。Demo 复制版本匹配的文本统计示例，不会根据需求设计新代码。`agh -p` 没有交互审批处理器，创作调用会被拒绝；不要通过放宽策略绕过。
@@ -27,8 +33,8 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 默认 **Plugin Helper** 提供三个工具：
 
-1. `plugin_helper_guide`（`kind: tool|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
-2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。有界 helper 接受不带依赖与生命周期脚本的自包含文本 ESM。
+1. `plugin_helper_guide`（`kind: tool|tool-with-panel|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
+2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。创建沿用内置 scaffold 的文本候选合同，支持其 TypeScript 面板模板；不会执行生命周期脚本。
 3. `plugin_helper_install`（`action: test`、`proposalId`）按上述会话策略裁决后，对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 不再安装；旧 onboarding proposal ID 需重新创建候选。
 
 新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。

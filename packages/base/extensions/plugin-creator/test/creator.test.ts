@@ -236,7 +236,9 @@ it('reads the bundled creator skill without executing commands and fails closed 
       },
     },
   } as ToolContext
-  const program = guide.match(/```ts\n([\s\S]*?)\n```/)?.[1]?.replace('CANDIDATE_ID', candidateId)
+  const program = guide
+    .match(/Minimal TypeScript cell pattern[\s\S]*?```ts\n([\s\S]*?)\n```/)?.[1]
+    ?.replace('CANDIDATE_ID', candidateId)
   expect(program).toBeDefined()
   expect(program!.length).toBeLessThan(8192)
   const tools = {
@@ -315,7 +317,8 @@ it('keeps the created draft and reports write as the failing operation without i
     session: { depth: 0 },
     pluginManage: {
       request: async (input: { action: string; candidateId?: string }) => {
-        if (input.action === 'prepare') return { candidateId, candidateHash, state: 'draft', tests: null }
+        if (input.action === 'candidate.create')
+          return { candidateId, candidateHash, state: 'draft', tests: null }
         expect(input).toMatchObject({ action: 'candidate.write', candidateId })
         throw Object.assign(new Error('unavailable'), { code: 'PLUGIN_MANAGEMENT_UNAVAILABLE' })
       },

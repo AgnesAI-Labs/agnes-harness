@@ -1,4 +1,5 @@
 import { authoringGuidance, verification } from './src/authoring.mjs'
+import { panelFiles } from './src/panel.generated.mjs'
 import { array, enumeration, object, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
 import { skinTest } from './src/skin-test.mjs'
@@ -91,13 +92,23 @@ export const pluginHelper = {
     api.register({
       name: 'plugin_helper_guide',
       description:
-        'Before creating an Agnes Harness (AGH) plugin, read this version-matched authoring guide and runnable template. The default target for “write a plugin” in this app is AGH. Use kind: skill for authored Skill packages; connecting an existing MCP server uses mcp-helper. This helper authors ordinary tool, Skill or pure CSS skin plugin rows; follow the shared recommended path returned by the guide.',
-      parameters: object({ kind: enumeration('tool', 'skill', 'skin') }),
+        'Before creating an Agnes Harness (AGH) plugin, read this version-matched authoring guide and runnable template. The default target for “write a plugin” in this app is AGH. Use kind: skill for authored Skill packages; connecting an existing MCP server uses mcp-helper. This helper authors ordinary tool, tool with panel, Skill or pure CSS skin plugin rows; follow the shared recommended path returned by the guide.',
+      parameters: object({ kind: enumeration('tool', 'tool-with-panel', 'skill', 'skin') }),
       meta: meta(true),
       async execute({ kind }, ctx) {
         const authoringCapability = ctx?.pluginManage
           ? 'supplied-authorization-checked-per-call'
           : 'unavailable-host-capability'
+        if (kind === 'tool-with-panel')
+          return result({
+            host: 'Agnes Harness',
+            apiVersion: '4.0.0',
+            authoringCapability,
+            authoringPath: authoringGuidance,
+            guidance:
+              'Existing tool-with-panel scaffold: backend tool plus a profile-lifetime client page and descriptor. Rename package, row, tool and client IDs together. The starter page prompts a tool call; implement the requested interactions and persistence on this same candidate. Candidate tests verify registration/invocation and descriptor structure, not browser appearance. / 复用工具加面板模板，在同一候选补齐所需交互和持久化；候选测试不代表浏览器验收。',
+            files: panelFiles,
+          })
         if (kind === 'skin')
           return result({
             host: 'Agnes Harness',
@@ -142,7 +153,7 @@ export const pluginHelper = {
           authoringCapability,
           authoringPath: authoringGuidance,
           guidance:
-            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Follow authoringPath: save once via plugin_helper_create, edit the same candidate with plugin_candidate_read/write, test with plugin_test, submit with plugin_install_local. Compatibility plugin_helper_install test/commit/status acts on the same ID; commit only submits review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
+            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/exec for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This helper supplies self-contained tool/Skill/skin files or the existing tool-with-panel scaffold; no arbitrary dependencies/lifecycle scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Follow authoringPath: save once via plugin_helper_create, edit the same candidate with plugin_candidate_read/write, test with plugin_test, submit with plugin_install_local. Compatibility plugin_helper_install test/commit/status acts on the same ID; commit only submits review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
           documentation: 'https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md',
           files: [
             { path: 'package.json', content: JSON.stringify(manifest, null, 2) },
@@ -152,7 +163,7 @@ export const pluginHelper = {
               content:
                 kind === 'tool'
                   ? 'import {test} from "node:test";import assert from "node:assert/strict";import {createPluginTestHost} from "@agnes/host/author-testkit";import {main} from "../index.mjs";test("counts words",async()=>{const host=await createPluginTestHost(main);try{assert.deepEqual((await host.invoke("my_text_stats",{text:"hello world"})).structured,{characters:11,words:2})}finally{await host.dispose()}})\n'
-                  : 'import {test} from "node:test";import assert from "node:assert/strict";import {main} from "../index.mjs";test("registers Skill data",()=>{let skill;main.apply({skills:{register(value){skill=value}}});assert.equal(skill.name,"my-workflow");assert.ok(skill.body)})\n',
+                  : 'import {test} from "node:test";import assert from "node:assert/strict";import {createPluginTestHost} from "@agnes/host/author-testkit";import {main} from "../index.mjs";test("registers Skill data through the Host with an explicit skills service",async()=>{let skill;const host=await createPluginTestHost(main,{services:{skills:{register(value){skill=value;return()=>{}}}}});try{assert.equal(skill.name,"my-workflow");assert.ok(skill.body)}finally{await host.dispose()}})\n',
             },
           ],
         })
@@ -170,7 +181,8 @@ export const pluginHelper = {
           files.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0) > 256 * 1024
         )
           throw new Error('PLUGIN_FILES_INVALID')
-        return result(await port(ctx).request({ action: 'prepare', files }), 'candidate.create')
+        const value = await port(ctx).request({ action: 'candidate.create', files })
+        return result({ ...value, proposalId: value.candidateId }, 'candidate.create')
       },
     })
     api.register({

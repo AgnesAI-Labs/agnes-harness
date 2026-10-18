@@ -434,31 +434,39 @@ it('rejects aliases, file-directory conflicts, bounds and lifecycle/dependency d
   ).toThrow()
 })
 
-it.each(['tool', 'skill'])('the shipped %s template passes real package inspection', async (kind) => {
-  const module = await import(
-    new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
-  )
-  const tools: ToolDef[] = []
-  module.pluginHelper.apply({
-    tools: { register: (tool: (typeof tools)[number]) => tools.push(tool) },
-  })
-  const guide = tools.find((t) => t.name === 'plugin_helper_guide')
-  if (!guide) throw new Error('guide missing')
-  const s = await setup()
-  const context = {
-    signal: new AbortController().signal,
-    session: { depth: 0 },
-    pluginManage: { request: s.request },
-  } as unknown as Parameters<ToolDef['execute']>[1]
-  const result = await guide.execute({ kind }, context)
-  expect(result).toMatchObject({
-    structured: { authoringCapability: 'supplied-authorization-checked-per-call' },
-  })
-  const text = result.content.find((part) => part.type === 'text')
-  if (text?.type !== 'text') throw new Error('guide returned no text')
-  const generated = JSON.parse(text.text)
-  expect((await s.request({ action: 'prepare', files: generated.files })).state).toBe('draft')
-})
+it.each(['tool', 'tool-with-panel', 'skill', 'skin'])(
+  'the shipped %s template passes real package inspection',
+  async (kind) => {
+    const module = await import(
+      new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+    )
+    const tools: ToolDef[] = []
+    module.pluginHelper.apply({
+      tools: { register: (tool: (typeof tools)[number]) => tools.push(tool) },
+    })
+    const guide = tools.find((t) => t.name === 'plugin_helper_guide')
+    if (!guide) throw new Error('guide missing')
+    const s = await setup()
+    const context = {
+      signal: new AbortController().signal,
+      session: { depth: 0 },
+      pluginManage: { request: s.request },
+    } as unknown as Parameters<ToolDef['execute']>[1]
+    const result = await guide.execute({ kind }, context)
+    expect(result).toMatchObject({
+      structured: { authoringCapability: 'supplied-authorization-checked-per-call' },
+    })
+    const text = result.content.find((part) => part.type === 'text')
+    if (text?.type !== 'text') throw new Error('guide returned no text')
+    const generated = JSON.parse(text.text)
+    const create = tools.find((t) => t.name === 'plugin_helper_create')
+    if (!create) throw new Error('create missing')
+    const created = await create.execute({ files: generated.files }, context)
+    expect(created).toMatchObject({ structured: { state: 'draft' } })
+    const candidate = created.structured as AuthoringCandidate & { proposalId: string }
+    expect(candidate.proposalId).toBe(candidate.candidateId)
+  },
+)
 
 it('accepts the bundled pure skin candidate template, rejecting arbitrary client contributions', async () => {
   const templatePath = '../../package-manager/bundled-plugins/plugin-helper/src/skin.mjs'
