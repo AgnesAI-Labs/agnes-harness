@@ -55,6 +55,19 @@
 
 所有包的 launch 声明均进入 `capabilityHash`，修改启动信息必须重新审阅信任。旧 `metadata.launches` 拒绝。`metadata.exampleOf` 作为经依赖版本校验的受限示例关系独立保留；可选 `pageEntry` 须有此关系且对应已声明的 profile 示例页。能力标签不能赋予普通智能体示例管理权限。
 
+## 用同一个 Acme 示例理解装配
+
+部署执行 Profile → 插件 → 智能体 → 应用展示，各自承担一项职责：
+
+| 层 | Acme 中的对应内容 | 谁决定、何时生效 |
+| --- | --- | --- |
+| 部署执行 Profile | `AGNES_PROFILE=local-dev`：模型、权限上限、默认 Loop 与运行服务 | 部署者配置执行环境；应用采纳不修改它 |
+| 插件 | `@acme/operations`：工具 `acme_status`、页面、`desk` Bundle 和应用声明 | 安装、审阅信任并启用后提供候选能力 |
+| 智能体 | `@acme/operations#desk`：自身的 `launch.preset=acme`、工具范围和可编辑提示草稿 | 启动审阅绑定最终运行方式、模型、权限及来源；启动后会话保留其执行绑定 |
+| 应用展示 | `acme-operations`：Acme 品牌、Ava 助手名、`@acme/operations#acme-overview` 页面、隐藏自动化入口和默认／可见智能体 | 管理员在设置 → 应用预览并显式采纳；只选择展示默认值 |
+
+本期**不分发或采纳执行 Profile 模板**。应用不是执行模板；部署者继续独立配置 Profile，切换展示不会重配已有会话。完整安装、预览与启动命令见 [Acme 参考应用](../../examples/acme/README.zh-CN.md)。
+
 ## 应用声明
 
 完整的身份、raster 资产、接管角色和显式采纳合同见[应用](applications.zh-CN.md)。安装只产生候选；展示选择在执行解析之外保存。

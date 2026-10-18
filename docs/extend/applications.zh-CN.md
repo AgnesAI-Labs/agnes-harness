@@ -8,24 +8,56 @@
 **设置 → 应用**中显式预览、采纳。选择应用不会启用依赖，也不会改变执行 profile、组合哈希、已有会话、
 pin、Actor、权限或模型 persona。
 
+## 用同一个 Acme 示例理解装配
+
+部署执行 Profile → 插件 → 智能体 → 应用展示，各自承担一项职责：
+
+| 层 | Acme 中的对应内容 | 谁决定、何时生效 |
+| --- | --- | --- |
+| 部署执行 Profile | `AGNES_PROFILE=local-dev`：模型、权限上限、默认 Loop 与运行服务 | 部署者配置执行环境；应用采纳不修改它 |
+| 插件 | `@acme/operations`：工具 `acme_status`、页面、`desk` Bundle 和应用声明 | 安装、审阅信任并启用后提供候选能力 |
+| 智能体 | `@acme/operations#desk`：自身的 `launch.preset=acme`、工具范围和可编辑提示草稿 | 启动审阅绑定最终运行方式、模型、权限及来源；启动后会话保留其执行绑定 |
+| 应用展示 | `acme-operations`：Acme 品牌、Ava 助手名、`@acme/operations#acme-overview` 页面、隐藏自动化入口和默认／可见智能体 | 管理员在设置 → 应用预览并显式采纳；只选择展示默认值 |
+
+本期**不分发或采纳执行 Profile 模板**。应用不是执行模板；部署者继续独立配置 Profile，切换展示不会重配已有会话。完整安装、预览与启动命令见 [Acme 参考应用](../../examples/acme/README.zh-CN.md)。
+
+## 应用声明
+
 ```json
 {
   "application": {
-    "id": "acme",
+    "id": "acme-operations",
     "brand": {
-      "name": { "en": "Acme", "zh-CN": "艾克米" },
-      "title": { "en": "Acme Workbench" },
-      "assistantName": { "en": "Ava" },
-      "mark": "assets/mark.png"
+      "name": {
+        "en": "Acme",
+        "zh-CN": "Acme"
+      },
+      "title": {
+        "en": "Acme Operations",
+        "zh-CN": "Acme 运营台"
+      },
+      "assistantName": {
+        "en": "Ava",
+        "zh-CN": "艾娃"
+      },
+      "mark": "assets/mark.png",
+      "favicon": "assets/favicon.png"
     },
     "presentation": {
-      "home": "acme/kit#overview",
-      "skin": "acme",
-      "navigation": { "entries": ["acme/kit#overview"], "hideBuiltin": ["agents", "automation"] },
-      "roles": { "navigation": { "packageId": "acme/kit", "clientId": "navigation" } }
+      "home": "@acme/operations#acme-overview",
+      "navigation": {
+        "entries": [
+          "@acme/operations#acme-overview"
+        ],
+        "hideBuiltin": [
+          "automation"
+        ]
+      }
     },
-    "defaultAgent": "acme/kit#work",
-    "agents": ["acme/kit#work"]
+    "defaultAgent": "@acme/operations#desk",
+    "agents": [
+      "@acme/operations#desk"
+    ]
   }
 }
 ```

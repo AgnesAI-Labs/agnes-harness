@@ -4,7 +4,7 @@ English | [简体中文](bundles-and-profiles.zh-CN.md)
 
 [Documentation](../README.md) · [Plugin kinds](README.md) · [Package management](../guide/packages.md)
 
-A profile selects an application built from plugins. A bundle packages reusable profile patches and presets as static data. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
+A deployment execution profile assembles runtime capabilities from plugins. A Bundle packages reusable profile patches and permission profiles (Presets) as static data. Application presentation is adopted separately; this release does not adopt execution profile templates. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
 
 ## Session tool visibility
 
@@ -12,7 +12,7 @@ Enabling a package that publishes bundles makes its providers available for sele
 
 The compiled ownership scope is pinned with the composition and code generation. Live resources retain their existing filters. Older saved bindings keep their prior scope; create a new session to apply isolation. The resolved profile adds the optional Host-generated `compositionToolScope` field; this is not a user manifest setting.
 
-In Web Settings → Bundles & Presets, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
+In Web Settings → Advanced → Run configuration → Technical details → Additional combinations for all conversations → Technical details, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
 
 ## Publish a bundle
 
