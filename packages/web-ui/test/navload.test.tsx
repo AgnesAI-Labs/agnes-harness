@@ -300,6 +300,10 @@ describe('startup check notice', () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
     const css = readFileSync(resolve(__dirname, '../src/tokens.css'), 'utf8')
+    const groups = readFileSync(resolve(__dirname, '../src/doctor-groups.css'), 'utf8')
+    expect(groups).toMatch(
+      /@container \(max-width: 560px\) \{[\s\S]*?\.agnes-doctor-footer-actions \{[^}]*flex-wrap: wrap;[^}]*flex-basis: 100%;/,
+    )
     expect(css).toMatch(/\.agnes-doctor-notice \{\s*position: fixed;\s*top: 3\.5rem;/)
     expect(css).toMatch(
       /@media \(max-width: 900px\) \{\s*\.agnes-doctor-notice \{\s*top: auto;[^}]*bottom: max\(1rem, env\(safe-area-inset-bottom\)\);/,
