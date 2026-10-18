@@ -130,11 +130,11 @@ export function sectionSurface(page: Page, id: string) {
     schedules: 'automation',
     triggers: 'automation',
     search: 'plugins-search',
-    memory: 'plugins-memory',
     engines: 'plugins-subagents',
     'computer-use': 'plugins-computer-use',
   }
   if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
+  if (id === 'memory') return page.getByTestId('personalization-memory')
   if (id === 'model') return page.locator('#config-accounts')
   if (id === 'general') return page.locator('#appearance-settings-pane')
   if (id === 'history') return page.getByTestId('session-search')
@@ -152,6 +152,16 @@ export function sectionSurface(page: Page, id: string) {
 
 export async function section(page: Page, id: string) {
   if (await page.getByTestId('session-search').isVisible()) await page.keyboard.press('Escape')
+  if (id === 'memory') {
+    if (!(await page.locator('#config').isVisible()))
+      await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
+    const back = page.getByTestId('settings-back')
+    if (await back.isVisible()) await back.click()
+    await page.getByTestId('settings-nav-general').click()
+    await page.getByTestId('personalization-memory').scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('memory-panel')).toBeVisible()
+    return
+  }
   const dock = page.getByTestId('workbench-right-toggle')
   if (
     id !== 'jobs' &&
@@ -192,7 +202,6 @@ export async function section(page: Page, id: string) {
     feedback: ['plugins', 'review'],
     review: ['plugins', 'review'],
     search: ['plugins', 'plugins.search'],
-    memory: ['plugins', 'plugins.memory'],
     engines: ['plugins', 'plugins.subagents'],
     'computer-use': ['plugins', 'plugins.computer-use'],
     schedules: ['automation', 'schedules'],
