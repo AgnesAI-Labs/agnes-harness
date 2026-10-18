@@ -1915,6 +1915,19 @@ importers:
         specifier: workspace:*
         version: link:../sdk
 
+  tools/authoring:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
+
   tools/e2e-web:
     dependencies:
       '@agnes/observability':

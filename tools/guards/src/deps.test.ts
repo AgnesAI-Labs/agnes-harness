@@ -68,6 +68,7 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
 // therefore 9 here, with channels/bridges still together on 8, which lets every existing and
 // previously approved dependency in the code pass.
 const LAYER: Record<string, number> = {
+  '@agnes/authoring-eval': 11, // Explicit paid acceptance composes public SDK and inference APIs.
   '@agnes/batch': 4, // Application plugin composes public SDK sessions and author contracts.
   '@agnes/memory-file': 2, // File provider implements the pure extension API; Base composes it.
   '@agnes/e2e-web': 11, // Private acceptance client consumes only the public SDK and protocol.
