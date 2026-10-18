@@ -349,9 +349,11 @@ it('lists accounts as rows: logo, default model and count, state tags, fix, and 
   expect(rows[0]?.textContent).toContain('Default')
   expect(rows[1]?.dataset.enabled).toBe('false')
   expect(rows[1]?.textContent).toContain('Disabled')
-  expect(rows[2]?.textContent).toContain('Credential missing')
+  expect(rows[2]?.textContent).toContain('API key required')
   await act(async () =>
-    [...(rows[2]?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Fix')?.click(),
+    [...(rows[2]?.querySelectorAll('button') ?? [])]
+      .find((b) => b.textContent === 'Re-enter API key')
+      ?.click(),
   )
   expect(edits).toEqual(['kimi'])
   // The default account offers neither disable nor remove while another account could take over.

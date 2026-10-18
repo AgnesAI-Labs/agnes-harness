@@ -202,7 +202,7 @@ describe('bootLocal', () => {
     const err = await bootLocal(parseArgs(['-p', 'x']), deps).catch((e: unknown) => e)
     expect(err).toMatchObject({ name: 'BootError', code: 2 })
     expect((err as Error).message).toContain('E_PRESET_UNRESOLVED')
-    expect((err as Error).message).toContain('provider.routes')
+    expect((err as Error).message).toContain('no-routes: Configure a model account in Settings → Models')
     expect((err as Error).message).not.toContain('createHost needs a package loader')
   }, 60_000)
 
