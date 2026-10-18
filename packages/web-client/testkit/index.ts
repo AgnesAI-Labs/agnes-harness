@@ -1,5 +1,7 @@
 /** Node-only author fixture. Uses the real clientModule facade; only profileCaller is replaced.
  * Use serially: the fixture owns temporary DOM globals until dispose(). */
+
+import { MessageChannel } from 'node:worker_threads'
 import { Context } from '@agnes/cordis'
 import { Window } from 'happy-dom'
 import React, { act } from 'react'
@@ -25,6 +27,15 @@ export async function createClientPanelTestHost(
   locale: 'zh-CN' | 'en' = 'en',
 ) {
   const window = new Window()
+  // Bundled React cannot use module.require('timers') and act() falls back to MessageChannel.
+  // Native Node ports keep the test worker alive even after the DOM and React root are closed.
+  const channels = new Set<MessageChannel>()
+  class ScopedMessageChannel extends MessageChannel {
+    constructor() {
+      super()
+      channels.add(this)
+    }
+  }
   const saved = new Map<string, PropertyDescriptor | undefined>()
   for (const [name, value] of Object.entries({
     window,
@@ -32,6 +43,7 @@ export async function createClientPanelTestHost(
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
     IS_REACT_ACT_ENVIRONMENT: true,
+    MessageChannel: ScopedMessageChannel,
   })) {
     saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
@@ -41,6 +53,11 @@ export async function createClientPanelTestHost(
   window.document.body.append(container)
   const root = createRoot(container as unknown as HTMLElement)
   const restore = () => {
+    for (const channel of channels) {
+      channel.port1.close()
+      channel.port2.close()
+    }
+    channels.clear()
     for (const [name, descriptor] of saved) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor)
       else Reflect.deleteProperty(globalThis, name)
@@ -57,10 +74,13 @@ export async function createClientPanelTestHost(
     new LocaleService(ctx, locale)
     await ctx.plugin(clientModule(module), identity)
   } catch (error) {
-    await ctx.fiber.dispose()
-    root.unmount()
-    await window.happyDOM.close()
-    restore()
+    try {
+      await ctx.fiber.dispose()
+      await act(async () => root.unmount())
+      await window.happyDOM.close()
+    } finally {
+      restore()
+    }
     throw error
   }
   return {
