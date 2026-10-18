@@ -255,6 +255,9 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
             ...(target.pageEntry ? { pageEntry: target.pageEntry } : {}),
             ...(target.binding ? { binding: target.binding } : {}),
             ...(target.clientId ? { clientId: target.clientId } : {}),
+            ...(target.presentationRoleBindings
+              ? { presentationRoleBindings: target.presentationRoleBindings }
+              : {}),
             ...(target.presentationRoles ? { presentationRoles: target.presentationRoles } : {}),
             ...(target.homeEntries ? { homeEntries: target.homeEntries } : {}),
             ...(target.examplePages ? { examplePages: target.examplePages } : {}),

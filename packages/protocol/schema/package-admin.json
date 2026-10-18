@@ -2958,6 +2958,37 @@
           "minLength": 1,
           "maxLength": 128
         },
+        "presentationRoleBindings": {
+          "description": "Host-verified per-role consent binding for this exact client declaration, package identity and dependency closure; never supplied by plugin code.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "navigation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "conversation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "composer": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "goal": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "interaction": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "deliverables": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
         "presentationRoles": {
           "type": "array",
           "maxItems": 6,

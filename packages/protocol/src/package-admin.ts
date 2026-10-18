@@ -251,6 +251,8 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         phase: source.phase,
       }
       if (source.clientId !== undefined) row.clientId = source.clientId
+      if (source.presentationRoleBindings !== undefined)
+        row.presentationRoleBindings = { ...source.presentationRoleBindings }
       if (source.presentationRoles !== undefined) row.presentationRoles = [...source.presentationRoles]
       if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
       if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry

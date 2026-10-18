@@ -20,6 +20,7 @@ export function readyRosterModules(rows: readonly ClientModuleRosterRow[]): Read
         ...(row.exampleOf ? { exampleOf: row.exampleOf } : {}),
         ...(row.pageEntry ? { pageEntry: row.pageEntry } : {}),
         ...(row.clientId ? { clientId: row.clientId } : {}),
+        ...(row.presentationRoleBindings ? { presentationRoleBindings: row.presentationRoleBindings } : {}),
         ...(row.presentationRoles ? { presentationRoles: row.presentationRoles } : {}),
         ...(row.binding ? { binding: row.binding } : {}),
         ...(row.homeEntries ? { homeEntries: row.homeEntries } : {}),

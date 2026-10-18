@@ -9,6 +9,7 @@ import type {
 /** 名册里的 ready 模块（WC3 modules 的最小子集）。 */
 export interface ReadyClientModule {
   clientId?: string
+  presentationRoleBindings?: ModuleIdentity['presentationRoleBindings']
   presentationRoles?: ModuleIdentity['presentationRoles']
   /** Isolated Intelligent UI renderers; never imported into the workbench document. */
   intelligentComponents?: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[]

@@ -116,6 +116,8 @@ export type CommandAuthorizer = (
  */
 export interface ModuleIdentity {
   clientId?: string
+  /** Host-verified identity of the actual client and its consented dependency closure. */
+  presentationRoleBindings?: Readonly<Partial<Record<import('@agnes/protocol').PresentationRole, string>>>
   presentationRoles?: readonly import('@agnes/protocol').PresentationRole[]
   /** Browser lifecycle/slot owner identity. Distinct rows of one package must not tear down each other. */
   exampleOf?: string
