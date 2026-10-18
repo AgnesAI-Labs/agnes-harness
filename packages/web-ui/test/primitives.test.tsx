@@ -27,6 +27,7 @@ const cleanups: (() => void)[] = []
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup()
   document.body.replaceChildren()
+  document.documentElement.removeAttribute('data-agnes-input')
 })
 function render(element: Parameters<typeof mountRegion>[1]) {
   const host = document.createElement('div')
@@ -321,20 +322,29 @@ it('sorts Table records without changing caller data and retains its labelled so
 })
 
 it('returns focus to the anchored Popover trigger on Escape', async () => {
-  const { Popover } = await import('../src/index.js')
-  const host = render(
+  const { Popover, renderRegion } = await import('../src/index.js')
+  const picker = () => (
     <Popover trigger="click" content={<Button>Choose</Button>}>
       <Button>Picker</Button>
-    </Popover>,
+    </Popover>
   )
+  document.documentElement.setAttribute('data-agnes-input', 'keyboard')
+  const host = render(picker())
   const trigger = host.querySelector('button')!
   trigger.focus()
   trigger.click()
   await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover button')).not.toBeNull())
+  expect(document.querySelector('.agnes-ui-popover--keyboard')).not.toBeNull()
+  document.documentElement.setAttribute('data-agnes-input', 'pointer')
+  renderRegion(host, picker())
+  await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover--keyboard')).not.toBeNull())
+  expect(document.querySelector('.agnes-ui-popover--pointer')).toBeNull()
   const choice = document.querySelector<HTMLElement>('.agnes-ui-popover button')!
   choice.focus()
   key(choice, 'Escape')
   await vi.waitFor(() => expect(document.activeElement).toBe(trigger))
+  trigger.click()
+  await vi.waitFor(() => expect(document.querySelector('.agnes-ui-popover--pointer')).not.toBeNull())
 })
 
 it('keeps DataList row actions independent from opening a row and renders caller empty content', async () => {

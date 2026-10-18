@@ -102,6 +102,9 @@ describe('refinement stylesheet', () => {
   })
 
   it('animates keyboard-opened menus and disclosures only for the pointer', () => {
+    expect(refinement).not.toMatch(/:root\[data-agnes-input="pointer"\]\s*:is\([^)]*\.agnes-ui-popover/)
+    expect(refinement).toContain('.agnes-ui-popover--pointer:is(')
+
     for (const surface of ['.agh-menu-popup', '.agh-disclosure', '.ant-tabs-tabpane-active']) {
       const rule = new RegExp(
         `:root\\[data-agnes-input="pointer"\\][^{]*${surface.replace('.', '\\.')}[^{]*\\{[^}]*animation`,

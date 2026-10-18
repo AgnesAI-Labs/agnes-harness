@@ -564,16 +564,14 @@
     /* Menus, pickers and popovers grow out of their trigger when the pointer opens them; a
      keyboard-opened surface is simply there. Exits are shorter and do not bounce. */
     :root[data-agnes-input="pointer"]
-      :is(.agh-menu-popup, .ant-select-dropdown, .agnes-ui-popover):is(
-        [class*="-enter-active"],
-        [class*="-appear-active"]
-      ) {
+      :is(.agh-menu-popup, .ant-select-dropdown):is([class*="-enter-active"], [class*="-appear-active"]),
+    .agnes-ui-popover--pointer:is([class*="-enter-active"], [class*="-appear-active"]) {
       animation-name: agh-pop-in;
       animation-duration: var(--motion-long) !important;
       animation-timing-function: var(--motion-spring);
     }
-    :root[data-agnes-input="pointer"]
-      :is(.agh-menu-popup, .ant-select-dropdown, .agnes-ui-popover)[class*="-leave-active"] {
+    :root[data-agnes-input="pointer"] :is(.agh-menu-popup, .ant-select-dropdown)[class*="-leave-active"],
+    .agnes-ui-popover--pointer[class*="-leave-active"] {
       animation-name: agh-pop-out;
       animation-duration: calc(var(--motion-long) * var(--motion-exit)) !important;
       animation-timing-function: var(--motion-ease-out);
