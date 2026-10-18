@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
 import { PackageError, withLock } from '@agnes/package-manager'
@@ -11,7 +11,7 @@ import type {
   PackagePreview,
 } from '@agnes/protocol'
 import { jcs } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
+import { readReceiptDates, saveReceiptJournal } from './receipt-journal.js'
 import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Owner = { version: string; principal: string; profile: string; row: ClientModuleRosterRow }
@@ -76,15 +76,10 @@ export function createExamplePackages(options: {
     if (statSync(file).size > 16 * 1024 * 1024) return deny('E_PACKAGE_INTEGRITY')
     const state = JSON.parse(readFileSync(file, 'utf8')) as State
     if (state.version !== 1 || !state.reviews || !state.operations) return deny('E_PACKAGE_INTEGRITY')
+    readReceiptDates(file, state)
     return state
   }
-  async function save(state: State) {
-    const temporary = `${file}.${randomUUID()}.tmp`
-    const body = JSON.stringify(state)
-    if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
-    writeFileSync(temporary, body, { mode: 0o600, flush: true })
-    await renameWriteThrough(temporary, file)
-  }
+  const save = (state: State) => saveReceiptJournal(file, state)
   async function owner(rowId: string): Promise<Owner> {
     const value = await backend.owner(rowId)
     if (

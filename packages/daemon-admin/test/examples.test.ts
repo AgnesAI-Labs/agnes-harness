@@ -1,12 +1,15 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type {
+import {
   AgentPlan,
-  ClientModuleRosterRow,
-  PackageCatalogDescriptor,
-  PackageInstalledDescriptor,
-  PackagePreview,
+  type ClientModuleRosterRow,
+  jcs,
+  type PackageCatalogDescriptor,
+  type PackageInstalledDescriptor,
+  type PackagePreview,
+  validateAgainst,
 } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { createAgentLaunches, createExamplePackages, type ExampleBackend } from '../src/packages/examples.js'
@@ -469,20 +472,75 @@ for (const kind of ['agent', 'example'] as const) {
     expect(Object.keys(f.load().operations)).toHaveLength(0)
   })
 
-  it(`${kind}: conservatively dates pre-existing terminal receipts on first observation`, async () => {
-    const f = await retentionFixture(kind)
-    await f.call(f.request)
-    const state = f.load()
-    for (const op of Object.values(state.operations) as { terminalAt?: number }[]) delete op.terminalAt
-    f.store(state)
-    f.advance(receiptWindow * 2)
-    expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
-    f.advance(receiptWindow - 1)
-    expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
-    f.advance(1)
-    await expect(f.call(f.request)).rejects.toThrow('STALE')
-    expect(f.sessions.size).toBe(1)
-  })
+  it.each(['ordinary', 'byte-cap'])(
+    `${kind}: conservatively dates pre-existing terminal receipts on first observation (%s)`,
+    async (size) => {
+      const f = await retentionFixture(kind)
+      await f.call(f.request)
+      const state = f.load()
+      let pendingKey: string | undefined
+      for (const op of Object.values(state.operations) as { terminalAt?: number }[]) delete op.terminalAt
+      if (size === 'byte-cap') {
+        const hash = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
+        const seed = (Object.values(state.operations) as Record<string, any>[]).find((op) => op.sessionId)!
+        const plan = kind === 'agent' ? seed.review.plan : seed.review.launch
+        plan.launch.description.en = 'Synthetic retained launch description. '.repeat(50)
+        expect(validateAgainst(AgentPlan, plan).ok).toBe(true)
+        const owner = kind === 'agent' ? seed.review.owner : seed.owner
+        const pending = structuredClone(seed)
+        pending.state = 'running'
+        pending.review.expires = f.now() + receiptWindow * 5
+        delete pending.sessionId
+        const pendingRequest = { ...f.request, operationId: 'pending' }
+        pending[kind === 'agent' ? 'payload' : 'digest'] = hash(pendingRequest)
+        pendingKey = hash([owner, pendingRequest.operationId])
+        state.operations[pendingKey] = pending
+        const base = Buffer.byteLength(JSON.stringify(state))
+        const count = Math.min(
+          9998,
+          Math.floor((16 * 1024 * 1024 - base) / (Buffer.byteLength(JSON.stringify(seed)) + 200)),
+        )
+        for (let i = 0; i < count; i++) {
+          const request = { ...f.request, operationId: `historical-${i}` }
+          const op = structuredClone(seed)
+          op[kind === 'agent' ? 'payload' : 'digest'] = hash(request)
+          state.operations[hash([owner, request.operationId])] = op
+        }
+        const remaining = 16 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(state)) - 1
+        // Fill only valid plan text fields; each remains below its schema string bound.
+        const ops = Object.values(state.operations) as Record<string, any>[]
+        for (let i = 0, left = remaining; left > 0; i++) {
+          const record = ops.filter((op) => (kind === 'agent' ? op.review.plan : op.review.launch))[i]
+          if (!record) throw new Error('not enough historical plans')
+          const plan = kind === 'agent' ? record.review.plan : record.review.launch
+          const extra = Math.min(left, 1000)
+          plan.launch.description.en += 'x'.repeat(extra)
+          left -= extra
+        }
+        expect(Buffer.byteLength(JSON.stringify(state))).toBe(16 * 1024 * 1024 - 1)
+      }
+      f.store(state)
+      f.advance(receiptWindow * 2)
+      if (size === 'byte-cap') {
+        expect(await f.call({ action: 'read', operationId: f.request.operationId })).toMatchObject({
+          state: 'completed',
+        })
+        const file = join(f.directory, kind === 'agent' ? 'agent-operations.json' : 'operations.json')
+        expect(Buffer.byteLength(readFileSync(file))).toBeLessThanOrEqual(16 * 1024 * 1024)
+        expect(Object.keys(JSON.parse(readFileSync(`${file}.dates`, 'utf8'))).length).toBeGreaterThan(0)
+      }
+      expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
+      f.advance(receiptWindow - 1)
+      expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
+      f.advance(1)
+      await expect(f.call(f.request)).rejects.toThrow('STALE')
+      expect(f.sessions.size).toBe(1)
+      if (size === 'byte-cap') {
+        expect(pendingKey && f.load().operations[pendingKey].state).toBe('running')
+        await f.prepare()
+      }
+    },
+  )
 }
 
 it('example receipts remain readable while an activation owns the write lock', async () => {

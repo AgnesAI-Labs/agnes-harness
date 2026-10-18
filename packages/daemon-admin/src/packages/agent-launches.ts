@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PackageError, withLock } from '@agnes/package-manager'
 import { type AgentPlan, jcs, parseAgentRef } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
+import { readReceiptDates, saveReceiptJournal } from './receipt-journal.js'
 import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Caller = { principal: string; profile: string; workspace: string; activation: string }
@@ -51,15 +51,10 @@ export function createAgentLaunches(options: {
     if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
     const value = JSON.parse(body) as State
     if (!value.reviews || !value.operations) deny('E_PACKAGE_INTEGRITY')
+    readReceiptDates(file, value)
     return value
   }
-  const save = async (state: State) => {
-    const body = JSON.stringify(state)
-    if (Buffer.byteLength(body) > 16 * 1024 * 1024) deny('OVERLOADED')
-    const temporary = `${file}.${randomUUID()}.tmp`
-    writeFileSync(temporary, body, { mode: 0o600, flush: true })
-    await renameWriteThrough(temporary, file)
-  }
+  const save = (state: State) => saveReceiptJournal(file, state)
   const scope = ({ principal, profile, workspace }: Caller) => hash({ principal, profile, workspace })
   const check = async (review: Review, caller: Caller, receipt = false) => {
     if (
