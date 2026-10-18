@@ -554,6 +554,11 @@
     outline-offset: 1px;
     box-shadow: var(--focus-line);
   }
+  /* Text-only hints must not intercept a neighboring action as focus or hover moves. */
+  .agh-tooltip,
+  .agh-tooltip * {
+    pointer-events: none;
+  }
   /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-container {

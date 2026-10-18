@@ -1,7 +1,9 @@
 /** @vitest-environment happy-dom */
+import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { readUiCss } from '../../../tools/web-style-source.mjs'
 import {
   Button,
   CompletionCheck,
@@ -148,6 +150,14 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
   const host = render(
     createElement(IconButton, { name: 'search', label: 'Search sessions', shortcut: ['⌘', 'K'] }),
   )
+  const style = document.createElement('style')
+  // happy-dom lacks cascade layers; apply the real hint hit-testing rule on its own.
+  style.textContent =
+    readUiCss(resolve(__dirname, '../src/components.css')).match(
+      /\.agh-tooltip,\s*\.agh-tooltip \*\s*\{[^}]+\}/,
+    )?.[0] ?? ''
+  document.head.append(style)
+  cleanups.push(() => style.remove())
   const button = host.querySelector('button')!
   // The accessible name is the action; the shortcut is only shown.
   expect(button.getAttribute('aria-label')).toBe('Search sessions')
@@ -158,6 +168,8 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
     return found!
   })
   expect(tooltip.firstChild?.textContent).toBe('Search sessions')
+  // A hint may overlap an adjacent action while focus or hover moves through navigation.
+  expect(getComputedStyle(document.querySelector('[role=tooltip]')!).pointerEvents).toBe('none')
   expect([...tooltip.querySelectorAll('kbd.agh-kbd .agh-kbd-key')].map((cap) => cap.textContent)).toEqual([
     '⌘',
     'K',

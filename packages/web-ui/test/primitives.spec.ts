@@ -297,6 +297,7 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   await expect(icon).toHaveCSS('height', '28px')
   await icon.focus()
   await expect(page.getByRole('tooltip')).toHaveText('Refresh')
+  await expect(page.getByRole('tooltip')).toHaveCSS('pointer-events', 'none')
   for (const width of [375, 390]) {
     await page.setViewportSize({ width, height: 844 })
     for (const edge of ['left', 'right'] as const) {
