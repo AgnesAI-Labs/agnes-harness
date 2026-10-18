@@ -570,6 +570,8 @@ export function supervisorLister(
   }
 }
 
+declare const AGNES_VERSION: string | undefined
+
 export type StartSupervisorOptions = {
   config: DaemonConfig
   profile: ResolvedProfile
@@ -2017,7 +2019,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         registry: supervisorRegistry,
         prompter,
         clock,
-        agnesVersion: '0.0.0',
+        agnesVersion: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
         modelAdapters: adapterLookup,
