@@ -67,6 +67,10 @@ export function safeAuthoringOutput(value: string, maxBytes = 16384, directory?:
   let text = value.slice(0, 262144).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
   if (directory)
     text = text
+      .split(`file://${directory}/node_modules/.authoring-tests/`)
+      .join('./')
+      .split(`file://${directory}/`)
+      .join('./')
       .split(directory + '/node_modules/.authoring-tests/')
       .join('./')
       .split(directory + '/')

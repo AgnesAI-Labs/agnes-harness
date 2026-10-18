@@ -36,7 +36,7 @@ it('retains redacted assertion details, package-relative locations and bounded c
   const privateHome = ['', 'Users', 'synthetic'].join('/')
   build.mockResolvedValue({})
   exec.mockResolvedValue({
-    stdout: `not ok 1 - persists data\n  name: AssertionError\n  error: expected 2 entries, got 0\n  location: ${directory}/test/fail.test.mjs:4:1\n  private: ${privateHome}/private/data.json\n  stack: |-\n    TestContext.privateFrame (file://${privateHome}/private/test.mjs:1:1)\n# tests 1\n# fail 1\n# pass 0\n# authoring-exit 1\n${'x'.repeat(20000)}`,
+    stdout: `not ok 1 - persists data\n  name: AssertionError\n  error: expected 2 entries, got 0\n  location: file://${directory}/test/fail.test.mjs:4:1\n  private: ${privateHome}/private/data.json\n  stack: |-\n    TestContext.privateFrame (file://${privateHome}/private/test.mjs:1:1)\n# tests 1\n# fail 1\n# pass 0\n# authoring-exit 1\n${'x'.repeat(20000)}`,
   })
   const result = await runAuthoringTests(directory, files, new AbortController().signal)
   expect(result).toMatchObject({ state: 'failed', count: 1 })
