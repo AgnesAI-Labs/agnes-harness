@@ -1584,6 +1584,27 @@
     transition-duration: 0s !important;
   }
 
+  /* Phone navigation shares the available strip; long labels wrap inside full touch targets. */
+  @media (max-width: 767px) {
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-nav-list {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab {
+      flex: 1 1 0;
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+      padding: var(--s8) var(--s4);
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab-btn {
+      width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-align: center;
+    }
+  }
+
   /* Tabs are frequent navigation; their final indicator/scroll positions remain immediate. */
   .agnes-ui-tabs :is(.ant-tabs-ink-bar, .ant-tabs-nav-list) {
     transition: none;
