@@ -41,19 +41,34 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
   )
 }
 
-export async function settings(page: Page, locale = 'en') {
-  // A settings deep link opens its modal before the lazy form has attached.
-  if (new URL(page.url()).searchParams.has('settings') || (await page.locator('#config[open]').count()))
-    await expect(page.locator('#config-form')).toBeVisible()
-  if (!(await page.locator('#config-form').isVisible())) {
-    await sidebar(page)
-    await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+async function settingsVisible(page: Page) {
+  return (
+    (await page.locator('#config-form').isVisible()) ||
+    (await page.getByTestId('settings-navigation').isVisible()) ||
+    (await page.getByTestId('settings-back').isVisible()) ||
+    (await page.locator('[data-testid="settings-subpage-header"]:visible').count()) > 0
+  )
+}
+
+async function settingsRoot(page: Page) {
+  // Nested SettingsDrill content is portaled outside the hidden root form.
+  const subpage = page.locator('[data-testid="settings-subpage-header"]:visible')
+  if (await subpage.count()) {
+    await subpage.getByRole('button').first().click()
+    await expect(subpage).toHaveCount(0)
   }
-  // A reopened phone dialog retains its last detail page; return through its real navigation.
-  await expect(page.locator('#config-form')).toBeVisible()
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
   await expect(page.getByTestId('settings-navigation')).toBeVisible()
+}
+
+export async function settings(page: Page, locale = 'en') {
+  if (!(await settingsVisible(page))) {
+    await sidebar(page)
+    await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+  }
+  await expect.poll(() => settingsVisible(page)).toBe(true)
+  await settingsRoot(page)
 }
 
 /** Open a disclosure through its rendered control, including the React disclosure used by v3. */
@@ -99,13 +114,7 @@ export async function sidebar(page: Page) {
 }
 
 export async function homePage(page: Page, id: string, tab?: string) {
-  if (new URL(page.url()).searchParams.has('settings') || (await page.locator('#config[open]').count()))
-    await expect(page.locator('#config-form')).toBeVisible()
-  if (
-    (await page.locator('#config-form').isVisible()) ||
-    (await page.getByTestId('settings-back').isVisible())
-  )
-    await dismissSettings(page)
+  if (await settingsVisible(page)) await dismissSettings(page)
   const dock = page.getByTestId('workbench-right-toggle')
   if ((await dock.isVisible()) && (await dock.getAttribute('aria-expanded')) === 'true')
     await dismissWorkbench(page)
@@ -113,7 +122,16 @@ export async function homePage(page: Page, id: string, tab?: string) {
   await page.getByTestId(`home-entry-${id}`).click()
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
   const back = page.getByTestId('push-back')
-  for (let level = 0; level < 8 && (await back.isVisible()); level++) await back.click()
+  for (let level = 0; level < 8 && (await back.isVisible()); level++) {
+    const previous = page.url()
+    await back.click()
+    // Push navigation traverses history; await its route before choosing the next visible action.
+    await expect
+      .poll(async () => page.url() !== previous || !(await back.isVisible()) || (await settingsVisible(page)))
+      .toBe(true)
+    await settled(page)
+    if (await settingsVisible(page)) await dismissSettings(page)
+  }
   await expect(back).toBeHidden()
   if (tab) {
     if (id === 'plugins')
@@ -255,11 +273,7 @@ export async function section(page: Page, id: string) {
     return
   }
   if (id === 'history' || id === 'archived') {
-    if (
-      (await page.locator('#config-form').isVisible()) ||
-      (await page.getByTestId('settings-back').isVisible())
-    )
-      await dismissSettings(page)
+    if (await settingsVisible(page)) await dismissSettings(page)
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
       await sidebar(page)
@@ -350,10 +364,9 @@ export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal'
 }
 
 async function dismissSettings(page: Page) {
-  const close = page.locator('#config-close')
-  if (!(await close.isVisible())) await page.getByTestId('settings-back').click()
-  await close.click()
-  await expect(page.locator('#config-form')).toBeHidden()
+  await settingsRoot(page)
+  await page.locator('#config-close').click()
+  await expect.poll(() => settingsVisible(page)).toBe(false)
 }
 
 export async function closeSettings(page: Page, _locale = 'en') {
@@ -361,11 +374,7 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('session-search')).toBeHidden()
   }
-  if (
-    (await page.locator('#config-form').isVisible()) ||
-    (await page.getByTestId('settings-back').isVisible())
-  )
-    await dismissSettings(page)
+  if (await settingsVisible(page)) await dismissSettings(page)
   if (await page.locator('#home-page').isVisible()) {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')

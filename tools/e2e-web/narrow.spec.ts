@@ -1,5 +1,6 @@
 import { copyFile, mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
@@ -59,7 +60,9 @@ async function usable(page: Page, info: TestInfo, name: string) {
       const target =
         (node.matches('input[type=checkbox], input[type=radio]')
           ? node.closest('label')
-          : node.closest('.ant-tabs-tab, .ant-select')) ?? node
+          : node.matches('.xterm-helper-textarea')
+            ? node.closest('.xterm')
+            : node.closest('.ant-tabs-tab, .ant-select')) ?? node
       const rect = target.getBoundingClientRect()
       if (rect.width < 1 || rect.height < 1 || rect.bottom <= 0 || rect.top >= innerHeight) continue
       const label =
@@ -149,7 +152,7 @@ for (const locale of ['en', 'zh-CN'])
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
         if (surface === 'settings' && width === 768)
-          await page.getByTestId('memory-panel').scrollIntoViewIfNeeded()
+          await page.getByTestId('memory-content').scrollIntoViewIfNeeded()
         if (surface === 'session') {
           // Opening a tool after the phone flow can retain the previous reading position.
           // Frame the completed first turn from its start at both widths.
@@ -322,7 +325,6 @@ for (const locale of ['en', 'zh-CN'])
           page.getByTestId('conversation-turn').nth(1).getByTestId('turn-process-toggle').locator('..'),
         )
         await expect(delivery).toContainText('Delivery report.md')
-        const rightToggle = page.getByTestId('workbench-right-toggle')
         await delivery.locator('.agh-list-row-title').first().click()
         await expect(page.getByTestId('workbench-deliverables')).toContainText('Delivery report.md')
         await page
@@ -340,7 +342,9 @@ for (const locale of ['en', 'zh-CN'])
               '当前模型已不可用，请重新选择模型',
             ),
           )
-          await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
+          const process = page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle')
+          if ((await process.getAttribute('aria-expanded')) !== 'true') await process.click()
+          await expect(process).toHaveAttribute('aria-expanded', 'true')
           const detail = page.getByTestId('tool-detail-toggle').first()
           if ((await detail.getAttribute('aria-expanded')) !== 'true') await detail.click()
           await expect(page.getByTestId('tool-detail-text').first()).toContainText('Synthetic delivery')
@@ -496,12 +500,27 @@ for (const locale of ['en', 'zh-CN'])
             page.getByTestId('terminal-panel').getByTestId('terminal-tab-close').first(),
           ).toBeVisible()
           const output = page.getByTestId('workbench-terminal-output')
-          await expect(output).toHaveValue(/[$#] /)
-          await output.pressSequentially(
+          const terminalText = output.locator('.xterm-accessibility-tree')
+          const terminalInput = output.locator('textarea')
+          await expect(terminalInput).toBeEditable()
+          // xterm focuses its hidden IME textarea from the entire visible terminal surface.
+          // Measure and exercise that hit area, as with a radio's surrounding label.
+          await output.locator('.xterm').click({ position: { x: 20, y: 20 } })
+          await expect(terminalInput).toBeFocused()
+          await expect(terminalText).toContainText(/[$#%]\s/)
+          const selectedTerminal = page.getByTestId('terminal-tab').and(page.locator('[aria-pressed="true"]'))
+          const terminalId = (await selectedTerminal.getAttribute('id'))?.replace(/^terminal-tab-/, '')
+          if (!terminalId) throw new Error('The visible terminal must identify its real process')
+          await terminalInput.pressSequentially(
             "PS1='narrow$ '; printf '\\033[2J\\033[H'; printf 'NARROW_TERMINAL_OK\\n'",
           )
-          await output.press('Enter')
-          await expect(output).toHaveValue(/NARROW_TERMINAL_OK\r?\n/)
+          await terminalInput.press('Enter')
+          await expect
+            .poll(async () =>
+              stripVTControlCharacters((await session.jobsRead(terminalId)).job?.stdout ?? ''),
+            )
+            .toMatch(/\nNARROW_TERMINAL_OK\r?\n/)
+          await expect(terminalText).toContainText('NARROW_TERMINAL_OK')
           await usable(page, info, `terminal-running-${viewport.width}`)
           if (viewport.width === 375) await capture('workbench', viewport.width)
           if (viewport.width === 768) {
