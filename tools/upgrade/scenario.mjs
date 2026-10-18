@@ -251,6 +251,8 @@ try {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner
     await verifyManaged(state)
+  } else if (phase === 'current-declarations') {
+    await verifyCurrentDeclarations(sdk, admin, workspace)
   } else {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner
@@ -412,10 +414,12 @@ try {
       (row) => row.packageId === packageId,
     )
     const previousRows = state.roster.rows.filter((row) => row.packageId === packageId)
-    const stableRow = ({ binding: _binding, ...row }) => row
+    const stableRow = ({ binding: _binding, clientId: _clientId, ...row }) => row
     assert.deepEqual(currentRows.map(stableRow), previousRows.map(stableRow))
     for (const row of currentRows) {
       const prior = previousRows.find((old) => old.rowId === row.rowId)
+      // The current roster adds an explicit client identity; this fixture has no authored id.
+      assert.equal(row.clientId, prior.clientId ?? prior.rowId)
       if (prior.binding) assert.deepEqual(row.binding, prior.binding)
       else
         assert.deepEqual(
@@ -434,7 +438,6 @@ try {
         )
     }
     await verifyManaged(state)
-    await verifyCurrentDeclarations(sdk, admin, workspace)
   }
 } finally {
   await sdk.close()

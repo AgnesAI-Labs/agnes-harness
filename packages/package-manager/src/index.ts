@@ -77,6 +77,7 @@ export {
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
+export { currentStoredShape } from './stored-metadata.js'
 export * from './trust-gate.js'
 export * from './workspace.js'
 export * from './workspace-deployments.js'

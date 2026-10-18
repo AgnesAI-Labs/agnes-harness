@@ -70,6 +70,9 @@ export function developmentPluginRows(
   const declarations = parseAgnesPluginEntries(
     snapshot.packageId,
     (pkg.agnes as { plugins?: unknown } | undefined)?.plugins,
+    // Startup also uses this builder for integrity-checked, persisted runtime snapshots.
+    // The explicit development reader above still admits only current author declarations.
+    { stored: true },
   )
   const rows: Readonly<PluginRow>[] = declarations
     .filter((entry) => !isResourceOwnedRowId(entry.id))

@@ -96,6 +96,8 @@ it.skipIf(process.platform === 'win32')(
             daemon = await runtime(builds.current, home, workspace)
             await scenario('verify', repository)
             await verifyRuntimeSnapshotFixture(home, capturedSnapshots)
+            await scenario('current-declarations', repository)
+            await verifyRuntimeSnapshotFixture(home, capturedSnapshots, { afterReviewedUpdate: true })
             const upgradedReceipt = JSON.parse(await readFile(receiptFile, 'utf8'))
             assert.equal(upgradedReceipt.version, 4)
             assert.equal(upgradedReceipt.phase, 'complete')

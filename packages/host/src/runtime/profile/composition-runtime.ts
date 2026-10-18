@@ -206,7 +206,15 @@ export async function createCompositionHost(
         ...(sources
           ? {
               packages: [
-                ...binding.profile.packages.filter((pkg) => pkg.trust === 'builtin' || !pkg.enabled),
+                // Unselected packages remain composition vocabulary, without executable authority.
+                // Match cold generation restoration: only selected sources may enable their code.
+                ...binding.profile.packages
+                  .filter(
+                    (pkg) =>
+                      pkg.trust === 'builtin' ||
+                      !sources.some((source) => source.snapshot.packageId === pkg.id),
+                  )
+                  .map((pkg) => (pkg.trust === 'builtin' ? pkg : { ...pkg, enabled: false })),
                 ...sources.map(({ snapshot }) => ({
                   ...binding.profile.packages.find((pkg) => pkg.id === snapshot.packageId),
                   id: snapshot.packageId,

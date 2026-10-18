@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import {
   activeRuntimePinId,
   createPackageManager,
+  developmentPluginRows,
   loadPackagePlugins,
   parseSource,
   readLock,
@@ -45,6 +46,12 @@ it('starts from the real pre-unification store without rewriting pins, records o
   })
   expect(loaded).toHaveLength(1)
   expect(loaded[0]?.declaration.metadata).toMatchObject({ category: 'example' })
+  expect(developmentPluginRows({ snapshot: original.snapshot, generation: 1, trusted: true }, [])).toEqual([
+    expect.objectContaining({
+      id: 'ext:acme/legacy',
+      plugin: `acme/legacy@${original.snapshot.snapshotId}/runtime`,
+    }),
+  ])
   expect(readFileSync(stateFile(), 'utf8')).toBe(before)
   expect(readFileSync(join(profile(), 'agnes-lock.json'), 'utf8')).toBe(lock)
   expect(original.snapshot.agents).toBeUndefined()

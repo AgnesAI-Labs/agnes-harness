@@ -21,6 +21,20 @@ const categories = new Set([
   'business-agent',
   'example',
 ])
+const kinds = new Set(['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'])
+function currentKinds(value: Record<string, unknown>, maximum: number): Record<string, unknown> {
+  const old = value.kinds
+  if (
+    value.provides !== undefined ||
+    !Array.isArray(old) ||
+    old.length > maximum ||
+    old.some((kind) => !kinds.has(kind)) ||
+    new Set(old).size !== old.length
+  )
+    return value
+  const { kinds: _kinds, ...rest } = value
+  return { ...rest, provides: old }
+}
 export function legacyMetadata(value: unknown): value is StoredPluginMetadata {
   return !!value && typeof value === 'object' && Object.hasOwn(value, 'category')
 }
@@ -43,7 +57,7 @@ export function validStoredMetadata(value: unknown): value is StoredPluginMetada
 export function currentStoredShape(value: unknown, depth = 0): unknown {
   if (depth > 4) return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
-  const result = { ...value } as Record<string, unknown>
+  const result = currentKinds({ ...value } as Record<string, unknown>, 6)
   if (legacyMetadata(result.metadata) && validStoredMetadata(result.metadata)) {
     const { category: _category, launches: _launches, ...current } = result.metadata
     result.metadata = current
@@ -56,9 +70,13 @@ export function currentStoredShape(value: unknown, depth = 0): unknown {
     const presentation = { ...result.presentation } as Record<string, unknown>
     if (Array.isArray(presentation.rows))
       presentation.rows = presentation.rows.map((row) => currentStoredShape(row, depth + 1))
+    if (presentation.includes && typeof presentation.includes === 'object')
+      presentation.includes = currentKinds(presentation.includes as Record<string, unknown>, 7)
     result.presentation = presentation
   }
   if (result.previous) result.previous = currentStoredShape(result.previous, depth + 1)
+  for (const key of ['preview', 'installed'])
+    if (result[key]) result[key] = currentStoredShape(result[key], depth + 1)
   if (Array.isArray(result.contributions))
     result.contributions = result.contributions.map((row) => currentStoredShape(row, depth + 1))
   return result

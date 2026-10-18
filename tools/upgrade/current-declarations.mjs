@@ -74,5 +74,8 @@ export async function verifyCurrentDeclarations(sdk, admin, workspace) {
     agentDigest: plan.digest,
   })
   assert.equal((await session.prompt('upgrade current agent')).reason, 'completed')
+  console.info(
+    'Upgrade declarations: reviewed v2 update, application preview, agent resolve + completed new session',
+  )
   // Reopening the captured turn pin is checked by verifyRuntimeSnapshotFixture after this update.
 }

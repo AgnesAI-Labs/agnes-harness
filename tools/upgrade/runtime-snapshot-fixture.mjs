@@ -26,7 +26,17 @@ export async function seedRuntimeSnapshotFixture(home) {
   for (const id of Object.keys(captured.pins)) assert.ok(!Object.hasOwn(state.pins, id))
   const packages = join(home, 'data/profiles/local-dev/packages')
   await mkdir(packages, { recursive: true })
-  await cp(join(capturedProfile, 'packages'), packages, { recursive: true, force: false, errorOnExist: true })
+  const copyOptions = { recursive: true, force: false, errorOnExist: true }
+  for (const id of Object.keys(capturedLock.packages)) {
+    const name = id.replaceAll('/', '__')
+    await cp(join(capturedProfile, 'packages', name), join(packages, name), copyOptions)
+  }
+  const runtimeRoot = join(packages, '.runtime-snapshots')
+  await mkdir(runtimeRoot, { recursive: true })
+  for (const id of Object.keys(captured.snapshots)) {
+    assert.ok(!Object.hasOwn(state.snapshots, id))
+    await cp(join(capturedProfile, 'packages/.runtime-snapshots', id), join(runtimeRoot, id), copyOptions)
+  }
   Object.assign(lock.packages, capturedLock.packages)
   Object.assign(state.snapshots, captured.snapshots)
   Object.assign(state.pins, captured.pins)
@@ -35,7 +45,7 @@ export async function seedRuntimeSnapshotFixture(home) {
   return captured
 }
 
-export async function verifyRuntimeSnapshotFixture(home, captured) {
+export async function verifyRuntimeSnapshotFixture(home, captured, { afterReviewedUpdate = false } = {}) {
   const current = await read(join(home, 'profiles/local-dev/.agnes-runtime-snapshots.json'))
   const held = new Set(
     Object.values(captured.pins)
@@ -47,8 +57,23 @@ export async function verifyRuntimeSnapshotFixture(home, captured) {
     // Session pins and every retained record must keep their original identity and content.
     if (held.has(id) || current.snapshots[id]) assert.deepEqual(current.snapshots[id], record)
   }
-  for (const [id, pin] of Object.entries(captured.pins))
-    if (pin.purpose === 'turn' || current.pins[id]) assert.deepEqual(current.pins[id], pin)
+  // A reviewed enable may recreate a GC'd orphan active pin using its deterministic id.
+  // Pure upgrade checks every retained pin; session references stay exact after updates too.
+  for (const [id, pin] of Object.entries(captured.pins)) {
+    if (pin.purpose === 'turn' || (!afterReviewedUpdate && current.pins[id]))
+      assert.deepEqual(current.pins[id], pin)
+    else if (current.pins[id]) {
+      const { snapshotId, ...identity } = current.pins[id]
+      const { snapshotId: originalId, ...originalIdentity } = pin
+      assert.deepEqual(identity, originalIdentity)
+      if (snapshotId !== originalId) {
+        const replacement = current.snapshots[snapshotId]
+        assert.equal(replacement.version, 2)
+        for (const key of ['packageId', 'integrity', 'treeIntegrity', 'capabilityHash'])
+          assert.deepEqual(replacement[key], captured.snapshots[originalId][key])
+      }
+    }
+  }
   const snapshotId = captured.pins['session-original'].snapshotId
   const module = await import(
     pathToFileURL(join(home, 'data/profiles/local-dev/packages/.runtime-snapshots', snapshotId, 'index.mjs'))
