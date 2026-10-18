@@ -75,3 +75,34 @@ export function generationSourceReader(
     ]
   }
 }
+
+/** Authoring rechecks the existing generation trust authority even inside an already-open turn. */
+export function generationAuthoringAuthority(
+  options: Pick<HostOptions, 'profileDir' | 'agnesVersion' | 'runtimePluginSources' | 'pluginManage'>,
+  profile: string,
+  sourcesFor: (sessionKey: string) => readonly RuntimePluginSnapshot[] | undefined,
+) {
+  const assertTrust = (sources: readonly RuntimePluginSnapshot[]) =>
+    assertGenerationTrust(
+      sources,
+      options.profileDir,
+      profile,
+      options.agnesVersion ?? '0.0.0',
+      options.runtimePluginSources,
+    )
+  const bridge = options.pluginManage
+  const pluginManage: HostOptions['pluginManage'] =
+    bridge &&
+    (async (invocation, signal) => {
+      signal.throwIfAborted()
+      const sources = sourcesFor(invocation.sessionKey)
+      if (!sources)
+        throw Object.assign(new Error('Authoring generation is unavailable'), {
+          code: 'PLUGIN_MANAGEMENT_UNAVAILABLE',
+        })
+      await assertTrust(sources)
+      signal.throwIfAborted()
+      return bridge(invocation, signal)
+    })
+  return { assertTrust, pluginManage }
+}

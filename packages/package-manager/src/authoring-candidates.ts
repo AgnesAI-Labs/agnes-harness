@@ -20,6 +20,7 @@ import {
   saveAuthoringRecord,
   writeAuthoringFiles,
 } from './authoring-files.js'
+import { PackageError } from './errors.js'
 import type { PackageManager } from './manager.js'
 import { hashDirectory } from './sources.js'
 
@@ -314,7 +315,7 @@ export class AuthoringCandidates {
       record.value.tests?.state !== 'passed' ||
       record.value.tests.hash !== expected
     )
-      authoringError('Passing tests for this exact candidate are required')
+      throw new PackageError('E_EXT_LOAD', 'Passing tests for this exact candidate are required')
     const installed = (await this.manager.inventory(profileDir)).packages.find(
       (p) => p.id === record.value.packageId,
     )

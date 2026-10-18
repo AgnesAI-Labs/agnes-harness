@@ -258,3 +258,39 @@ it('reads the bundled creator skill without executing commands and fails closed 
   })
   expect(exec).not.toHaveBeenCalled()
 })
+
+it.each([
+  ['PLUGIN_MANAGEMENT_UNAVAILABLE', 'unavailable-host-capability'],
+  ['CAPABILITY_DENIED', 'permission-denied'],
+  ['E_LEASE_EXPIRED', 'permission-denied'],
+  ['E_WORKSPACE_UNTRUSTED', 'permission-denied'],
+  ['PLUGIN_CANDIDATE_STALE', 'stale-hash'],
+  ['E_PACKAGE_STATE', 'validation-failure'],
+  ['E_PACKAGE_SOURCE', 'validation-failure'],
+])('reports %s with its operation, stage and existing candidate', async (code, kind) => {
+  const candidateId = `candidate-${'a'.repeat(32)}`
+  const args = { candidateId, expectedHash: `sha256-${'b'.repeat(64)}` }
+  const ctx = {
+    signal: new AbortController().signal,
+    pluginManage: {
+      request: async () => {
+        throw Object.assign(new Error('refused'), { code })
+      },
+    },
+  } as unknown as ToolContext
+  expect(await pluginCreatorTools[3].execute(args, ctx)).toMatchObject({
+    isError: true,
+    details: { code, kind, operation: 'candidate.submit', stage: 'request', candidateId },
+  })
+  const withoutPort = { ...ctx }
+  delete withoutPort.pluginManage
+  expect(await pluginCreatorTools[3].execute(args, withoutPort)).toMatchObject({
+    isError: true,
+    details: {
+      kind: 'unavailable-host-capability',
+      operation: 'candidate.submit',
+      stage: 'host-capability',
+      candidateId,
+    },
+  })
+})

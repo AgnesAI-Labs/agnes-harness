@@ -2,6 +2,7 @@ import type { ToolContext } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import type { AuthoringCandidate } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
+import { authoringFailure } from './authoring-error.js'
 import { candidateResult } from './candidate-result.js'
 import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
@@ -20,19 +21,44 @@ const file = Type.Object(
   { path: Type.String({ minLength: 1, maxLength: 240 }), content: Type.String({ maxLength: 131072 }) },
   { additionalProperties: false },
 )
-async function request(ctx: ToolContext, input: unknown, read?: { offset?: number; expectedHash?: string }) {
+async function request(
+  ctx: ToolContext,
+  input: { action: string; candidateId?: string; [key: string]: unknown },
+  read?: { offset?: number; expectedHash?: string },
+) {
   ctx.signal.throwIfAborted()
-  if (!ctx.pluginManage)
-    return {
-      isError: true,
-      content: [
-        { type: 'text' as const, text: 'Host-reviewed authoring is unavailable. No files were installed.' },
-      ],
+  try {
+    if (!ctx.pluginManage)
+      throw Object.assign(new Error('Host authoring capability is unavailable'), {
+        code: 'PLUGIN_PORT_UNAVAILABLE',
+      })
+    const value = await ctx.pluginManage.request(input)
+    ctx.signal.throwIfAborted()
+    const result = await candidateResult(ctx, value as AuthoringCandidate, read)
+    if (result.isError) {
+      const failure = authoringFailure(
+        input.action,
+        input.candidateId ?? (value as AuthoringCandidate).candidateId,
+        'result',
+        result.details,
+      )
+      if (failure)
+        return { ...result, details: failure.details, content: [...failure.content, ...result.content] }
     }
-  const value = await ctx.pluginManage.request(input)
-  ctx.signal.throwIfAborted()
-  return candidateResult(ctx, value as AuthoringCandidate, read)
+    return result
+  } catch (error) {
+    ctx.signal.throwIfAborted()
+    const failure = authoringFailure(
+      input.action,
+      input.candidateId,
+      ctx.pluginManage ? 'request' : 'host-capability',
+      error,
+    )
+    if (failure) return failure
+    throw error
+  }
 }
+
 export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_creator_guide',

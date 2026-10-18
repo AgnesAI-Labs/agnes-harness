@@ -2,17 +2,22 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { authoringSandbox } from '@agnes/daemon-admin/packages/index'
 import { resolveToolCallPolicy, type ToolDef } from '@agnes/extension-api'
-import { createPackageManager, emptyLock, writeLock } from '@agnes/package-manager'
-import type { AuthoringCandidate } from '@agnes/protocol'
+import type { HostSession, PluginManageInvocation } from '@agnes/host'
+import { createPackageManager, emptyLock, readDevelopmentPlugin, writeLock } from '@agnes/package-manager'
+import type { AuthoringCandidate, AuthoringTests, InferenceEvent } from '@agnes/protocol'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { toolPolicy } from '../../base/extensions/approval-policy/src/tool-policy.js'
 import { pluginCreatorTools } from '../../base/extensions/plugin-creator/src/index.js'
+import { createTestHost } from '../../host/testkit/index.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createPackageAdminService, FilePackageOperationStore } from '../src/packages/index.js'
 import { pluginProposalSourceAdapter } from '../src/packages/plugin-source.js'
+import { packageManageReplyError } from '../src/supervisor/package-manage-error.js'
 import { checkedPluginFiles } from '../src/supervisor/plugin-files.js'
 import { createPluginManageRequests } from '../src/supervisor/plugin-manage-requests.js'
 
@@ -87,12 +92,14 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     return pkg.entry.integrity
   }
   let running = false
-  const testRunner = vi.fn(async () => ({
-    state: 'passed' as const,
-    count: 1,
-    runner: 'node-test' as const,
-    output: 'synthetic unit runner',
-  }))
+  const testRunner = vi.fn(
+    async (): Promise<Omit<AuthoringTests, 'hash' | 'completedAt'>> => ({
+      state: 'passed' as const,
+      count: 1,
+      runner: 'node-test' as const,
+      output: 'synthetic unit runner',
+    }),
+  )
   const admin = createPackageAdminService({
     manager,
     profileDirectory: async () => profileDir,
@@ -138,6 +145,7 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
   const ask = vi
     .spyOn(ep, 'request')
     .mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
+  let ownerId = 'local'
   const options = {
     directory: root,
     home: join(root, 'private-home'),
@@ -146,7 +154,7 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     current: () => currentEp.conn,
     connections: () => liveEndpoints.map((e) => e.conn),
     endpoint: (conn: typeof ep.conn) => liveEndpoints.find((e) => e.conn === conn),
-    owner: () => ({ principalId: 'local', active: true }),
+    owner: () => ({ principalId: ownerId, active: true }),
   }
   let handler = createPluginManageRequests(options)
   const request = (input: unknown, overrides = {}, requestId: string = randomUUID()) =>
@@ -169,6 +177,22 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     }) as Promise<AuthoringCandidate & { proposalId: string }>
   return {
     root,
+    setOwner: (id: string) => {
+      ownerId = id
+    },
+    dispatch: (invocation: PluginManageInvocation, signal: AbortSignal, sandbox: unknown) =>
+      handler(
+        invocation.sessionKey,
+        randomUUID(),
+        'plugin-manage',
+        {
+          ...invocation,
+          candidateTestSandbox: sandbox,
+        },
+        signal,
+      ).catch((error) => {
+        throw Object.assign(new Error('Authoring refused'), packageManageReplyError(error))
+      }),
     testRunner,
     refresh,
     profileDir,
@@ -190,7 +214,7 @@ it('drafts and submits a tested review without installing, trusting or enabling;
   expect(p.state).toBe('draft')
   expect(p.origin).toMatchObject({ sessionKey: 'session', turn: 2, toolUseId: 'tool' })
   await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toMatchObject({
-    data: { reason: 'E_PACKAGE_PREVIEW_STALE' },
+    data: { reason: 'E_PACKAGE_STATE' },
   })
   s.ask.mockRestore()
   const pending = s.request({
@@ -545,4 +569,129 @@ it('fails closed when the sandbox probe fails under full-access', async () => {
   )
   expect(s.testRunner).not.toHaveBeenCalled()
   expect(s.ask).not.toHaveBeenCalled()
+})
+
+it('continues a helper draft through real builtin registration and dispatch into the same candidate service', async () => {
+  const s = await setup()
+  const helper = await readDevelopmentPlugin(
+    fileURLToPath(new URL('../../package-manager/bundled-plugins/plugin-helper', import.meta.url)),
+    'local-dev',
+  )
+  let trusted = true
+  const scripts: ConstructorParameters<typeof ScriptedProvider>[0]['scripts'] = []
+  const invocations: PluginManageInvocation[] = []
+  let activeSession: HostSession | undefined
+  const { host } = await createTestHost({
+    dataDir: join(s.root, 'host'),
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    runtimePluginSnapshots: [helper],
+    runtimePluginSources: async () => [{ ...helper, trusted }],
+    extensionLoader: { import: (file) => import(pathToFileURL(file).href) },
+    provider: new ScriptedProvider({ scripts }),
+    disableSessionTitle: true,
+    approval: async () => ({
+      verdict: 'allowed-once',
+      answeredBy: { id: 'reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }),
+    pluginManage: async (invocation, signal) => {
+      invocations.push(invocation)
+      return s.dispatch(invocation, signal, activeSession?.commandSandboxPolicy?.())
+    },
+  })
+  try {
+    const session = await host.createSession({ cwd: join(s.root, 'host'), key: 'session' })
+    activeSession = session
+    const call = async (name: string, args: Record<string, unknown>) => {
+      scripts.push(
+        [
+          { type: 'toolcall_end', via: 'native', call: { name, args, toolUseId: '', ordinal: 0 } },
+          { type: 'done', reason: 'toolUse' },
+        ] as InferenceEvent[],
+        [
+          { type: 'text_delta', delta: 'receipt received' },
+          { type: 'done', reason: 'stop' },
+        ],
+      )
+      await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text: name }] })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const [event] = await session.scan({ type: 'tool/result', order: 'desc', limit: 1 })
+      if (!event) throw new Error('Missing tool result')
+      return event.data as { isError?: boolean; structured: AuthoringCandidate; details?: unknown }
+    }
+    const created = await call('plugin_helper_create', { files })
+    const p = created.structured
+    expect(p).toMatchObject({
+      state: 'draft',
+      origin: { packageId: '@agnes/plugin-helper', snapshotId: helper.snapshot.snapshotId },
+    })
+    const args = { candidateId: p.candidateId, expectedHash: p.candidateHash }
+    const read = await call('plugin_candidate_read', { candidateId: p.candidateId })
+    expect(read.structured).toMatchObject({
+      candidateId: p.candidateId,
+      candidateHash: p.candidateHash,
+      sourceFiles: expect.arrayContaining([...files]),
+    })
+    const bad = await call('plugin_candidate_write', {
+      ...args,
+      expectedHash: `sha256-${'0'.repeat(64)}`,
+      files,
+    })
+    expect(bad, JSON.stringify(bad)).toMatchObject({
+      isError: true,
+      structured: { kind: 'stale-hash', operation: 'candidate.write', candidateId: p.candidateId },
+    })
+    const changed = [...files, { path: 'notes.md', content: 'same candidate, builtin edit' }]
+    const written = await call('plugin_candidate_write', { ...args, files: changed })
+    const hash = written.structured.candidateHash
+    expect(hash).not.toBe(p.candidateHash)
+    expect(written.structured.candidateId).toBe(p.candidateId)
+    s.testRunner.mockResolvedValueOnce({
+      state: 'failed',
+      count: 1,
+      runner: 'node-test',
+      output: 'synthetic failing case',
+    })
+    expect((await call('plugin_test', { ...args, expectedHash: hash })).isError).toBe(true)
+    expect(await call('plugin_install_local', { ...args, expectedHash: hash })).toMatchObject({
+      isError: true,
+      structured: { kind: 'validation-failure' },
+    })
+    expect((await call('plugin_test', { ...args, expectedHash: hash })).structured.tests).toMatchObject({
+      state: 'passed',
+      hash,
+    })
+    expect((await call('plugin_install_local', { ...args, expectedHash: hash })).structured).toMatchObject({
+      state: 'review',
+      candidateId: p.candidateId,
+    })
+    expect(invocations[0]).toMatchObject({
+      packageId: '@agnes/plugin-helper',
+      rowId: 'ext:plugin-helper/main',
+    })
+    for (const invocation of invocations.slice(1))
+      expect(invocation).toMatchObject({
+        packageId: '@agnes/base',
+        rowId: 'ext:agnes/plugin-creator',
+        snapshotId: host.sessionGeneration?.(session.key),
+      })
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+    expect(s.exec).not.toHaveBeenCalled()
+    // Old ids and hashes remain readable through both compatibility tool sets after restart.
+    s.restart()
+    expect((await s.request({ action: 'status', proposalId: p.candidateId })).candidateHash).toBe(hash)
+    s.setOwner('not-the-owner')
+    expect(
+      await call('plugin_candidate_write', { ...args, expectedHash: hash, files: changed }),
+    ).toMatchObject({ isError: true, structured: { kind: 'permission-denied' } })
+    s.setOwner('local')
+    trusted = false
+    const before = invocations.length
+    expect(
+      await call('plugin_candidate_write', { ...args, expectedHash: hash, files: changed }),
+    ).toMatchObject({ isError: true, structured: { kind: 'permission-denied' } })
+    expect(invocations).toHaveLength(before)
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+  } finally {
+    await host.close()
+  }
 })

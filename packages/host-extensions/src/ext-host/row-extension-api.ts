@@ -15,6 +15,7 @@ import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/pr
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
 import { refusedForParameters } from '../resources/management-refusal.js'
 import type { Lease } from './lease.js'
+import { pluginManageForCall } from './plugin-manage-binding.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { invalidToolMessage } from './tool-def-message.js'
@@ -248,33 +249,13 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
                     : {}),
                   ...(pluginManage
                     ? {
-                        pluginManage: Object.freeze({
-                          request: async (request: unknown) => {
-                            const assertLive = () => {
-                              lease.assertInvocationAlive()
-                              if (finished || callSignal.aborted)
-                                throw new Error('plugins management invocation expired')
-                              if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage plugins')
-                            }
-                            assertLive()
-                            const result = await hostPortRequest(
-                              tctx,
-                              () =>
-                                pluginManage(
-                                  {
-                                    input: structuredClone(request),
-                                    toolUseId: tctx.session.toolUseId,
-                                    turn: tctx.session.turn ?? 0,
-                                    sessionKey: tctx.session.key,
-                                  },
-                                  callSignal,
-                                ),
-                              refusedForParameters('plugin management'),
-                            )
-                            assertLive()
-                            return result
-                          },
-                        }),
+                        pluginManage: pluginManageForCall(
+                          pluginManage,
+                          tctx,
+                          lease,
+                          callSignal,
+                          () => finished,
+                        ),
                       }
                     : {}),
                   ...(skillInstall

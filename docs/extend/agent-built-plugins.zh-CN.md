@@ -35,6 +35,10 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 可选 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
 
+两组工具共用同一个由 Host 绑定的候选服务：`plugin_helper_create` 创建的草稿可以继续由 `plugin_candidate_read` 和 `plugin_candidate_write` 编辑，沿用原候选 ID 与当前哈希。Host 记录真实调用包、代码快照（内置工具使用该会话固定的代码代际）、行与行级 lease，并检查每次工具调用的生命期。子代理、已取消或过期的调用以及缺少当前 owner 授权的调用不能使用此端口。内置作者工具的错误回执标明操作、阶段、候选 ID，并区分宿主能力不可用、权限拒绝、哈希过期和验证失败。能力不可用不表示管理员关闭了作者功能；保留草稿并报告实际失败的操作。
+
+更新后的 Host 重新装配工具时才获得此绑定。已经运行的 worker 在正常重启前继续使用原装配能力；保留会话仍沿用原代码 pin，重新打开不会改写 pin 或升级固定的工具代码。原候选与哈希保持可读，helper 创建的草稿也适用。本次更新不会清理草稿或自动发布。
+
 大包分步构建，每次回复的新文件文本最多 8 KiB，每次完成一个文件或带唯一标记的完整段落。写入仍替换完整树，不能只发送变化文件。存在 `run_code` 时，在 cell 内读取当前候选，程序化更新 `sourceFiles`，用新摘要写入完整数组，仅输出返回的摘要；内置 `plugin_creator_guide` 提供小型 cell 示例。没有代码工具时，将完整草稿控制在输出额度内，或配置服务商支持的更高 `model.max_tokens`。发生 `OUTPUT_LIMIT` 后，读取原候选并用更小片段接续：未完成调用已被丢弃。最终摘要必须重新测试才能提交审阅；部分草稿或输出额度提示不是测试通过的证据。
 
 在 **设置 → 插件 → 候选** 从列表选择草稿；状态标签区分待审阅、已拒绝和已发布。摘要显示插件、来源会话与轮次、测试结果及新增权限。逐个展开文件查看新增和删除行，长文件在差异区域内滚动。默认收起的 **技术详情** 包含候选、已安装基线、审阅和测试运行的摘要，原始能力变化、会话／工具 ID 及测试输出。检查改动时，审阅页底部保持 **批准发布** 和 **拒绝** 可见。

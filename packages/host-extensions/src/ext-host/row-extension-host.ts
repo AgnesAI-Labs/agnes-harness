@@ -24,6 +24,7 @@ import {
 } from './extension-status-book.js'
 import { type Lease, leaseFor, ROW_BOUND_LEASE_TTL_MS } from './lease.js'
 import type { ExtensionStatus } from './managed-host.js'
+import { bindPluginManage } from './plugin-manage-binding.js'
 import type { KernelPorts } from './ports.js'
 import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS, type RowExtensionApi } from './row-extension-api.js'
 
@@ -365,17 +366,12 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         : {}),
       ...(requestPluginManage
         ? {
-            pluginManage: (invocation, signal) =>
-              requestPluginManage(
-                {
-                  ...invocation,
-                  packageId: origin.packageId,
-                  snapshotId: origin.snapshotId,
-                  rowId,
-                  leaseId: installLeaseId,
-                },
-                signal,
-              ),
+            pluginManage: bindPluginManage(requestPluginManage, {
+              packageId: origin.packageId,
+              snapshotId: origin.snapshotId,
+              rowId,
+              leaseId: installLeaseId,
+            }),
           }
         : {}),
       ...(requestSkillInstall

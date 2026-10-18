@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { ExtensionContext, ExtensionManifest, LeaseView, Logger } from '@agnes/extension-api'
 import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
@@ -14,12 +15,16 @@ import {
 import { type Lease, leaseFor, ROW_BOUND_LEASE_TTL_MS } from './lease.js'
 import type { ExtensionSpec, ExtensionStatus } from './managed-host.js'
 import { mapResult } from './map-result.js'
+import { bindPluginManage } from './plugin-manage-binding.js'
 import type { KernelPorts } from './ports.js'
 import { preflightEmbeddedExtension, preflightExtension } from './preflight.js'
 
 export type BuiltinRowHostOptions = Readonly<{
   /** Shared with the plugin-row host: a row id is owned by one supplier at a time, whoever it is. */
   owners: ExtensionOwners
+  pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
+  /** Durable generation selected by Host for the real calling session; never a version sentinel. */
+  sessionGeneration?: (sessionKey: string) => string | undefined
   order: ExtensionOrder
   ports: KernelPorts
   platform: ExtensionContext['platform']
@@ -224,7 +229,18 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
       r.lease = lease
       leases.set(spec.id, lease)
       let registering = true
+      const leaseId = randomUUID()
       const api = buildExtensionAPI({
+        ...(options.pluginManage && options.sessionGeneration
+          ? {
+              pluginManage: bindPluginManage(options.pluginManage, {
+                packageId: spec.package,
+                snapshotId: options.sessionGeneration,
+                rowId: input.rowId,
+                leaseId,
+              }),
+            }
+          : {}),
         manifest,
         packageIdentity: spec.package,
         packageVersion: spec.packageVersion,
