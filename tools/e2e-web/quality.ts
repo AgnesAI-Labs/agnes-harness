@@ -73,6 +73,8 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
     .toEqual([])
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
+  await page.mouse.move(0, 0)
+  if (name.startsWith('new-session-')) await page.locator('#prompt').focus()
   await settled(page)
   await expect(page.locator('.agh-toast')).toHaveCount(0)
   // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
@@ -89,6 +91,11 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   if (name.startsWith('diagnostics-status-'))
     await page.getByTestId('diagnostics-doctor').evaluate((card) => {
       card.scrollIntoView({ block: 'end', behavior: 'instant' })
+    })
+  // Inspecting the auxiliary fields can scroll the Models page. Frame its account heading and CTA.
+  if (name.startsWith('accounts-'))
+    await page.locator('.config-accounts-welcome').evaluate((card) => {
+      for (let parent = card.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
     })
   // Candidate navigation can retain the plugin pane's browser scroll anchor. The review
   // baseline frames its heading and actions from the top, independent of the previous list.
@@ -224,6 +231,24 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       node.value = '/workspace/w'
     }
   })
+  const workspaceChoices = page.locator(
+    '.workspace-option-path, #memory-workspace option, [data-testid="memory-root"]',
+  )
+  await workspaceChoices.evaluateAll((nodes) => {
+    for (const node of nodes) {
+      if (node.childElementCount) continue
+      const original = node.textContent ?? ''
+      const normalized = original.replace(/(?:\/private)?\/tmp\/agh-e2e-[^/\s]+\/w/g, '/workspace/w')
+      if (normalized === original) continue
+      node.setAttribute('data-e2e-workspace-choice-original', original)
+      node.textContent = normalized
+    }
+  })
+  // Screenshots disable CSS motion; use the public reduced-motion preference for JS hints too.
+  const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(page.locator('.composer-example-hint')).toHaveCount(0)
+  await settled(page)
   const restoreTrace = await normalizeTraceVisual(page)
   const options = { animations: 'disabled' as const, fullPage: true, mask }
   try {
@@ -243,6 +268,14 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     await expect(page).toHaveScreenshot(`${name}.png`, options)
   } finally {
     await restoreTrace()
+    await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
+    await workspaceChoices.evaluateAll((nodes) => {
+      for (const node of nodes) {
+        const original = node.getAttribute('data-e2e-workspace-choice-original')
+        if (original !== null) node.textContent = original
+        node.removeAttribute('data-e2e-workspace-choice-original')
+      }
+    })
     await workspacePaths.evaluateAll((nodes) => {
       for (const node of nodes as HTMLInputElement[]) {
         node.value = node.getAttribute('data-e2e-workspace-path-original') ?? ''

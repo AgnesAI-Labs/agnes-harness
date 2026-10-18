@@ -192,6 +192,8 @@ hidden; the metadata clock is normalized to 12:00 while its model label stays vi
 Unified Trace captures use the real Record order menu and normalize only the isolated runtime context
 path, current clock and elapsed numbers, retaining localized units, records, controls and statuses.
 The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
+Screenshots temporarily use the public reduced-motion preference for JavaScript example hints,
+then restore the original preference; CSS motion is disabled by Playwright.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.
 

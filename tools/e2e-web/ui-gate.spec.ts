@@ -124,6 +124,7 @@ for (const locale of ['en', 'zh-CN'])
       await expect(add).toBeVisible()
       let fieldSurface = ''
       let popupSurface = ''
+      let inputSurface = ''
       for (const id of pages) {
         if (id === 'jobs') {
           await closeSettings(page, locale)
@@ -131,17 +132,11 @@ for (const locale of ['en', 'zh-CN'])
         }
         await section(page, id)
         await expect(sectionSurface(page, id)).toBeVisible()
-        const catalogPage = [
-          'models',
-          'bundles',
-          'system-prompt',
-          'context',
-          'security',
-          'application',
-          'providers',
-        ].includes(id)
-        if (catalogPage) await expect(page.getByTestId('settings-refresh')).toBeVisible()
-        else await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
+        // Catalogue reads refresh on page entry/focus; the redesign removed the universal
+        // refresh button. Keep the loaded, error-free guarantee for every actual page.
+        await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
+        await expect(sectionSurface(page, id)).not.toHaveAttribute('aria-busy', 'true')
+        await expect(page.getByTestId('settings-catalog-state')).toHaveCount(0)
         if (id === 'plugins') {
           await expect(page.getByTestId('plugin-candidates')).toHaveCount(0)
           fieldSurface = await page
@@ -150,6 +145,14 @@ for (const locale of ['en', 'zh-CN'])
           popupSurface = await page.getByTestId('home-page-plugins').evaluate((owner) => {
             const probe = document.createElement('div')
             probe.style.background = 'var(--agnes-bg-control)'
+            owner.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          inputSurface = await page.getByTestId('home-page-plugins').evaluate((owner) => {
+            const probe = document.createElement('div')
+            probe.style.background = 'var(--agnes-input-surface)'
             owner.appendChild(probe)
             const color = getComputedStyle(probe).backgroundColor
             probe.remove()
@@ -176,13 +179,37 @@ for (const locale of ['en', 'zh-CN'])
           await advanced(page)
           await section(page, 'memory')
           await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+          const workspaceField = page.getByTestId('memory-workspace')
+          await expect(workspaceField).toBeVisible()
+          await expect(workspaceField).toHaveCSS('background-color', inputSurface)
           await page.getByTestId('memory-open').click()
           await expect(page.getByTestId('memory-content')).toBeVisible()
-          for (const control of ['memory-workspace', 'memory-mode', 'memory-file', 'memory-content']) {
-            const field = page.getByTestId(control)
-            const popup = await field.evaluate((node) => node.tagName === 'SELECT')
-            await expect(field).toHaveCSS('background-color', popup ? popupSurface : fieldSurface)
-          }
+          const mode = page.getByTestId('memory-mode')
+          await expect(mode).toHaveRole('radiogroup')
+          const trackSurface = await mode.evaluate((node) => {
+            const probe = document.createElement('div')
+            probe.style.background = 'var(--agnes-segment-track)'
+            node.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          await expect(mode).toHaveCSS('background-color', trackSurface)
+          await expect(mode.locator('.agh-segmented-thumb')).toHaveCSS('background-color', popupSurface)
+          await expect(page.getByTestId('memory-actions')).toContainText('MEMORY.md')
+          const editor = page.getByTestId('memory-content')
+          const codeSurface = await editor.evaluate((node) => {
+            const probe = document.createElement('div')
+            probe.style.backgroundColor = getComputedStyle(node).getPropertyValue('--agnes-bg-fill')
+            node.parentElement!.appendChild(probe)
+            const color = getComputedStyle(probe).backgroundColor
+            probe.remove()
+            return color
+          })
+          await page.mouse.move(0, 0)
+          await expect(editor).toHaveCSS('background-color', codeSurface)
+          await editor.focus()
+          await expect(editor).toHaveCSS('background-color', inputSurface)
         }
         if (id === 'mcp') {
           await page
@@ -211,7 +238,7 @@ for (const locale of ['en', 'zh-CN'])
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
           }
-          await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', popupSurface)
+          await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', inputSurface)
           await accessible(page, info, 'mcp-advanced')
           await page.locator('#mcp-secret-kind-trigger').click()
           await page.locator('#mcp-secret-kind-listbox-0').click()
@@ -261,7 +288,9 @@ for (const locale of ['en', 'zh-CN'])
         }
         if (id === 'discover') {
           await quality('discover-duplicate-versions')
-          const packageRow = page.locator('article[data-plugin-id="@agnes-examples/client-multi-panel"]')
+          const packageRow = page
+            .getByTestId('market-card')
+            .and(page.locator('[data-plugin-id="@agnes-examples/client-multi-panel"]'))
           await expect(packageRow).toHaveCount(1)
           await expect(packageRow.getByRole('heading')).toHaveCount(1)
           const versions = packageRow.getByTestId('plugin-other-versions')
@@ -271,6 +300,8 @@ for (const locale of ['en', 'zh-CN'])
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
           await versions.locator('.agh-disclosure-summary').click()
           await expect(packageRow.locator('.plugin-source')).toHaveCount(0)
+          await packageRow.scrollIntoViewIfNeeded()
+          await expect(packageRow).toBeInViewport({ ratio: 1 })
           await screen(page, info, `discover-version-picker-${locale}-${theme}`)
           const picker = packageRow.getByTestId('plugin-version-picker')
           await expect(picker).toHaveClass(/agnes-ui-select/)
