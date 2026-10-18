@@ -116,6 +116,8 @@ test('v3 settings exposes four everyday pages, persistent advanced settings and 
   await expect(page.getByTestId('settings-advanced-switch')).toHaveAttribute('aria-checked', 'false')
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBe('0')
   await page.reload()
+  // A persisted settings URL restores its dialog after the session binding finishes.
+  await expect(page.locator('#config[open]')).toBeVisible()
   await settings(page, 'zh-CN')
   await expect(page.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(4)
   await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
