@@ -341,7 +341,7 @@ export function CandidateInbox({
             <>
               <span>{facts[value.candidateId]?.sourceTitle ?? t('candidates.untitledSession')}</span>
               {!['review', 'failed', 'interrupted'].includes(value.state) && (
-                <MetaText>{t('candidates.state.' + value.state)}</MetaText>
+                <MetaText> · {t('candidates.state.' + value.state)}</MetaText>
               )}
               {facts[value.candidateId] && (
                 <CandidateListFacts
