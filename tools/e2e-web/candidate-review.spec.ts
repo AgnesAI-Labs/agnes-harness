@@ -141,19 +141,16 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(skillReview.locator('.candidate-summary-facts')).toHaveCSS('display', 'flex')
     await screen(page, info, `candidate-review-${locale}-${theme}`)
     await pluginPage.getByTestId('candidate-fact-chain').click()
-    const facts = page.getByTestId('fact-chain')
-    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(draft.packageId)
-    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(
-      locale === 'en' ? 'Tests passed: 1' : '测试通过 1 项',
-    )
+    const facts = page.getByTestId('trace-authoring')
+    await expect(facts).toContainText(draft.packageId)
+    await expect(facts).toContainText(locale === 'en' ? 'Tests passed: 1' : '测试通过 1 项')
     await expect(facts.locator('.agh-disclosure')).toHaveAttribute('data-open', 'false')
     await translated(page)
     await accessible(page, info, `fact-authoring-${locale}-${theme}`)
-    // Frame the originating conversation consistently after navigation and text reflow.
-    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
-      viewport.style.scrollBehavior = 'auto'
-      viewport.scrollTop = 0
-    })
+    // The originating candidate is selected in the unified Trace source inspector.
+    await expect(page.locator('.trace-tab[data-pane="source"]')).toHaveAttribute('aria-selected', 'true')
+    await page.getByTestId('trace-toolbar-more').click()
+    await page.getByTestId('trace-timeline-sequence').click()
     await page.mouse.move(0, 0)
     await screen(page, info, `fact-authoring-${locale}-${theme}`)
   }
@@ -564,11 +561,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   // Installed provenance opens the retained published candidate, not the pending replacement.
   await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
   await pluginTab(page, 'permissions').click()
-  await page
-    .getByRole('dialog', { name: 'Plugin details', exact: true })
-    .getByTestId('plugin-fact-chain')
-    .click()
-  const publishedFacts = page.getByTestId('fact-chain').locator('[data-fact-kind="authoring"]')
+  await page.getByTestId(`push-page-plugin:${draft.packageId}`).getByTestId('plugin-fact-chain').click()
+  const publishedFacts = page.getByTestId('trace-authoring')
   await expect(publishedFacts).toContainText(`${draft.packageId} 0.1.0 · Published`)
   await expect(publishedFacts).toContainText('Human review recorded')
   await expect(publishedFacts).toContainText('Tests passed: 1')
