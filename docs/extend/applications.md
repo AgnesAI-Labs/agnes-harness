@@ -72,3 +72,7 @@ is dispatched before generic boot, loads no plugins and only clears presentation
 uses online CAS; otherwise an atomic write uses the shared configuration lock and revision.
 
 The [Acme reference application](../../examples/acme/README.md) supplies a tool, a default-Loop agent, raster identity assets, an additional page and executable SDK preview/adoption commands.
+
+## Before starting Acme
+
+With the same home and profile, start Web at the selected origin before installing the application, or run `node agnes.mjs daemon stop` after installation and before starting Web. `plugins add` may itself start a daemon. If its origin differs, `serve --port 4198` refuses with `local daemon Web origin does not match the selected origin`. Stop this home’s daemon and retry the same `serve` command. See the complete [Acme deployment steps](../../examples/acme/README.md#deployer-adoption).

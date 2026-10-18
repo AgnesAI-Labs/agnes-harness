@@ -63,3 +63,7 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 品牌资产还必须通过真实像素解码：最多 1,048,576 总像素、32 帧，编解码超时两秒；ICO 需使用 PNG 帧，旧 DIB 编码拒绝。浏览器加载或解码失败时回退宿主。配置保存已同意的完整预览及摘要，因此同 ref 升级、卸载旧包后仍比较旧/新传递依赖闭包；旧同意快照无法验证时明确显示“未知”，不声称没有变化。
 
 [Acme 参考应用](../../examples/acme/README.zh-CN.md)提供工具、默认 Loop 智能体、品牌栅格资产、追加页面和可执行的 SDK 预览／采纳命令。
+
+## 启动 Acme 的前置条件
+
+在同一 home 和 profile 下，先启动选定 origin 的 Web 服务，再安装应用；或在安装后、启动 Web 前执行 `node agnes.mjs daemon stop`。`plugins add` 本身可能启动 daemon。若其 origin 不匹配，`serve --port 4198` 会拒绝并提示 `local daemon Web origin does not match the selected origin`。停止该 home 的 daemon 后重试同一 `serve` 命令即可；完整命令见 [Acme 部署流程](../../examples/acme/README.zh-CN.md#部署者采用流程)。
