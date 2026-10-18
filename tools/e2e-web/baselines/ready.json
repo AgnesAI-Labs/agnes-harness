@@ -1,5 +1,5 @@
 {
-  "uiCommit": "ab9ec88f9161456d85f2399d0150606c1bfdccf2",
+  "uiCommit": "77a4a5fb2a7e7f664f7d938e76a1dd78a372d5a2",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -333,7 +333,7 @@
     "ciArchitecture": "x64"
   },
   "lastRefresh": {
-    "sourceCommit": "ab9ec88f9161456d85f2399d0150606c1bfdccf2",
+    "sourceCommit": "77a4a5fb2a7e7f664f7d938e76a1dd78a372d5a2",
     "platform": "darwin",
     "specs": [
       "ui-gate",
@@ -346,7 +346,7 @@
       "prompt-trace",
       "first-run"
     ],
-    "scope": "Selected manually reviewed Darwin frames captured across focused runs. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest narrow refresh covers responsive native Composer sizing. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
     "previousBatch": {
       "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
       "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
