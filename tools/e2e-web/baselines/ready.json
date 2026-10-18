@@ -1,5 +1,5 @@
 {
-  "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
+  "uiCommit": "ddfd67c9075f4881865c405ccec29eb5878ab92e",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -18,7 +18,8 @@
     "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible.",
     "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible.",
     "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored.",
-    "Unified Trace runtime context path and current clock only are normalized; elapsed durations keep their localized units. Record-order view uses the real menu; source records, controls, statuses and evidence remain visible."
+    "Unified Trace runtime context path and current clock only are normalized; elapsed durations keep their localized units. Record-order view uses the real menu; source records, controls, statuses and evidence remain visible.",
+    "Synthetic workspace choice and Memory path display text only is normalized to /workspace/w; control values stay unchanged and original text is restored."
   ],
   "ready": [
     "first-run-en-light",
@@ -332,14 +333,36 @@
     "ciArchitecture": "x64"
   },
   "lastRefresh": {
-    "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
+    "sourceCommit": "ddfd67c9075f4881865c405ccec29eb5878ab92e",
     "platform": "darwin",
-    "specs": ["ui-gate", "narrow", "first-run", "ui-flows"],
-    "initialBatch": {
-      "sourceCommit": "1c9474a0bc358d7f99873bfc90f3cd5153300f9d",
-      "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
-    },
-    "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
-    "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
+    "specs": [
+      "ui-gate",
+      "narrow",
+      "fact-chain",
+      "candidate-review",
+      "ui-flows",
+      "workbench",
+      "diagnostics",
+      "prompt-trace",
+      "first-run"
+    ],
+    "scope": "Manually inspected selected Darwin frames only. Linux and unrelated captures retain their earlier baselines. Source commit records the final implementation and harness before image-only commits.",
+    "previousBatch": {
+      "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
+      "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
+      "platform": "darwin",
+      "specs": ["ui-gate", "narrow", "first-run", "ui-flows"],
+      "initialBatch": {
+        "sourceCommit": "1c9474a0bc358d7f99873bfc90f3cd5153300f9d",
+        "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
+      },
+      "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
+      "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
+    }
+  },
+  "capturePreferences": {
+    "reducedMotion": "reduce for screenshots only; restored after capture",
+    "focus": "new-session prompt",
+    "animations": "disabled"
   }
 }
