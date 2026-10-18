@@ -126,6 +126,7 @@ describe('trace region layout', () => {
       '.workbench-files-filter .agh-search-bar-field > input',
       '.workbench-changes-file.agnes-ui-button',
       '.agnes-settings-chip-input',
+      '.agnes-settings-block a',
     ])
       expect(tablet).toContain(selector)
     expect(tablet).toContain('min-height: var(--s32)')

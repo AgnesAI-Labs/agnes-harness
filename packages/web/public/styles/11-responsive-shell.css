@@ -14,9 +14,14 @@
         .trace-fold-all.agh-btn--icon,
         .workbench-files-filter .agh-search-bar-field > input,
         .workbench-changes-file.agnes-ui-button,
-        .agnes-settings-chip-input
+        .agnes-settings-chip-input,
+        .agnes-settings-block a
       ) {
       min-height: var(--s32);
+    }
+    .agnes-settings-block a {
+      display: inline-flex;
+      align-items: center;
     }
     .trace-search-box {
       height: auto;
