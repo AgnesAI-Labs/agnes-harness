@@ -176,6 +176,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(page.locator('.trace-tab[data-pane="source"]')).toHaveAttribute('aria-selected', 'true')
     await traceSequence(page)
     await page.mouse.move(0, 0)
+    await expect(page.locator('.trace-inspector')).toBeInViewport({ ratio: 1 })
     await screen(page, info, `fact-authoring-${locale}-${theme}`)
   }
   await page.evaluate(() => {
