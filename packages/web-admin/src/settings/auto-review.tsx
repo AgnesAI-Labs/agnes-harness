@@ -25,7 +25,13 @@ import { useEffect, useState } from 'react'
 export { reviewCatalog } from './auto-review-locale.js'
 
 import { reviewCatalog } from './auto-review-locale.js'
-import { type ModelSlotsState, modelSlotOptions, modelSlotsSettings } from './model-slots.js'
+import {
+  type ModelSlotCatalog,
+  type ModelSlotsState,
+  modelSlotOptions,
+  modelSlotsCatalog,
+  modelSlotsSettings,
+} from './model-slots.js'
 
 export async function reviewSettings(
   config?: AutoReviewConfig,
@@ -57,6 +63,7 @@ const sameConfig = (a: AutoReviewConfig, b: AutoReviewConfig) => JSON.stringify(
 export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
   const [slots, setSlots] = useState<ModelSlotsState>()
+  const [catalog, setCatalog] = useState<ModelSlotCatalog>()
   const [slotsFailed, setSlotsFailed] = useState(false)
   const [stored, setStored] = useState<AutoReviewConfig>()
   const [readFailed, setReadFailed] = useState(false)
@@ -79,6 +86,13 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
     let epoch = 0
     const refresh = () => {
       const request = ++epoch
+      void modelSlotsCatalog(controller.signal)
+        .then((value) => {
+          if (!controller.signal.aborted && request === epoch) setCatalog(value)
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && request === epoch) setCatalog(undefined)
+        })
       void modelSlotsSettings(undefined, controller.signal)
         .then((value) => {
           if (!controller.signal.aborted && request === epoch) {
@@ -130,11 +144,11 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
     const automatic = name === 'fast' && chosen === undefined ? slots?.auto?.fast : undefined
     const target = chosen ?? automatic
     if (!target || !slots) return undefined
-    const option = modelSlotOptions(slots).find(
+    const option = (catalog ? modelSlotOptions(catalog) : []).find(
       (entry) => entry.route === target.route && entry.id === target.model,
     )
     if (automatic) return t('autoModel', { model: option ? (option.name ?? option.id) : target.model })
-    return option ? `${option.label} · ${option.name ?? option.id}` : undefined
+    return option ? `${option.label} · ${option.name ?? option.id}` : !catalog ? target.model : undefined
   }
   const reviewer = modelName(slot)
   const overrides = value.overrides ?? []

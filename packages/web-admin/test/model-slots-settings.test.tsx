@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { AutoReviewPanel } from '../src/settings/auto-review.js'
-import { ModelSlotsPanel, modelSlotOptions } from '../src/settings/model-slots.js'
+import { ModelSlotsPanel, modelSlotOptions, modelSlotsPanel } from '../src/settings/model-slots.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root | undefined
@@ -65,7 +65,11 @@ afterEach(async () => {
   delete state.auto
   setAdvancedSettingsShown(false)
 })
-async function mount(canSave = true, slots: Record<string, unknown> = {}) {
+async function mount(
+  canSave = true,
+  slots: Record<string, unknown> = {},
+  optionsRead?: () => Promise<Response>,
+) {
   // Auxiliary models are an advanced fold: it exists only while advanced settings show.
   setAdvancedSettingsShown(true)
   state = { ...state, revision: 1, slots, canSave }
@@ -74,12 +78,15 @@ async function mount(canSave = true, slots: Record<string, unknown> = {}) {
     'fetch',
     vi.fn(async (url: string, options?: RequestInit) => {
       if (url === '/admin/api/auto-review') return new Response(JSON.stringify({ modelSlot: 'fast' }))
+      if (url === '/admin/api/model-adapters')
+        return optionsRead ? optionsRead() : Response.json({ modelAdapters: state.modelAdapters })
       if (options?.method === 'POST') {
         writes.push(JSON.parse(String(options.body)))
         if (failSave) return new Response('{}', { status: 409 })
         state = { ...state, ...JSON.parse(String(options.body)), revision: state.revision + 1 }
       }
-      return new Response(JSON.stringify(state))
+      const { modelAdapters: _options, ...snapshot } = state
+      return Response.json(snapshot)
     }),
   )
   const host = document.createElement('div')
@@ -90,7 +97,7 @@ async function mount(canSave = true, slots: Record<string, unknown> = {}) {
       createElement(
         'div',
         {},
-        createElement(ModelSlotsPanel, { t: en }),
+        modelSlotsPanel({ accounts: [] }, en),
         createElement(SettingsSubpageFrame, { header: null }, createElement(AutoReviewPanel, { canSave })),
       ),
     ),
@@ -158,6 +165,46 @@ it('says the settings changed elsewhere, keeps the choice and reloads on request
   )
   await choose(host, 'verifier', JSON.stringify(['local', 'reviewer']))
   expect(writes.at(-1)).toMatchObject({ revision: 7 })
+})
+it('shows and clears saved slots while options are pending, and refreshes auto review independently', async () => {
+  const pending = new Promise<Response>(() => {})
+  const host = await mount(true, { fast: { route: 'local', model: 'reviewer' } }, () => pending)
+  const select = host.querySelector<HTMLSelectElement>('#model-slot-fast')!
+  expect(select.value).toBe(JSON.stringify(['local', 'reviewer']))
+  expect(select.disabled).toBe(false)
+  expect(host.querySelector('[data-testid="model-slots-options-loading"]')).not.toBeNull()
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="auto-review-customize"]')?.click(),
+  )
+  expect(host.querySelector('#auto-review-model option[value="fast"]')?.textContent).toContain('reviewer')
+  await choose(host, 'fast', '')
+  expect(writes).toEqual([{ revision: 1, slots: {} }])
+  expect(select.value).toBe('')
+  expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain('not set')
+})
+it('keeps an options failure separate from saved settings and retries only the options', async () => {
+  const optionsRead = vi.fn(async () => new Response('{}', { status: 502 }))
+  const host = await mount(true, { verifier: { route: 'local', model: 'reviewer' } }, optionsRead)
+  expect(host.querySelector('[data-testid="model-slots-status"]')).toBeNull()
+  expect(host.querySelector('[data-testid="model-slots-options-error"]')?.textContent).toContain(
+    'Could not load model options',
+  )
+  const select = host.querySelector<HTMLSelectElement>('#model-slot-verifier')!
+  expect(select.value).toBe(JSON.stringify(['local', 'reviewer']))
+  expect(select.selectedOptions[0]?.textContent).toContain('Unavailable')
+  expect(select.disabled).toBe(false)
+  await choose(host, 'verifier', '')
+  expect(writes).toEqual([{ revision: 1, slots: { verifier: null } }])
+  optionsRead.mockResolvedValue(Response.json({ modelAdapters: state.modelAdapters }))
+  const settingsReads = vi.mocked(fetch).mock.calls.filter(([url]) => url === '/admin/api/model-slots').length
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="model-slots-options-error"] button')?.click(),
+  )
+  expect(host.querySelector('[data-testid="model-slots-options-error"]')).toBeNull()
+  expect([...select.options].map((option) => option.value)).toContain(JSON.stringify(['local', 'reviewer']))
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => url === '/admin/api/model-slots')).toHaveLength(
+    settingsReads,
+  )
 })
 it('shows the model an unset fast slot follows, and nothing automatic for the verifier', async () => {
   state.auto = { fast: { accountId: 'account-1', route: 'local', model: 'reviewer' } }

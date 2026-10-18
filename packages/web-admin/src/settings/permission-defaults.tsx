@@ -48,27 +48,38 @@ export function PermissionDefaults({
     lifetime.current = abort
     setBusy(true)
     setReadFailed(false)
+    // Effective composition is supplemental; a plugin catalog must not hold up saved defaults.
+    setEffective(undefined)
+    void fetcher('/admin/api/composition', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: abort.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return
+        const resolved: unknown = await response.json()
+        if (!abort.signal.aborted && resolved && typeof resolved === 'object' && 'preset' in resolved)
+          setEffective(typeof resolved.preset === 'string' ? resolved.preset : undefined)
+      })
+      .catch(() => {})
     void trackPageRequest(
       Promise.all([
-        fetcher('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store', signal: abort.signal }),
-        PluginAdminApi.context((url, init) => fetcher(url, { ...init, signal: abort.signal })),
-        fetcher('/admin/api/composition', {
+        fetcher('/admin/api/defaults', {
           credentials: 'same-origin',
           cache: 'no-store',
           signal: abort.signal,
         }),
+        PluginAdminApi.context((url, init) => fetcher(url, { ...init, signal: abort.signal })),
       ]),
     )
-      .then(async ([defaults, context, composition]) => {
-        if (!defaults.ok || !composition.ok) throw new Error('defaults unavailable')
+      .then(async ([defaults, context]) => {
+        if (!defaults.ok) throw new Error('defaults unavailable')
         const value = await defaults.json()
-        const resolved = await composition.json()
         const picked: unknown = { revision: value.revision, defaults: value.defaults }
         if (!isSessionDefaultsSnapshot(picked)) throw new Error('invalid defaults')
         if (!abort.signal.aborted) {
           setCanSave(!context.readOnly && context.permissions.includes('packages.activate'))
           setSnapshot(picked as Snapshot)
-          setEffective(typeof resolved.preset === 'string' ? resolved.preset : undefined)
         }
       })
       .catch(() => {

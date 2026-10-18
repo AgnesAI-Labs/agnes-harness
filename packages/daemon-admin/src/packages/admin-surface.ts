@@ -322,7 +322,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             error(response, 409, 'E_ADMIN_READ_ONLY', '')
             return true
           }
-          if (!options.modelSlots || !options.sessionSelection) {
+          if (!options.modelSlots) {
             error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
             return true
           }
@@ -335,16 +335,9 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             const snapshot = write
               ? await options.modelSlots.save(input as import('@agnes/protocol').ModelSlotsSnapshot)
               : await options.modelSlots.get()
-            const modelAdapters = await options.sessionSelection.modelAdapters()
-            if (
-              !validateAgainst(ModelSlotsSnapshot, snapshot).ok ||
-              modelAdapters.length > 4096 ||
-              !modelAdapters.every(isAdminModelAdapter)
-            )
-              throw new Error('Invalid model slots')
+            if (!validateAgainst(ModelSlotsSnapshot, snapshot).ok) throw new Error('Invalid model slots')
             reply(response, 200, {
               ...snapshot,
-              modelAdapters,
               canSave: !readOnly && configuredPermissions.includes('packages.activate'),
             })
           } catch (cause) {

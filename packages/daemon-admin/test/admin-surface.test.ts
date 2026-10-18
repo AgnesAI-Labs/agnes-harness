@@ -420,20 +420,26 @@ it('reads real selection catalogs and protects defaults with the existing admin 
   }
   const provider: AdminSessionSelection = {
     loops: async () => [loop],
-    modelAdapters: async () => [adapter],
-    getDefaults: async () => snapshot,
+    modelAdapters: vi.fn(async () => [adapter]),
+    getDefaults: vi.fn(async () => snapshot),
     saveDefaults: vi.fn(async (input) => ({ ...input, revision: input.revision + 1 })),
   }
   const slots = { revision: 4, slots: { fast: { route: 'local', model: 'reviewer' }, verifier: null } }
   const modelSlots = {
     get: vi.fn(async () => slots),
-    save: vi.fn(async (input: import('@agnes/protocol').ModelSlotsSnapshot) => ({ ...input, revision: 5 })),
+    save: vi.fn(async (input: import('@agnes/protocol').ModelSlotsSnapshot) => {
+      // The real RPC validates targets with this catalog before saving (covered in config-rpc).
+      await provider.modelAdapters()
+      return { ...input, revision: 5 }
+    }),
   }
   const s = await server(undefined, undefined, { sessionSelection: provider, modelSlots })
   expect((await s.selectionRequest('model-slots', 'POST', slots)).status).toBe(409)
   expect((await s.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(409)
   await s.request('context')
-  expect(await (await s.selectionRequest('model-slots')).json()).toMatchObject({ ...slots, canSave: true })
+  expect(await (await s.selectionRequest('model-slots')).json()).toEqual({ ...slots, canSave: true })
+  expect(provider.modelAdapters).not.toHaveBeenCalled()
+  expect(await (await s.selectionRequest('defaults')).json()).toEqual(snapshot)
   expect(
     (await s.selectionRequest('model-slots', 'POST', slots, { Origin: 'https://foreign.example' })).status,
   ).toBe(403)
@@ -443,6 +449,12 @@ it('reads real selection catalogs and protects defaults with the existing admin 
     slots: slots.slots,
   })
   expect(modelSlots.save).toHaveBeenCalledWith(slots)
+  // The RPC save owns target validation; the HTTP response must not fetch a second catalog.
+  expect(provider.modelAdapters).toHaveBeenCalledTimes(1)
+  modelSlots.save.mockRejectedValueOnce({ rpc: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } } })
+  const unavailable = await s.selectionRequest('model-slots', 'POST', slots)
+  expect(unavailable.status).toBe(400)
+  expect(await unavailable.json()).toMatchObject({ error: { data: { code: 'CONFIG_INVALID_INPUT' } } })
   modelSlots.save.mockRejectedValueOnce({ rpc: { data: { reason: 'CONFIG_REVISION_CONFLICT' } } })
   expect((await s.selectionRequest('model-slots', 'POST', slots)).status).toBe(409)
   expect(await (await s.selectionRequest('loops')).json()).toEqual({ loops: [loop], ...snapshot })
@@ -465,11 +477,29 @@ it('reads real selection catalogs and protects defaults with the existing admin 
   expect((await denied.selectionRequest('model-slots', 'POST', slots)).status).toBe(403)
   expect(await (await denied.selectionRequest('model-slots')).json()).toMatchObject({ canSave: false })
   expect((await denied.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(403)
+  expect((await denied.selectionRequest('model-adapters')).status).toBe(200)
+  const noRead = await server(undefined, undefined, {
+    sessionSelection: provider,
+    modelSlots,
+    permissions: [],
+  })
+  for (const route of ['model-slots', 'model-adapters', 'defaults'])
+    expect((await noRead.selectionRequest(route)).status).toBe(403)
+  // Recovery refuses writes, while both independent reads remain available.
+  s.invoke.mockRejectedValueOnce(new Error('recovery'))
+  await s.request('context')
+  expect((await s.selectionRequest('model-slots', 'POST', slots)).status).toBe(409)
+  expect(await (await s.selectionRequest('model-slots')).json()).toEqual({ ...slots, canSave: false })
+  expect((await s.selectionRequest('model-adapters')).status).toBe(200)
+  // Reading settings requires no catalog provider at all.
+  const configOnly = await server(undefined, undefined, { modelSlots })
+  expect((await configOnly.selectionRequest('model-slots')).status).toBe(200)
 })
 
 it('refuses absent or malformed catalogs and redacts failures and revision conflicts', async () => {
   const absent = await server()
   expect((await absent.selectionRequest('loops')).status).toBe(503)
+  expect((await absent.selectionRequest('model-adapters')).status).toBe(503)
   const selection: AdminSessionSelection = {
     loops: async () => [{ id: 'x', version: '1', sourcePackage: 'pkg', capabilities: [] }],
     modelAdapters: async () => [],
@@ -487,6 +517,30 @@ it('refuses absent or malformed catalogs and redacts failures and revision confl
     { id: 'x', version: '1', sourcePackage: 'pkg', capabilities: [], secret: 'bad' } as never,
   ]
   expect((await s.selectionRequest('loops')).status).toBe(502)
+  for (const catalog of [
+    [{ secret: 'private-path' }],
+    Array.from({ length: 4097 }, () => ({
+      id: 'adapter',
+      version: '1',
+      sourcePackage: 'pkg',
+      wireApi: 'custom',
+      capabilities: { imageInput: false, tools: true, streaming: true },
+      models: [],
+    })),
+  ]) {
+    selection.modelAdapters = async () => catalog as never
+    const invalid = await s.selectionRequest('model-adapters')
+    expect(invalid.status).toBe(502)
+    expect(await invalid.text()).not.toContain('private-path')
+  }
+  selection.modelAdapters = async () => {
+    throw new Error('private-path')
+  }
+  const failed = await s.selectionRequest('model-adapters')
+  expect(failed.status).toBe(502)
+  expect(await failed.text()).not.toContain('private-path')
+  // A catalog failure cannot affect the independent defaults read.
+  expect(await (await s.selectionRequest('defaults')).json()).toEqual({ revision: 1, defaults: {} })
 })
 
 it('exposes composition and gates bundle selection behind activation and recovery checks', async () => {

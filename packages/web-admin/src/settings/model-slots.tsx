@@ -11,7 +11,7 @@ import {
   Loadable,
   reportSuccess,
   SettingsAdvanced,
-  SettingsItem,
+  SettingsState,
   type Translate,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -20,7 +20,8 @@ import { PluginAdminApi } from '../admin/plugins/api.js'
 /** A save refused because the settings changed elsewhere since they were read. */
 class ModelSlotsConflict extends Error {}
 
-export type ModelSlotsState = ModelSlotsSnapshot & { modelAdapters: AdminModelAdapter[]; canSave: boolean }
+export type ModelSlotsState = ModelSlotsSnapshot & { canSave: boolean }
+export type ModelSlotCatalog = { modelAdapters: AdminModelAdapter[] }
 export async function modelSlotsSettings(
   input?: ModelSlotsSnapshot,
   signal?: AbortSignal,
@@ -49,15 +50,31 @@ export async function modelSlotsSettings(
       slots: value.slots,
       ...('auto' in value && value.auto !== undefined ? { auto: value.auto } : {}),
     }).ok ||
-    !('modelAdapters' in value) ||
-    !Array.isArray(value.modelAdapters) ||
-    value.modelAdapters.length > 4096 ||
-    !value.modelAdapters.every(isAdminModelAdapter) ||
     !('canSave' in value) ||
     typeof value.canSave !== 'boolean'
   )
     throw new Error('Model slots unavailable')
   return value as ModelSlotsState
+}
+/** Options are independent of the saved settings, including after a save. */
+export async function modelSlotsCatalog(signal?: AbortSignal): Promise<ModelSlotCatalog> {
+  const response = await fetch('/admin/api/model-adapters', {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    ...(signal ? { signal } : {}),
+  })
+  const value: unknown = await response.json()
+  if (
+    !response.ok ||
+    !value ||
+    typeof value !== 'object' ||
+    !('modelAdapters' in value) ||
+    !Array.isArray(value.modelAdapters) ||
+    value.modelAdapters.length > 4096 ||
+    !value.modelAdapters.every(isAdminModelAdapter)
+  )
+    throw new Error('Model options unavailable')
+  return value as ModelSlotCatalog
 }
 /** The saved accounts, as far as naming a model needs them. */
 export type ModelSlotAccount = Readonly<{
@@ -69,7 +86,7 @@ export type ModelSlotAccount = Readonly<{
  * One option per route and model. A route is an internal id (`account-acct-…`), so each option also
  * carries what a person calls it: the account's name and the model's display name.
  */
-export function modelSlotOptions(state: ModelSlotsState, accounts: readonly ModelSlotAccount[] = []) {
+export function modelSlotOptions(state: ModelSlotCatalog, accounts: readonly ModelSlotAccount[] = []) {
   const byRoute = new Map(accounts.map((account) => [account.route, account]))
   return [
     ...new Map(
@@ -105,6 +122,8 @@ export function ModelSlotsPanel({
 }) {
   const [state, setState] = useState<ModelSlotsState>()
   const [busy, setBusy] = useState(true)
+  const [catalog, setCatalog] = useState<ModelSlotCatalog>()
+  const [optionsState, setOptionsState] = useState<'loading' | 'failed' | 'ready'>('loading')
   const lifetime = useRef<AbortController>()
   const [message, setMessage] = useState<'' | 'failed' | 'conflict'>('')
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -121,12 +140,25 @@ export function ModelSlotsPanel({
       if (!signal?.aborted) setBusy(false)
     }
   }, [])
+  const loadOptions = useCallback(async (signal: AbortSignal) => {
+    setOptionsState('loading')
+    try {
+      const next = await modelSlotsCatalog(signal)
+      if (!signal.aborted) {
+        setCatalog(next)
+        setOptionsState('ready')
+      }
+    } catch {
+      if (!signal.aborted) setOptionsState('failed')
+    }
+  }, [])
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
     void load(controller.signal)
+    void loadOptions(controller.signal)
     return () => controller.abort()
-  }, [load])
+  }, [load, loadOptions])
   /** A choice is saved as it is made: the whole document, at the revision it was read at. */
   async function save(slots: ModelSlotsState['slots']) {
     if (!state?.canSave || busy) return
@@ -147,7 +179,7 @@ export function ModelSlotsPanel({
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
-  const models = state ? modelSlotOptions(state, accounts) : []
+  const models = catalog ? modelSlotOptions(catalog, accounts) : []
   const named = (target: { route: string; model: string } | null | undefined, chosen = true) => {
     if (!target) return undefined
     const option = models.find((model) => model.route === target.route && model.id === target.model)
@@ -173,6 +205,27 @@ export function ModelSlotsPanel({
       }
     >
       <p>{t('modelSettings.slots.help')}</p>
+      {optionsState === 'loading' && (
+        <SettingsState tone="loading" data-testid="model-slots-options-loading">
+          {t('modelSettings.slots.optionsLoading')}
+        </SettingsState>
+      )}
+      {optionsState === 'failed' && (
+        <Banner
+          tone="error"
+          data-testid="model-slots-options-error"
+          action={
+            <Button
+              size="small"
+              onClick={() => lifetime.current && void loadOptions(lifetime.current.signal)}
+            >
+              {t('modelSettings.slots.reload')}
+            </Button>
+          }
+        >
+          {t('modelSettings.slots.optionsFailed')}
+        </Banner>
+      )}
       {state ? (
         <AuxiliaryModelFields
           slots={state.slots}
@@ -216,15 +269,5 @@ export function modelSlotsPanel(
   configuration: { revision?: number; accounts?: readonly ModelSlotAccount[] } | undefined,
   t: Translate,
 ) {
-  if (configuration?.accounts?.length === 0)
-    return (
-      <SettingsItem
-        label={t('modelSettings.slots.title')}
-        aria-disabled="true"
-        className="config-auxiliary-disabled"
-      >
-        <span>{t('accounts.auxiliaryEmpty')}</span>
-      </SettingsItem>
-    )
   return <ModelSlotsPanel key={configuration?.revision ?? 0} t={t} accounts={configuration?.accounts ?? []} />
 }
