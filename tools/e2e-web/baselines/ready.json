@@ -1,5 +1,5 @@
 {
-  "uiCommit": "77a4a5fb2a7e7f664f7d938e76a1dd78a372d5a2",
+  "uiCommit": "9d1e83fa6fabd6d006ce841f4df1d3a102e719f8",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -333,7 +333,7 @@
     "ciArchitecture": "x64"
   },
   "lastRefresh": {
-    "sourceCommit": "77a4a5fb2a7e7f664f7d938e76a1dd78a372d5a2",
+    "sourceCommit": "9d1e83fa6fabd6d006ce841f4df1d3a102e719f8",
     "platform": "darwin",
     "specs": [
       "ui-gate",
@@ -346,7 +346,7 @@
       "prompt-trace",
       "first-run"
     ],
-    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest narrow, permission-menu and workbench refresh covers responsive native Composer sizing. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest four tablet file-workbench frames show the original report-reading turn beside the file pane. Native Composer sizing and authoring inspector frames retain their documented earlier captures. Linux and unrelated baselines retain their earlier capture.",
     "previousBatch": {
       "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
       "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
@@ -364,6 +364,7 @@
     "reducedMotion": "reduce for screenshots only; restored after capture",
     "focus": "new-session prompt",
     "animations": "disabled",
-    "authoringProvenance": "Actual Trace inspector; whole-page accessibility and separate full Trace pixel gates remain enabled."
+    "authoringProvenance": "Actual Trace inspector; whole-page accessibility and separate full Trace pixel gates remain enabled.",
+    "tabletFileWorkbench": "Original report-reading turn; tail-follow is checked first and restored afterwards. Conversation text remains visible."
   }
 }
