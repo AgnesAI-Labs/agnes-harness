@@ -445,6 +445,7 @@ describe('rendered sidebar region', () => {
           placement: 'primary',
           icon: 'plug',
           titleKey: `home.entry.${id}`,
+          ...(id === 'plugins' ? { badge: { getSnapshot: () => 2, subscribe: () => () => {} } } : {}),
           component: page,
         }),
       ),
@@ -474,25 +475,33 @@ describe('rendered sidebar region', () => {
         [...(sidebar?.querySelectorAll('[data-testid^="home-entry-"]') ?? [])].map((entry) =>
           entry.getAttribute('data-testid'),
         )
-      // Built-in agents are a daily entry; plugins stay with management at the bottom.
+      // Built-in pages stay above workspaces in their navigation order.
       const agents = sidebar?.querySelector('[data-testid="home-entry-agents"]')
       expect(agents?.querySelector('.home-entry-label')?.firstChild?.textContent).toBe('Agents')
       expect(ids()).toEqual([
+        'home-entry-plugins',
         'home-entry-agents',
         'home-entry-automation',
         'home-entry-primary.board',
         'home-entry-example.board',
-        'home-entry-plugins',
       ])
       expect(
         sidebar?.querySelector('[data-testid="home-entry-plugins"]')?.closest('.sidebar-footer'),
-      ).not.toBeNull()
+      ).toBeNull()
+      expect(sidebar?.querySelectorAll('.sidebar-footer .home-entry')).toHaveLength(0)
       expect(agents?.closest('.sidebar-footer')).toBeNull()
+      expect(
+        sidebar?.querySelector('[data-testid="home-entry-plugins"] .home-entry-badge')?.textContent,
+      ).toContain('2')
       // The entries sit between the new-session action and the workspace list.
       const entries = sidebar?.querySelector('[data-testid="home-entries"]')
       expect(
-        sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ??
-          0 & Node.DOCUMENT_POSITION_FOLLOWING,
+        (sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ?? 0) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(
+        (entries?.compareDocumentPosition(sidebar?.querySelector('#sessions') as Node) ?? 0) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
       for (const collapsed of [true, false]) {
         document.getElementById('sidebar-toggle')?.click()

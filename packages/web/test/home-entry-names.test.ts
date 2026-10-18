@@ -115,12 +115,11 @@ describe('home entry names', () => {
           await reconciler.reconcileNow()
           root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) }))
         })
-        for (const id of ['agents', 'automation', 'console'])
+        for (const id of ['plugins', 'agents', 'automation', 'console'])
           expect(host.querySelector(`[data-testid="home-entry-${id}"]`)).toBeTruthy()
         expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
           language === 'zh-CN' ? '控制台' : 'Console',
         )
-        expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
         expect(importer).not.toHaveBeenCalled()
         await act(async () => {
           applicationIdentity.set({
@@ -145,26 +144,13 @@ describe('home entry names', () => {
             node.getAttribute('data-testid'),
           ),
         ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation'])
-        await act(async () =>
-          root.render(
-            createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars), management: true }),
-          ),
-        )
         expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
         await act(async () => applicationIdentity.set(undefined))
         expect(
           [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
             node.getAttribute('data-testid'),
           ),
-        ).toEqual(['home-entry-plugins'])
-        await act(async () =>
-          root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) })),
-        )
-        expect(
-          [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
-            node.getAttribute('data-testid'),
-          ),
-        ).toEqual(['home-entry-agents', 'home-entry-automation', 'home-entry-console'])
+        ).toEqual(['home-entry-plugins', 'home-entry-agents', 'home-entry-automation', 'home-entry-console'])
         modules = []
         await act(async () => {
           await reconciler.invalidate()
@@ -207,7 +193,7 @@ describe('home entry names', () => {
           expect(activeHomeEntry()).toBeUndefined()
           await waitFor(() =>
             expect(host.querySelector('[data-testid^="home-entry-"]')?.getAttribute('data-testid')).toBe(
-              'home-entry-agents',
+              'home-entry-plugins',
             ),
           )
           const ordinary = host.querySelector('[data-testid="home-entry-console"]')

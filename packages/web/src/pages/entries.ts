@@ -9,7 +9,7 @@ const AutomationPage = deferHomePage(async () => ({
 const PluginsPage = deferHomePage(async () => ({ default: (await import('./plugins-page.js')).PluginsPage }))
 
 /** Built-in IDs for callers that need labels; placement follows the shared registry. */
-export const BUILTIN_HOME_ENTRIES: readonly string[] = ['agents', 'plugins', 'automation']
+export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation']
 
 /** Drafts waiting for review: the count beside the plugins entry. */
 function pendingReviewBadge(): HomeEntryBadge & { refresh(): void } {
@@ -51,7 +51,7 @@ export function registerBuiltinHomeEntries(): () => void {
   const disposers = [
     homeEntries.register({
       id: 'agents',
-      order: 10,
+      order: 20,
       placement: 'primary',
       icon: 'bot',
       titleKey: 'home.entry.agents',
@@ -59,7 +59,7 @@ export function registerBuiltinHomeEntries(): () => void {
     }),
     homeEntries.register({
       id: 'plugins',
-      order: 20,
+      order: 10,
       placement: 'primary',
       icon: 'puzzle',
       titleKey: 'home.entry.plugins',
