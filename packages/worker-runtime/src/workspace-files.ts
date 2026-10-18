@@ -1,12 +1,15 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, fstatSync, readSync } from 'node:fs'
 import { lstat, realpath, stat } from 'node:fs/promises'
-import { devNull, homedir } from 'node:os'
+import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { HostSession } from '@agnes/host'
 import { AGH_DIR, type RpcError, rpcError, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { listCanonicalDirectorySync, openCanonicalFileSync } from '@agnes/system-node'
+
+import { type GitMark, type GitStatus, readGitStatus } from './workspace-git.js'
+
+export { type GitMark, gitMark, parseGitPorcelain } from './workspace-git.js'
 
 /** Workbench reads stop at 1 MiB. Larger files report their size and omit text. */
 export const MAX_READ_BYTES = 1024 * 1024
@@ -14,11 +17,8 @@ export const BINARY_SCAN_BYTES = 8192
 export const MAX_LIST_ENTRIES = 500
 const MAX_SCAN_ENTRIES = 5000
 const MAX_IGNORE_BYTES = 256 * 1024
-const MAX_GIT_BYTES = 256 * 1024
-const GIT_TIMEOUT_MS = 500
 
 export type WorkspaceKind = 'file' | 'directory' | 'other'
-export type GitMark = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'
 export type WorkspaceEntry = { name: string; kind: WorkspaceKind; git?: GitMark }
 export type WorkspaceList = {
   path: string
@@ -277,114 +277,14 @@ async function ignoreFiles(
   return files
 }
 
-export function gitMark(status: string): GitMark | undefined {
-  if (status === '??') return 'untracked'
-  const first = [...status].find((char) => char !== ' ')
-  if (first === '?' || first === 'A') return first === '?' ? 'untracked' : 'added'
-  if (first === 'M' || first === 'U') return 'modified'
-  if (first === 'D') return 'deleted'
-  if (first === 'R') return 'renamed'
-  if (first === 'C') return 'added'
-  return first ? 'modified' : undefined
-}
-
-/** In porcelain -z, the first rename path is the destination; the following path is the source. */
-export function parseGitPorcelain(bytes: Buffer): Map<string, GitMark> {
-  const marks = new Map<string, GitMark>()
-  let offset = 0
-  while (offset < bytes.length) {
-    const end = bytes.indexOf(0, offset)
-    const record = bytes.subarray(offset, end === -1 ? bytes.length : end)
-    offset = end === -1 ? bytes.length : end + 1
-    if (record.length < 4) continue
-    const status = record.subarray(0, 2).toString('utf8')
-    const mark = gitMark(status)
-    if (!mark) continue
-    if (status.includes('R') || status.includes('C')) {
-      const nextEnd = bytes.indexOf(0, offset)
-      const destination = record.subarray(3).toString('utf8')
-      offset = nextEnd === -1 ? bytes.length : nextEnd + 1
-      if (destination) marks.set(destination, mark)
-      continue
-    }
-    const path = record.subarray(3).toString('utf8')
-    if (path) marks.set(path, mark)
-  }
-  return marks
-}
-
-type GitStatus = { marks: Map<string, GitMark>; status: WorkspaceList['gitStatus'] }
-function gitPorcelain(root: string): Promise<GitStatus> {
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (marks: Map<string, GitMark> | undefined) => {
-      if (settled) return
-      settled = true
-      resolve({ marks: marks ?? new Map(), status: marks ? 'available' : 'unavailable' })
-    }
-    const child = spawn(
-      'git',
-      [
-        '--no-optional-locks',
-        '-c',
-        'core.fsmonitor=false',
-        '--git-dir',
-        join(root, '.git'),
-        '--work-tree',
-        root,
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--ignore-submodules=all',
-        '--untracked-files=all',
-      ],
-      {
-        cwd: root,
-        stdio: ['ignore', 'pipe', 'ignore'],
-        env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
-      },
-    )
-    const chunks: Buffer[] = []
-    let size = 0
-    let overflow = false
-    const timer = setTimeout(() => {
-      child.kill()
-      finish(undefined)
-    }, GIT_TIMEOUT_MS)
-    child.stdout?.on('data', (chunk: Buffer) => {
-      size += chunk.length
-      if (size > MAX_GIT_BYTES) {
-        overflow = true
-        child.kill()
-        return
-      }
-      chunks.push(chunk)
-    })
-    child.on('error', () => {
-      clearTimeout(timer)
-      finish(undefined)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code !== 0 || overflow) finish(undefined)
-      else finish(parseGitPorcelain(Buffer.concat(chunks)))
-    })
-  })
-}
-
 async function gitStatus(root: string, authority: WorkspaceAuthority): Promise<GitStatus> {
   try {
-    const git = await lstat(join(root, '.git'))
-    if (!git.isDirectory() || git.isSymbolicLink()) return { marks: new Map(), status: 'unavailable' }
     // This fixed Host metadata operation authorizes the root, not document reads of .git.
     await resolveInside(root, '', authority)
-  } catch (error) {
-    return {
-      marks: new Map(),
-      status: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'not-repository' : 'unavailable',
-    }
+    return await readGitStatus(root)
+  } catch {
+    return { marks: new Map(), status: 'unavailable' }
   }
-  return gitPorcelain(root)
 }
 
 function directoryBadge(
