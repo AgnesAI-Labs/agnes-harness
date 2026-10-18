@@ -5,7 +5,7 @@ import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
-import { collectRead, collectReadAsync } from './cooperative-read.js'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import {
@@ -25,6 +25,7 @@ import {
 } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
+import { contributionCeiling, recordEntry } from './runtime-snapshot-entry.js'
 import type {
   CreateJournal,
   GcJournal,
@@ -42,7 +43,7 @@ import type {
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
-import { invalidatePackageVerification, verifiedDirectoryDigest } from './verification-operation.js'
+import { invalidatePackageVerification } from './verification-operation.js'
 
 export type {
   RuntimePin,
@@ -280,7 +281,11 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
       : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
   }
 }
-function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+function* verifyRecordSteps(
+  s: RuntimeSnapshotStore,
+  record: SnapshotRecord,
+  directory: string,
+): ReadSteps<RuntimeSnapshot> {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
   try {
@@ -294,7 +299,7 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  const treeIntegrity = verifiedDirectoryDigest(actual, {
+  const treeIntegrity = yield* directoryDigestSteps(actual, {
     ...checkedRecord,
     version: checkedRecord.packageVersion,
   })
@@ -323,33 +328,8 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     ...(checkedRecord.application ? { application: structuredClone(checkedRecord.application) } : {}),
   })
 }
-function contributionCeiling(record: SnapshotRecord): string[] {
-  return [
-    ...new Set(
-      record.contributions.flatMap((c) => (c.kind === 'extension' ? Object.keys(c.capabilities ?? {}) : [])),
-    ),
-  ]
-}
-function recordEntry(record: SnapshotRecord): LockEntry {
-  return {
-    version: record.packageVersion,
-    source: structuredClone(record.source),
-    integrity: record.integrity,
-    trust: 'trusted',
-    license: record.license,
-    state: { installed: new Date(0).toISOString(), trusted: null, enabled: false },
-    dependencies: structuredClone(record.dependencies),
-    previous: null,
-    contributions: structuredClone(record.contributions),
-    ...(record.metadata ? { metadata: structuredClone(record.metadata) } : {}),
-    ...(record.agents ? { agents: structuredClone(record.agents) } : {}),
-    ...(record.application ? { application: structuredClone(record.application) } : {}),
-    ...(record.declaredCapabilities === undefined
-      ? {}
-      : { declaredCapabilities: structuredClone(record.declaredCapabilities) }),
-    treeIntegrity: record.treeIntegrity,
-    ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
-  } as LockEntry
+function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+  return collectRead(verifyRecordSteps(s, record, directory))
 }
 function pinView(
   s: RuntimeSnapshotStore,
@@ -542,7 +522,7 @@ function clearJournal(s: RuntimeSnapshotStore): void {
 }
 
 /** Caller holds the PackageManager Profile lock. Runtime state never decides the active revision. */
-function* runtimeRecoverySteps(s: RuntimeSnapshotStore): Generator<void, void, void> {
+function* runtimeRecoverySteps(s: RuntimeSnapshotStore): ReadSteps<void> {
   const root = runtimeRoot(s)
   rmSync(`${statePath(s)}.tmp`, { force: true })
   if (!present(journalPath(s))) {
@@ -600,13 +580,13 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
   collectRead(runtimeRecoverySteps(s))
 }
 export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
-  return collectReadAsync(runtimeRecoverySteps(s))
+  return collectReadAsync(runtimeRecoverySteps(s), false)
 }
 
 function* knownRuntimeDirectoryReadSteps(
   s: RuntimeSnapshotStore,
   state: RuntimeState,
-): Generator<void, Map<string, RuntimeSnapshot>, void> {
+): ReadSteps<Map<string, RuntimeSnapshot>> {
   const verified = new Map<string, RuntimeSnapshot>()
   const root = runtimeRoot(s)
   if (!present(root)) {
@@ -619,7 +599,7 @@ function* knownRuntimeDirectoryReadSteps(
     if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
   for (const record of Object.values(state.snapshots)) {
     yield
-    verified.set(record.snapshotId, verifyRecord(s, record, snapshotDir(s, record.snapshotId)))
+    verified.set(record.snapshotId, yield* verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId)))
   }
   return verified
 }
@@ -755,7 +735,7 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-function* runtimePinReadSteps(s: RuntimeSnapshotStore, lock?: Lockfile): Generator<void, RuntimePin[], void> {
+function* runtimePinReadSteps(s: RuntimeSnapshotStore, lock?: Lockfile): ReadSteps<RuntimePin[]> {
   const state = readState(s)
   const verified = yield* knownRuntimeDirectoryReadSteps(s, state)
   const pins: RuntimePin[] = []

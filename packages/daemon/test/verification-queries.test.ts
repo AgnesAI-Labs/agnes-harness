@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createPackageAdminService } from '@agnes/daemon-admin/packages/handler'
 import { FilePackageOperationStore } from '@agnes/daemon-admin/packages/operations'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
+import { RegistryLister, SessionRegistry } from '@agnes/daemon-rpc/local/sessions'
 import { resolveProfile } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import {
@@ -38,7 +39,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true })
 })
 
-async function fixture(companion = false) {
+async function fixture(companion = false, benchmark = false) {
   const root = mkdtempSync(join(tmpdir(), 'agh-query-verification-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -86,6 +87,10 @@ async function fixture(companion = false) {
       }),
     )
     writeFileSync(join(dir, 'index.js'), 'export const plugin = { apply() {} }\n')
+    if (benchmark) {
+      mkdirSync(join(dir, 'data'))
+      for (let n = 0; n < 32; n++) writeFileSync(join(dir, 'data', `${n}.txt`), Buffer.alloc(16 * 1024, n))
+    }
     const source = parseSource(`file:./source-${i}`)
     const preview = await m.inspect(profileDir, source)
     await m.install(profileDir, source, { expectedIntegrity: preview.integrity })
@@ -161,6 +166,7 @@ async function fixture(companion = false) {
 it('bounds each light query to one installed tree and one exact referenced snapshot, on cold and warm reads', async () => {
   const f = await fixture()
   const hash = vi.spyOn(sources, 'hashDirectory')
+  const asyncHash = vi.spyOn(sources, 'hashDirectoryAsync')
   try {
     for (const method of [
       '_agnes/v1/applications.get',
@@ -171,6 +177,7 @@ it('bounds each light query to one installed tree and one exact referenced snaps
     ] as const) {
       for (const round of ['cold', 'warm']) {
         hash.mockClear()
+        asyncHash.mockClear()
         const start = performance.now()
         const result =
           method === 'models'
@@ -182,15 +189,17 @@ it('bounds each light query to one installed tree and one exact referenced snaps
               )
         expect(result).toBeDefined()
         const counts = new Map<string, number>()
-        for (const [dir] of hash.mock.calls) counts.set(dir, (counts.get(dir) ?? 0) + 1)
+        for (const [dir] of [...hash.mock.calls, ...asyncHash.mock.calls])
+          counts.set(dir, (counts.get(dir) ?? 0) + 1)
         console.log(
           'verification query',
           method,
           round,
-          hash.mock.calls.length,
+          { sync: hash.mock.calls.length, async: asyncHash.mock.calls.length },
           `${(performance.now() - start).toFixed(2)}ms`,
         )
-        expect(hash.mock.calls.length).toBe(18)
+        expect(hash.mock.calls.length).toBe(0)
+        expect(asyncHash.mock.calls.length).toBe(18)
         expect([...counts.values()].every((count) => count === 1)).toBe(true)
       }
     }
@@ -302,11 +311,12 @@ it('opens a real Host session with bounded source verification and still refuses
     const session = await host.createSession({ key: 'verify-session', cwd: f.root })
     console.log(
       'verification session open',
-      hash.mock.calls.length,
+      { sync: hash.mock.calls.length, async: asyncHash.mock.calls.length },
       `${(performance.now() - start).toFixed(2)}ms`,
     )
     const counts = new Map<string, number>()
-    for (const [directory] of hash.mock.calls) counts.set(directory, (counts.get(directory) ?? 0) + 1)
+    for (const [directory] of [...hash.mock.calls, ...asyncHash.mock.calls])
+      counts.set(directory, (counts.get(directory) ?? 0) + 1)
     const installed = [...counts].filter(
       ([dir]) => dir.includes('/packages/') && !dir.includes('.runtime-snapshots'),
     )
@@ -314,13 +324,23 @@ it('opens a real Host session with bounded source verification and still refuses
     const generations = [...counts].filter(([dir]) => dir.includes('.runtime-generations'))
     expect(installed).toHaveLength(9)
     expect(snapshots).toHaveLength(9)
-    expect([...installed, ...snapshots].every(([, count]) => count <= 3)).toBe(true)
-    expect(generations.every(([, count]) => count <= 2)).toBe(true)
+    const syncCounts = new Map<string, number>()
+    for (const [directory] of hash.mock.calls) syncCounts.set(directory, (syncCounts.get(directory) ?? 0) + 1)
+    // Keep the previous per-directory synchronous budgets, and additionally bound the combined total below.
+    expect([...installed, ...snapshots].every(([dir]) => (syncCounts.get(dir) ?? 0) <= 3)).toBe(true)
+    expect(generations.every(([dir]) => (syncCounts.get(dir) ?? 0) <= 2)).toBe(true)
+    console.log('verification counts by tree', {
+      installed: installed.map(([, n]) => n),
+      snapshots: snapshots.map(([, n]) => n),
+      generations: generations.map(([, n]) => n),
+    })
     // Creating/publishing a new code archive intentionally ends the preceding read phase.
     // Independent copy validation and the publication reader retain fresh verification.
+    // The previous fixture observed 99 sync + 54 async walks. Count both kinds after the conversion.
     expect(hash.mock.calls.length).toBeLessThanOrEqual(99)
+    expect(hash.mock.calls.length + asyncHash.mock.calls.length).toBeLessThanOrEqual(153)
     // Review probe: the original asynchronous import/use gates remain independent of the memo.
-    console.log('review async use gates', asyncHash.mock.calls.length)
+    console.log('verification async read and use gates', asyncHash.mock.calls.length)
     expect(asyncHash.mock.calls.length).toBeGreaterThanOrEqual(45)
     await session.close()
     const file = join(packageDir(f.root, 'local-dev', '@fixture/query-0'), 'index.js')
@@ -380,3 +400,64 @@ it.each([false, true])(
     }
   },
 )
+
+it('keeps scheduled session-list requests responsive during nine-package list/skin/mixed reads', async () => {
+  const f = await fixture(false, true)
+  const { host } = await createTestHost({ dataDir: f.root, script: [], disableSessionTitle: true })
+  const lister = new RegistryLister(new SessionRegistry(host, { clock: Date.now }))
+  const actual = sources.hashDirectoryAsync
+  const asyncHash = vi.spyOn(sources, 'hashDirectoryAsync')
+  const read = (method: PackageAdminMethodName) =>
+    f.admin.call(
+      method,
+      { profile: 'local-dev' },
+      {
+        audience: 'admin',
+        principalId: 'test',
+        clientId: 'test',
+        permissions: ['packages.read'],
+      },
+    )
+  try {
+    for (const mode of ['sync-control', 'async'] as const) {
+      if (mode === 'sync-control')
+        asyncHash.mockImplementation(async (...args) => sources.hashDirectory(...args))
+      else asyncHash.mockImplementation(actual)
+      for (const query of ['package', 'skin', 'mixed'] as const) {
+        const latencies: number[] = []
+        for (let round = 0; round < 3; round++) {
+          let running = true
+          const light = (async () => {
+            do {
+              const start = performance.now()
+              await new Promise<void>((resolve) => setImmediate(resolve))
+              expect((await lister.list({})).items).toEqual([])
+              latencies.push(performance.now() - start)
+            } while (running)
+          })()
+          try {
+            if (query === 'mixed')
+              await Promise.all([
+                read('_agnes/v1/packages.list'),
+                read('_agnes/v1/skins.list'),
+                f.modelList(),
+              ])
+            else await read(query === 'skin' ? '_agnes/v1/skins.list' : '_agnes/v1/packages.list')
+          } finally {
+            running = false
+            await light
+          }
+        }
+        console.log(
+          'verification responsiveness',
+          JSON.stringify({ mode, query, samples: latencies.length, maxMs: Math.max(...latencies) }),
+        )
+        expect(latencies.length).toBeGreaterThan(0)
+      }
+    }
+  } finally {
+    asyncHash.mockRestore()
+    await host.close()
+    await f.close()
+  }
+})

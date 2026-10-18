@@ -64,7 +64,7 @@ import {
 } from './provenance.js'
 import {
   collectRuntimeSnapshotsStore,
-  listRuntimePinsStore,
+  listRuntimePinsStoreAsync,
   pinRuntimeSnapshotStore,
   type RuntimePin,
   type RuntimeSnapshotCollection,
@@ -387,7 +387,15 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
             withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
           }
-          await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
+          // A clean read validates the same complete snapshot set without entering recovery.
+          // Journals and abandoned temp state still take the original recovery path.
+          const recoveryNeeded = [
+            '.agnes-runtime-transaction.json',
+            '.agnes-runtime-transaction.json.tmp',
+            '.agnes-runtime-snapshots.json.tmp',
+          ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
+          if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
+          else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
           recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
           return fn()
         },
@@ -704,7 +712,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           try {
             const lock = load(profileDir)
             return projectLocal(
-              await readInventoryAsync(lock, {
+              await (opts.fresh ? readInventory : readInventoryAsync)(lock, {
                 ...storeFor(profileDir),
                 ceiling: ceiling(lock),
                 ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
@@ -720,7 +728,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           await setImmediate()
           return read()
         }
-        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, true) : scan()).finally(clear)
+        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
         if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
         return reading
       })
@@ -769,7 +777,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir)), {}, true)
+      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

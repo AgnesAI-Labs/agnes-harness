@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { PackageBlocker, PackageContributionSummary, PackagePresentation } from '@agnes/protocol'
-import { collectRead, collectReadAsync } from './cooperative-read.js'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
 import { inspectVerifiedTree } from './inspect.js'
@@ -20,7 +20,6 @@ import {
 import { packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { validStoredMetadata } from './stored-metadata.js'
-import { verifiedDirectoryDigest } from './verification-operation.js'
 import { verifyWorkspace } from './workspace.js'
 
 export type InstalledPackage = Readonly<{
@@ -109,13 +108,13 @@ type VerifiedPackageDirectory = {
 export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
 
 /** Shared immutable-tree verification for installed inventory and runtime snapshots. */
-export function verifyPackageDirectory(
+function* verifyPackageDirectorySteps(
   id: string,
   entry: LockEntry,
   directory: string,
   ceiling: readonly string[],
   cache?: InventoryVerificationCache,
-): VerifiedPackageDirectory {
+): ReadSteps<VerifiedPackageDirectory> {
   capabilityHash(entry)
   if (
     entry.contributions === undefined ||
@@ -126,13 +125,19 @@ export function verifyPackageDirectory(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
-  const treeIntegrity = verifiedDirectoryDigest(directory, {
+  const treeIntegrity = yield* directoryDigestSteps(directory, {
     version: entry.version,
     integrity: entry.integrity,
     treeIntegrity: entry.treeIntegrity,
     capabilityHash: capabilityHash(entry),
   })
   return verifyHashedPackageDirectory(id, entry, directory, ceiling, treeIntegrity, cache)
+}
+
+export function verifyPackageDirectory(
+  ...args: Parameters<typeof verifyPackageDirectorySteps>
+): VerifiedPackageDirectory {
+  return collectRead(verifyPackageDirectorySteps(...args))
 }
 
 /** Package-private: the caller has checked this exact identity through the operation verifier
@@ -225,7 +230,7 @@ export function verifyHashedPackageDirectory(
   }
   return result
 }
-function verifiedRollbackTarget(
+function* verifiedRollbackTarget(
   id: string,
   entry: LockEntry,
   options: {
@@ -234,7 +239,7 @@ function verifiedRollbackTarget(
     ceiling: readonly string[]
     verificationCache?: InventoryVerificationCache
   },
-): InstalledPackage['verifiedRollbackTarget'] {
+): ReadSteps<InstalledPackage['verifiedRollbackTarget']> {
   if (entry.previous === null) return null
   const previous = entry.previous
   if (
@@ -256,7 +261,7 @@ function verifiedRollbackTarget(
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {
-    verified = verifyPackageDirectory(
+    verified = yield* verifyPackageDirectorySteps(
       id,
       snapshot,
       previousPackageDir(options, id),
@@ -295,7 +300,7 @@ function* inventoryReadSteps(
     verificationCache?: InventoryVerificationCache
     builtinDirectory?: (id: string) => string | undefined
   },
-): Generator<void, InstalledInventory, void> {
+): ReadSteps<InstalledInventory> {
   const packages: InstalledPackage[] = [],
     paths = new Set<string>()
   const capabilityPolicy = readPluginCapabilityPolicy(options.profileDir)
@@ -330,7 +335,7 @@ function* inventoryReadSteps(
         throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
           detail: { id },
         })
-      const verified = verifyPackageDirectory(
+      const verified = yield* verifyPackageDirectorySteps(
         id,
         entry,
         directory,
@@ -398,7 +403,7 @@ function* inventoryReadSteps(
       ...(provides === undefined ? {} : { provides }),
       contributions: entry.contributions ?? [],
       blockers,
-      verifiedRollbackTarget: verifiedRollbackTarget(id, entry, {
+      verifiedRollbackTarget: yield* verifiedRollbackTarget(id, entry, {
         dataDir: options.dataDir,
         profile: lock.profile,
         ceiling: options.ceiling ?? lock.policySnapshot.capabilityCeiling,

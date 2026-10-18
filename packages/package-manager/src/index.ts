@@ -83,6 +83,7 @@ export * from './trust-gate.js'
 export {
   invalidatePackageVerification,
   verifiedDirectoryDigest,
+  verifiedDirectoryDigestAsync,
   withoutPackageVerification,
   withPackageVerification,
 } from './verification-operation.js'

@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  type Stats,
   statSync,
   writeFileSync,
 } from 'node:fs'
@@ -219,7 +220,7 @@ export async function hashDirectoryAsync(
   const rootStat = await asyncFs.stat(root)
   if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
-  const files: { rel: string; file: string }[] = []
+  const files: { rel: string; file: string; observed: Stats }[] = []
   const walk = async (current: string): Promise<void> => {
     for (const entry of await asyncFs.readdir(current, { withFileTypes: true })) {
       checkCancelled(opts.signal)
@@ -229,7 +230,7 @@ export async function hashDirectoryAsync(
       const stat = await asyncFs.lstat(file)
       if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
       if (stat.isDirectory()) await walk(file)
-      else if (stat.isFile()) files.push({ rel, file })
+      else if (stat.isFile()) files.push({ rel, file, observed: stat })
       else throw sourceError('package tree contains a special entry', 'special-entry')
     }
   }
@@ -237,7 +238,7 @@ export async function hashDirectoryAsync(
   // One bounded scratch buffer per traversal, reused only after each awaited read/hash completes.
   const chunk = new Uint8Array(256 * 1024)
   const outer = createHash('sha256')
-  for (const { rel, file } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
+  for (const { rel, file, observed } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
     checkCancelled(opts.signal)
     if (!contained(root, await asyncFs.realpath(file)))
       throw sourceError('package file escapes its source tree', 'path-escape')
@@ -247,7 +248,8 @@ export async function hashDirectoryAsync(
     )
     try {
       const before = await handle.stat()
-      if (!before.isFile()) throw sourceError('package file changed while hashing', 'tree-changed')
+      if (!before.isFile() || !sameFileObservation(before, observed))
+        throw sourceError('package file changed while hashing', 'tree-changed')
       const inner = createHash('sha256').update(rel).update('\0')
       for (;;) {
         checkCancelled(opts.signal)
@@ -271,6 +273,18 @@ export async function hashDirectoryAsync(
       await handle.close()
     }
   }
+  // A previously closed file can change while a later file yields. Recheck the entire observation,
+  // including ctime: same-size writes with a restored mtime must still refuse this traversal.
+  for (const { file, observed } of files) {
+    checkCancelled(opts.signal)
+    const current = await asyncFs.lstat(file)
+    if (
+      !current.isFile() ||
+      !sameFileObservation(current, observed) ||
+      !contained(root, await asyncFs.realpath(file))
+    )
+      throw sourceError('package file changed while hashing', 'tree-changed')
+  }
   const finalRoot = await asyncFs.lstat(dir)
   if (
     finalRoot.isSymbolicLink() ||
@@ -281,6 +295,16 @@ export async function hashDirectoryAsync(
     throw sourceError('package directory changed while hashing', 'tree-changed')
   checkCancelled(opts.signal)
   return `sha256-${outer.digest('hex')}`
+}
+
+function sameFileObservation(a: Stats, b: Stats): boolean {
+  return (
+    a.dev === b.dev &&
+    a.ino === b.ino &&
+    a.size === b.size &&
+    a.mtimeMs === b.mtimeMs &&
+    a.ctimeMs === b.ctimeMs
+  )
 }
 
 type PackageJson = {

@@ -5,7 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MessageChannel } from 'node:worker_threads'
 import { afterEach, expect, it, vi } from 'vitest'
-import { verifiedDirectoryDigest, withoutPackageVerification, withPackageVerification } from '../src/index.js'
+import {
+  invalidatePackageVerification,
+  verifiedDirectoryDigest,
+  verifiedDirectoryDigestAsync,
+  withoutPackageVerification,
+  withPackageVerification,
+} from '../src/index.js'
 import * as sources from '../src/sources.js'
 import { hashDirectory } from '../src/sources.js'
 
@@ -187,5 +193,118 @@ it('canonicalizes an ancestor alias on each hit and refuses a directory retarget
     renameSync(dir, replaced)
     writeFileSync(dir, 'not a directory')
     expect(() => verifiedDirectoryDigest(dir, current)).toThrow(/not a directory/)
+  })
+})
+
+it('shares pending async verification, retries failures/mismatches and isolates the next operation', async () => {
+  const { dir, identity } = fixture()
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync')
+  await withPackageVerification(async () => {
+    expect(
+      await Promise.all(Array.from({ length: 4 }, () => verifiedDirectoryDigestAsync(dir, identity))),
+    ).toEqual(Array(4).fill(identity.treeIntegrity))
+    expect(hash).toHaveBeenCalledTimes(1)
+    expect(verifiedDirectoryDigest(dir, identity)).toBe(identity.treeIntegrity)
+    invalidatePackageVerification()
+    hash.mockRejectedValueOnce(new Error('read failed'))
+    await expect(verifiedDirectoryDigestAsync(dir, identity)).rejects.toThrow('read failed')
+    expect(await verifiedDirectoryDigestAsync(dir, identity)).toBe(identity.treeIntegrity)
+    const mismatch = { ...identity, treeIntegrity: 'sha256-wrong' }
+    await verifiedDirectoryDigestAsync(dir, mismatch)
+    await verifiedDirectoryDigestAsync(dir, mismatch)
+    expect(hash).toHaveBeenCalledTimes(5)
+  })
+  await withPackageVerification(() => verifiedDirectoryDigestAsync(dir, identity))
+  expect(hash).toHaveBeenCalledTimes(6)
+})
+
+it.each(['invalidate', 'write', 'resolve', 'reject'] as const)(
+  'a late async result cannot repopulate an operation after %s',
+  async (exit) => {
+    const { dir, identity } = fixture()
+    let release!: (digest: string) => void
+    const hash = vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve
+        }),
+    )
+    let pending!: Promise<string>
+    let inherited!: () => Promise<string>
+    const operation = withPackageVerification(async () => {
+      inherited = AsyncResource.bind(() => verifiedDirectoryDigestAsync(dir, identity))
+      pending = verifiedDirectoryDigestAsync(dir, identity)
+      if (exit === 'invalidate') invalidatePackageVerification()
+      if (exit === 'write') withoutPackageVerification(() => {})
+      if (exit === 'resolve' || exit === 'reject') {
+        if (exit === 'reject') throw new Error('ended')
+        return
+      }
+      let releaseNew!: (digest: string) => void
+      hash.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            releaseNew = resolve
+          }),
+      )
+      const newer = verifiedDirectoryDigestAsync(dir, identity)
+      release(identity.treeIntegrity)
+      await pending
+      // The old finally must not delete the newer epoch's pending work or populate its memo.
+      const joined = verifiedDirectoryDigestAsync(dir, identity)
+      let settled = false
+      void joined.then(() => {
+        settled = true
+      })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(settled).toBe(false)
+      expect(hash).toHaveBeenCalledTimes(2)
+      releaseNew(identity.treeIntegrity)
+      expect(await Promise.all([newer, joined])).toEqual([identity.treeIntegrity, identity.treeIntegrity])
+      invalidatePackageVerification()
+      writeFileSync(join(dir, 'payload'), 'other')
+      expect(await inherited()).not.toBe(identity.treeIntegrity)
+    })
+    if (exit === 'reject') await expect(operation).rejects.toThrow('ended')
+    else await operation
+    if (exit === 'resolve' || exit === 'reject') {
+      release(identity.treeIntegrity)
+      await pending
+      writeFileSync(join(dir, 'payload'), 'other')
+      expect(await inherited()).not.toBe(identity.treeIntegrity)
+    }
+    expect(hash.mock.calls.length).toBeGreaterThanOrEqual(2)
+  },
+)
+
+it('checks root links, type and ancestor retargeting on every async memo/pending access', async () => {
+  const { dir, identity } = fixture()
+  const alias = `${dir}-alias`,
+    moved = `${dir}-moved`
+  roots.push(alias, moved)
+  await withPackageVerification(async () => {
+    expect(await verifiedDirectoryDigestAsync(dir, identity)).toBe(identity.treeIntegrity)
+    symlinkSync(dir, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(verifiedDirectoryDigestAsync(alias, identity)).rejects.toThrow(/symbolic link/)
+    renameSync(dir, moved)
+    symlinkSync(moved, dir, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(verifiedDirectoryDigestAsync(dir, identity)).rejects.toThrow(/symbolic link/)
+    unlinkSync(dir)
+    writeFileSync(dir, 'not a directory')
+    await expect(verifiedDirectoryDigestAsync(dir, identity)).rejects.toThrow(/not a directory/)
+    unlinkSync(dir)
+    mkdirSync(dir)
+    mkdirSync(join(dir, 'tree'))
+    writeFileSync(join(dir, 'tree', 'payload'), 'first')
+    unlinkSync(alias)
+    symlinkSync(dir, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    const digest = hashDirectory(join(dir, 'tree'), { exclude: [] })
+    const expected = { ...identity, treeIntegrity: digest }
+    expect(await verifiedDirectoryDigestAsync(join(alias, 'tree'), expected)).toBe(digest)
+    unlinkSync(alias)
+    mkdirSync(join(moved, 'tree'))
+    writeFileSync(join(moved, 'tree', 'payload'), 'other')
+    symlinkSync(moved, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(await verifiedDirectoryDigestAsync(join(alias, 'tree'), expected)).not.toBe(digest)
   })
 })

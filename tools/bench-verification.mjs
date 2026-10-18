@@ -1,5 +1,6 @@
 // pnpm exec tsx tools/bench-verification.mjs --home <isolated-daemon-home> --owner <owner-json>
 //   --trace <NDJSON-from-preload> [--profile local-dev] [--session <synthetic-workspace>]
+//   [--concurrency <rounds>] measures session-list latency on a separate SDK connection.
 // Start that daemon with bench-verification-preload.mjs first; see the preload header.
 // No startup, activation or inference here. --session explicitly opts into a synthetic session.
 // Timings include opt-in instrumentation. Repeat without the preload for uninstrumented timings.
@@ -21,16 +22,18 @@ if (
   typeof owner.socketPath !== 'string'
 )
   throw new Error('Invalid daemon owner record')
-const client = createClient({
-  journal: memoryJournal(),
-  transport: {
-    kind: 'unix',
-    path: owner.socketPath,
-    ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
-      ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
-      : {}),
-  },
-})
+const connect = () =>
+  createClient({
+    journal: memoryJournal(),
+    transport: {
+      kind: 'unix',
+      path: owner.socketPath,
+      ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+        ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+        : {}),
+    },
+  })
+const client = connect()
 const profile = args.get('--profile') ?? 'local-dev'
 const events = () => {
   if (!args.get('--trace')) return []
@@ -82,6 +85,48 @@ try {
       instrumented: Boolean(args.get('--trace')),
     }),
   )
+  if (args.has('--concurrency')) {
+    const rounds = Number(args.get('--concurrency'))
+    if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 100)
+      throw new Error('Concurrency rounds must be 1..100')
+    const light = connect()
+    try {
+      await light.initialize()
+      for (const scenario of ['idle', 'package list', 'skin list', 'mixed lists']) {
+        const samples = []
+        for (let round = 0; round < rounds; round++) {
+          let running = true
+          const polling = (async () => {
+            do {
+              const start = performance.now()
+              await light.call('_agnes/v1/session.list', { limit: 10 })
+              samples.push(performance.now() - start)
+              await new Promise((resolve) => setTimeout(resolve, 1))
+            } while (running)
+          })()
+          try {
+            if (scenario === 'idle') await new Promise((resolve) => setTimeout(resolve, 100))
+            else if (scenario === 'mixed lists')
+              await Promise.all(queries.slice(0, 5).map(([, read]) => read()))
+            else await queries.find(([query]) => query === scenario)[1]()
+          } finally {
+            running = false
+            await polling
+          }
+        }
+        console.log(
+          JSON.stringify({
+            scenario,
+            rounds,
+            samples: samples.length,
+            maxLightQueryMs: Math.max(...samples),
+          }),
+        )
+      }
+    } finally {
+      await light.close()
+    }
+  }
   for (const [query, read] of queries)
     for (let round = 0; round < 2; round++) {
       const before = events().length,

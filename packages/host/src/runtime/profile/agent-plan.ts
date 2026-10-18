@@ -127,7 +127,7 @@ export async function sessionAdmission(
     bundleCatalog: sessionBundleCatalog(
       profile,
       sources.length || activePackages || options.runtimePluginSources
-        ? readRuntimeBundles(sources)
+        ? await readRuntimeBundles(sources)
         : undefined,
       new Set(
         [

@@ -6,6 +6,8 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -135,9 +137,12 @@ it('lets a worker read validated active snapshots while a package effect owns th
   })
   await withLock(profile, async () => {
     const hash = vi.spyOn(sourceModule, 'hashDirectory')
+    const asyncHash = vi.spyOn(sourceModule, 'hashDirectoryAsync')
     const sourcesRead = await m.runtimePluginSnapshots(profile)
-    expect(hash.mock.calls.length).toBe(2)
+    expect(hash.mock.calls.length).toBe(0)
+    expect(asyncHash.mock.calls.length).toBe(2)
     hash.mockRestore()
+    asyncHash.mockRestore()
     const sources = sourcesRead
     expect(sources).toHaveLength(1)
     expect(sources[0]?.snapshot.integrity).toBe(selected.integrity)
@@ -431,6 +436,15 @@ it.each(['runtime-gc-prepared', 'runtime-gc-moved', 'runtime-gc-state-written'] 
 )
 
 it('fails closed and preserves unknown or damaged runtime directories', async () => {
+  // An ordinary list may bypass recovery only when even dangling journal entries are absent.
+  const journal = join(profile, '.agnes-runtime-transaction.json')
+  symlinkSync(join(root, 'missing-journal'), journal, process.platform === 'win32' ? 'junction' : 'dir')
+  try {
+    await expect(manager().inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+    await expect(manager().listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  } finally {
+    unlinkSync(journal)
+  }
   const m = await installTrusted(),
     expected = await identity(),
     pin = await m.pinRuntimeSnapshot(profile, {
