@@ -194,6 +194,9 @@ it('opens the trace on the linked request with its source tab, never a workbench
   )
   expect(workbenchPanels.get('facts')).toBeUndefined()
   expect(workbenchPanels.get('changed-files')).toBeDefined()
+  flushSync(() => root.querySelector<HTMLButtonElement>('.trace-inspector-close')?.click())
+  expect(root.querySelector('.trace-inspector')?.hasAttribute('hidden')).toBe(true)
+  expect(document.activeElement).toBe(root.querySelector('.trace-row[data-trace-row-id="a1"]'))
 })
 
 it('reveals a filtered or folded tool and shows its authorization with future-call rules and receipt', async () => {
