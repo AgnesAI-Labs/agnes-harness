@@ -98,11 +98,15 @@ export function useHostedDialog({
       if (!showing || navRef.current.stack.includes(showing)) return
       shown.current = undefined
       // The controller commits synchronously when it closes; let this commit finish first.
+      let current = true
       queueMicrotask(() => {
+        if (!current) return
         cancelDialogHost(host)
         setRestoreFocus(true)
       })
-      return
+      return () => {
+        current = false
+      }
     }
     if (!top || !latest.current.owns(top)) return
     let current = true

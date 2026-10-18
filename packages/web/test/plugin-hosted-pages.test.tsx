@@ -75,7 +75,7 @@ async function mount(open: (segment: string) => HostedOpen = () => 'opened') {
       createElement(
         PushStack,
         { rootTitle: 'Plugins', route: searchParamRoute('view') },
-        createElement('button', { id: 'list' }, 'Open item'),
+        createElement('button', { id: 'list', type: 'button' }, 'Open item'),
         createElement(Pages, { open }),
       ),
     ),
