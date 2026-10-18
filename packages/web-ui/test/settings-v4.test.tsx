@@ -82,8 +82,8 @@ it('drills into a subpage, nested subpages, and returns with 返回 and the brow
   expect(history.state).toMatchObject({ agnesSettingsSubpage: 2 })
   // The browser's back button returns one level.
   await act(async () => {
-    history.replaceState({ agnesSettingsSubpage: 1 }, '')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { agnesSettingsSubpage: 1 } }))
+    history.replaceState({ ...history.state, agnesSettingsSubpage: 1 }, '')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
   })
   expect($(host, '[data-testid="settings-subpage-header"] h2').textContent).toBe('OTLP export')
   // 返回 goes back through history when the entry is ours.
