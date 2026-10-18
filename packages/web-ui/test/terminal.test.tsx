@@ -236,22 +236,25 @@ it('follows runtime theme defaults while retaining OSC overrides and resets, and
   vi.restoreAllMocks()
 })
 
-it('keeps the roving tab focus when a terminal is mounted by keyboard tab navigation', () => {
-  const tablist = document.createElement('div'),
-    tab = document.createElement('button')
-  tablist.setAttribute('role', 'tablist')
-  tab.setAttribute('role', 'tab')
-  tablist.append(tab)
-  document.body.append(tablist)
-  tab.focus()
-  try {
-    const { terminal } = mount()
-    expect(document.activeElement).toBe(tab)
-    expect(terminal.options.cursorBlink).toBe(false)
-  } finally {
-    tablist.remove()
-  }
-})
+it.each(['tablist', 'listbox', 'toolbar'])(
+  'keeps roving focus when a terminal is mounted from keyboard navigation in %s',
+  (role) => {
+    const tablist = document.createElement('div'),
+      tab = document.createElement('button')
+    tablist.setAttribute('role', role)
+    if (role !== 'toolbar') tab.setAttribute('role', role === 'listbox' ? 'option' : 'tab')
+    tablist.append(tab)
+    document.body.append(tablist)
+    tab.focus()
+    try {
+      const { terminal } = mount()
+      expect(document.activeElement).toBe(tab)
+      expect(terminal.options.cursorBlink).toBe(false)
+    } finally {
+      tablist.remove()
+    }
+  },
+)
 
 it('authorizes only xterm styles with the document nonce and uses CSSOM for cell colors', () => {
   const meta = document.createElement('meta')

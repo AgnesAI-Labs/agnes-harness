@@ -47,7 +47,7 @@ export function TerminalTabs(props: Props) {
     setEditing(id)
   }
   return (
-    <div role="listbox" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
+    <div role="toolbar" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
       {tabs.map((tab, index) => {
         if (!observed.current.has(tab.id)) observed.current.set(tab.id, now)
         const human = tab.owner === 'human',
@@ -118,10 +118,11 @@ export function TerminalTabs(props: Props) {
                       <Button
                         type="text"
                         size="small"
-                        role="option"
+                        className="workbench-terminal-select"
+                        data-testid="terminal-tab"
                         id={`terminal-tab-${tab.id}`}
                         aria-controls="terminal-job-content"
-                        aria-selected={active === tab.id}
+                        aria-pressed={active === tab.id}
                         tabIndex={
                           active === tab.id || (!tabs.some((row) => row.id === active) && index === 0)
                             ? 0

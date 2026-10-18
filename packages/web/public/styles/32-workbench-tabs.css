@@ -140,14 +140,14 @@
   .workbench-terminal-pill .agh-menu-anchor {
     display: block;
   }
-  .workbench-terminal-pill [role="option"] {
+  .workbench-terminal-pill .workbench-terminal-select {
     width: 100%;
     display: flex;
     gap: var(--s4);
     padding-inline: var(--s4);
     color: var(--agnes-text-secondary);
   }
-  .workbench-terminal-tabs .workbench-terminal-pill [aria-selected="true"] {
+  .workbench-terminal-tabs .workbench-terminal-pill [aria-pressed="true"] {
     color: var(--agnes-text-primary);
     background: transparent;
   }
@@ -165,7 +165,7 @@
   }
   .workbench-terminal-runtime {
     font: 10px var(--font-mono);
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     white-space: nowrap;
   }
   .workbench-terminal-pill:where([data-editing="true"]) .workbench-terminal-name {
