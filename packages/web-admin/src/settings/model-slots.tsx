@@ -179,12 +179,15 @@ export function ModelSlotsPanel({
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
-  const models = catalog ? modelSlotOptions(catalog, accounts) : []
+  const models = optionsState === 'ready' && catalog ? modelSlotOptions(catalog, accounts) : []
+  const unavailableLabel = t(
+    `modelSettings.slots.${optionsState === 'loading' ? 'checkingAvailability' : optionsState === 'failed' ? 'availabilityUnknown' : 'unavailable'}`,
+  )
   const named = (target: { route: string; model: string } | null | undefined, chosen = true) => {
     if (!target) return undefined
     const option = models.find((model) => model.route === target.route && model.id === target.model)
-    // A chosen slot on a route nothing serves any more is left empty at session start, so say so.
-    if (!option && chosen) return `${target.model} · ${t('modelSettings.slots.unavailable')}`
+    // Only a completed catalog can establish that a saved model is unavailable.
+    if (!option && chosen) return `${target.model} · ${unavailableLabel}`
     return option?.name ?? target.model
   }
   // While the fast slot is unset the backend follows the default account and says which model that is.
@@ -233,6 +236,7 @@ export function ModelSlotsPanel({
           disabled={!state.canSave || busy}
           t={t}
           unsetLabel={{ fast: fastUnset }}
+          unavailableLabel={unavailableLabel}
           onChange={(slot, target) => {
             const { [slot]: _replaced, ...rest } = state.slots
             // An emptied fast slot goes back to following the default account; the verifier is

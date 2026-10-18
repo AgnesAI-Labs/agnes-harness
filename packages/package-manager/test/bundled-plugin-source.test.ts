@@ -138,7 +138,24 @@ it('generates an executable tool plugin using the current owned registration por
   )
   pluginHelper.apply({ tools })
   const guide = registered.get('plugin_helper_guide')!
-  const result = await guide.execute({ kind: 'tool' }, {} as never)
+  // The guide is readable even when the invocation has no authoring capability.
+  for (const context of [undefined, null, {}])
+    for (const kind of ['tool', 'skill', 'skin'])
+      expect(await guide.execute({ kind }, context as never)).toMatchObject({
+        structured: { authoringCapability: 'unavailable-host-capability' },
+      })
+  const request = vi.fn(async () => {
+    throw new Error('The guide must not request an operation')
+  })
+  const result = await guide.execute({ kind: 'tool' }, {
+    signal: new AbortController().signal,
+    session: { depth: 0 },
+    pluginManage: { request },
+  } as never)
+  expect(result).toMatchObject({
+    structured: { authoringCapability: 'supplied-authorization-checked-per-call' },
+  })
+  expect(request).not.toHaveBeenCalled()
   const text = result.content.find((part) => part.type === 'text')
   if (!text || text.type !== 'text') throw new Error('guide returned no text')
   const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }

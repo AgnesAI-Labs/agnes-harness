@@ -438,14 +438,25 @@ it.each(['tool', 'skill'])('the shipped %s template passes real package inspecti
   const module = await import(
     new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
   )
-  const tools: { name: string; execute(args: unknown): Promise<{ content: { text: string }[] }> }[] = []
+  const tools: ToolDef[] = []
   module.pluginHelper.apply({
     tools: { register: (tool: (typeof tools)[number]) => tools.push(tool) },
   })
   const guide = tools.find((t) => t.name === 'plugin_helper_guide')
   if (!guide) throw new Error('guide missing')
-  const generated = JSON.parse((await guide.execute({ kind })).content[0]?.text ?? '{}')
   const s = await setup()
+  const context = {
+    signal: new AbortController().signal,
+    session: { depth: 0 },
+    pluginManage: { request: s.request },
+  } as unknown as Parameters<ToolDef['execute']>[1]
+  const result = await guide.execute({ kind }, context)
+  expect(result).toMatchObject({
+    structured: { authoringCapability: 'supplied-authorization-checked-per-call' },
+  })
+  const text = result.content.find((part) => part.type === 'text')
+  if (text?.type !== 'text') throw new Error('guide returned no text')
+  const generated = JSON.parse(text.text)
   expect((await s.request({ action: 'prepare', files: generated.files })).state).toBe('draft')
 })
 

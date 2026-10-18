@@ -289,7 +289,7 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
     await expect(tail).toHaveCount(1)
     await expect(tail.getByTestId('deliverable-file')).toHaveCount(1)
     await tail.locator('.agh-list-row-title').click()
-    await expect(tail).toContainText('Synthetic delivery')
+    await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Synthetic delivery')
     expect((await toolResult(session, 'present'))?.artifactRefs).toEqual(saved?.artifactRefs)
   }
   // Loading an immutable plugin URL proves this exercised the deployed package rather than source imports.

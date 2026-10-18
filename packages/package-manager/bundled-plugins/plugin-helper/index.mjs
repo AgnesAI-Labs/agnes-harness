@@ -45,7 +45,7 @@ const meta = (readOnly, approval = 'never') => ({
   requiresApproval: approval,
 })
 const port = (ctx) => {
-  if (!ctx.pluginManage) throw new Error('PLUGIN_PORT_UNAVAILABLE')
+  if (!ctx?.pluginManage) throw new Error('PLUGIN_PORT_UNAVAILABLE')
   if (ctx.session.depth !== 0) throw new Error('PLUGIN_LOCAL_MAIN_SESSION_REQUIRED')
   ctx.signal.throwIfAborted()
   return ctx.pluginManage
@@ -77,7 +77,7 @@ export const pluginHelper = {
                       : { test: 'candidate.test', commit: 'candidate.submit', status: 'candidate.show' }[
                           args.action
                         ],
-                  stage: context.pluginManage ? 'request' : 'host-capability',
+                  stage: context?.pluginManage ? 'request' : 'host-capability',
                   candidateId: args.proposalId ?? null,
                   message:
                     '操作未完成；复述 operation、stage、candidateId，保留同一草稿，不编造设置开关。 / Report operation, stage and candidateId; keep the same draft, never invent settings/switches. Do not bypass denial with shell/config edits.',
@@ -95,7 +95,7 @@ export const pluginHelper = {
       parameters: object({ kind: enumeration('tool', 'skill', 'skin') }),
       meta: meta(true),
       async execute({ kind }, ctx) {
-        const authoringCapability = ctx.pluginManage
+        const authoringCapability = ctx?.pluginManage
           ? 'supplied-authorization-checked-per-call'
           : 'unavailable-host-capability'
         if (kind === 'skin')
