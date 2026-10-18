@@ -8,6 +8,7 @@
     "testkit/assertions.test.ts",
     "testkit/assertions.ts",
     "testkit/index.ts",
+    "testkit/jobs.ts",
     "testkit/mem-fts.ts",
     "testkit/mem-table.ts",
     "testkit/seam-init.ts",
