@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [插件类型](README.zh-CN.md) · [包管理](../guide/packages.zh-CN.md)
 
-Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 打包成静态数据。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
+部署执行 Profile 从插件装配运行能力；Bundle 把可复用的 profile 补丁和权限方案（Preset）打包成静态数据。应用展示由管理员另行采纳，本期不提供执行 Profile 模板采纳。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
 
 ## 会话工具可见范围
 
@@ -12,7 +12,7 @@ Profile 从插件装配应用；bundle 把可复用的 profile 补丁和 preset 
 
 编译后的工具归属范围随 composition 和代码 generation 固定，实时资源沿用现有过滤规则。旧保存绑定保留原范围；新建会话可应用隔离。resolved profile 新增可选的 Host 生成字段 `compositionToolScope`，不属于用户 manifest 设置。
 
-Web 设置 → 组合包与预设中的会话信息列出实际工具组及启用原因。示例工具明确标注其打包 fixture 来源；工作区问题应使用工作区文件读取工具。
+Web 设置 → 高级 → 运行配置 → 技术详情 → 所有对话附加组合 → 技术详情中的会话信息列出实际工具组及启用原因。示例工具明确标注其打包 fixture 来源；工作区问题应使用工作区文件读取工具。
 
 ## 格式与选择
 

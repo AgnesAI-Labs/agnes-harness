@@ -55,6 +55,19 @@ Static preflight reports `structural`, `static-references`, `deployment-dependen
 
 Launch declarations participate in `capabilityHash` for every package. Changing a launch requires a new trust review. `metadata.launches` is rejected. `metadata.exampleOf` remains a separate, dependency-version-checked relation for restricted example management; optional `pageEntry` requires this relation and a declared profile example page. Capability labels do not give ordinary agents example-management privileges.
 
+## Assembly through the same Acme example
+
+Deployment profile → plugin → agent → application presentation each has a distinct job:
+
+| Layer | Acme example | Who chooses it and when it applies |
+| --- | --- | --- |
+| Deployment execution profile | `AGNES_PROFILE=local-dev`: model, permission ceilings, default Loop and runtime services | The deployer configures execution; application adoption does not modify it |
+| Plugin | `@acme/operations`: `acme_status`, the page, the `desk` Bundle and application declaration | Installation, trust review and enablement make capabilities available as candidates |
+| Agent | `@acme/operations#desk`: its own `launch.preset=acme`, tool scope and editable prompt draft | Launch review binds the final running mode, model, permissions and sources; the session retains its execution binding |
+| Application presentation | `acme-operations`: Acme brand, Ava assistant name, `@acme/operations#acme-overview` page, hidden Automation entry and default/visible agents | An admin previews and explicitly adopts it in Settings → Application; it selects presentation defaults only |
+
+This release **does not distribute or adopt execution profile templates**. An application is not an execution template. Deployers continue to configure profiles independently; changing presentation does not reconfigure saved sessions. See the [Acme reference application](../../examples/acme/README.md) for installation, preview and launch commands.
+
 ## Application declaration
 
 See [Applications](applications.md) for the complete identity, raster asset, presentation role and explicit adoption contracts. Installing an application only creates a candidate; presentation selection stays outside execution resolution.

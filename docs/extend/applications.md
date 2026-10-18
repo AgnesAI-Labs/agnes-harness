@@ -9,24 +9,56 @@ trusting or enabling its package only makes it a candidate. An administrator exp
 adopts it in **Settings → Application**. Selecting it does not enable dependencies or change execution
 profiles, composition hashes, saved sessions, pins, actors, permissions or model personas.
 
+## Assembly through the same Acme example
+
+Deployment profile → plugin → agent → application presentation each has a distinct job:
+
+| Layer | Acme example | Who chooses it and when it applies |
+| --- | --- | --- |
+| Deployment execution profile | `AGNES_PROFILE=local-dev`: model, permission ceilings, default Loop and runtime services | The deployer configures execution; application adoption does not modify it |
+| Plugin | `@acme/operations`: `acme_status`, the page, the `desk` Bundle and application declaration | Installation, trust review and enablement make capabilities available as candidates |
+| Agent | `@acme/operations#desk`: its own `launch.preset=acme`, tool scope and editable prompt draft | Launch review binds the final running mode, model, permissions and sources; the session retains its execution binding |
+| Application presentation | `acme-operations`: Acme brand, Ava assistant name, `@acme/operations#acme-overview` page, hidden Automation entry and default/visible agents | An admin previews and explicitly adopts it in Settings → Application; it selects presentation defaults only |
+
+This release **does not distribute or adopt execution profile templates**. An application is not an execution template. Deployers continue to configure profiles independently; changing presentation does not reconfigure saved sessions. See the [Acme reference application](../../examples/acme/README.md) for installation, preview and launch commands.
+
+## Application declaration
+
 ```json
 {
   "application": {
-    "id": "acme",
+    "id": "acme-operations",
     "brand": {
-      "name": { "en": "Acme", "zh-CN": "艾克米" },
-      "title": { "en": "Acme Workbench" },
-      "assistantName": { "en": "Ava" },
-      "mark": "assets/mark.png"
+      "name": {
+        "en": "Acme",
+        "zh-CN": "Acme"
+      },
+      "title": {
+        "en": "Acme Operations",
+        "zh-CN": "Acme 运营台"
+      },
+      "assistantName": {
+        "en": "Ava",
+        "zh-CN": "艾娃"
+      },
+      "mark": "assets/mark.png",
+      "favicon": "assets/favicon.png"
     },
     "presentation": {
-      "home": "acme/kit#overview",
-      "skin": "acme",
-      "navigation": { "entries": ["acme/kit#overview"], "hideBuiltin": ["agents", "automation"] },
-      "roles": { "navigation": { "packageId": "acme/kit", "clientId": "navigation" } }
+      "home": "@acme/operations#acme-overview",
+      "navigation": {
+        "entries": [
+          "@acme/operations#acme-overview"
+        ],
+        "hideBuiltin": [
+          "automation"
+        ]
+      }
     },
-    "defaultAgent": "acme/kit#work",
-    "agents": ["acme/kit#work"]
+    "defaultAgent": "@acme/operations#desk",
+    "agents": [
+      "@acme/operations#desk"
+    ]
   }
 }
 ```
