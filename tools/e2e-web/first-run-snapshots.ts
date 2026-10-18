@@ -66,7 +66,11 @@ export async function firstRunSnapshots() {
       })
     },
     async capture(page: Page, name: string) {
+      const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
       try {
+        // Read-only replay cannot respond to JS media listeners; settle the original before cloning.
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        await expect(page.locator('.composer-example-hint')).toHaveCount(0)
         for (const appearance of ['light', 'dark']) {
           await theme(page, appearance)
           for (const width of [1440, 1280]) {
@@ -114,6 +118,7 @@ export async function firstRunSnapshots() {
           }
         }
       } finally {
+        await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
         await page.setViewportSize({ width: 1440, height: 900 })
         await theme(page, 'light')
       }

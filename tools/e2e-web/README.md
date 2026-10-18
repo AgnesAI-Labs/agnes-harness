@@ -194,6 +194,7 @@ path, current clock and elapsed numbers, retaining localized units, records, con
 The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
 Screenshots temporarily use the public reduced-motion preference for JavaScript example hints,
 then restore the original preference; CSS motion is disabled by Playwright.
+Read-only first-run frames settle that same preference before cloning the production DOM.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.
 
