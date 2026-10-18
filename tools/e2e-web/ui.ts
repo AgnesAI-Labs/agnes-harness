@@ -42,12 +42,14 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 }
 
 export async function settings(page: Page, locale = 'en') {
-  if (!(await page.locator('#config').isVisible())) {
+  // A settings deep link opens its modal before the lazy form has attached.
+  if (await page.locator('#config[open]').count()) await expect(page.locator('#config-form')).toBeVisible()
+  if (!(await page.locator('#config-form').isVisible())) {
     await sidebar(page)
     await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
   }
   // A reopened phone dialog retains its last detail page; return through its real navigation.
-  await expect(page.locator('#config')).toBeVisible()
+  await expect(page.locator('#config-form')).toBeVisible()
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
   await expect(page.getByTestId('settings-navigation')).toBeVisible()
@@ -96,13 +98,17 @@ export async function sidebar(page: Page) {
 }
 
 export async function homePage(page: Page, id: string, tab?: string) {
-  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  if (await page.locator('#config[open]').count()) await expect(page.locator('#config-form')).toBeVisible()
+  if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
   const dock = page.getByTestId('workbench-right-toggle')
   if ((await dock.isVisible()) && (await dock.getAttribute('aria-expanded')) === 'true')
     await dismissWorkbench(page)
   await sidebar(page)
   await page.getByTestId(`home-entry-${id}`).click()
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
+  const back = page.getByTestId('push-back')
+  for (let level = 0; level < 8 && (await back.isVisible()); level++) await back.click()
+  await expect(back).toBeHidden()
   if (tab) {
     if (id === 'plugins')
       await page
@@ -118,7 +124,7 @@ export async function homePage(page: Page, id: string, tab?: string) {
 }
 
 export async function advanced(page: Page) {
-  if (!(await page.locator('#config').isVisible()))
+  if (!(await page.locator('#config-form').isVisible()))
     await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
@@ -163,7 +169,7 @@ export function sectionSurface(page: Page, id: string) {
 export async function section(page: Page, id: string) {
   if (await page.getByTestId('session-search').isVisible()) await page.keyboard.press('Escape')
   if (id === 'memory') {
-    if (!(await page.locator('#config').isVisible()))
+    if (!(await page.locator('#config-form').isVisible()))
       await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
     const back = page.getByTestId('settings-back')
     if (await back.isVisible()) await back.click()
@@ -175,7 +181,7 @@ export async function section(page: Page, id: string) {
   const dock = page.getByTestId('workbench-right-toggle')
   if (
     id !== 'jobs' &&
-    !(await page.locator('#config').isVisible()) &&
+    !(await page.locator('#config-form').isVisible()) &&
     (await dock.isVisible()) &&
     (await dock.getAttribute('aria-expanded')) === 'true'
   )
@@ -233,7 +239,7 @@ export async function section(page: Page, id: string) {
     return
   }
   if (id === 'history' || id === 'archived') {
-    if (await page.locator('#config').isVisible()) await dismissSettings(page)
+    if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
       await sidebar(page)
@@ -243,7 +249,7 @@ export async function section(page: Page, id: string) {
     }
     return
   }
-  if (!(await page.locator('#config').isVisible()))
+  if (!(await page.locator('#config-form').isVisible()))
     await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
@@ -277,13 +283,14 @@ async function dismissWorkbench(page: Page) {
   }
 }
 
-/** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
-/** The goal popover opens from the top bar's more menu; its own toggle sits hidden under it. */
+/** The session composer command opens the Goal popover. */
 export async function openGoal(page: Page) {
-  await page.locator('#topbar-more').click()
-  await page.getByTestId('topbar-more-goal').click()
+  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).fill('/goal')
+  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).press('Enter')
+  await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 
+/** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
 export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
   const toggle = page.getByTestId('workbench-right-toggle')
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
@@ -317,7 +324,7 @@ async function dismissSettings(page: Page) {
   const close = page.locator('#config-close')
   if (!(await close.isVisible())) await page.getByTestId('settings-back').click()
   await close.click()
-  await expect(page.locator('#config')).toBeHidden()
+  await expect(page.locator('#config-form')).toBeHidden()
 }
 
 export async function closeSettings(page: Page, _locale = 'en') {
@@ -325,14 +332,14 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('session-search')).toBeHidden()
   }
-  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  if (await page.locator('#config-form').isVisible()) await dismissSettings(page)
   if (await page.locator('#home-page').isVisible()) {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
     if (id) {
       if ((await page.locator('#session-filter').getAttribute('data-filter')) === 'archived') {
         await page.locator('#session-filter').click()
-        await page.getByTestId('session-filter-active').click()
+        await page.getByTestId('session-filter-unarchived').click()
       }
       await page.locator(`.session[data-session="${id}"]`).click()
     } else await page.locator('#new').click()

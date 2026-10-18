@@ -103,7 +103,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       const child = execFile(
         process.execPath,
         [entry, ...args],
-        { cwd: process.cwd(), env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
+        { cwd: workspace, env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
         (error, stdout, stderr) => {
           log += `CLI ${args[0]}\n${stdout}${stderr}`
           error
@@ -145,7 +145,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       String(address.port),
     ]
     web = spawn(command, args, {
-      cwd: process.cwd(),
+      cwd: workspace,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })

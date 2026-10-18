@@ -4,6 +4,7 @@ import AxeBuilder from '@axe-core/playwright'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { localeKeys, unresolvedLabels } from './i18n.js'
+import { normalizeTraceVisual } from './trace-visual.js'
 
 let keys: Promise<string[]> | undefined
 export async function settled(page: Page) {
@@ -73,13 +74,7 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
   await settled(page)
-  if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
-    info.annotations.push({
-      type: 'pixel-snapshot-deferred',
-      description: `${name}: deferred to consolidated visual acceptance`,
-    })
-    return
-  }
+  await expect(page.locator('.agh-toast')).toHaveCount(0)
   // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
   if (name.startsWith('tool-row-')) {
     await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
@@ -205,7 +200,8 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
   if (
     name.startsWith('workbench-') ||
-    name.startsWith('fact-artifact-') ||
+    (name.startsWith('fact-artifact-') &&
+      !(await page.locator('#view-trace[aria-selected="true"]').count())) ||
     name.startsWith('narrow-workbench-')
   ) {
     // Frame the latest completed conversation consistently after dock/viewport reflow.
@@ -228,9 +224,17 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       node.value = '/workspace/w'
     }
   })
+  const restoreTrace = await normalizeTraceVisual(page)
   const options = { animations: 'disabled' as const, fullPage: true, mask }
   try {
     await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
+    if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
+      info.annotations.push({
+        type: 'pixel-snapshot-deferred',
+        description: `${name}: deferred to consolidated visual acceptance`,
+      })
+      return
+    }
     if (manifest.pending[name]) {
       info.annotations.push({ type: 'visual-baseline-pending', description: manifest.pending[name] })
       return
@@ -238,6 +242,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
     await expect(page).toHaveScreenshot(`${name}.png`, options)
   } finally {
+    await restoreTrace()
     await workspacePaths.evaluateAll((nodes) => {
       for (const node of nodes as HTMLInputElement[]) {
         node.value = node.getAttribute('data-e2e-workspace-path-original') ?? ''

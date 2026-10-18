@@ -167,6 +167,11 @@ ready image fail. Only an explicit reviewed update writes baselines:
 AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
 ```
 
+For a capture-only review, `AGH_SKIP_PIXEL_SNAPSHOTS=1` writes the same normalized PNGs to the
+run's output directory and annotates each deferred comparison. Inspect those images before
+updating a baseline; a capture-only run is not a passing visual gate. Rerun without that flag
+and without update mode to verify the reviewed images.
+
 Review PNG changes and the manifest together with the pinned Chromium on the target platform.
 Linux provisions real bwrap filesystem/process/network namespaces. On Ubuntu CI, a dedicated
 AppArmor profile grants user namespaces only to `/usr/bin/bwrap`; global sysctls and AppArmor
@@ -223,3 +228,5 @@ Any new excess fails the check and is also appended to the job summary. Re-measu
 uses the guard's `countLines` and exact source-path matching; no report-only switch or
 spare allocation bypasses the ceiling. Structural, dependency, counting-regression
 and functional assertions remain hard gates.
+
+The runtime launches both serve and CLI children from its synthetic workspace. Agent launch tickets inherit the server workspace, so a test must never start them from the repository checkout.
