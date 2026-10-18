@@ -178,11 +178,19 @@ function observation(
     const desiredSurfaceRevision = options.desiredSurfaceRevision?.(packageId)
     const reportRows = options.store.report()?.rows ?? []
     const hasBackendRows = [...packageRowIds(options.store, packageId)].some((id) => !id.startsWith('web:'))
+    // Static Skill declarations have no executable row. Their activation proof is the validated,
+    // trusted and enabled inventory, plus the same qualified target required below for all backends.
+    const staticSkillsEligible =
+      !hasBackendRows &&
+      contributions.length > 0 &&
+      contributions.every((row) => row.kind === 'skill') &&
+      options.lifecycleEligible?.(packageId) === true
     const readinessClass = classifyPackageContributions(contributions, hasBackendRows)
     // A package the tree does not want running, with nothing left running it, is simply not running.
     // Reporting it as starting would block removing a disabled package, which needs not-running.
     if (
       readinessClass === 'extension-only' &&
+      !staticSkillsEligible &&
       packageStopped(options.store, options.workerGeneration?.(), packageId)
     )
       return { actual: 'not-running' }
@@ -191,8 +199,9 @@ function observation(
       desiredPublished: Boolean(options.store.desired()),
       treeQualified: view.actual,
       extensionRowsActive:
-        options.extensionRowsActive?.(packageId) ??
-        packageExtensionRowsActive(packageId, reportRows, packageRowIds(options.store, packageId)),
+        staticSkillsEligible ||
+        (options.extensionRowsActive?.(packageId) ??
+          packageExtensionRowsActive(packageId, reportRows, packageRowIds(options.store, packageId))),
       ...(surfaceRunningRevision === undefined ? {} : { surfaceRunningRevision }),
       ...(desiredSurfaceRevision === undefined ? {} : { desiredSurfaceRevision }),
       clientRosterMatch: options.clientRosterMatch?.(packageId) ?? false,
