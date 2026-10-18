@@ -1,8 +1,10 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
@@ -152,6 +154,13 @@ it.each([false, true])(
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
+    const style = document.createElement('style')
+    // Apply the production layout rule without its cascade layer (unsupported in happy-dom).
+    style.textContent =
+      readFileSync(resolve(__dirname, '../../web/public/styles/23-plugin-review.css'), 'utf8').match(
+        /\.plugin-candidates \.candidate-summary-facts \{[^}]+\}/,
+      )?.[0] ?? ''
+    document.head.append(style)
     try {
       await act(async () =>
         root.render(
@@ -163,7 +172,10 @@ it.each([false, true])(
             confirm={() => undefined}
             onPublished={async () => undefined}
             {...(surface
-              ? { reviewSurface: (content: ReactNode) => <div data-testid="review-surface">{content}</div> }
+              ? {
+                  reviewSurface: (content: ReactNode) =>
+                    createPortal(<div data-testid="review-surface">{content}</div>, host),
+                }
               : {})}
           />,
         ),
@@ -208,6 +220,7 @@ it.each([false, true])(
         candidate.packageId,
       )
       expect(button('candidate-approve').disabled).toBe(false)
+      expect(getComputedStyle(host.querySelector('.candidate-summary-facts')!).display).toBe('flex')
       list.mockRejectedValueOnce(new Error('offline'))
       await act(async () => button('candidate-refresh').click())
       expect(button('candidate-refresh').disabled).toBe(false)
@@ -240,6 +253,7 @@ it.each([false, true])(
       expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
     } finally {
       await act(async () => root.unmount())
+      style.remove()
       host.remove()
       vi.useRealTimers()
       scope.IS_REACT_ACT_ENVIRONMENT = false

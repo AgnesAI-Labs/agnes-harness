@@ -397,7 +397,14 @@ export function CandidateInbox({
     </li>
   )
   const renderReview = (content: ReactNode) =>
-    reviewSurface && selected ? reviewSurface(content, () => setSelected(undefined), selected) : content
+    reviewSurface && selected
+      ? reviewSurface(
+          // The pushed page can portal outside the inbox; keep its review stylesheet scope.
+          <section className="plugin-candidates">{content}</section>,
+          () => setSelected(undefined),
+          selected,
+        )
+      : content
   const title = originTitle || t('candidates.untitledSession')
   const permissions = selected ? addedPermissions(selected) : undefined
   const tone = (state: string) =>

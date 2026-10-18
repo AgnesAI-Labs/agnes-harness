@@ -138,6 +138,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(pluginPage.getByTestId('candidate-hash')).toBeHidden()
     await translated(page)
     await accessible(page, info, `candidate-review-${locale}-${theme}`)
+    await expect(skillReview.locator('.candidate-summary-facts')).toHaveCSS('display', 'flex')
     await screen(page, info, `candidate-review-${locale}-${theme}`)
     await pluginPage.getByTestId('candidate-fact-chain').click()
     const facts = page.getByTestId('fact-chain')
