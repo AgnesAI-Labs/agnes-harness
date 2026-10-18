@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import { readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -20,13 +21,14 @@ import {
   runResourceCliCommand,
 } from '@agnes/resource-control-cli'
 import { TransportClosed } from '@agnes/sdk'
-import { ensureLocalBackend } from './boot/backend.js'
+import { ensureLocalBackend, resolveLocalControlScope } from './boot/backend.js'
 import { bootDefault } from './boot/default.js'
 import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
 import { bootLocal, type LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
 import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
+import { recoveryCommand } from './commands/app.js'
 import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
 import {
   BootError,
@@ -389,7 +391,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.OK
   }
   if (p.help) {
-    io.stdout.write(`${commandHelp(p.command)}\n`)
+    io.stdout.write(`${commandHelp(p.command, io.env.AGNES_LOCALE)}\n`)
     return ExitCode.OK
   }
 
@@ -406,10 +408,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
   const home = eph?.home ?? resolveHome(io.env)
-  if (p.command === 'home') {
-    const { homeCommand } = await import('./commands/home.js')
-    return await homeCommand(p.rest, io)
-  }
+  const recovery = await recoveryCommand(p, io, home)
+  if (recovery !== undefined) return recovery
   const production = Object.keys(boot).length === 0
   let diagnosticHome = home
   if (production && p.command !== 'doctor') {
@@ -523,7 +523,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         write: (text) => io.stdout.write(text),
         // The command line parser above has already made these explicit selections. Reusing the
         // daemon's control path keeps owner identity and stale PID handling in one place.
-        scope: resolveDaemonScope,
+        scope: resolveLocalControlScope,
         ...(parsed.command === 'status' ? { status: daemonStatus } : { stop: stopDaemon }),
       })
       return controlExit ?? ExitCode.ERROR

@@ -9,3 +9,5 @@ The public `@agnes/web-client` `DeliverablesStore` reads authorized session UI p
 Every delivered version is a content snapshot. Editing the workspace file does not change it. Open and download always use `ClientResourceService` with the recorded lane and full artifact identity. Refusal and reclaimed/missing content remain failures. A reference is never authorization.
 
 Intelligent UI is an optional peer of the backend tool. If rendering is disabled or fails, `present` still records the snapshots and succeeds; this plugin displays the durable plain file list. Existing Intelligent UI file-list records remain readable after switching providers.
+
+The conversation tail follows its parent outlet with `slots.inject()`. It may be absent during startup or conversation replacement; the data store, card renderers and workbench panel remain available. Disposing the role also removes the injection, so later outlet declarations cannot revive its old owner.

@@ -150,10 +150,11 @@ Ordinary packages declare `package.json` name/version/exports, dependency and li
 | `agnes.plugins[].export`, `apiRange` | Required module export name and tested contract range; incompatibility refuses before code import |
 | `id`, `runtime`, `default`, `config` | Optional row id (default `ext:<package-id>/<export>`; `web:` reserved), runtime default `in-process`, default-enabled declaration true, detached JSON config; this declaration does not bypass package enablement |
 | `provide`, `inject`, `optionalInject`, `services` | Optional bounded unique service-name lists. `inject` is the one declaration of what the plugin injects (an in-process export that repeats it must agree); `optionalInject` marks the subset that is not required. `provide` must match the export; Surface service names are checked again at dispatch |
-| `agnes.kinds` | Optional unique values `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`; package categories are not the eight provider kind names |
+| `agnes.provides` | Optional unique values `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`, `service`; package categories are not the eight provider kind names |
 | `agnes.plugins[].capabilities` | Optional network/exec/secrets/credentials scope arrays, filesystem read/write arrays, model/childAgents/ui/device booleans, and a `uiData` list of exact capability names (no globs; each becomes the atom `uiData:<permission>` and is included in the capability hash); capability atoms are reviewed and checked against allow/deny ceilings, deny wins; omission is undeclared, not proof of no effects |
+| `agnes.application` | Minimal `{id, defaultAgent?, agents?}` declaration; no execution template or presentation runtime. Brand/presentation fields are pending. |
 | `agnes.hostProvidedExternals` | Controlled external dependency compatibility declarations; not a replacement for row `apiRange` |
-| `agnes.bundles` | Static named documents with `extends/profile/presets`; requires kind `bundle`; references do not install companion packages |
+| `agnes.bundles` | Static named documents with `extends/profile/presets/launch`; launch is explicit and not inherited; references do not install companion packages |
 | `agnes.contributions`, `surfaces`, `clientDescriptors` | Declared assets/API surfaces/browser contributions; loader validates paths, schema, containment and allowed services; immutable public client config must contain no credentials |
 | `agnes.extensions` | Directories of bundled plugins of an official package. Each directory's `package.json` carries one `agnes.plugins` entry in the same shape as an installed plugin; there is no `agnes.extension.json` |
 

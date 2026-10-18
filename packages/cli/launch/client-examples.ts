@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { createExamplePackages } from '@agnes/daemon/packages'
+import { createAgentLaunches, createExamplePackages } from '@agnes/daemon/packages'
 import type { PackageOperationReceipt } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import type { LocalBackend } from './backend.js'
@@ -10,6 +11,7 @@ export function localClientExamples(
   client: Client,
   initialize: () => Promise<unknown>,
 ) {
+  const hostActivation = randomUUID()
   const profile = backend.scope.profile
   const admin = client.packages
   const settled = async (submit: () => Promise<PackageOperationReceipt>) => {
@@ -175,40 +177,55 @@ export function localClientExamples(
             await new Promise((resolve) => setTimeout(resolve, 100))
           }
         },
-        async validateLaunch(example, launch) {
-          // An explicit example launch selects its own installed bundle; the default Host need
-          // not have that bundle active. The catalog still binds it to this exact package.
-          const bundles = await client.request('_agnes/v1/admin.bundles.get', {})
-          if (
-            !bundles.catalog?.some(
-              (bundle) => bundle.id === launch.bundle && bundle.sourcePackage === example.id,
-            ) ||
-            !example.presentation?.presets?.some(
-              (preset) => preset.bundle === launch.bundle && preset.id === launch.preset,
-            )
-          )
-            throw new Error('CAPABILITY_DENIED')
-        },
-        async open(launch, sessionKey) {
+        resolveAgent: (ref) => client.agents.resolve(ref),
+        async open(plan, sessionKey) {
           return (
             await client.session.new({
               cwd: backend.scope.workspace,
-              bundles: [launch.bundle],
-              preset: launch.preset,
+              agent: plan.ref,
+              agentDigest: plan.digest,
               sessionKey,
             })
           ).id
-        },
-        async prompt(sessionId, prompt, commandId) {
-          const session = client.sessions.get(sessionId) ?? (await client.session.load(sessionId))
-          await session.followUp(prompt, { commandId })
         },
       },
     })
   // localPackageAdmin supplies a fixed journal namespace that survives launcher restart.
   let awaitClientId = ''
   let facade: ReturnType<typeof createExamplePackages> | undefined
+  const agents = createAgentLaunches({
+    directory: join(backend.scope.daemonDir, 'agent-launches'),
+    backend: {
+      async caller() {
+        await initialize()
+        const workspace = (await client.workspace.list()).items.find(
+          (row) => row.path === backend.scope.workspace && row.available,
+        )
+        if (!workspace) throw new Error('CAPABILITY_DENIED')
+        return {
+          principal: await client.clientId(),
+          profile,
+          workspace: backend.scope.workspace,
+          activation: `${hostActivation}:${workspace.workspaceId ?? workspace.path}:${workspace.revision ?? 0}`,
+        }
+      },
+      resolve: (ref) => client.agents.resolve(ref),
+      async open(plan, sessionKey) {
+        return (
+          await client.session.new({
+            cwd: backend.scope.workspace,
+            agent: plan.ref,
+            agentDigest: plan.digest,
+            sessionKey,
+          })
+        ).id
+      },
+    },
+  })
   return {
+    async callAgent(request: Record<string, unknown>) {
+      return agents.call(request)
+    },
     async call(rowId: string, request: Record<string, unknown>) {
       await initialize()
       awaitClientId = await client.clientId()

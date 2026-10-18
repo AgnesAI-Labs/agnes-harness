@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import { type DaemonScope, readDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
+import { type DaemonScope, readDaemonDiscovery } from '@agnes/daemon'
 import {
   type AuthOption,
   type CreateClientOptions,
@@ -11,6 +11,7 @@ import {
 import { BootError } from '../errors.js'
 import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
+import { connectionScope } from './connection-scope.js'
 import { profileNameFrom } from './inputs.js'
 import { localPipeFactories } from './pipe-factory.js'
 
@@ -142,7 +143,7 @@ export async function bootConnect(p: ParsedArgs, deps: ConnectBootDeps): Promise
   let scope: DaemonScope | undefined
   if (target.kind === 'unix' && target.path.startsWith(PIPE_PREFIX)) {
     try {
-      scope = await resolveDaemonScope({
+      scope = await connectionScope({
         env: deps.env,
         cwd: p.cwd ?? deps.cwd,
         ...(deps.home ? { home: deps.home } : {}),

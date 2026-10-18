@@ -1,9 +1,5 @@
-# Client Panel v2
+# 前端视图位置示例 v2
 
-`client-panel` 的热更新候选版本。它与 v1 使用相同的包 ID 和插件 ID，将
-`ui:sidebar` 的可见版本标识改为 `Agnes client module demo · v2`，并更换侧栏强调色。
+通过 `ctx.slots.register('workbench.panel', Component)` 添加视图位置；保留默认导航。所有登记随贡献撤销同步回收。
 
-在 v1 已安装、信任并启用时，用这个目录执行更新，可验证名册变更、
-新快照加载与旧 fiber 卸载。
-
-`contributes.client.publicConfig` 只承载随包发布、明确公开的展示元数据；它不是后端 runtime config，也不能放凭据、token 或 secret 引用。
+Adds a workbench view through the scoped facade. The default navigation remains available.

@@ -9,10 +9,13 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
+import * as asyncFs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -117,6 +120,10 @@ describe('packageDir', () => {
   })
 })
 
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+}))
+
 describe('hashDirectory', () => {
   let root: string
   beforeEach(() => {
@@ -125,6 +132,8 @@ describe('hashDirectory', () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
   it('is deterministic, path-sensitive, and excludes only the configured trees', async () => {
+    mkdirSync(join(root, '中文 空间', 'nested dir'), { recursive: true })
+    writeFileSync(join(root, '中文 空间', 'nested dir', '文件 name.txt'), '字节一致')
     mkdirSync(join(root, 'z'))
     mkdirSync(join(root, 'node_modules', 'ignored'), { recursive: true })
     mkdirSync(join(root, 'fixtures', 'out'), { recursive: true })
@@ -162,6 +171,54 @@ describe('hashDirectory', () => {
       rmSync(outside, { force: true })
       unlinkSync(rootAlias)
     }
+  })
+  it.each(['during-read', 'after-close'] as const)(
+    'rejects a same-size restored-mtime edit %s during the walk',
+    async (timing) => {
+      const file = join(root, 'a-payload'),
+        tail = join(root, 'z-tail')
+      writeFileSync(file, 'first')
+      writeFileSync(tail, 'tail')
+      const before = statSync(file)
+      const canonicalFile = realpathSync(file),
+        canonicalTail = realpathSync(tail)
+      const change = () => {
+        writeFileSync(file, 'other')
+        utimesSync(file, before.atime, before.mtime)
+      }
+      const open = asyncFs.open
+      const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
+        if (timing === 'after-close' && args[0] === canonicalTail) change()
+        const handle = await open(...args)
+        if (timing === 'during-read' && args[0] === canonicalFile) {
+          const stat = handle.stat.bind(handle)
+          vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+            const observed = await stat()
+            change()
+            return observed
+          })
+        }
+        return handle
+      })
+      try {
+        await expect(hashDirectoryAsync(root)).rejects.toMatchObject({ detail: { reason: 'tree-changed' } })
+      } finally {
+        spy.mockRestore()
+      }
+    },
+  )
+
+  it.each([
+    '../../../examples/acme',
+    '../../../examples/demos/business-agent',
+    '../../../examples/demos/hot-upgrade',
+    '../../../examples/demos/growing-skills',
+  ])('matches the synchronous digest for bundled example %s', async (path) => {
+    const directory = fileURLToPath(new URL(path, import.meta.url))
+    expect(await hashDirectoryAsync(directory)).toBe(hashDirectory(directory))
+    expect(await hashDirectoryAsync(directory, { exclude: [] })).toBe(
+      hashDirectory(directory, { exclude: [] }),
+    )
   })
   it('yields while hashing file contents and honours cancellation', async () => {
     writeFileSync(join(root, 'payload'), Buffer.alloc(1024 * 1024, 23))

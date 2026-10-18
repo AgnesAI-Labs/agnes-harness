@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { collectPackageSkillFiles, discoverPackageSkill, packageSkillLoadError } from '@agnes/base'
 import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
+import { safeAuthoringOutput } from '@agnes/error-sanitization'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
 import type { build as Build } from 'esbuild'
@@ -82,6 +83,8 @@ async function testCandidate(
     '@agnes/plugin-runtime/testkit': [],
     '@agnes/host/testkit': ['createPluginTestRegistration'],
     '@agnes/host/author-testkit': [],
+    '@agnes/web-client/testkit': [],
+    react: [],
   }
   const sdkExports = join(dirname(sdk), 'authoring-sdk-exports.json')
   if (existsSync(sdk)) {
@@ -116,14 +119,28 @@ async function testCandidate(
         {
           name: 'authoring-public-sdk',
           setup(b) {
-            b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox)/ }, (args) => {
+            // Native SDK dependencies retain their own optional-package resolution. Candidate
+            // imports still go through the hashed-source restriction below.
+            b.onResolve({ filter: /^sharp$/ }, (args) => {
+              if (insideCandidate(args.importer)) return undefined
+              return {
+                path: pathToFileURL(require.resolve(args.path, { paths: [args.resolveDir] })).href,
+                external: true,
+              }
+            })
+            b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox|react$)/ }, (args) => {
               if (!insideCandidate(args.importer)) return undefined
               if (!Object.hasOwn(modules, args.path))
                 throw new Error('Only public author SDK modules are available in candidate tests')
               return existsSync(sdk)
                 ? { path: args.path, namespace: 'authoring-sdk' }
                 : {
-                    path: sdkRequire.resolve(
+                    path: (args.path === 'react'
+                      ? createRequire(require.resolve('@agnes/web-client/testkit'))
+                      : args.path === '@agnes/web-client/testkit'
+                        ? require
+                        : sdkRequire
+                    ).resolve(
                       args.path === '@agnes/host/testkit'
                         ? '@agnes/host/testkit/plugin-registration'
                         : args.path,
@@ -137,10 +154,11 @@ async function testCandidate(
             b.onLoad({ filter: /.*/, namespace: 'authoring-sdk' }, (args) => ({
               loader: 'js',
               contents: `import { namespaces } from ${JSON.stringify(sdk)};\n${(modules[args.path] ?? [])
-                .filter((k) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && k !== 'default')
-                .map(
-                  (k) =>
-                    `export const ${k} = namespaces[${JSON.stringify(args.path)}][${JSON.stringify(k)}];`,
+                .filter((k) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k))
+                .map((k) =>
+                  k === 'default'
+                    ? `export default namespaces[${JSON.stringify(args.path)}].default;`
+                    : `export const ${k} = namespaces[${JSON.stringify(args.path)}][${JSON.stringify(k)}];`,
                 )
                 .join('\n')}`,
             }))
@@ -212,15 +230,31 @@ async function testCandidate(
           : 'failed',
       count,
       runner: 'node-test',
-      output: result.stdout.slice(-16384),
+      output: safeAuthoringOutput(result.stdout, 16384, directory),
     }
   } catch (error) {
     if (signal.aborted) throw error
+    const partial =
+      error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string'
+        ? error.stdout
+        : ''
     return {
       state: 'failed',
       count: 0,
       runner: 'node-test',
-      output: 'Candidate test command or compilation failed; no passing result recorded.',
+      output: safeAuthoringOutput(
+        error && typeof error === 'object' && 'errors' in error && Array.isArray(error.errors)
+          ? error.errors
+              .slice(0, 16)
+              .map((issue) => {
+                const location = issue.location
+                return `CompileError: ${issue.text} (${location?.file ?? 'unknown'}:${location?.line ?? 0}:${location?.column ?? 0})`
+              })
+              .join('\n')
+          : `${error instanceof Error ? `${error.name}: ${error.message}` : 'Candidate test command failed'}; no passing result recorded.\n${partial}`,
+        16384,
+        directory,
+      ),
     }
   }
 }

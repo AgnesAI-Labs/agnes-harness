@@ -73,7 +73,8 @@ export function ConversationMessages(props: ConversationMessagesProps) {
     const ownerByNodeId = new Map(
       stable.turns.flatMap((turn) => turn.nodeIds.map((id) => [id, turn.id] as const)),
     )
-    const loose = [...nodes].filter(([id]) => !assigned.has(id))
+    // Call records belong to the turn's process/metadata views, including late unassigned costs.
+    const loose = [...nodes].filter(([id, node]) => !assigned.has(id) && node.kind !== 'cost')
     const last = stable.turns.at(-1)
     items = stable.turns.map((turn) =>
       item(

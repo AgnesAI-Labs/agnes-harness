@@ -2,6 +2,7 @@ import { type PackageInstalledDescriptor, resolvePluginMetadata } from '@agnes/p
 import {
   Banner,
   Button,
+  CopyButton,
   fallbackT,
   IconButton,
   reportSuccess,
@@ -11,6 +12,7 @@ import {
   SettingsDrill,
   SettingsItem,
   SettingsTag,
+  SettingsTechnicalDetails,
   StateSwitch,
   useUiText,
 } from '@agnes/web-ui'
@@ -178,7 +180,6 @@ export function BundlesPanel({
       entry?.displayName ?? entry?.label ?? resolvePluginMetadata(pkg?.metadata, locale)?.displayName
     return { name, version: entry?.version ?? pkg?.version }
   }
-  const nameOf = (id: string) => describe(id).name ?? id
   const locked = busy || !canSave
   const move = (id: string, offset: number) => {
     const from = selected.indexOf(id)
@@ -219,7 +220,7 @@ export function BundlesPanel({
           <SettingsBlock state={busy && !snapshot ? 'loading' : undefined}>
             {snapshot && rows.length === 0 && (
               <SettingsItem label={t('bundles.empty')} data-testid="bundles-empty">
-                <Button size="small" href="/?page=agents">
+                <Button size="small" href="/?page=plugins">
                   {t('bundles.install')}
                 </Button>
               </SettingsItem>
@@ -280,7 +281,19 @@ export function BundlesPanel({
                       {!entry && <SettingsTag tone="warn">{t('bundles.missing')}</SettingsTag>}
                     </>
                   }
-                  description={entry ? version : t('bundles.missing-help')}
+                  description={
+                    <>
+                      {entry ? version : t('bundles.missing-help')}{' '}
+                      <SettingsTechnicalDetails title={settingsText('technicalDetails')}>
+                        <code>{id}</code>{' '}
+                        <CopyButton
+                          text={id}
+                          label={settingsText('copyId')}
+                          copiedLabel={settingsText('copiedId')}
+                        />
+                      </SettingsTechnicalDetails>
+                    </>
+                  }
                 >
                   <StateSwitch
                     id={`bundle-default-${encodeURIComponent(id)}`}
@@ -299,7 +312,7 @@ export function BundlesPanel({
             <SettingsDrill
               id="bundles-effective"
               data-testid="bundles-technical"
-              label={t('bundles.explain')}
+              label={settingsText('technicalDetails')}
               description={settingsText('dumpHelp')}
             >
               <SettingsBlock>

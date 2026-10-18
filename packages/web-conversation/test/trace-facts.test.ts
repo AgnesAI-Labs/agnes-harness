@@ -124,6 +124,17 @@ const toolChain: FactChainResult = {
       externalOutcome: 'unknown',
     },
     {
+      id: 'ui-action',
+      kind: 'plugin-fact',
+      seq: 7,
+      namespace: 'agnes/intelligent-ui',
+      event: 'action.succeeded',
+      label: 'Review report',
+      state: 'succeeded',
+      surfaceId: 'review',
+      revision: 1,
+    },
+    {
       id: 'art',
       kind: 'artifact',
       seq: 5,
@@ -177,6 +188,10 @@ it('opens the trace on the linked request with its source tab, never a workbench
   expect(panel.isOpen()).toBe(true)
   expect(selected(root)).toBe('a1')
   expect(pane(root)?.getAttribute('data-pane')).toBe('source')
+  const tabs = root.querySelectorAll('.trace-inspector-tabs [role="tab"]')
+  expect(tabs.length).toBeGreaterThan(1)
+  for (const tab of tabs) expect(tab.hasAttribute('aria-pressed')).toBe(false)
+  expect(root.querySelector('.trace-tab[aria-selected="true"]')?.getAttribute('data-pane')).toBe('source')
   await vi.waitFor(() =>
     expect(readFactChain).toHaveBeenCalledWith(
       { sessionId: 's', laneId: 'main', anchor: { kind: 'request', callId } },
@@ -190,6 +205,9 @@ it('opens the trace on the linked request with its source tab, never a workbench
   )
   expect(workbenchPanels.get('facts')).toBeUndefined()
   expect(workbenchPanels.get('changed-files')).toBeDefined()
+  flushSync(() => root.querySelector<HTMLButtonElement>('.trace-inspector-close')?.click())
+  expect(root.querySelector('.trace-inspector')?.hasAttribute('hidden')).toBe(true)
+  expect(document.activeElement).toBe(root.querySelector('.trace-row[data-trace-row-id="a1"]'))
 })
 
 it('reveals a filtered or folded tool and shows its authorization with future-call rules and receipt', async () => {
@@ -208,6 +226,8 @@ it('reveals a filtered or folded tool and shows its authorization with future-ca
   await vi.waitFor(() =>
     expect(pane(root)?.querySelector('[data-link="receipt"]')?.textContent).toContain('Completed'),
   )
+  expect(pane(root)?.querySelector('[data-link="ui"]')?.textContent).toContain('Action succeeded')
+  expect(pane(root)?.querySelector('[data-link="ui"]')?.textContent).toContain('Review report · revision 1')
   expect(pane(root)?.querySelector('[data-testid="trace-gaps"]')?.textContent).toContain('not retained')
   const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
     init?.method === 'POST'
@@ -249,15 +269,91 @@ it('opens the record that produced an artifact and downloads it from the source 
   )
 })
 
-it('follows a feedback candidate to the tool call that drafted it', async () => {
-  const { root, panel } = mount()
-  const candidateId = `candidate-${'e'.repeat(32)}`
-  expect(
-    panel.focusFact?.({ sessionId: 's', laneId: 'main', anchor: { kind: 'authoring', candidateId } }),
-  ).toBe(true)
-  await vi.waitFor(() => expect(selected(root)).toBe('t1'))
-  expect(pane(root)?.getAttribute('data-pane')).toBe('source')
-})
+it.each(['tool', 'feedback'])(
+  'follows a %s candidate to its source and published version',
+  async (origin) => {
+    const { root, panel } = mount({
+      readFactChain: async () =>
+        ({
+          ...toolChain,
+          nodes: [
+            {
+              id: 'au',
+              kind: 'authoring',
+              toolUseId: origin === 'tool' ? 'use-1' : 'feedback:source',
+              turn: 1,
+              candidateId: `candidate-${'e'.repeat(32)}`,
+              packageId: 'reviewed-evidence',
+              version: '1.0.0',
+              state: 'published',
+              candidateHash: 'hash',
+              reviewHash: 'review',
+              baseHash: null,
+              testHash: 'hash',
+              testsState: 'passed',
+              testsCount: 1,
+              reviewed: true,
+            },
+          ],
+        }) as unknown as FactChainResult,
+    })
+    const candidateId = `candidate-${'e'.repeat(32)}`
+    expect(
+      panel.focusFact?.({ sessionId: 's', laneId: 'main', anchor: { kind: 'authoring', candidateId } }),
+    ).toBe(true)
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            items: [],
+            growth:
+              origin === 'feedback'
+                ? [
+                    {
+                      feedbackId: 'source',
+                      feedbackRevision: 1,
+                      messageSeq: 3,
+                      candidateId,
+                      candidateHash: 'hash',
+                      reviewHash: 'review',
+                      state: 'published',
+                      reviewer: 'local',
+                      packageId: 'feedback-skill-evidence',
+                      version: '1.0.0',
+                    },
+                  ]
+                : [],
+            counts: { up: 0, down: 1, withdrawn: 0, withCandidate: 1 },
+            truncated: false,
+          }),
+        ),
+    )
+    await vi.waitFor(() => expect(selected(root)).toBe(origin === 'tool' ? 't1' : 'a1'))
+    expect(pane(root)?.getAttribute('data-pane')).toBe('source')
+    await vi.waitFor(() =>
+      expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+        'reviewed-evidence 1.0.0 · Published',
+      ),
+    )
+    expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+      'Tests passed: 1',
+    )
+    expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+      'Human review recorded',
+    )
+    expect(
+      pane(root)?.querySelector('[data-testid="trace-authoring"] .agh-disclosure')?.getAttribute('data-open'),
+    ).toBe('false')
+    if (origin === 'feedback')
+      await vi.waitFor(() =>
+        expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')?.textContent).toContain(
+          'Published version: feedback-skill-evidence@1.0.0',
+        ),
+      )
+    else expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')).toBeNull()
+  },
+)
 
 it('opens the turn from the usage popover on its source tab', () => {
   const { root, conversation } = mount()

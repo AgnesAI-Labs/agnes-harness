@@ -1,8 +1,10 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
@@ -30,6 +32,14 @@ it.each([
   ['text', 'text\n'],
   ['old\n'.repeat(1000), 'new\n'.repeat(1000)],
 ])('preserves both complete file versions in the line diff', (before, after) => {
+  const css = readFileSync(
+    resolve(import.meta.dirname, '../../web/public/styles/23-plugin-review.css'),
+    'utf8',
+  )
+  const header = css.match(/\.plugin-candidates \.candidate-file \.agh-disclosure-summary \{([^}]*)\}/)?.[1]
+  expect(header).toContain('position: sticky')
+  expect(header).toContain('top: 0')
+  expect(header).toContain('background: var(--agnes-bg-surface)')
   const html = renderToStaticMarkup(
     <CandidateFileDiff file={{ path: 'skill.test.mjs', before, after }} t={t} />,
   )
@@ -104,7 +114,11 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     const newPlugin = {
       ...candidate,
       baseHash: null,
-      preview: { ...preview, kinds: ['tool'] as ['tool'], version: '0.1.0' },
+      preview: {
+        ...preview,
+        presentation: { includes: { provides: ['tool'] as ['tool'], counts: { tools: 1 } }, rows: [] },
+        version: '0.1.0',
+      },
     }
     const update = {
       ...newPlugin,
@@ -115,7 +129,15 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
       ...newPlugin,
       preview: null,
       sourceFiles: [
-        { path: 'package.json', content: JSON.stringify({ version: '1.0.0', agnes: { kinds: ['skills'] } }) },
+        {
+          path: 'package.json',
+          content: JSON.stringify({
+            version: '1.0.0',
+            agnes: {
+              contributions: [{ kind: 'skill', id: 'reviewed/main', path: './skills/method/SKILL.md' }],
+            },
+          }),
+        },
       ],
     }
     const html = (value: AuthoringCandidate) =>
@@ -126,6 +148,35 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     expect(html(newPlugin)).toContain('0.1.0')
     expect(html(update)).toContain(text('candidates.update'))
     expect(html(update)).toContain('0.2.0')
+    expect(
+      candidateIdentity({
+        ...skill,
+        preview: {
+          ...preview,
+          presentation: { includes: { provides: ['skills'], counts: { skills: 1 } }, rows: [] },
+        },
+      }).type,
+    ).toBe('skill')
+    // Code-registered Skills (including feedback drafts) declare their kind before inspection.
+    expect(
+      candidateIdentity({
+        ...skill,
+        sourceFiles: [
+          {
+            path: 'package.json',
+            content: JSON.stringify({
+              version: '1.0.0',
+              agnes: {
+                provides: ['skills'],
+                plugins: [
+                  { id: 'ext:reviewed/main', export: 'main', apiRange: '^4.0.0', inject: ['skills'] },
+                ],
+              },
+            }),
+          },
+        ],
+      }).type,
+    ).toBe('skill')
     expect(html(skill)).toContain(text('candidates.type.skill'))
     expect(html(skill)).toContain(text('candidates.new.skill'))
     expect(html(skill)).toContain(text('candidates.minutesAgo', { count: 2 }))
@@ -149,6 +200,13 @@ it.each([false, true])(
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
+    const style = document.createElement('style')
+    // Apply the production layout rule without its cascade layer (unsupported in happy-dom).
+    style.textContent =
+      readFileSync(resolve(__dirname, '../../web/public/styles/23-plugin-review.css'), 'utf8').match(
+        /\.plugin-candidates \.candidate-summary-facts \{[^}]+\}/,
+      )?.[0] ?? ''
+    document.head.append(style)
     try {
       await act(async () =>
         root.render(
@@ -160,7 +218,10 @@ it.each([false, true])(
             confirm={() => undefined}
             onPublished={async () => undefined}
             {...(surface
-              ? { reviewSurface: (content: ReactNode) => <div data-testid="review-surface">{content}</div> }
+              ? {
+                  reviewSurface: (content: ReactNode) =>
+                    createPortal(<div data-testid="review-surface">{content}</div>, host),
+                }
               : {})}
           />,
         ),
@@ -205,6 +266,7 @@ it.each([false, true])(
         candidate.packageId,
       )
       expect(button('candidate-approve').disabled).toBe(false)
+      expect(getComputedStyle(host.querySelector('.candidate-summary-facts')!).display).toBe('flex')
       list.mockRejectedValueOnce(new Error('offline'))
       await act(async () => button('candidate-refresh').click())
       expect(button('candidate-refresh').disabled).toBe(false)
@@ -237,6 +299,7 @@ it.each([false, true])(
       expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
     } finally {
       await act(async () => root.unmount())
+      style.remove()
       host.remove()
       vi.useRealTimers()
       scope.IS_REACT_ACT_ENVIRONMENT = false
@@ -266,7 +329,10 @@ it.each([
       candidateId: 'skill-review',
       packageId: '@example/weekly-report',
       state: 'review' as const,
-      preview: { ...plainPreview, kinds: ['skills'] as ['skills'] },
+      preview: {
+        ...plainPreview,
+        presentation: { includes: { provides: ['skills'] as ['skills'], counts: { skills: 1 } }, rows: [] },
+      },
       sourceFiles: [
         ...candidate.sourceFiles,
         { path: 'SKILL.md', content: `---\n${header}\n---\nInert body.\n` },
@@ -276,7 +342,10 @@ it.each([
       ...candidate,
       candidateId: 'plugin-review',
       state: 'review' as const,
-      preview: { ...preview, kinds: ['tool'] as ['tool'] },
+      preview: {
+        ...preview,
+        presentation: { includes: { provides: ['tool'] as ['tool'], counts: { tools: 1 } }, rows: [] },
+      },
     }
     let listedSkill: AuthoringCandidate = skill
     let unavailable = false
@@ -337,79 +406,94 @@ it.each([
   },
 )
 
-it('closes a published review, links to the skill, and keeps terminal history without dead decisions', async () => {
-  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  scope.IS_REACT_ACT_ENVIRONMENT = true
-  const reviewed = {
-    ...candidate,
-    state: 'review' as const,
-    reviewHash: 'review-hash',
-    preview: { ...preview, kinds: ['skills'] as ['skills'] },
-    sourceFiles: [
-      ...candidate.sourceFiles,
-      { path: 'SKILL.md', content: '---\nname: published-skill\ndescription: Synthetic skill\n---\nBody' },
-    ],
-  }
-  const published = { ...reviewed, state: 'published' as const }
-  const rejected = { ...candidate, candidateId: 'history', state: 'rejected' as const }
-  let items = [reviewed, rejected] as AuthoringCandidate[]
-  let run: (() => Promise<void>) | undefined
-  const api = {
-    candidatesList: async () => ({ candidates: items }),
-    candidatesShow: async (id: string) => items.find((value) => value.candidateId === id),
-    candidatesDecide: vi.fn(async () => {
-      items = [published, rejected]
-      return published
-    }),
-  } as unknown as PluginAdminApi
-  const host = document.createElement('div')
-  document.body.append(host)
-  const root = createRoot(host)
-  try {
-    await act(async () =>
-      root.render(
-        <CandidateInbox
-          api={api}
-          canReview
-          canTest
-          t={t}
-          confirm={(value) => {
-            run = value.run
-          }}
-          onPublished={async () => undefined}
-          reviewSurface={(content) => <div data-testid="review-dialog">{content}</div>}
-        />,
-      ),
-    )
-    expect(host.querySelector('[data-testid="candidate-list"]')?.querySelectorAll('li')).toHaveLength(1)
-    expect(host.querySelector<HTMLElement>('[data-testid="candidate-history"]')?.dataset.open).toBe('false')
-    await act(async () =>
-      host
-        .querySelector<HTMLButtonElement>('[data-testid="candidate-list"] [data-testid="candidate-open"]')
-        ?.click(),
-    )
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.click())
-    expect(api.candidatesDecide).not.toHaveBeenCalled()
-    expect(run).toBeDefined()
-    await act(async () => run?.())
-    expect(api.candidatesDecide).toHaveBeenCalledOnce()
-    expect(host.querySelector('[data-testid="review-dialog"]')).toBeNull()
-    expect(host.querySelector('[data-testid="candidate-published"]')?.textContent).toContain('发布')
-    expect(host.querySelector<HTMLAnchorElement>('[data-testid="candidate-published-link"]')?.href).toContain(
-      'settings=skills',
-    )
-    const history = host.querySelector<HTMLElement>('[data-testid="candidate-history"]')
-    expect(history?.dataset.open).toBe('false')
-    await act(async () => {
-      if (history) setDisclosureOpen(history, true)
-      host
-        .querySelector<HTMLButtonElement>('[data-candidate-id="history"] [data-testid="candidate-open"]')
-        ?.click()
-    })
-    expect(host.querySelector('[data-testid="candidate-approve"]')).toBeNull()
-    expect(host.querySelector('[data-testid="candidate-reject"]')).toBeNull()
-  } finally {
-    await act(async () => root.unmount())
-    host.remove()
-  }
-})
+it.each([false, true])(
+  'closes a published review, links to the skill, and keeps terminal history without dead decisions (%s)',
+  async (merged) => {
+    const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+    scope.IS_REACT_ACT_ENVIRONMENT = true
+    const reviewed = {
+      ...candidate,
+      state: 'review' as const,
+      reviewHash: 'review-hash',
+      preview: {
+        ...preview,
+        presentation: { includes: { provides: ['skills'] as ['skills'], counts: { skills: 1 } }, rows: [] },
+      },
+      sourceFiles: [
+        ...candidate.sourceFiles,
+        { path: 'SKILL.md', content: '---\nname: published-skill\ndescription: Synthetic skill\n---\nBody' },
+      ],
+    }
+    const published = { ...reviewed, state: 'published' as const }
+    const rejected = { ...candidate, candidateId: 'history', state: 'rejected' as const }
+    let items = [reviewed, rejected] as AuthoringCandidate[]
+    let run: (() => Promise<void>) | undefined
+    const api = {
+      candidatesList: async () => ({ candidates: items }),
+      candidatesShow: async (id: string) => items.find((value) => value.candidateId === id),
+      candidatesDecide: vi.fn(async () => {
+        items = [published, rejected]
+        return published
+      }),
+    } as unknown as PluginAdminApi
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          <CandidateInbox
+            api={api}
+            merged={merged}
+            canReview
+            canTest
+            t={t}
+            confirm={(value) => {
+              run = value.run
+            }}
+            onPublished={async () => undefined}
+            reviewSurface={(content) => <div data-testid="review-dialog">{content}</div>}
+          />,
+        ),
+      )
+      expect(host.querySelector('[data-testid="candidate-list"]')?.querySelectorAll('li')).toHaveLength(1)
+      expect(host.querySelector<HTMLElement>('[data-testid="candidate-history"]')?.dataset.open).toBe('false')
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[data-testid="candidate-list"] [data-testid="candidate-open"]')
+          ?.click(),
+      )
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.click(),
+      )
+      expect(api.candidatesDecide).not.toHaveBeenCalled()
+      expect(run).toBeDefined()
+      await act(async () => run?.())
+      expect(api.candidatesDecide).toHaveBeenCalledOnce()
+      expect(host.querySelector('[data-testid="review-dialog"]')).toBeNull()
+      expect(host.querySelector('[data-testid="candidate-published"]')?.textContent).toContain('发布')
+      expect(
+        host.querySelector<HTMLAnchorElement>('[data-testid="candidate-published-link"]')?.href,
+      ).toContain(merged ? 'page=plugins&tab=skills' : 'settings=skills')
+      const history = host.querySelector<HTMLElement>('[data-testid="candidate-history"]')
+      expect(history?.dataset.open).toBe('false')
+      await act(async () => {
+        if (history) setDisclosureOpen(history, true)
+        host
+          .querySelector<HTMLButtonElement>('[data-candidate-id="history"] [data-testid="candidate-open"]')
+          ?.click()
+      })
+      if (merged)
+        expect(
+          history?.querySelector(
+            `[data-candidate-id="${published.candidateId}"] .agh-list-row-copy > .agh-meta`,
+          )?.textContent,
+        ).toContain(`${t('candidates.untitledSession')} · ${t('candidates.state.published')}`)
+      expect(host.querySelector('[data-testid="candidate-approve"]')).toBeNull()
+      expect(host.querySelector('[data-testid="candidate-reject"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  },
+)

@@ -194,6 +194,7 @@ it.each(['en', 'zh-CN'] as const)(
     let refuse = true
     let listUnavailable = false
     let blockedList: Promise<void> | undefined
+    let blockedAnswer: Promise<void> | undefined
     const call = vi.fn(async (method: string, input?: { handle: typeof handle }) => {
       if (method === '_agnes/v1/schedules.list')
         return {
@@ -213,6 +214,7 @@ it.each(['en', 'zh-CN'] as const)(
         if (listUnavailable) throw new Error('temporarily unavailable')
         return { decisions: snapshot }
       }
+      if (blockedAnswer) await blockedAnswer
       if (refuse) throw new Error('stale decision refused')
       pending = pending.filter((value) => value.handle.id !== input?.handle.id)
       return {}
@@ -307,8 +309,34 @@ it.each(['en', 'zh-CN'] as const)(
       window.dispatchEvent(new Event('focus'))
       await Promise.resolve()
       await vi.waitFor(() => expect(surface()?.querySelector('[role="alert"]')).toBeNull())
-      action(allowLabel)?.click()
+      const cardsBeforeFailure = [...(surface()?.querySelectorAll('[data-testid="approval-card"]') ?? [])]
+      expect(cardsBeforeFailure).toHaveLength(2)
+      const focusedBeforeFailure = action(allowLabel)
+      if (!focusedBeforeFailure) throw new Error('Missing approval action')
+      let failAnswer!: () => void
+      blockedAnswer = new Promise<void>((resolve) => {
+        failAnswer = resolve
+      })
+      focusedBeforeFailure.focus()
+      focusedBeforeFailure.click()
+      await vi.waitFor(() => expect(focusedBeforeFailure.disabled).toBe(true))
+      expect(action(allowLabel)).toBe(focusedBeforeFailure)
+      const answers = () =>
+        call.mock.calls.filter(([method]) => method === '_agnes/v1/profile.decisions.answer').length
+      const beforeRetry = answers()
+      focusedBeforeFailure.click()
+      expect(answers()).toBe(beforeRetry)
+      blockedAnswer = undefined
+      failAnswer()
       await vi.waitFor(() => expect(surface()?.querySelector('[role="alert"]')).toBeTruthy())
+      expect(action(allowLabel)).toBe(focusedBeforeFailure)
+      const cardsAfterFailure = [...(surface()?.querySelectorAll('[data-testid="approval-card"]') ?? [])]
+      expect(cardsAfterFailure).toHaveLength(cardsBeforeFailure.length)
+      cardsAfterFailure.forEach((card, index) => {
+        expect(card).toBe(cardsBeforeFailure[index])
+      })
+      expect(document.activeElement).toBe(focusedBeforeFailure)
+      expect(focusedBeforeFailure.disabled).toBe(false)
       expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.answer', {
         handle,
         revision: 1,

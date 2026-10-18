@@ -38,7 +38,6 @@
           "displayName": "Child-agent coordination",
           "summary": "Lets the agent delegate work to child agents, exchange messages and collect their results.",
           "description": "Lets the agent delegate work to child agents, exchange messages and collect their results.",
-          "category": "collaboration",
           "locales": {
             "zh-CN": {
               "displayName": "子 Agent 协作",
@@ -48,6 +47,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

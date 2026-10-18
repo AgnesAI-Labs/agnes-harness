@@ -21,7 +21,6 @@
           "displayName": "Local machine owner",
           "summary": "Treats callers as one local machine owner for single-user deployments.",
           "description": "Treats callers as one local machine owner for single-user deployments.",
-          "category": "safety-approval",
           "locales": {
             "zh-CN": {
               "displayName": "本机所有者",

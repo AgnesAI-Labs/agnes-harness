@@ -23,7 +23,7 @@ export const firstRunCatalog: LocaleCatalog = {
       'This account and model will be used for new sessions. Existing sessions keep their choices.',
     'firstRun.examples': 'Add capabilities, optionally',
     'firstRun.examplesHelp':
-      'Official examples add execution methods, tools and panels. Review their capabilities and trust before installation. You can add them later.',
+      'Official examples add running modes, tools and panels. Review their capabilities and trust before installation. You can add them later.',
     'firstRun.ready': 'Ready for your first task',
     'firstRun.readyHelp': 'Describe a small task. You can switch models in the conversation.',
     'firstRun.progress': 'Setup progress',
@@ -35,7 +35,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.add': 'Use my API key',
     'firstRun.accountLabel': 'Model account',
     'firstRun.modelLabel': 'Default model',
-    'firstRun.review': 'Business agent examples → Plugins / Discover',
+    'firstRun.review': 'Agent examples → Plugins / Discover',
     'firstRun.start': 'Start conversation',
     'firstRun.failed': 'Setup could not be saved. Try again, or skip for now.',
     'firstRun.loading': 'Saving your choice…',
@@ -85,14 +85,14 @@ export const firstRunCatalog: LocaleCatalog = {
     'doctor.fix.permissions':
       'Check ownership: private directories need mode 0700 and credential/configuration files mode 0600. On Windows, check private ACLs.',
     'doctor.fix.credentials':
-      'Check private credential storage and re-add an account whose credential is missing. No key values appear in diagnostics.',
+      'Open Settings → Models and re-enter the API key for an account whose credential is missing or unreadable. Diagnostics never show key values.',
     'doctor.fix.sandbox':
       'Enable the OS sandbox: Seatbelt on macOS, bubblewrap and user namespaces on Linux. Check Landlock support with agh doctor platform. Unavailable isolation refuses protected commands.',
     'doctor.fix.connection':
       'Start AGH with the same home and profile. If the Web port is busy, choose another with --port.',
     'doctor.fix.disk': 'Free space on the home volume. Review session data before removing any files.',
     'doctor.fix.accounts':
-      'Add and test a model account in Settings, then choose a default model. You can also skip setup and use the local demo.',
+      'Add or repair and test a model account in Settings → Models, then choose a default model.',
     'doctor.fix.plugins':
       'Review plugin integrity in Settings. Restore the matching package before enabling it; do not delete the lock file.',
     'doctor.fix.mcp':
@@ -104,7 +104,7 @@ export const firstRunCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'firstRun.workspace': '选择工作文件夹',
-    'firstRun.workspaceHelp': 'Agent 会在这个文件夹里工作。请选择文件夹继续，也可以跳过配置。',
+    'firstRun.workspaceHelp': '智能体会在这个文件夹里工作。请选择文件夹继续，也可以跳过配置。',
     'firstRun.chooseWorkspace': '选择文件夹',
     'firstRun.manualWorkspace': '无法选择文件夹时，手动输入',
     'firstRun.workspacePath': '文件夹路径',
@@ -122,7 +122,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.modelHelp': '新会话将使用此账户和模型；已有会话保留原来的选择。',
     'firstRun.examples': '按需添加能力',
     'firstRun.examplesHelp':
-      '官方示例可添加执行方式、工具与面板。安装时会审阅能力并确认信任，也可以稍后再添加。',
+      '官方示例可添加运行方式、工具与面板。安装时会审阅能力并确认信任，也可以稍后再添加。',
     'firstRun.ready': '开始你的第一个任务',
     'firstRun.readyHelp': '描述一个小任务。你可以在对话中切换模型。',
     'firstRun.progress': '配置进度',
@@ -134,7 +134,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.add': '使用自己的 API Key',
     'firstRun.accountLabel': '模型账户',
     'firstRun.modelLabel': '默认模型',
-    'firstRun.review': '想看业务 Agent 示例？去插件 → 发现',
+    'firstRun.review': '想看智能体示例？去插件 → 发现',
     'firstRun.start': '开始对话',
     'firstRun.failed': '配置未能保存，请重试或暂时跳过。',
     'firstRun.loading': '正在保存选择…',
@@ -182,13 +182,14 @@ export const firstRunCatalog: LocaleCatalog = {
       '运行 agh home info。若布局不受支持，请通过 AGH_HOME 选择新的私有空目录。已有文件不会被修改。',
     'doctor.fix.permissions':
       '请检查所有者：私有目录权限应为 0700，凭据和配置文件应为 0600；Windows 请检查私有 ACL。',
-    'doctor.fix.credentials': '检查私有凭据存储；缺少凭据的账户需重新添加。诊断不会显示密钥内容。',
+    'doctor.fix.credentials':
+      '在设置 → 模型中为凭据缺失或无法读取的账户重新填写 API key。诊断不会显示密钥内容。',
     'doctor.fix.sandbox':
       '启用系统沙箱：macOS 使用 Seatbelt，Linux 使用 bubblewrap 与用户命名空间。运行 agh doctor platform 可检查 Landlock 支持；隔离不可用时，受保护的命令会被拒绝。',
     'doctor.fix.connection':
       '使用相同的运行目录和配置档启动 AGH。Web 端口被占用时，可用 --port 选择其他端口。',
     'doctor.fix.disk': '释放运行目录所在磁盘的空间。处理任何文件前，请先审阅会话数据。',
-    'doctor.fix.accounts': '在设置中添加并测试模型账户，然后选择默认模型。也可以跳过配置，使用本地演示模型。',
+    'doctor.fix.accounts': '在设置 → 模型中添加或修复并测试模型账户，然后选择默认模型。',
     'doctor.fix.plugins': '在设置中检查插件完整性；启用前先恢复匹配的插件包，不要删除锁文件。',
     'doctor.fix.mcp': '本地 MCP 命令需要可用的沙箱及配置的沙箱预设。启用服务前，请检查 MCP 设置与信任状态。',
     'doctor.count': '已配置 {count} 项',

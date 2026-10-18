@@ -47,7 +47,7 @@
       "@agnes/resource-control-runtime": "0.0.0",
       "@agnes/protocol": "0.0.0"
     },
-    "kinds": [
+    "provides": [
       "skills"
     ]
   }

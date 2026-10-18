@@ -410,7 +410,11 @@ describe('Inference segment', () => {
       code: 'TOOL_NOT_DISCLOSED',
     })
     const result = (await log.scan({ type: 'tool/result', limit: 10 })).at(-1)
-    expect(result?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+    expect(result?.data).toMatchObject({
+      code: 'TOOL_NOT_DISCLOSED',
+      isError: true,
+      content: [{ text: expect.stringContaining('model_capability') }],
+    })
   })
 
   it('refuses a queued Computer Use call if the primary model becomes text-only before execution', async () => {

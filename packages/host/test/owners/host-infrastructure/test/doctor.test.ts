@@ -133,3 +133,46 @@ it('propagates cancellation to an explicitly requested account probe', async () 
   ).rejects.toMatchObject({ name: 'AbortError' })
   expect(probeSignal?.aborted).toBe(true)
 })
+
+it('warns for unavailable account credentials without probing or disclosing secrets', async () => {
+  const { credentials: _credentials, ...safeProbes } = probes
+  const config = {
+    get: async () => ({
+      accounts: [{ ...account, credentialConfigured: false, credentialIssue: 'CONFIG_CREDENTIAL_REQUIRED' }],
+    }),
+    test: async () => {
+      throw new Error('must not probe an unavailable account')
+    },
+  } as never
+  const report = await runDoctor({
+    home: home(),
+    profile: 'local-dev',
+    configuration: config,
+    probes: safeProbes,
+    probeAccounts: true,
+  })
+  expect(report.status).toBe('warn')
+  expect(report.checks.filter((check) => check.status === 'warn').map((check) => check.id)).toEqual([
+    'credentials',
+    'accounts',
+  ])
+  expect(report.checks.find((check) => check.id === 'accounts')).toMatchObject({ probed: false })
+  expect(JSON.stringify(report)).not.toMatch(/PRIVATE LABEL|private.invalid|fixture-model/)
+  const partial = await runDoctor({
+    home: home(),
+    profile: 'local-dev',
+    probes: safeProbes,
+    probeAccounts: true,
+    configuration: {
+      get: async () => ({
+        accounts: [account, { ...account, accountId: 'lost', credentialConfigured: false }],
+      }),
+      test: async () => ({ verified: false }),
+    } as never,
+  })
+  // A missing key never masks a real failure on a different, usable account.
+  expect(partial.checks.find((check) => check.id === 'accounts')).toMatchObject({
+    status: 'fail',
+    probed: true,
+  })
+})

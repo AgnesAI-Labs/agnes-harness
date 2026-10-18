@@ -37,7 +37,7 @@ export const searchCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     add: '添加搜索服务',
-    help: '选择网页搜索服务，让 Agent 能够查找网上的信息。',
+    help: '选择网页搜索服务，让智能体能够查找网上的信息。',
     empty: '尚未添加搜索服务',
     otherServices: '其他可用服务',
     current: '当前使用',
@@ -58,7 +58,7 @@ export const searchCatalog: LocaleCatalog = {
     test: '测试',
     testEmpty: '输入一个搜索词。',
     testFailed: '搜索未成功，请检查服务设置后重试。',
-    emptyHelp: '选择服务并保存访问密钥，让 Agent 能够搜索网页。',
+    emptyHelp: '选择服务并保存访问密钥，让智能体能够搜索网页。',
     tested: '测试通过',
     testCompleted: '搜索测试已完成。',
     clearHelp: '清除后，此服务将无法使用，直到你保存新的密钥。',

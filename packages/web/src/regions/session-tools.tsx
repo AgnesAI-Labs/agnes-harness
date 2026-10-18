@@ -1,7 +1,7 @@
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Icon, IconButton, Menu } from '@agnes/web-ui'
 import { useSyncExternalStore } from 'react'
-import { archivedSessions } from '../archived-sessions.js'
+import { navigationHistory as archivedSessions } from '../navigation-history.js'
 
 /** The sidebar asks for the search palette; the workbench owns it. */
 export const SESSION_SEARCH_EVENT = 'agnes:session-search'

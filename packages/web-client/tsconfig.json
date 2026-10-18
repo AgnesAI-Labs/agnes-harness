@@ -10,8 +10,17 @@
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../../tsconfig.config.json" },
-    { "path": "../cordis" },
-    { "path": "../web-slots" }
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../web-slots"
+    },
+    {
+      "path": "../web-units"
+    }
   ]
 }

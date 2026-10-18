@@ -37,7 +37,6 @@
           "displayName": "Sample dashboard",
           "summary": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
           "description": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "样例仪表盘",
@@ -52,7 +51,6 @@
       "displayName": "Sample dashboard",
       "summary": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
       "description": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "样例仪表盘",
@@ -60,7 +58,10 @@
           "description": "演示由版本化插件数据服务支持的独立仪表盘页面。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./extension/index.mjs"
 }

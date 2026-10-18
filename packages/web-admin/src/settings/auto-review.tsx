@@ -25,7 +25,13 @@ import { useEffect, useState } from 'react'
 export { reviewCatalog } from './auto-review-locale.js'
 
 import { reviewCatalog } from './auto-review-locale.js'
-import { type ModelSlotsState, modelSlotOptions, modelSlotsSettings } from './model-slots.js'
+import {
+  type ModelSlotCatalog,
+  type ModelSlotsState,
+  modelSlotOptions,
+  modelSlotsCatalog,
+  modelSlotsSettings,
+} from './model-slots.js'
 
 export async function reviewSettings(
   config?: AutoReviewConfig,
@@ -57,6 +63,9 @@ const sameConfig = (a: AutoReviewConfig, b: AutoReviewConfig) => JSON.stringify(
 export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
   const [slots, setSlots] = useState<ModelSlotsState>()
+  const [catalog, setCatalog] = useState<ModelSlotCatalog>()
+  const [optionsState, setOptionsState] = useState<'loading' | 'failed' | 'ready'>('loading')
+  const [optionsReads, setOptionsReads] = useState(0)
   const [slotsFailed, setSlotsFailed] = useState(false)
   const [stored, setStored] = useState<AutoReviewConfig>()
   const [readFailed, setReadFailed] = useState(false)
@@ -74,6 +83,31 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       })
     return () => controller.abort()
   }, [reads])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: optionsReads is an explicit catalog retry.
+  useEffect(() => {
+    const controller = new AbortController()
+    let epoch = 0
+    const refresh = () => {
+      const request = ++epoch
+      setOptionsState('loading')
+      void modelSlotsCatalog(controller.signal)
+        .then((value) => {
+          if (!controller.signal.aborted && request === epoch) {
+            setCatalog(value)
+            setOptionsState('ready')
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && request === epoch) setOptionsState('failed')
+        })
+    }
+    refresh()
+    window.addEventListener('agnes:model-slots-changed', refresh)
+    return () => {
+      controller.abort()
+      window.removeEventListener('agnes:model-slots-changed', refresh)
+    }
+  }, [optionsReads])
   useEffect(() => {
     const controller = new AbortController()
     let epoch = 0
@@ -119,24 +153,31 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
     config.set(next as AutoReviewConfig, when)
   }
   const slot = value.modelSlot ?? 'fast'
-  // The reviewer by the name of its account and model, never its route.
+  const models = optionsState === 'ready' && catalog ? modelSlotOptions(catalog) : []
   /**
    * The reviewer by the name of its account and model, never its route. An unset fast slot
    * (undefined) follows the default account and the backend says which model that is (`auto.fast`);
-   * null means the slot is off; a chosen slot nothing serves any more has no name.
+   * null means the slot is off. A saved model keeps its id while availability is checked.
    */
   const modelName = (name: 'fast' | 'verifier') => {
     const chosen = slots?.slots[name]
     const automatic = name === 'fast' && chosen === undefined ? slots?.auto?.fast : undefined
     const target = chosen ?? automatic
     if (!target || !slots) return undefined
-    const option = modelSlotOptions(slots).find(
-      (entry) => entry.route === target.route && entry.id === target.model,
-    )
+    if (optionsState !== 'ready') {
+      const model = `${target.model} · ${t(optionsState === 'loading' ? 'checkingAvailability' : 'availabilityUnknown')}`
+      return automatic ? t('autoModel', { model }) : model
+    }
+    const option = models.find((entry) => entry.route === target.route && entry.id === target.model)
     if (automatic) return t('autoModel', { model: option ? (option.name ?? option.id) : target.model })
-    return option ? `${option.label} · ${option.name ?? option.id}` : undefined
+    return option ? `${option.label} · ${option.name ?? option.id}` : `${target.model} · ${t('unavailable')}`
   }
   const reviewer = modelName(slot)
+  const chosen = slots?.slots[slot]
+  const reviewerUnavailable =
+    optionsState === 'ready' &&
+    !!chosen &&
+    !models.some((option) => option.route === chosen.route && option.id === chosen.model)
   const overrides = value.overrides ?? []
   const summary = [
     t(slot),
@@ -190,7 +231,24 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
                 </SettingsSelect>
               </SettingsItem>
             </SettingsBlock>
-            {(slotsFailed || (slots && !reviewer)) && (
+            {reviewer && optionsState !== 'ready' && (
+              <Banner
+                tone={optionsState === 'failed' ? 'warning' : 'info'}
+                data-testid={
+                  optionsState === 'failed' ? 'auto-review-options-error' : 'auto-review-options-loading'
+                }
+                action={
+                  optionsState === 'failed' ? (
+                    <Button size="small" onClick={() => setOptionsReads((count) => count + 1)}>
+                      {t('retryOptions')}
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {t(optionsState === 'loading' ? 'checkingAvailability' : 'availabilityUnknown')}
+              </Banner>
+            )}
+            {(slotsFailed || (slots && (!reviewer || reviewerUnavailable))) && (
               <Banner
                 tone="warning"
                 data-testid="auto-review-slot-status"
@@ -204,7 +262,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
                   </Button>
                 }
               >
-                {t(slotsFailed ? 'slotFailed' : 'slotUnset')}
+                {t(slotsFailed ? 'slotFailed' : reviewerUnavailable ? 'slotUnavailable' : 'slotUnset')}
               </Banner>
             )}
             <SettingsBlock label={t('scope')}>

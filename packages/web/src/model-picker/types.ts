@@ -1,5 +1,5 @@
 import type { ModelInputLimits, ModelSettings, ThinkingLevel } from '@agnes/protocol'
-import type { SessionAuxiliarySnapshot } from '@agnes/web-ui'
+import type { SessionAuxiliarySnapshot, Translate } from '@agnes/web-ui'
 
 export type ModelPickerOption = {
   id: string
@@ -36,6 +36,8 @@ export type ModelPickerState = {
 }
 
 export type ModelPickerProps = {
+  /** Presentation-owned locale; bundled clients cannot share the host's imperative bridge. */
+  t?: Translate
   state: ModelPickerState
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>

@@ -11,6 +11,9 @@ export interface DshShellRegionMount extends EmptyStateRegionMount {}
 export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount {
   if (registry.spec('root')) throw new Error('DSH shell root is already mounted')
   registry.declare('root', { kind: 'single', scope: 'root' }, 'web-shell')
+  // The composer can remain selected when a different conversation frame owns main.conversation.
+  registry.declare('conversation.composer', { kind: 'chain', scope: 'session' }, 'web-shell')
+  registry.declare('conversation.composer.bar', { kind: 'single', scope: 'session-maybe' }, 'web-shell')
   const removeRoot = registry.register(
     {
       name: 'root',

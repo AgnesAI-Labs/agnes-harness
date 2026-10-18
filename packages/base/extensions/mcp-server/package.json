@@ -21,7 +21,6 @@
           "displayName": "MCP connections",
           "summary": "Connects configured MCP servers and manages their tools, resources and reconnections.",
           "description": "Connects configured MCP servers and manages their tools, resources and reconnections.",
-          "category": "integrations",
           "locales": {
             "zh-CN": {
               "displayName": "MCP 连接",

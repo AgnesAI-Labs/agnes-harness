@@ -4,7 +4,7 @@ English | [简体中文](imports.zh-CN.md)
 
 [Author kit](README.md) · [Quickstart](quickstart.md) · [Testing](testing.md)
 
-Import plugin code from one package, `@agnes/plugin-runtime`: it carries the author helpers and re-exports every contract of `@agnes/extension-api` (kinds, Loop ports, provider types, errors), so the rows below that name `@agnes/extension-api` are reachable from it too. Use **`@agnes/host/author-testkit` for author tests**. `@agnes/extension-api/host` holds the Host's backend port and is not an author entry. Every kind, registered or bound, is one token type; import a Host-service token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#4-optional-compilation-and-tests).
+Import plugin code from one package, `@agnes/plugin-runtime`: it carries the author helpers and re-exports every contract of `@agnes/extension-api` (kinds, Loop ports, provider types, errors), so the rows below that name `@agnes/extension-api` are reachable from it too. Use **`@agnes/host/author-testkit` for author tests**. `@agnes/extension-api/host` holds the Host's backend port and is not an author entry. Every kind, registered or bound, is one token type; import a Host-service token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#5-optional-compilation-and-tests).
 
 **Author** below means the supported public author surface in this preview, not a frozen API guarantee. **Specialist** means an explicit contract or integration task. **Internal/legacy — don't use** means avoid that entry in new author templates; existing exports remain available.
 
@@ -31,6 +31,8 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 | Test tools, Skills, Loops and adapters | `@agnes/host/author-testkit` | `createPluginTestHost`, `driveLoop`, `scriptedModel`, `runModelAdapter` | Author, test files only. The Host registration bridge is automatic. Supply explicit service doubles for lightweight contracts. |
 | Test sessions, generation pins, model replay or HTTP/SSE faults | `@agnes/host/author-testkit` | `createAuthorTestkit`, `recordModelFixture`, `replayModelFixture`, `startModelFaultServer`, `ScriptedProvider`, `fakeModel`, `fakeRequest` | Author, test files only; [testing guide](testing.md) explains fixture limits and cleanup. |
 | Check specialist provider lifecycle contracts | `@agnes/extension-api/testkit` | `runProviderConformance`, `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance`, `childAgentConformance` | Specialist. Requires a real Host registration/session probe; this is not a second starter testkit. Optional Vitest persistence suites live at `@agnes/extension-api/testkit/persistence-contract`. |
+
+For profile pages, import React from `react` and call your declared backend through `ctx.profile.services.query/effect/readOperation`; see the [browser author reference](../reference/plugin-author-api.md) and working [panel template](../../templates/tool-with-panel/). For Node DOM tests, import `createClientPanelTestHost` from `@agnes/web-client/testkit` and stub only its `profileCaller` argument. `createPluginTestHost` accepts an isolated `storeDir` for restart retention and exposes `invokeProfileService` for registered handler contracts; native admission/approvals are outside this lightweight fixture.
 
 ## Kind tokens
 
@@ -76,7 +78,6 @@ The package `exports` maps select the entry; the entry's exports select the symb
 - [observability package](../../packages/observability/package.json), [Intelligent UI contract package](../../packages/intelligent-ui-contract/package.json), and [Git worktree contract package](../../packages/git-worktree-contract/package.json).
 
 TypeBox is the declared `@sinclair/typebox` dependency; its own package exports provide the root, `/value` and `/compiler` entries. The [runtime module list](../../packages/plugin-runtime/src/provided-externals.ts) supplies those same namespaces.
-
 
 ## Session decisions
 

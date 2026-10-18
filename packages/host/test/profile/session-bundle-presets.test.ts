@@ -8,11 +8,13 @@ import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
-import { hashDirectory } from '@agnes/package-manager'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { hashDirectory, preflightPackageBundles } from '@agnes/package-manager'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
+import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
 import { createTestHost } from '../../testkit/index.js'
 import {
+  packageDirs,
   pluginHost,
   pluginRow,
   pluginSource,
@@ -24,6 +26,38 @@ import {
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'session-bundle-presets-test-worker' }),
 }))
+
+it('defers a deployment launch preset to admission, which requires its explicit allowed definition', () => {
+  const bundles = {
+    work: {
+      profile: { tools: ['read'] },
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'standard' },
+    },
+  }
+  expect(preflightPackageBundles({ packageId: 'acme/kit', bundles })).toMatchObject({
+    level: 'deployment-dependent',
+    reasons: ['launch-preset-definition-required:standard'],
+  })
+  const profile = {
+    provider: { routes: [] },
+    presets: { default: 'other', allowed: ['standard', 'other'] },
+    bundleCatalog: parsePackageBundles('acme/kit', bundles),
+    limits: {},
+  } as unknown as ResolvedProfile
+  const selection = { preset: bundles.work.launch.preset, bundles: ['acme/kit#work'] }
+  const host = { presets: { standard: { name: 'standard' }, other: { name: 'other' } } }
+  expect(admitSessionBundlePresets(profile, host, selection).preset.name).toBe('standard')
+  expect(() =>
+    admitSessionBundlePresets(profile, { presets: { other: host.presets.other } }, selection),
+  ).toThrow('preset standard not provided')
+  expect(() =>
+    admitSessionBundlePresets(
+      { ...profile, presets: { default: 'other', allowed: ['other'] } },
+      host,
+      selection,
+    ),
+  ).toThrow('preset standard is not in presets.allowed')
+})
 
 /** A deployment that knows two bundles but selects neither: only a session can choose them. */
 function fixture() {
@@ -45,7 +79,11 @@ function fixture() {
         ...parsePackageBundles('@fixture/elsewhere', {
           demo: {
             presets: {
-              elsewhere: { ...strict, name: 'elsewhere', model: { route: { primary: 'not-served-here' } } },
+              elsewhere: {
+                ...strict,
+                name: 'elsewhere',
+                model: { route: { primary: { route: 'not-served-here', model: 'default' } } },
+              },
             },
           },
         }),
@@ -301,3 +339,251 @@ it.each(['route', 'model'])(
     }
   },
 )
+
+it('reviews the compiler final tree, strictly pins an agent and admits saved schedule selections against current bundle definitions', async () => {
+  const original = pluginSource("ctx.tools.register(tool('fixture_review'))")
+  const bundles = {
+    parent: { profile: { toolPolicy: { readOnly: false } } },
+    review: {
+      extends: [`${VENDOR}#parent`],
+      profile: { tools: ['read'] },
+      presets: {
+        unselected: {
+          name: 'unselected',
+          extends: 'standard',
+          model: { route: { primary: { route: 'not-served', model: 'default' } } },
+        },
+        review: { name: 'review', extends: 'standard', composition: { toolPolicy: { readOnly: true } } },
+      },
+      launch: {
+        title: { en: 'Review' },
+        description: { en: 'Review' },
+        preset: 'review',
+        prompt: { mode: 'draft', text: { en: 'Editable' } },
+      },
+    },
+  }
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = {
+    ...bundles,
+    writer: {
+      extends: [`${VENDOR}#parent`],
+      profile: { tools: ['write'] },
+      presets: { relaxed: { name: 'relaxed', extends: 'standard' } },
+      launch: { title: { en: 'Writer' }, description: { en: 'Writer' }, preset: 'relaxed' },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  let source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const metadataDirectory = scratch()
+  const metadataId = '@acme/launch-only'
+  const metadataBundles = { work: { extends: [`${VENDOR}#review`], launch: bundles.review.launch } }
+  writeFileSync(
+    join(metadataDirectory, 'package.json'),
+    JSON.stringify({
+      name: metadataId,
+      version: '1.0.0',
+      dependencies: { [VENDOR]: '^2.3.4' },
+      agnes: { bundles: metadataBundles },
+    }),
+  )
+  const metadataSource = {
+    ...source,
+    snapshot: {
+      ...source.snapshot,
+      directory: metadataDirectory,
+      packageId: metadataId,
+      version: '1.0.0',
+      snapshotId: 'metadata',
+      integrity: 'metadata-integrity',
+      treeIntegrity: hashDirectory(metadataDirectory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost([source, metadataSource], {
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      }),
+    packageDirs: {
+      ...packageDirs,
+      // Packaged builtins use a verified release directory without a package.json.
+      '@agnes/ai': scratch(),
+    },
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    profileInputs: { bundleCatalog: parsePackageBundles(VENDOR, bundles) },
+    runtimePluginSources: async () => [source, metadataSource],
+  })
+  try {
+    await host.applyRuntimeTarget(targetOf([pluginRow()]))
+    const ref = `${VENDOR}#review`
+    const plan = await host.resolveAgent!(ref)
+    expect(plan.permission.readOnly).toBe(false)
+    expect(plan.bundles).toEqual([ref])
+    const writer = await host.resolveAgent!(`${VENDOR}#writer`)
+    expect(writer.loop).toEqual(plan.loop)
+    expect(writer.preset).toBe('relaxed')
+    expect(writer.permission.tools).toEqual(['write'])
+    expect(plan.permission.tools).toEqual(['read'])
+    const metadataPlan = await host.resolveAgent!(`${metadataId}#work`)
+    expect(metadataPlan.bundles).toEqual([`${metadataId}#work`])
+    expect(metadataPlan.sources.map((item) => item.id)).toContain(metadataId)
+    const metadataSession = await host.createSession({
+      key: 'metadata-only',
+      cwd: dataDir,
+      agent: metadataPlan.ref,
+      agentDigest: metadataPlan.digest,
+    })
+    expect(metadataSession.preset.name).toBe('review')
+    await metadataSession.close()
+    const session = await host.createSession({
+      key: 'reviewed-agent',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: plan.digest,
+    })
+    expect(session.preset.name).toBe('review')
+    expect(session.preset.model.route.primary).toBe(plan.model.route)
+    expect(session.preset.model.id.primary).toBe(plan.model.model)
+    expect((await session.scan({ type: 'user/message', limit: 1 })).length).toBe(0)
+    const saved = { bundles: plan.bundles, preset: plan.preset, loop: plan.loop }
+    // Same selection, new trusted Bundle definition. Its launch is no longer read by schedules.
+    manifest.agnes.bundles.review.profile = { tools: ['write'], toolPolicy: { readOnly: true } }
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+        capabilityHash: 'changed',
+      },
+    }
+    await expect(
+      host.createSession({ key: 'drifted-agent', cwd: dataDir, agent: ref, agentDigest: plan.digest }),
+    ).rejects.toThrow('review drift')
+    delete manifest.agnes.bundles.review.launch
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+      },
+    }
+    const scheduled = await host.createSession({ key: 'schedule-next-run', cwd: dataDir, ...saved })
+    const bindings = new CompositionSessionStore(join(dataDir, 'profiles', 'local-dev'))
+    expect(bindings.read(scheduled.key)?.tree.selection.tools).toEqual(['write'])
+    expect(bindings.read(session.key)?.tree.selection.tools).toEqual(['read'])
+    await scheduled.close()
+    await session.close()
+    // A strict caller cannot use ordinary admission's unserved-route fallback.
+    manifest.agnes.bundles.review.launch = plan.launch
+    manifest.agnes.bundles.review.presets.review.model = {
+      route: { primary: { route: 'not-served', model: 'default' } },
+    }
+    writeFileSync(file, JSON.stringify(manifest))
+    source = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+      },
+    }
+    await expect(host.resolveAgent!(ref)).rejects.toMatchObject({ code: 'E_PRESET_UNRESOLVED' })
+  } finally {
+    await host.close()
+  }
+})
+
+it('binds an agent review to published row config and the admitted tools without revealing config', async () => {
+  const original = pluginSource(
+    "const t=tool('fixture_review'); t.meta.isReadOnly=config?.readOnly!==false; t.meta.replay='never'; ctx.tools.register(t); const image=tool('fixture_image'); image.meta.requiresImageInput=true; ctx.tools.register(image)",
+  )
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = {
+    work: {
+      profile: { tools: ['fixture_review', 'fixture_image'], toolPolicy: { readOnly: true } },
+      presets: { safe: { name: 'safe', extends: 'standard' } },
+      launch: { title: { en: 'Review' }, description: { en: 'Synthetic' }, preset: 'safe' },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  const source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost(source, {
+    packageDirs: { ...packageDirs, '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)) },
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
+      }),
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    runtimePluginSources: async () => [source],
+  })
+  const fixtureValue = 'synthetic-private-config'
+  const target = (readOnly: boolean) =>
+    targetOf([
+      createPluginRow({
+        ...pluginRow(),
+        snapshotDigest: source.snapshot.integrity,
+        exportName: 'plugin',
+        config: { readOnly, privateSetting: fixtureValue },
+      }),
+    ])
+  try {
+    await host.applyRuntimeTarget(target(true))
+    const ref = `${VENDOR}#work`
+    const before = await host.resolveAgent!(ref)
+    expect(before.permission).toMatchObject({ readOnly: true, tools: ['fixture_review'] })
+    // Re-publishing unchanged config preserves the ticket and opens on precisely those tools.
+    await host.applyRuntimeTarget(target(true))
+    expect((await host.resolveAgent!(ref)).digest).toBe(before.digest)
+    const unchanged = await host.createSession({
+      key: 'unchanged-config',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: before.digest,
+    })
+    expect(unchanged.currentTools().resolve('fixture_review')).toBeDefined()
+    await unchanged.close()
+    await host.applyRuntimeTarget(target(false))
+    const after = await host.resolveAgent!(ref)
+    expect(after.digest).not.toBe(before.digest)
+    expect(after.permission).toMatchObject({ readOnly: true, tools: [] })
+    expect(JSON.stringify(after)).not.toContain(fixtureValue)
+    await expect(
+      host.createSession({ key: 'stale-config', cwd: dataDir, agent: ref, agentDigest: before.digest }),
+    ).rejects.toThrow('review drift')
+    const current = await host.createSession({
+      key: 'current-config',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: after.digest,
+    })
+    expect(current.currentTools().resolve('fixture_review')).toBeUndefined()
+    await current.close()
+  } finally {
+    await host.close()
+  }
+})

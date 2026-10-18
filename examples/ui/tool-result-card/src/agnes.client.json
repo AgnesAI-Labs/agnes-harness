@@ -1,0 +1,9 @@
+{
+  "client": {
+    "id": "tool-result-card",
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slots": [],
+    "slotCatalogVersion": "dsh-client-slots/v1"
+  }
+}

@@ -14,6 +14,7 @@ import { panelContext } from './context.js'
 import { type DiffRow, diffSide, foldDiff, parseDiff, textRows } from './diff-lines.js'
 import { fileType } from './file-types.js'
 import { changesCount } from './tab-counts.js'
+import { visiblePoll } from './visible-poll.js'
 
 type Selection = { sessionId: string; path: string; revision?: string }
 function fileSelection(value: unknown, sessionId?: string): Selection | undefined {
@@ -70,7 +71,6 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
   useEffect(() => {
     if (!session) return
     let alive = true
-    let timer: ReturnType<typeof setTimeout> | undefined
     const read = async () => {
       try {
         const result = await session.workspaceChanges({
@@ -86,17 +86,14 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
         if (alive)
           setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
       } finally {
-        if (alive) {
-          setLoading(false)
-          timer = setTimeout(() => void read(), 3000)
-        }
+        if (alive) setLoading(false)
       }
     }
     setLoading(true)
-    void read()
+    const stop = visiblePoll(read, 3000)
     return () => {
       alive = false
-      clearTimeout(timer)
+      stop()
     }
   }, [session, scope, path, expectedRevision, refresh, t])
   if (!session)
@@ -207,7 +204,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
                     ) : (
                       <Icon name="file" className="workbench-file-icon" />
                     )}
-                    <span className="workbench-changes-path" title={file.path}>
+                    <span className="workbench-changes-path" title={file.path} translate="no">
                       {slash >= 0 && (
                         <span className="workbench-changes-dir">{file.path.slice(0, slash + 1)}</span>
                       )}
@@ -242,7 +239,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
         {selected ? (
           <article className="workbench-change-preview" aria-label={t('workbench.changes.diff')}>
             <header className="workbench-change-head">
-              <strong className="workbench-change-name" title={selected.path}>
+              <strong className="workbench-change-name" title={selected.path} translate="no">
                 {selected.path.slice(selected.path.lastIndexOf('/') + 1)}
               </strong>
               {latest && (

@@ -15,9 +15,6 @@
     "node": ">=24"
   },
   "agnes": {
-    "kinds": [
-      "tool"
-    ],
     "plugins": [
       {
         "export": "skillHelper",
@@ -30,7 +27,6 @@
           "displayName": "Skills helper",
           "summary": "Helps create and import reusable Skills through reviewed requests.",
           "description": "Helps create and import reusable Skills through reviewed requests.",
-          "category": "developer",
           "locales": {
             "zh-CN": {
               "displayName": "技能助手",
@@ -45,7 +41,6 @@
       "displayName": "Skills helper",
       "summary": "Helps create and import reusable Skills through reviewed requests.",
       "description": "Helps create and import reusable Skills through reviewed requests.",
-      "category": "developer",
       "locales": {
         "zh-CN": {
           "displayName": "技能助手",
@@ -53,6 +48,9 @@
           "description": "通过审核后的请求帮助创建和导入可复用技能。"
         }
       }
-    }
+    },
+    "provides": [
+      "tool"
+    ]
   }
 }

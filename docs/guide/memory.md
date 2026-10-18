@@ -32,7 +32,7 @@ Memory stays in local files and the session ledger needed for tool execution. Fo
 
 ## Memory and knowledge sources together
 
-`AGENTS.md` contains team rules checked into the project. Memory contains learned preferences outside Git. Session search answers “what did we discuss?”; knowledge bases supply source material through MCP, tools or [FDE bundles](demo.md). These can coexist with one memory provider. AGENTS.md and authoritative knowledge sources take precedence: correct conflicting memory through the same approval flow, rather than copying source documents into it.
+`AGENTS.md` contains team rules checked into the project. Memory contains learned preferences outside Git. Session search answers “what did we discuss?”; knowledge bases supply source material through MCP, tools or [Business agents](demo.md). These can coexist with one memory provider. AGENTS.md and authoritative knowledge sources take precedence: correct conflicting memory through the same approval flow, rather than copying source documents into it.
 
 The demo model performs no reasoning. `show remembered preferences` (or `显示记住的偏好`) displays the memory contribution actually received in that request. `call write {"path":"<memory-directory>/MEMORY.md","content":"Prefer concise summaries."}` uses the same normal tool and approval path as a configured reasoning model. Read an existing file before replacing it.
 

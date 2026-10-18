@@ -49,7 +49,6 @@ describe('plugin purpose metadata', () => {
     displayName: 'Search',
     summary: 'Find project text.',
     description: 'Search readable files.',
-    category: 'tools' as const,
     locales: { 'zh-CN': { displayName: '搜索' } },
   }
   it('falls back per field and leaves omitted metadata absent', () => {
@@ -58,44 +57,24 @@ describe('plugin purpose metadata', () => {
       displayName: '搜索',
       summary: metadata.summary,
       description: metadata.description,
-      category: 'tools',
     })
     expect(resolvePluginMetadata(metadata, 'en')?.displayName).toBe('Search')
   })
-  it('validates bounded example metadata and refuses unrelated declarations or duplicate launches', () => {
-    const launch = {
-      id: 'start',
-      kind: 'business-agent',
-      title: 'Start',
-      bundle: 'acme/example#demo',
-      preset: 'safe',
-      prompt: 'Read synthetic data.',
-    }
-    const example = {
-      ...metadata,
-      category: 'example',
-      exampleOf: 'acme/host',
-      launches: [launch],
-      pageEntry: 'scene',
-    }
+  it('validates the independent restricted example relation and rejects old author fields', () => {
+    const example = { ...metadata, exampleOf: 'acme/host', pageEntry: 'scene' }
     expect(validatePluginMetadata(example).ok).toBe(true)
     expect(validatePluginMetadata({ ...example, exampleOf: undefined }).ok).toBe(false)
-    expect(validatePluginMetadata({ ...example, category: 'tools' }).ok).toBe(false)
-    expect(validatePluginMetadata({ ...example, launches: [launch, launch] }).ok).toBe(false)
-    expect(
-      validatePluginMetadata({ ...example, launches: [{ ...launch, prompt: '😀'.repeat(4097) }] }).ok,
-    ).toBe(false)
+    expect(validatePluginMetadata({ ...example, category: 'example' }).ok).toBe(false)
+    expect(validatePluginMetadata({ ...example, launches: [] }).ok).toBe(false)
   })
-  it('carries a localized sample prompt, an experimental mark and the business-agent category', () => {
+  it('carries a localized sample prompt, an experimental mark and no category', () => {
     const agent = {
       ...metadata,
-      category: 'business-agent' as const,
       experimental: true,
       samplePrompt: { en: 'Review the sample contract.', 'zh-CN': '审查示例合同。' },
     }
     expect(validatePluginMetadata(agent).ok).toBe(true)
     expect(resolvePluginMetadata(agent, 'zh-CN')).toMatchObject({
-      category: 'business-agent',
       experimental: true,
       samplePrompt: '审查示例合同。',
     })
@@ -120,9 +99,7 @@ describe('plugin purpose metadata', () => {
       description: '😀'.repeat(1200),
       docsUrl: 'https://example.org/' + '😀'.repeat(2000),
     }
-    expect(validatePluginMetadata({ ...text, category: 'tools' }).ok).toBe(true)
-    expect(
-      validatePluginMetadata({ ...text, category: 'tools', locales: { en: text, 'zh-CN': text } }).ok,
-    ).toBe(false)
+    expect(validatePluginMetadata({ ...text }).ok).toBe(true)
+    expect(validatePluginMetadata({ ...text, locales: { en: text, 'zh-CN': text } }).ok).toBe(false)
   })
 })

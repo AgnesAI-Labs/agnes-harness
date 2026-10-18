@@ -30,6 +30,7 @@ import {
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
+  jcs,
   rpcError,
   type UiActionParams,
   type UiActionReceipt,
@@ -58,6 +59,7 @@ import {
   type UiDataSourceCatalogView,
   type UiDataSourceLookup,
 } from './ui-data-source.js'
+import { actorForUiResult, authenticateUiAction } from './ui-result-identity.js'
 
 const READER: Actor = { id: UI_OWNER, org: 'local', role: 'extension', deptPath: [], attrs: {} }
 const UNAVAILABLE = 'Intelligent UI plugin unavailable'
@@ -67,26 +69,6 @@ export type UiDataSourceCatalog = UiDataSourceCatalogView
 
 function denied(reason?: string): never {
   throw rpcError('CAPABILITY_DENIED', reason === undefined ? undefined : { reason })
-}
-
-async function actorForUiResult(session: HostSession, owner: string, key: string): Promise<Actor> {
-  if (!key.startsWith('ui-result:')) denied()
-  const commandId = key.slice('ui-result:'.length)
-  const rows = await scanAll((query) => session.scan(query), {
-    type: `x/${owner}/action.received`,
-    lane: session.lane,
-    fromSeq: (session.d.log.parent?.boundarySeq ?? 0) + 1,
-    toSeq: session.lastSeq,
-  })
-  let actor: Actor | undefined
-  for (const row of rows) {
-    if (row.origin !== `ext:${owner}` || row.trust !== 'untrusted') continue
-    const record = (row.data as { record?: { request?: { commandId?: string }; actor?: Actor } }).record
-    if (record?.request?.commandId !== commandId || !record.actor?.id || !record.actor.org) continue
-    actor = record.actor
-  }
-  if (!actor) denied()
-  return actor
 }
 
 async function confirmDeferredSource(
@@ -132,6 +114,7 @@ export function createIntelligentUiBridge(input: {
   )
   const sourceCache = new Map<string, UiDataSourceCacheEntry>()
   const sourceValidators = new Map<string, ((data: unknown) => boolean) | 'invalid'>()
+  const semanticCalls = new WeakSet<ServiceCall>()
   let hooked = false
   const enabled = () => input.extensionHost.packageFor(intelligentUiKind, UI_OWNER) !== undefined
   const generationOf = (session: HostSession) =>
@@ -145,12 +128,16 @@ export function createIntelligentUiBridge(input: {
     session: HostSession,
     actor: Actor,
     signal: AbortSignal,
+    actionRequest?: UiActionParams,
   ): Promise<IntelligentUiInstance> => {
     const packageId = input.extensionHost.packageFor(intelligentUiKind, UI_OWNER)
     const generationId = generationOf(session)
     if (!packageId || !generationId || session.closingOrClosed) denied(UNAVAILABLE)
     const queue = deferredQueueFor(session)?.forSession(session.key, session.lane)
     if (!queue) denied()
+    const actionAdmission = actionRequest
+      ? { request: structuredClone(actionRequest), actor: structuredClone(actor) }
+      : undefined
     const call: ServiceCall = {
       owner: UI_OWNER,
       packageId,
@@ -158,7 +145,7 @@ export function createIntelligentUiBridge(input: {
       generationId,
       signal,
       watermark: session.lastSeq,
-      actor,
+      actor: structuredClone(actor),
       live: () => {
         if (session.closingOrClosed || signal.aborted) return undefined
         if (generationOf(session) !== generationId) return undefined
@@ -168,9 +155,10 @@ export function createIntelligentUiBridge(input: {
         return { owner: UI_OWNER, active: true, generationId }
       },
     }
+    semanticCalls.add(call)
     return input.extensionHost.bindHost(intelligentUiKind, call, {
-      ledger: (boundCall, _binding, descriptor) =>
-        createSessionLedger(session as unknown as SessionLedgerSession, {
+      ledger: (boundCall, _binding, descriptor) => {
+        const ledger = createSessionLedger(session as unknown as SessionLedgerSession, {
           kind: intelligentUiKind.kind,
           owner: UI_OWNER,
           eventNames: descriptor.eventNames ?? [],
@@ -179,7 +167,19 @@ export function createIntelligentUiBridge(input: {
           alive() {
             if (session.closingOrClosed || signal.aborted) denied(UNAVAILABLE)
           },
-        }),
+        })
+        return {
+          ...ledger,
+          async appendOwn(name, data, sourceSeq) {
+            if (name === 'action.received' && actionAdmission) {
+              const request = (data as { record?: { request?: UiActionParams } }).record?.request
+              if (!request || jcs(request) !== jcs(actionAdmission.request)) denied()
+              await authenticateUiAction(session, actionAdmission.request, actionAdmission.actor, signal)
+            }
+            return ledger.appendOwn(name, data, sourceSeq)
+          },
+        }
+      },
       projections: unavailableProjections,
       lastSeq: () => session.lastSeq,
       now: () => Date.now(),
@@ -190,9 +190,10 @@ export function createIntelligentUiBridge(input: {
     actor: Actor,
     signal: AbortSignal,
     op: (ui: IntelligentUiInstance) => Promise<T>,
+    actionRequest?: UiActionParams,
   ): Promise<T> => {
     if (session.closingOrClosed || !enabled()) denied(UNAVAILABLE)
-    const ui = await bind(session, actor, signal)
+    const ui = await bind(session, actor, signal, actionRequest)
     try {
       return await op(ui)
     } finally {
@@ -297,9 +298,10 @@ export function createIntelligentUiBridge(input: {
       const session = requireSession(ref.key, ref.lane)
       if (!call.actor) denied()
       const found = deferredQueueFor(session)?.ownerFacade(session.key, session.lane, {
-        owner: UI_OWNER,
-        actor: call.actor,
-        confirmSource: (seq, source, signal) => confirmDeferredSource(session, UI_OWNER, seq, source, signal),
+        owner: call.owner,
+        actor: structuredClone(call.actor),
+        confirmSource: (seq, source, signal) =>
+          confirmDeferredSource(session, call.owner, seq, source, signal),
       })
       if (!found) denied()
       return {
@@ -329,7 +331,7 @@ export function createIntelligentUiBridge(input: {
           )
           return (row?.data as { invocationId?: string } | undefined)?.invocationId
         },
-        authenticatedActor: call.actor,
+        authenticatedActor: structuredClone(call.actor),
         resolveSources: (request: UiSourceResolveInput) => {
           const live = requireSession(session.key, session.lane)
           const generationId = generationOf(live)
@@ -353,7 +355,7 @@ export function createIntelligentUiBridge(input: {
             declarations: () => readUiComponentDeclarations(input.profileDir, live.key),
             open: async (registration, signal) => {
               const instance = await input.extensionHost.bindHost(uiDataSourceKind, {
-                owner: UI_OWNER,
+                owner: call.owner,
                 packageId: registration.sourcePackage,
                 providerId: registration.id,
                 session: call.session,
@@ -363,7 +365,7 @@ export function createIntelligentUiBridge(input: {
                 live: () => {
                   if (signal.aborted || live.closingOrClosed) return undefined
                   if (generationOf(live) !== generationId) return undefined
-                  return { owner: UI_OWNER, active: true, generationId }
+                  return { owner: call.owner, active: true, generationId }
                 },
               })
               return {
@@ -379,12 +381,15 @@ export function createIntelligentUiBridge(input: {
       }
     },
     input(call) {
+      if (!call.actor) denied()
+      const authenticatedActor = structuredClone(call.actor)
+      const semantic = semanticCalls.has(call)
       return {
         async deliver(key, input, signal) {
           const ref = call.session
           if (!ref) denied(UNAVAILABLE)
           const session = requireSession(ref.key, ref.lane)
-          const actor = await actorForUiResult(session, call.owner, key)
+          const actor = await actorForUiResult(session, call.owner, key, authenticatedActor, semantic)
           return enqueueSystemInput(
             session,
             key,
@@ -418,7 +423,7 @@ export function createIntelligentUiBridge(input: {
         )
       return {
         action: (params, actor, signal) =>
-          run(session, actor, signal, (ui) => ui.action(params, actor, signal)),
+          run(session, actor, signal, (ui) => ui.action(params, actor, signal), params),
         read: async (params, signal) => {
           const page = await run(session, READER, signal, (ui) => ui.read(params, signal))
           const surfaces: UiSurfaceRecord[] = []

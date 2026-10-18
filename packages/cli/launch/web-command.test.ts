@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnsureLocalBackendOptions, LocalBackend } from './backend.js'
 import { parseWebCommand, runWebCommand, type WebCommandIO } from './web-command.js'
 
@@ -41,6 +41,12 @@ const resources = {
   workerEntry: '/tmp/local-runtime/worker.mjs',
   webRoot: '/tmp/local-runtime/web',
 }
+
+let daemonDir: string
+beforeEach(() => {
+  daemonDir = mkdtempSync(join(tmpdir(), 'agh-web-command-'))
+})
+afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
 
 describe('Web command launch contract', () => {
   it.each(['en', 'zh-CN'])(
@@ -90,7 +96,7 @@ describe('Web command launch contract', () => {
     const ensureBackend = vi.fn(async (options: EnsureLocalBackendOptions) => {
       expect(options.exposeWeb).toBe(false)
       return {
-        scope: {} as LocalBackend['scope'],
+        scope: { daemonDir } as LocalBackend['scope'],
         discovery: {} as LocalBackend['discovery'],
         socketPath: unreachableSocket,
         closeClient,
@@ -149,6 +155,7 @@ describe('Web command launch contract', () => {
       received = options
       return {
         scope: {
+          daemonDir,
           home: '/tmp/agnes-launch-fixture',
           profile: 'local-dev',
           scopeID: 'test-scope',
@@ -229,7 +236,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -264,7 +271,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -298,7 +305,7 @@ describe('Web command launch contract', () => {
     const signals = new EventEmitter()
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         socketPath: unreachableSocket,
         web: {
@@ -328,7 +335,7 @@ describe('Web command launch contract', () => {
     let handleAdmin: ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         socketPath: unreachableSocket,
         web: {

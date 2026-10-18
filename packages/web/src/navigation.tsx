@@ -8,7 +8,7 @@ import {
   untitledSessionLabel,
 } from '@agnes/web-units/shell'
 import { useState, useSyncExternalStore } from 'react'
-import { archivedSessions } from './archived-sessions.js'
+import { navigationHistory as archivedSessions } from './navigation-history.js'
 import { SessionMenu } from './session-menu.js'
 import { WorkspaceMenu } from './workspace-menu.js'
 
@@ -404,7 +404,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   <>
                     {page.loading && !page.loaded && <p role="status">{t('nav.loading')}</p>}
                     {!page.ready && <p role="status">{t('nav.initializing')}</p>}
-                    {(page.error || (page.stale && !page.loading)) && (
+                    {!page.loading && (page.error || page.stale) && (
                       <p role={page.error ? 'alert' : 'status'}>
                         {page.error ?? t('nav.updated')}{' '}
                         <Button

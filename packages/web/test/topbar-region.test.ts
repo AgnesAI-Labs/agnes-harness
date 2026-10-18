@@ -241,6 +241,9 @@ describe('rendered topbar region', () => {
       /#status \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - var\(--s8\)\);[^}]*overflow: hidden;/,
     )
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(css).toMatch(
+      /@media \(max-width: 767px\) \{\s*\.topbar \{\s*min-width: var\(--control-height-touch\);/,
+    )
     expect(css).toMatch(/\.topbar-row \{[^}]*container: topbar-row \/ inline-size/)
     const start = css.indexOf('@container topbar-row (max-width: 55rem) {')
     expect(start).toBeGreaterThan(-1)

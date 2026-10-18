@@ -21,7 +21,6 @@
           "displayName": "ACP child agents",
           "summary": "Connects an external ACP agent process to handle delegated tasks.",
           "description": "Connects an external ACP agent process to handle delegated tasks.",
-          "category": "collaboration",
           "locales": {
             "zh-CN": {
               "displayName": "ACP 子 Agent",

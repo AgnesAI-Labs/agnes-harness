@@ -2,6 +2,7 @@ import type { ToolContext } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import type { AuthoringCandidate } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
+import { authoringFailure } from './authoring-error.js'
 import { candidateResult } from './candidate-result.js'
 import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
@@ -20,34 +21,67 @@ const file = Type.Object(
   { path: Type.String({ minLength: 1, maxLength: 240 }), content: Type.String({ maxLength: 131072 }) },
   { additionalProperties: false },
 )
-async function request(ctx: ToolContext, input: unknown, read?: { offset?: number; expectedHash?: string }) {
+async function request(
+  ctx: ToolContext,
+  input: { action: string; candidateId?: string; [key: string]: unknown },
+  read?: { offset?: number; expectedHash?: string },
+) {
   ctx.signal.throwIfAborted()
-  if (!ctx.pluginManage)
-    return {
-      isError: true,
-      content: [
-        { type: 'text' as const, text: 'Host-reviewed authoring is unavailable. No files were installed.' },
-      ],
+  try {
+    if (!ctx.pluginManage)
+      throw Object.assign(new Error('Host authoring capability is unavailable'), {
+        code: 'PLUGIN_PORT_UNAVAILABLE',
+      })
+    const value = await ctx.pluginManage.request(input)
+    ctx.signal.throwIfAborted()
+    const result = await candidateResult(ctx, value as AuthoringCandidate, read, input.action)
+    if (result.isError) {
+      const failure = authoringFailure(
+        input.action,
+        input.candidateId ?? (value as AuthoringCandidate).candidateId,
+        'result',
+        result.details,
+      )
+      if (failure)
+        return { ...result, details: failure.details, content: [...failure.content, ...result.content] }
     }
-  const value = await ctx.pluginManage.request(input)
-  ctx.signal.throwIfAborted()
-  return candidateResult(ctx, value as AuthoringCandidate, read)
+    return result
+  } catch (error) {
+    ctx.signal.throwIfAborted()
+    const failure = authoringFailure(
+      input.action,
+      input.candidateId,
+      ctx.pluginManage ? 'request' : 'host-capability',
+      error,
+    )
+    if (failure) return failure
+    throw error
+  }
 }
+
 export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_creator_guide',
-    description: 'Read the reviewed plugin/Skill authoring guide.',
+    description:
+      'Read the version-matched authoring path, receipt reporting, verification stages and complete-package delivery guide.',
     parameters: Type.Object({}, { additionalProperties: false }),
     meta: { ...meta, isReadOnly: true, isDestructive: false, replay: 'safe', requiresApproval: 'never' },
     async execute(_args, ctx) {
       ctx.signal.throwIfAborted()
-      return { content: [{ type: 'text', text: creatorAssets.skill }] }
+      return {
+        content: [{ type: 'text', text: `${creatorAssets.authoringGuidance}\n\n${creatorAssets.skill}` }],
+        structured: {
+          authoringCapability: ctx.pluginManage
+            ? 'supplied-authorization-checked-per-call'
+            : 'unavailable-host-capability',
+        },
+      }
     },
   }),
   defineTool({
     name: 'plugin_scaffold',
     description:
-      'Draft a plugin or Markdown Skill in the Host candidate area, outside discovery roots. Returns candidateId and candidateHash; no code is installed.',
+      'Alternative initial template step to plugin_helper_create; never recreate after a later-stage failure. Draft a plugin or Markdown Skill in the Host candidate area, outside discovery roots. Returns candidateId and candidateHash; no code is installed.',
     parameters: Type.Object(
       {
         template: Type.Union(
@@ -70,7 +104,7 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_test',
     description:
-      'Run bounded Node author tests for this exact candidate hash using the public testkit. One hash-bound confirmation authorizes execution; full-access skips it only with enforced OS isolation. Tests never publish.',
+      'Run bounded Node author tests for this exact candidate hash using the public testkit. One hash-bound confirmation authorizes execution; full-access skips it only with enforced OS isolation. Tests never verify install or browser appearance, and never publish.',
     parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
     // The daemon owns the sole exact-hash execution confirmation.
     meta: { ...meta, isDestructive: false, requiresApproval: 'never' },
@@ -91,9 +125,15 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_candidate_write',
     description:
-      'Replace the complete candidate text tree. Build in <=8 KiB new-text steps; use run_code to read/modify/write the full tree without re-emitting unchanged files. After truncation, read the same candidate. Changes invalidate tests and review.',
+      'Read first, then use mode: merge with changed files only and optional remove paths. Untouched files remain. Default replace rewrites the complete tree. expectedHash is required; edits invalidate tests and review. Keep new text <=8 KiB; after truncation read the same candidate.',
     parameters: Type.Object(
-      { candidateId, expectedHash, files: Type.Array(file, { minItems: 1, maxItems: 64 }) },
+      {
+        candidateId,
+        expectedHash,
+        files: Type.Array(file, { maxItems: 64 }),
+        mode: Type.Optional(Type.Union([Type.Literal('replace'), Type.Literal('merge')])),
+        remove: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 64 })),
+      },
       { additionalProperties: false },
     ),
     meta,
@@ -129,8 +169,7 @@ export default defineAgnesPlugin({
           {
             id: 'plugin-creator',
             order: 165,
-            content:
-              'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation. Keep new text <=8 KiB per reply; use run_code for incremental full-tree edits. After OUTPUT_LIMIT, read and continue the same candidate.',
+            content: creatorAssets.authoringContextGuidance,
           },
         ],
       })),

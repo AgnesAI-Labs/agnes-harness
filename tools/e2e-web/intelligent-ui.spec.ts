@@ -214,9 +214,7 @@ for (const [locale, theme, width] of [
       'title',
       locale === 'en' ? 'Revision 1' : '版本 1',
     )
-    await expect(fullSurface.locator(':scope > header')).not.toContainText(
-      locale === 'en' ? 'Revision 1' : '版本 1',
-    )
+    await expect(fullSurface.getByTestId('ui-meta')).toHaveText(locale === 'en' ? 'Revision 1' : '修订 1')
     const detail = panel.getByTestId('ui-detail-summary')
     await expect(detail).toBeVisible()
     expect(await detail.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('1px')

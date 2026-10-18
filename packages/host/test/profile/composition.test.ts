@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { agentSelection } from '@agnes/host-common/profile/agent'
 import {
   assertCompositionCompatible,
   type CompositionCatalog,
@@ -14,6 +15,7 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   SessionCapabilitySet,
   validateAgainst,
@@ -26,7 +28,9 @@ import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/p
 import {
   compositionAllowsTool,
   profileForComposition,
+  projectCompositionRows,
 } from '../../src/runtime/profile/composition-selection.js'
+import { sessionBundleCatalog } from '../../src/runtime/profile/session-bundle-presets.js'
 import {
   capabilityEnabled,
   resolveSessionCapabilities,
@@ -213,6 +217,17 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     },
     env,
   )
+  expect(sessionBundleCatalog(profile, {})).toEqual(catalog)
+  expect(sessionBundleCatalog(profile, {}, new Set(['acme/research']))).toEqual({})
+  const installed = {
+    ...profile,
+    packages: [
+      ...profile.packages,
+      { ...profile.packages[0]!, id: 'acme/research', trust: 'trusted' as const },
+    ],
+  }
+  expect(sessionBundleCatalog(installed, {})).toEqual({})
+  expect(sessionBundleCatalog(installed, catalog)).toEqual(catalog)
   expect(
     resolveComposition({
       ...profile,
@@ -371,6 +386,37 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
       session: { packages: [{ id: 'acme/unknown', source: 'runtime-snapshot', enabled: true }] },
     }),
   ).toThrow('unknown package acme/unknown')
+  const privateRow = (id: string, revision: string) =>
+    createPluginRow({
+      id,
+      plugin: 'builtin:host/private',
+      snapshotDigest: 'host-private',
+      exportName: id,
+      entryRevision: revision,
+      extrasRevision: 'none',
+      mountRevision: revision,
+      config: { revision },
+      inject: [],
+      provides: [],
+    })
+  const previousSeam = privateRow('seam:approval', 'previous')
+  const localSeam = privateRow('seam:approval', 'local')
+  const forgedSeam = privateRow('seam:approval', 'forged')
+  expect(projectCompositionRows([previousSeam], baseline, undefined, [localSeam], [previousSeam])).toEqual([])
+  expect(
+    projectCompositionRows([forgedSeam], baseline, undefined, [localSeam], [previousSeam]),
+  ).toMatchObject([forgedSeam])
+  const previousExtension = privateRow('ext:host/private', 'previous')
+  const localExtension = privateRow('ext:host/private', 'local')
+  expect(
+    projectCompositionRows(
+      [{ ...previousExtension, disabled: true }],
+      baseline,
+      undefined,
+      [localExtension],
+      [previousExtension],
+    ),
+  ).toMatchObject([{ ...localExtension, disabled: true }])
   const next = resolveComposition(profile, {
     preset: { name: 'research', providers: { compaction: { provider: 'sliding-window' } } },
   })
@@ -464,4 +510,85 @@ it('reads a preset selection from its one providers table', () => {
   ).toThrow('providers table')
   expect(validatePreset({ name: 'p', providers: { 'tool-policy': { provider: 'read-only' } } }).ok).toBe(true)
   expect(validatePreset({ name: 'p', 'tool-policy': { provider: 'read-only' } }).ok).toBe(false)
+})
+
+it('resolves explicit agent presets at the session layer, with source dependency validation and no inherited launch', async () => {
+  const bundles = {
+    ...parsePackageBundles('acme/parent', {
+      parent: { profile: { toolPolicy: { readOnly: false } } },
+    }),
+    ...parsePackageBundles('acme/kit', {
+      writer: {
+        extends: ['acme/parent#parent'],
+        profile: { tools: ['write'], providers: { loop: { provider: 'shared', version: '1.0.0' } } },
+        presets: {
+          safe: { name: 'safe', composition: { toolPolicy: { readOnly: true } } },
+          other: { name: 'other' },
+        },
+        launch: { title: { en: 'Writer' }, description: { en: 'Writer' }, preset: 'safe' },
+      },
+      reader: {
+        profile: { tools: ['read'], providers: { loop: { provider: 'shared', version: '1.0.0' } } },
+        presets: { other: { name: 'other' } },
+        launch: { title: { en: 'Reader' }, description: { en: 'Reader' }, preset: 'other' },
+      },
+      child: { extends: ['acme/kit#writer'] },
+    }),
+  }
+  const sources = [
+    {
+      id: 'acme/kit',
+      version: '1.0.0',
+      integrity: 'kit',
+      source: 'file',
+      enabled: true,
+      dependencies: { 'acme/parent': '^1.0.0' },
+    },
+    {
+      id: 'acme/parent',
+      version: '1.0.0',
+      integrity: 'parent',
+      source: 'file',
+      enabled: true,
+      dependencies: {},
+    },
+  ]
+  const selection = agentSelection('acme/kit#writer', bundles, sources)
+  expect(selection.preset).toBe('safe')
+  expect(selection.bundles).toEqual(['acme/kit#writer'])
+  expect(selection.sources.map((source) => source.id).sort()).toEqual(['acme/kit', 'acme/parent'])
+  const profile = await resolveProfile(
+    { builtin: 'local-dev', user: { name: 'local-dev' }, bundleCatalog: bundles },
+    env,
+  )
+  const admitted = {
+    ...profile,
+    presets: { ...profile.presets, allowed: [...profile.presets.allowed, 'safe', 'other'] },
+    bundleCatalog: bundles,
+  }
+  const writer = resolveComposition(admitted, {
+    preset: bundles['acme/kit#writer']!.document.presets!.safe!,
+    sessionBundles: selection.bundles,
+  })
+  expect(writer.selection.toolPolicy?.readOnly).toBe(false)
+  expect(writer.sources['toolPolicy.readOnly']).toEqual({ layer: 'session', name: 'acme/parent#parent' })
+  const reader = resolveComposition(admitted, {
+    preset: { name: 'other' },
+    sessionBundles: agentSelection('acme/kit#reader', bundles, sources).bundles,
+  })
+  expect(reader.selection.loop).toEqual(writer.selection.loop)
+  expect(reader.selection.tools).toEqual(['read'])
+  expect(writer.selection.tools).toEqual(['write'])
+  expect(() => agentSelection('acme/kit#child', bundles, sources)).toThrow('unknown agent')
+  expect(() => agentSelection('acme/kit#missing', bundles, sources)).toThrow()
+  expect(() => agentSelection('acme/kit#writer', bundles, [sources[0]!])).toThrow()
+  expect(() =>
+    agentSelection('acme/kit#writer', bundles, [{ ...sources[0]!, dependencies: {} }, sources[1]!]),
+  ).toThrow()
+  expect(() =>
+    agentSelection('acme/kit#writer', bundles, [sources[0]!, { ...sources[1]!, version: '2.0.0' }]),
+  ).toThrow()
+  const cyclic = structuredClone(bundles)
+  cyclic['acme/parent#parent']!.document.extends = ['acme/kit#writer']
+  expect(() => agentSelection('acme/kit#writer', cyclic, sources)).toThrow('cycle')
 })

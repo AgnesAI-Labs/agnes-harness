@@ -21,7 +21,6 @@
           "displayName": "Codex child agents",
           "summary": "Uses a configured Codex process to handle delegated coding tasks.",
           "description": "Uses a configured Codex process to handle delegated coding tasks.",
-          "category": "collaboration",
           "locales": {
             "zh-CN": {
               "displayName": "Codex 子 Agent",

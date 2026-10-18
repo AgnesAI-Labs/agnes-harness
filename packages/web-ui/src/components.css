@@ -554,6 +554,11 @@
     outline-offset: 1px;
     box-shadow: var(--focus-line);
   }
+  /* Text-only hints must not intercept a neighboring action as focus or hover moves. */
+  .agh-tooltip,
+  .agh-tooltip * {
+    pointer-events: none;
+  }
   /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-container {
@@ -1327,12 +1332,20 @@
     .ant-select-item-option {
       min-height: var(--control-height-touch);
     }
+  }
+
+  @media (max-width: 900px) {
     .agh-touch-target {
       position: relative;
     }
     .agh-touch-target::after {
       content: "";
       position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-touch-target::after {
       inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
     }
   }
@@ -1569,6 +1582,27 @@
   :is(.agh-menu-popup, .agnes-ui-popover, .agh-tooltip, .ant-select-dropdown) {
     animation-duration: 0s !important;
     transition-duration: 0s !important;
+  }
+
+  /* Phone navigation shares the available strip; long labels wrap inside full touch targets. */
+  @media (max-width: 767px) {
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-nav-list {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab {
+      flex: 1 1 0;
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+      padding: var(--s8) var(--s4);
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab-btn {
+      width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-align: center;
+    }
   }
 
   /* Tabs are frequent navigation; their final indicator/scroll positions remain immediate. */

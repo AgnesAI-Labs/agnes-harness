@@ -97,6 +97,9 @@ export type PushNavigation = {
   reset(): void
 }
 
+// An unrelated frame may retain another frame's depth in its history state.
+const HISTORY_OWNER = 'agnes.push.owner'
+
 function historyDepth(state: unknown, key: string): number {
   const depth = (state as Record<string, unknown> | null)?.[key]
   return typeof depth === 'number' ? depth : 0
@@ -155,7 +158,7 @@ export function usePushNavigation({
       // One history entry per level, so the browser's back button leaves the page.
       try {
         history.pushState(
-          { ...(history.state ?? {}), [historyKey]: next.length },
+          { ...(history.state ?? {}), [historyKey]: next.length, [HISTORY_OWNER]: historyKey },
           '',
           routeRef.current?.href(next),
         )
@@ -175,7 +178,7 @@ export function usePushNavigation({
       publish(next)
       try {
         history.replaceState(
-          { ...(history.state ?? {}), [historyKey]: next.length },
+          { ...(history.state ?? {}), [historyKey]: next.length, [HISTORY_OWNER]: historyKey },
           '',
           routeRef.current?.href(next),
         )
@@ -189,7 +192,11 @@ export function usePushNavigation({
       const target = Math.max(0, Math.min(depth, known.length))
       if (target === known.length) return
       // Levels this frame pushed go back through history, so back and forward stay truthful.
-      if (target >= base.current && historyDepth(history.state, historyKey) === known.length) {
+      if (
+        target >= base.current &&
+        historyDepth(history.state, historyKey) === known.length &&
+        history.state?.[HISTORY_OWNER] === historyKey
+      ) {
         if (known.length - target === 1) history.back()
         else history.go(target - known.length)
         return
@@ -200,7 +207,11 @@ export function usePushNavigation({
       const address = routeRef.current
       if (address)
         try {
-          history.replaceState({ ...(history.state ?? {}), [historyKey]: target }, '', address.href(next))
+          history.replaceState(
+            { ...(history.state ?? {}), [historyKey]: target, [HISTORY_OWNER]: historyKey },
+            '',
+            address.href(next),
+          )
         } catch {}
     },
     [historyKey, publish],
@@ -212,7 +223,7 @@ export function usePushNavigation({
     const next = known.slice(0, -1)
     try {
       history.replaceState(
-        { ...(history.state ?? {}), [historyKey]: next.length },
+        { ...(history.state ?? {}), [historyKey]: next.length, [HISTORY_OWNER]: historyKey },
         '',
         routeRef.current?.href(next),
       )

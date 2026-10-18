@@ -42,6 +42,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
   const replacements: Record<string, string> = {
     __PACKAGE_NAME__: name,
     __TOOL_NAME__: `plugin_${skill.replaceAll('-', '_')}`,
+    __SERVICE_NAME__: `plugin${skill.replaceAll('-', '')}`,
     __SKILL_NAME__: skill,
     __SETUP_GUIDE__:
       'This is a private authoring candidate. Run plugin_test, submit it with plugin_install_local, then review and publish in Settings → Plugins. Do not copy it into discovery roots.',
@@ -68,7 +69,6 @@ export function candidateTemplate(template: string, name: string): { path: strin
   pkg.agnes.plugins = pkg.agnes.plugins.map((p: object) => ({ ...p, apiRange: '^4.0.0' }))
   pkg.scripts = { test: 'node --test test/*.test.mjs' }
   manifest.content = JSON.stringify(pkg, null, 2) + '\n'
-  if (['tool', 'tool-with-panel'].includes(template))
-    files.push({ path: 'test/scripted.test.mjs', content: scriptedToolTest })
+  if (template === 'tool') files.push({ path: 'test/scripted.test.mjs', content: scriptedToolTest })
   return files
 }

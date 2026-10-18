@@ -26,7 +26,8 @@
     "typescript": "7.0.2",
     "@types/node": "26.4.1",
     "tsx": "4.23.13",
-    "@agnes/host": "0.0.0"
+    "@agnes/host": "0.0.0",
+    "@agnes/web-client": "0.0.0"
   },
   "agnes": {
     "plugins": [
@@ -35,10 +36,12 @@
         "apiRange": "^4.0.0",
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
-          "tools"
+          "tools",
+          "services"
         ],
         "capabilities": {
-          "ui": true
+          "ui": true,
+          "store": true
         }
       }
     ],
@@ -53,9 +56,12 @@
       "@agnes/extension-api": "^4.0.0",
       "@sinclair/typebox": "0.34.33"
     },
-    "kinds": [
+    "provides": [
       "tool",
       "ui"
     ]
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
   }
 }

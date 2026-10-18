@@ -16,11 +16,11 @@ import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
-function run(argv: string[]) {
+function run(argv: string[], env?: NodeJS.ProcessEnv) {
   const [file, ...args] = argv
   if (!file) throw new Error('missing executable')
   return new Promise<{ code: number; stdout: string }>((resolve) => {
-    execFile(file, args, { timeout: 3000 }, (error, stdout) => {
+    execFile(file, args, { timeout: 3000, ...(env ? { env } : {}) }, (error, stdout) => {
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, stdout })
     })
   })
@@ -48,6 +48,24 @@ seatbelt(
         code: 0,
         stdout: 'ok',
       })
+      const env = {
+        PATH: '/usr/bin:/bin',
+        HOME: allowed,
+        TMPDIR: allowed,
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+      }
+      expect((await run(['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env)).code).toBe(0)
+      const status = await run(confine('git -C "$1" status --short', allowed), env)
+      expect(status.code).toBe(0)
+      expect(status.stdout).toContain('?? ok')
+      expect(await run(confine('echo x > /dev/null; exec 3<> /dev/null'))).toEqual({ code: 0, stdout: '' })
+      const denyNull = seatbeltDenyNetworkArgv(['/bin/sh', '-c', 'echo x > /dev/null'], {
+        allowPaths: [allowed],
+        denyPaths: [denied, '/dev/null'],
+      })
+      expect((await run(denyNull)).code).not.toBe(0)
+      expect((await run(confine('echo x > /dev/zero'))).code).not.toBe(0)
       expect((await run(confine('printf bad > "$1"', join(root, 'outside')))).code).not.toBe(0)
       expect(existsSync(join(root, 'outside'))).toBe(false)
       expect((await run(confine('cat "$1"', secret))).code).not.toBe(0)

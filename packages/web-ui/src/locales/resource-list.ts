@@ -105,9 +105,9 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'skills.title': '技能',
-    'skills.description': '技能是教 Agent 做特定事情的说明书，比如“怎么写周报”。',
+    'skills.description': '技能是教智能体做特定事情的说明书，比如“怎么写周报”。',
     'skills.new': '新建技能',
-    'skills.create': '让 Agent 创建',
+    'skills.create': '让智能体创建',
     'skills.import': '导入已有技能',
     'skills.importOther': '导入 Claude Code / Codex 技能',
     'skills.creatorPrompt':
@@ -119,9 +119,9 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.search': '搜索技能',
     'skills.refresh': '刷新技能',
     'skills.where': '技能文件夹在哪里？',
-    'skills.reviewUnavailable': '请从 Agnes 设置打开技能页，审阅 Agent 提议的技能和反馈。',
+    'skills.reviewUnavailable': '请从 Agnes 设置打开技能页，审阅智能体提议的技能和反馈。',
     'skills.importHelp': '将已有技能文件夹放入支持的来源，再扫描文件夹。每个技能文件夹包含 SKILL.md 说明书。',
-    'skills.otherHelp': '如何导入其他 Agent 的技能',
+    'skills.otherHelp': '如何导入其他智能体的技能',
     'skills.scan': '扫描文件夹',
     'skills.close': '关闭',
     'skills.readOnly': '当前只读或有操作正在进行，请稍后再试。',
@@ -132,7 +132,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.details': '详情',
     'skills.run': '在新会话中运行',
 
-    'empty.skills.importEnabled': '当前安装已启用其他 Agent 的用户技能导入，实际扫描的来源已列在上方。',
+    'empty.skills.importEnabled': '当前安装已启用其他智能体的用户技能导入，实际扫描的来源已列在上方。',
     'root.location.workspace-agnes': '工作区技能文件夹',
     'root.location.user-agnes': 'Agnes 个人技能',
     'root.location.user-agents': '~/.agents/skills',
@@ -146,8 +146,8 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'root.scope.runtime': '运行时',
 
     'empty.skills.title': '还没有技能',
-    'empty.skills.description': '技能让 Agent 记住你的做事方法，比如“怎么写周报”“代码评审清单”。',
-    'empty.skills.import': '默认不导入其他 Agent 的用户技能，开启方式见导入指南。',
+    'empty.skills.description': '技能让智能体记住你的做事方法，比如“怎么写周报”“代码评审清单”。',
+    'empty.skills.import': '默认不导入其他智能体的用户技能，开启方式见导入指南。',
 
     ...resourceFailureCatalog['zh-CN'],
     loading: '正在读取本地资源目录…',

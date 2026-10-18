@@ -1,0 +1,70 @@
+{
+  "name": "@agnes/navigation-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:navigation-ui/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Navigation presentation",
+          "summary": "Default history, workspace and navigation presentation.",
+          "description": "Default history, workspace and navigation presentation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "导航呈现",
+              "summary": "默认对话历史、工作区与导航呈现。",
+              "description": "默认对话历史、工作区与导航呈现。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:navigation-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Navigation presentation",
+      "summary": "Default history, workspace and navigation presentation.",
+      "description": "Default history, workspace and navigation presentation.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "导航呈现",
+          "summary": "默认对话历史、工作区与导航呈现。",
+          "description": "默认对话历史、工作区与导航呈现。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

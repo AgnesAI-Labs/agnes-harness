@@ -997,14 +997,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
-        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1084,6 +1076,45 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "reasons", "next"],
+          "properties": {
+            "level": {
+              "enum": ["structural", "static-references", "deployment-dependent", "refused"]
+            },
+            "reasons": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            },
+            "next": {
+              "enum": ["resolve-static-references", "validate-deployment", "review-trust", "fix-declaration"]
+            }
+          }
         }
       },
       "required": [
@@ -1304,14 +1335,6 @@
           },
           "required": ["state", "reasonCode", "reason", "nextAction"]
         },
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
-        },
         "draining": {
           "type": "boolean"
         },
@@ -1422,6 +1445,24 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
         }
       },
       "required": [
@@ -1440,14 +1481,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kinds": {
-          "type": "array",
-          "items": {
-            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-          },
-          "uniqueItems": true,
-          "maxItems": 6
-        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1499,6 +1532,24 @@
         },
         "presentation": {
           "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
         }
       },
       "required": [
@@ -1517,6 +1568,43 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
         "code": {
           "enum": [
             "E_PACKAGE_SOURCE",
@@ -2906,6 +2994,50 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "presentationRoleBindings": {
+          "description": "Host-verified per-role consent binding for this exact client declaration, package identity and dependency closure; never supplied by plugin code.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "navigation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "conversation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "composer": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "goal": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "interaction": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "deliverables": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "presentationRoles": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PresentationRole"
+          }
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
     },
@@ -3374,6 +3506,93 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
+        "writeSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "removed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "changed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "entries": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "missing": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "unchanged": {
+              "type": "boolean"
+            }
+          },
+          "required": ["added", "removed", "changed", "entries", "missing", "unchanged"]
+        },
         "candidateId": {
           "type": "string",
           "pattern": "^candidate-[a-f0-9]{32}$"
@@ -3615,7 +3834,7 @@
         },
         "files": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 64,
           "items": {
             "type": "object",
@@ -3633,6 +3852,21 @@
             },
             "required": ["path", "content"]
           }
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["replace", "merge"],
+          "description": "Defaults to replace. Merge retains untouched files and applies explicit removals."
+        },
+        "remove": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "description": "Existing paths to delete; valid only with mode merge."
         }
       },
       "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "files"]
@@ -3872,19 +4106,11 @@
           "enum": ["official", "example", "local", "local-source", "third-party"]
         },
         "includes": {
-          "description": "What the package contains, derived from package data without running plugin code. kinds joins the declared agnes.kinds with what the data proves. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
+          "description": "Static package facts without executing plugin code. provides combines author labels with explicit contribution evidence, independently of runtime registrations. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["kinds", "counts"],
+          "required": ["provides", "counts"],
           "properties": {
-            "kinds": {
-              "type": "array",
-              "items": {
-                "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
-              },
-              "uniqueItems": true,
-              "maxItems": 7
-            },
             "counts": {
               "type": "object",
               "additionalProperties": false,
@@ -3915,6 +4141,14 @@
                   "maximum": 4096
                 }
               }
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
             }
           }
         },
@@ -4028,6 +4262,509 @@
           "enum": ["active", "draining", "history-only", "disabled", "failed"]
         }
       }
+    },
+    "ApplicationSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "applicationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declarationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindingDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentSnapshot": {
+          "$ref": "#/$defs/ApplicationPreview"
+        }
+      },
+      "required": [
+        "packageId",
+        "applicationId",
+        "integrity",
+        "declarationDigest",
+        "consentDigest",
+        "bindingDigest"
+      ]
+    },
+    "ApplicationConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roleSelections": {
+          "$ref": "#/$defs/PresentationRoleSelections"
+        }
+      },
+      "required": ["revision", "selection"]
+    },
+    "ApplicationPreviewParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "packageId"]
+    },
+    "ApplicationPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declaration": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "declarationDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 256
+        },
+        "replacedRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 6
+        },
+        "dependencyDiff": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "recovery": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "warning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "packageId",
+        "version",
+        "integrity",
+        "source",
+        "signature",
+        "declaration",
+        "declarationDigest",
+        "consentDigest",
+        "dependencies",
+        "replacedRoles",
+        "dependencyDiff",
+        "scope",
+        "recovery",
+        "warning",
+        "assets"
+      ]
+    },
+    "ApplicationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["host", "active", "unresolved"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "applicationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["packageId", "applicationId", "version", "available"]
+          }
+        },
+        "roleSelections": {
+          "$ref": "#/$defs/PresentationRoleSelections"
+        },
+        "roles": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/PresentationRoleState"
+          }
+        }
+      },
+      "required": ["revision", "selection", "status", "effective", "assets", "candidates"]
+    },
+    "ApplicationAdoptParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "packageId", "expectedRevision", "consentDigest", "clientId", "commandId"]
+    },
+    "ApplicationClearParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        }
+      },
+      "required": ["profile", "expectedRevision", "clientId", "commandId"]
+    },
+    "PresentationRoleSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declarationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindingDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentSnapshot": {
+          "$ref": "#/$defs/ApplicationPreview"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "packageId",
+        "integrity",
+        "declarationDigest",
+        "consentDigest",
+        "bindingDigest",
+        "clientId"
+      ]
+    },
+    "PresentationRoleSelections": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "navigation": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "conversation": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "composer": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "goal": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "interaction": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "deliverables": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        }
+      }
+    },
+    "PresentationRoleState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PresentationRoleSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["resolved", "unresolved"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "enum": ["default", "application", "choice"]
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "extension-manifest.json#/$defs/ApplicationRoleTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "required": ["packageId", "clientId", "version"]
+          }
+        }
+      },
+      "required": ["role", "selection", "status", "source", "effective", "candidates"]
     }
   }
 }

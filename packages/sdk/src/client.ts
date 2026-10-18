@@ -34,6 +34,7 @@ import {
   type MethodName,
   type MethodSpec,
   type PageSessionMeta,
+  parseAgentRef,
   parseLoopSelection,
   parseSessionBundles,
   projectClientModuleRows,
@@ -464,11 +465,18 @@ export class Client {
   createSession(options: {
     cwd: string
     preset?: string
+    agent?: string
+    agentDigest?: string
     bundles?: readonly string[]
     sessionKey?: string
     loop?: LoopSelection
   }): Promise<Session> {
     return this.session.new(options)
+  }
+
+  readonly agents = {
+    resolve: (ref: string): Promise<import('@agnes/protocol').AgentPlan> =>
+      this.call('_agnes/v1/agents.resolve', { ref: parseAgentRef(ref) }),
   }
 
   readonly session = {
@@ -477,11 +485,19 @@ export class Client {
     new: async (o: {
       cwd: string
       preset?: string
+      agent?: string
+      agentDigest?: string
       bundles?: readonly string[]
       sessionKey?: string
       loop?: LoopSelection
     }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
+      if (o.agent !== undefined) {
+        meta.agent = parseAgentRef(o.agent)
+        if (o.loop || o.bundles !== undefined || o.preset)
+          throw new TypeError('agent cannot be combined with execution overrides')
+      }
+      if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
       if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
       if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)

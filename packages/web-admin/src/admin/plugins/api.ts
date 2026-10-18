@@ -68,6 +68,10 @@ const METHOD_BY_PATH = {
   'pins/inspect': '_agnes/v1/packages.pins.inspect',
   'pins/release': '_agnes/v1/packages.pins.release',
   'trust-workspace': '_agnes/v1/packages.trustWorkspace',
+  'application/get': '_agnes/v1/applications.get',
+  'application/preview': '_agnes/v1/applications.preview',
+  'application/adopt': '_agnes/v1/applications.adopt',
+  'application/clear': '_agnes/v1/applications.clear',
   'config/get': '_agnes/v1/plugins.config.get',
   'config/validate': '_agnes/v1/plugins.config.validate',
   'config/save': '_agnes/v1/plugins.config.save',
@@ -141,6 +145,41 @@ function intentFingerprint(value: string): string {
  * source credential, or transport credential to the page.
  */
 export class PluginAdminApi {
+  async resolveAgent(agent: string): Promise<import('@agnes/protocol').AgentPlan> {
+    return this.agentLaunch({ action: 'resolve', agent })
+  }
+  async prepareAgent(
+    agent: string,
+  ): Promise<{ launchTicket: string; presentation: import('@agnes/protocol').AgentPlan }> {
+    return this.agentLaunch({ action: 'prepare', agent })
+  }
+  async startAgent(
+    launchTicket: string,
+    operationId: string,
+  ): Promise<{ sessionId: string; draft?: import('@agnes/protocol').BundleLaunch['prompt'] }> {
+    return this.agentLaunch({ action: 'start', launchTicket, operationId })
+  }
+  async readAgent(operationId: string): Promise<{
+    state: 'running' | 'completed' | 'failed' | 'unknown'
+    code?: string
+    sessionId?: string
+    draft?: import('@agnes/protocol').BundleLaunch['prompt']
+  }> {
+    return this.agentLaunch({ action: 'read', operationId })
+  }
+  private async agentLaunch<T>(request: Record<string, unknown>): Promise<T> {
+    // Keep native fetch unbound; `this.#fetch(...)` would rebind its receiver to this facade.
+    const fetcher = this.#fetch
+    const response = await fetcher('/api/agents/launch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ request }),
+    })
+    const value = await response.json()
+    if (!response.ok) throw new Error(value.error?.message ?? 'CAPABILITY_DENIED')
+    return value as T
+  }
+
   readonly #fetch: FetchLike
   readonly #context: AdminContext
 
@@ -168,6 +207,55 @@ export class PluginAdminApi {
     return body
   }
 
+  application(): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#post('application/get', { profile: this.#context.profile })
+  }
+  previewApplication(packageId: string): Promise<import('@agnes/protocol').ApplicationPreview> {
+    return this.#post('application/preview', { profile: this.#context.profile, packageId })
+  }
+  adoptApplication(
+    packageId: string,
+    expectedRevision: number,
+    consentDigest: string,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/adopt', { packageId, expectedRevision, consentDigest })
+  }
+  clearApplication(expectedRevision: number): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/clear', { expectedRevision })
+  }
+  previewRole(
+    role: import('@agnes/protocol').PresentationRole,
+    packageId: string,
+    targetClientId: string,
+  ): Promise<import('@agnes/protocol').ApplicationPreview> {
+    return this.#post('application/preview', {
+      profile: this.#context.profile,
+      role,
+      packageId,
+      targetClientId,
+    })
+  }
+  selectRole(
+    role: import('@agnes/protocol').PresentationRole,
+    packageId: string,
+    targetClientId: string,
+    expectedRevision: number,
+    consentDigest: string,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/adopt', {
+      role,
+      packageId,
+      targetClientId,
+      expectedRevision,
+      consentDigest,
+    })
+  }
+  clearRole(
+    role: import('@agnes/protocol').PresentationRole,
+    expectedRevision: number,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/clear', { role, expectedRevision })
+  }
   #candidateRead: Promise<import('@agnes/protocol').AuthoringCandidateList> | undefined
 
   candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {

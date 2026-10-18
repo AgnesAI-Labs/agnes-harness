@@ -33,7 +33,6 @@
           "displayName": "Project file search",
           "summary": "Lets the agent find project files and search their contents.",
           "description": "Lets the agent find project files and search their contents.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "项目文件搜索",
@@ -43,6 +42,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

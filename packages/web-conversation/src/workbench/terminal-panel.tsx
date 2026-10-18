@@ -16,6 +16,7 @@ import {
 } from './terminal-preferences.js'
 import { TerminalTabs } from './terminal-tabs.js'
 import { TerminalView } from './terminal-view.js'
+import { visiblePoll } from './visible-poll.js'
 
 const closedSessions = new Set<string>()
 const openingSessions = new Set<string>()
@@ -113,8 +114,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: a completed control receipt restarts polling immediately.
   useEffect(() => {
     if (!session) return
-    let alive = true,
-      timer: ReturnType<typeof setTimeout> | undefined
+    let alive = true
     const poll = async () => {
       try {
         let value: SessionJobsReadResult
@@ -122,6 +122,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           // An output response already contains the job list; steady-state polling needs one read.
           value = await session.jobsRead(restored.current && active ? active : undefined)
         } catch (cause) {
+          if (!alive || document.visibilityState === 'hidden') return
           if (!active || !restored.current) throw cause
           value = await session.jobsRead()
           if (value.jobs.some((job) => job.id === active)) throw cause
@@ -188,15 +189,13 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       } catch (cause) {
         if (alive)
           setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
-      } finally {
-        if (alive) timer = setTimeout(() => void poll(), 1000)
       }
     }
-    void poll()
+    const stop = visiblePoll(poll, 1000)
     // Closing the dock, switching sessions and disposing registration only detach the UI.
     return () => {
       alive = false
-      clearTimeout(timer)
+      stop()
     }
   }, [session, active, refresh, t])
   useEffect(() => {

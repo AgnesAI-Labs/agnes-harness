@@ -1,75 +1,75 @@
-# 插件用途元数据
+# 插件元数据与声明能力
 
 [English](plugin-metadata.md) | 简体中文
 
-[插件作者工具包](README.zh-CN.md) · [双语内容表](plugin-presentation/CONTENT.zh-CN.md) · [页面设计](plugin-presentation/DESIGN.zh-CN.md)
-
-用 `@agnes/extension-api` 导出的公开 `PluginMetadata` 契约说明插件为用户解决什么问题。支持 `package.json.agnes.metadata` 和 `package.json.agnes.plugins[].metadata`。包级元数据介绍整个包；展示独立插件行时，行级的完整元数据优先于包级介绍。第三方插件也使用这一契约，整个块可省略。
+插件在 `agnes.metadata` 中提供可选展示文字，用 `agnes.provides` 声明能力标签。标签只描述包，不授予权限；权限仍由插件行 capabilities 与 Host 准入决定。
 
 ```json
 {
   "agnes": {
+    "provides": ["tool", "ui"],
     "metadata": {
-      "displayName": "Project file search",
-      "summary": "Lets the agent find project files and search their contents.",
-      "description": "Find files by name and search readable project text to locate the information needed for a task.",
-      "category": "tools",
-      "docsUrl": "https://example.org/docs/file-search",
-      "locales": {
-        "zh-CN": {
-          "displayName": "项目文件搜索",
-          "summary": "让 Agent 查找项目文件并检索文件内容。",
-          "description": "按名称查找文件并检索可读项目文本，定位任务需要的信息。"
-        }
-      }
+      "displayName": "Project search",
+      "summary": "Find readable project text.",
+      "description": "Search files available to the session.",
+      "docsUrl": "https://example.org/docs",
+      "locales": { "zh-CN": { "displayName": "项目搜索" } }
     }
   }
 }
 ```
 
-提供元数据时必须包含 `displayName`、`summary`、`description`、`category`。名称限制为 1–80 个 Unicode 码点，摘要 1–240，短段落 1–1,200，可选文档地址 1–2,048。文本必须去除首尾空白、可打印且为单行／单段，禁止控制字符和 Unicode 换行符。摘要用一句话说明解决的问题，描述可补充范围和前提。schema 使用按码点计数的有界正则与 UTF-16 上限，让生成的校验器正确接受上限以内的补充 Unicode 字符。
+`provides` 是可选的不重复标签集合，可用值为 `tool`、`loop`、`model-adapter`、`mcp`、`skills`、`ui`、`bundle`、`service`。仅提供 Loop 的插件不必声明 Bundle 或智能体。这组展示标签与扩展的 `provides` seam 声明、插件行的 `provide` 服务名独立。旧 `metadata.category` 和 `agnes.kinds` 均拒绝，不设兼容层。
 
-分类值为 `agent-loop`、`tools`、`safety-approval`、`memory-context`、`collaboration`、`integrations`、`observability`、`ui`、`developer`、`business-agent`。分类只是编辑分组，不改变运行时类型或权限。客户端只读 `agnes.metadata` 上的分类，所以一个包只有一个分类；每一行填相同的值。包里有什么另由 `agnes.kinds` 声明，见[按角色选择插件类型](choose-a-plugin-type.zh-CN.md)。交付一个业务流程的组合包使用 `business-agent`，客户端把这类包列为业务 Agent。`docsUrl` 只能是无凭据、空白或控制字符的绝对 HTTPS 地址。`locales` 仅接受 `en` 和 `zh-CN`，可分别覆盖名称、摘要、描述和文档地址中的部分字段。所有对象拒绝未知字段，每个完整元数据块最多 24 KiB UTF-8 JSON。
-
-安装检查不导入插件代码即可校验包级与行级元数据，扩展准入复用同一协议 schema。通过校验的包元数据随预览、目录、锁文件和不可变运行快照保存；版本变化沿用现有完整性、信任和固定版本规则。元数据不授予能力，不进入能力哈希，不改变加载、授权或启停语义。
-
-另有两个可选字段说明包的呈现方式：
-
-```json
-{
-  "category": "business-agent",
-  "samplePrompt": {
-    "en": "Review the sample supplier contract clause by clause.",
-    "zh-CN": "逐条审查示例供应商合同。"
-  },
-  "experimental": true
-}
-```
-
-`samplePrompt` 是一条可以原样发送、用来试用这个包的提示。`en` 必填，`zh-CN` 可选；客户端显示当前语言，没有时回退到 `en`。每个值是一段 1–600 个码点的文字，规则与摘要相同。`experimental: true` 表示这个包的行为仍可能变化，客户端把它和稳定的包分开列出；其他情况省略该字段。两个字段都只是展示数据，不影响加载与授权。
-
-页面逐字段读取当前语言，没有翻译时使用基础值。完全缺失时显示完整 ID、已有类型、未分类和“作者未提供用途说明”。作者文案作为纯文本展示，文档链接由用户主动打开。官方／示例来源取自现有来源记录与目录，不依据作者文案或包名猜测。
-
-“提供什么”和“在哪里出现”读取现有注册信息与库存。作者介绍或能力声明不能证明工具已注册。未加载或暂不可读的贡献不从 ID 推断。轻量展示投影的范围见已批准设计中的 Phase B 说明。
+存在 metadata 时，`displayName`、`summary`、`description` 必填，分别不超过 80、240、1,200 个 Unicode 码点；文字须去首尾空格、可打印且为单行。可选 `docsUrl` 须为无凭据 HTTPS URL，最多 2,048 个码点。`locales.en`、`locales.zh-CN` 可逐字段覆盖，缺译文逐字段回落。整块元数据不超过 24 KiB UTF-8 JSON。可选 `samplePrompt` 必须提供英文回落，可提供中文，每种最多 600 码点；`experimental` 为布尔值。作者文字按纯文本显示，文档链接仅在主动点击后打开。
 
 <a id="what-a-package-includes"></a>
 
-`PackagePresentation.includes` 说明一个包里有什么，供每行的「包含」标签和市场的类型筛选使用：
+插件行可提供自己的说明。来源标签依据已核验 provenance，不能由包名或作者标签声明。静态展示可统计显式声明的工具、Skill 文件、Bundle 和界面贡献，未提供数量表示未知。静态声明与运行后的登记是独立证据。
+
+## 智能体就是带 launch 的 Bundle
 
 ```json
-{ "kinds": ["tool", "loop", "skills", "ui", "bundle"], "counts": { "bundles": 1, "ui": 1 } }
+{
+  "agnes": {
+    "provides": ["bundle"],
+    "bundles": {
+      "review": {
+        "presets": { "safe": { "name": "safe", "extends": "standard" } },
+        "launch": {
+          "title": { "en": "Review", "zh-CN": "审查" },
+          "description": { "en": "Review a document.", "zh-CN": "审查文档。" },
+          "preset": "safe",
+          "prompt": { "text": { "en": "Review this document." }, "mode": "draft" }
+        }
+      },
+      "reuse": { "extends": ["acme/reviewer#review"] }
+    }
+  }
+}
 ```
 
-`kinds` 是声明的 `agnes.kinds` 加上包数据能证明的类型：`agnes.bundles` 下有 bundle、有客户端描述文件或 surface（`ui`）、有 `skill` 贡献或 `skill` 资源能力（`skills`）、有 `mcp` 资源能力（`mcp`）、声明了工具名（`tool`）。顺序固定为 `tool`、`loop`、`model-adapter`、`mcp`、`skills`、`ui`、`bundle`。`counts` 包含 `tools`、`skills`、`mcp`、`bundles`、`ui`，只有包数据写明数量时才出现：`capabilities.tools.names` 下不重复的名称、`skill` 贡献、`agnes.bundles` 的条目、客户端描述文件加 surface。缺少某个数量表示它由插件代码决定，而检查从不运行代码；这不代表零。目前没有包数据描述 MCP 连接，所以 `mcp` 不会有数量。包没有声明任何类型、也证明不了任何类型时，这个字段不出现。客户端每个类型显示一个标签，有数量时才加上数字。
+智能体引用为 `package#bundle`。`launch.title`、`description`、`preset` 必填；本地化文字必含 `en`，可含 `zh-CN`。可选 `pages` 指向同包声明的 profile 页面。草稿 prompt 每种语言不超过 16 KiB，不能包含 secret 引用。**launch 不继承**：上面的 `reuse` 只是复用积木，不是智能体。子 Bundle 可以声明完整 launch 并选择继承的 preset。`extends` 是不重复的完整引用数组，不新增内联组合语法。
 
-`PackagePresentation.presets` 概括每个组合包 preset 的策略保证了什么，客户端可以在安装前如实说明：
+静态预检分 `structural`（结构合法）、`static-references`（静态引用可解）、`deployment-dependent`（待部署验证）、`refused`（拒绝），提供原因和下一步。它不执行插件代码，会检查完整 preset、继承、launch 引用和已知 runtime 限制。预检按 Bundle 父到子覆盖后的有效 preset 链检查继承；完全已知的循环拒绝，缺少继承定义或由部署提供的 launch preset 标为待部署验证。部署准入须校验该显式 preset 及允许列表，launch 不回退默认 preset。依赖定义与运行时导出仍可能需要部署验证；安装检查通过不等于就绪，挂载、绑定、新会话、恢复保留动态检查。普通 isolated 插件行目前在导入前拒绝。
 
-```json
-{ "bundle": "acme/research#research", "id": "research", "toolPolicy": "default", "readOnly": "yes", "confirmBeforeActions": "no", "network": "none" }
-```
+所有包的 launch 声明均进入 `capabilityHash`，修改启动信息必须重新审阅信任。旧 `metadata.launches` 拒绝。`metadata.exampleOf` 作为经依赖版本校验的受限示例关系独立保留；可选 `pageEntry` 须有此关系且对应已声明的 profile 示例页。能力标签不能赋予普通智能体示例管理权限。
 
-所有字段都由后端从包数据推导，不运行插件代码，作者不能自己填写。只读字段遵循运行时合并顺序：先预设，再按声明顺序应用会话组合包及其父组合包，每个父组合包只应用一次；显式的 `false` 会覆盖之前的 `true`。合并后的平台 `toolPolicy.readOnly` 为 true 时，`readOnly` 为 `yes`，任何策略服务商下都成立。否则，值已知为 false 且使用默认策略服务商时为 `no`；使用自定义服务商或遇到无法解析的外部组合包时为 `unknown`。外部组合包之后的显式设置可以重新确定该值。
+## 用同一个 Acme 示例理解装配
 
-默认工具策略服务商下是否确认取决于会话的权限模式，preset 不作保证，所以 `confirmBeforeActions` 为 `no`；使用自定义服务商时为 `unknown`。`network` 读取包声明的能力：任何插件列出了主机时为 `allowed`，所有插件都声明了能力且没有列出主机时为 `none`，声明不完整且没有列出主机时为 `unknown`。客户端只应对 `yes` 和 `none` 作出承诺，其余情况列出声明的能力。
+部署执行 Profile → 插件 → 智能体 → 应用展示，各自承担一项职责：
 
-预览、库存和目录 DTO 的可选只读 `PackagePresentation` 字段携带有界行 ID、作者 metadata、可选公开 extension source ID 与 configSchema 是否存在。库存／目录来源由后端推导。这些静态声明不是注册信息，不参与 target、能力哈希或启停。页面结合既有 runtime/provider 与 composition 工具目录、浏览器插槽、页面链接及已验证资源描述展示实际贡献。没有可读包归属的全局设置页、命令和事件不做归属推测；既有目录分页、生命周期 blockers 与 pins 保持原样。
+| 层 | Acme 中的对应内容 | 谁决定、何时生效 |
+| --- | --- | --- |
+| 部署执行 Profile | `AGNES_PROFILE=local-dev`：模型、权限上限、默认 Loop 与运行服务 | 部署者配置执行环境；应用采纳不修改它 |
+| 插件 | `@acme/operations`：工具 `acme_status`、页面、`desk` Bundle 和应用声明 | 安装、审阅信任并启用后提供候选能力 |
+| 智能体 | `@acme/operations#desk`：自身的 `launch.preset=acme`、工具范围和可编辑提示草稿 | 启动审阅绑定最终运行方式、模型、权限及来源；启动后会话保留其执行绑定 |
+| 应用展示 | `acme-operations`：Acme 品牌、Ava 助手名、`@acme/operations#acme-overview` 页面、隐藏自动化入口和默认／可见智能体 | 管理员在设置 → 应用预览并显式采纳；只选择展示默认值 |
+
+本期**不分发或采纳执行 Profile 模板**。应用不是执行模板；部署者继续独立配置 Profile，切换展示不会重配已有会话。完整安装、预览与启动命令见 [Acme 参考应用](../../examples/acme/README.zh-CN.md)。
+
+## 应用声明
+
+完整的身份、raster 资产、接管角色和显式采纳合同见[应用](applications.zh-CN.md)。安装只产生候选；展示选择在执行解析之外保存。
+
+固定作者主干为 29 槽：包封套 9、插件行 14、客户端绑定 2、Bundle 4。相对原 27 槽：移除 `agnes.kinds`，增加 `agnes.provides`、`agnes.application`、`bundles.*.launch`。嵌套 metadata 与 launch 子字段不在该分母内。首个工具与首个 Loop 不增加必填步骤。

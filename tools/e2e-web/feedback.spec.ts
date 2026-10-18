@@ -142,6 +142,7 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
     await expect(page.getByTestId('feedback-provenance')).toContainText('发布版本')
     const restored = page.getByTestId('message-feedback').last()
     await expect(restored.getByTestId('feedback-down')).toHaveAttribute('aria-pressed', 'true')
+    await page.locator('#view-chat').click()
     // Clicking the pressed rating again withdraws it.
     await restored.getByTestId('feedback-down').click()
     await expect(restored.getByTestId('feedback-down')).toHaveAttribute('aria-pressed', 'false')

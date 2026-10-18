@@ -5,6 +5,7 @@ import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approv
 import { type NestedToolLease, NestedToolSchedulingError } from '@agnes/core-effects/effects/scheduler'
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import { modelCapabilityUnavailable } from '../execution/turn/tool-availability.js'
 import { type ResolvedToolPolicyEnvelope, resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
 import { modelAllowsTool } from './model-tools.js'
@@ -92,7 +93,7 @@ export function callableTool(s: SessionImpl, t: Turn, name: string) {
   const def = t.snapshot.byName.get(name)
   if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
   if (!modelAllowsTool(def, s.computerUseAllowed()))
-    throw Object.assign(new Error('tool was not disclosed for the current primary model'), {
+    throw Object.assign(new Error(modelCapabilityUnavailable.message), {
       code: 'TOOL_NOT_DISCLOSED',
     })
   return def

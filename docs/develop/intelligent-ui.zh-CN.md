@@ -162,6 +162,8 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 | `_agnes/v1/ui.read(UiReadParams)` | 已认证恢复读取；可选 surface/command 筛选、不透明 cursor 和 limit。返回 `UiReadResult`，包含 ledger 水位和有界 surface/回执分页。 |
 | `_agnes/v1/ui.refresh(UiRefreshParams)` | 对一个仍打开的 surface 做已认证重查。返回 `UiSurfaceRecord`。revision 不变，不写 surface 事实。见 [UI 数据源](#ui-数据源)。 |
 
+恢复读取仅为仍标记为 `received` 的持久动作唤醒既有 runner。空页或仅含终态回执的页面不启动 prompt 活动，也不占用空闲会话。
+
 以上方法是已注册的 App Server 合同；SDK 会话提供 `uiAction()`、`uiRead()` 与 `uiRefresh()`。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
 
 Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过 Loop 的通用 services 读取器接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时，空队列不改变默认 Loop 调度。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。

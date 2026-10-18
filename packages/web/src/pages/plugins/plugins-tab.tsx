@@ -6,47 +6,37 @@ import {
 import { pluginNotice } from '@agnes/web-admin/admin/plugins/admin'
 import { KindFilter, pluginFailureMessage } from '@agnes/web-admin/admin/plugins/control-panel'
 import { PluginOperationFeedback } from '@agnes/web-admin/admin/plugins/operation-feedback'
-import { homeNavigation } from '@agnes/web-client'
 import {
-  Badge,
   Banner,
   Button,
   Count,
   Field,
   Icon,
-  isBuiltinPlugin,
-  ListRow,
   type MenuItem,
-  PLUGIN_CATEGORIES,
   PluginList,
   Popover,
+  pluginOrigin,
   SearchBar,
   SettingsSelect,
   SettingsState,
-  Tag,
   terminal,
-  useAdvancedSettings,
   usePushStack,
 } from '@agnes/web-ui'
-import type { ComponentProps, ReactNode } from 'react'
+import { type ComponentProps, type ReactNode, useState } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
-import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
-import { CAPABILITY_ICONS } from './capabilities.js'
 import { CAPABILITIES, openPlugins, pluginPageId } from './route.js'
 import type { CapabilitySummaries } from './summaries.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 type Row = PackageInstalledDescriptor | PackageCatalogDescriptor
 
-const flag = (item: Row, name: string): unknown =>
-  (item.metadata as Record<string, unknown> | undefined)?.[name]
-/** One rule for what counts as a business agent, shared with the gallery and the empty state. */
+/** Only explicit launch declarations identify agents across these surfaces. */
 export const isBusinessAgent = (item: Row): boolean => sharedBusinessAgent(item as PackageCatalogDescriptor)
 /**
  * The installed list is one section: business agents lead, then what is switched on, then by name.
- * Category is a filter and a line on the row, never a heading.
+ * Source and capability filters leave the inventory in one list.
  */
 export function orderInstalled<T extends PackageInstalledDescriptor>(
   rows: readonly T[],
@@ -56,7 +46,6 @@ export function orderInstalled<T extends PackageInstalledDescriptor>(
   const rank = (item: T) => (isBusinessAgent(item) ? 0 : 2) + (item.desired === 'enabled' ? 0 : 1)
   return [...rows].sort((a, b) => rank(a) - rank(b) || nameOf(a).localeCompare(nameOf(b), locale))
 }
-export const isExperimental = (item: Row): boolean => flag(item, 'experimental') === true
 
 /** What one row of the installed list or the marketplace needs from the controller. */
 export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof PluginList>, 'rows' | 'tab'> {
@@ -64,7 +53,7 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
     loading: view.state.loading,
     inventoryAuthoritative: view.state.inventoryAuthoritative,
     query: view.query,
-    filtered: !!view.kind || !!view.category,
+    filtered: !!view.kind,
     nextCursor: view.state.nextCursor,
     menuOf: (item): readonly MenuItem[] => [
       ...('desired' in item && item.presentation?.rows.some((row) => row.settings)
@@ -107,7 +96,7 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
   }
 }
 
-/** Search and the category filter shared by the installed list and the marketplace. */
+/** Search and the capability filter shared by the installed list and the marketplace. */
 export function PluginToolbar({
   view,
   t,
@@ -120,7 +109,6 @@ export function PluginToolbar({
   /** A filter the tab owns, shown before the shared one. */
   leading?: ReactNode
 }) {
-  const advanced = useAdvancedSettings()
   return (
     <SearchBar
       data-testid="plugin-toolbar"
@@ -140,41 +128,20 @@ export function PluginToolbar({
             trigger="click"
             content={
               <>
-                <Field label={t('filter.category')} htmlFor="plugin-category">
-                  <SettingsSelect
-                    id="plugin-category"
-                    data-testid="plugin-category-filter"
-                    value={view.category}
-                    onChange={(event) => {
-                      view.category = event.target.value
-                      view.render()
-                    }}
-                  >
-                    <option value="">{t('filter.all')}</option>
-                    {PLUGIN_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {view.purposeText(`category.${category}`)}
-                      </option>
-                    ))}
-                    <option value="unclassified">{view.purposeText('unclassified')}</option>
-                  </SettingsSelect>
-                </Field>
-                {(advanced || !!view.kind) && (
-                  <KindFilter
-                    value={view.kind}
-                    t={view.t}
-                    onChange={(value) => {
-                      view.kind = value
-                      view.render()
-                    }}
-                  />
-                )}
+                <KindFilter
+                  value={view.kind}
+                  t={view.t}
+                  onChange={(value) => {
+                    view.kind = value
+                    view.render()
+                  }}
+                />
               </>
             }
           >
             <Button icon={<Icon name="sliders-horizontal" />} data-testid="plugin-filter">
               {t('filter.label')}
-              <Count value={Number(!!view.category) + Number(!!view.kind)} label={t('filter.active')} />
+              <Count value={Number(!!view.kind)} label={t('filter.active')} />
             </Button>
           </Popover>
         </>
@@ -250,107 +217,89 @@ export function PluginsTab({
   t: Text
   summaries: CapabilitySummaries
 }) {
-  const props = pluginListProps(view)
+  const [source, setSource] = useState<PluginSource | ''>('')
   const pages = usePushStack()
   const locale = view.locale.getSnapshot()
   const nameOf = (item: PackageInstalledDescriptor) =>
     resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id
-  const rows = view
-    .filteredInstalled()
-    .filter(
-      (item) =>
-        !item.metadata?.exampleOf &&
-        (!view.kind || item.kinds?.includes(view.kind)) &&
-        (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
-    )
-  const stable = rows.filter((item) => !isExperimental(item))
-  const builtin = orderInstalled(stable.filter(isBuiltinPlugin), nameOf, locale)
-  const others = orderInstalled(
-    stable.filter((item) => !isBuiltinPlugin(item)),
+  const rows = orderInstalled(
+    view.filteredInstalled().filter((item) => matchesPluginFilters(item, source, view.kind)),
     nameOf,
     locale,
   )
-  const experimental = rows.filter(isExperimental)
-  // Capabilities are not packages: a category or type filter cannot match them, a search by name can.
-  const needle = view.query.toLocaleLowerCase(locale)
-  const capabilities =
-    view.kind || view.category
-      ? []
-      : CAPABILITIES.filter((id) =>
-          `${t(`cap.${id}.name`)} ${t(`cap.${id}.desc`)}`.toLocaleLowerCase(locale).includes(needle),
-        )
-  const searching = !!view.query || !!view.kind || !!view.category
   return (
     <>
-      <PluginToolbar view={view} t={t} onQuery={() => view.render()} />
-      {(capabilities.length > 0 || builtin.length > 0) && (
-        <HomePageSection title={t('builtin.title')} actions={<small>{t('builtin.note')}</small>}>
-          <div data-testid="plugin-builtin">
-            <PluginList
-              {...props}
-              tab="installed"
-              rows={builtin}
-              leading={capabilities.map((id) => {
-                const name = t(`cap.${id}.name`)
-                const summary = summaries[id]
-                return (
-                  <ListRow
-                    key={id}
-                    className="plugin-row plugins-page-capability"
-                    data-capability={id}
-                    data-testid={`builtin-${id}`}
-                    icon={<Icon name={CAPABILITY_ICONS[id]} size={20} />}
-                    title={name}
-                    titleLabel={t('builtin.open', { name })}
-                    status={<Badge>{t('builtin.badge')}</Badge>}
-                    description={t(`cap.${id}.desc`)}
-                    onOpen={() => pages.open(id)}
-                    actions={
-                      <>
-                        {summary &&
-                          (summary.attention ? (
-                            <Tag tone="warn">{summary.text}</Tag>
-                          ) : (
-                            <span className="plugins-page-summary">{summary.text}</span>
-                          ))}
-                        <Icon name="chevron-right" size={16} />
-                      </>
-                    }
-                  />
-                )
-              })}
-            />
-          </div>
-        </HomePageSection>
-      )}
-      {(others.length > 0 ||
-        !searching ||
-        (!capabilities.length && !builtin.length && !experimental.length)) && (
-        <HomePageSection
-          title={t('installed.others')}
-          actions={
-            others.length ? <small>{t('installed.count', { count: others.length })}</small> : undefined
-          }
-        >
-          <div data-testid="plugin-browser">
-            <PluginList
-              {...props}
-              tab="installed"
-              rows={others}
-              emptyActions={
-                <Button onClick={() => homeNavigation.open('agents')}>{t('installed.empty.action')}</Button>
-              }
-            />
-          </div>
-        </HomePageSection>
-      )}
-      {experimental.length > 0 && (
-        <HomePageSection title={t('experimental.title')} actions={<small>{t('experimental.note')}</small>}>
-          <div data-testid="plugin-experimental">
-            <PluginList {...props} tab="installed" rows={experimental} />
-          </div>
-        </HomePageSection>
-      )}
+      <PluginToolbar
+        view={view}
+        t={t}
+        onQuery={() => view.render()}
+        leading={<PluginSourceFilter value={source} onChange={setSource} t={t} />}
+      />
+      <div className="plugins-page-actions" data-testid="plugin-capability-settings">
+        {CAPABILITIES.map((id) => (
+          <Button key={id} onClick={() => pages.open(id)}>
+            {t(`cap.${id}.name`)}
+            {summaries[id] ? ` · ${summaries[id]?.text}` : ''}
+          </Button>
+        ))}
+      </div>
+      <div data-testid="plugin-browser">
+        <PluginList
+          {...pluginListProps(view)}
+          filtered={!!source || !!view.kind}
+          tab="installed"
+          rows={rows}
+        />
+      </div>
     </>
+  )
+}
+
+export const PLUGIN_SOURCES = ['official', 'community', 'local'] as const
+export type PluginSource = (typeof PLUGIN_SOURCES)[number]
+export const pluginSourceValue = (value: string): PluginSource | '' =>
+  PLUGIN_SOURCES.find((source) => source === value) ?? ''
+
+export function pluginSource(item: Row): PluginSource {
+  const origin = pluginOrigin(item)
+  if (origin === 'builtin' || origin === 'official') return 'official'
+  return origin === 'local' ||
+    origin === 'local-source' ||
+    ['file', 'local', 'workspace', 'path'].includes(item.source.type)
+    ? 'local'
+    : 'community'
+}
+
+export function matchesPluginFilters(item: Row, source: PluginSource | '', capability: string): boolean {
+  return (
+    (!source || pluginSource(item) === source) &&
+    (!capability || !!item.provides?.some((value) => value === capability))
+  )
+}
+
+export function PluginSourceFilter({
+  value,
+  onChange,
+  t,
+}: {
+  value: PluginSource | ''
+  onChange(value: PluginSource | ''): void
+  t: Text
+}) {
+  return (
+    <Field label={t('source.label')}>
+      <SettingsSelect
+        aria-label={t('source.label')}
+        value={value}
+        onChange={(event) => onChange(pluginSourceValue(event.target.value))}
+      >
+        <option value="">{t('source.all')}</option>
+        {PLUGIN_SOURCES.map((id) => (
+          <option key={id} value={id}>
+            {t(`source.${id}`)}
+          </option>
+        ))}
+      </SettingsSelect>
+    </Field>
   )
 }

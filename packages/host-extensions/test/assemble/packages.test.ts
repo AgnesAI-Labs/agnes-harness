@@ -124,9 +124,27 @@ describe('createJitiPackageLoader', () => {
     // present, so a loader that fell back to `main` here would fail to resolve the entry at all.
     writeFileSync(
       join(d, 'package.json'),
-      JSON.stringify({ name: 'acme/pkg', main: './does-not-exist.js', exports: { '.': './index.ts' } }),
+      JSON.stringify({
+        name: 'acme/pkg',
+        main: './does-not-exist.js',
+        exports: { '.': './index.ts' },
+        agnes: {
+          plugins: [
+            {
+              apiRange: '^4.0.0',
+              export: 'runtime',
+              metadata: {
+                displayName: 'Legacy package',
+                summary: 'Synthetic fixture',
+                description: 'Persisted plugin-core row',
+                category: 'tools',
+              },
+            },
+          ],
+        },
+      }),
     )
-    writeFileSync(join(d, 'index.ts'), 'export const marker = true')
+    writeFileSync(join(d, 'index.ts'), 'export const marker = true; export const runtime = { apply() {} }')
     // Typed as the interface: importPackage is what assemble() calls, not the concrete loader.
     const l: PackageLoader = loader()
     const m = await l.importPackage('acme/pkg', d)

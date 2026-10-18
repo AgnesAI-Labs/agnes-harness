@@ -86,8 +86,11 @@ it('shows workflow step records as rows of the activity, never as the answer', a
     .join('')
   expect(prose).not.toContain('{')
   expect(host.querySelector('.timeline-node.assistant')).toBeNull()
-  // Open the process, then the group of three steps.
-  await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-process-toggle"]')?.click())
+  // A workflow with only step records keeps the process open even if the last record is
+  // referenced as final: the activity is the only readable result. Open its group of three steps.
+  expect(host.querySelector('[data-testid="turn-process-toggle"]')?.getAttribute('aria-expanded')).toBe(
+    'true',
+  )
   const group = host.querySelector<HTMLElement>('[data-testid="turn-activity-toggle"]')
   expect(group?.textContent).toContain('完成了 3 个步骤')
   await act(async () => group?.click())

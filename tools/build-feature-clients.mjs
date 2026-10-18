@@ -11,6 +11,8 @@ const check = process.argv.includes('--check')
 for (const [feature, presentation, suffix] of [
   ['goal-ui', 'goal-presentation', 'tsx'],
   ['interaction-ui', 'intelligent-ui-presentation', 'ts'],
+  ['navigation-ui', '../../web/src/presentations/navigation', 'tsx'],
+  ['conversation-ui', '../../web/src/presentations/conversation', 'tsx'],
 ]) {
   const outfile = join(root, `packages/package-manager/bundled-plugins/${feature}/src/client.js`)
   const result = await build({

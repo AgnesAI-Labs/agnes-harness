@@ -83,6 +83,14 @@ export function createCapabilities(
     call,
   ) => {
     const session = call?.session ?? ctx.live.kernel.get().get(sessionKey)
+    // Preview admission uses the same primary-model gate as a live session. Unknown or
+    // ambiguous models expose no image tools, just as Core's session gate does.
+    const primary = providerStage.routes?.primary
+    const models = providerStage.provider
+      .models()
+      .filter((model) => model.route === primary?.route && model.id === primary?.model)
+    const previewImageInput =
+      models.length === 1 && models[0]!.input.includes('text') && models[0]!.input.includes('image')
     const registered = session?.currentResources().snapshot() ?? ctx.live.kernel.get().resources.snapshot()
     const resources = [
       ...new Map(
@@ -142,7 +150,7 @@ export function createCapabilities(
         childEngines: childAgentCatalog(runtimeTarget.pluginTree.root).map((entry) => entry.id),
         uiModules: capabilityClientCatalog(pkgs.activeRuntimeSources),
       },
-      ...(session ? { computerUseAllowed: session.computerUseAllowed() } : {}),
+      computerUseAllowed: session ? session.computerUseAllowed() : previewImageInput,
       ...(runtimeTarget.pluginTree.root.childAgents.allowlist(sessionKey)
         ? { childAllowlist: runtimeTarget.pluginTree.root.childAgents.allowlist(sessionKey)! }
         : {}),

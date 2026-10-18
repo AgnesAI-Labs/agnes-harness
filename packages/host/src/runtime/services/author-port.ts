@@ -22,6 +22,7 @@ import {
 } from '@agnes/host-common/assemble/service-binding'
 import type { ExtensionInvocation } from '@agnes/host-extensions/ext-host/invocation'
 import type { KernelPorts } from '@agnes/host-extensions/ext-host/ports'
+import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import type { Actor } from '@agnes/protocol'
 import { createSessionAgentInput, createSessionLedger, type SessionLedgerSession } from './session-ports.js'
@@ -213,8 +214,10 @@ export function createExtensionServiceHost(input: {
         ? bindings.registerHost(root, kind, provider, identity.packageId)
         : providers.registerHost(kind, identity.packageId, provider)
     const offs: Array<() => void> = []
+    let claimed = false
     try {
       bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)
+      claimed = true
       for (const listener of listeners.get(kind.kind) ?? [])
         offs.push(listener(identity.owner, identity.packageId))
     } catch (error) {
@@ -225,14 +228,21 @@ export function createExtensionServiceHost(input: {
           // A listener that already returned must not hide the registration failure.
         }
       }
-      bindings.forget(kind.kind, provider.id, provider.version)
-      void dispose()
+      if (claimed) bindings.forget(kind.kind, provider.id, provider.version)
+      void dispose().catch(() => undefined)
       throw error
     }
-    return async () => {
-      for (const off of offs) off()
+    let live = true
+    return () => {
+      if (!live) return Promise.resolve()
+      live = false
+      for (const off of offs) {
+        try {
+          off()
+        } catch {}
+      }
       bindings.forget(kind.kind, provider.id, provider.version)
-      await dispose()
+      return dispose()
     }
   }
   const ports: NonNullable<KernelPorts['serviceProviders']> = {
@@ -251,7 +261,56 @@ export function createExtensionServiceHost(input: {
     sink,
     ports,
     install(ctx, kind, descriptor, origins) {
-      bindings.install(ctx, kind, descriptor, origins)
+      bindings.install(
+        ctx,
+        kind,
+        descriptor,
+        origins,
+        (ownerContext, rowId, packageId, provider, register) => {
+          // The row index supplies identity. Provider ids never confer the semantic UI owner.
+          const owner = pluginRowSource(rowId)
+          const dispose = register()
+          const offs: Array<() => void> = []
+          let claimed = false
+          try {
+            bindings.noteOwner(kind.kind, provider.id, provider.version, owner, packageId)
+            claimed = true
+            for (const listener of listeners.get(kind.kind) ?? []) offs.push(listener(owner, packageId))
+          } catch (error) {
+            for (const off of offs.reverse()) {
+              try {
+                off()
+              } catch {}
+            }
+            if (claimed) bindings.forget(kind.kind, provider.id, provider.version)
+            void dispose().catch(() => undefined)
+            throw error
+          }
+          let live = true
+          const release = () => {
+            if (!live) return
+            live = false
+            for (const off of offs.reverse()) {
+              try {
+                off()
+              } catch {}
+            }
+            bindings.forget(kind.kind, provider.id, provider.version)
+          }
+          // Claim cleanup must run even if the provider's asynchronous dispose fails.
+          try {
+            ownerContext.effect(() => release)
+          } catch (error) {
+            release()
+            void dispose().catch(() => undefined)
+            throw error
+          }
+          return () => {
+            release()
+            return dispose()
+          }
+        },
+      )
     },
     registerOn(ctx, kind, provider, identity) {
       if (

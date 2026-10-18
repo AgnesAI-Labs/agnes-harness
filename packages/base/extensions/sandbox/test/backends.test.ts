@@ -99,7 +99,7 @@ describe('closed-network backend compilers', () => {
     },
   )
 
-  it('escapes Seatbelt strings and denies both operations without implicit temp/device writes', () => {
+  it('escapes Seatbelt strings and preserves denies with only literal standard device grants', () => {
     const confined = seatbeltConfine(['echo', 'a b'], {
       ...options,
       allowPaths: ['/work/quote" and \\ slash'],
@@ -114,7 +114,11 @@ describe('closed-network backend compilers', () => {
     expect(profile).toContain('(deny network*)')
     expect(profile).not.toContain('/private/tmp')
     expect(profile).toContain('(ioctl-command TIOCSPGRP)')
-    expect(profile).not.toMatch(/\(allow file-write[^\n]*\/dev/)
+    expect(profile).toContain('(allow file-read* file-write* (literal "/dev/null"))')
+    for (const device of ['zero', 'random', 'urandom']) {
+      expect(profile).toContain(`(allow file-read* (literal "/dev/${device}"))`)
+    }
+    expect(profile).not.toMatch(/\(allow [^\n]*\(subpath "\/dev(?:\/|"|\))/)
   })
 
   it('does not return raw argv for a Windows backend it cannot enforce', () => {

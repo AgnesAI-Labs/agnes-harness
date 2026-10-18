@@ -70,6 +70,7 @@ import * as SlotsGen from '../gen/ts/slots.js'
 import * as SurfaceGen from '../gen/ts/surface.js'
 import * as ToolDefGen from '../gen/ts/tooldef.js'
 import * as WorkerGen from '../gen/ts/worker.js'
+import { AgentPlan, AgentResolveParams } from '../src/agents.js'
 import {
   METHODS,
   type MethodName,
@@ -204,6 +205,7 @@ ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
   }
 })
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+const AGENTS_ID = 'https://agnes.dev/agents/schema.json'
 const SESSION_RUNTIME_ID = 'https://agnes.dev/session-runtime'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
 const SCHEDULES_ID = 'https://agnes.dev/schedules'
@@ -235,6 +237,7 @@ ajv.addSchema({
   },
 })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
+ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
 ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
@@ -5996,13 +5999,79 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'Reviewed custom UI declarations bound props bytes and require keyboard accessibility',
   },
-  PluginCategory: { valid: 'tools', invalid: ['unknown', '', 1], note: 'Public plugin category vocabulary' },
+  PluginProvide: {
+    valid: 'tool',
+    invalid: ['unknown', '', 1],
+    note: 'Declared capabilities are labels, not authority',
+  },
+  PluginLocalizedText: {
+    valid: { en: 'Hello' },
+    invalid: [{}, { en: '' }, { en: 'Hello', fr: 'Salut' }],
+    note: 'English fallback text',
+  },
+  AgentRef: {
+    valid: '@acme/agent#work',
+    invalid: ['work', '#work', '@acme/agent#'],
+    note: 'Full Bundle reference',
+  },
+  BundleLaunch: {
+    valid: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    invalid: [{}, { title: { en: 'Work' }, description: { en: 'Work' } }],
+    note: 'Complete explicit launch block',
+  },
+  DeclaredAgent: {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    },
+    invalid: [{}, { ref: 'work', launch: {} }],
+    note: 'Static Bundle launch projection',
+  },
+  ApplicationTemplate: {
+    valid: { id: 'acme', brand: { name: { en: 'Acme' } } },
+    invalid: [{}, { id: 'acme', brand: { unknown: true } }],
+    note: 'Application identity and presentation contract',
+  },
+  ApplicationAsset: {
+    valid: {
+      path: 'assets/mark.png',
+      size: 8,
+      mime: 'image/png',
+      sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationBrand: {
+    valid: { name: { en: 'Acme' } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationPageRef: {
+    valid: 'acme/kit#overview.details',
+    invalid: ['home', 'acme/kit#'],
+    note: 'Package-qualified presentation page',
+  },
+  ApplicationPresentation: {
+    valid: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationRoleTarget: {
+    valid: { packageId: 'acme/kit', clientId: 'ui' },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  PresentationRole: {
+    valid: 'navigation',
+    invalid: ['unknown'],
+    note: 'Application static presentation contract',
+  },
   PluginMetadata: {
     valid: {
       displayName: 'Reports',
       summary: 'Find reports.',
       description: 'Search project reports.',
-      category: 'business-agent',
       docsUrl: 'https://example.org/docs',
       samplePrompt: { en: 'Find the March report.', 'zh-CN': '找出三月的报告。' },
       experimental: true,
@@ -6012,21 +6081,18 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
         displayName: 'Reports',
         summary: 'Find reports.',
         description: 'Search project reports.',
-        category: 'tools',
         samplePrompt: { 'zh-CN': '找出三月的报告。' },
       },
       {
         displayName: 'Reports',
         summary: 'Find reports.',
         description: 'Search project reports.',
-        category: 'tools',
         experimental: 'yes',
       },
       {
         displayName: '',
         summary: 'Find reports.',
         description: 'Search project reports.',
-        category: 'tools',
       },
       {
         displayName: 'Reports',
@@ -6038,14 +6104,12 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
         displayName: 'Reports',
         summary: 'Find reports.',
         description: 'Search project reports.',
-        category: 'tools',
         docsUrl: 'http://example.org/docs',
       },
       {
         displayName: 'Reports',
         summary: 'Find reports.',
         description: 'Search project reports.',
-        category: 'tools',
         docsUrl: 'https://user:password@example.org/docs',
       },
     ],
@@ -6220,7 +6284,19 @@ const ExtensionManifestDefs: Record<string, TSchema> = {
   HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
   ExampleLaunchDeclaration: ExtensionManifestGen.ExampleLaunchDeclaration,
   UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
-  PluginCategory: ExtensionManifestGen.PluginCategory,
+  PluginProvide: ExtensionManifestGen.PluginProvide,
+  PluginLocalizedText: ExtensionManifestGen.PluginLocalizedText,
+  AgentRef: ExtensionManifestGen.AgentRef,
+  BundleLaunch: ExtensionManifestGen.BundleLaunch,
+  DeclaredAgent: ExtensionManifestGen.DeclaredAgent,
+  ApplicationTemplate: ExtensionManifestGen.ApplicationTemplate,
+  ApplicationAsset: ExtensionManifestGen.ApplicationAsset,
+  ApplicationBrand: ExtensionManifestGen.ApplicationBrand,
+  ApplicationPresentation: ExtensionManifestGen.ApplicationPresentation,
+  ApplicationPageRef: ExtensionManifestGen.ApplicationPageRef,
+  ApplicationRoleTarget: ExtensionManifestGen.ApplicationRoleTarget,
+  PresentationRole: ExtensionManifestGen.PresentationRole,
+
   PluginMetadata: ExtensionManifestGen.PluginMetadata,
   PluginMetadataLocale: ExtensionManifestGen.PluginMetadataLocale,
   Capabilities: ExtensionManifestGen.Capabilities,
@@ -7468,6 +7544,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertResult,
   },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
+  [AGENTS_ID]: { AgentResolveParams, AgentPlan },
   [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
@@ -7535,6 +7612,17 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    ApplicationSelection: PackageAdminGen.ApplicationSelection,
+    ApplicationConfigSnapshot: PackageAdminGen.ApplicationConfigSnapshot,
+    ApplicationPreviewParams: PackageAdminGen.ApplicationPreviewParams,
+    ApplicationPreview: PackageAdminGen.ApplicationPreview,
+    ApplicationState: PackageAdminGen.ApplicationState,
+    ApplicationAdoptParams: PackageAdminGen.ApplicationAdoptParams,
+    ApplicationClearParams: PackageAdminGen.ApplicationClearParams,
+    PresentationRoleSelection: PackageAdminGen.PresentationRoleSelection,
+    PresentationRoleSelections: PackageAdminGen.PresentationRoleSelections,
+    PresentationRoleState: PackageAdminGen.PresentationRoleState,
+
     PackagePresentation: PackageAdminGen.PackagePresentation,
     PluginConfigAudit: PackageAdminGen.PluginConfigAudit,
     PluginConfigEntry: PackageAdminGen.PluginConfigEntry,
@@ -7789,6 +7877,28 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/agents.resolve': { fileId: AGENTS_ID, params: 'AgentResolveParams', result: 'AgentPlan' },
+  '_agnes/v1/applications.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.preview': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationPreviewParams',
+    result: 'ApplicationPreview',
+  },
+  '_agnes/v1/applications.adopt': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationAdoptParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.clear': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationClearParams',
+    result: 'ApplicationState',
+  },
+
   '_agnes/v1/extension.wakes.enqueue': {
     fileId: 'https://agnes.ai/schema/extension-service.json',
     params: 'BoundWakeEnqueueParams',
@@ -8671,6 +8781,39 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/agents.resolve': {
+    valid: { ref: 'acme/kit#work' },
+    invalid: [{}, { ref: 1 }, { ref: 'x', actor: 'forged' }],
+    note: 'Host resolves explicit refs',
+  },
+  '_agnes/v1/applications.get': {
+    valid: { profile: 'local-dev' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.preview': {
+    valid: { profile: 'local-dev', packageId: 'acme' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.adopt': {
+    valid: {
+      profile: 'local-dev',
+      packageId: 'acme',
+      expectedRevision: 0,
+      consentDigest: 'a'.repeat(64),
+      clientId: 'test',
+      commandId: 'adopt',
+    },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.clear': {
+    valid: { profile: 'local-dev', expectedRevision: 0, clientId: 'test', commandId: 'clear' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+
   '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
   '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
   '_agnes/v1/extension.callScoped': {
@@ -9447,6 +9590,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/applications.get': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.preview': PackageAdminSamples.ApplicationPreview as Sample,
+  '_agnes/v1/applications.adopt': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.clear': PackageAdminSamples.ApplicationState as Sample,
+
   '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeReceipt as Sample,
   '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReceipt as Sample,
   '_agnes/v1/extension.callScoped': ServiceSamples.ProfileServiceCallResult as Sample,
@@ -9771,6 +9919,26 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceResult as Sample,
+  '_agnes/v1/agents.resolve': {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      loop: { id: 'loop', version: '1.0.0' },
+      bundles: ['acme/kit#work'],
+      preset: 'safe',
+      pages: [],
+      digest: 'hash',
+      compositionHash: 'tree',
+      presetHash: 'preset',
+      effectivePresetHash: 'effective',
+      model: { route: 'demo', model: 'demo' },
+      models: { primary: { route: 'demo', model: 'demo' } },
+      permission: { readOnly: true, tools: [], allow: [], deny: [] },
+      sources: [],
+    },
+    invalid: [{}, { ref: 'acme/kit#work' }],
+    note: 'Resolved plans are complete and carry no credentials',
+  },
   '_agnes/v1/session.runtime': {
     valid: {
       sessionKey: 's',

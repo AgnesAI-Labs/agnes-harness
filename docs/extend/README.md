@@ -13,7 +13,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Kind | Starter | Contribution |
 | --- | --- | --- |
 | Tool | [tool](../../templates/tool/) | TypeBox input/result schemas, execution signal and unload cleanup |
-| Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | The same tool plus a separate browser sidebar slot |
+| Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | Shared to-do tool/store, profile services and an interactive React page |
 | MCP and Skills | [mcp-skills](../../templates/mcp-skills/) | MCP definition and a packaged Skill registered through the Skills service |
 | Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `ctx.providers.register` |
 | Loop | [loop](../../templates/loop/) | Official staged business workflow with confirmation and checkpoint recovery |
@@ -82,7 +82,7 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 
 ## Proposals
 
-[Proposed plugin metadata and purpose cards](plugin-presentation/DESIGN.md) defines optional author-owned descriptions and runtime-derived contribution facts; it is not implemented yet.
+[Proposed plugin metadata and purpose cards](plugin-presentation/DESIGN.md) defines optional author-owned descriptions and runtime-derived contribution facts; it is historical; use the current purpose metadata contract below.
 
 [Purpose metadata](plugin-metadata.md) defines optional localized plugin purpose text.
 
@@ -91,3 +91,5 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 Register tools, Skills and providers with `ctx.tools.register(tool)`, `ctx.skills.register(skill)` and `ctx.providers.register(kind, provider)`. Declare the corresponding injection; the platform owns cleanup without an extra `ctx.effect`. Connections and subscriptions you create still need lifecycle cleanup.
 
 Omit `ToolMeta.costHint`, `deferLoading` and `requiresApproval` for no cost estimate, initial discovery and approval inferred from `isDestructive`. Import the `readOnlyTool` / `writeTool` metadata presets from plugin-runtime: use `meta: readOnlyTool`, or spread a preset and override fields. `modelVisible: false` hides model discovery/schemas while preserving internal calls; `requiresImageInput: true` limits discovery/execution to models with native image input.
+
+[Four-step Loop tutorial](first-loop.md) · [Application contract](applications.md) · [Acme reference application](../../examples/acme/README.md)

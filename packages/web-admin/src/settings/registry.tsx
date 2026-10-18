@@ -10,13 +10,14 @@ import {
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
-  SettingsPageDescription,
+  SettingsTechnicalDetails,
   scopedResourceKey,
   useResource,
 } from '@agnes/web-ui'
 import { type ReactNode, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
+import { ApplicationPanel } from './application.js'
 import { AutoReviewPanel } from './auto-review.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
@@ -56,7 +57,7 @@ export type RuntimeSettingsContext = {
 // Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
-  // The dialog lists three pages: General, Models & accounts, Permissions & security.
+  // Native everyday pages share the registry with application adoption.
   ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 0],
   ['model', 'accounts', 'model', 'model-settings', 'modelNav', 10],
 ] as const) {
@@ -102,7 +103,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
     <SettingsDrill
       id="runtime-details"
       data-testid="plugin-diagnostics"
-      label={t('runtimeDetails')}
+      label={t('technicalDetails')}
       description={t('runtimeDetailsHelp')}
       onClick={() => setOpen(true)}
     >
@@ -178,6 +179,7 @@ const definitions: readonly [
   number,
   (c: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
 ][] = [
+  ['application', 'application', 30, (c) => <ApplicationPanel api={c.api} canSave={c.canSave} />],
   [
     'security',
     'security',
@@ -206,7 +208,7 @@ const definitions: readonly [
     80,
     (c, t) => (
       <>
-        <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
+        <p className="agnes-settings-note">{t('runConfigIntro')}</p>
         <div id="settings-subsection-models" tabIndex={-1} className="agnes-settings-anchor">
           <SessionDefaultsPanel
             api={c.api}
@@ -215,7 +217,15 @@ const definitions: readonly [
             providers={c.snapshot?.providers}
           />
         </div>
-        <BundlesPanel api={c.api} canSave={c.canSave} t={c.pluginText} presets={c.snapshot?.presets ?? []} />
+        <SettingsTechnicalDetails title={t('technicalDetails')} data-testid="run-config-technical">
+          <p>{t('compositionDetailsHelp')}</p>
+          <BundlesPanel
+            api={c.api}
+            canSave={c.canSave}
+            t={c.pluginText}
+            presets={c.snapshot?.presets ?? []}
+          />
+        </SettingsTechnicalDetails>
         <div id="settings-subsection-context" tabIndex={-1} className="agnes-settings-anchor">
           <ContextPanel canSave={c.canSave} />
         </div>
@@ -235,7 +245,14 @@ for (const [group, id, order, render] of definitions) {
     group,
     id,
     order,
-    icon: id === 'models' ? 'agent' : id === 'diagnostics' ? 'diagnostics' : group,
+    icon:
+      id === 'application'
+        ? 'puzzle'
+        : id === 'models'
+          ? 'agent'
+          : id === 'diagnostics'
+            ? 'diagnostics'
+            : group,
     titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
     groupTitleKey: group === 'advanced' ? 'settings-shell.advanced' : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,

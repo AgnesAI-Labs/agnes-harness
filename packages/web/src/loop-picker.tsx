@@ -6,12 +6,14 @@ import {
   isSessionDefaultsSnapshot,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
+import { useBusinessAgents } from '@agnes/web-admin/agents'
 import {
   ChoiceLabel,
   choiceName,
   type ResolvedComposition,
   readComposition,
 } from '@agnes/web-admin/settings/choices'
+import { homeNavigation } from '@agnes/web-client'
 import { tr as hostText } from '@agnes/web-foundation/locale-bridge'
 import { composerLocaleCatalog } from '@agnes/web-foundation/locales/composer'
 import {
@@ -151,11 +153,14 @@ export function LoopPicker() {
     return value === key ? fallback(key) : value
   }
   const state = useSyncExternalStore(subscribe, () => view)
+  const agents = useBusinessAgents()
+  const launchable = agents.agents.filter((agent) => agents.readyAgents.includes(agent.ref))
   const selected = state.selected ? loopIdentity(state.selected) : ''
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   // A bundle or preset already chosen for this draft stays visible: it changes what the session does.
   const composition = advancedSettingsShown() || !!state.selectedBundles?.length || state.preset !== undefined
   const advancedAvailable =
+    launchable.length > 0 ||
     state.loops.length >= 2 ||
     stale ||
     !!state.error ||
@@ -207,6 +212,24 @@ export function LoopPicker() {
       data-testid="agent-options"
       aria-label={tr('composer.agent.title')}
     >
+      {launchable.length > 0 && (
+        <Field label={tr('composer.agent.title')}>
+          <Select<string>
+            data-testid="new-session-agent"
+            aria-label={tr('composer.agent.title')}
+            disabled={state.disabled}
+            value=""
+            options={launchable.map((agent) => ({ value: agent.ref, label: agent.name }))}
+            onChange={(ref) => {
+              const agent = launchable.find((entry) => entry.ref === ref)
+              if (agent) {
+                setOpen(false)
+                homeNavigation.open('agents', { focus: agent.entry.id, agent: agent.ref, start: true })
+              }
+            }}
+          />
+        </Field>
+      )}
       <Field label={state.label} {...(composition ? { hint: origin } : {})}>
         {state.loops.length === 1 && !stale ? (
           <div data-testid="new-session-loop-readonly" title={`${defaultText} · ${origin}`}>

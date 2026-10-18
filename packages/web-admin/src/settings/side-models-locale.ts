@@ -5,7 +5,8 @@ export const SIDE_MODELS_NAMESPACE = '@agnes/web-admin/side-models'
 export const sideModelsCatalog: LocaleCatalog = {
   en: {
     'side.title': 'Side models',
-    'side.note': 'Payload requests only, not for conversations. Loop plugins call them as side calls.',
+    'side.note':
+      'Payload requests only, not for conversations. Running mode plugins call them as side calls.',
     'side.empty': 'No side models yet.',
     'side.add': 'Add side model',
     'side.edit': 'Edit',
@@ -43,7 +44,7 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.modelCount': '{count} models',
     'side.copyRoute': 'Copy route name',
     'side.copied': 'Copied',
-    'side.routeHint': 'Reference this route name in the loop plugin configuration (jev.route).',
+    'side.routeHint': 'Reference this route name in the running mode plugin configuration (jev.route).',
     'side.credentialConfigured': 'credential configured',
     'side.credentialMissing': 'credential missing',
     'side.test': 'Test connection',

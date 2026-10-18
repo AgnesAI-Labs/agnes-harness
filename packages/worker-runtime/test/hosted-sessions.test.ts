@@ -73,7 +73,25 @@ describe('HostedSessions', () => {
       workspaceRoot: '/workspace',
     })
 
-    await Promise.all([hosted.open(open('a')), hosted.open(open('b'))])
+    const fresh = open('a')
+    fresh.params.agent = 'acme/kit#review'
+    fresh.params.agentDigest = 'reviewed'
+    const recovered = open('b')
+    recovered.params = {
+      ...recovered.params,
+      agent: 'acme/kit#removed-after-start',
+      agentDigest: 'old-review',
+      resume: true,
+    }
+    await Promise.all([hosted.open(fresh), hosted.open(recovered)])
+    expect(createSession.mock.calls.find(([input]) => input.key === 'a')?.[0]).toMatchObject({
+      agent: fresh.params.agent,
+      agentDigest: 'reviewed',
+    })
+    expect(createSession.mock.calls.find(([input]) => input.key === 'b')?.[0]).not.toHaveProperty('agent')
+    expect(createSession.mock.calls.find(([input]) => input.key === 'b')?.[0]).not.toHaveProperty(
+      'agentDigest',
+    )
     expect(createSession).toHaveBeenCalledTimes(2)
     const runA = hosted.dispatch(command('a', 'run', { runId: 'same', until: 'idle' }))
     const runB = hosted.dispatch(command('b', 'run', { runId: 'same', until: 'idle' }))

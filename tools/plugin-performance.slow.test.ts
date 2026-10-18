@@ -144,7 +144,7 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
             writeFileSync(join(directory, `asset-${file}.txt`), Buffer.alloc(32 * 1024, 97))
           const source = { type: 'file' as const, ref: `file:./plugin-${index}` }
           const tree = sources.hashDirectory(directory, { exclude: [] })
-          const { preview } = inspectStaged({
+          const { preview } = await inspectStaged({
             dir: directory,
             source,
             ceiling: ['ui'],

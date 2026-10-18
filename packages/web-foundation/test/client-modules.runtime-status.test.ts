@@ -36,6 +36,7 @@ describe('client module runtime status', () => {
 
     expect(normalized).toEqual({
       code: 'CLIENT_MODULE_IMPORT_FAILED',
+      phase: 'import',
       message: '插件 UI 入口加载失败，可重试',
     })
     expect(JSON.stringify(normalized)).not.toContain('secret')

@@ -136,6 +136,13 @@ it('calls a stored fetch without rebinding its browser receiver to the API facad
   } as typeof fetch
   await new PluginConfigApi(context, configFetcher).get('fixture/plugin')
   expect(receiver).toBeUndefined()
+  receiver = 'not-called'
+  const agentFetcher = function (this: unknown): Promise<Response> {
+    receiver = this
+    return Promise.resolve(Response.json({ state: 'unknown' }))
+  } as typeof fetch
+  await new PluginAdminApi(context, agentFetcher).readAgent('op-1')
+  expect(receiver).toBeUndefined()
 })
 
 it('reads validated same-origin Surface links from the admin BFF', async () => {
@@ -542,4 +549,19 @@ it('resolves auxiliary defaults from explicit slots and the actual automatic fas
   ]) {
     await expect(loadAuxiliaryModelDefaults(async () => response)).rejects.toThrow()
   }
+})
+
+it('reads an agent start receipt through the same fixed launch facade', async () => {
+  let body: unknown
+  const fetcher: typeof fetch = async (url, init) => {
+    expect(url).toBe('/api/agents/launch')
+    body = JSON.parse(String(init?.body))
+    return Response.json({ state: 'completed', sessionId: 'original-session' })
+  }
+  const api = new PluginAdminApi(context, fetcher)
+  await expect(api.readAgent('original-operation')).resolves.toEqual({
+    state: 'completed',
+    sessionId: 'original-session',
+  })
+  expect(body).toEqual({ request: { action: 'read', operationId: 'original-operation' } })
 })

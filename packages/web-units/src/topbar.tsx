@@ -26,9 +26,10 @@ export interface TopbarHandle {
 }
 interface TopbarProps {
   translate: Translate
+  productTitle?: string
 }
 export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
-  { translate: t }: TopbarProps,
+  { translate: t, productTitle = 'Agnes Harness' }: TopbarProps,
   ref: ForwardedRef<TopbarHandle>,
 ) {
   const [taskTitle, setTaskTitle] = useState<string>()
@@ -44,11 +45,11 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   const [agent, setAgent] = useState<string>()
   useEffect(() => {
     const previous = document.title
-    document.title = taskTitle ? `${taskTitle} · Agnes Harness` : 'Agnes Harness'
+    document.title = taskTitle ? `${taskTitle} · ${productTitle}` : productTitle
     return () => {
       document.title = previous
     }
-  }, [taskTitle])
+  }, [taskTitle, productTitle])
   useImperativeHandle(
     ref,
     () => ({

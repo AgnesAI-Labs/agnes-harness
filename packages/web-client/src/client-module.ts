@@ -4,6 +4,7 @@ import { createExampleClient, type ExampleLaunches, type ExamplePackages } from 
 import {
   type ContributionAvailability,
   contributionAvailability,
+  ownContribution,
   scopedHomeEntries,
 } from './contribution-scope.js'
 import {
@@ -16,6 +17,7 @@ import { scopedExamplePages } from './example-pages.js'
 import { scopedPresentationRoles } from './presentation-roles.js'
 import { scopedProfileStreams } from './profile-streams.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
+import { bindContributions } from './scoped-contributions.js'
 import {
   AgnesClientService,
   type ClientCommand,
@@ -56,6 +58,13 @@ export interface ClientContext extends Context {
   examplePages: ReturnType<typeof scopedExamplePages>
   availability: ContributionAvailability
   homeEntries: ReturnType<typeof scopedHomeEntries>
+  settingsSections: Pick<typeof import('./ui-registries.js').settingsSections, 'register'>
+  conversationCards: Pick<typeof import('./ui-registries.js').conversationCards, 'register'>
+  workbenchPanels: Pick<typeof import('./ui-registries.js').workbenchPanels, 'register'>
+  fileViewerActions: Pick<typeof import('./ui-registries.js').fileViewerActions, 'register'>
+  composerCommands: Pick<typeof import('./ui-registries.js').composerCommands, 'register'>
+  factChainLinks: Pick<typeof import('./fact-chain-links.js').factChainLinks, 'register'>
+  workbenchNavigation: Pick<typeof import('./fact-chain-links.js').workbenchNavigation, 'register'>
   resources: ClientResourceService
   presentation: PresentationHost
   presentationRoles: ReturnType<typeof scopedPresentationRoles>
@@ -77,7 +86,9 @@ export function clientModule(mod: ClientModule): {
       }
       const bound = createFiberBoundRegistry(
         registry,
-        ctx,
+        (off) => {
+          ctx.effect(() => off)
+        },
         config.rowId ?? config.packageId,
         config.allowedSlots,
         config.slotCatalogVersion,
@@ -113,6 +124,11 @@ export function clientModule(mod: ClientModule): {
         input: Record<string, unknown> | undefined,
         options?: { operationId?: string; read?: boolean; sessionReads?: readonly string[] },
       ) => {
+        if (
+          availability.getSnapshot()?.lifetime !== 'profile' ||
+          availability.getSnapshot()?.availability !== 'active'
+        )
+          throw new Error('CAPABILITY_DENIED')
         if (!agnes.profileCaller || !config.services?.includes(name))
           throw new Error(`client profile service is unavailable: ${name}`)
         return agnes.profileCaller(config, name, input, options)
@@ -151,9 +167,7 @@ export function clientModule(mod: ClientModule): {
       }
       const boundCommands = {
         register(command: ClientCommand) {
-          const off = commands.register(config.rowId ?? config.packageId, command)
-          ctx.effect(() => off)
-          return off
+          return commands.register(config.rowId ?? config.packageId, command)
         },
         registerEffect(command: ClientEffectCommand) {
           if (!agnes.effectCaller || !config.services?.includes(command.service))
@@ -258,6 +272,24 @@ export function clientModule(mod: ClientModule): {
         }),
         configurable: true,
       })
+      bindContributions(
+        ctx as ClientContext,
+        config,
+        registry,
+        (effect, assert) =>
+          createFiberBoundRegistry(
+            registry,
+            effect,
+            config.rowId ?? config.packageId,
+            config.allowedSlots,
+            config.slotCatalogVersion,
+            assert,
+          ),
+        boundCommands.register,
+        (off) => {
+          ctx.effect(() => off)
+        },
+      )
       return mod.apply(ctx as ClientContext, config)
     },
   }
@@ -265,12 +297,18 @@ export function clientModule(mod: ClientModule): {
 
 function createFiberBoundRegistry(
   registry: SlotRegistry,
-  fiberCtx: Context,
+  effect: (off: () => void) => void,
   owner: string,
   allowedSlots: readonly string[] | undefined,
   configCatalogVersion: string | undefined,
+  assert: (name?: string) => void = () => {},
 ): SlotRegistry {
   const bound = Object.create(registry) as SlotRegistry
+  // Session binding state belongs to the host registry, never to a role facade.
+  Object.defineProperty(bound, 'sessionId', { get: () => registry.sessionId })
+  bound.bindSession = registry.bindSession.bind(registry)
+  bound.setSession = registry.setSession.bind(registry)
+  bound.subscribeSession = registry.subscribeSession.bind(registry)
   bound.register = ((
     nameOrOptions: SlotName | Record<string, unknown>,
     component: unknown,
@@ -278,6 +316,7 @@ function createFiberBoundRegistry(
   ) => {
     const requestedName =
       typeof nameOrOptions === 'string' ? nameOrOptions : (nameOrOptions as { name?: SlotName }).name
+    assert(requestedName as string)
     const registration =
       typeof nameOrOptions === 'string'
         ? { name: nameOrOptions, ...(options ?? {}), owner }
@@ -294,13 +333,12 @@ function createFiberBoundRegistry(
     if (allowedSlots !== undefined && !allowedSlots.includes(requestedName as string))
       throw new Error(`client module ${owner} registered undeclared slot ${String(requestedName)}`)
     const off = registry.register(registration as never, component)
-    fiberCtx.effect(() => off)
-    return off
+    return ownContribution(owner, off, effect)
   }) as SlotRegistry['register']
   bound.inject = ((name: string, factory: () => unknown) => {
+    assert(name)
     const off = registry.inject(name, factory)
-    fiberCtx.effect(() => off)
-    return off
+    return ownContribution(owner, off, effect)
   }) as SlotRegistry['inject']
   return bound
 }

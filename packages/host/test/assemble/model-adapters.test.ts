@@ -13,6 +13,7 @@ import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import {
   builtinModelAdapterCatalog,
+  builtinModelSelectionData,
   installModelAdapters,
   ModelAdapterRegistry,
   modelAdapterCatalog,
@@ -277,8 +278,12 @@ async function fixture(selected: string, missingCredential = false) {
           ['@agnes/ai', '@agnes/base', '@agnes/code', source.snapshot.packageId].map((id) => [
             id,
             {
-              version: '1.2.3',
-              integrity: `sha256-${'2'.repeat(64)}`,
+              version: id === source.snapshot.packageId ? '1.2.3' : '0.1.0',
+              source:
+                id === source.snapshot.packageId
+                  ? { type: 'file' as const, ref: 'file:fixture' }
+                  : { type: 'builtin' as const, ref: 'builtin' },
+              integrity: id === source.snapshot.packageId ? `sha256-${'2'.repeat(64)}` : 'builtin:0.1.0',
               trust: id === source.snapshot.packageId ? 'trusted' : 'builtin',
               enabled: true,
             },
@@ -415,10 +420,37 @@ it.each([
   },
 )
 
-it('reads what the built-in adapters take without assembling a Host', () => {
+it('reads release adapter identities and capabilities without assembling a Host', async () => {
   const builtin = new Map(builtinModelAdapterCatalog().map((entry) => [entry.id, entry.capabilities]))
   expect(builtin.get('typesafe-systemone')).toMatchObject({ payload: true, payloadOnly: true })
   // Every conversation adapter declares neither payload key.
   for (const id of ['openai-completions', 'anthropic-messages', 'openai'])
     expect(builtin.get(id)).toEqual({ imageInput: true, tools: true, streaming: true })
+  const profile = await resolveProfile(
+    { builtin: 'local-dev' },
+    {
+      platform: { os: 'darwin', arch: 'arm64', capabilities: {} },
+      agnesVersion: '0.0.0',
+      now: '2026-10-18',
+      homeDir: '/synthetic',
+    },
+  )
+  const data = await builtinModelSelectionData({
+    ...profile,
+    packages: [
+      ...profile.packages.filter((pkg) => pkg.id !== '@agnes/model-adapters'),
+      {
+        id: '@agnes/model-adapters',
+        version: '0.0.0',
+        integrity: 'builtin:0.0.0',
+        source: 'builtin',
+        trust: 'builtin',
+        enabled: true,
+      },
+    ],
+  })
+  expect(data.adapters.find((a) => a.id === 'openai-completions')?.sourcePackage).toBe('@agnes/ai')
+  for (const id of ['scripted', 'replay', 'local-openai'])
+    expect(data.adapters.find((a) => a.id === id)).toBeUndefined()
+  expect(builtinModelAdapterCatalog().find((a) => a.id === 'scripted')?.sourcePackage).toBe('@agnes/ai')
 })

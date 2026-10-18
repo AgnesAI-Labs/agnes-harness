@@ -1,12 +1,10 @@
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import { applicationAgents } from '@agnes/web-client'
 import { homeAdmin } from './admin-api.js'
 
-/**
- * A business agent is a bundle marked `category: "business-agent"`; catalogs written before that
- * mark existed name the same packages under `@agnes-fde/`.
- */
+/** Catalogue availability comes from explicit launch declarations, independently of package names. */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  return row.metadata?.category === 'business-agent' || row.id.startsWith('@agnes-fde/')
+  return (row.agents?.length ?? 0) > 0
 }
 
 /** Every business agent the catalog offers, in catalog order. */
@@ -25,28 +23,23 @@ export async function listBusinessAgents(
   do {
     pages += 1
     const page = await catalog(undefined, cursor)
-    rows.push(...page.items.filter(isBusinessAgent))
+    rows.push(
+      ...page.items
+        .map((row) => ({ ...row, agents: applicationAgents(row.agents ?? []) }))
+        .filter(isBusinessAgent)
+        .flatMap((entry) => (entry.agents ?? []).map((agent) => ({ ...entry, agents: [agent] }))),
+    )
     cursor = page.nextCursor ?? undefined
   } while (cursor && rows.length < 256 && pages < 32)
   return rows
 }
 
-/** The three a new session suggests first: different kinds of work, when the catalog has them. */
-const FEATURED = ['code-review', 'data-report', 'knowledge-qa']
-
+/** Suggestions retain the explicit catalog order; names do not imply agent categories. */
 export function featuredBusinessAgents(
   rows: readonly PackageCatalogDescriptor[],
   count = 3,
 ): PackageCatalogDescriptor[] {
-  const rank = (row: PackageCatalogDescriptor) => {
-    const index = FEATURED.indexOf(row.id.split('/').at(-1) ?? '')
-    return index < 0 ? FEATURED.length : index
-  }
-  return rows
-    .map((row, index) => ({ row, index }))
-    .sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index)
-    .slice(0, count)
-    .map((entry) => entry.row)
+  return rows.slice(0, count)
 }
 
 export type BusinessAgentSuggestions = Readonly<{

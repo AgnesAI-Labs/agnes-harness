@@ -44,6 +44,9 @@ export async function runtime(distribution, home, cwd) {
     },
     async crash() {
       // Kill only the daemon owned by this newly created home; orphan workers are not allowed.
+      // Freeze supervision before enumerating: a worker spawned after ps would escape the kill
+      // list and correctly keep managed recovery fenced by its still-live process identity.
+      process.kill(owner.pid, 'SIGSTOP')
       const { stdout } = await run('ps', ['-axo', 'pid=,ppid='])
       const rows = stdout
         .trim()
@@ -52,7 +55,6 @@ export async function runtime(distribution, home, cwd) {
       const descendants = (pid) =>
         rows.filter((row) => row[1] === pid).flatMap(([child]) => [...descendants(child), child])
       const children = descendants(owner.pid)
-      process.kill(owner.pid, 'SIGSTOP')
       for (const pid of children) {
         try {
           process.kill(pid, 'SIGKILL')

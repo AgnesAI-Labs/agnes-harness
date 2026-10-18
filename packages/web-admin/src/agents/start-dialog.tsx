@@ -14,7 +14,6 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { InstallReview, shortSource } from '../admin/plugins/install-review.js'
-import { sessionStartUrl } from '../settings/runtime-panels.js'
 import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 import type { BusinessAgent } from './catalog.js'
 import {
@@ -32,13 +31,15 @@ import {
 } from './start-flow.js'
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
-export type StartedSession = StartTarget & { prompt?: string | undefined }
+export type StartedSession = { sessionId: string; prompt?: string | undefined }
 /**
  * Opens the new-session draft the way every other start link does: the loop is selected, the
  * package's session bundles are requested and the sample prompt is filled in, never sent.
  */
 export const openStartedSession = (target: StartedSession): void =>
-  location.assign(sessionStartUrl(undefined, target.prompt, target.bundles, target.loop))
+  location.assign(
+    `/?${new URLSearchParams({ session: target.sessionId, ...(target.prompt ? { prompt: target.prompt } : {}) })}`,
+  )
 
 type Reviewed = PackagePreview | PackageInstalledDescriptor
 type GetsRow = { icon: IconName; title: string; detail?: string | undefined; caution?: boolean }
@@ -57,7 +58,7 @@ export function startGets(reviewed: Reviewed, t: Text): GetsRow[] {
       title: tools.length === 1 ? t('gets.tool') : t('gets.tools', { count: tools.length }),
       detail: list(tools),
     })
-  if (reviewed.kinds?.includes('loop')) rows.push({ icon: 'bot', title: t('gets.loop') })
+  if (reviewed.provides?.includes('loop')) rows.push({ icon: 'bot', title: t('gets.loop') })
   const skills = reviewed.contributions.filter((item) => item.kind === 'skill').map((item) => item.id)
   if (skills.length)
     rows.push({
@@ -143,18 +144,27 @@ export function StartSteps({ progress, t }: { progress: StartProgress; t: Text }
 }
 
 const idle: StartProgress = { install: 'pending', trust: 'pending', enable: 'pending', session: 'pending' }
+type LaunchAttempt = { target: StartTarget; operationId: string }
 
 type Phase =
   | { kind: 'idle' }
   | { kind: 'planning'; agent: BusinessAgent }
   | { kind: 'confirm'; agent: BusinessAgent; plan: StartPlan }
-  | { kind: 'running'; agent: BusinessAgent; plan: StartPlan; progress: StartProgress }
+  | { kind: 'launch-review'; agent: BusinessAgent; plan: StartPlan; target: StartTarget; operationId: string }
+  | {
+      kind: 'running'
+      agent: BusinessAgent
+      plan: StartPlan
+      progress: StartProgress
+      launch?: LaunchAttempt
+    }
   | {
       kind: 'failed'
       agent: BusinessAgent
       plan: StartPlan | undefined
       progress: StartProgress
       failure: StartFailure
+      launch?: LaunchAttempt
     }
 
 /** The page a start opens inside Agent FDE: `agent-<slug>`, so a link opens the agent's start. */
@@ -186,7 +196,7 @@ export function useBusinessAgentStart(options: {
   openSession?: (target: StartedSession) => void
   onOpenPlugins?: (agent: BusinessAgent) => void
 }): BusinessAgentStart {
-  const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
+  const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   // The start shows as a page inside Agent FDE (Agent FDE › the agent); its page is the address.
   const nav = usePushStack()
@@ -239,16 +249,15 @@ export function useBusinessAgentStart(options: {
         (target) => {
           if (signal.aborted) return
           latest.current.onChanged?.()
-          setPhase({ kind: 'idle' })
-          hide(agent)
-          ;(latest.current.openSession ?? openStartedSession)({ ...target, prompt: agent.samplePrompt })
+          setPhase({ kind: 'launch-review', agent, plan, target, operationId: crypto.randomUUID() })
+          show(agent)
         },
         (error: unknown) => {
           if (!signal.aborted) fail(agent, plan, progress, error)
         },
       )
     },
-    [fail, hide],
+    [fail, show],
   )
 
   const begin = useCallback(
@@ -282,6 +291,59 @@ export function useBusinessAgentStart(options: {
     [fail, run, show],
   )
 
+  const launch = async (agent: BusinessAgent, plan: StartPlan, attempt: LaunchAttempt, recover = false) => {
+    const api = latest.current.api
+    if (!api) return
+    setPhase({ kind: 'running', agent, plan, progress: { ...idle, session: 'running' }, launch: attempt })
+    const complete = (result: { sessionId: string; draft?: StartTarget['launch']['prompt'] }) => {
+      setPhase({ kind: 'idle' })
+      hide(agent)
+      ;(latest.current.openSession ?? openStartedSession)({
+        sessionId: result.sessionId,
+        prompt: result.draft?.text[locale] ?? result.draft?.text.en,
+      })
+    }
+    const receipt = async () => {
+      const result = await api.readAgent(attempt.operationId)
+      if (result.state === 'completed' && result.sessionId)
+        complete({ ...result, sessionId: result.sessionId })
+      else throw new Error(result.code ?? (result.state === 'running' ? 'START_PENDING' : 'OUTCOME_UNKNOWN'))
+    }
+    const stopped = (error: unknown) => {
+      setPhase({
+        kind: 'failed',
+        agent,
+        plan,
+        launch: attempt,
+        progress: { ...idle, session: 'failed' },
+        failure: {
+          step: 'session',
+          code: 'request',
+          detail: error instanceof Error ? error.message : undefined,
+        },
+      })
+      show(agent)
+    }
+    // Recovery only reads the original receipt: failed/unknown never becomes another start.
+    if (recover) {
+      try {
+        await receipt()
+      } catch (error) {
+        stopped(error)
+      }
+      return
+    }
+    try {
+      complete(await api.startAgent(attempt.target.launchTicket, attempt.operationId))
+    } catch {
+      try {
+        await receipt()
+      } catch (error) {
+        stopped(error)
+      }
+    }
+  }
+
   const close = () => {
     if (phase.kind === 'idle') return
     const agent = phase.agent
@@ -305,7 +367,7 @@ export function useBusinessAgentStart(options: {
 
   const start: BusinessAgentStart['start'] = (agent, startOptions) => {
     // A second click on the same agent brings its page back instead of starting twice.
-    if (phase.kind !== 'idle' && phase.agent.entry.id === agent.entry.id) return show(agent)
+    if (phase.kind !== 'idle' && phase.agent.ref === agent.ref) return show(agent)
     if (phase.kind === 'running') return show(phase.agent)
     begin(agent, startOptions?.quiet === true)
   }
@@ -348,7 +410,7 @@ export function useBusinessAgentStart(options: {
         description={t(
           phase.kind === 'planning'
             ? 'dialog.checking'
-            : phase.kind === 'confirm'
+            : phase.kind === 'confirm' || phase.kind === 'launch-review'
               ? 'dialog.confirm'
               : phase.kind === 'running'
                 ? 'dialog.running'
@@ -357,6 +419,46 @@ export function useBusinessAgentStart(options: {
         )}
       >
         <div className="agent-start-page" data-testid="agent-start-dialog">
+          {phase.kind === 'launch-review' && (
+            <section data-testid="agent-launch-review">
+              <SettingsGroup>
+                <SettingsItem
+                  label={phase.target.launch.title[locale] ?? phase.target.launch.title.en}
+                  description={phase.target.ref}
+                />
+                <SettingsItem label={t('launch.model')} description={JSON.stringify(phase.target.models)} />
+                <SettingsItem
+                  label={t('launch.permission')}
+                  description={JSON.stringify(phase.target.permission)}
+                />
+                <SettingsItem
+                  label={t('launch.sources')}
+                  description={phase.target.sources
+                    .map((source) => `${source.id}@${source.version} ${source.integrity}`)
+                    .join(', ')}
+                />
+                {phase.target.launch.prompt && (
+                  <SettingsItem
+                    label={t('launch.draft')}
+                    description={
+                      phase.target.launch.prompt.text[locale] ?? phase.target.launch.prompt.text.en
+                    }
+                  />
+                )}
+              </SettingsGroup>
+              <Button
+                data-testid="agent-launch-confirm"
+                onClick={() => {
+                  void launch(phase.agent, phase.plan, {
+                    target: phase.target,
+                    operationId: phase.operationId,
+                  })
+                }}
+              >
+                {t('action.session')}
+              </Button>
+            </section>
+          )}
           {phase.kind === 'planning' && <Loadable loading hasData={false} shape="rows" />}
           {phase.kind === 'confirm' && reviewed && (
             <InstallReview
@@ -462,6 +564,7 @@ export function useBusinessAgentStart(options: {
                 </span>
               </Banner>
               <p className="agent-start-help">{t(`fail.kept.${phase.failure.step}`)}</p>
+              {phase.launch && <p>{t('launch.uncertain')}</p>}
             </div>
           )}
           {phase.kind !== 'confirm' && (
@@ -481,6 +584,10 @@ export function useBusinessAgentStart(options: {
                     appearance="primary"
                     data-testid="agent-start-retry"
                     onClick={() => {
+                      if (phase.launch && phase.plan) {
+                        void launch(phase.agent, phase.plan, phase.launch, true)
+                        return
+                      }
                       const last = phase.plan?.preview ?? phase.plan?.installed
                       begin(
                         phase.agent,
@@ -494,8 +601,13 @@ export function useBusinessAgentStart(options: {
                       )
                     }}
                   >
-                    {t('dialog.retry')}
+                    {t(phase.launch ? 'launch.check' : 'dialog.retry')}
                   </Button>
+                  {phase.launch && (
+                    <Button data-testid="agent-start-new-intent" onClick={() => begin(phase.agent, false)}>
+                      {t('launch.another')}
+                    </Button>
+                  )}
                 </>
               ) : (
                 <Button data-testid="agent-start-cancel" onClick={close}>

@@ -1,0 +1,70 @@
+{
+  "name": "@agnes/conversation-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:conversation-ui/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Conversation presentation",
+          "summary": "Default conversation frame, transcript and independently selected composer.",
+          "description": "Default conversation frame, transcript and independently selected composer.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "对话呈现",
+              "summary": "默认对话框架、转录与可独立选择的输入框。",
+              "description": "默认对话框架、转录与可独立选择的输入框。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:conversation-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Conversation presentation",
+      "summary": "Default conversation frame, transcript and independently selected composer.",
+      "description": "Default conversation frame, transcript and independently selected composer.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "对话呈现",
+          "summary": "默认对话框架、转录与可独立选择的输入框。",
+          "description": "默认对话框架、转录与可独立选择的输入框。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

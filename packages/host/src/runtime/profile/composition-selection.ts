@@ -6,7 +6,12 @@ import type {
 } from '@agnes/host-common/profile/composition'
 import { freezeTree } from '@agnes/host-common/profile/composition-freeze'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
+import type { PluginRow } from '@agnes/plugin-runtime/host'
+import type { Host } from '../lifecycle/host.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
+
+export type CompositionContainer = { host: Host; tree: ResolvedComposition; draining?: boolean }
 
 /** Compile a preset tree into a separate Host profile, without changing an existing session. */
 export function profileForComposition(profile: ResolvedProfile, tree: ResolvedComposition): ResolvedProfile {
@@ -88,4 +93,58 @@ export function compositionAllowsTool(
     }).tools,
     name,
   )
+}
+
+/** Rebind only identities attested by a live Host. Unknown builtin claims reach the normal refusal. */
+export function projectCompositionRows<T extends PluginRow>(
+  rows: readonly T[],
+  tree: ResolvedComposition,
+  host: Host | undefined,
+  localRows: readonly PluginRow[],
+  authority: readonly PluginRow[],
+): T[] {
+  // Skills are live resources. A replayed target can carry a row from an earlier worker boot.
+  // Use this container's prepared row so its mount identity matches its current importer.
+  const consumers = new Map(
+    host?.extensionRows
+      .current()
+      .filter((row) => row.liveResources?.length)
+      .map((row) => [row.id, row]),
+  )
+  const own = new Map(localRows.map((row) => [row.id, row]))
+  const known = new Set(authority.map((row) => `${row.id}\0${row.mountIdentity}`))
+  const scoped = rows.flatMap((row) => {
+    if (!row.plugin.startsWith('builtin:') || !known.has(`${row.id}\0${row.mountIdentity}`)) return [row]
+    const local = own.get(row.id)
+    if (local?.mountIdentity === row.mountIdentity) return [row]
+    // Each composition owns its seam/preset policy; its publisher merges its own private rows.
+    if (!local || row.id.startsWith('seam:') || row.id.startsWith('preset:')) return []
+    return [{ ...local, ...(row.disabled === undefined ? {} : { disabled: row.disabled }) } as T]
+  })
+  const candidates = scoped.map((row) => {
+    const live = consumers.get(row.id)
+    return live && live.plugin === row.plugin && live.entryRevision === row.entryRevision ? (live as T) : row
+  })
+  const plugins = resolveSessionCapabilities({
+    composition: tree,
+    installed: {
+      plugins: candidates.map((row) => ({
+        id: row.id,
+        enabled: !row.disabled,
+        packageId:
+          pluginSnapshotIdentity(row.plugin)?.packageId ??
+          (row.plugin.startsWith('builtin:')
+            ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
+            : undefined),
+      })),
+    },
+  }).plugins
+  return candidates.map((row) => {
+    const override = tree.selection.plugins?.[row.id]
+    return Object.freeze({
+      ...row,
+      ...(override?.config === undefined ? {} : { config: override.config }),
+      disabled: !capabilityEnabled(plugins, row.id),
+    })
+  })
 }

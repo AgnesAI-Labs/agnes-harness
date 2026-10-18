@@ -8,6 +8,7 @@ import {
   type VerifiedRowEntry,
   VerifiedRowError,
 } from '@agnes/plugin-runtime/host'
+import { parsePackageBundleContract } from './bundle-contract.js'
 import { PackageError } from './errors.js'
 import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
@@ -35,6 +36,8 @@ export type RuntimePluginSnapshot = Readonly<{
   snapshot: RuntimeSnapshot
   generation: number
   trusted: boolean
+  /** Current installed identity is enabled for new sessions; retained pins may be false. */
+  enabled?: boolean
 }>
 
 export function activeRuntimePinId(ref: Readonly<{ packageId: string; integrity: string }>): string {
@@ -69,6 +72,8 @@ export function runtimePluginSnapshotsFromInventory(
           capabilityHash: pkg.capabilityHash,
           directory: pkg.directory,
           contributions: pkg.contributions,
+          ...(pkg.entry.agents ? { agents: pkg.entry.agents } : {}),
+          ...(pkg.entry.application ? { application: pkg.entry.application } : {}),
         }),
         generation: 1,
         trusted: pkg.trusted,
@@ -100,6 +105,30 @@ export function runtimePluginSnapshotsFromInventory(
   return Object.freeze(sources)
 }
 
+/** Verified declarative packages need no artificial executable row or active code pin. */
+export function runtimePluginDataSourcesFromInventory(
+  inventory: InstalledInventory,
+): readonly RuntimePluginSnapshot[] {
+  const packages = inventory.packages.filter((pkg) => {
+    if (!pkg.enabled || !pkg.trusted || pkg.blockers.length || !pkg.directory || !pkg.entry.treeIntegrity)
+      return false
+    const manifest = readStaticJson(join(pkg.directory, 'package.json'))
+    const agnes = (manifest.agnes ?? {}) as Record<string, unknown>
+    if (parseAgnesPluginEntries(pkg.id, agnes.plugins, { stored: true }).length) return false
+    return (
+      Object.keys(parsePackageBundleContract(pkg.id, agnes.bundles)).length > 0 ||
+      pkg.entry.application !== undefined
+    )
+  })
+  return runtimePluginSnapshotsFromInventory({ ...inventory, packages })
+    .filter((source) =>
+      packages.some(
+        (pkg) => pkg.id === source.snapshot.packageId && pkg.entry.integrity === source.snapshot.integrity,
+      ),
+    )
+    .map((source) => Object.freeze({ ...source, enabled: true }))
+}
+
 /** Only daemon-owned active pins may supply executable rows to a shared worker. */
 export function runtimePluginSnapshotsFromPins(
   inventory: InstalledInventory,
@@ -117,6 +146,18 @@ export function runtimePluginSnapshotsFromPins(
       !trusted.has(pin.snapshot.packageId)
     )
       continue
+    const current = inventory.packages.find((pkg) => pkg.id === pin.snapshot.packageId)
+    // A historical identity keeps its own bytes; reusing the installed identity must keep
+    // its verified tree and capability binding too. Store reads additionally bind source/ref.
+    if (
+      current?.entry.integrity === pin.snapshot.integrity &&
+      (current.entry.version !== pin.snapshot.version ||
+        current.entry.treeIntegrity !== pin.snapshot.treeIntegrity ||
+        current.capabilityHash !== pin.snapshot.capabilityHash)
+    )
+      throw new PackageError('E_LOCK_MISMATCH', 'active runtime pin differs from installed snapshot', {
+        detail: { reason: 'active-pin-installed-binding' },
+      })
     const key = `${pin.snapshot.packageId}\0${pin.snapshot.integrity}`
     const existing = sources.get(key)
     if (existing && existing.snapshot.treeIntegrity !== pin.snapshot.treeIntegrity)
@@ -127,6 +168,12 @@ export function runtimePluginSnapshotsFromPins(
       key,
       Object.freeze({
         snapshot: Object.freeze({ ...pin.snapshot, snapshotId: pin.snapshot.integrity }),
+        enabled: inventory.packages.some(
+          (pkg) =>
+            pkg.id === pin.snapshot.packageId &&
+            pkg.enabled &&
+            pkg.entry.integrity === pin.snapshot.integrity,
+        ),
         generation: 1,
         trusted: true,
       }),
@@ -178,7 +225,9 @@ function readDeclarations(
   if ((agnes as Readonly<Record<string, unknown>>).extensions !== undefined)
     stateFailure('legacy-extension-format')
   try {
-    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins)
+    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins, {
+      stored: true,
+    })
   } catch (error) {
     if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')

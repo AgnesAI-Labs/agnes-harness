@@ -164,6 +164,8 @@ export function createExtensionHost(
   // Builtin extensions that an `ext:` row supplies (MIGRATED_EXTENSION_IDS) are loaded here rather
   // than by `managed`, so a plugin row replacing one and the builtin coming back hand over cleanly.
   const builtinRows = createBuiltinRowHost({
+    ...(deps.pluginManage ? { pluginManage: deps.pluginManage } : {}),
+    ...(deps.sessionGeneration ? { sessionGeneration: deps.sessionGeneration } : {}),
     owners: extensionOwners,
     order: extensionOrder,
     ports: extPorts,

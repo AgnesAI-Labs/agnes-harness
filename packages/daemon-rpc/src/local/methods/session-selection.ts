@@ -23,10 +23,12 @@ type Catalog = {
   modelAdapters: readonly AdminModelAdapter[]
 }
 
-/** The supervisor queries its real Host-bearing shared worker, never a profile-only approximation. */
+/** Loop/default administration uses the real Host catalog. Model display may supply its own
+ * verified projection without starting that Host or preparing a session. */
 export function sessionSelectionProvider(
   configuration: ConfigurationService | undefined,
   catalog: () => Promise<Catalog>,
+  modelCatalog?: () => Promise<readonly AdminModelAdapter[]>,
 ): AdminSessionSelection | undefined {
   if (!configuration || !('sessionDefaults' in configuration) || !('saveSessionDefaults' in configuration))
     return undefined
@@ -34,7 +36,7 @@ export function sessionSelectionProvider(
     {
       presets: async () => (await catalog()).presets?.map((entry) => entry.id) ?? [],
       loops: async () => (await catalog()).loops,
-      modelAdapters: async () => (await catalog()).modelAdapters,
+      modelAdapters: modelCatalog ?? (async () => (await catalog()).modelAdapters),
       models: async (adapter) => (isAdminModelAdapter(adapter) ? adapter.models : []),
     },
     configuration as ConfigurationService & SessionDefaultsConfigurationService,

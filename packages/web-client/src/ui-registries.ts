@@ -70,11 +70,15 @@ export class UiExtensionRegistry<Entry extends { readonly id: string; readonly o
   #version = 0
   constructor(private readonly validate?: (entry: Entry) => void) {}
   register(entry: Entry): () => void {
+    return this.registerPrepared(entry)
+  }
+  protected registerPrepared(entry: Entry, prepare?: (stored: Entry) => void): () => void {
     if (!/^[a-z][a-z0-9.-]*$/.test(entry.id) || !Number.isFinite(entry.order))
       throw new Error('Invalid UI extension registration')
     this.validate?.(entry)
     if (this.#entries.has(entry.id)) throw new Error(`UI extension already registered: ${entry.id}`)
     const stored = Object.freeze({ ...entry }) as Entry
+    prepare?.(stored)
     this.#entries.set(entry.id, stored)
     this.#changed()
     return () => {
@@ -140,7 +144,8 @@ export type HomeEntry = Readonly<{
   component: ComponentType<{ context: UiExtensionContext }>
 }>
 export class HomeEntryRegistry extends UiExtensionRegistry<HomeEntry> {
-  override register(entry: HomeEntry): () => void {
+  readonly #packages = new WeakMap<HomeEntry, string>()
+  private check(entry: HomeEntry): void {
     if (entry.placement !== undefined && entry.placement !== 'primary' && entry.placement !== 'secondary')
       throw new Error('Invalid home placement')
     const entries = this.entries()
@@ -149,7 +154,21 @@ export class HomeEntryRegistry extends UiExtensionRegistry<HomeEntry> {
       (entry.placement === 'primary' && entries.filter((item) => item.placement === 'primary').length >= 32)
     )
       throw new Error('Home entry registration limit exceeded')
+  }
+  override register(entry: HomeEntry): () => void {
+    this.check(entry)
     return super.register(entry)
+  }
+  /** Host facade binds ownership before synchronous registry observers run. */
+  registerOwned(packageId: string, entry: HomeEntry): () => void {
+    this.check(entry)
+    return this.registerPrepared(entry, (stored) => this.#packages.set(stored, packageId))
+  }
+  resolve(ref: string): HomeEntry | undefined {
+    const separator = ref.indexOf('#')
+    if (separator < 1) return undefined
+    const entry = this.get(ref.slice(separator + 1))
+    return entry && this.#packages.get(entry) === ref.slice(0, separator) ? entry : undefined
   }
 }
 export const homeEntries = new HomeEntryRegistry()
@@ -165,7 +184,7 @@ export function homeEntryGroups(entries: readonly HomeEntry[]) {
   }
 }
 
-export type HomePageSelection = Readonly<{ id: string; selection?: unknown }>
+export type HomePageSelection = Readonly<{ id: string; selection?: unknown; pageRef?: string }>
 /**
  * Which home entry page is requested. The page shows while an entry with that ID is registered; a
  * request whose entry is missing (not loaded yet, or its plugin was disabled) shows the conversation.
@@ -175,6 +194,16 @@ export class HomeNavigation {
   #listeners = new Set<() => void>()
   open(id: string, selection?: unknown): void {
     this.#set(selection === undefined ? { id } : { id, selection })
+  }
+  /** A selected application page keeps its owner through unloads, failures and replacements. */
+  openRef(pageRef: string, selection?: unknown): void {
+    const separator = pageRef.indexOf('#')
+    if (separator < 1) throw new Error('Invalid qualified home page')
+    this.#set({
+      id: pageRef.slice(separator + 1),
+      pageRef,
+      ...(selection === undefined ? {} : { selection }),
+    })
   }
   close(): void {
     if (this.#current) this.#set(undefined)

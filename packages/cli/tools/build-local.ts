@@ -247,7 +247,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   await buildWithMetadata({
     define: { ...productionWebOptions.define, __AGNES_WEB_BUNDLE__: 'true' },
     entryPoints: {
-      app: join(repoPackages, 'web', 'src', 'app.ts'),
+      app: join(repoPackages, 'web', 'src', 'bootstrap.ts'),
       admin: '@agnes/web-admin/admin/plugins/admin',
       resources: join(repoPackages, 'resource-control-web', 'src', 'admin.tsx'),
       // 独立页（/admin/plugins、/admin/resources）的宿主入口；设置弹窗里嵌的是上面三个模块。

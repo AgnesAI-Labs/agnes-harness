@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { jcs } from '@agnes/protocol'
+import { currentStoredShape } from '@agnes/package-manager'
+import { jcs, validatePackageAdminData } from '@agnes/protocol'
 import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { FilePackageOperationStore, withOperationState } from '../src/packages/operations.js'
@@ -119,4 +120,82 @@ it('reclaims a settled operation and its cancel commands seven days after it set
   ])
   const saved = JSON.parse(await readFile(join(root, 'operations', 'operations.json'), 'utf8'))
   expect(saved.cancels).toEqual([])
+})
+
+it('reopens historical operation results without rewriting them and refuses invalid legacy declarations', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-operation-upgrade-'))
+  roots.push(root)
+  const directory = join(root, 'operations')
+  const store = new FilePackageOperationStore(directory)
+  const now = new Date().toISOString()
+  await store.admit(inspect('op-old', now))
+  const file = join(directory, 'operations.json')
+  const journal = JSON.parse(await readFile(file, 'utf8'))
+  const metadata = {
+    displayName: 'Legacy',
+    summary: 'Synthetic operation result',
+    description: 'Historical plugin metadata',
+    category: 'example',
+    exampleOf: 'acme/parent',
+    launches: [
+      {
+        id: 'work',
+        kind: 'business-agent',
+        title: 'Work',
+        bundle: 'acme/legacy#work',
+        preset: 'safe',
+        prompt: 'Synthetic draft',
+      },
+    ],
+  }
+  const operation = journal.operations[0].operation
+  operation.state = 'completed'
+  operation.installed = {
+    id: 'acme/legacy',
+    version: '1.0.0',
+    source: { type: 'file', ref: 'file:./legacy' },
+    integrity: `sha256-${'a'.repeat(64)}`,
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    contributions: [],
+    blockers: [],
+    rollbackTarget: null,
+    capabilityHash: 'b'.repeat(64),
+    metadata,
+    kinds: ['bundle'],
+    presentation: {
+      includes: { kinds: ['bundle'], counts: { bundles: 1 } },
+      rows: [{ id: 'ext:acme/legacy', settings: false, metadata }],
+    },
+  }
+  const original = JSON.stringify(journal)
+  await writeFile(file, original)
+  const reopened = new FilePackageOperationStore(directory)
+  expect(await reopened.pending()).toEqual([])
+  expect((await reopened.get('local-dev', 'op-old'))?.operation).toEqual(operation)
+  expect(await readFile(file, 'utf8')).toBe(original)
+  expect(validatePackageAdminData('PackageOperation', currentStoredShape(operation)).ok).toBe(true)
+  await reopened.admit(inspect('op-new', now))
+  expect(JSON.parse(await readFile(file, 'utf8')).operations[0].operation).toEqual(operation)
+
+  for (const corrupt of [
+    (value: typeof operation) => {
+      value.installed.metadata.category = 'unknown'
+    },
+    (value: typeof operation) => {
+      value.installed.metadata.launches[0].kind = 'unknown'
+    },
+    (value: typeof operation) => {
+      value.installed.presentation.includes.kinds = ['service']
+    },
+    (value: typeof operation) => {
+      value.installed.kinds = ['bundle', 'bundle']
+    },
+  ]) {
+    const invalid = JSON.parse(original)
+    corrupt(invalid.operations[0].operation)
+    await writeFile(file, JSON.stringify(invalid))
+    await expect(new FilePackageOperationStore(directory).pending()).rejects.toThrow('unavailable')
+  }
 })

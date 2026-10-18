@@ -4239,17 +4239,66 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "model": { "type": "string", "maxLength": 256 },
-            "promptHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-            "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-            "scopeHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-            "decision": { "enum": ["allow", "deny", "escalate"] },
-            "risk": { "enum": ["low", "medium", "high"] },
-            "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
-            "latencyMs": { "type": "number", "minimum": 0 },
-            "cost": { "type": "number", "minimum": 0 },
-            "costSource": { "enum": ["estimated", "gateway", "unavailable"] },
-            "source": { "enum": ["model", "human-override", "fallback"] }
+            "scopePreview": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["args", "cwd", "mode"],
+              "properties": {
+                "args": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "cwd": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "mode": {
+                  "type": "string",
+                  "maxLength": 128
+                }
+              }
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "promptHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "argsHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "scopeHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "decision": {
+              "enum": ["allow", "deny", "escalate"]
+            },
+            "risk": {
+              "enum": ["low", "medium", "high"]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "latencyMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cost": {
+              "type": "number",
+              "minimum": 0
+            },
+            "costSource": {
+              "enum": ["estimated", "gateway", "unavailable"]
+            },
+            "source": {
+              "enum": ["model", "human-override", "fallback"]
+            }
           },
           "required": [
             "model",
@@ -5935,6 +5984,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "executionRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Last revision affecting execution; presentation-only CAS still increments revision."
+        },
         "configured": {
           "type": "boolean"
         },
@@ -6339,6 +6393,10 @@
         },
         "credentialConfigured": {
           "type": "boolean"
+        },
+        "credentialIssue": {
+          "description": "Read-only availability reason. Missing or unreadable credentials exclude this account from new-session routes; no credential values are returned.",
+          "enum": ["CONFIG_CREDENTIAL_REQUIRED", "CONFIG_CREDENTIAL_UNREADABLE"]
         },
         "authType": {
           "enum": ["api-key", "oauth"]

@@ -383,12 +383,18 @@ it('describes a schedule rule in words, and hosts its primary action where the p
 
 it('round-trips a task through the form and orders Agnes AI models first', () => {
   const choices = scheduleChoices({
-    loops: [
-      { id: 'react', version: '1', label: 'ReAct', sourcePackage: '@agnes/base' },
-      { id: 'report', version: '2', label: 'Data report', sourcePackage: '@agnes-fde/data-report' },
-    ],
+    loops: [{ id: 'react', version: '1', label: 'ReAct', sourcePackage: '@agnes/base' }],
     presets: ['default', 'review'],
-    bundles: [{ id: 'report#bundle', sourcePackage: '@agnes-fde/data-report' }],
+    agents: [
+      {
+        ref: 'acme/report#bundle',
+        launch: { title: { en: 'Data report' }, preset: 'review' },
+        loop: { id: 'report', version: '2' },
+        bundles: ['report#bundle'],
+        preset: 'review',
+        model: { route: 'agnes', model: 'agnes-1' },
+      } as import('@agnes/protocol').AgentPlan,
+    ],
     adapters: [
       { id: 'openai', label: 'OpenAI', models: [{ id: 'gpt', route: 'openai' }] },
       {

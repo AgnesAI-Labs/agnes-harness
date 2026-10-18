@@ -21,7 +21,6 @@
           "displayName": "Progress checks",
           "summary": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
           "description": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "执行进度检查",

@@ -5,12 +5,14 @@ function BrokenToolView() {
 }
 
 export function apply(ctx) {
-  for (const key of ['bash', 'shell']) {
-    ctx.slots.register(
-      { name: 'tool.call.toolview', key, id: `dsh-tool-view-${key}`, priority: 20 },
-      BrokenToolView,
-    )
-  }
+  return ctx.slots.inject('tool.call.toolview', () =>
+    ['bash', 'shell'].map((key) =>
+      ctx.slots.register(
+        { name: 'tool.call.toolview', key, id: `dsh-tool-view-${key}`, priority: 20 },
+        BrokenToolView,
+      ),
+    ),
+  )
 }
 
 void createElement

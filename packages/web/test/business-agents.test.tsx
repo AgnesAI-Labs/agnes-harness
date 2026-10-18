@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { homeNavigation, SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -21,6 +21,16 @@ import { EmptyStateBuiltin } from '../src/regions/empty-state.js'
 const agent = (name: string, metadata?: Record<string, unknown>, scope = '@agnes-fde') =>
   ({
     id: `${scope}/${name}`,
+    ...(scope !== '@agnes-example'
+      ? {
+          agents: [
+            {
+              ref: 'acme/kit#work',
+              launch: { title: { en: name }, description: { en: name }, preset: 'safe' },
+            },
+          ],
+        }
+      : {}),
     version: '1.0.0',
     ...(metadata ? { metadata: { displayName: name, summary: `${name} summary`, ...metadata } } : {}),
   }) as unknown as PackageCatalogDescriptor
@@ -31,13 +41,13 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('recognises a business agent by its category, or by the package scope older catalogs use', () => {
-  expect(isBusinessAgent(agent('crm', { category: 'business-agent' }, '@acme'))).toBe(true)
+it('recognises a business agent by its explicit launch declaration', () => {
+  expect(isBusinessAgent(agent('crm', {}, '@acme'))).toBe(true)
   expect(isBusinessAgent(agent('crm'))).toBe(true)
-  expect(isBusinessAgent(agent('dag-loop', { category: 'developer' }, '@agnes-example'))).toBe(false)
+  expect(isBusinessAgent(agent('dag-loop', {}, '@agnes-example'))).toBe(false)
 })
 
-it('reads every catalog page and suggests three different kinds of work first', async () => {
+it('reads every catalog page and suggests explicit agents in catalog order', async () => {
   const catalog = vi
     .fn()
     .mockResolvedValueOnce({
@@ -58,10 +68,17 @@ it('reads every catalog page and suggests three different kinds of work first', 
     '@agnes-fde/crm-assistant',
   ])
   expect(featuredBusinessAgents(rows).map((row) => row.id)).toEqual([
-    '@agnes-fde/code-review',
-    '@agnes-fde/data-report',
     '@agnes-fde/compliance-audit',
+    '@agnes-fde/data-report',
+    '@agnes-fde/code-review',
   ])
+  const ready = rows[0]!
+  const unavailable = {
+    ...ready,
+    agents: [{ ...ready.agents![0]!, ref: 'acme/kit#unavailable' }],
+  }
+  const declared = await listBusinessAgents(async () => ({ items: [ready, unavailable] }))
+  expect(declared.map((row) => row.agents?.[0]?.ref)).toEqual([ready.agents![0]!.ref, 'acme/kit#unavailable'])
 })
 
 it('keeps the hero free of cards even when the business-agent catalog is available', async () => {
@@ -70,8 +87,10 @@ it('keeps the hero free of cards even when the business-agent catalog is availab
     agent('code-review', { samplePrompt: { en: 'Review the sample patch.' } }),
     agent('data-report', {}),
   ]
-  const suggestions = createBusinessAgentSuggestions(async () => rows)
-  await suggestions.refresh()
+  const read = vi.fn(async () => rows)
+  const suggestions = createBusinessAgentSuggestions(read)
+  await Promise.all([suggestions.refresh(), suggestions.refresh()])
+  expect(read).toHaveBeenCalledTimes(1)
   expect(suggestions.getSnapshot().featured).toHaveLength(2)
   vi.spyOn(businessAgentSuggestions, 'getSnapshot').mockReturnValue(suggestions.getSnapshot())
   const host = document.createElement('div')
@@ -95,4 +114,61 @@ it('keeps the hero free of cards even when the business-agent catalog is availab
     await act(async () => root.unmount())
     await ctx.fiber.dispose()
   }
+})
+
+it('projects one card per explicit declaration, including several agents in one plugin and no prefix fallback', async () => {
+  const { declaredAgentCards } = await import('../src/pages/agents-model.js')
+  const base = agent('support', { displayName: 'Plugin name' }, '@acme')
+  const rows = [
+    {
+      ...base,
+      agents: [
+        {
+          ref: '@acme/support#triage',
+          launch: {
+            title: { en: 'Triage', 'zh-CN': '分诊' },
+            description: { en: 'Sort incoming work' },
+            preset: 'safe',
+          },
+        },
+        {
+          ref: '@acme/support#reply',
+          launch: {
+            title: { en: 'Reply' },
+            description: { en: 'Prepare a reply' },
+            preset: 'review',
+            prompt: { mode: 'draft' as const, text: { en: 'Draft a response' } },
+          },
+        },
+      ],
+    },
+    { ...base, id: '@agnes-fde/legacy', agents: [] },
+  ]
+  const cards = declaredAgentCards(rows, 'zh-CN')
+  expect(cards.map((card) => [card.declaration.ref, card.name, card.summary, card.samplePrompt])).toEqual([
+    ['@acme/support#triage', '分诊', 'Sort incoming work', undefined],
+    ['@acme/support#reply', 'Reply', 'Prepare a reply', 'Draft a response'],
+  ])
+  expect(new Set(cards.map((card) => card.slug)).size).toBe(2)
+  const installed: PackageInstalledDescriptor = {
+    id: base.id,
+    version: '2.0.0',
+    trusted: true,
+    desired: 'enabled',
+    actual: 'running',
+    source: { type: 'file', ref: 'file:./support' },
+    integrity: 'sha512-support',
+    contributions: [],
+    blockers: [],
+    agents: cards.filter((card) => card.ref === '@acme/support#reply').map((card) => card.declaration),
+  }
+  const current = declaredAgentCards(rows, 'en', [installed])
+  expect(current.map((card) => card.ref)).toEqual(['@acme/support#reply'])
+  expect(current[0]?.entry).toBe(installed)
+  expect(current[0]?.catalogAgent).toBeUndefined()
+  expect(current[0]?.entry).not.toHaveProperty('sourceId')
+  expect(current[0]?.entry).not.toHaveProperty('compatibility')
+  const disabled = declaredAgentCards(rows, 'en', [{ ...installed, desired: 'installed-disabled' }])
+  expect(disabled[0]?.catalogAgent?.ref).toBe('@acme/support#reply')
+  expect(disabled[0]?.catalogAgent?.entry.agents?.map((agent) => agent.ref)).toEqual(['@acme/support#reply'])
 })

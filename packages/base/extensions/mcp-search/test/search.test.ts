@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
-import { checkToolDef } from '@agnes/extension-api'
+import { presetDefaults, ToolRegistry } from '@agnes/core'
+import { actor, fakeProvider, openSession, readTool, textTurn, toolTurn } from '@agnes/core/testkit'
+import { checkToolDef, type ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { SqliteToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js'
 import { MemFts } from '../../../testkit/mem-fts.js'
@@ -7,6 +9,9 @@ import { MemTable } from '../../../testkit/mem-table.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createWebSearchTool } from '../../tools-web/src/search.js'
 import { toolDescribeTool, toolSearchTool } from '../src/search-tools.js'
+
+const unknownAvailability =
+  '\nAvailability unknown (request snapshot unavailable); use the schemas supplied in the current model request and refresh discovery after the next model request.'
 
 const rows = [
   {
@@ -140,7 +145,9 @@ describe('tool_search / tool_describe', () => {
     expect(describe.meta).toMatchObject({ deferLoading: false, replay: 'safe', isReadOnly: true })
 
     const result = await search.execute({ query: 'pull', limit: 1 }, fakeToolContext())
-    expect(result.content).toEqual([{ type: 'text', text: 'mcp_gh_list_prs — list pull requests 拉取请求' }])
+    expect(result.content).toEqual([
+      { type: 'text', text: 'mcp_gh_list_prs — list pull requests 拉取请求' + unknownAvailability },
+    ])
     expect((await search.execute({ query: 'absent' }, fakeToolContext())).content).toEqual([
       { type: 'text', text: 'no matching tools' },
     ])
@@ -330,14 +337,16 @@ describe('tool_search / tool_describe', () => {
       expect(list).toHaveBeenCalledTimes(1)
     }
     const noSkill = await search.execute({ query: 'weather skill', limit: 1 }, fakeToolContext())
-    expect(noSkill.content).toEqual([{ type: 'text', text: 'mcp_weather — weather skill' }])
+    expect(noSkill.content).toEqual([
+      { type: 'text', text: 'mcp_weather — weather skill' + unknownAvailability },
+    ])
     const ctx = fakeToolContext()
     ctx.tools.list = () => [{ ...toolSearchTool(index), name: 'web-access' }]
     const collision = await search.execute({ query: 'web-access', limit: 1 }, ctx)
     expect(collision.content[0]).toMatchObject({ text: expect.stringMatching(/^Skill web-access —/u) })
     const both = await search.execute({ query: 'web-access', limit: 2 }, ctx)
     const text = (both.content[0] as { text: string }).text
-    expect(text).toContain('Already provided in this session')
+    expect(text).toContain('Availability unknown')
     expect(text.match(/^Skill /gmu)).toHaveLength(1)
     expect(text).toContain('Skill web-access —')
   })
@@ -383,7 +392,7 @@ describe('tool_search / tool_describe', () => {
       content: [{ text: expect.stringContaining('parameters:') }],
     })
     expect(await toolSearchTool(index).execute({ query: eager.name }, ctx)).toMatchObject({
-      content: [{ text: expect.stringContaining('Already provided in this session') }],
+      content: [{ text: expect.stringContaining('Availability unknown') }],
     })
     const web = createWebSearchTool()
     const deferred = {
@@ -406,7 +415,7 @@ describe('tool_search / tool_describe', () => {
       const text = (result.content[0] as { text: string }).text
       expect(text).toMatch(query === 'search tool' ? /^search_panel —/ : /^web_search —/)
       expect(text.match(/web_search —/g)).toHaveLength(1)
-      expect(text).toContain('Already provided in this session')
+      expect(text).toContain('Availability unknown')
       expect(await toolSearchTool(new MemFts()).execute({ query, limit: 2 }, ctx)).toEqual(result)
       if (query === 'search tool') expect(text).toContain('search_panel —')
     }
@@ -418,10 +427,86 @@ describe('tool_search / tool_describe', () => {
     index.upsert([{ name: 'z_docs', description: 'retired-provider-marker', schema: '{}' }])
     expect(
       await toolSearchTool(index).execute({ query: 'retired-provider-marker', limit: 1 }, ctx),
-    ).toMatchObject({ content: [{ text: 'z_docs — retired-provider-marker' }] })
+    ).toMatchObject({ content: [{ text: 'z_docs — retired-provider-marker' + unknownAvailability }] })
     ctx.tools.list = () => []
     expect(await toolDescribeTool(index).execute({ name: eager.name }, ctx)).toMatchObject({ isError: true })
   })
+
+  it.each([
+    ['read', {}, 'offered', undefined],
+    ['later', { deferLoading: true }, 'deferred', undefined],
+    ['run_code', {}, 'unavailable', 'mode'],
+    ['compact', {}, 'unavailable', 'policy'],
+    ['internal', { modelVisible: false }, 'unavailable', 'policy'],
+    ['camera', { requiresImageInput: true }, 'unavailable', 'model_capability'],
+  ] as const)(
+    'reports request availability for %s and agrees with Core refusal',
+    async (name, meta, status, reason) => {
+      const index = new MemFts()
+      const target = { ...(readTool() as ToolDef), name, meta: { ...(readTool() as ToolDef).meta, ...meta } }
+      index.upsert([{ name, description: target.description, schema: '{}' }])
+      const registry = new ToolRegistry()
+      const states: unknown[] = []
+      const search = toolSearchTool(index)
+      registry.add(
+        {
+          ...search,
+          async execute(
+            args: Parameters<typeof search.execute>[0],
+            ctx: Parameters<typeof search.execute>[1],
+          ) {
+            states.push(ctx.tools.availability?.(name))
+            return search.execute(args, ctx)
+          },
+        },
+        { source: 'test', trust: 'builtin' },
+      )
+      registry.add(toolDescribeTool(index), { source: 'test', trust: 'builtin' })
+      registry.add(target, { source: 'test', trust: 'builtin' })
+      const provider = fakeProvider([
+        toolTurn('tool_search', { query: name }),
+        toolTurn(name, {}),
+        ...(status === 'deferred'
+          ? [
+              toolTurn('tool_describe', { name }),
+              toolTurn('tool_search', { query: name }),
+              toolTurn(name, {}),
+            ]
+          : []),
+        textTurn('done'),
+      ])
+      const preset = presetDefaults()
+      preset.compaction.agentCallable = false
+      const { session } = await openSession({ provider, registry, preset })
+      try {
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'discover' }] })
+        await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(states[0]).toMatchObject({ status, ...(reason ? { reason } : {}) })
+        const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+        const message = (states[0] as { message: string }).message
+        expect(results[0]?.data).toMatchObject({
+          content: [{ type: 'text', text: expect.stringContaining(message) }],
+        })
+        expect(provider.requests[0]?.tools.some((tool) => tool.name === name)).toBe(status === 'offered')
+        if (status === 'deferred') {
+          expect(states[1]).toMatchObject({ status: 'offered' })
+          expect(provider.requests[3]?.tools.some((tool) => tool.name === name)).toBe(true)
+          expect(results[3]?.data).toMatchObject({
+            content: [{ text: expect.stringContaining('Offered in this request; call it directly') }],
+          })
+          expect(results[4]?.data).not.toMatchObject({ isError: true })
+        }
+        if (status === 'offered') expect(results[1]?.data).not.toMatchObject({ isError: true })
+        else
+          expect(results[1]?.data).toMatchObject({
+            code: 'TOOL_NOT_DISCLOSED',
+            content: [{ text: expect.stringContaining(message) }],
+          })
+      } finally {
+        await session.close()
+      }
+    },
+  )
 
   it('describes an exact tool, caps schema bytes, and errors on unknown names', async () => {
     const index = populated()
@@ -510,6 +595,7 @@ describe('tool_search / tool_describe', () => {
         (await toolSearchTool(new MemFts()).execute({ query, limit: 5 }, ctx)).content[0] as { text: string }
       ).text
         .split('\n')
+        .filter((line) => line.includes(' — '))
         .map((line) => line.split(' — ')[0])
     expect(await names('create_issue')).toEqual(['mcp__tracker__create_issue'])
     expect(await names('edit page')).toEqual(['mcp__wiki__edit_page'])
@@ -521,6 +607,6 @@ describe('tool_search / tool_describe', () => {
           text: string
         }
       ).text,
-    ).toBe('mcp__wiki__edit_page — Edit a page')
+    ).toBe('mcp__wiki__edit_page — Edit a page' + unknownAvailability)
   })
 })

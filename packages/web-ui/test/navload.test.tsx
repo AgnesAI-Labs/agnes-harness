@@ -51,13 +51,29 @@ function Replacer({ id }: { id: string }) {
     id,
   )
 }
-function Pages({ route = false }: { route?: boolean }) {
+function Finisher() {
+  const nav = usePushStack()
+  return createElement(
+    'button',
+    { type: 'button', 'data-testid': 'finish', onClick: () => nav.finish() },
+    'Finish',
+  )
+}
+function Pages({
+  route = false,
+  historyKey = 'navloadTest',
+  routeParam = 'view',
+}: {
+  route?: boolean
+  historyKey?: string
+  routeParam?: string
+}) {
   return createElement(
     PushStack,
     {
       rootTitle: 'Agent FDE',
-      historyKey: 'navloadTest',
-      ...(route ? { route: searchParamRoute('view') } : {}),
+      historyKey,
+      ...(route ? { route: searchParamRoute(routeParam) } : {}),
     },
     createElement('p', { 'data-testid': 'root' }, 'gallery'),
     createElement(Opener, { id: 'crm' }),
@@ -67,6 +83,7 @@ function Pages({ route = false }: { route?: boolean }) {
       createElement('p', { 'data-testid': 'crm-body' }, 'crm'),
       createElement(Opener, { id: 'edit' }),
       createElement(Replacer, { id: 'done' }),
+      createElement(Finisher),
     ),
     createElement(
       PushPage,
@@ -136,6 +153,15 @@ describe('push pages', () => {
     expect(location.search).toBe('?page=agents&view=crm')
     click(q(host, '[data-testid="open-edit"]'))
     expect(location.search).toBe('?page=agents&view=crm/edit')
+    // A completed settings frame leaves its own history entry at this same plugin address.
+    const settings = render(
+      createElement(Pages, { route: true, historyKey: 'settingsTest', routeParam: 'settings' }),
+    )
+    click(q(settings, '[data-testid="open-crm"]'))
+    click(q(settings, '[data-testid="finish"]'))
+    expect(q(settings, '[data-testid="push-header"]')).toBeNull()
+    click(q(host, '[data-testid="push-back"]'))
+    expect(location.search).toBe('?page=agents&view=crm')
     act(() => {
       history.replaceState(null, '', '/?page=agents')
       window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
@@ -274,6 +300,10 @@ describe('startup check notice', () => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
     const css = readFileSync(resolve(__dirname, '../src/tokens.css'), 'utf8')
+    const groups = readFileSync(resolve(__dirname, '../src/doctor-groups.css'), 'utf8')
+    expect(groups).toMatch(
+      /@container \(max-width: 560px\) \{[\s\S]*?\.agnes-doctor-footer-actions \{[^}]*flex-wrap: wrap;[^}]*flex-basis: 100%;/,
+    )
     expect(css).toMatch(/\.agnes-doctor-notice \{\s*position: fixed;\s*top: 3\.5rem;/)
     expect(css).toMatch(
       /@media \(max-width: 900px\) \{\s*\.agnes-doctor-notice \{\s*top: auto;[^}]*bottom: max\(1rem, env\(safe-area-inset-bottom\)\);/,

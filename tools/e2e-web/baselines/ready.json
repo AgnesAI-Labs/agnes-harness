@@ -1,5 +1,5 @@
 {
-  "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
+  "uiCommit": "9d1e83fa6fabd6d006ce841f4df1d3a102e719f8",
   "chromium": "153.0.8010.12",
   "playwright": "1.63.0",
   "viewport": {
@@ -17,7 +17,9 @@
     "Workspace file read clock only is normalized to 12:00; its localized label stays visible.",
     "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible.",
     "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible.",
-    "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored."
+    "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored.",
+    "Unified Trace runtime context path and current clock only are normalized; elapsed durations keep their localized units. Record-order view uses the real menu; source records, controls, statuses and evidence remain visible.",
+    "Synthetic workspace choice and Memory path display text only is normalized to /workspace/w; control values stay unchanged and original text is restored."
   ],
   "ready": [
     "first-run-en-light",
@@ -331,14 +333,38 @@
     "ciArchitecture": "x64"
   },
   "lastRefresh": {
-    "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
+    "sourceCommit": "9d1e83fa6fabd6d006ce841f4df1d3a102e719f8",
     "platform": "darwin",
-    "specs": ["ui-gate", "narrow", "first-run", "ui-flows"],
-    "initialBatch": {
-      "sourceCommit": "1c9474a0bc358d7f99873bfc90f3cd5153300f9d",
-      "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
-    },
-    "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
-    "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
+    "specs": [
+      "ui-gate",
+      "narrow",
+      "fact-chain",
+      "candidate-review",
+      "ui-flows",
+      "workbench",
+      "diagnostics",
+      "prompt-trace",
+      "first-run"
+    ],
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest four tablet file-workbench frames show the original report-reading turn beside the file pane. Native Composer sizing and authoring inspector frames retain their documented earlier captures. Linux and unrelated baselines retain their earlier capture.",
+    "previousBatch": {
+      "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
+      "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
+      "platform": "darwin",
+      "specs": ["ui-gate", "narrow", "first-run", "ui-flows"],
+      "initialBatch": {
+        "sourceCommit": "1c9474a0bc358d7f99873bfc90f3cd5153300f9d",
+        "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
+      },
+      "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
+      "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
+    }
+  },
+  "capturePreferences": {
+    "reducedMotion": "reduce for screenshots only; restored after capture",
+    "focus": "new-session prompt",
+    "animations": "disabled",
+    "authoringProvenance": "Actual Trace inspector; whole-page accessibility and separate full Trace pixel gates remain enabled.",
+    "tabletFileWorkbench": "Original report-reading turn; tail-follow is checked first and restored afterwards. Conversation text remains visible."
   }
 }

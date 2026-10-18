@@ -24,6 +24,8 @@ node agnes.mjs --mode json --chunks --meta "Explain this project"
 
 By default, the CLI connects to or starts the shared local daemon. `--connect TARGET` selects an explicit target and does not fall back on failure. `--standalone` uses an embedded runtime; `--ephemeral` selects temporary execution. ACP is available through `acp` or `--mode acp`; do not assume it shares the ordinary daemon mode's lifecycle.
 
+Ordinary automatic connections reuse a ready daemon after checking the canonical home/profile/data path, owner identity, private socket permissions, protocol and CLI version, and authenticated readiness. They do not prepare local plugin snapshots or verify installed packages again; the daemon still authorizes RPCs and verifies code before execution. Missing or unhealthy daemons use full startup preparation. A version mismatch requires stopping and restarting the daemon with the current CLI. Doctor, recovery, embedded execution and Web launchers retain their preparation paths.
+
 <a id="交互式终端"></a>
 
 ## Interactive terminal

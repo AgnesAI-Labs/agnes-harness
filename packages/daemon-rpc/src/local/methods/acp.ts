@@ -24,6 +24,7 @@ import {
   fromAcpPrompt,
   type HarnessMeta,
   type Inbox,
+  parseAgentRef,
   parseLoopSelection,
   parseSessionBundles,
   type RpcError,
@@ -579,6 +580,26 @@ export function registerAcp(
         reason: 'remote session actor authority unavailable',
       })
     const h = pocket(params)
+    let agent: string | undefined
+    try {
+      agent = h.agent === undefined ? undefined : parseAgentRef(h.agent)
+    } catch {
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent ref' })
+    }
+    let agentDigest = typeof h.agentDigest === 'string' ? h.agentDigest : undefined
+    if (
+      (agent && (h.loop !== undefined || h.bundles !== undefined || h.preset !== undefined)) ||
+      (h.agentDigest !== undefined && (!agent || !agentDigest || !/^sha256-[a-f0-9]{64}$/.test(agentDigest)))
+    )
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent selection' })
+    if (agent) {
+      if (!cx.host.resolveAgent)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'agent resolution unavailable' })
+      const plan = await cx.host.resolveAgent(agent)
+      if (agentDigest && agentDigest !== plan.digest)
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'agent review drift' })
+      agentDigest = plan.digest
+    }
     let loop: ReturnType<typeof parseLoopSelection> | undefined
     try {
       loop = h.loop === undefined ? undefined : parseLoopSelection(h.loop)
@@ -614,7 +635,7 @@ export function registerAcp(
             cx.host.profile,
             await cx.resolveNewSessionActor(c.conn.credential, 'session'),
             workspace.path,
-          )}${loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : ''}`
+          )}${agent ? `:agent:${randomUUID()}` : loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : ''}`
     const hasSessionFact =
       cx.registry.get(requestedKey) !== undefined ||
       cx.workspaces.sessionPath(requestedKey) !== undefined ||
@@ -642,6 +663,8 @@ export function registerAcp(
       entry = await cx.registry.open({
         cwd: binding.canonicalRoot,
         binding,
+        ...(agent ? { agent } : {}),
+        ...(agentDigest ? { agentDigest } : {}),
         ...(preset ? { preset } : {}),
         ...(bundles !== undefined ? { bundles } : {}),
         ...(loop ? { loop } : {}),

@@ -21,7 +21,6 @@
           "displayName": "Claude Code child agents",
           "summary": "Uses a configured Claude Code process to handle delegated coding tasks.",
           "description": "Uses a configured Claude Code process to handle delegated coding tasks.",
-          "category": "collaboration",
           "locales": {
             "zh-CN": {
               "displayName": "Claude Code 子 Agent",

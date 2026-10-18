@@ -13,18 +13,8 @@ export const say = (text: string): InferenceEvent[] => [
   { type: 'done', reason: 'stop' },
 ]
 
-/**
- * The lockfile host has no reader for yet. The three ids are the ones templates/local-dev.yaml
- * declares; without an entry for each, resolveProfile refuses the whole profile.
- */
-export const TEST_LOCK: LockState = {
-  packages: Object.fromEntries(
-    ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
-      id,
-      { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin' as const, enabled: true },
-    ]),
-  ),
-}
+/** Builtin identities come from the resolving build; a synthetic lock must not forge release provenance. */
+export const TEST_LOCK: LockState = { packages: {} }
 
 /**
  * Boot dependencies pointed at a host that answers from a script. `dir` is both the home and the

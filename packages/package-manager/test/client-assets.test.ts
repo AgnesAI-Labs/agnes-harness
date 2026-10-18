@@ -26,6 +26,21 @@ import { snapshotHash } from '../src/integrity.js'
 import { readBundledManifest } from '../src/manifest.js'
 
 const roots: string[] = []
+const missingClientFile = (entry: string) =>
+  expect.objectContaining({
+    code: 'E_PACKAGE_STATE',
+    detail: expect.objectContaining({
+      reason: 'entry-escape',
+      diagnostics: [
+        expect.objectContaining({
+          code: 'missing-required-file',
+          path: 'package.json',
+          field: 'entry',
+          name: entry,
+        }),
+      ],
+    }),
+  })
 function makePackage(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-client-'))
   roots.push(dir)
@@ -176,7 +191,7 @@ describe('client asset resolution', () => {
   it('rejects an entry that does not exist in the install tree', () => {
     const dir = makePackage()
     expect(() => resolveClientAssets(dir, manifestWith({ entry: 'dist/client/missing.js' }))).toThrow(
-      /cannot be resolved/,
+      missingClientFile('dist/client/missing.js'),
     )
   })
   it('rejects an entry that only reaches the package through a symlink', () => {
@@ -206,7 +221,7 @@ describe('client asset resolution', () => {
         }),
       ),
     )
-    expect(() => readBundledManifest(dir)).toThrow(/cannot be resolved/)
+    expect(() => readBundledManifest(dir)).toThrow(missingClientFile('dist/client/index.js'))
     writeClientFiles(dir)
     expect(readBundledManifest(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
   })
@@ -441,8 +456,8 @@ describe('client capability hash integration', () => {
     entry: './index.mjs',
   }
 
-  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', () => {
-    const { preview } = staged({ ...baseManifest, capabilities: {} }, {})
+  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', async () => {
+    const { preview } = await staged({ ...baseManifest, capabilities: {} }, {})
     expect(preview.contributions).toHaveLength(0)
     expect(JSON.stringify(preview.contributions)).not.toContain('"client"')
     // 旧算法基线：无 client 字段的贡献摘要 + runtimeSupports 缺省归一，逐字段照抄改动前的计算。
@@ -450,38 +465,22 @@ describe('client capability hash integration', () => {
     expect(preview.capabilityHash).toBe(baseline)
     expect(capabilityHash({ contributions: preview.contributions, dependencies: {} })).toBe(baseline)
   })
-  it('binds example launch content to the reviewed capability digest', () => {
-    const metadata = {
-      displayName: 'Example',
-      summary: 'Example',
-      description: 'Example',
-      category: 'example' as const,
-      exampleOf: 'acme/host',
-      launches: [
-        {
-          id: 'work',
-          kind: 'business-agent' as const,
-          title: 'Work',
-          bundle: 'acme/demo#work',
-          preset: 'safe',
-          prompt: 'Read sample data.',
-        },
-      ],
-    }
-    const base = { contributions: [], dependencies: { 'acme/host': '*' }, metadata }
+  it('binds launch content independently of example metadata to the reviewed capability digest', () => {
+    const launch = { title: { en: 'Work' }, description: { en: 'Read sample data' }, preset: 'safe' }
+    const base = { contributions: [], dependencies: {}, agents: [{ ref: 'acme/kit#work', launch }] }
     const first = capabilityHash(base)
-    const launch = metadata.launches[0]
-    if (!launch) throw new Error('missing launch fixture')
+    expect(
+      capabilityHash({ ...base, agents: [{ ref: 'acme/kit#work', launch: { ...launch, preset: 'write' } }] }),
+    ).not.toBe(first)
     expect(
       capabilityHash({
         ...base,
-        metadata: { ...metadata, launches: [{ ...launch, prompt: 'Write sample data.' }] },
+        application: { id: 'acme', brand: { name: { en: 'Acme' } }, defaultAgent: 'acme/demo#work' },
       }),
     ).not.toBe(first)
-    expect(capabilityHash({ ...base, metadata: { ...metadata, exampleOf: 'other/host' } })).not.toBe(first)
   })
-  it('adds the normalized client field to the summary and the hash for a declaring package', () => {
-    const { preview } = staged(
+  it('adds the normalized client field to the summary and the hash for a declaring package', async () => {
+    const { preview } = await staged(
       {
         ...baseManifest,
         capabilities: { ui: true },
@@ -510,20 +509,20 @@ describe('client capability hash integration', () => {
     const expected = capabilityHash({ contributions: preview.contributions, dependencies: {} })
     expect(preview.capabilityHash).toBe(expected)
   })
-  it('moves the capability hash when only the declared services change', () => {
+  it('moves the capability hash when only the declared services change', async () => {
     const files = { 'dist/client/index.js': 64 }
     const withServices = (services: string[]) => ({
       ...baseManifest,
       capabilities: { ui: true },
       contributes: { client: { entry: 'dist/client/index.js', services } },
     })
-    const first = staged(withServices(['hello.query']), files).preview.capabilityHash
-    const second = staged(withServices(['hello.other']), files).preview.capabilityHash
+    const first = (await staged(withServices(['hello.query']), files)).preview.capabilityHash
+    const second = (await staged(withServices(['hello.other']), files)).preview.capabilityHash
     expect(second).not.toBe(first)
   })
-  it('rejects a staged package whose declared client files are missing or oversized', () => {
+  it('rejects a staged package whose declared client files are missing or oversized', async () => {
     // inspect/staging 与运行时读取走同一道校验：文件系统真相在 staging 上就把坏包挡下。
-    expect(() =>
+    await expect(
       staged(
         {
           ...baseManifest,
@@ -532,6 +531,6 @@ describe('client capability hash integration', () => {
         },
         {},
       ),
-    ).toThrow(/cannot be resolved/)
+    ).rejects.toMatchObject(missingClientFile('./client/index.js'))
   })
 })

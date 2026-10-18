@@ -20,6 +20,8 @@ node agnes.mjs --mode json --chunks --meta "解释当前项目"
 
 默认连接或启动本地共享 daemon。`--connect TARGET` 是显式连接，失败不回退；`--standalone` 为嵌入式，`--ephemeral` 为显式临时执行。ACP 入口为 `acp` 或 `--mode acp`，不能推定其生命周期与普通共享 daemon 模式一致。
 
+普通自动连接会在核对规范化的 home/profile/数据路径、进程身份、私有 socket 权限、协议与 CLI 版本，并完成认证就绪检查后复用现有 daemon；连接前不再准备本地插件快照或重复校验安装包。RPC 授权及执行前的代码校验仍由 daemon 负责。没有就绪 daemon 或其状态异常时，仍执行完整启动准备；版本不一致时需停止 daemon，再用当前 CLI 重启。Doctor、恢复、嵌入式执行与 Web 启动入口保留各自的准备路径。
+
 ## 交互式终端
 
 ```sh

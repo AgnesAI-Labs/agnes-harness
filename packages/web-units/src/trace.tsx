@@ -700,11 +700,17 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     return () => conversation.removeEventListener('agnes:trace-turn', jump)
   }, [options.conversation, options.toggle, snapshot, selectRow])
   selectRowRef.current = selectRow
-  const closeInspector = (): void =>
+  const closeInspector = (): void => {
+    const previous = selected
     flushSync(() => {
       setSelected(undefined)
       setLightbox(null)
     })
+    if (previous) {
+      revealRow(previous)
+      root.querySelector<HTMLElement>(`.trace-row[data-trace-row-id="${CSS.escape(previous)}"]`)?.focus()
+    }
+  }
   const selectPane = (next: InspectorPane): void => flushSync(() => setPane(next))
   const toggleTurn = (turn: number): void =>
     flushSync(() =>

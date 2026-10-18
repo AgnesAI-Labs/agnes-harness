@@ -13,6 +13,7 @@ export function errorMessageKey(code: string): AppServerError['data']['messageKe
   if (code === 'CONFIG_CREDENTIAL_REQUIRED') return 'appServer.errors.credentialRequired'
   if (code === 'CONFIG_CREDENTIAL_REJECTED') return 'appServer.errors.credentialRejected'
   if (code.startsWith('CONFIG_CREDENTIAL_')) return 'appServer.errors.credentialStore'
+  if (code === 'E_PRESET_UNRESOLVED') return 'appServer.errors.unavailable'
   if (code === 'E_SANDBOX_WORKSPACE') return 'appServer.errors.unavailable'
   if (code.startsWith('E_PROVIDER_')) return 'appServer.errors.provider'
   if (code === 'E_SESSION_VERSION_NEWER') return 'appServer.errors.sessionNewer'

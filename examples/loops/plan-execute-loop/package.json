@@ -30,7 +30,6 @@
           "displayName": "Plan-Execute Loop",
           "summary": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
           "description": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "计划-执行 Loop",
@@ -45,7 +44,6 @@
       "displayName": "Plan-Execute Loop",
       "summary": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
       "description": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
-      "category": "agent-loop",
       "locales": {
         "zh-CN": {
           "displayName": "计划-执行 Loop",
@@ -53,6 +51,9 @@
           "description": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。"
         }
       }
-    }
+    },
+    "provides": [
+      "loop"
+    ]
   }
 }

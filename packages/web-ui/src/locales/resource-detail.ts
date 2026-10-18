@@ -104,7 +104,7 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.edit': '编辑',
     'mcp.disclosure.title': '工具加载方式',
     'mcp.disclosure.label': '工具加载方式',
-    'mcp.disclosure.hint': '自动：工具少时直接可见，多了改为由 Agent 按需搜索。',
+    'mcp.disclosure.hint': '自动：工具少时直接可见，多了改为由智能体按需搜索。',
     'mcp.disclosure.auto': '自动',
     'mcp.disclosure.always': '始终可见',
     'mcp.disclosure.on-demand': '按需',

@@ -15,7 +15,6 @@ import {
   PACKAGE_ADMIN_METHODS,
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminContext,
-  type PackageAdminMethodName,
   type PackageAdminPermission,
   type RpcError,
   RuntimeAdminSnapshot,
@@ -36,48 +35,10 @@ import {
 import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
-// Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
-// route map (packages/web-admin/src/admin/plugins/api.ts METHOD_BY_PATH) — see
-// admin-surface.test.ts's "route allowlist" coverage.
-export const ACTIONS = {
-  'candidates/list': '_agnes/v1/plugins.candidates.list',
-  'candidates/show': '_agnes/v1/plugins.candidates.show',
-  'candidates/create': '_agnes/v1/plugins.candidates.create',
-  'candidates/write': '_agnes/v1/plugins.candidates.write',
-  'candidates/test': '_agnes/v1/plugins.candidates.test',
-  'candidates/submit': '_agnes/v1/plugins.candidates.submit',
-  'candidates/approve': '_agnes/v1/plugins.candidates.approve',
-  'candidates/reject': '_agnes/v1/plugins.candidates.reject',
-  'catalog/list': '_agnes/v1/packages.catalog.list',
-  'catalog/get': '_agnes/v1/packages.catalog.get',
-  list: '_agnes/v1/packages.list',
-  provenance: '_agnes/v1/packages.provenance',
-  'source-policy': '_agnes/v1/packages.sourcePolicy',
-  generations: '_agnes/v1/plugins.generations',
-  'publication-status': '_agnes/v1/plugins.publicationStatus',
-  'sessions/migrate': '_agnes/v1/sessions.migrate',
-  inspect: '_agnes/v1/packages.inspect',
-  install: '_agnes/v1/packages.install',
-  trust: '_agnes/v1/packages.trust',
-  untrust: '_agnes/v1/packages.untrust',
-  enable: '_agnes/v1/packages.enable',
-  disable: '_agnes/v1/packages.disable',
-  update: '_agnes/v1/packages.update',
-  rollback: '_agnes/v1/packages.rollback',
-  remove: '_agnes/v1/packages.remove',
-  'operation/get': '_agnes/v1/packages.operation.get',
-  'operation/cancel': '_agnes/v1/packages.operation.cancel',
-  'pins/inspect': '_agnes/v1/packages.pins.inspect',
-  'pins/release': '_agnes/v1/packages.pins.release',
-  'trust-workspace': '_agnes/v1/packages.trustWorkspace',
-  'config/get': '_agnes/v1/plugins.config.get',
-  'config/validate': '_agnes/v1/plugins.config.validate',
-  'config/save': '_agnes/v1/plugins.config.save',
-  'tree/get': '_agnes/v1/plugins.tree.get',
-  'tree/list': '_agnes/v1/plugins.tree.list',
-  'tree/apply': '_agnes/v1/plugins.tree.apply',
-  'tree/rollback': '_agnes/v1/plugins.tree.rollback',
-} as const satisfies Record<string, PackageAdminMethodName>
+
+import { ACTIONS } from './admin-actions.js'
+
+export { ACTIONS } from './admin-actions.js'
 export type AdminSurfaceAction = keyof typeof ACTIONS
 
 export type AdminSurfaceLink = Readonly<{
@@ -361,7 +322,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             error(response, 409, 'E_ADMIN_READ_ONLY', '')
             return true
           }
-          if (!options.modelSlots || !options.sessionSelection) {
+          if (!options.modelSlots) {
             error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
             return true
           }
@@ -374,16 +335,9 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             const snapshot = write
               ? await options.modelSlots.save(input as import('@agnes/protocol').ModelSlotsSnapshot)
               : await options.modelSlots.get()
-            const modelAdapters = await options.sessionSelection.modelAdapters()
-            if (
-              !validateAgainst(ModelSlotsSnapshot, snapshot).ok ||
-              modelAdapters.length > 4096 ||
-              !modelAdapters.every(isAdminModelAdapter)
-            )
-              throw new Error('Invalid model slots')
+            if (!validateAgainst(ModelSlotsSnapshot, snapshot).ok) throw new Error('Invalid model slots')
             reply(response, 200, {
               ...snapshot,
-              modelAdapters,
               canSave: !readOnly && configuredPermissions.includes('packages.activate'),
             })
           } catch (cause) {
@@ -952,7 +906,11 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           error(response, 403, 'E_ADMIN_SCOPE', 'The admin request does not belong to this profile.')
           return true
         }
-        if (readOnly && PACKAGE_ADMIN_METHODS[method].administration.execution !== 'read') {
+        if (
+          readOnly &&
+          method !== '_agnes/v1/applications.clear' &&
+          PACKAGE_ADMIN_METHODS[method].administration.execution !== 'read'
+        ) {
           error(response, 409, 'E_ADMIN_READ_ONLY', 'The admin surface is in read-only recovery mode.')
           return true
         }

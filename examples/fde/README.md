@@ -1,12 +1,12 @@
-# FDE bundles: business delivery with AGH
+# Business agents: building enterprise applications with AGH
 
 English | [简体中文](README.zh-CN.md) · [Why AGH](../../docs/guide/why-agh.md)
 
-A forward-deployed engineer ships a workflow, connectors, a reviewed policy and a playbook together. Each directory below is an independent installable **bundle**, using only public contracts and the author kit. The examples use synthetic data and local simulators, so a team can explore the delivery workflow without credentials.
+A forward-deployed engineer ships a workflow, connectors, a reviewed policy and a playbook together. Each directory below is an independent installable **plugin** with a launchable agent, using only public contracts and the author kit. The examples use synthetic data and local simulators, so a team can explore the delivery workflow without credentials.
 
 Each `modelText` request is a tools-free prose stage with its own narrow instruction. The workflow playbook remains a registered Skill for the surrounding Loop; it is not injected into draft or commentary requests. Keep customer drafts focused on the supplied facts and customer-facing reply.
 
-| Bundle | Business result | Control point |
+| Agent / 智能体 | Business result | Control point |
 | --- | --- | --- |
 | [Support triage](support-triage/README.md) | Ticket lookup → classification → draft → human approval → simulated send receipt. | Human approval before action |
 | [Contract review](contract-review/README.md) | Split clauses → parallel review nodes → aggregate markdown report → model commentary. | Read-only policy |
@@ -23,9 +23,9 @@ Each `modelText` request is a tools-free prose stage with its own narrow instruc
 
 ## Start a delivery
 
-Build `agh` from the [installation guide](../../docs/guide/install.md). Open an example README, run `agh plugins add .` inside that directory, then select its installed bundle through `agh run --bundle PACKAGE#NAME` or Web’s **Admin → Plugins → Bundles** panel. Each README gives the preset, prompt, model target and expected result. Web bundle changes need a Host restart and a new session. A client can instead select the bundle for one session through `session/new` with `bundles`, without a restart; that session gets the bundle's preset and policy. See [bundles and profiles](../../docs/extend/bundles-and-profiles.md#select-for-one-session).
+Build `agh` from the [installation guide](../../docs/guide/install.md). From an example directory, run `agh plugins add .`, review its permissions, then select its agent on Web’s **Agents** page or run `agh --new --agent PACKAGE#NAME -p "task"`. Every example's `agnes.bundles.<id>.launch` selects an explicit preset; no package-name inference is used. Installation alone does not start an agent. The advanced [composition guide](../../docs/extend/bundles-and-profiles.md) covers per-session and admin-wide configuration. FDE means the work of building an application for an enterprise; see [Acme](../acme/README.md) for an explicitly adopted application.
 
-The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model. Every example uses Core-prepared requests and the session primary model; `real-model.bundle.json` configures the preset primary route.
+Agent presets inherit the deployment’s selected model. The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment uses its configured model; model requests may incur charges. Starting an agent reviews the effective model, permissions, sources and editable prompt. Confirming creates an empty session and fills the composer; only Send submits the prompt. Every example uses Core-prepared requests and the session primary model; `real-model.bundle.json` configures the preset primary route.
 
 Sending, CRM notes, runbook restarts, device actions, recruiting follow-up present a draft and call official `ask_user_question`. A persisted Proceed/Cancel question parks the workflow; a validated user answer resumes it. Tool authorization remains separate, and unavailable permissions still refuse actions. Finance keeps its existing review surface and consumes the structured action receipt through an input stage. Use Web/TUI for the business choice. Evidence-only bundles complete headlessly, allowing generated output writes while denying source mutation. Demo outputs remain deterministic; real-model commentary is a review draft.
 

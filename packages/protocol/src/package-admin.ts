@@ -1,5 +1,6 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
+import { contract } from './admin-contract.js'
 import { inspectJsonData } from './json-data.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
@@ -249,6 +250,10 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         enabled: source.enabled,
         phase: source.phase,
       }
+      if (source.clientId !== undefined) row.clientId = source.clientId
+      if (source.presentationRoleBindings !== undefined)
+        row.presentationRoleBindings = { ...source.presentationRoleBindings }
+      if (source.presentationRoles !== undefined) row.presentationRoles = [...source.presentationRoles]
       if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
       if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry
       if (source.homeEntries !== undefined)
@@ -338,24 +343,26 @@ export type PackageAdminAccessPolicy = Readonly<{
   permission: P.PackageAdminPermission
   identity: 'none' | 'principal-client-command'
 }>
-const contract = (
-  params: TSchema,
-  result: TSchema,
-  execution: PackageAdminAccessPolicy['execution'],
-  permission: P.PackageAdminPermission,
-) =>
-  Object.freeze({
-    kind: 'request' as const,
-    direction: 'c2s' as const,
-    params,
-    result,
-    administration: Object.freeze({
-      execution,
-      permission,
-      identity: execution === 'read' ? ('none' as const) : ('principal-client-command' as const),
-    }),
-  })
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
+  '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
+  '_agnes/v1/applications.preview': contract(
+    P.ApplicationPreviewParams,
+    P.ApplicationPreview,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/applications.adopt': contract(
+    P.ApplicationAdoptParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/applications.clear': contract(
+    P.ApplicationClearParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
   '_agnes/v1/plugins.candidates.list': contract(
     P.PackageListParams,
     P.AuthoringCandidateList,
@@ -625,6 +632,16 @@ export function canAccessPackageAdmin(
 // trying to print the whole literal type. An explicit annotation on the table sidesteps that by
 // giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
 export type PackageAdminDataName =
+  | 'PresentationRoleSelection'
+  | 'PresentationRoleSelections'
+  | 'PresentationRoleState'
+  | 'ApplicationSelection'
+  | 'ApplicationConfigSnapshot'
+  | 'ApplicationPreviewParams'
+  | 'ApplicationPreview'
+  | 'ApplicationState'
+  | 'ApplicationAdoptParams'
+  | 'ApplicationClearParams'
   | 'PluginConfigGetParams'
   | 'PluginConfigValidateParams'
   | 'PluginConfigSaveParams'
@@ -708,6 +725,17 @@ export type PackageAdminDataName =
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
+  PresentationRoleSelection: P.PresentationRoleSelection,
+  PresentationRoleSelections: P.PresentationRoleSelections,
+  PresentationRoleState: P.PresentationRoleState,
+  ApplicationSelection: P.ApplicationSelection,
+  ApplicationConfigSnapshot: P.ApplicationConfigSnapshot,
+  ApplicationPreviewParams: P.ApplicationPreviewParams,
+  ApplicationPreview: P.ApplicationPreview,
+  ApplicationState: P.ApplicationState,
+  ApplicationAdoptParams: P.ApplicationAdoptParams,
+  ApplicationClearParams: P.ApplicationClearParams,
+
   PluginConfigGetParams: P.PluginConfigGetParams,
   PluginConfigValidateParams: P.PluginConfigValidateParams,
   PluginConfigSaveParams: P.PluginConfigSaveParams,

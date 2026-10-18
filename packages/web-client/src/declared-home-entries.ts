@@ -3,9 +3,18 @@ import { homeEntries } from './ui-registries.js'
 
 const pending = new Map<string, { owner: string; dispose(): void }>()
 
+/** Package identity is attached by the host facade, never by an ordinary entry's payload. */
+export function registerOwnedHomeEntry(packageId: string, entry: HomeEntry): () => void {
+  return homeEntries.registerOwned(packageId, entry)
+}
+
+export function resolveHomeEntry(ref: string): HomeEntry | undefined {
+  return homeEntries.resolve(ref)
+}
+
 /** Host-owned navigation while a declared profile module waits for its first page open. */
-export function reserveHomeEntry(owner: string, entry: HomeEntry): () => void {
-  const off = homeEntries.register(entry)
+export function reserveHomeEntry(owner: string, entry: HomeEntry, packageId?: string): () => void {
+  const off = packageId ? registerOwnedHomeEntry(packageId, entry) : homeEntries.register(entry)
   const reservation = {
     owner,
     dispose() {

@@ -2,15 +2,32 @@
 
 [English](README.md) | 简体中文
 
-**可托付的业务 Agent 平台。** 将业务 Agent 打包成插件，升级时让已有任务继续使用原版本，再通过人工审阅积累可复用的技能。
+**AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**
 
-AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、Web 和 SDK 共享一个本地 App Server，提供持久会话、审批与可检查的执行记录。
+- **插件**是安装、分发与信任单位，可以提供工具、运行方式（Loop）、模型、界面、技能、连接或服务。
+- **智能体**是带显式 `launch` 的 Bundle，引用为 `package#bundle`；它选择运行方式和预设，开始一个任务。
+- **应用**在插件中声明品牌、展示默认值与默认／可见智能体，由部署管理员预览后显式采纳。安装不会自动切换应用。
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [为什么选择 AGH](docs/guide/why-agh.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [开发插件](docs/extend/quickstart.zh-CN.md)
+**FDE（前线部署工程）就是为企业构建应用**：把业务工具、智能体和工作界面交付给实际使用者。会话执行与授权仍由原有后端维护。
 
-## 1. 业务 Agent 就是插件
+最小工具插件：从已构建的源码仓运行以下命令，把一个回显工具加入隔离环境；无需声明智能体或应用。
 
-把业务 Agent Loop、工具、模型适配器、角色与技能组合成可安装的组合包。每个会话只获得所选能力，客服 Agent 的业务工具不会自动出现在无关的默认会话中。通过公开前端 API，还可以加入岗位工作台面板。
+```sh
+export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
+node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
+node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+```
+
+[快速开始](docs/guide/quickstart.zh-CN.md) · [文档](docs/README.zh-CN.md) · [构建插件](docs/extend/quickstart.zh-CN.md) · [Acme 应用](examples/acme/README.zh-CN.md)
+
+<a id="1-业务-agent-就是插件"></a>
+
+## 1. 用插件交付业务智能体
+
+把业务 Agent Loop、工具、模型适配器、角色与技能组合成可安装的插件。每个会话只获得所选能力，客服 Agent 的业务工具不会自动出现在无关的默认会话中。通过公开前端 API，还可以加入岗位工作台面板。
 
 业务事件也能驱动 Agent：显式启用 [GitHub 与通用 Webhook 触发器](docs/guide/webhooks.zh-CN.md)，在工作区正常策略下启动普通会话。
 
@@ -20,7 +37,7 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 ## 2. 升级时，进行中的工作保留原版本
 
-新会话使用审阅后的新插件代码，已有会话在重启后仍保留原后端代码（工具、hook、Loop 与 seam），而插件的面板与视图始终来自当前已安装的版本。通过轨迹和执行证据查看模型请求、工具结果与恢复缺口。外部操作结果不确定时，必须先核对，再决定是否重新派发。
+新会话使用审阅后的新插件代码，已有会话在重启后仍保留原后端代码（工具、hook、Loop 与 seam），Profile 页面跟随当前激活版本，会话渲染器跟随该会话固定的代际。通过轨迹和执行证据查看模型请求、工具结果与恢复缺口。外部操作结果不确定时，必须先核对，再决定是否重新派发。
 
 ![插件已停止向新会话提供能力，旧版本仍由已有会话使用](docs/assets/readme/plugin-old-version-zh-CN-light.png)
 
@@ -34,7 +51,7 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 [运行技能成长演示](examples/demos/growing-skills/README.zh-CN.md) · [候选审阅](docs/extend/agent-built-plugins.zh-CN.md) · [记忆](docs/guide/memory.zh-CN.md)
 
-截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
+截图使用合成浏览器测试数据说明信任与版本行为，菜单可能与当前界面不同。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
 <a id="new-product-clean-home"></a>
 

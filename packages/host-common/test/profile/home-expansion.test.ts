@@ -18,7 +18,13 @@ const lock: LockState = {
   packages: Object.fromEntries(
     ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
       id,
-      { version: '0.1.0', integrity: 'sha512-x', trust: 'builtin' as const, enabled: true },
+      {
+        version: '0.1.0',
+        source: { type: 'builtin' as const, ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin' as const,
+        enabled: true,
+      },
     ]),
   ),
 }

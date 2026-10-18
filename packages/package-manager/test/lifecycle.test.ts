@@ -517,7 +517,6 @@ it.each(['1.0.0', '1.1.0-alpha.2'])(
       displayName: 'Example',
       summary: 'Example',
       description: 'Example',
-      category: 'example',
       exampleOf: id,
     }
     writeFileSync(join(childDir, 'package.json'), JSON.stringify(pkg))
@@ -571,7 +570,6 @@ async function installDependent(m: ReturnType<typeof manager>, range: string) {
     displayName: 'Dependent',
     summary: 'Fixture',
     description: 'Fixture',
-    category: 'example',
     exampleOf: id,
   }
   writeFileSync(file, JSON.stringify(pkg))

@@ -249,7 +249,7 @@ describe('surface panel frame', () => {
       }
       const delivered = state.querySelector('[data-testid="ui-action-delivered"]')
       expect(delivered?.textContent ?? null).toBe(
-        ['succeeded', 'failed', 'rejected'].includes(status) ? '结果已投递给 Agent' : null,
+        ['succeeded', 'failed', 'rejected'].includes(status) ? '结果已投递给智能体' : null,
       )
     },
   )

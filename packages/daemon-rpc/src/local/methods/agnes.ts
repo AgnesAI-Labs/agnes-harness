@@ -1432,11 +1432,7 @@ export function registerAgnes(
     await jobs('jobs.cancel').cancel(jobId)
     return {}
   })
-  registerSchedules(ep, {
-    schedules: () => cx.schedules,
-    requireOwner,
-    registry: cx.registry,
-  })
+  registerSchedules(ep, cx, requireOwner)
   const participantRows = async (session: ScannableSession): Promise<ParticipantListResult> => {
     const current = new Map<string, ParticipantListResult['participants'][number]>()
     for (const event of await rowsOfType(session, 'participant')) {

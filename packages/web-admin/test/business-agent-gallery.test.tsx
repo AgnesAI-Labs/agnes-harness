@@ -1,4 +1,8 @@
 /** @vitest-environment happy-dom */
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createAgentLaunches } from '@agnes/daemon-admin/packages/agent-launches'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageOperation } from '@agnes/protocol'
 import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
@@ -36,13 +40,23 @@ const entry = (id: string, name: string, sample?: string) =>
     compatibility: 'supported',
     sourceId: 'official-examples',
     retrievedAt: '',
-    kinds: ['loop', 'tool'],
+    provides: ['loop', 'tool'],
+    agents: [
+      {
+        ref: `${id}#work`,
+        launch: {
+          title: { en: name },
+          description: { en: name },
+          preset: 'safe',
+          ...(sample ? { prompt: { mode: 'draft', text: { en: sample } } } : {}),
+        },
+      },
+    ],
     presentation: { origin: 'example', rows: [] },
     metadata: {
       displayName: name,
       summary: `${name} summary`,
       description: '',
-      category: 'business-agent',
       ...(sample ? { samplePrompt: { en: sample } } : {}),
     },
   }) as unknown as PackageCatalogDescriptor
@@ -73,7 +87,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
         source: entry(ID, 'x').source,
         integrity: 'sha512-a',
         capabilityHash: 'cap',
-        kinds: ['loop', 'tool'],
+        provides: ['loop', 'tool'],
         contributions: [{ kind: 'skill', id: 'playbook', path: 'skills/playbook' }],
         blockers: [],
         declaredCapabilities: {
@@ -85,6 +99,24 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
     },
   }
   const api = {
+    resolveAgent: async (ref: string) => (await api.prepareAgent(ref)).presentation,
+    prepareAgent: async (ref: string) => ({
+      launchTicket: 'ticket',
+      presentation: {
+        ref,
+        launch: entry(ID, 'Data report', 'Summarise the sample CSV.').agents![0]!.launch,
+        loop: { id: 'fde.data-report', version: '5.0.0' },
+        bundles: [ref],
+        preset: 'safe',
+        model: { route: 'demo', model: 'm' },
+        sources: [],
+        permission: { readOnly: true, tools: [], allow: [], deny: [] },
+      },
+    }),
+    startAgent: async () => ({
+      sessionId: 'agent-session',
+      draft: { mode: 'draft', text: { en: 'Summarise the sample CSV.' } },
+    }),
     catalog: async () => ({
       items: [
         entry(ID, 'Data report', 'Summarise the sample CSV.'),
@@ -171,13 +203,15 @@ const click = (selector: string) =>
 it('shows a card per business agent, with a sample line only where the package has one', async () => {
   const host = await mount(setup().source, () => {})
   expect(host.querySelectorAll('.agent-card')).toHaveLength(2)
-  const report = host.querySelector('[data-testid="business-agent-data-report"]')
+  const report = host.querySelector('[data-testid="business-agent-data-report-work"]')
   expect(report?.textContent).toContain('Data report')
   expect(report?.querySelector('[data-testid="business-agent-sample"]')?.textContent).toBe(
     en('try', { prompt: 'Summarise the sample CSV.' }),
   )
   expect(
-    host.querySelector('[data-testid="business-agent-code-review"] [data-testid="business-agent-sample"]'),
+    host.querySelector(
+      '[data-testid="business-agent-code-review-work"] [data-testid="business-agent-sample"]',
+    ),
   ).toBeNull()
   expect(report?.textContent).toContain(en('state.available'))
 })
@@ -186,7 +220,7 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   const kit = setup()
   const opened: StartedSession[] = []
   await mount(kit.source, (target) => opened.push(target))
-  await click('[data-testid="business-agent-start-data-report"]')
+  await click('[data-testid="business-agent-start-data-report-work"]')
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-gets"]')).not.toBeNull())
   // Inspecting is all that has happened before the user agrees.
   expect(kit.calls).toEqual(['inspect'])
@@ -210,23 +244,35 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   expect(review?.querySelector('[data-testid="install-review-unverified"]')).not.toBeNull()
   expect(document.querySelector('[role="dialog"]')).toBeNull()
   await click('[data-testid="agent-start-confirm"]')
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+  )
+  await click('[data-testid="agent-launch-confirm"]')
   await vi.waitFor(() => expect(opened).toHaveLength(1), { timeout: 5000 })
   expect(kit.calls).toEqual(['inspect', 'install', 'trust', 'enable'])
   expect(opened[0]).toEqual({
-    loop: { id: 'fde.data-report', version: '5.0.0' },
-    bundles: [],
+    sessionId: 'agent-session',
     prompt: 'Summarise the sample CSV.',
   })
 })
 
 it('opens a session at once for a ready agent, and refuses package changes without permission', async () => {
   const ready = setup({ ready: true })
+  const { api } = await ready.source.connect()
+  const resolve = vi.spyOn(api, 'resolveAgent')
+  const prepare = vi.spyOn(api, 'prepareAgent')
   const opened: StartedSession[] = []
   const host = await mount(ready.source, (target) => opened.push(target))
-  expect(host.querySelector('[data-testid="business-agent-data-report"]')?.textContent).toContain(
+  expect(host.querySelector('[data-testid="business-agent-data-report-work"]')?.textContent).toContain(
     en('state.ready'),
   )
-  await click('[data-testid="business-agent-start-data-report"]')
+  expect(resolve).not.toHaveBeenCalled()
+  expect(prepare).not.toHaveBeenCalled()
+  await click('[data-testid="business-agent-start-data-report-work"]')
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+  )
+  await click('[data-testid="agent-launch-confirm"]')
   await vi.waitFor(() => expect(opened).toHaveLength(1))
   expect(ready.calls).toEqual([])
   expect(document.querySelector('[data-testid="agent-start-gets"]')).toBeNull()
@@ -235,7 +281,8 @@ it('opens a session at once for a ready agent, and refuses package changes witho
   document.body.replaceChildren()
   const denied = await mount(setup({ permissions: ['packages.read'] }).source, () => {})
   expect(
-    denied.querySelector<HTMLButtonElement>('[data-testid="business-agent-start-data-report"]')?.disabled,
+    denied.querySelector<HTMLButtonElement>('[data-testid="business-agent-start-data-report-work"]')
+      ?.disabled,
   ).toBe(true)
 })
 
@@ -259,9 +306,9 @@ it('marks the card another surface points at, and starts it when asked to', asyn
 it('opens a start as a page inside Agent FDE, and 返回 cancels it before anything is installed', async () => {
   const kit = setup()
   const host = await mount(kit.source, () => {})
-  await click('[data-testid="business-agent-start-data-report"]')
+  await click('[data-testid="business-agent-start-data-report-work"]')
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
-  expect(new URL(location.href).searchParams.get('view')).toBe('agent-data-report')
+  expect(new URL(location.href).searchParams.get('view')).toBe('agent-data-report-work')
   expect([...host.querySelectorAll('.agh-push-crumbs li')].map((item) => item.textContent)).toEqual([
     'Agent FDE',
     'Data report',
@@ -276,9 +323,92 @@ it('opens a start as a page inside Agent FDE, and 返回 cancels it before anyth
 })
 
 it('opens the start of an agent from a link that names its page', async () => {
-  history.replaceState(null, '', '/?page=agents&view=agent-data-report')
+  history.replaceState(null, '', '/?page=agents&view=agent-data-report-work')
   const kit = setup()
   await mount(kit.source, () => {})
   await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
   expect(kit.calls).toEqual(['inspect'])
 })
+
+it.each(['lost', 'unknown'] as const)(
+  'keeps the original launch operation after a %s response',
+  async (outcome) => {
+    const kit = setup({ ready: true })
+    const { api } = await kit.source.connect()
+    const plan = { ...(await api.prepareAgent(`${ID}#work`)).presentation, digest: 'reviewed-digest' }
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-agent-retry-'))
+    const sessions: string[] = []
+    const operationIds: string[] = []
+    let firstRead = true
+    const facade = createAgentLaunches({
+      directory,
+      backend: {
+        caller: async () => ({
+          principal: 'synthetic',
+          profile: 'default',
+          workspace: directory,
+          activation: 'one',
+        }),
+        resolve: async () => plan,
+        open: async () => {
+          const id = `synthetic-session-${sessions.length + 1}`
+          sessions.push(id)
+          if (outcome === 'unknown') throw new Error('uncertain dispatch')
+          return id
+        },
+      },
+    })
+    api.resolveAgent = async () => plan
+    api.prepareAgent = async (agent) =>
+      (await facade.call({ action: 'prepare', agent })) as Awaited<ReturnType<PluginAdminApi['prepareAgent']>>
+    api.startAgent = async (launchTicket, operationId) => {
+      operationIds.push(operationId)
+      await facade.call({ action: 'start', launchTicket, operationId })
+      throw new Error('lost success response')
+    }
+    api.readAgent = async (operationId) => {
+      if (firstRead) {
+        firstRead = false
+        throw new Error('receipt temporarily unavailable')
+      }
+      return (await facade.call({ action: 'read', operationId })) as Awaited<
+        ReturnType<PluginAdminApi['readAgent']>
+      >
+    }
+    const opened: StartedSession[] = []
+    try {
+      await mount(kit.source, (session) => opened.push(session))
+      await click('[data-testid="business-agent-start-data-report-work"]')
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+      )
+      await click('[data-testid="agent-launch-confirm"]')
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="agent-start-retry"]')).not.toBeNull(),
+      )
+      expect(sessions).toEqual(['synthetic-session-1'])
+      await click('[data-testid="agent-start-retry"]')
+      if (outcome === 'lost') {
+        await vi.waitFor(() =>
+          expect(opened).toEqual([{ sessionId: 'synthetic-session-1', prompt: 'Summarise the sample CSV.' }]),
+        )
+      } else {
+        await vi.waitFor(() =>
+          expect(document.querySelector('[data-testid="agent-start-error"]')?.textContent).toContain(
+            'OUTCOME_UNKNOWN',
+          ),
+        )
+        expect(document.querySelector('[data-testid="agent-start-new-intent"]')?.textContent).toBe(
+          en('launch.another'),
+        )
+        await click('[data-testid="agent-start-retry"]')
+        expect(opened).toEqual([])
+      }
+      expect(sessions).toEqual(['synthetic-session-1'])
+      expect(operationIds).toHaveLength(1)
+    } finally {
+      for (const root of roots.splice(0)) await act(async () => root.unmount())
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)

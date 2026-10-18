@@ -73,7 +73,7 @@ async function runExample(kind: 'react' | 'dag') {
   const packageFile = join(loopPackage, 'package.json')
   const manifest = JSON.parse(readFileSync(packageFile, 'utf8'))
   manifest.agnes.plugins[0].export = 'reviewFixture'
-  manifest.agnes.kinds = ['bundle', 'loop']
+  manifest.agnes.provides = ['bundle', 'loop']
   manifest.agnes.bundles = {
     review: {
       profile: {

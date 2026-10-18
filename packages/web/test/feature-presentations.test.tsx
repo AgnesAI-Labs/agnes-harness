@@ -2,37 +2,45 @@
 import { Context } from '@agnes/cordis'
 import type { UITimeline } from '@agnes/protocol'
 import {
+  type ClientContext,
   composerCommands,
   conversationCards,
   LocaleService,
+  type PresentationProvider,
   PresentationRoleRegistry,
   SessionService,
   SlotRegistry,
   workbenchPanels,
 } from '@agnes/web-client'
 import { renderSessionActions } from '@agnes/web-conversation/session-actions'
-import { unmountRegion } from '@agnes/web-ui'
+import { intelligentUiCatalog, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 // @ts-expect-error Generated shipped ESM is exercised directly without a release build.
 import * as goal from '../../package-manager/bundled-plugins/goal-ui/src/client.js'
 // @ts-expect-error Generated shipped ESM is exercised directly without a release build.
 import * as interaction from '../../package-manager/bundled-plugins/interaction-ui/src/client.js'
+import { expectLocalizedDom } from './helpers/localized-dom.js'
 
 it.each([
-  ['goal', goal, 'goal', 'goal'],
-  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views'],
+  ['goal', goal, 'goal', 'goal', 'en'],
+  ['goal', goal, 'goal', 'goal', 'zh-CN'],
+  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views', 'en'],
+  ['interaction', interaction, 'intelligent-ui', 'intelligent-turn-views', 'zh-CN'],
 ] as const)(
   'registers, yields, restores and revokes the complete %s presentation',
-  async (role, official, panelId, cardId) => {
+  async (role, official, panelId, cardId, language) => {
     const ctx = new Context(),
       slots = new SlotRegistry(ctx),
       roles = new PresentationRoleRegistry()
     const session = new SessionService(ctx)
-    const locale = new LocaleService(ctx, 'en')
+    const previousLanguage = document.documentElement.lang
+    document.documentElement.lang = language
+    const locale = new LocaleService(ctx, language)
     const client = { sessions: { get: () => undefined } }
     // Services are non-enumerable just as on a real Cordis client fiber.
-    const services = Object.create(
+    const services: ClientContext = Object.create(
       null,
       Object.fromEntries(
         Object.entries({
@@ -41,12 +49,22 @@ it.each([
           locale,
           agnes: client,
           resources: {},
+          composerCommands,
+          conversationCards,
+          workbenchPanels,
           theme: {},
           presentation: {},
-          presentationRoles: { register: (provider: never) => roles.register('official', provider) },
+          presentationRoles: {
+            register: (provider: PresentationProvider) =>
+              roles.register('official', {
+                ...provider,
+                mount: () => provider.mount(services),
+              }),
+          },
         }).map(([name, value]) => [name, { value }]),
       ),
     )
+    if (role === 'interaction') slots.declare('conversation.view', { kind: 'list', scope: 'session' })
     const stop = official.apply(services)
     let stopReplacement: (() => void) | undefined
     const host = document.createElement('div')
@@ -92,7 +110,12 @@ it.each([
         await vi.waitFor(() => expect(document.body.textContent).toContain('Historical goal'))
         flushSync(() => document.querySelector<HTMLButtonElement>('[data-testid="goal-resume"]')!.click())
         expect(command).toHaveBeenCalledWith('/goal resume')
+      } else {
+        const Panel = workbenchPanels.get(panelId)!.component
+        flushSync(() => renderRegion(host, createElement(Panel, { context: { t: (key) => locale.t(key) } })))
+        expect(host.textContent).toContain(intelligentUiCatalog[language]['ui.empty'])
       }
+      expectLocalizedDom(document.body)
       stopReplacement = roles.register('replacement', {
         role,
         priority: 0,
@@ -128,6 +151,7 @@ it.each([
       stop()
       unmountRegion(host)
       host.remove()
+      document.documentElement.lang = previousLanguage
     }
   },
 )
@@ -156,7 +180,9 @@ it.each([
     new ThemeService(ctx, 'light')
     const owner = `${role}-actual-fiber`
     const fiber = ctx.plugin(clientModule(official), {
-      packageId: `official-${role}`,
+      packageId: `@agnes/${role}-ui`,
+      clientId: `${role}-ui`,
+      presentationRoles: [role],
       revision: 'fixture',
       rowId: owner,
       allowedSlots: [...allowedSlots],
@@ -182,6 +208,73 @@ it.each([
       stopReplacement?.()
       await fiber.dispose()
       await ctx.fiber.dispose()
+    }
+  },
+)
+
+it.each(['interaction-first', 'conversation-first'] as const)(
+  'mounts and remounts the official conversation and interaction independently (%s)',
+  async (order) => {
+    const { clientModule, presentationRoles } = await import('@agnes/web-client')
+    const { startClientModules } = await import('../src/client-modules/boot.js')
+    const { apply: conversation } = await import('../src/presentations/conversation.js')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
+    const runtime = await startClientModules({
+      agnes: { sessions: { get: () => undefined } } as never,
+      rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
+      conversationContainer: host,
+    })
+    const modules = {
+      conversation: { apply: conversation, roles: ['conversation', 'composer'] },
+      interaction: { apply: interaction.apply, roles: ['interaction'] },
+    }
+    let replace: (() => void) | undefined
+    try {
+      for (const name of order === 'interaction-first'
+        ? (['interaction', 'conversation'] as const)
+        : (['conversation', 'interaction'] as const)) {
+        const mod = modules[name]
+        await runtime.ctx.plugin(clientModule({ apply: mod.apply }), {
+          packageId: `@agnes/${name}-ui`,
+          clientId: `${name}-ui`,
+          revision: 'fixture',
+          presentationRoles: mod.roles,
+          slotCatalogVersion: 'dsh-client-slots/v1',
+          binding: { owner: `ordering-${name}`, lifetime: 'profile', availability: 'active' },
+        } as never)
+      }
+      runtime.session.setSession('history')
+      await vi.waitFor(() => {
+        expect(host.querySelector('#transcript-content')).not.toBeNull()
+        expect(runtime.registry.entriesOfSlot('conversation.view').map((entry) => entry.id)).toEqual([
+          'builtin-conversation-view',
+          'builtin-intelligent-ui',
+        ])
+      })
+      replace = presentationRoles.register('fixture-frame', {
+        role: 'conversation',
+        priority: 0,
+        mount: () => () => {},
+      })
+      expect(runtime.registry.spec('conversation.view')).toBeUndefined()
+      expect(workbenchPanels.get('intelligent-ui')).toBeDefined()
+      replace()
+      replace = undefined
+      await vi.waitFor(() => {
+        expect(host.querySelector('#transcript-content')).not.toBeNull()
+        expect(runtime.registry.entriesOfSlot('conversation.view').map((entry) => entry.id)).toEqual([
+          'builtin-conversation-view',
+          'builtin-intelligent-ui',
+        ])
+      })
+      expect(presentationRoles.resolution('conversation').effective?.packageId).toBe('@agnes/conversation-ui')
+    } finally {
+      replace?.()
+      await runtime.dispose()
+      host.remove()
+      fetcher.mockRestore()
     }
   },
 )

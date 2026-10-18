@@ -82,8 +82,8 @@ it('drills into a subpage, nested subpages, and returns with 返回 and the brow
   expect(history.state).toMatchObject({ agnesSettingsSubpage: 2 })
   // The browser's back button returns one level.
   await act(async () => {
-    history.replaceState({ agnesSettingsSubpage: 1 }, '')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { agnesSettingsSubpage: 1 } }))
+    history.replaceState({ ...history.state, agnesSettingsSubpage: 1 }, '')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
   })
   expect($(host, '[data-testid="settings-subpage-header"] h2').textContent).toBe('OTLP export')
   // 返回 goes back through history when the entry is ours.
@@ -223,6 +223,7 @@ it('shows a failed read as one line with retry and keeps what is shown', async (
   expect($(host, '[data-testid="loadable-error"]').textContent).toMatch(/Couldn’t load|读取失败/)
   expect(host.textContent).toContain('Agnes AI')
   expect($(host, '.agnes-settings-info').getAttribute('title')).toBe('The account new sessions use')
+  expect($(host, '.agnes-settings-info').classList.contains('agh-touch-target')).toBe(true)
   await act(async () => $<HTMLButtonElement>(host, '[data-testid="loadable-retry"]').click())
   expect(reload).toHaveBeenCalledOnce()
 })
@@ -349,9 +350,11 @@ it('lists accounts as rows: logo, default model and count, state tags, fix, and 
   expect(rows[0]?.textContent).toContain('Default')
   expect(rows[1]?.dataset.enabled).toBe('false')
   expect(rows[1]?.textContent).toContain('Disabled')
-  expect(rows[2]?.textContent).toContain('Credential missing')
+  expect(rows[2]?.textContent).toContain('API key required')
   await act(async () =>
-    [...(rows[2]?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Fix')?.click(),
+    [...(rows[2]?.querySelectorAll('button') ?? [])]
+      .find((b) => b.textContent === 'Re-enter API key')
+      ?.click(),
   )
   expect(edits).toEqual(['kimi'])
   // The default account offers neither disable nor remove while another account could take over.

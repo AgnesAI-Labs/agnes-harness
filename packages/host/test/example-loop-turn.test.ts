@@ -84,8 +84,12 @@ async function runExampleTurn(kind: keyof typeof cases) {
         ['@agnes/ai', '@agnes/base', '@agnes/code', spec.packageId].map((id) => [
           id,
           {
-            version: '1.0.0',
-            integrity: source.snapshot.integrity,
+            version: id === spec.packageId ? '1.0.0' : '0.1.0',
+            source:
+              id === spec.packageId
+                ? { type: 'file' as const, ref: 'file:fixture' }
+                : { type: 'builtin' as const, ref: 'builtin' },
+            integrity: id === spec.packageId ? source.snapshot.integrity : 'builtin:0.1.0',
             trust: id === spec.packageId ? 'trusted' : 'builtin',
             enabled: true,
           },
@@ -224,8 +228,12 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
         ['@agnes/ai', '@agnes/base', '@agnes/code', spec.packageId].map((id) => [
           id,
           {
-            version: '1.0.0',
-            integrity: source.snapshot.integrity,
+            version: id === spec.packageId ? '1.0.0' : '0.1.0',
+            source:
+              id === spec.packageId
+                ? { type: 'file' as const, ref: 'file:fixture' }
+                : { type: 'builtin' as const, ref: 'builtin' },
+            integrity: id === spec.packageId ? source.snapshot.integrity : 'builtin:0.1.0',
             trust: id === spec.packageId ? 'trusted' : 'builtin',
             enabled: true,
           },

@@ -26,7 +26,7 @@ export const BUNDLED_HELPERS = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
-  ...['goal-ui', 'interaction-ui'].map((name) => ({
+  ...['goal-ui', 'interaction-ui', 'navigation-ui', 'conversation-ui'].map((name) => ({
     name,
     id: `@agnes/${name}`,
     version: '0.1.0',

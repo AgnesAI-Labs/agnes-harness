@@ -101,9 +101,10 @@ it('builds local web assets with the shared platform vendor modules', async () =
       await server.close()
     }
     const app = await readFile(join(output, 'app.js'), 'utf8')
-    const appChunks = [...app.matchAll(/from\s*["'](\.\/chunk-[^"']+\.js)["']/g)].map((match) => match[1])
-    const chunkSources = await Promise.all(
-      appChunks.map((chunk) => readFile(join(output, chunk ?? ''), 'utf8')),
+    const moduleSources = await Promise.all(
+      Object.keys(builds[0]?.metafile?.outputs ?? {})
+        .filter((file) => file.endsWith('.js'))
+        .map((file) => readFile(resolve(base, file), 'utf8')),
     )
     const html = await readFile(join(output, 'index.html'), 'utf8')
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
@@ -125,8 +126,10 @@ it('builds local web assets with the shared platform vendor modules', async () =
     )
     expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
     expect(app).toMatch(/from\s*["']react["']/)
-    expect([app, ...chunkSources].some((source) => /from\s*["']@agnes\/web-ui["']/.test(source))).toBe(true)
-    expect(app).toMatch(/from\s*["']@agnes\/web-ui\/conversation["']/)
+    expect(moduleSources.some((source) => /from\s*["']@agnes\/web-ui["']/.test(source))).toBe(true)
+    expect(moduleSources.some((source) => /from\s*["']@agnes\/web-ui\/conversation["']/.test(source))).toBe(
+      true,
+    )
     expect(html).toContain('"react": "/vendor/react.js"')
     expect(html).toContain('"@agnes/web-ui": "/vendor/web-ui.js"')
     expect(html).toContain('"recharts": "/vendor/recharts.js"')

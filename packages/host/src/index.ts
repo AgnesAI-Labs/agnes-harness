@@ -456,6 +456,7 @@ export {
 } from '@agnes/host-providers/assemble/compaction-engines'
 export {
   builtinModelAdapterCatalog,
+  builtinModelSelectionData,
   ModelAdapterRegistry,
   modelAdapterCatalog,
 } from '@agnes/host-providers/assemble/model-adapters'

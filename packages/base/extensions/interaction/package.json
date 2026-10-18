@@ -42,7 +42,6 @@
           "displayName": "User questions",
           "summary": "Lets the agent ask focused questions and continue with the user's answers.",
           "description": "Lets the agent ask focused questions and continue with the user's answers.",
-          "category": "tools",
           "locales": {
             "zh-CN": {
               "displayName": "向用户提问",
@@ -52,6 +51,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   },
   "peerDependencies": {

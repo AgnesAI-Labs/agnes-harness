@@ -13,7 +13,7 @@ import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { type SettingsAdmin, SettingsPages } from '../src/settings/pages.js'
 import { createSettingsController } from '../src/settings.js'
@@ -35,6 +35,11 @@ function styleRule(css: string, selector: string): string {
   expect(match, `missing rule ${selector}`).not.toBeNull()
   return match?.[1] ?? ''
 }
+
+beforeEach(() => {
+  // Independent panels also fetch here. Unhandled endpoints must still obey fetch's Promise contract.
+  diagnosticsFetch.mockReset().mockImplementation(async () => Response.json({}, { status: 503 }))
+})
 
 afterEach(() => {
   clearResources()
@@ -118,12 +123,13 @@ it('operates the React settings pane and account dialog without losing native fo
   )
   dialog.removeEventListener('agnes:settings-terminal', openTerminal)
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
-  // The dialog lists three pages; everything else moved out and is no longer listed.
+  // The dialog lists everyday pages, including application adoption; everything else moved out and is no longer listed.
   const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
   expect([...everyday].map((item) => item.getAttribute('data-settings-section'))).toEqual([
     'general',
     'model',
     'security',
+    'application',
   ])
   expect(dialog.querySelector('#settings-advanced')).toBeNull()
   expect(dialog.querySelector('#settings-search')).toBeNull()
@@ -499,6 +505,10 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
       ),
     )
     expect(runtime).not.toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="plugin-diagnostics"]')?.textContent).toContain(
+      'Technical details',
+    )
+    expect(host.querySelector('[data-testid="runtime-generations"]')).toBeNull()
     // Leftover plugin files are read and released here, without the plugins page being open.
     // Leftover files are the first record of the 运行详情 subpage, opened in place.
     expect(host.querySelector('[data-testid="runtime-occupancy"]')).toBeNull()
@@ -521,7 +531,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     // The page names itself once; the open subpage has its own title and the refresh.
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
       'Runtime & diagnostics',
-      'Runtime details',
+      'Technical details',
     ])
     expect(
       host.querySelector('[data-testid="settings-subpage-header"] [data-testid="settings-refresh"]'),
@@ -573,5 +583,111 @@ it('re-reads the runtime details after a local plugin rescan, not only the page 
   } finally {
     flushSync(() => root.unmount())
     host.remove()
+  }
+})
+
+it('opens the application adoption page in its stable group independently of the runtime catalog', async () => {
+  const form = document.createElement('div')
+  form.id = 'config-form'
+  form.dataset.runtimePage = 'application'
+  const host = document.createElement('div')
+  document.body.append(form, host)
+  const root = createRoot(host)
+  const runtime = vi.fn(async () => {
+    throw new Error('must not load runtime')
+  })
+  try {
+    const application = vi.fn<PluginAdminApi['application']>(async () => ({
+      revision: 1,
+      selection: null,
+      status: 'host',
+      effective: null,
+      assets: {},
+      candidates: [{ packageId: 'acme/kit', applicationId: 'Acme', version: '1.0.0', available: true }],
+    }))
+    await act(async () =>
+      root.render(createElement(SettingsPages, { admin: adminOf({ runtime, application }) })),
+    )
+    await vi.waitFor(() => expect(host.textContent).toContain('Acme'))
+    expect(host.textContent).toContain('agh app clear')
+    expect(application).toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="application-placeholder"]')).toBeNull()
+    expect(settingsSections.entries().filter((entry) => entry.id === 'application')).toHaveLength(1)
+    expect(settingsSections.get('application')?.group).toBe('application')
+    expect(runtime).not.toHaveBeenCalled()
+    const { settingsRoute, settingsGroup } = await import('@agnes/web-units/shell')
+    expect(settingsGroup('application')).toBe('application')
+    for (const [old, anchor] of [
+      ['agent-fde', 'bundles'],
+      ['runtime-config', 'models'],
+      ['system-prompt', 'system-prompt'],
+      ['execution', 'session-loop'],
+      ['context', 'context'],
+    ] as const)
+      expect(settingsRoute(old)).toEqual({ id: 'models', anchor: `settings-subsection-${anchor}` })
+    expect(settingsSections.get('models')?.group).toBe('advanced')
+    expect(settingsSections.get('diagnostics')?.group).toBe('advanced')
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
+it('keeps advanced composition reachable behind technical details while leading with agent tasks', async () => {
+  const form = document.createElement('div')
+  form.id = 'config-form'
+  form.dataset.runtimePage = 'models'
+  const host = document.createElement('div')
+  document.body.append(form, host)
+  const root = createRoot(host)
+  vi.stubGlobal('fetch', async () => Response.json({ error: { message: 'off' } }, { status: 503 }))
+  const runtime = vi.fn(
+    async (): Promise<RuntimeAdminSnapshot> => ({
+      providers: [],
+      presets: [],
+      localPluginFolders: { home: '/fixture/plugins', workspace: '/fixture/workspace' },
+    }),
+  )
+  const bundles = vi.fn(async () => ({
+    revision: 2,
+    bundles: [],
+    effect: 'restart-required' as const,
+    catalog: [],
+  }))
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SettingsPages, {
+          admin: adminOf({
+            runtime,
+            bundles,
+            loops: async () => ({ loops: [], defaults: {}, revision: 1 }),
+            modelAdapters: async () => ({ modelAdapters: [] }),
+            composition: async () => {
+              throw new Error('off')
+            },
+            list: async () => {
+              throw new Error('off')
+            },
+          }),
+        }),
+      ),
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="run-config-technical"]')).not.toBeNull())
+    expect(host.textContent).toContain('Choose an agent on the Agents page')
+    const technical = host.querySelector<HTMLElement>('[data-testid="run-config-technical"]')
+    const toggle = technical?.querySelector<HTMLButtonElement>(':scope > button')
+    if (!technical || !toggle) throw new Error('technical details missing')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(technical.textContent).toContain('Preset IDs identify permission profiles')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="settings-drill-bundles"]')?.click(),
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="bundles-empty"]')).not.toBeNull())
+    expect(bundles).toHaveBeenCalled()
+  } finally {
+    await act(async () => root.unmount())
+    vi.unstubAllGlobals()
   }
 })

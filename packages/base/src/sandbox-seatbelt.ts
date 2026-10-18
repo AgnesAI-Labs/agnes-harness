@@ -35,8 +35,14 @@ export function seatbeltDenyNetworkArgv(
     '(deny default)',
     '(allow process*)',
     '(allow sysctl-read)',
+    // Common tools open the null sink read/write; entropy and zero sources need only reads.
+    // Exact literals grant no other devices. The explicit denies below still take precedence.
+    '(allow file-read* file-write* (literal "/dev/null"))',
+    ...['/dev/zero', '/dev/random', '/dev/urandom'].map(
+      (path) => `(allow file-read* (literal ${quote(path)}))`,
+    ),
     // Job control changes only the foreground group of the caller's controlling terminal
-    // (the kernel enforces session ownership). No device writes or other ioctls are granted.
+    // (the kernel enforces session ownership). No other ioctls are granted.
     '(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))',
     ...(policy.readPaths
       ? [

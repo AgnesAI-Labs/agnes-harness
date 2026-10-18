@@ -93,18 +93,20 @@ test('v3 archive filter restores the same session and its conversation', async (
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(false)
   await page.locator('#session-filter').click()
-  await page.getByTestId('session-filter-active').click()
+  await page.getByTestId('session-filter-unarchived').click()
   await page.locator(`.session[data-session="${id}"]`).click()
   await expect(page.getByTestId('conversation-turn')).toContainText('REG5_ARCHIVE_CONTENT')
 })
 
-test('v3 settings exposes three everyday pages, persistent advanced settings and legacy plugin redirects', async ({
+test('v3 settings exposes four everyday pages, persistent advanced settings and legacy plugin redirects', async ({
   page,
   runtime,
 }) => {
   await preferences(page, 'zh-CN')
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime, 'zh-CN')
+  await fresh(page, 'zh-CN')
+  await turn(page, 'Keep the settings navigation session across reloads')
   await settings(page, 'zh-CN')
   // A browser that never chose shows the advanced group; turning it off is remembered.
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBeNull()
@@ -114,10 +116,12 @@ test('v3 settings exposes three everyday pages, persistent advanced settings and
   await expect(page.getByTestId('settings-advanced-switch')).toHaveAttribute('aria-checked', 'false')
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBe('0')
   await page.reload()
+  // A persisted settings URL restores its dialog after the session binding finishes.
+  await expect(page.locator('#config[open]')).toBeVisible()
   await settings(page, 'zh-CN')
-  await expect(page.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(3)
+  await expect(page.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(4)
   await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
-  for (const id of ['general', 'model', 'security']) await section(page, id)
+  for (const id of ['general', 'model', 'security', 'application']) await section(page, id)
   await expect(page.getByTestId('auto-review-customize')).toHaveCount(0)
   await advanced(page)
   await expect(page.getByTestId('settings-advanced')).toBeVisible()
@@ -138,6 +142,7 @@ test('v3 settings exposes three everyday pages, persistent advanced settings and
   await page.goto(subpage)
   await expect(page.getByTestId('auto-review-tools')).toBeVisible()
   await page.reload()
+  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
   await settings(page, 'zh-CN')
   await expect(page.getByTestId('settings-advanced')).toBeVisible()
   await closeSettings(page, 'zh-CN')
@@ -155,7 +160,7 @@ test('v3 settings exposes three everyday pages, persistent advanced settings and
   await page.reload()
   await expect(page.locator('#model-settings-pane')).toBeVisible()
   await expect(page.getByTestId('account-page-add')).toHaveCount(0)
-  await page.locator('#config-add-account').click()
+  await page.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
   await expect(page.getByTestId('account-page-add')).toBeVisible()
   await page.goBack()
   await expect.poll(() => new URL(page.url()).searchParams.get('settings')).toBe('model')
@@ -194,7 +199,12 @@ for (const locale of ['en', 'zh-CN'])
         }
         for (const capability of ['search', 'computer-use', 'subagents']) {
           await homePage(page, 'plugins')
-          await page.getByTestId(`builtin-${capability}`).click()
+          const label = {
+            search: /^(Web search|网页搜索)/,
+            'computer-use': /^(Computer use|电脑操作)/,
+            subagents: /^(Subagents|子代理)/,
+          }[capability]!
+          await page.getByTestId('plugin-capability-settings').getByRole('button', { name: label }).click()
           await expect(page.getByTestId(`home-page-plugins-${capability}`)).toBeVisible()
           await translated(page)
           expect(
@@ -205,7 +215,7 @@ for (const locale of ['en', 'zh-CN'])
         }
         await sidebar(page)
         await settings(page, locale)
-        for (const id of ['general', 'model', 'security']) {
+        for (const id of ['general', 'model', 'security', 'application']) {
           await section(page, id)
           await translated(page)
           expect(

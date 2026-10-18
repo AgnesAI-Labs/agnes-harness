@@ -77,7 +77,14 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
+| `agh app clear [--profile NAME] [--json]` | 在插件启动前清除当前应用及全部界面角色选择，复用配置 CAS |
 | `agh app-server --stdio` / `schema --out DIR` | 桥接共享 daemon / 不启动服务地导出生成合同 |
 | `agh doctor --json` / `doctor --probe --json` | 本地检查 / 显式账号测试，可能产生费用 |
 
 完整参数与权限边界见[候选审阅](../extend/agent-built-plugins.zh-CN.md)、[热重载](../extend/hot-reload.zh-CN.md)、[App Server](app-server.zh-CN.md)和[首次运行](../guide/getting-started.zh-CN.md)。
+
+## 按智能体创建会话
+
+`node agnes.mjs --agent '@acme/kit#review' -p '检查这个工作区'` 通过后端解析该 Bundle 自己声明的 `launch`，选择精确的 Loop、会话 Bundle 和必填 preset。`--agent` 不能与 `--loop`、`--preset` 或恢复选项组合。只有 Loop 的插件仍可使用 `--loop id@version`。
+
+目标必须已信任、已启用且可启动；引用、依赖或严格模型/权限准入失败会拒绝创建，不会退回普通会话。草稿提示词不会自动发送。

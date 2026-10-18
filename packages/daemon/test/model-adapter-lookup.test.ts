@@ -1,12 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import type { ResolvedProfile } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import { publishModelAdapterCatalog, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { ApisListResult, RouteDecl } from '@agnes/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { createLocalEndpoint } from '../src/local/index.js'
-import { modelAdapterLookup } from '../src/supervisor/model-adapter-lookup.js'
+import { readModelSelectionCatalog } from '../src/supervisor/model-adapter-lookup.js'
 
 const chatModel = fakeModel({ id: 'chat-1', route: 'gw' })
 const jevModel = fakeModel({ id: 'jev-1', route: 'jev', api: 'typesafe-systemone', input: ['text'] })
@@ -29,8 +31,8 @@ const acmePayloadOnly = adapter('acme', { payload: true, payloadOnly: true })
 /** What `apis.list` answers on a supervisor: its host is a profile, its adapters come from `lookup`. */
 async function listed(
   declared: RouteDecl[],
-  worker: Parameters<typeof modelAdapterLookup>[0]['worker'],
-  waitMs = 2_000,
+  source: RuntimePluginSnapshot | undefined,
+  published: readonly (typeof acmePayloadOnly)[] = [],
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnesd-adapter-lookup-'))
   const { host } = await createTestHost({
@@ -52,14 +54,25 @@ async function listed(
   // The routes under test are declared on the profile the supervisor serves; the lookup reads the same.
   const profile = {
     ...host.profile,
-    provider: { ...host.profile.provider, routes: declared },
+    provider: { ...host.profile.provider, routes: declared, catalog: { include: [] } },
   }
   const served = new Proxy(host, {
     get: (target, key, receiver) => (key === 'profile' ? profile : Reflect.get(target, key, receiver)),
   })
+  const profileDir = join(dataDir, 'profiles', 'local-dev')
+  publishModelAdapterCatalog(
+    profileDir,
+    profile.hash,
+    published.map((adapter) => ({ ...adapter, models: [] })),
+    source ? [source] : [],
+  )
   const ep = createLocalEndpoint(served, {
     clock: () => Date.now(),
-    modelAdapters: modelAdapterLookup({ routes: () => profile.provider.routes ?? [], worker, waitMs }),
+    modelAdapters: readModelSelectionCatalog({
+      profile: () => profile,
+      profileDir,
+      sources: async () => (source ? [source] : []),
+    }),
   })
   try {
     await ep.handle({
@@ -93,60 +106,87 @@ async function listed(
   }
 }
 
-it('answers from the built-in registrations when every route uses one, and never asks the worker', async () => {
-  const worker = vi.fn(() => undefined)
+const source: RuntimePluginSnapshot = {
+  trusted: true,
+  enabled: true,
+  generation: 1,
+  snapshot: {
+    packageId: '@acme/adapter',
+    snapshotId: `sha256-${'a'.repeat(64)}`,
+    profile: 'local-dev',
+    version: '1.0.0',
+    integrity: `sha256-${'b'.repeat(64)}`,
+    treeIntegrity: `sha256-${'c'.repeat(64)}`,
+    capabilityHash: 'd'.repeat(64),
+    directory: '/synthetic/verified-adapter',
+    contributions: [],
+  },
+}
+
+it('answers from release registrations and configured models without a worker, excluding payload-only models', async () => {
   const { models } = await listed(
     [route('gw', 'openai-completions', chatModel), route('jev', 'typesafe-systemone', jevModel)],
-    worker,
+    undefined,
   )
   expect(models).toEqual(['gw/chat-1'])
-  expect(worker).not.toHaveBeenCalled()
 })
 
-it('lists a community route unfiltered, and promptly, while the worker is not running', async () => {
-  const worker = vi.fn(() => undefined)
-  const { models, elapsedMs } = await listed(
-    [route('gw', 'openai-completions', chatModel), route('acme-route', 'acme', acmeModel)],
-    worker,
-  )
-  expect(models).toEqual(['gw/chat-1', 'acme-route/acme-1'])
-  expect(worker).toHaveBeenCalled()
-  expect(elapsedMs).toBeLessThan(1_000)
-})
-
-it('leaves a community payload-only route out once the running worker reports its adapters', async () => {
-  const command = vi.fn(async () => ({ modelAdapters: [acmePayloadOnly] }))
+it('reads a community payload-only description from its verified publication, without session catalog admission', async () => {
   const { models } = await listed(
     [route('gw', 'openai-completions', chatModel), route('acme-route', 'acme', acmeModel)],
-    () => ({ command }) as never,
+    source,
+    [acmePayloadOnly],
   )
   expect(models).toEqual(['gw/chat-1'])
-  expect(command).toHaveBeenCalledWith('session.catalog', {}, expect.objectContaining({ timeoutMs: 2_000 }))
-}, 10_000)
-
-it('does not wait for a worker that does not answer', async () => {
-  const command = vi.fn(() => new Promise<never>(() => undefined))
-  const { models, elapsedMs } = await listed(
-    [route('gw', 'openai-completions', chatModel), route('acme-route', 'acme', acmeModel)],
-    () => ({ command }) as never,
-    50,
-  )
-  expect(models).toEqual(['gw/chat-1', 'acme-route/acme-1'])
-  expect(elapsedMs).toBeLessThan(1_000)
 })
 
-it('keeps the last adapters it read when the worker later fails to answer', async () => {
-  let answer: () => Promise<unknown> = async () => ({ modelAdapters: [acmePayloadOnly] })
-  const lookup = modelAdapterLookup({
-    routes: () => [{ api: 'acme' }],
-    worker: () => ({ command: () => answer() }) as never,
-    waitMs: 50,
-  })
-  expect((await lookup()).map((entry) => entry.id)).toContain('acme')
-  answer = () => new Promise<never>(() => undefined)
-  expect((await lookup()).map((entry) => entry.id)).toContain('acme')
-  answer = async () => {
-    throw new Error('worker closed')
+it('does not reuse a revoked or different-version community publication on a later request', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'agnesd-model-projection-'))
+  const profileDir = join(dataDir, 'profiles', 'local-dev')
+  mkdirSync(profileDir, { recursive: true })
+  let live = [source]
+  const profile = {
+    hash: 'profile',
+    packages: [],
+    provider: { routes: [route('acme-route', 'acme', acmeModel)], catalog: { include: [] } },
+  } as unknown as ResolvedProfile
+  publishModelAdapterCatalog(profileDir, profile.hash, [{ ...acmePayloadOnly, models: [] }], live)
+  const read = readModelSelectionCatalog({ profile: () => profile, profileDir, sources: async () => live })
+  try {
+    expect(await read()).toContainEqual(expect.objectContaining({ id: 'acme' }))
+    const adapter = {
+      ...acmePayloadOnly,
+      capabilities: { ...acmePayloadOnly.capabilities, payloadOnly: false },
+      models: [{ id: 'dynamic-1', route: 'acme-route' }],
+    }
+    let rows = [
+      {
+        plugin: `${source.snapshot.packageId}@${source.snapshot.snapshotId}/adapter`,
+        entryRevision: source.snapshot.snapshotId,
+      },
+    ]
+    const worker = { alive: true, command: async () => ({ modelAdapters: [adapter], sources: rows }) }
+    const running = readModelSelectionCatalog({
+      profile: () => profile,
+      profileDir,
+      sources: async () => live,
+      worker: () => worker,
+    })
+    expect(await running()).toContainEqual(
+      expect.objectContaining({ models: [{ id: 'dynamic-1', route: 'acme-route' }] }),
+    )
+    adapter.models = [{ id: 'dynamic-2', route: 'acme-route' }]
+    expect(await running()).toContainEqual(
+      expect.objectContaining({ models: [{ id: 'dynamic-2', route: 'acme-route' }] }),
+    )
+    rows = []
+    // A removed live registration cannot fall back to an older publication for this same code.
+    expect(await running()).not.toContainEqual(expect.objectContaining({ id: 'acme' }))
+    live = [{ ...source, snapshot: { ...source.snapshot, version: '2.0.0' } }]
+    expect(await read()).not.toContainEqual(expect.objectContaining({ id: 'acme' }))
+    live = [{ ...source, trusted: false }]
+    expect(await read()).not.toContainEqual(expect.objectContaining({ id: 'acme' }))
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true })
   }
-  expect((await lookup()).map((entry) => entry.id)).toContain('acme')
 })

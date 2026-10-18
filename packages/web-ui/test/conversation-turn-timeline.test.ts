@@ -169,6 +169,89 @@ describe('turn timeline', () => {
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
 
+  it.each([false, true])(
+    'shows workflow prose and tool results without a final assistant reference (live=%s)',
+    async (live) => {
+      const nodes = [
+        user,
+        tool('inspection', 'acme_inspect', {}, { resultPreview: 'ACME-001 inspection-due' }),
+        say('report', 'Inspect the filter on ACME-001.'),
+      ]
+      if (live) await render(nodes, turn(nodes))
+      await render(nodes, turn(nodes, { status: 'completed', endedAt: '2026-10-01T00:00:01.000Z' }))
+      expect(wrapper('report')?.hidden).toBe(false)
+      expect(wrapper('inspection')?.hidden).toBe(false)
+      expect(host.textContent).toContain('ACME-001 inspection-due')
+      expect(host.querySelector('[data-testid="turn-process-toggle"]')?.getAttribute('aria-expanded')).toBe(
+        'true',
+      )
+    },
+  )
+
+  it.each(['zh-CN', 'en'] as const)(
+    'keeps one total and call details inside the process (%s)',
+    async (locale) => {
+      const calls: UITurn['usage']['calls'] = [1, 2, 3].map((n) => ({
+        id: `call:${n}`,
+        seq: n + 2,
+        purpose: 'inference',
+        model: 'test-model',
+        creditSource: 'estimated',
+        tokens: { input: 777, output: 10, cacheRead: 0, cacheWrite: 0 },
+        billing: { usdMicros: 246, source: 'estimated', subscription: false },
+      }))
+      const nodes: UINode[] = [
+        user,
+        say('final', 'answer'),
+        ...calls.map((call) => ({
+          kind: 'cost' as const,
+          ...call,
+          source: call.creditSource,
+        })),
+      ]
+      const current = turn(nodes, {
+        // Late cost nodes can sit outside the turn's loaded node list.
+        nodeIds: ['user', 'final'],
+        status: 'completed',
+        finalAssistantId: 'final',
+        durationMs: 12000,
+        usage: {
+          totals: { input: 2331, output: 30, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+          calls,
+          cost: { usdMicros: 738, source: 'estimated', subscription: false },
+          reasoningComplete: true,
+          billingComplete: true,
+        },
+      })
+      for (const live of [true, false]) {
+        if (live) await render(nodes, { ...current, status: 'running' }, { t: translate(locale) })
+        await render(nodes, current, { t: translate(locale) })
+        const process = host.querySelector<HTMLElement>('.turn-process')
+        const body = process?.querySelector<HTMLElement>(':scope > .agh-disclosure-content')
+        expect(process?.hidden).toBe(false)
+        expect(body?.hidden).toBe(true)
+        expect(
+          host.querySelectorAll('[data-node-kind="cost"], .timeline-unassigned .call-usage'),
+        ).toHaveLength(0)
+        expect(host.querySelectorAll('[data-testid="turn-process-usage-total"]')).toHaveLength(1)
+        expect(body?.querySelector('[data-testid="turn-process-usage-total"]')?.textContent).toBe(
+          locale === 'zh-CN'
+            ? '输入 2.3K · 输出 30 · $0.000738（估算）'
+            : 'In 2.3K · Out 30 · $0.000738 (estimated)',
+        )
+        await click(process?.querySelector('[data-testid="turn-process-toggle"]'))
+        expect(body?.hidden).toBe(false)
+        const toggle = body?.querySelector('[data-testid="turn-usage-calls"]')
+        expect(toggle).toBeTruthy()
+        await click(toggle)
+        expect(body?.querySelectorAll('.turn-call')).toHaveLength(3)
+        await click(body?.querySelector('.turn-call .agh-disclosure-summary'))
+        expect(body?.querySelector('.turn-call .usage-grid')?.textContent).toContain('777')
+        await click(process?.querySelector('[data-testid="turn-process-toggle"]'))
+      }
+    },
+  )
+
   it('interleaves unboxed prose with one row per run of steps, and opens a run into its steps', async () => {
     const nodes: UINode[] = [
       user,

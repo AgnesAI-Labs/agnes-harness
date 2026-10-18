@@ -131,6 +131,7 @@ const request = (commandId = 'one'): UiActionParams => ({
 function fixture(
   components: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[] = [],
   collector = false,
+  additionalTools: readonly Pick<ToolDef, 'name' | 'parameters'>[] = [],
 ) {
   const rows: EventEnvelope[] = [],
     calls = new Map<string, DeferredInvocationReceipt>(),
@@ -138,6 +139,7 @@ function fixture(
   let checker: IntelligentUiCapabilities['checkArtifact'] = async () => 'not_found'
   let service: IntelligentUiInstance,
     available = true,
+    deferredSupported = true,
     now = 100000,
     lostWake = false,
     failDelivery = false,
@@ -197,8 +199,9 @@ function fixture(
       for (const receipt of calls.values()) await service.changed(receipt, signal)
     },
   }
-  const tools = () =>
-    available
+  const tools = () => [
+    ...additionalTools,
+    ...(available
       ? [
           {
             name: collector ? 'ui_submit' : 'adjust',
@@ -216,7 +219,8 @@ function fixture(
               : parameters,
           },
         ]
-      : []
+      : []),
+  ]
   const restart = () =>
     (service = createIntelligentUiService({
       binding: {
@@ -275,7 +279,9 @@ function fixture(
       capabilities: {
         checkArtifact: (ref, signal) => checker!(ref, signal),
         taskId: () => 'task',
-        supportsDeferredInvocations: true,
+        get supportsDeferredInvocations() {
+          return deferredSupported
+        },
         components: () => components,
         queue,
         tools,
@@ -305,6 +311,9 @@ function fixture(
       admitted = value
     },
     row,
+    deferredSupported: (value: boolean) => {
+      deferredSupported = value
+    },
     tool: (value: boolean) => (available = value),
     clock: (value: number) => (now = value),
     wakeFail: (value: boolean) => (lostWake = value),
@@ -1494,3 +1503,60 @@ it('publishes the checked input snapshot when a caller changes its object during
     (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]?.surface.data.file,
   ).toMatchObject({ artifact: { sha256: 'a'.repeat(64), size: 3 } })
 })
+
+it('admits the public component-library surface and delivers one successful authenticated action for duplicate command ids', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { pathToFileURL } = await import('node:url')
+  const root = `${process.cwd()}/examples/ui/component-library`
+  const descriptor = JSON.parse(await readFile(`${root}/src/agnes.client.json`, 'utf8'))
+  const example = await import(pathToFileURL(`${root}/surface.mjs`).href)
+  const f = fixture(descriptor.client.intelligentComponents, false, [
+    {
+      name: 'ui_example_ack',
+      parameters: Type.Object({ message: Type.String({ maxLength: 64 }) }, { additionalProperties: false }),
+    },
+  ])
+  await f.service().render({ surface: example.reviewSurface() }, signal)
+  const request: UiActionParams = {
+    sessionId: 'session',
+    surfaceId: 'component-review',
+    revision: 1,
+    actionId: 'confirm',
+    commandId: 'example-confirm',
+    confirmed: true,
+    input: {},
+    selection: {},
+  }
+  expect(await f.service().action(request, actor, signal)).toMatchObject({ status: 'received' })
+  await f.outcome('succeeded')
+  expect(await f.service().action(request, actor, signal)).toMatchObject({
+    status: 'succeeded',
+    duplicate: true,
+  })
+  expect(f.calls.size).toBe(1)
+  expect(f.deliveries.size).toBe(1)
+  const input = f.rows.find((row) => row.type.endsWith('/inbox'))!.data as {
+    system: { source: string; type: string; data: { status: string } }
+  }
+  expect(input.system).toMatchObject({
+    source: 'agnes/intelligent-ui',
+    type: 'action-result',
+    data: { status: 'succeeded' },
+  })
+})
+
+it.each(['undeclared-action', 'illegal-params', 'missing-confirmation', 'no-deferred', 'disabled'] as const)(
+  'refuses an Intelligent UI action with %s before dispatch',
+  async (reason) => {
+    const f = await opened()
+    const value = request()
+    if (reason === 'undeclared-action') value.actionId = 'not-declared'
+    if (reason === 'illegal-params') value.input = { adjustment: { amount: 'wrong', reason: 'reviewed' } }
+    if (reason === 'missing-confirmation') value.confirmed = false
+    if (reason === 'no-deferred') f.deferredSupported(false)
+    if (reason === 'disabled') f.tool(false)
+    const receipt = await f.service().action(value, actor, signal)
+    expect(receipt.status).toBe('rejected')
+    expect(f.calls.size).toBe(0)
+  },
+)

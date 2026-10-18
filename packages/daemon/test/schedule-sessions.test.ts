@@ -1,9 +1,18 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { openDaemonScheduleDb } from '@agnes/base/schedule'
 import { JobsRepo } from '@agnes/daemon-foundation/jobs/repo'
 import { Scheduler } from '@agnes/daemon-foundation/jobs/scheduler'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { NoticeSink } from '@agnes/daemon-foundation/local/notice'
-import { describe, expect, it } from 'vitest'
+import { createTestHost } from '@agnes/host/testkit'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import * as sdk from '@agnes/sdk'
+import { handleServiceCommand } from '@agnes/worker-runtime'
+import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   failureOf,
@@ -197,5 +206,154 @@ it('records a scheduled park and notifies the owner and bound channel through th
     await scheduler.stop()
     await tasks.close()
     await tables.close()
+  }
+})
+
+it('saves and runs a hot-installed agent through the current worker catalog, refusing revocation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-hot-schedule-'))
+  const directory = join(root, 'package')
+  mkdirSync(directory)
+  const file = join(directory, 'package.json')
+  const manifest = {
+    name: '@acme/hot',
+    version: '1.0.0',
+    agnes: {
+      bundles: {
+        work: {
+          profile: { tools: ['read'] },
+          presets: { safe: { name: 'safe', extends: 'standard' } },
+          launch: { title: { en: 'Hot' }, description: { en: 'Synthetic' }, preset: 'safe' } as
+            | object
+            | undefined,
+        },
+      },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  const source: RuntimePluginSnapshot = {
+    trusted: true,
+    enabled: true,
+    generation: 1,
+    snapshot: {
+      packageId: manifest.name,
+      version: '1.0.0',
+      profile: 'local-dev',
+      snapshotId: 'synthetic',
+      integrity: 'synthetic-integrity',
+      capabilityHash: 'synthetic-capability',
+      contributions: [],
+      directory,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+    },
+  }
+  let sources: readonly RuntimePluginSnapshot[] = []
+  const { host } = await createTestHost({
+    dataDir: root,
+    script: [],
+    disableSessionTitle: true,
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      }),
+    packageDirs: Object.fromEntries(
+      ['base', 'code', 'ai'].map((id) => [
+        `@agnes/${id}`,
+        fileURLToPath(new URL(`../../${id}`, import.meta.url)),
+      ]),
+    ),
+    runtimePluginSources: async () => sources,
+    extensionLoader: {
+      import: async () => {
+        throw new Error('declarative source must not execute')
+      },
+    },
+  })
+  const opened: Awaited<ReturnType<typeof host.createSession>>[] = []
+  const client = vi.spyOn(sdk, 'createClient').mockImplementation(
+    () =>
+      ({
+        initialize: async () => ({}),
+        close: async () => {},
+        call: async () => ({}),
+        createSession: async (input: Parameters<sdk.NodeClient['createSession']>[0]) => {
+          const { sessionKey, ...selection } = input
+          const session = await host.createSession({
+            ...selection,
+            ...(sessionKey ? { key: sessionKey } : {}),
+          })
+          opened.push(session)
+          return { id: session.key }
+        },
+      }) as unknown as sdk.NodeClient,
+  )
+  const catalog = async () =>
+    (await handleServiceCommand(
+      host,
+      { kind: 'command', requestId: 'catalog', method: 'session.catalog', params: {} },
+      new Map(),
+    )) as import('../src/supervisor/schedule-sessions.js').ScheduleCatalog
+  const tables = sqliteTables()
+  let now = 10_000
+  const tasks = scheduledTasks({
+    db: openDaemonScheduleDb(tables.table('schedules')),
+    clock: () => now,
+    socketPath: '/synthetic-unused',
+    serverIdentity: { pid: 1, processStartId: 'synthetic' },
+    sources: {
+      workspaces: async () => [{ path: root, available: true }],
+      normalize: async (path) => path,
+      catalog,
+      presets: () => host.profile.presets.allowed,
+    },
+  })
+  try {
+    expect((await catalog()).bundles).toEqual([])
+    sources = [source]
+    const plan = await host.resolveAgent!('@acme/hot#work')
+    expect((await catalog()).bundles).toContainEqual({ id: plan.ref, sourcePackage: manifest.name })
+    const input = {
+      title: 'Hot',
+      prompt: 'Read',
+      selector: { every_seconds: 60 },
+      target: {
+        kind: 'new-session' as const,
+        cwd: root,
+        loop: plan.loop,
+        bundles: plan.bundles,
+        preset: plan.preset,
+        model: plan.model,
+      },
+    }
+    const saved = await tasks.upsert(input)
+    if (!('id' in saved)) throw new Error('hot schedule rejected')
+    // After save, running must depend on the saved selection rather than any launch declaration.
+    manifest.agnes.bundles.work.launch = undefined
+    writeFileSync(file, JSON.stringify(manifest))
+    const changed = {
+      ...source,
+      snapshot: { ...source.snapshot, treeIntegrity: hashDirectory(directory, { exclude: [] }) },
+    }
+    sources = [changed]
+    await expect(host.resolveAgent!(plan.ref)).rejects.toThrow('unknown agent')
+    now += 60_000
+    const job = new JobsRepo(tables.table('jobs'), () => now).claimDue(now, 'synthetic', 1000, 1)[0]
+    if (!job) throw new Error('schedule job missing')
+    expect(await tasks.hooks.prepare(job)).toEqual({ sessionKey: opened[0]!.key })
+    expect(opened[0]!.preset.name).toBe('safe')
+    expect(opened[0]!.currentTools().resolve('read')).toBeDefined()
+    for (const revoked of [[{ ...changed, enabled: false }], [{ ...changed, trusted: false }], []]) {
+      sources = revoked
+      await expect(tasks.upsert(input)).rejects.toMatchObject({ code: 'bundle_unavailable' })
+      await expect(tasks.hooks.prepare(job)).rejects.toThrow('bundle_unavailable')
+    }
+    expect(opened).toHaveLength(1)
+  } finally {
+    client.mockRestore()
+    await tasks.close()
+    for (const session of opened) await session.close()
+    await host.close()
+    await tables.close()
+    rmSync(root, { recursive: true, force: true })
   }
 })

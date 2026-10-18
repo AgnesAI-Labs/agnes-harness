@@ -30,7 +30,6 @@
           "displayName": "Conversation compaction",
           "summary": "Lets the agent shorten a long conversation to make room for continuing work.",
           "description": "Lets the agent shorten a long conversation to make room for continuing work.",
-          "category": "memory-context",
           "locales": {
             "zh-CN": {
               "displayName": "对话压缩",
@@ -40,6 +39,9 @@
           }
         }
       }
+    ],
+    "provides": [
+      "tool"
     ]
   }
 }

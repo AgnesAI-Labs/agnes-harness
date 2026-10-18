@@ -12,7 +12,6 @@ export async function createSkillCandidate(args, checked, ctx) {
         type: 'module',
         license: 'MIT',
         agnes: {
-          kinds: ['skills'],
           contributions: [
             {
               kind: 'skill',

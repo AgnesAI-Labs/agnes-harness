@@ -43,7 +43,6 @@
           "displayName": "Workflow hooks",
           "summary": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
           "description": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
-          "category": "integrations",
           "locales": {
             "zh-CN": {
               "displayName": "工作流钩子",

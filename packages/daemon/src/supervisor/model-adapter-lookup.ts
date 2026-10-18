@@ -1,11 +1,17 @@
-import { builtinModelAdapterCatalog } from '@agnes/host'
+import {
+  builtinModelAdapterCatalog,
+  builtinModelSelectionData,
+  conversationModelAdapters,
+  type ResolvedProfile,
+} from '@agnes/host'
+import {
+  type RuntimePluginSnapshot,
+  readPublishedModelAdapters,
+  withPackageVerification,
+} from '@agnes/package-manager'
 import type { AdminLoop, AdminModelAdapter } from '@agnes/protocol'
+import { type ModelCatalogWorker, readRunningModelCatalog } from './model-catalog-read.js'
 import type { WorkerLink } from './worker-link.js'
-
-type Adapter = Pick<AdminModelAdapter, 'id' | 'capabilities'>
-
-/** How long `apis.list` waits for a running worker to name its adapters before it answers without. */
-export const ADAPTER_LOOKUP_WAIT_MS = 2_000
 
 /** What the shared worker's assembled Host reports about sessions, as the supervisor reads it. */
 export type SharedSessionCatalog = {
@@ -22,58 +28,39 @@ export async function sharedSessionCatalog(pool: {
   return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as SharedSessionCatalog
 }
 
-/**
- * Which model adapters take payloads only, for the supervisor, which holds no adapter registry.
- *
- * It never starts or waits on a worker for the common case: when every declared route uses a
- * built-in registration, the built-in capabilities answer. Only a route of a community adapter makes
- * it ask, and then it asks the shared worker only if that worker is already running, for at most
- * `waitMs`. Otherwise, or if the worker fails or is late, it answers with the last catalog it read
- * (or the built-ins), so `apis.list` is never slower than `waitMs` and never fails; the host gate
- * still refuses a payload-only model whichever list it came from.
- */
-export function modelAdapterLookup(o: {
-  routes(): readonly Readonly<{ api: string }>[]
-  /** The shared worker, only if it is already running. */
-  worker(): Pick<WorkerLink, 'command'> | undefined
-  waitMs?: number
-}): () => Promise<readonly Adapter[]> {
-  const waitMs = o.waitMs ?? ADAPTER_LOOKUP_WAIT_MS
-  const builtin = builtinModelAdapterCatalog()
-  const builtinIds = new Set(builtin.map((adapter) => adapter.id))
-  let last: readonly Adapter[] | undefined
-  return async () => {
-    if (o.routes().every((route) => builtinIds.has(route.api))) return builtin
-    const worker = o.worker()
-    if (!worker) return last ?? builtin
-    let timer: ReturnType<typeof setTimeout> | undefined
-    try {
-      const catalog = (await Promise.race([
-        worker.command('session.catalog', {}, { timeoutMs: waitMs }),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('adapter lookup timed out')), waitMs)
-        }),
-      ])) as { modelAdapters: readonly Adapter[] }
-      last = catalog.modelAdapters
-      return last
-    } catch {
-      return last ?? builtin
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-}
-
-/**
- * The supervisor's lookup over its own profile and worker pool. Create it once per daemon, not per
- * connection: the catalog it last read is then shared by every connection.
- */
-export function supervisorAdapterLookup(
-  host: { profile: { provider: { routes?: readonly Readonly<{ api: string }>[] } } },
-  pool: { businessWorker(): { link: Pick<WorkerLink, 'command'> } | undefined },
-): ReturnType<typeof modelAdapterLookup> {
-  return modelAdapterLookup({
-    routes: () => host.profile.provider.routes ?? [],
-    worker: () => pool.businessWorker()?.link,
-  })
+/** Model pickers need route declarations and registration descriptions, not session composition.
+ * A community description is published by real Host assembly and is usable only while its exact
+ * source remains verified and trusted. Nothing returned here can admit a session or execute code. */
+export function readModelSelectionCatalog(input: {
+  profile(): ResolvedProfile
+  profileDir: string
+  sources(): Promise<readonly RuntimePluginSnapshot[]>
+  worker?(): ModelCatalogWorker | undefined
+}): () => Promise<AdminModelAdapter[]> {
+  return () =>
+    withPackageVerification(async () => {
+      const profile = input.profile()
+      const sources = await input.sources()
+      const live = await readRunningModelCatalog(
+        input.worker?.(),
+        sources,
+        builtinModelAdapterCatalog(profile),
+      )
+      if (live) return [...live]
+      const published = readPublishedModelAdapters(input.profileDir, profile.hash, sources)
+      const builtin = await builtinModelSelectionData(profile)
+      const adapters = new Map(builtin.adapters.map((a) => [a.id, a]))
+      for (const entry of published) adapters.set(entry.id, entry)
+      const models = new Map(builtin.models.map((m) => [`${m.route}\0${m.id}`, m]))
+      for (const adapter of published)
+        for (const model of adapter.models) {
+          if (model.route)
+            models.set(`${model.route}\0${model.id}`, {
+              id: model.id,
+              route: model.route,
+              api: adapter.wireApi,
+            })
+        }
+      return conversationModelAdapters([...adapters.values()], [...models.values()], builtin.routes)
+    })
 }

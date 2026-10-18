@@ -8,11 +8,14 @@ import { parseAgnesPluginEntries } from './plugin-manifest.js'
 import { hashDirectory } from './sources.js'
 
 /** Explicit dev entry point: inspect local data before executable code is imported. */
-export function readDevelopmentPlugin(directory: string, profile: string): RuntimePluginSnapshot {
+export async function readDevelopmentPlugin(
+  directory: string,
+  profile: string,
+): Promise<RuntimePluginSnapshot> {
   directory = resolve(directory)
   const pkg = readStaticJson(join(directory, 'package.json'))
   const integrity = hashDirectory(directory, { exclude: [] })
-  const { preview, treeIntegrity } = inspectStaged({
+  const { preview, treeIntegrity } = await inspectStaged({
     dir: directory,
     source: { type: 'file', ref: 'file:./development' },
     fetched: {
@@ -39,6 +42,8 @@ export function readDevelopmentPlugin(directory: string, profile: string): Runti
       version: preview.version,
       capabilityHash: preview.capabilityHash,
       contributions: preview.contributions,
+      ...(preview.agents ? { agents: preview.agents } : {}),
+      ...(preview.application ? { application: preview.application } : {}),
       dependencies: preview.dependencies,
       ...(preview.declaredCapabilities === undefined
         ? {}
@@ -65,6 +70,9 @@ export function developmentPluginRows(
   const declarations = parseAgnesPluginEntries(
     snapshot.packageId,
     (pkg.agnes as { plugins?: unknown } | undefined)?.plugins,
+    // Startup also uses this builder for integrity-checked, persisted runtime snapshots.
+    // The explicit development reader above still admits only current author declarations.
+    { stored: true },
   )
   const rows: Readonly<PluginRow>[] = declarations
     .filter((entry) => !isResourceOwnedRowId(entry.id))

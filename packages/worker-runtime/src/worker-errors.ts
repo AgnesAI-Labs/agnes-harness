@@ -4,5 +4,19 @@ import { attachmentErrorCode, rpcError } from '@agnes/protocol'
 /** Preserve a fixed attachment refusal across the worker link without exposing native messages. */
 export function workerDomainFailure(error: unknown) {
   const code = attachmentErrorCode(error)
-  return code ? rpcError('INVALID_PARAMS', { code }) : domainFailureFromUnknown(error)
+  if (code) return rpcError('INVALID_PARAMS', { code })
+  const failure = domainFailureFromUnknown(error)
+  if (failure.code === 'E_PRESET_UNSUPPORTED') {
+    if (failure.reason === 'bundle-unavailable')
+      return rpcError('SEMANTIC_REJECTED', {
+        code: 'BUNDLE_UNAVAILABLE',
+        reason: 'selected bundle is not installed, enabled and trusted',
+      })
+    if (failure.reason === 'preset-not-allowed')
+      return rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed' })
+  }
+  // Preserve closed admission refusals as RPC errors; the daemon must not turn them into UNKNOWN.
+  if (['E_PRESET_UNSUPPORTED', 'E_PRESET_UNRESOLVED', 'E_MODEL_UNSUPPORTED'].includes(failure.code))
+    return rpcError('PRESET_SWITCH_REJECTED', { code: failure.code })
+  return failure
 }

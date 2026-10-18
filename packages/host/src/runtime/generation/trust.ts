@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { HostError } from '@agnes/host-common/errors'
 import { capabilityHash, lockPath, type RuntimePluginSnapshot, readLock } from '@agnes/package-manager'
+import type { HostOptions } from '../lifecycle/host.js'
 
 /** Code pins preserve an approved snapshot, never a revoked package grant. Enablement is independent. */
 export async function assertGenerationTrust(
@@ -25,7 +26,10 @@ export async function assertGenerationTrust(
         (source) =>
           source.trusted &&
           source.snapshot.packageId === snapshot.packageId &&
+          source.snapshot.snapshotId === snapshot.snapshotId &&
+          source.snapshot.version === snapshot.version &&
           source.snapshot.integrity === snapshot.integrity &&
+          source.snapshot.treeIntegrity === snapshot.treeIntegrity &&
           source.snapshot.capabilityHash === snapshot.capabilityHash,
       )
     )
@@ -39,7 +43,9 @@ export async function assertGenerationTrust(
       entry.trustDecision?.integrity !== entry.integrity ||
       entry.trustDecision.capabilityHash !== capabilityHash(entry) ||
       (entry.integrity === snapshot.integrity &&
-        entry.trustDecision.capabilityHash !== snapshot.capabilityHash)
+        (entry.version !== snapshot.version ||
+          entry.treeIntegrity !== snapshot.treeIntegrity ||
+          entry.trustDecision.capabilityHash !== snapshot.capabilityHash))
     )
       throw new HostError(
         'E_WORKSPACE_UNTRUSTED',
@@ -47,4 +53,56 @@ export async function assertGenerationTrust(
         { detail: { packageId: snapshot.packageId, generationRestore: true } },
       )
   }
+}
+
+/** Let each publisher resolve explicit development reloads as well as installed source identities. */
+export function generationSourceReader(
+  options: Pick<HostOptions, 'runtimePluginSources' | 'runtimePluginCatalogue' | 'runtimePluginSnapshots'>,
+  development: ReadonlyMap<string, RuntimePluginSnapshot>,
+) {
+  return async () => {
+    const available =
+      (await options.runtimePluginSources?.()) ??
+      options.runtimePluginCatalogue ??
+      options.runtimePluginSnapshots ??
+      []
+    return [
+      ...new Map(
+        [...available, ...development.values()].map(
+          (source) => [`${source.snapshot.packageId}@${source.snapshot.snapshotId}`, source] as const,
+        ),
+      ).values(),
+    ]
+  }
+}
+
+/** Authoring rechecks the existing generation trust authority even inside an already-open turn. */
+export function generationAuthoringAuthority(
+  options: Pick<HostOptions, 'profileDir' | 'agnesVersion' | 'runtimePluginSources' | 'pluginManage'>,
+  profile: string,
+  sourcesFor: (sessionKey: string) => readonly RuntimePluginSnapshot[] | undefined,
+) {
+  const assertTrust = (sources: readonly RuntimePluginSnapshot[]) =>
+    assertGenerationTrust(
+      sources,
+      options.profileDir,
+      profile,
+      options.agnesVersion ?? '0.0.0',
+      options.runtimePluginSources,
+    )
+  const bridge = options.pluginManage
+  const pluginManage: HostOptions['pluginManage'] =
+    bridge &&
+    (async (invocation, signal) => {
+      signal.throwIfAborted()
+      const sources = sourcesFor(invocation.sessionKey)
+      if (!sources)
+        throw Object.assign(new Error('Authoring generation is unavailable'), {
+          code: 'PLUGIN_MANAGEMENT_UNAVAILABLE',
+        })
+      await assertTrust(sources)
+      signal.throwIfAborted()
+      return bridge(invocation, signal)
+    })
+  return { assertTrust, pluginManage }
 }

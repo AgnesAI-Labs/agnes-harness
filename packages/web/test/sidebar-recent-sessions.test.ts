@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { resolve } from 'node:path'
-import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
+import type { PageSessionMeta, SessionGroupsResult, WorkspaceEntry } from '@agnes/protocol'
 import type { SidebarGroupState } from '@agnes/web-units'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import {
   resetExpandedGroups,
   shownSessions,
 } from '../src/navigation.js'
+import { createSidebarPagination } from '../src/sidebar-pagination.js'
 import { zhT } from './helpers/locale.js'
 
 const WORKSPACE = '/work/WorkLLM'
@@ -65,6 +66,120 @@ afterEach(() => {
 })
 
 describe('recent sessions per workspace', () => {
+  it.each(['success', 'summary failure', 'page failure'] as const)(
+    'retains rows and the disabled pagination button throughout a message refresh: %s',
+    async (outcome) => {
+      const nav = document.createElement('nav')
+      document.body.append(nav)
+      const summary: SessionGroupsResult = {
+        ready: true,
+        items: [
+          { groupId: 'a', workspaceId: 'a', total: 8, revision: 'v1', ready: true, lastMessageAt: null },
+        ],
+      }
+      const page: PageSessionMeta = {
+        items: Array.from({ length: 5 }, (_, i) => session(i)),
+        total: 8,
+        revision: 'v1',
+        next: 'old-cursor',
+      }
+      let finishSummary!: (value: SessionGroupsResult) => void,
+        failSummary!: (error: unknown) => void,
+        finishPage!: (value: PageSessionMeta) => void,
+        failPage!: (error: unknown) => void
+      const pendingSummary = new Promise<SessionGroupsResult>((resolve, reject) => {
+        finishSummary = resolve
+        failSummary = reject
+      })
+      const pendingPage = new Promise<PageSessionMeta>((resolve, reject) => {
+        finishPage = resolve
+        failPage = reject
+      })
+      const groups = vi.fn(async () => summary)
+      const list = vi.fn(async () => page)
+      const frames: {
+        button: Element | null
+        disabled: boolean | undefined
+        reload: boolean
+        row: Element | null
+      }[] = []
+      const ui = createSidebarPagination(
+        { groups, list },
+        () => {
+          flushSync(() =>
+            renderSessionNavigation(
+              {
+                nav,
+                sessions: ui.rows(),
+                workspaces: [{ ...workspace, workspaceId: 'a' }],
+                labels: new Map(),
+                newSession: vi.fn(),
+                open: vi.fn(),
+                paging: ui.snapshot(),
+                groupAction: (id, action) => {
+                  void ui.action(id, action)
+                },
+              },
+              zhT,
+            ),
+          )
+          const button = nav.querySelector<HTMLButtonElement>('[data-testid="workspace-sessions-toggle"]')
+          frames.push({
+            button,
+            disabled: button?.disabled,
+            reload: nav.textContent?.includes(zhT('nav.updated')) ?? false,
+            row: nav.querySelector('[data-session="s0"]'),
+          })
+        },
+        () => 'Failed',
+      )
+      await ui.refresh()
+      const button = nav.querySelector<HTMLButtonElement>('[data-testid="workspace-sessions-toggle"]')
+      const firstRow = nav.querySelector<HTMLButtonElement>('[data-session="s0"]')
+      firstRow?.focus()
+      const scroller = nav.querySelector<HTMLElement>('.workspace-sessions')
+      if (scroller) scroller.scrollTop = 42
+      frames.length = 0
+      groups.mockImplementationOnce(() => pendingSummary)
+      list.mockImplementationOnce(() => pendingPage)
+      ui.invalidateSession('s0', WORKSPACE, [{ path: WORKSPACE, workspaceId: 'a' }])
+      const refresh = ui.refresh()
+      expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')).toBe(button)
+      expect(button?.disabled).toBe(true)
+      button?.click()
+      await Promise.resolve()
+      expect(list).toHaveBeenCalledTimes(1)
+      if (outcome === 'summary failure') failSummary(new Error('offline'))
+      else {
+        finishSummary({ ...summary, items: summary.items.map((item) => ({ ...item, revision: 'v2' })) })
+        await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+        expect(button?.disabled).toBe(true)
+        button?.click()
+        if (outcome === 'page failure') failPage(new Error('offline'))
+        else finishPage({ ...page, revision: 'v2', next: 'fresh-cursor' })
+      }
+      await refresh
+      const during = frames.slice(0, -1)
+      expect(during.length).toBeGreaterThan(0)
+      expect(
+        during.every(
+          (frame) => frame.button === button && frame.disabled && !frame.reload && frame.row === firstRow,
+        ),
+      ).toBe(true)
+      expect(nav.querySelector('[data-session="s0"]')).toBe(firstRow)
+      expect(document.activeElement).toBe(firstRow)
+      expect(scroller?.scrollTop).toBe(42)
+      if (outcome === 'success') {
+        expect(frames.every((frame) => frame.button === button && !frame.reload)).toBe(true)
+        expect(button?.disabled).toBe(false)
+        expect(ui.snapshot().groups[0]?.next).toBe('fresh-cursor')
+      } else {
+        expect(nav.textContent).toContain('Failed')
+        expect(nav.textContent).toContain(zhT('nav.reload'))
+        expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')).toBeNull()
+      }
+    },
+  )
   it.each(['win32', 'darwin'] as const)(
     'renders quiet server pages on %s and unmounts a closed group',
     (runtimePlatform) => {
@@ -114,12 +229,13 @@ describe('recent sessions per workspace', () => {
         [...nav.querySelectorAll('button')].find((button) => button.textContent === '重试')?.click(),
       )
       expect(action).toHaveBeenLastCalledWith('a', 'retry')
-      delete group.error
       group.loading = true
       flushSync(draw)
       expect(more.disabled).toBe(true)
       expect(nav.querySelector('.workspace-sessions')?.getAttribute('aria-busy')).toBe('true')
       expect(nav.querySelector('[role="status"]')).toBeNull()
+      expect(nav.querySelector('[role="alert"]')).toBeNull()
+      delete group.error
       group.stale = true
       flushSync(draw)
       expect(nav.querySelector('[role="status"]')).toBeNull()

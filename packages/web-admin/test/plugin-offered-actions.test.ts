@@ -39,7 +39,6 @@ it('offers no ordinary management actions for any parent-owned example', () => {
       displayName: 'Example',
       summary: 'Example',
       description: 'Example',
-      category: 'example' as const,
       exampleOf: 'acme/parent',
     },
   }
@@ -47,7 +46,13 @@ it('offers no ordinary management actions for any parent-owned example', () => {
   expect(
     offeredActions(page)({
       ...example,
-      metadata: { displayName: 'FDE', summary: 'FDE', description: 'FDE', category: 'business-agent' },
+      metadata: { displayName: 'FDE', summary: 'FDE', description: 'FDE' },
+      agents: [
+        {
+          ref: 'acme/kit#work',
+          launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+        },
+      ],
     }),
   ).toHaveLength(3)
 })

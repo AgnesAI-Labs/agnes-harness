@@ -22,7 +22,6 @@
           "displayName": "Reasoning and tools Loop",
           "summary": "Alternates model reasoning and tool calls to carry a task through successive steps.",
           "description": "Alternates model reasoning and tool calls to carry a task through successive steps.",
-          "category": "agent-loop",
           "locales": {
             "zh-CN": {
               "displayName": "推理与工具 Loop",
@@ -37,7 +36,6 @@
       "displayName": "Reasoning and tools Loop",
       "summary": "Alternates model reasoning and tool calls to carry a task through successive steps.",
       "description": "Alternates model reasoning and tool calls to carry a task through successive steps.",
-      "category": "agent-loop",
       "locales": {
         "zh-CN": {
           "displayName": "推理与工具 Loop",
@@ -45,6 +43,9 @@
           "description": "交替执行模型推理与工具调用，逐步推进任务。"
         }
       }
-    }
+    },
+    "provides": [
+      "loop"
+    ]
   }
 }

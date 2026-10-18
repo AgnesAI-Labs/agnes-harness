@@ -1,4 +1,11 @@
-import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
+import {
+  applicationBrand,
+  applicationIdentity,
+  type LocaleService,
+  SlotOutlet,
+  type SlotRegistry,
+  SlotsProvider,
+} from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
 import {
   Topbar,
@@ -6,10 +13,28 @@ import {
   type TopbarHandle,
   type TopbarStatusDetails,
 } from '@agnes/web-units/shell'
+import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { type EmptyStateRegionMount, rootStableRegistry, TOPBAR_SLOT } from './contracts.js'
 export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
   ready: Promise<void>
+}
+function BrandedTopbar({
+  locale,
+  setHandle,
+}: {
+  locale: LocaleService
+  setHandle(value: TopbarHandle | null): void
+}) {
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  useSyncExternalStore(locale.subscribe, locale.getSnapshot)
+  return (
+    <Topbar
+      ref={setHandle}
+      productTitle={applicationBrand(locale.locale).title}
+      translate={(key, vars) => locale.t(key, vars)}
+    />
+  )
 }
 /** Mount the component-owned topbar behind a replaceable SlotOutlet. */
 export function mountTopbarRegion(
@@ -51,7 +76,7 @@ export function mountTopbarRegion(
   registry.declare(TOPBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   const removeBuiltin = registry.register(
     { name: TOPBAR_SLOT as string, id: 'builtin-topbar', owner: '@agnes/web-topbar', priority: 0 },
-    () => <Topbar ref={setHandle} translate={(key, vars) => locale.t(key, vars)} />,
+    () => <BrandedTopbar setHandle={setHandle} locale={locale} />,
   )
   container.replaceChildren()
   const root = createRegionRenderer(container)

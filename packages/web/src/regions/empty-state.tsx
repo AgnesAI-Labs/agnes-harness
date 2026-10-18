@@ -1,4 +1,6 @@
 import {
+  applicationBrand,
+  applicationIdentity,
   type LocaleService,
   type SessionService,
   SlotOutlet,
@@ -8,25 +10,21 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { AnimatedTagline, createRegionRenderer } from '@agnes/web-ui'
 import { Welcome, XProvider } from '@agnes/web-ui/x'
-import { type ReactElement, useEffect } from 'react'
+import { type ReactElement, useEffect, useSyncExternalStore } from 'react'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
-const APP_BRAND = 'Agnes Harness'
 type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
 export function EmptyStateBuiltin({ t = (key) => key }: { t?: EmptyStateText }): ReactElement {
+  const identity = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const brand = applicationBrand(document.documentElement.lang)
   useEffect(() => {
     void businessAgentSuggestions.refresh()
   }, [])
   return (
     <div data-agnes-region-owner="builtin" data-agnes-region-unit="empty-state">
       <div className="conversation-hero-dsh" data-agnes-conversation-hero={true}>
-        <SlotOutlet
-          name="conversation.hero.brand.mark"
-          props={{ owner: { surface: 'conversation.hero' } }}
-          hideWhenEmpty={true}
-        />
         <SlotOutlet
           name="conversation.hero.workspace"
           props={{ owner: { surface: 'conversation.hero' } }}
@@ -49,9 +47,18 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: EmptyStateText }):
           rootClassName="empty-state-welcome"
           title={
             <span className="empty-state-lockup">
-              <span className="agnes-mark empty-brand-mark" aria-hidden="true" />
+              <SlotOutlet
+                name="conversation.hero.brand.mark"
+                fallback={
+                  identity?.assets.mark ? (
+                    <img src={identity.assets.mark} alt="" className="empty-brand-mark" />
+                  ) : (
+                    <span className="agnes-mark empty-brand-mark" aria-hidden="true" />
+                  )
+                }
+              />
               <span id="empty-state-title" className="empty-state-heading" translate="no">
-                {APP_BRAND}
+                {brand.name}
               </span>
             </span>
           }

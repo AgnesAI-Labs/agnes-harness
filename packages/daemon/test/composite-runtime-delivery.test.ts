@@ -41,7 +41,13 @@ describe('CompositeRuntimeDelivery', () => {
       store.qualifyConverged(1, lastGood, { hash: lastGood.identity.treeHash, ok: true, rows: [] }),
     ).toBe(true)
     store.publishDesired(newer)
-    const delivery = new CompositeRuntimeDelivery(store)
+    const qualified: (string | undefined)[] = []
+    const delivery = new CompositeRuntimeDelivery(store, {
+      onConverged: () => {
+        qualified.push(store.lastGood()?.digest)
+        throw new Error('Synthetic notification sink closed')
+      },
+    })
     const boot = delivery.bootFor(4)
     expect(boot).toEqual({ artifact: lastGood, source: 'lastGood' })
     if (!boot) throw new Error('expected lastGood boot')
@@ -70,6 +76,7 @@ describe('CompositeRuntimeDelivery', () => {
       }),
     ).toBe(false)
     expect(store.pending()).toBe(true)
+    expect(qualified).toEqual([])
     expect(
       delivery.handleWorkerFrame(4, {
         type: 'runtime.converged',
@@ -83,6 +90,7 @@ describe('CompositeRuntimeDelivery', () => {
     ).toBe(true)
     expect(store.pending()).toBe(false)
     expect(store.lastGood()?.digest).toBe(newer.digest)
+    expect(qualified).toEqual([newer.digest])
   })
 
   it.each(['success', 'refusal', 'exit'] as const)(

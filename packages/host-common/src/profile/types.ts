@@ -187,6 +187,7 @@ export type ManagedPolicy = {
 }
 
 export type LockPackageState = {
+  source?: { type: string; ref: string }
   version: string
   integrity: string
   trust: 'builtin' | 'trusted'

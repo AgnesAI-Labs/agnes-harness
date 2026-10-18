@@ -29,7 +29,7 @@ export const topbarLocaleCatalog: LocaleCatalog = {
     'topbar.rename.cancel': '取消改名',
     'topbar.rename.invalid': '请输入会话名称。',
     'topbar.rename.failed': '会话名称保存失败，请重试。',
-    'topbar.agent': 'Agent：{name}',
+    'topbar.agent': '智能体：{name}',
     'topbar.stop': '停止',
     'topbar.defaultTitle': '新会话',
     'topbar.defaultStatus': '准备任务',

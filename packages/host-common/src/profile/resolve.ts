@@ -504,7 +504,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       // unbootable. `integrity` is a deliberate sentinel: anything matching a digest pattern would
       // be a claim nothing verified. Only the closed builtin set gets this; every other package
       // still needs a lock entry.
-      if (builtin.has(ref.id)) {
+      if (builtin.has(ref.id) && ref.source === 'builtin') {
         packages.push({
           id: ref.id,
           version: env.agnesVersion,
@@ -521,12 +521,24 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
         detail: { id: ref.id },
       })
     }
+    if (
+      st.trust === 'builtin' &&
+      (!builtin.has(ref.id) ||
+        ref.source !== 'builtin' ||
+        st.source?.type !== 'builtin' ||
+        st.source.ref !== 'builtin' ||
+        st.version !== env.agnesVersion ||
+        st.integrity !== `builtin:${env.agnesVersion}`)
+    )
+      throw new HostError('E_LOCK_MISMATCH', `package ${ref.id} cannot claim release identity`, {
+        detail: { id: ref.id, reason: 'builtin-provenance' },
+      })
     packages.push({
       id: ref.id,
       version: st.version,
       source: ref.source,
       integrity: st.integrity,
-      trust: builtin.has(ref.id) ? 'builtin' : st.trust,
+      trust: st.trust,
       enabled: ref.enabled ?? st.enabled,
       ...(ref.config === undefined ? {} : { config: structuredClone(ref.config) }),
       ...(st.provides ? { provides: [...st.provides] } : {}),

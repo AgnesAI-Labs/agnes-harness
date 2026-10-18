@@ -70,3 +70,53 @@ it('preserves attachment admission reasons on the wire with fixed text and no ar
   expect(new JsonlDecoder().feed(encodeFrame(frame))).toEqual([frame])
   expect(JSON.stringify(failure)).not.toContain('private')
 })
+
+it.each([
+  ...['E_PRESET_UNSUPPORTED', 'E_PRESET_UNRESOLVED', 'E_MODEL_UNSUPPORTED'].map((code) => ({
+    code,
+    reason: undefined,
+    wire: -32008,
+    message: 'PRESET_SWITCH_REJECTED',
+    data: { code },
+  })),
+  {
+    code: 'E_PRESET_UNSUPPORTED',
+    reason: 'bundle-unavailable',
+    wire: -32011,
+    message: 'SEMANTIC_REJECTED',
+    data: { code: 'BUNDLE_UNAVAILABLE', reason: 'selected bundle is not installed, enabled and trusted' },
+  },
+  {
+    code: 'E_PRESET_UNSUPPORTED',
+    reason: 'preset-not-allowed',
+    wire: -32008,
+    message: 'PRESET_SWITCH_REJECTED',
+    data: { code: 'PRESET_SWITCH_REJECTED', reason: 'not in presets.allowed' },
+  },
+  {
+    code: 'E_PRESET_UNSUPPORTED',
+    reason: 'private-reason',
+    wire: -32008,
+    message: 'PRESET_SWITCH_REJECTED',
+    data: { code: 'E_PRESET_UNSUPPORTED' },
+  },
+  {
+    code: 'E_MODEL_UNSUPPORTED',
+    reason: 'bundle-unavailable',
+    wire: -32008,
+    message: 'PRESET_SWITCH_REJECTED',
+    data: { code: 'E_MODEL_UNSUPPORTED' },
+  },
+])(
+  'preserves $code ($reason) as a safe RPC refusal across the worker and daemon',
+  async ({ code, reason, wire, message, data }) => {
+    const { workerDomainFailure } = await import('../src/worker-errors.js')
+    const failure = workerDomainFailure({
+      code,
+      message: 'private path',
+      detail: { reason, secret: 'private' },
+    })
+    expect(failure).toEqual({ code: wire, message, data })
+    expect(JSON.stringify(failure)).not.toContain('private')
+  },
+)

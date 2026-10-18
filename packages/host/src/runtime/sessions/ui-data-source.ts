@@ -316,6 +316,9 @@ function sealedSnapshotAtoms(snapshot: RuntimeSnapshot): { hashMatches: boolean;
   const recomputed = capabilityHash({
     contributions: [...snapshot.contributions],
     dependencies: { ...snapshot.dependencies },
+    ...(snapshot.metadata ? { metadata: snapshot.metadata } : {}),
+    ...(snapshot.agents ? { agents: snapshot.agents } : {}),
+    ...(snapshot.application ? { application: snapshot.application } : {}),
     ...(snapshot.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: snapshot.declaredCapabilities }),

@@ -4,6 +4,7 @@ import type { SessionJob } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { fireEvent, within } from '@testing-library/dom'
+import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
@@ -100,14 +101,15 @@ it('auto-opens once, lists Agent jobs read-only, retains completed output until 
   const agent = job()
   const listed = [agent]
   const { host, jobsControl } = mount(listed)
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2))
+  expect(host.querySelector('.workbench-terminal-tabs')?.getAttribute('role')).toBe('toolbar')
   expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell: 'zsh', columns: 100, rows: 30 })
   expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(1)
   expect(host.textContent).not.toContain('关闭工作台后')
   click(host.querySelector('#terminal-tab-job'))
   await vi.waitFor(() =>
     expect(host.querySelector('.workbench-terminal-readonly')?.textContent).toContain(
-      'Agent 运行的命令 · 只读',
+      '智能体运行的命令 · 只读',
     ),
   )
   await vi.waitFor(() => expect(host.querySelector('input')?.disabled).toBe(true))
@@ -120,22 +122,22 @@ it('auto-opens once, lists Agent jobs read-only, retains completed output until 
   click(host.querySelector('#terminal-tab-human-1'))
   click(host.querySelector('#terminal-tab-job'))
   await vi.waitFor(() => expect(host.textContent).toContain('retained output'))
-  expect(host.querySelector('#terminal-tab-job')?.getAttribute('aria-selected')).toBe('true')
+  expect(host.querySelector('#terminal-tab-job')?.getAttribute('aria-pressed')).toBe('true')
   const agentActions = await menu(host.querySelector('#terminal-tab-job') as HTMLElement, true)
   expect(agentActions.queryByText('重命名')).toBeNull()
   click(agentActions.getByText('取消跟随'))
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
   const actions = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
   click(actions.getByRole('menuitem', { name: /新建终端 · bash/ }))
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2))
   expect(localStorage.getItem('agnes.workbench.terminal.shell')).toBe('bash')
   click(host.querySelector('[data-testid=terminal-new]'))
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(3))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(3))
 })
 
 it('does not reopen after closing the last terminal, including after remount, and offers a minimal new button', async () => {
   const { host, jobsControl, session } = mount([])
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
   click(host.querySelector('[data-testid=terminal-tab-close]'))
   await vi.waitFor(() => expect(within(document.body).getByRole('button', { name: '终止进程' })).toBeTruthy())
   click(within(document.body).getByRole('button', { name: '终止进程' }))
@@ -162,7 +164,7 @@ it('does not reopen after closing the last terminal, including after remount, an
 it('long-presses plus without also creating a terminal, and tolerates unavailable browser storage', async () => {
   const human = job({ id: 'mine', owner: 'human', shell: 'zsh' })
   const { host, jobsControl } = mount([human])
-  await vi.waitFor(() => expect(host.querySelector('[role=option]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-tab]')).not.toBeNull())
   const plus = host.querySelector('[data-testid=terminal-new]') as HTMLElement
   vi.useFakeTimers()
   try {
@@ -199,13 +201,13 @@ it('long-presses plus without also creating a terminal, and tolerates unavailabl
 it('offers human controls and details, renames with Enter, Escape, blur and IME, and restores names after refresh', async () => {
   const human = job({ id: 'mine', owner: 'human', shell: 'zsh' })
   const { host, jobsControl, session } = mount([human])
-  await vi.waitFor(() => expect(host.querySelector('[role=option]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-tab]')).not.toBeNull())
   await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-fixture-resize]')).not.toBeNull())
   click(host.querySelector('[data-testid=terminal-fixture-resize]'))
   await vi.waitFor(() =>
     expect(jobsControl).toHaveBeenCalledWith({ operation: 'resize', jobId: 'mine', columns: 80, rows: 24 }),
   )
-  let tab = host.querySelector('[role=option]') as HTMLElement
+  let tab = host.querySelector('[data-testid=terminal-tab]') as HTMLElement
   let actions = await menu(tab, true)
   click(actions.getByRole('menuitem', { name: /中断/ }))
   await vi.waitFor(() =>
@@ -252,8 +254,10 @@ it('offers human controls and details, renames with Enter, Escape, blur and IME,
       }}
     />,
   )
-  await vi.waitFor(() => expect(host.querySelector('[role=option]')?.textContent).toContain('server'))
-  tab = host.querySelector('[role=option]') as HTMLElement
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid=terminal-tab]')?.textContent).toContain('server'),
+  )
+  tab = host.querySelector('[data-testid=terminal-tab]') as HTMLElement
   actions = await menu(tab)
   click(actions.getByText('终止进程'))
   await vi.waitFor(() => expect(within(document.body).getByRole('button', { name: '终止进程' })).toBeTruthy())
@@ -272,14 +276,14 @@ it('shows the exit line and dot tone, allows tab arrows and dismisses truncation
     truncated: true,
   })
   const { host } = mount([mine, success])
-  await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(2))
-  const [first, second] = [...host.querySelectorAll<HTMLElement>('[role=option]')]
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2))
+  const [first, second] = [...host.querySelectorAll<HTMLElement>('[data-testid=terminal-tab]')]
   await vi.waitFor(() => expect(host.textContent).toContain('进程已退出（1）'))
   expect(first?.querySelector('.agh-status-dot')?.getAttribute('data-tone')).toBe('danger')
   expect(second?.querySelector('.agh-status-dot')?.getAttribute('data-tone')).toBe('neutral')
   flushSync(() => fireEvent.keyDown(first as HTMLElement, { key: 'ArrowRight' }))
   await vi.waitFor(() => expect(host.textContent).toContain('进程已退出（0）'))
-  expect(second?.getAttribute('aria-selected')).toBe('true')
+  expect(second?.getAttribute('aria-pressed')).toBe('true')
   expect(host.querySelector('.workbench-terminal-note')?.textContent).toContain('输出已达到上限')
   click(within(host).getByLabelText('关闭提示'))
   expect(host.querySelector('.workbench-terminal-note')).toBeNull()
@@ -310,6 +314,19 @@ it('reads a tab count once per session watermark and lets an open panel share a 
   await new Promise((resolve) => setTimeout(resolve, 0))
   // A failed read keeps the last value.
   expect(count.read(context('s', 2))).toBe(5)
+  let finish!: (value: number) => void
+  read.mockImplementationOnce(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve
+      }),
+  )
+  expect(count.read(context('s', 3))).toBe(5)
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(4))
+  count.set('s', 8) // The open panel has already observed a newer count.
+  finish(1)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(count.read(context('s', 3))).toBe(8)
   stop()
 })
 
@@ -357,3 +374,41 @@ it.each(['zh-CN', 'en'] as const)(
     }
   },
 )
+
+it('pauses terminal reads while hidden and catches up output once on return', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+  let hidden = false
+  const visibility = vi
+    .spyOn(document, 'visibilityState', 'get')
+    .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const terminal = job({ owner: 'human', stdout: 'before hidden' })
+  const { session, host, jobsControl } = mount([terminal])
+  const reads = vi.spyOn(session, 'jobsRead')
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    const before = reads.mock.calls.length
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reads.mock.calls.length - before).toBe(0)
+    terminal.stdout += '\noutput while hidden'
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    expect(reads.mock.calls.length - before).toBe(1)
+    expect(host.textContent).toContain('output while hidden')
+    expect(jobsControl).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'kill' }))
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(reads.mock.calls.length - before).toBe(2)
+    unmountRegion(host)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reads.mock.calls.length - before).toBe(2)
+  } finally {
+    unmountRegion(host)
+    visibility.mockRestore()
+    reads.mockRestore()
+    vi.useRealTimers()
+  }
+})

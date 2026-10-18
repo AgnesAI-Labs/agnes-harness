@@ -97,7 +97,7 @@ it.each(['candidate.approve', 'install', 'trust', 'enable', 'candidate.submit'])
     expect(request.mock.calls[0]?.[1]).toEqual(input)
   },
 )
-it('refuses missing sessions and cancellation before sending a test request', async () => {
+it('refuses missing sessions, mismatched sessions and cancellation before sending a test request', async () => {
   const request = vi.fn<SharedSessionChannel['request']>(async () => undefined)
   await expect(
     requestPluginManage(undefined, invocation, new AbortController().signal, {
@@ -110,6 +110,28 @@ it('refuses missing sessions and cancellation before sending a test request', as
       request,
       currentSessionKey: () => 's',
     }),
+  ).rejects.toBeDefined()
+  await expect(
+    requestPluginManage(
+      undefined,
+      { ...invocation, input: { action: 'candidate.write' } },
+      new AbortController().signal,
+      {
+        request,
+        currentSessionKey: () => 'another-session',
+      },
+    ),
+  ).rejects.toThrow('session mismatch')
+  await expect(
+    requestPluginManage(
+      undefined,
+      { ...invocation, input: { action: 'candidate.write' } },
+      AbortSignal.abort(),
+      {
+        request,
+        currentSessionKey: () => 's',
+      },
+    ),
   ).rejects.toBeDefined()
   expect(request).not.toHaveBeenCalled()
 })

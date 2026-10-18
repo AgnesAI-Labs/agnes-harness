@@ -85,7 +85,14 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh plugins provenance ID [--json]` | Read installation origin and trust evidence |
 | `agh plugins publication-status [--json]` | Read per-container convergence results |
 | `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
+| `agh app clear [--profile NAME] [--json]` | Clear the application and all explicit interface role choices before plugin boot; uses the shared configuration CAS |
 | `agh app-server --stdio` / `schema --out DIR` | Bridge to the shared daemon / export its generated contract without starting it |
 | `agh doctor --json` / `doctor --probe --json` | Local checks / explicit account probes, which may incur charges |
 
 See [candidate review](../extend/agent-built-plugins.md), [hot reload](../extend/hot-reload.md), [App Server](app-server.md) and [first run](../guide/getting-started.md) for complete flags and authority boundaries.
+
+## Create a session from an agent
+
+`node agnes.mjs --agent '@acme/kit#review' -p 'Inspect this workspace'` asks the backend to resolve that Bundle's own `launch`, selecting an exact Loop, session Bundle and explicit preset. `--agent` cannot be combined with `--loop`, `--preset` or resume options. Loop-only plugins can still use `--loop id@version`.
+
+The target must be trusted, enabled and launch-ready. Invalid references, missing dependencies and unsatisfiable strict model/permission requirements refuse creation. Draft launch prompts are never sent automatically.

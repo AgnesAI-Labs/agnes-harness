@@ -233,15 +233,17 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
       package: '@agnes/ai',
       routes: [{ route: 'configured', api: 'scripted', baseUrl: 'https://demo.invalid' }],
     }
-    expect(
-      (
-        await readConfigurationProfileInputs({
-          ...options,
-          demoFallback: true,
-          configuration: { provider: configured },
-        })
-      ).user?.provider,
-    ).toEqual(configured)
+    for (const provider of [configured, { ...configured, routes: [], catalog: { include: [] } }]) {
+      expect(
+        (
+          await readConfigurationProfileInputs({
+            ...options,
+            demoFallback: true,
+            configuration: { provider },
+          })
+        ).user?.provider,
+      ).toEqual(provider)
+    }
     await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true })
     await writeFile(
       join(home, 'profiles', 'local-dev', 'bundle-selection.json'),

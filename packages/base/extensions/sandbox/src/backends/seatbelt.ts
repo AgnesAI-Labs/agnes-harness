@@ -4,7 +4,8 @@ import { validateArgv, validateClosedNetworkOptions } from './shared.js'
 
 /**
  * Compile a closed-network Seatbelt argv. The shared compiler escapes both backslashes and quotes,
- * never grants implicit temp/device writes, and applies every explicit deny to reads and writes.
+ * grants only /dev/null as an implicit writable device (no temp writes), and applies every
+ * explicit deny to reads and writes, including the standard device literals.
  */
 export function seatbeltConfine(argv: readonly string[], options: ClosedNetworkConfineOptions): string[] {
   const command = validateArgv(argv)

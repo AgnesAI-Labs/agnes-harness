@@ -41,7 +41,6 @@ Supply `example.*` keys in both locale catalogs registered with the host. Labels
 `createSchemaSettingsComponent` turns a schema, read/save/test adapters and permission declaration into a component for the existing settings registry. No second navigation or handwritten form is needed. Adapters use the plugin's declared service/effect paths. Reads return `{ values, revision? }`; saves receive that revision and return the authoritative updated document. Conflict handling and permission enforcement remain on the backend.
 
 ```tsx
-import { settingsSections } from '@agnes/web-client'
 import { createSchemaSettingsComponent } from '@agnes/web-ui'
 
 const component = createSchemaSettingsComponent({
@@ -52,7 +51,7 @@ const component = createSchemaSettingsComponent({
   save: (document, context, signal) => saveConfiguration(document, context, signal),
   test: (document, context, signal) => testConfiguration(document, context, signal),
 })
-const unregister = settingsSections.register({
+const unregister = ctx.settingsSections.register({
   group: 'plugins', groupTitleKey: 'example.group', id: 'example-config', titleKey: 'example.settings',
   icon: 'settings', order: 50, component,
 })

@@ -10,6 +10,7 @@ export type SessionAdmissionPort = {
   activate(sessionKey: string, reservedNew: boolean): void
 }
 export type Command =
+  | 'app'
   | 'app-server'
   | 'run'
   | 'batch'
@@ -57,6 +58,7 @@ export type ParsedArgs = {
   version: boolean
   profile?: string
   preset?: string
+  agent?: string
   loop?: LoopSelection
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */

@@ -30,9 +30,9 @@ test('v3 account dialog automatically tests a scripted provider before saving', 
   const provider = await startProviderFixture('REG5_AUTO_TEST_ACCOUNT', undefined, model)
   try {
     await settings(page)
-    await page.getByRole('button', { name: 'Add account', exact: true }).click()
-    const dialog = page.locator('#account-dialog')
-    await dialog.locator('[data-provider="deepseek"]').click()
+    await page.getByTestId('settings-nav-model').click()
+    await page.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
+    const dialog = page.locator('.account-dialog-body[data-page="add"]')
     await expand(dialog.locator('#config-account-advanced'))
     await dialog.locator('#config-account-name').fill('REG5 offline provider')
     await dialog.locator('#config-base-url').fill(provider.baseUrl)
@@ -75,6 +75,7 @@ test('v3 plugin tabs and built-in context save survive navigation and reload', a
   await expect(page.getByTestId('system-prompt-save')).toHaveCount(0)
   await expect(page.getByTestId('system-prompt-saved')).toHaveCount(0)
   await page.reload()
+  await chooseWorkspace(page, runtime)
   await settings(page)
   await section(page, 'general')
   await expect(page.getByTestId('system-prompt-personaPrefix')).toHaveValue(
@@ -174,6 +175,7 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
   if (!tool) throw new Error('The wizard-installed stdio server must expose its echo tool')
   await closeSettings(page)
   await fresh(page)
+  await turn(page, `call tool_describe ${JSON.stringify({ name: tool.name })}`)
   await turn(page, `call ${tool.name} {"text":"REG5_WIZARD_ECHO"}`)
   const id = new URL(page.url()).searchParams.get('session')
   if (!id) throw new Error('MCP invocation must create its browser session')
@@ -195,25 +197,21 @@ test('v3 business Agent one-click start installs its bundle and creates a Demo s
   await turn(page, 'Prepare the offline Demo workspace')
   await fresh(page)
   await homePage(page, 'agents')
-  const card = page.locator('[data-testid^="business-agent-"][data-package="@agnes-fde/knowledge-qa"]')
+  const card = page.locator('[data-agent-ref="@agnes-fde/knowledge-qa#knowledge-qa"]')
   await expect(card).toBeVisible()
-  const packageId = await card.getAttribute('data-package')
+  const packageId = (await card.getAttribute('data-agent-ref'))?.split('#')[0]
   if (!packageId) throw new Error('Business Agent card requires a package')
   await card.getByRole('button').click()
   const confirm = page.getByTestId('agent-start-confirm')
   await expect(confirm).toBeVisible()
   await confirm.click()
+  await expect(page.getByTestId('agent-launch-review')).toContainText('refund')
+  await page.getByTestId('agent-launch-confirm').click()
   await expect(page.locator('#home-page')).toBeHidden({ timeout: 25_000 })
   await expect(page.locator('#prompt')).toHaveValue(/refund/)
-  const requestedBundles = new URL(page.url()).searchParams.getAll('bundle')
-  expect(requestedBundles.length).toBeGreaterThan(0)
-  const workspace = page.getByRole('dialog', { name: 'Choose a workspace', exact: true })
-  if (!(await workspace.isVisible())) await page.locator('#composer-workspace').click()
-  await workspace
-    .locator('.workspace-option')
-    .filter({ has: page.locator('.workspace-option-name').filter({ hasText: /^w$/ }) })
-    .click()
-  await expect(workspace).toBeHidden()
+  const requestedBundles = ['@agnes-fde/knowledge-qa#knowledge-qa']
+  const launchedId = new URL(page.url()).searchParams.get('session')
+  expect(launchedId).toBeTruthy()
   await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
   await page
     .getByRole('textbox', { name: 'Task content', exact: true })
@@ -313,11 +311,18 @@ test('v3 pending review inbox opens a real Demo-authored draft and preserves its
   await prompt(
     session,
     'call skill_helper_create ' +
-      JSON.stringify({ name: 'reg5-reviewed-method', files: [{ path: 'SKILL.md', content }] }),
+      JSON.stringify({
+        name: 'reg5-reviewed-method',
+        files: [
+          { path: 'SKILL.md', content },
+          { path: 'scripts/read.mjs', content: 'export const reviewed = true;\n' },
+        ],
+      }),
   )
   const created = (await toolResult(session, 'skill_helper_create'))?.content[0]
   if (created?.type !== 'text') throw new Error('Draft creation must return its candidate')
   const candidate = JSON.parse(created.text) as import('@agnes/protocol').AuthoringCandidate
+  expect(candidate.candidateId).toMatch(/^candidate-/)
   await prompt(
     session,
     'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: candidate.candidateId }),

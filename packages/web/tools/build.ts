@@ -45,7 +45,7 @@ export async function buildWeb(
       absWorkingDir: root,
       define: { ...(options.development ? {} : productionWebOptions.define), __AGNES_WEB_BUNDLE__: 'true' },
       entryPoints: {
-        app: join(root, 'src', 'app.ts'),
+        app: join(root, 'src', 'bootstrap.ts'),
         admin: '@agnes/web-admin/admin/plugins/admin',
         resources: '@agnes/resource-control-web/admin',
         // 独立页宿主入口：设置弹窗里嵌的是 admin / resources（模块，由 app.ts 动态 import 后手动挂载）；

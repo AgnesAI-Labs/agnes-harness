@@ -1,3 +1,7 @@
+import { supervisorHostFacade } from './host-facade.js'
+
+export { supervisorHostFacade } from './host-facade.js'
+
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -155,10 +159,8 @@ import {
   initializeHome,
   initializeHomeLocked,
   overlayChildEngineTarget,
-  type PresetDoc,
   type ProcessIdentity,
   RequestTraceStore,
-  type ResolvedPreset,
   type ResolvedProfile,
   readFactChainBinding,
   resolveComposition,
@@ -211,10 +213,11 @@ import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
 import { describeGenerationSessions } from './generation-sessions.js'
+import { readRunningGenerationStatus } from './generation-status-read.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
-import { sharedSessionCatalog, supervisorAdapterLookup } from './model-adapter-lookup.js'
+import { readModelSelectionCatalog, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
@@ -242,7 +245,6 @@ import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import {
   createClientServiceDispatcher,
-  workerComputerUseStatusSource,
   workerServiceCaller,
   workerServiceInspector,
   workerServiceResolver,
@@ -349,6 +351,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      agent: string | null
       bundles: string | null
       loop: string | null
       promise: Promise<SessionEntry>
@@ -366,6 +369,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== o.cwd ||
           pending.preset !== (o.preset ?? null) ||
+          pending.agent !== (o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest])) ||
           pending.bundles !== (o.bundles === undefined ? null : JSON.stringify(o.bundles)) ||
           pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
         )
@@ -376,6 +380,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       this.opening.set(o.key, {
         cwd: o.cwd,
         preset: o.preset ?? null,
+        agent: o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest]),
         bundles: o.bundles === undefined ? null : JSON.stringify(o.bundles),
         loop: o.loop ? JSON.stringify(o.loop) : null,
         promise,
@@ -501,90 +506,6 @@ export async function activateForkOwnership(
   }
 }
 
-/**
- * A `Host`-shaped facade for the per-connection `AgnesContext.host` field: the supervisor process
- * holds no kernel at all ("supervisor 不持内核" - the daemon design's own name for this split), so
- * there is no real `Assembled` route/preset table to build a genuine `Host` from without also
- * assembling one (which is exactly what a worker process is for). Grepping every `cx.host.` access
- * in `local/methods/acp.ts` and `local/methods/agnes.ts` shows the RPC handlers only ever touch
- * `.profile` and `.validatePresetSwitch` / `.validateModelSwitch` - `.kernel`, `.provider`,
- * `.createSession` etc. are never read on this path (session lifecycle goes through
- * `SupervisorRegistry` / `WorkerRegistry` / `WorkerPool` instead), so those are stubbed to fail
- * loudly rather than silently if some future change ever reaches them.
- */
-export function supervisorHostFacade(
-  initial: ResolvedProfile,
-  activationBarrier: ExtensionActivationBarrier,
-  pool: Pick<WorkerPool, 'acquireSharedWorker'>,
-): {
-  host: Host
-  update(profile: ResolvedProfile): void
-} {
-  let profile = initial
-  const facade = {
-    activationBarrier,
-    get profile() {
-      return profile
-    },
-    get kernel(): never {
-      throw new Error('supervisor host facade: kernel is not available (the supervisor holds no kernel)')
-    },
-    get provider(): never {
-      throw new Error('supervisor host facade: provider is not available (the supervisor holds no kernel)')
-    },
-    providerFingerprint: null,
-    runtimes: [] as ResolvedProfile['runtimes'],
-    computerUse: initial.computerUse.enabled ? workerComputerUseStatusSource(pool, () => profile) : undefined,
-    presets: {} as Record<string, PresetDoc>,
-    createSession(): Promise<HostSession> {
-      throw new Error(
-        'supervisor host facade: createSession is not available - session lifecycle goes through ' +
-          'SupervisorRegistry/WorkerRegistry, never cx.host directly',
-      )
-    },
-    extensions: () => [],
-    async close() {
-      // No-op: this facade owns no resources of its own to release.
-    },
-    /**
-     * Best-effort, profile-only check: the supervisor has the raw `ResolvedProfile` but no assembled
-     * preset table. Without a session it can check only deployment `presets.allowed`; a session's
-     * pinned bundles may add names the supervisor cannot see. Session switches therefore delegate
-     * admission to the worker's `setPreset` case, which calls the real Host's `setSessionPreset`
-     * against that session's composition and hard requirements. `resolved.view` is just the preset NAME
-     * (not a real `PresetView`): `RemoteSession.setPreset` forwards it as the wire's `preset` field
-     * verbatim, and the worker re-derives the real view from that name itself.
-     */
-    validatePresetSwitch(name: string, sessionKey?: string): ResolvedPreset {
-      if (!sessionKey && !profile.presets.allowed.includes(name))
-        throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
-          detail: { preset: name },
-        })
-      return { view: name, doc: {} as PresetDoc, chain: [], hash: '' } as unknown as ResolvedPreset
-    },
-    /** The supervisor checks the sealed declaration before forwarding. The worker repeats the full
-     * assembled-provider check (including the published catalogue), so this is not the final gate. */
-    validateModelSwitch(sel: { route: string; model: string }): void {
-      const route = profile.provider.routes?.find((candidate) => candidate.route === sel.route)
-      const modelDeclared =
-        route?.models === undefined || route.models.some((model) => model.id === sel.model)
-      // Route and model go in `detail` only: an account route (`account-acct-<uuid>`) in the message
-      // trips HostError's leak check, and the code-less error it throws instead reaches the client
-      // as INTERNAL rather than PRESET_SWITCH_REJECTED.
-      if (!route || !modelDeclared)
-        throw new HostError('E_MODEL_UNSUPPORTED', 'the requested model is not declared', {
-          detail: { route: sel.route, model: sel.model },
-        })
-    },
-  }
-  return {
-    host: facade as unknown as Host,
-    update(next: ResolvedProfile) {
-      profile = next
-    },
-  }
-}
-
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 export function supervisorLister(
@@ -648,6 +569,8 @@ export function supervisorLister(
     },
   }
 }
+
+declare const AGNES_VERSION: string | undefined
 
 export type StartSupervisorOptions = {
   config: DaemonConfig
@@ -1124,9 +1047,21 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const runtimeStore = jobTables
       ? new CompositeTargetStore(jobTables.table('composite_runtime'), o.profile.name)
       : undefined
+    const notifyRuntimeTarget = (artifact: RuntimeTargetArtifact) =>
+      notices.emit('tree_changed', {
+        detail: {
+          profile: o.profile.name,
+          targetDigest: artifact.digest,
+          identity: artifact.identity,
+          hash: artifact.digest,
+        },
+      })
     let revertFailedDesired: (() => Promise<void>) | undefined
     const runtimeDelivery = runtimeStore
-      ? new CompositeRuntimeDelivery(runtimeStore, { onFailureRecorded: () => revertFailedDesired?.() })
+      ? new CompositeRuntimeDelivery(runtimeStore, {
+          onFailureRecorded: () => revertFailedDesired?.(),
+          onConverged: notifyRuntimeTarget,
+        })
       : undefined
     const runtimeTargetProbe = runtimeStore
       ? createRuntimeTargetProbeLauncher({
@@ -1287,15 +1222,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       notices,
     })
     runtimeStore?.onDesired((artifact) => {
+      // Candidate publication can change static Skills without creating a package operation.
+      skillWatcher?.changed({ rootKey: 'package' })
       pool.noteRuntimeTarget(artifact.digest)
-      notices.emit('tree_changed', {
-        detail: {
-          profile: o.profile.name,
-          targetDigest: artifact.digest,
-          identity: artifact.identity,
-          hash: artifact.digest,
-        },
-      })
+      notifyRuntimeTarget(artifact)
       if (runtimeDelivery?.stageStartup(artifact)) return
       void deliverDesiredToWorkers(pool, artifact).catch((error) => {
         o.audit?.({
@@ -1528,12 +1458,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
             generationStatus: async () => {
-              const worker = await pool.acquireSharedWorker()
-              const status = (await worker.command(
-                'pluginGenerations.status',
-                {},
-                { timeoutMs: o.config.limits.workerStartupMs },
-              )) as import('@agnes/protocol').PluginGenerationStatus
+              const status = await readRunningGenerationStatus(pool, o.config.limits.workerStartupMs)
               const running = (key: string) => registry.get(key)?.session.running === true
               return describeGenerationSessions(status, { lister, running })
             },
@@ -1567,6 +1492,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 )
             },
             workerGeneration: () => pool.businessWorker()?.generation,
+            workerStarting: () => pool.hasHostActivity('@shared'),
             desiredFor: async ({ packageId, operation, packageIds = [] }) => {
               latestInventory = await packageRuntime.manager.inventory(packageProfileDirectory)
               let previous = runtimeStore.desired()
@@ -1824,7 +1750,17 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           },
         })
       : undefined
-    const sessionSelection = sessionSelectionProvider(o.configuration, () => sharedSessionCatalog(pool))
+    const modelCatalog = readModelSelectionCatalog({
+      worker: () => pool.businessWorker()?.link,
+      profile: () => host.profile,
+      profileDir: o.profileDir,
+      sources: () => o.packageRuntime?.manager.runtimePluginSnapshots(o.profileDir) ?? Promise.resolve([]),
+    })
+    const sessionSelection = sessionSelectionProvider(
+      o.configuration,
+      () => sharedSessionCatalog(pool),
+      modelCatalog,
+    )
     const preferences = new SessionPreferencesStore(jobTables?.table('session_preferences'))
     const sidebarSessions = jobTables
       ? new SidebarSessions(
@@ -2056,10 +1992,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
     })
     automationEvents.triggers = appServerAdmin.observeTriggerSession
-    // The supervisor holds no adapter registry. `apis.list` learns which adapters take payloads only
-    // from the built-in registrations, and from the shared worker if it is already running. One
-    // lookup serves every connection, so the catalog it last read is shared.
-    const adapterLookup = supervisorAdapterLookup(host, pool)
+    // Display queries read release registrations and source-bound published descriptions.
+    // Each request verifies the current files and grants; none starts a worker for its catalog.
+    const adapterLookup = modelCatalog
     const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
       // `local` is the Unix identity and only a pre-auth placeholder for WSS. The lifecycle bearer
       // admits an HTTP upgrade but establishes no application principal; authGate replaces this value
@@ -2091,7 +2026,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         registry: supervisorRegistry,
         prompter,
         clock,
-        agnesVersion: '0.0.0',
+        agnesVersion: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
         modelAdapters: adapterLookup,

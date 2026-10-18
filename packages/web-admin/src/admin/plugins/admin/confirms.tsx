@@ -49,12 +49,14 @@ export function PreviewFacts({
       {current ? (
         <UpdateDiff preview={preview} fromVersion={current.version} />
       ) : (
-        <CapabilityReview value={preview.declaredCapabilities} t={t} />
+        <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
       )}
       <ProvenanceReview value={preview.provenance} t={t} />
       {/* A blocker or warning is why the user is reading this: show it without a click. */}
       <Technical open={preview.blockers.length > 0 || preview.warnings.length > 0}>
-        {current && <CapabilityReview value={preview.declaredCapabilities} t={t} />}
+        {current && (
+          <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
+        )}
         {current && combined ? (
           <UpdateActivationFacts installed={current} preview={preview} />
         ) : (
@@ -83,7 +85,9 @@ export function PreviewTechnicalFacts({
   return (
     <>
       <ProvenanceReview value={preview.provenance} t={t} />
-      {current && <CapabilityReview value={preview.declaredCapabilities} t={t} />}
+      {current && (
+        <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
+      )}
       {current && combined ? (
         <UpdateActivationFacts installed={current} preview={preview} />
       ) : (

@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
+import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
-import { collectRead, collectReadAsync } from './cooperative-read.js'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
+import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import {
@@ -22,6 +24,8 @@ import {
   verifyPackageDirectory,
 } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
+import { contributionCeiling, recordEntry } from './runtime-snapshot-entry.js'
 import type {
   CreateJournal,
   GcJournal,
@@ -38,6 +42,8 @@ import type {
 } from './runtime-snapshot-types.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
+import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
+import { invalidatePackageVerification } from './verification-operation.js'
 
 export type {
   RuntimePin,
@@ -98,7 +104,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
   const value = raw as Record<string, unknown>
   if (
     !exactKeys(value, [
-      'version',
+      ...(value.version === undefined ? [] : ['version']),
       'snapshotId',
       'packageId',
       'packageVersion',
@@ -111,12 +117,14 @@ function validateRecord(raw: unknown): SnapshotRecord {
       'dependencies',
       'contributions',
       ...(value.metadata === undefined ? [] : ['metadata']),
+      ...(value.agents === undefined ? [] : ['agents']),
+      ...(value.application === undefined ? [] : ['application']),
       ...(value.declaredCapabilities === undefined ? [] : ['declaredCapabilities']),
     ]) ||
     (value.declaredCapabilities !== undefined &&
       !validatePackageAdminData('PluginCapabilities', value.declaredCapabilities).ok) ||
-    (value.metadata !== undefined && !validatePluginMetadata(value.metadata).ok) ||
-    value.version !== 1 ||
+    (value.metadata !== undefined && !validStoredMetadata(value.metadata)) ||
+    (value.version !== undefined && value.version !== 1 && value.version !== 2) ||
     typeof value.snapshotId !== 'string' ||
     !SHA256.test(value.snapshotId) ||
     typeof value.packageId !== 'string' ||
@@ -144,8 +152,14 @@ function validateRecord(raw: unknown): SnapshotRecord {
     if (!id || id.length > 256 || typeof range !== 'string' || range.length > 1024)
       integrityFailure('snapshot-dependencies')
   for (const contribution of value.contributions)
-    if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
+    if (!validatePackageAdminData('PackageContributionSummary', currentStoredShape(contribution)).ok)
       integrityFailure('snapshot-contribution')
+  if (
+    (legacyMetadata(value.metadata) && (value.agents !== undefined || value.application !== undefined)) ||
+    !validApplicationDeclaration(value.application) ||
+    !validAgentDeclarations(value.agents, String(value.packageId))
+  )
+    integrityFailure('snapshot-launch-declarations')
   const record = value as unknown as SnapshotRecord
   if (
     record.snapshotId !==
@@ -155,6 +169,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
         integrity: record.integrity,
         treeIntegrity: record.treeIntegrity,
         capabilityHash: record.capabilityHash,
+        ...(record.version === 2 ? { recordVersion: 2 } : {}),
       }) ||
     capabilityHash(record) !== record.capabilityHash
   )
@@ -231,6 +246,7 @@ function runtimeSnapshotId(value: {
   integrity: string
   treeIntegrity: string
   capabilityHash: string
+  recordVersion?: 2
 }): string {
   return `sha256-${snapshotHash(value)}`
 }
@@ -238,13 +254,14 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
   if (!entry.treeIntegrity || !entry.contributions) integrityFailure('snapshot-migration-required')
   const hash = capabilityHash(entry)
   return {
-    version: 1,
+    version: 2,
     snapshotId: runtimeSnapshotId({
       packageId,
       version: entry.version,
       integrity: entry.integrity,
       treeIntegrity: entry.treeIntegrity,
       capabilityHash: hash,
+      recordVersion: 2,
     }),
     packageId,
     packageVersion: entry.version,
@@ -257,25 +274,23 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
     dependencies: structuredClone(entry.dependencies),
     contributions: structuredClone(entry.contributions),
     ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
+    ...(entry.agents ? { agents: structuredClone(entry.agents) } : {}),
+    ...(entry.application ? { application: structuredClone(entry.application) } : {}),
     ...(entry.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
   }
 }
-function trusted(entry: LockEntry, record: SnapshotRecord): boolean {
-  return (
-    entry.trust === 'builtin' ||
-    (entry.state.trusted !== null &&
-      entry.trustDecision?.integrity === entry.integrity &&
-      entry.trustDecision.capabilityHash === record.capabilityHash)
-  )
-}
-function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+function* verifyRecordSteps(
+  s: RuntimeSnapshotStore,
+  record: SnapshotRecord,
+  directory: string,
+): ReadSteps<RuntimeSnapshot> {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
   try {
-    root = realpathSync(runtimeRoot(s))
-    actual = realpathSync(directory)
+    root = nativeRealpathSync(runtimeRoot(s))
+    actual = nativeRealpathSync(directory)
     if (lstatSync(runtimeRoot(s)).isSymbolicLink() || lstatSync(directory).isSymbolicLink())
       integrityFailure('runtime-path-symlink')
   } catch (error) {
@@ -284,7 +299,10 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  const treeIntegrity = hashDirectory(actual, { exclude: [] })
+  const treeIntegrity = yield* directoryDigestSteps(actual, {
+    ...checkedRecord,
+    version: checkedRecord.packageVersion,
+  })
   if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
@@ -306,42 +324,23 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     directory: actual,
     contributions: structuredClone(checkedRecord.contributions),
     ...(checkedRecord.metadata ? { metadata: structuredClone(checkedRecord.metadata) } : {}),
+    ...(checkedRecord.agents ? { agents: structuredClone(checkedRecord.agents) } : {}),
+    ...(checkedRecord.application ? { application: structuredClone(checkedRecord.application) } : {}),
   })
 }
-function contributionCeiling(record: SnapshotRecord): string[] {
-  return [
-    ...new Set(
-      record.contributions.flatMap((c) => (c.kind === 'extension' ? Object.keys(c.capabilities ?? {}) : [])),
-    ),
-  ]
-}
-function recordEntry(record: SnapshotRecord): LockEntry {
-  return {
-    version: record.packageVersion,
-    source: structuredClone(record.source),
-    integrity: record.integrity,
-    trust: 'trusted',
-    license: record.license,
-    state: { installed: new Date(0).toISOString(), trusted: null, enabled: false },
-    dependencies: structuredClone(record.dependencies),
-    previous: null,
-    contributions: structuredClone(record.contributions),
-    ...(record.metadata ? { metadata: structuredClone(record.metadata) } : {}),
-    ...(record.declaredCapabilities === undefined
-      ? {}
-      : { declaredCapabilities: structuredClone(record.declaredCapabilities) }),
-    treeIntegrity: record.treeIntegrity,
-    ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
-  } as LockEntry
+function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+  return collectRead(verifyRecordSteps(s, record, directory))
 }
 function pinView(
   s: RuntimeSnapshotStore,
   state: RuntimeState,
   pin: PinRecord,
   verified?: RuntimeSnapshot,
+  current?: LockEntry,
 ): RuntimePin {
   const record = state.snapshots[pin.snapshotId]
   if (!record) integrityFailure('pin-snapshot-missing')
+  assertCurrentBinding(record, current)
   return freezeData({
     pinId: pin.pinId,
     operationId: pin.operationId,
@@ -406,6 +405,7 @@ function select(
   if (request.selector.kind === 'snapshot') {
     const record = state.snapshots[request.selector.snapshotId]
     if (!record || record.packageId !== request.packageId) stateFailure('snapshot-not-found')
+    assertCurrentBinding(record, live.entry)
     if (
       record.integrity !== request.selector.expectedIntegrity ||
       record.treeIntegrity !== request.selector.expectedTreeIntegrity
@@ -437,7 +437,7 @@ function select(
     directory = previousPackageDir(s, request.packageId)
   }
   const record = recordFromEntry(request.packageId, entry)
-  if (!trusted(entry, record))
+  if (!hasSnapshotTrust(entry, record))
     throw new PackageError('E_WORKSPACE_UNTRUSTED', 'runtime snapshot has no valid trust decision')
   if (
     record.integrity !== request.selector.expectedIntegrity ||
@@ -517,11 +517,12 @@ function clearJournal(s: RuntimeSnapshotStore): void {
   rmSync(journalPath(s))
   rmSync(`${journalPath(s)}.tmp`, { force: true })
   syncDirectory(s.profileDir)
+  invalidatePackageVerification()
   s.runtimeCheckpoint?.('runtime-finished')
 }
 
 /** Caller holds the PackageManager Profile lock. Runtime state never decides the active revision. */
-function* runtimeRecoverySteps(s: RuntimeSnapshotStore): Generator<void, void, void> {
+function* runtimeRecoverySteps(s: RuntimeSnapshotStore): ReadSteps<void> {
   const root = runtimeRoot(s)
   rmSync(`${statePath(s)}.tmp`, { force: true })
   if (!present(journalPath(s))) {
@@ -529,6 +530,7 @@ function* runtimeRecoverySteps(s: RuntimeSnapshotStore): Generator<void, void, v
     yield* knownRuntimeDirectoryReadSteps(s, readState(s))
     return
   }
+  invalidatePackageVerification()
   const state = readState(s),
     journal = readJournal(s),
     trash = join(root, `.trash-${journal.transactionId}`)
@@ -578,13 +580,13 @@ export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
   collectRead(runtimeRecoverySteps(s))
 }
 export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
-  return collectReadAsync(runtimeRecoverySteps(s))
+  return collectReadAsync(runtimeRecoverySteps(s), false)
 }
 
 function* knownRuntimeDirectoryReadSteps(
   s: RuntimeSnapshotStore,
   state: RuntimeState,
-): Generator<void, Map<string, RuntimeSnapshot>, void> {
+): ReadSteps<Map<string, RuntimeSnapshot>> {
   const verified = new Map<string, RuntimeSnapshot>()
   const root = runtimeRoot(s)
   if (!present(root)) {
@@ -597,7 +599,7 @@ function* knownRuntimeDirectoryReadSteps(
     if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
   for (const record of Object.values(state.snapshots)) {
     yield
-    verified.set(record.snapshotId, verifyRecord(s, record, snapshotDir(s, record.snapshotId)))
+    verified.set(record.snapshotId, yield* verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId)))
   }
   return verified
 }
@@ -626,7 +628,7 @@ export function pinRuntimeSnapshotStore(
       prior.purpose !== request.purpose
     )
       integrityFailure('pin-id-reused')
-    return pinView(s, state, prior)
+    return pinView(s, state, prior, undefined, own(lock.packages, prior.packageId))
   }
   if (Object.keys(state.pins).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
   const selected = select(s, lock, state, request, installedPackage, ceiling),
@@ -704,7 +706,7 @@ export function resolveRuntimePinStore(
     if (current.state.trusted === null || (packageEligible && !packageEligible(pin.packageId)))
       stateFailure('package-not-eligible')
   }
-  return pinView(s, state, pin)
+  return pinView(s, state, pin, undefined, lock && own(lock.packages, pin.packageId))
 }
 
 export function releaseRuntimePinStore(
@@ -733,21 +735,21 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-function* runtimePinReadSteps(s: RuntimeSnapshotStore): Generator<void, RuntimePin[], void> {
+function* runtimePinReadSteps(s: RuntimeSnapshotStore, lock?: Lockfile): ReadSteps<RuntimePin[]> {
   const state = readState(s)
   const verified = yield* knownRuntimeDirectoryReadSteps(s, state)
   const pins: RuntimePin[] = []
   for (const pin of Object.values(state.pins)) {
     yield
-    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId)))
+    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId), lock && own(lock.packages, pin.packageId)))
   }
   return pins
 }
 export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
   return collectRead(runtimePinReadSteps(s))
 }
-export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore): Promise<RuntimePin[]> {
-  return collectReadAsync(runtimePinReadSteps(s))
+export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore, lock?: Lockfile): Promise<RuntimePin[]> {
+  return collectReadAsync(runtimePinReadSteps(s, lock))
 }
 
 export function collectRuntimeSnapshotsStore(

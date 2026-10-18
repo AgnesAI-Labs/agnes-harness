@@ -47,7 +47,7 @@
       "@agnes/plugin-runtime": "0.0.0",
       "@agnes/extension-api": "^4.0.0"
     },
-    "kinds": [
+    "provides": [
       "loop"
     ]
   }

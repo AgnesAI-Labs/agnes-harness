@@ -2,7 +2,7 @@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { conversationCards, SlotRegistry } from '@agnes/web-client'
+import { applicationIdentity, conversationCards, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, createElement, type ReactNode, useEffect, useState } from 'react'
@@ -24,7 +24,7 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
-  const locale = zhLocaleService()
+  const locale = zhLocaleService(ctx)
   const mount = mountTranscriptRegion(registry, transcript, {
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,
@@ -107,6 +107,7 @@ afterEach(async () => {
   while (mounts.length) mounts.pop()?.dispose()
   while (contexts.length) await contexts.pop()?.fiber.dispose()
   document.body.replaceChildren()
+  applicationIdentity.set(undefined)
 })
 
 describe('W4a opt-in transcript node host', () => {
@@ -614,12 +615,18 @@ describe('W4a opt-in transcript node host', () => {
       )
       expect(tail?.textContent).toBe('history|two|three')
       expect(historyRenders).toBe(renders)
-      let removeCatalog: (() => void) | undefined
       await act(async () => {
-        removeCatalog = locale.register('updated-brand', { 'zh-CN': { 'brand.harness': 'Updated Harness' } })
+        applicationIdentity.set({
+          revision: 1,
+          status: 'active',
+          assets: {},
+          selection: null,
+          candidates: [],
+          effective: { id: 'updated', brand: { name: { en: 'Updated Harness' } } },
+        })
       })
       expect(transcript.querySelector('.process-name')?.textContent).toBe('Updated Harness')
-      await act(async () => removeCatalog?.())
+      await act(async () => applicationIdentity.set(undefined))
     } finally {
       remove()
       removeProbe()
@@ -974,7 +981,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     usage: usageFor(call),
   }
   await act(async () => mount.render([user, say('assistant', 2, 'final answer'), cost], [completed]))
-  const details = transcript.querySelector<HTMLElement>('.agh-disclosure.call-usage')
+  const details = transcript.querySelector<HTMLElement>('.turn-footer .agh-disclosure.call-usage')
   const summary = details?.querySelector<HTMLElement>('.agh-disclosure-summary')
   if (!details || !summary) throw new Error('missing cost disclosure')
   setDisclosureOpen(details, true)
@@ -994,7 +1001,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
         [{ ...completed, usage: usageFor(next) }],
       ),
     )
-    const article = transcript.querySelector('.agh-disclosure.call-usage')
+    const article = transcript.querySelector('.turn-footer .agh-disclosure.call-usage')
     expect(article).toBe(details)
     expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
     expect(details.dataset.open).toBe('true')
@@ -1022,7 +1029,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
       [{ ...completed, usage: { ...usageFor(call), calls: [] } }],
     ),
   )
-  expect(transcript.querySelector('.agh-disclosure.call-usage')).toBeNull()
+  expect(transcript.querySelector('.turn-footer .agh-disclosure.call-usage')).toBeNull()
   expect(details.isConnected).toBe(false)
   await act(async () => {
     registry.setSession('session-b')

@@ -40,6 +40,8 @@ import type {
   ModelSettings,
 } from '@agnes/protocol'
 import {
+  type ApplicationConfigSnapshot,
+  ApplicationSelection,
   AuxiliaryModelSlots,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
@@ -47,6 +49,7 @@ import {
   isSessionDefaultsSnapshot,
   ModelSlotsSnapshot,
   minimumContextBudget,
+  PresentationRoleSelections,
   readChildEngineSettings,
   type SessionDefaults,
   type SessionDefaultsSnapshot,
@@ -63,6 +66,12 @@ import {
 import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
+import {
+  configurationCredentialAvailability,
+  effectiveDefaultAccount,
+  isConfiguredCredential,
+  isUsableCredential,
+} from './configuration-credential-availability.js'
 import { configurationCredentialFailure } from './configuration-credential-failure.js'
 import { parseBaseUrl, requireEndpointCredential, validateEndpoint } from './configuration-endpoint.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
@@ -82,6 +91,7 @@ import {
   payloadOnlyRoute,
   testPayloadOnlyAccount,
 } from './configuration-payload-only.js'
+import { presentationSnapshot, updatePresentation } from './configuration-presentation.js'
 import { payloadOnlyRoutes } from './payload-only-routes.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
@@ -90,6 +100,8 @@ export { CONFIGURATION_ERROR_CODES } from './configuration-error.js'
 export { ConfigurationError, type ConfigurationErrorCode }
 
 export interface ConfigurationService {
+  application?(): Promise<ApplicationConfigSnapshot>
+  saveApplication?(input: ApplicationConfigSnapshot): Promise<ApplicationConfigSnapshot>
   modelSlots?(): Promise<ModelSlotsSnapshot>
   saveModelSlots?(input: ModelSlotsSnapshot): Promise<ModelSlotsSnapshot>
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
@@ -152,6 +164,9 @@ type StoredAccount = StoredConfigurationV1['provider'] & {
   networkTimeouts?: import('@agnes/protocol').ConfigSaveInput['networkTimeouts']
 }
 type StoredConfiguration = {
+  executionRevision?: number
+  application?: ApplicationSelection
+  roleSelections?: PresentationRoleSelections
   modelSlots?: AuxiliaryModelSlots
   version: 2
   profile: string
@@ -209,13 +224,13 @@ function acceptedChildEngines(value: unknown): ChildEngineSettings | undefined {
 
 function retainedConfiguration(current: StoredConfiguration | undefined) {
   return {
+    ...(current?.roleSelections === undefined ? {} : { roleSelections: current.roleSelections }),
+    ...(current?.application === undefined ? {} : { application: current.application }),
     ...(current?.modelSlots === undefined ? {} : { modelSlots: current.modelSlots }),
     ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
     ...(current?.childEngines === undefined ? {} : { childEngines: current.childEngines }),
   }
 }
-
-const isUsableCredential = (value: string): boolean => /\P{C}/u.test(value.trim())
 
 function inputObject(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -420,7 +435,17 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ...(value.inheritProvider === undefined ? [] : ['inheritProvider']),
       ...(value.childEngines === undefined ? [] : ['childEngines']),
       ...(value.modelSlots === undefined ? [] : ['modelSlots']),
+      ...(value.roleSelections === undefined ? [] : ['roleSelections']),
+      ...(value.application === undefined ? [] : ['application']),
+      ...(value.executionRevision === undefined ? [] : ['executionRevision']),
     ]) ||
+    (value.executionRevision !== undefined &&
+      (!Number.isSafeInteger(value.executionRevision) ||
+        (value.executionRevision as number) < 0 ||
+        (value.executionRevision as number) > (value.revision as number))) ||
+    (value.roleSelections !== undefined &&
+      !validateAgainst(PresentationRoleSelections, value.roleSelections).ok) ||
+    (value.application !== undefined && !validateAgainst(ApplicationSelection, value.application).ok) ||
     (value.sessionDefaults !== undefined && !isSessionDefaults(value.sessionDefaults)) ||
     (value.modelSlots !== undefined && !validateAgainst(AuxiliaryModelSlots, value.modelSlots).ok) ||
     (value.inheritProvider !== undefined &&
@@ -545,6 +570,13 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ? {}
       : { sessionDefaults: value.sessionDefaults as SessionDefaults }),
     ...(childEngines === undefined ? {} : { childEngines }),
+    ...(value.executionRevision === undefined
+      ? {}
+      : { executionRevision: value.executionRevision as number }),
+    ...(value.roleSelections === undefined
+      ? {}
+      : { roleSelections: value.roleSelections as PresentationRoleSelections }),
+    ...(value.application === undefined ? {} : { application: value.application as ApplicationSelection }),
     ...(value.modelSlots === undefined ? {} : { modelSlots: value.modelSlots as AuxiliaryModelSlots }),
   }
 }
@@ -614,7 +646,7 @@ export function createConfigurationService(
 ): ConfigurationService &
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
-  Required<Pick<ConfigurationService, 'modelSlots' | 'saveModelSlots'>> {
+  Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -711,21 +743,12 @@ export function createConfigurationService(
     ref: string,
     entry: ConfigurationProvider,
     authType: 'api-key' | 'oauth',
-  ): Promise<boolean> => {
-    const credential = await readCredential(ref)
-    if (isPayloadOnlyEntry(entry))
-      return (
-        credential?.kind === 'api-key' &&
-        credential.provider === 'generic' &&
-        isUsableCredential(credential.value)
-      )
-    if (authType === 'oauth') return isSubscriptionCredential(credential, entry.id)
-    return (
-      credential?.kind === 'api-key' &&
-      credential.provider === entry.id &&
-      isUsableCredential(credential.value)
+  ) => isConfiguredCredential(await readCredential(ref), entry.id, authType, isPayloadOnlyEntry(entry))
+
+  const credentialAvailability = (row: StoredAccount) =>
+    configurationCredentialAvailability(() =>
+      configuredCredential(row.credentialRef, providerFor(row.id, row.authType), row.authType),
     )
-  }
 
   const snapshot = async (state: StoredConfiguration | undefined): Promise<ConfigSnapshot> => {
     if (!state)
@@ -761,17 +784,22 @@ export function createConfigurationService(
                 ),
           enabled: row.enabled,
           authType: row.authType,
-          credentialConfigured: await configuredCredential(row.credentialRef, entry, row.authType),
+          ...(await credentialAvailability(row)),
         }
       }),
     )
-    const selected = accounts.find((row) => row.accountId === state.defaultAccountId && row.enabled)
+    const selected = effectiveDefaultAccount(
+      accounts,
+      state.defaultAccountId,
+      (row) => !isPayloadOnlyEntry(providerFor(row.providerId, row.authType ?? 'api-key')),
+    )
     return {
       profile,
       revision: state.revision,
+      executionRevision: state.executionRevision ?? state.revision,
       configured: selected?.credentialConfigured ?? false,
       accounts,
-      defaultAccountId: state.defaultAccountId,
+      defaultAccountId: selected?.accountId ?? null,
       effect: 'new-sessions',
       provider: selected
         ? {
@@ -788,7 +816,8 @@ export function createConfigurationService(
   /** An unset fast slot follows the default account; an explicit choice or `null` is left alone. */
   const slotsSnapshot = async (state: StoredConfiguration | undefined): Promise<ModelSlotsSnapshot> => {
     const slots = structuredClone(state?.modelSlots ?? {})
-    const row = state?.accounts.find((account) => account.accountId === state.defaultAccountId)
+    const effectiveDefault = (await snapshot(state)).defaultAccountId
+    const row = state?.accounts.find((account) => account.accountId === effectiveDefault)
     const result = { revision: state?.revision ?? 0, slots }
     if (slots.fast !== undefined || !row?.enabled) return result
     try {
@@ -873,7 +902,8 @@ export function createConfigurationService(
         { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
         { request, signal: callerSignal ?? new AbortController().signal, readCredential },
       )
-    const storedCredential = row ? await readCredential(row.credentialRef) : null
+    const storedCredential =
+      row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null
     let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
       configModel(
         record,
@@ -934,7 +964,8 @@ export function createConfigurationService(
     return supported.length === 0 ? { models, verified: false } : { models: supported, verified: true }
   }
 
-  const persistState = async (state: StoredConfiguration): Promise<void> => {
+  const persistState = async (state: StoredConfiguration, presentationOnly = false): Promise<void> => {
+    if (!presentationOnly) state.executionRevision = state.revision
     await ensureDirectory(home)
     await ensureDirectory(join(home, 'profiles'))
     await ensureDirectory(profileDir)
@@ -1043,7 +1074,8 @@ export function createConfigurationService(
       }
       await verifySubscriptionAuth(provider.id, auth, parsed.model, signal)
     }
-    const before = existing ? await readCredential(existing.credentialRef) : null
+    const before =
+      existing && parsed.apiKey === undefined ? await readCredential(existing.credentialRef) : null
     const key =
       parsed.apiKey ?? (before?.kind === 'api-key' && before.provider === entry.id ? before.value : undefined)
     const oauth = oauthEntry
@@ -1308,6 +1340,23 @@ export function createConfigurationService(
     test,
     save: (input) => serialized(() => saveInternal(input)),
     account: (input) => serialized(() => changeAccount(input)),
+    async application() {
+      return presentationSnapshot(await loadState())
+    },
+    saveApplication: (input) =>
+      serialized(async () => {
+        const current = await loadState()
+        const next = updatePresentation<StoredConfiguration>(input, current, {
+          version: 2,
+          profile,
+          accounts: [],
+          defaultAccountId: null,
+          revision: 0,
+          ...(!current ? { inheritProvider: true as const } : {}),
+        })
+        await persistState(next, true)
+        return presentationSnapshot(next)
+      }),
     async modelSlots() {
       return slotsSnapshot(await loadState())
     },
@@ -1401,8 +1450,7 @@ export function createConfigurationService(
       const routeGroups = await Promise.all(
         enabled.map(async (row) => {
           const entry = providerFor(row.id, row.authType)
-          if (!(await configuredCredential(row.credentialRef, entry, row.authType)))
-            throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+          if (!(await credentialAvailability(row)).credentialConfigured) return []
           // A payload-only account has no provider catalogue to resolve against; its declared
           // models render through the fixed payload template instead.
           if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]

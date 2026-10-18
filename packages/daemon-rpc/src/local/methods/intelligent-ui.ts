@@ -68,12 +68,9 @@ export function registerIntelligentUi(
         service = entry.session.intelligentUi
       if (!service) throw rpcError('CAPABILITY_DENIED')
       const result = await service.read(params, signal)
-      // Repair a durable queued invocation's wake after restart, through SC1's ordinary runner.
-      cx.continueFollowUps?.(
-        entry,
-        undefined,
-        result.actions.some((action) => action.status === 'received'),
-      )
+      // Repair received invocations after restart; idle polling must not claim prompt activity.
+      if (result.actions.some((action) => action.status === 'received'))
+        cx.continueFollowUps?.(entry, undefined, true)
       return result
     })
   })

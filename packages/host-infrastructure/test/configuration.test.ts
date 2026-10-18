@@ -349,9 +349,13 @@ it('saves a payload-only account bound to a generic credential and renders its r
     ),
   ).toThrow(/E_PRESET_UNRESOLVED/)
 
-  // The rendered route fails closed when the bound credential disappears.
+  // Losing the bound credential excludes the route without blocking the settings surface.
   await createCredentialStore({ root }).remove(ref)
-  await expect(service.profileInput()).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  expect((await service.profileInput()).provider?.routes).toEqual([])
+  expect((await service.get()).accounts?.[0]).toMatchObject({
+    credentialConfigured: false,
+    credentialIssue: 'CONFIG_CREDENTIAL_REQUIRED',
+  })
 })
 
 it('accepts a direct endpoint for a payload-only account and rejects chat-form fields', async () => {
@@ -1060,7 +1064,16 @@ it.runIf(process.getuid !== undefined).each([0o500, 0o755])(
     await chmod(directory, 0o700)
     await service.save({ ...input, model: 'deepseek-flash', expectedRevision: 0 })
     await chmod(directory, mode)
-    await expect(service.get()).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_PERMISSIONS' })
+    expect((await service.get()).accounts?.[0]).toMatchObject({
+      credentialConfigured: false,
+      credentialIssue: 'CONFIG_CREDENTIAL_UNREADABLE',
+    })
+    expect((await service.profileInput()).provider?.routes).toEqual([])
+    // An unavailable credential degrades reads only; writes retain their permission refusal.
+    await expect(
+      service.save({ ...input, model: 'deepseek-flash', expectedRevision: 1 }),
+    ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_PERMISSIONS' })
+    await service.get()
     const records = (await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8'))
       .trim()
       .split('\n')
@@ -1189,3 +1202,60 @@ it('persists explicit auxiliary defaults under the shared revision without chang
     slots: { fast: null, verifier: null },
   })
 })
+
+it.each(['missing', 'unreadable'] as const)(
+  'excludes a %s default credential, falls back only to a configured account, and recovers on save',
+  async (failure) => {
+    const entry = getApiKeyProvider('openai')
+    if (!entry) throw new Error('openai registry entry missing')
+    const model = (await entry.createAdapter()).models(entry.route)[0]?.id
+    if (!model) throw new Error('model missing')
+    const server = await fixture(model)
+    const root = await home()
+    const service = createConfigurationService({ home: root, profile: 'local-dev' })
+    const input = { providerId: 'openai', baseUrl: server.baseUrl, model }
+    await service.save({ ...input, accountId: 'work', apiKey: 'test-work-key' })
+    await service.save({ ...input, accountId: 'personal', apiKey: 'test-person-key' })
+    const original = await service.profileInput()
+    const [work, personal] = original.provider?.routes ?? []
+    if (!work?.credentialRef || !personal?.credentialRef) throw new Error('account routes missing')
+    const store = createCredentialStore({ root })
+    if (failure === 'missing') await store.remove(work.credentialRef)
+    else {
+      // Malformed credential bytes are unreadable and must never enter an audit message.
+      const name = work.credentialRef.split('/').at(-1)
+      if (!name) throw new Error('credential name missing')
+      await writeFile(join(root, 'secrets', 'openai', name), 'test-bad-key', { mode: 0o600 })
+    }
+    const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+    const degraded = await reloaded.profileInput()
+    expect(degraded.provider?.routes?.map((row) => row.route)).toEqual([personal.route])
+    const status = await reloaded.get()
+    expect(status).toMatchObject({
+      configured: true,
+      defaultAccountId: 'personal',
+      provider: { route: personal.route },
+    })
+    expect(status.accounts?.find((row) => row.accountId === 'work')).toMatchObject({
+      enabled: true,
+      credentialConfigured: false,
+      credentialIssue: failure === 'missing' ? 'CONFIG_CREDENTIAL_REQUIRED' : 'CONFIG_CREDENTIAL_UNREADABLE',
+    })
+    // Availability never rewrites the saved preference or increments a revision.
+    expect(JSON.parse(await readFile(await savedModelPath(root), 'utf8')).defaultAccountId).toBe('work')
+    expect(status.revision).toBe(2)
+    await store.remove(personal.credentialRef)
+    expect((await reloaded.profileInput()).provider).toMatchObject({ routes: [], catalog: { include: [] } })
+    expect(await reloaded.get()).toMatchObject({ configured: false, defaultAccountId: null, provider: null })
+    const restored = await reloaded.save({
+      ...input,
+      accountId: 'work',
+      apiKey: 'test-new-key',
+      expectedRevision: 2,
+    })
+    expect(restored).toMatchObject({ configured: true, defaultAccountId: 'work', revision: 3 })
+    expect((await reloaded.profileInput()).provider?.routes?.map((row) => row.route)).toEqual([work.route])
+    const audit = await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8').catch(() => '')
+    expect(audit + JSON.stringify([status, degraded, restored])).not.toMatch(/test-(work|person|new|bad)-key/)
+  },
+)

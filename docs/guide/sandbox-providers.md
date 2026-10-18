@@ -66,6 +66,14 @@ The Docker example reports partial process/network enforcement and refuses unsup
 
 An explicit L0 override requests no command enforcement and reports `level: none, scope: []`. The file-tool fence still applies independently.
 
+## Standard devices in local confinement
+
+The macOS Seatbelt profile permits reads and writes to the exact `/dev/null` literal, and reads to the exact `/dev/zero`, `/dev/random` and `/dev/urandom` literals. This lets Git and other commands use the null sink under workspace-write, including when reads are restricted. It grants no writes to the other three devices, broad `/dev` subtree access, raw disk access, temporary-directory writes or additional ioctls. The existing controlling-TTY ioctl rule is unchanged. Explicit path denies override these device grants; protected paths and workspace write roots retain their restrictions.
+
+Local stdio MCP isolation uses the same compiler, so its strict, workspace-write and network profiles have the same device exceptions. Its runtime read list already includes `/dev/null` and `/dev/urandom`; runtime reads alone do not authorize writes.
+
+Linux bubblewrap already supplies an isolated minimal device tree through `--dev /dev`, rather than exposing host raw devices. Its device permissions are not identical to Seatbelt's literal rules. Landlock is currently a diagnostic ABI check, not an alternative command confinement backend. Windows has no implemented local L1 backend; the Windows compiler refuses confinement, and the explicit conditional startup policy described below remains the only unimplemented-platform exception. Neither Linux nor Windows needs a device-policy change for this macOS defect.
+
 ## Conditional local isolation
 
 `l1Implementation` describes implementation support (`implemented`, `unimplemented`, or `unknown`), separately from command availability and the actual workspace probe. Missing support is unknown. Only the trusted builtin local backend can grant the unimplemented exception; a third-party declaration cannot authorize a fallback to local execution.

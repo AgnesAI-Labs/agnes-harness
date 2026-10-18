@@ -16,7 +16,6 @@
           "displayName": "Service-backed panel example",
           "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
           "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "服务面板示例",
@@ -37,7 +36,6 @@
       "displayName": "Service-backed panel example",
       "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
       "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "服务面板示例",
@@ -45,6 +43,9 @@
           "description": "演示工作台面板如何通过受限浏览器桥接读取插件服务。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   }
 }

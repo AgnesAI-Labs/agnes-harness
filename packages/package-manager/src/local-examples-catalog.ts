@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { BUNDLED_EXAMPLES, bundledExampleSource } from './bundled-plugin-source.js'
 import { type CatalogRead, createCatalog, staticCatalogSource } from './catalog.js'
 import { PackageError } from './errors.js'
@@ -75,18 +76,18 @@ function json(file: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function descriptor(
+async function descriptor(
   workspace: string,
   relativeDirectory: string,
   signal?: AbortSignal,
   sourceRef?: string,
-): Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'> {
+): Promise<Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'>> {
   signal?.throwIfAborted()
   const directory = join(workspace, relativeDirectory)
   let owned: string
   try {
     if (lstatSync(directory).isSymbolicLink()) return invalid('symlink')
-    owned = realpathSync(directory)
+    owned = nativeRealpathSync(directory)
   } catch {
     return invalid('directory')
   }
@@ -96,7 +97,7 @@ function descriptor(
     return invalid('identity')
   const source = { type: 'file' as const, ref: sourceRef ?? `file:./${relativeDirectory}` }
   const integrity = hashDirectory(owned, { ...(signal ? { signal } : {}) })
-  const { preview } = inspectStaged({
+  const { preview } = await inspectStaged({
     dir: owned,
     source,
     fetched: {
@@ -116,9 +117,11 @@ function descriptor(
     integrity,
     license: preview.license,
     contributions: preview.contributions,
+    ...(preview.agents ? { agents: preview.agents } : {}),
+    ...(preview.application ? { application: preview.application } : {}),
     ...(preview.presentation ? { presentation: preview.presentation } : {}),
     ...(preview.metadata ? { metadata: preview.metadata } : {}),
-    ...(preview.kinds === undefined ? {} : { kinds: preview.kinds }),
+    ...(preview.provides === undefined ? {} : { provides: preview.provides }),
     compatibility: 'supported' as const,
   }
   const projected = { ...value, sourceId: SOURCE_ID, retrievedAt: new Date(0).toISOString() }
@@ -137,7 +140,7 @@ export async function createLocalExamplesCatalog(
 ): Promise<LocalExamplesCatalog> {
   let workspace: string
   try {
-    workspace = realpathSync(options.workspace)
+    workspace = nativeRealpathSync(options.workspace)
   } catch {
     return invalid('workspace')
   }
@@ -145,7 +148,7 @@ export async function createLocalExamplesCatalog(
   const source = staticCatalogSource(SOURCE_ID, async (signal) => ({
     issuedAt: new Date(now()).toISOString(),
     ttlMs: TTL_MS,
-    entries: [
+    entries: await Promise.all([
       ...FAMILIES.flatMap((family) =>
         family.releases.map((release) =>
           descriptor(workspace, `examples/packages/${family.family}/${release}`, signal),
@@ -160,7 +163,7 @@ export async function createLocalExamplesCatalog(
             descriptor(workspace, `examples/packages/${family}/broken`, signal),
           )
         : []),
-    ],
+    ]),
   }))
   const catalog = createCatalog([source], { priority: [SOURCE_ID], now })
   const initial = await catalog.read(options.signal ? { signal: options.signal } : {})
@@ -181,20 +184,8 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
         cwd: source.root,
         ...(signal ? { signal } : {}),
       })
-      const entry = descriptor(realpathSync(staging), example.name, signal, example.ref)
-      if (example.family !== 'loops') entries.push(entry)
-      else {
-        // The loop examples predate agnes.kinds; their family is the declaration.
-        const includes = entry.presentation?.includes
-        const kinds = ['loop' as const, ...(includes?.kinds ?? []).filter((kind) => kind !== 'loop')]
-        entries.push({
-          ...entry,
-          kinds: ['loop'],
-          ...(entry.presentation
-            ? { presentation: { ...entry.presentation, includes: { kinds, counts: includes?.counts ?? {} } } }
-            : {}),
-        })
-      }
+      const entry = await descriptor(nativeRealpathSync(staging), example.name, signal, example.ref)
+      entries.push(entry)
     }
     return entries
   } finally {

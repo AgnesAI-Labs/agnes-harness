@@ -26,16 +26,7 @@ export function validatePluginMetadata(x: unknown): ValidationResult<EXTENSION_M
   )
   if (!checked.ok) return checked
   const m = checked.value
-  if (
-    (m.category === 'example' && !m.exampleOf) ||
-    (m.category !== 'example' &&
-      (m.exampleOf !== undefined || m.launches !== undefined || m.pageEntry !== undefined)) ||
-    new Set(m.launches?.map((launch) => launch.id)).size !== (m.launches?.length ?? 0) ||
-    m.launches?.some(
-      (launch) =>
-        new TextEncoder().encode(launch.prompt).byteLength > 16384 || /secret:\/\//i.test(launch.prompt),
-    )
-  )
+  if (m.pageEntry !== undefined && !m.exampleOf)
     return {
       ok: false,
       errors: [{ path: '/exampleOf', code: 'OTHER', message: 'Invalid example declarations.' }],
@@ -54,7 +45,6 @@ export function resolvePluginMetadata(
     displayName: localized?.displayName ?? metadata.displayName,
     summary: localized?.summary ?? metadata.summary,
     description: localized?.description ?? metadata.description,
-    category: metadata.category,
     docsUrl: localized?.docsUrl ?? metadata.docsUrl,
     samplePrompt: metadata.samplePrompt?.[locale] ?? metadata.samplePrompt?.en,
     experimental: metadata.experimental === true,

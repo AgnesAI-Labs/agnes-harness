@@ -11,6 +11,7 @@ describe('repo', () => {
       .sort()
     expect(names).toEqual([
       '@agnes/ai',
+      '@agnes/authoring-eval',
       '@agnes/base',
       '@agnes/batch',
       '@agnes/bridges',

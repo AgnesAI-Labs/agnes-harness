@@ -28,6 +28,16 @@ it('restores pages and tabs on history traversal without adding entries and pres
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toBeUndefined()
     expect(history.length).toBe(count + 1)
+    homeNavigation.openRef('a#overview', { tab: 'work' })
+    expect(new URL(location.href).searchParams.get('pagePackage')).toBe('a')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(homeNavigation.getSnapshot()).toEqual({
+      id: 'overview',
+      pageRef: 'a#overview',
+      selection: { tab: 'work' },
+    })
+    homeNavigation.open('overview')
+    expect(new URL(location.href).searchParams.get('pagePackage')).toBeNull()
     history.replaceState(null, '', '/?page=third-party')
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
@@ -38,6 +48,33 @@ it('restores pages and tabs on history traversal without adding entries and pres
   window.dispatchEvent(new PopStateEvent('popstate'))
   expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
 })
+
+it.each(['business-agents', 'business-agent', 'agent-fde', 'fde'])(
+  'redirects legacy page %s without losing deep-link context',
+  (page) => {
+    history.replaceState({ scope: 1 }, '', `/?page=${page}&tab=all&view=agent-acme&session=s`)
+    const count = history.length
+    const stop = bindHomeRouting()
+    try {
+      expect(homeNavigation.getSnapshot()).toEqual({ id: 'agents', selection: { tab: 'all' } })
+      expect(new URLSearchParams(location.search).get('page')).toBe('agents')
+      expect(new URLSearchParams(location.search).get('session')).toBe('s')
+      expect(new URLSearchParams(location.search).get('view')).toBe('agent-acme')
+      expect(history.length).toBe(count)
+      // Qualified plugin pages keep their name and owner, even when the name was a builtin alias.
+      history.replaceState(null, '', `/?page=${page}&pagePackage=acme/console&tab=details`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      expect(homeNavigation.getSnapshot()).toEqual({
+        id: page,
+        pageRef: `acme/console#${page}`,
+        selection: { tab: 'details' },
+      })
+      expect(new URLSearchParams(location.search).get('page')).toBe(page)
+    } finally {
+      stop()
+    }
+  },
+)
 
 it('replaces the selected registration lifetime on batched plugin reload, and unmounts on removal', async () => {
   const { Context } = await import('@agnes/cordis')

@@ -1,6 +1,5 @@
 import type { ModelSettings } from '@agnes/protocol'
-import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, contextBudgetLabel, Icon, SettingsInput } from '@agnes/web-ui'
+import { Button, contextBudgetLabel, Icon, SettingsInput, type Translate } from '@agnes/web-ui'
 import { type ReactNode, useState } from 'react'
 import { budgetChoices, checkBudget, draftSettings, thinkingChoices, unavailableThinking } from './state.js'
 import type { ModelPickerSettings } from './types.js'
@@ -61,6 +60,7 @@ function Choices({
 }
 
 export function SessionModelSettings({
+  t,
   settings,
   panel,
   disabled,
@@ -68,6 +68,7 @@ export function SessionModelSettings({
   close,
 }: {
   settings: ModelPickerSettings
+  t: Translate
   panel: 'thinking' | 'context' | 'auxiliary' | undefined
   disabled: boolean
   commit(next: ModelSettings): Promise<void>
@@ -81,8 +82,8 @@ export function SessionModelSettings({
   const [custom, setCustom] = useState(
     !!saved && Number(saved) !== settings.capacity && !presets.includes(Number(saved)),
   )
-  const levels = thinkingChoices(settings, tr)
-  const stale = unavailableThinking(settings, tr)
+  const levels = thinkingChoices(settings, t)
+  const stale = unavailableThinking(settings, t)
   const thinking = stale ? undefined : (settings.thinking ?? '')
   const check = checkBudget(budget, settings.capacity)
   const capacity = contextBudgetLabel(settings.capacity)
@@ -98,35 +99,35 @@ export function SessionModelSettings({
     <section
       id="model-settings-popover"
       hidden={panel !== 'thinking' && panel !== 'context'}
-      aria-label={tr('modelSettings.detailAria')}
+      aria-label={t('modelSettings.detailAria')}
     >
       <div hidden={panel !== 'thinking'}>
         <Choices
           id="session-model-thinking"
-          label={tr('modelSettings.thinkingLabel')}
-          options={levels.length ? levels : [{ value: '', label: tr('modelSettings.presetAuto') }]}
+          label={t('modelSettings.thinkingLabel')}
+          options={levels.length ? levels : [{ value: '', label: t('modelSettings.presetAuto') }]}
           selected={thinking}
           disabled={disabled}
           onChoose={(value) => apply(value, budget, true)}
         />
         {stale ? (
           <p className="model-picker-notice">
-            {tr('modelSettings.savedThinkingUnavailable', { value: stale })}
+            {t('modelSettings.savedThinkingUnavailable', { value: stale })}
           </p>
         ) : null}
       </div>
       <div hidden={panel !== 'context'}>
         <Choices
           id="session-model-budget"
-          label={tr('modelSettings.windowLabel')}
+          label={t('modelSettings.windowLabel')}
           options={[
             {
-              label: tr('modelSettings.presetAuto'),
+              label: t('modelSettings.presetAuto'),
               value: '',
-              description: tr('modelSettings.usingCapacity', { capacity }),
+              description: t('modelSettings.usingCapacity', { capacity }),
             },
             ...presets.map((tokens) => ({ label: contextBudgetLabel(tokens), value: String(tokens) })),
-            { label: tr('modelSettings.custom'), value: 'custom' },
+            { label: t('modelSettings.custom'), value: 'custom' },
           ]}
           selected={
             custom
@@ -159,7 +160,7 @@ export function SessionModelSettings({
               autoComplete="off"
               value={budget.endsWith('K') ? budget.slice(0, -1) : budget ? String(Number(budget) / 1000) : ''}
               disabled={disabled}
-              aria-label={tr('modelSettings.customKAria')}
+              aria-label={t('modelSettings.customKAria')}
               aria-invalid={!check.valid}
               aria-describedby="session-model-window-hint session-model-settings-error"
               onChange={(event) =>
@@ -176,16 +177,16 @@ export function SessionModelSettings({
                 apply(thinking ?? '', budget, true)
               }}
             />
-            <span aria-hidden="true">{tr('modelSettings.kUnit')}</span>
+            <span aria-hidden="true">{t('modelSettings.kUnit')}</span>
           </div>
         ) : null}
         <p id="session-model-window-hint" className="model-picker-hint">
-          {tr('modelSettings.compactHint', { capacity })}
+          {t('modelSettings.compactHint', { capacity })}
         </p>
         <p id="session-model-settings-error" className="model-picker-error" role="alert">
           {check.valid
             ? ''
-            : tr('modelSettings.windowRangeK', {
+            : t('modelSettings.windowRangeK', {
                 min: (check.min / 1000).toLocaleString('en-US', { maximumFractionDigits: 3 }),
                 max: (check.max / 1000).toLocaleString('en-US', { maximumFractionDigits: 3 }),
               })}

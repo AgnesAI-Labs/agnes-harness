@@ -5,6 +5,7 @@ import {
   type DaemonDiscovery,
   type DaemonDiscoveryWeb,
   type DaemonScope,
+  type DaemonScopeOptions,
   DaemonStartupBusyError,
   daemonSocketPaths,
   daemonStatus,
@@ -24,6 +25,7 @@ import {
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
 import { BootError } from '../errors.js'
+import { connectionScope, validateConnectionSocket } from './connection-scope.js'
 import {
   readStartupDiagnostic,
   removeStartupDiagnostic,
@@ -60,6 +62,8 @@ export type EnsureLocalBackendOptions = {
   agnesVersion?: string
   /** Management Web may start read-only recovery without evaluating a damaged package lock. */
   allowPackageRecovery?: boolean
+  /** Full preparation is the default for launchers and maintenance callers. */
+  preparation?: 'connect-first' | 'full'
   signal?: AbortSignal
   /** Request the daemon's authenticated loopback Web listener for this exact origin. */
   webOrigin?: string
@@ -88,6 +92,22 @@ const DEFAULT_READINESS_TIMEOUT_MS = 30_000
 const DEFAULT_READINESS_POLL_MS = 50
 /** Cleanup is best effort after a bounded startup failure; it must not defeat the readiness bound. */
 const CLIENT_CLEANUP_TIMEOUT_MS = 250
+
+/** Status/stop use the existing identity-bound process control, without starting a daemon or
+ * requiring its RPC version to match (operators must be able to stop an older daemon). */
+export async function resolveLocalControlScope(options: DaemonScopeOptions = {}): Promise<DaemonScope> {
+  try {
+    const scope = await connectionScope({ ...options, env: { ...(options.env ?? process.env) } })
+    const discovery = await readDaemonDiscovery(scope)
+    if (discovery) {
+      await validateConnectionSocket(discovery.socketPath)
+      return scope
+    }
+  } catch {
+    // Maintenance diagnostics and absent/stale owners retain the original full resolution path.
+  }
+  return resolveDaemonScope(options)
+}
 
 function asBootError(stage: string, error: unknown): BootError {
   if (error instanceof BootError) return error
@@ -320,6 +340,7 @@ async function sdkReady(
   options: EnsureLocalBackendOptions,
   deadlineAt: number,
 ): Promise<DaemonDiscovery> {
+  await withinDeadline(() => validateConnectionSocket(discovery.socketPath), deadlineAt, options.signal)
   const makeClient = options.createClientImpl ?? createClient
   const remaining = Math.max(1, deadlineAt - Date.now())
   const client = makeClient({
@@ -340,7 +361,9 @@ async function sdkReady(
     timeouts: { initialize: remaining, request: remaining },
   })
   try {
-    await withinDeadline(() => client.initialize(), deadlineAt, options.signal)
+    const info = await withinDeadline(() => client.initialize(), deadlineAt, options.signal)
+    if (options.agnesVersion !== undefined && info.agnesVersion !== options.agnesVersion)
+      throw new BootError('local daemon version does not match this CLI; stop/restart the local daemon')
     // Configuration is part of the readiness contract: a listening socket and initialize alone do
     // not prove this is the same fully assembled daemon that CLI/Web settings will use.
     await withinDeadline(() => client.config.get(), deadlineAt, options.signal)
@@ -587,27 +610,43 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || !Number.isSafeInteger(poll) || poll <= 0)
     throw new BootError('local daemon readiness timing is invalid')
   const deadlineAt = Date.now() + timeout
-  let scope: DaemonScope
-  try {
-    scope = await withinDeadline(
-      () =>
-        resolveDaemonScope({
-          ...(options.env ? { env: options.env } : {}),
-          ...(options.cwd ? { cwd: options.cwd } : {}),
-          ...(options.home ? { home: options.home } : {}),
-          ...(options.profile ? { profile: options.profile } : {}),
-          ...(options.workspace ? { workspace: options.workspace } : {}),
-          ...(options.dataDir ? { dataDir: options.dataDir } : {}),
-          ...(options.agnesVersion ? { agnesVersion: options.agnesVersion } : {}),
-          ...(options.allowPackageRecovery ? { allowPackageRecovery: true } : {}),
-        }),
-      deadlineAt,
-      options.signal,
-    )
-  } catch (error) {
-    throw asBootError('scope resolution', error)
+  let scope: DaemonScope | undefined
+  let started: DiscoveryResult | undefined
+  if (options.preparation === 'connect-first') {
+    try {
+      const candidate = await withinDeadline(() => connectionScope(options), deadlineAt, options.signal)
+      const discovery = await readReady(candidate, requested, deadlineAt, options.signal)
+      if (discovery) {
+        const verified = await sdkReady(candidate, discovery, options, deadlineAt)
+        scope = candidate
+        started = { discovery: verified, verified: true }
+      }
+    } catch {
+      // Full preparation below preserves existing startup/recovery and diagnostic refusals.
+      // An unverified endpoint never receives a command, and we never stop a reused daemon.
+    }
   }
-  const started = await discoverOrStart(scope, options, requested, deadlineAt)
+  if (!scope)
+    try {
+      scope = await withinDeadline(
+        () =>
+          resolveDaemonScope({
+            ...(options.env ? { env: options.env } : {}),
+            ...(options.cwd ? { cwd: options.cwd } : {}),
+            ...(options.home ? { home: options.home } : {}),
+            ...(options.profile ? { profile: options.profile } : {}),
+            ...(options.workspace ? { workspace: options.workspace } : {}),
+            ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+            ...(options.agnesVersion ? { agnesVersion: options.agnesVersion } : {}),
+            ...(options.allowPackageRecovery ? { allowPackageRecovery: true } : {}),
+          }),
+        deadlineAt,
+        options.signal,
+      )
+    } catch (error) {
+      throw asBootError('scope resolution', error)
+    }
+  started ??= await discoverOrStart(scope, options, requested, deadlineAt)
   try {
     const discovery = started.verified
       ? started.discovery

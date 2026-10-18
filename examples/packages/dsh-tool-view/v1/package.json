@@ -15,7 +15,6 @@
           "displayName": "Tool display example",
           "summary": "Demonstrates custom displays for running tool calls and completed tool results.",
           "description": "Demonstrates custom displays for running tool calls and completed tool results.",
-          "category": "ui",
           "locales": {
             "zh-CN": {
               "displayName": "工具展示示例",
@@ -36,7 +35,6 @@
       "displayName": "Tool display example",
       "summary": "Demonstrates custom displays for running tool calls and completed tool results.",
       "description": "Demonstrates custom displays for running tool calls and completed tool results.",
-      "category": "ui",
       "locales": {
         "zh-CN": {
           "displayName": "工具展示示例",
@@ -44,7 +42,10 @@
           "description": "演示运行中工具调用与已完成工具结果的自定义展示。"
         }
       }
-    }
+    },
+    "provides": [
+      "ui"
+    ]
   },
   "exports": "./index.mjs"
 }

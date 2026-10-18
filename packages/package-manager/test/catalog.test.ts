@@ -80,25 +80,52 @@ it('failed discovery uses only a still-fresh snapshot and reports cache provenan
   fail = true
   expect((await catalog.read()).sources).toEqual([{ sourceId: 'curated', status: 'cached' }])
 })
-it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize'])(
-  'rejects invalid %s documents without publishing',
-  async (kind) => {
-    const doc = fixture()
-    if (kind === 'ttl') doc.ttlMs = 86400001
-    if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
-    if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
-    if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
-    if (kind === 'unknown') doc.extra = true
-    if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
-    const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
-    expect(await catalog.read()).toEqual({
-      entries: [],
-      conflicts: [],
-      sources: [{ sourceId: 'curated', status: 'unavailable' }],
-    })
-    expect(catalog.snapshots()).toEqual([])
-  },
-)
+it.each([
+  'ttl',
+  'future',
+  'duplicate',
+  'source',
+  'unknown',
+  'oversize',
+  'duplicate-agent',
+  'foreign-agent',
+  'secret-agent',
+  'oversize-agent',
+])('rejects invalid %s documents without publishing', async (kind) => {
+  const doc = fixture()
+  if (kind === 'ttl') doc.ttlMs = 86400001
+  if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
+  if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
+  if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
+  if (kind === 'unknown') doc.extra = true
+  if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
+  const agent = {
+    ref: `${doc.entries[0].id}#work`,
+    launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+  }
+  if (kind === 'duplicate-agent') doc.entries[0].agents = [agent, agent]
+  if (kind === 'foreign-agent') doc.entries[0].agents = [{ ...agent, ref: 'other/package#work' }]
+  if (kind === 'secret-agent' || kind === 'oversize-agent')
+    doc.entries[0].agents = [
+      {
+        ...agent,
+        launch: {
+          ...agent.launch,
+          prompt: {
+            mode: 'draft',
+            text: { en: kind === 'secret-agent' ? 'secret://private' : '😀'.repeat(4097) },
+          },
+        },
+      },
+    ]
+  const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
+  expect(await catalog.read()).toEqual({
+    entries: [],
+    conflicts: [],
+    sources: [{ sourceId: 'curated', status: 'unavailable' }],
+  })
+  expect(catalog.snapshots()).toEqual([])
+})
 it.each([{ priority: ['curated', 'curated'] }, { priority: ['missing'] }, { priority: [] }])(
   'rejects invalid managed priority $priority',
   ({ priority }) => {
@@ -228,14 +255,21 @@ describe('local example catalog', () => {
     ])
     const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
     expect(fde).toHaveLength(12)
-    expect(fde.every((entry) => entry.kinds?.includes('bundle'))).toBe(true)
+    expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
     // The gallery finds business agents by category and offers each one's own prompt in both languages.
-    expect(result.entries.filter((entry) => entry.metadata?.category === 'business-agent')).toEqual(fde)
+    expect(result.entries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
     for (const entry of fde) {
       const prompt = entry.metadata?.samplePrompt
       expect(prompt?.en).toBeTruthy()
       expect(prompt?.['zh-CN']).toBeTruthy()
       expect(prompt?.en).not.toMatch(/^Run the .* workflow/)
+      expect(entry.agents?.[0]?.launch.prompt).toEqual({ mode: 'draft', text: prompt })
+      const name = entry.id.slice('@agnes-fde/'.length)
+      const manifest = JSON.parse(
+        readFileSync(new URL(`../../../examples/fde/${name}/package.json`, import.meta.url), 'utf8'),
+      )
+      // Shipped agents inherit the selected deployment model, including homes without a Demo route.
+      expect(manifest.agnes.bundles[name].presets[name].model).toBeUndefined()
     }
     expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
     // Their policy lives in plugin code, which a listing never runs: the summary says so instead of
@@ -256,12 +290,12 @@ describe('local example catalog', () => {
     // What each one contains is derived: the declared kinds, and a count only where the data has one.
     for (const entry of fde) {
       const includes = entry.presentation?.includes
-      expect(new Set(includes?.kinds)).toEqual(new Set(entry.kinds))
+      expect(new Set(includes?.provides)).toEqual(new Set(entry.provides))
       expect(includes?.counts.bundles).toBe(1)
       expect(includes?.counts.tools).toBeUndefined()
-      expect(includes?.counts.ui === 1).toBe(entry.kinds?.includes('ui'))
+      expect(includes?.counts.ui === 1).toBe(entry.provides?.includes('ui'))
       // One category level: the package's, which its plugin rows repeat rather than contradict.
-      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.category).toBe('business-agent')
+      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.displayName).toBeTruthy()
     }
     for (const entry of result.entries) {
       const directory = fileURLToPath(

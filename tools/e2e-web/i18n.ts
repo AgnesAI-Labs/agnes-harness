@@ -34,7 +34,7 @@ export function unresolvedLabels(known: string[]) {
   const namespaces = new Set(known.map((key) => key.split('.')[0]))
   const result: string[] = []
   for (const element of document.querySelectorAll<HTMLElement>('body *')) {
-    if (!element.checkVisibility() || element.closest('pre, code, script, style')) continue
+    if (!element.checkVisibility() || element.closest('pre, code, script, style, [translate="no"]')) continue
     const values = [
       element.getAttribute('aria-label'),
       element.getAttribute('placeholder'),

@@ -4,6 +4,8 @@
     "lifetime": "profile",
     "slotCatalogVersion": "dsh-client-slots/v1",
     "slots": ["conversation.view"],
-    "requiresBackendRows": ["ext:agnes/intelligent-ui"]
+    "requiresBackendRows": ["ext:agnes/intelligent-ui"],
+    "presentationRoles": ["interaction"],
+    "id": "interaction-ui"
   }
 }

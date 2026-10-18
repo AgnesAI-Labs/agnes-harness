@@ -64,9 +64,13 @@ export function unresolvedProviderAssembly(): Awaited<ReturnType<typeof buildPro
     provider: {
       // biome-ignore lint/correctness/useYield: fail-closed inference has no events
       async *infer() {
-        throw new HostError('E_PRESET_UNRESOLVED', 'no-routes: the profile declares no provider.routes', {
-          detail: { reason: 'no-routes' },
-        })
+        throw new HostError(
+          'E_PRESET_UNRESOLVED',
+          'no-routes: Configure a model account in Settings → Models (请在设置 → 模型中配置模型账号).',
+          {
+            detail: { reason: 'no-routes' },
+          },
+        )
       },
       models: () => [],
     },

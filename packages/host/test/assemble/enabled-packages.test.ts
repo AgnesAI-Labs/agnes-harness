@@ -64,7 +64,13 @@ async function setup(projections = false) {
         packages: Object.fromEntries(
           ids.map((id) => [
             id,
-            { version: '0.1.0', integrity: 'sha512-test', trust: 'builtin', enabled: true },
+            {
+              version: '0.1.0',
+              source: { type: 'builtin' as const, ref: 'builtin' },
+              integrity: 'builtin:0.1.0',
+              trust: 'builtin',
+              enabled: true,
+            },
           ]),
         ),
       },

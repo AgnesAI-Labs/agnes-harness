@@ -8,7 +8,7 @@ import { ExitCode, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageE
 import type { Booted, ParsedArgs } from '../types.js'
 
 export const RUN_USAGE =
-  'agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]'
+  'Advanced composition runner: agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]\nFor an agent, use agh --new --agent <package#agent> -p <prompt>.'
 export type RunArgs = {
   bundle: string
   input: string
@@ -34,7 +34,11 @@ export function parseRunArgs(rest: string[]): RunArgs {
       json = true
       continue
     }
-    if (!['--bundle', '--input', '--profile', '--preset', '--loop', '--model', '--cwd'].includes(flag))
+    if (
+      !['--bundle', '--input', '--profile', '--preset', '--agent', '--loop', '--model', '--cwd'].includes(
+        flag,
+      )
+    )
       throw new UsageError(`unknown run option ${flag}\n${RUN_USAGE}`)
     const value = rest[++index]
     if (!value || (value.startsWith('-') && !(flag === '--input' && value === '-')))
@@ -183,6 +187,7 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
           signal: ac.signal,
           ...(parsed.args.preset ? { preset: parsed.args.preset } : {}),
           ...(parsed.args.loop ? { loop: parsed.args.loop } : {}),
+          ...(parsed.args.agent ? { agent: parsed.args.agent } : {}),
           ...(parsed.args.model ? { model: parsed.args.model } : {}),
           write: (record) => writeLine(deps.stdout, { ...record, input: inputs[index] }),
         })

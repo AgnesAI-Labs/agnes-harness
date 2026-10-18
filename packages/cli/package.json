@@ -69,7 +69,8 @@
     "esbuild": "0.28.2",
     "postject": "1.0.0-alpha.6",
     "@agnes/host-infrastructure": "workspace:*",
-    "@agnes/plugin-runtime": "workspace:*"
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/web-client": "workspace:*"
   },
   "license": "Apache-2.0"
 }

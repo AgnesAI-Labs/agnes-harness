@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
@@ -9,6 +9,7 @@ import {
   type PackageSourcePolicy,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { isPackageError, PackageError } from './errors.js'
@@ -50,7 +51,7 @@ import {
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
-import { entryFrom, readPackageJson } from './package-record.js'
+import { applyReviewedContract, entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
 import {
@@ -63,7 +64,7 @@ import {
 } from './provenance.js'
 import {
   collectRuntimeSnapshotsStore,
-  listRuntimePinsStore,
+  listRuntimePinsStoreAsync,
   pinRuntimeSnapshotStore,
   type RuntimePin,
   type RuntimeSnapshotCollection,
@@ -93,6 +94,7 @@ import {
 } from './store.js'
 import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
 import { dependentUpdateBlockers, updatePackages } from './update.js'
+import { withoutPackageVerification, withPackageVerification } from './verification-operation.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 export type PackageStatus = {
@@ -128,7 +130,7 @@ export interface PackageManager {
   trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
   untrust(profileDir: string, id: string, decision: TrustDecision): Promise<LockEntry>
   /** Ordinary concurrent reads share only their in-flight scan. Publication/authorization reads
-   * use fresh to establish a new verification boundary. Nothing is cached after a scan. */
+   * use fresh to establish a new verification boundary. Completed inventories are never retained. */
   inventory(profileDir: string, opts?: Readonly<{ fresh?: boolean }>): Promise<InstalledInventory>
   /** Lock-free, validated snapshot read for a worker while daemon package effects hold the lock. */
   runtimePluginSnapshots(profileDir: string): Promise<readonly RuntimePluginSnapshot[]>
@@ -253,9 +255,9 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
   let root: string
   let deploy: string
   try {
-    root = realpathSync(profileDir)
+    root = nativeRealpathSync(profileDir)
     if (lstatSync(deployDir).isSymbolicLink()) throw new Error('symlink')
-    deploy = realpathSync(deployDir)
+    deploy = nativeRealpathSync(deployDir)
   } catch {
     throw new PackageError('E_WORKSPACE_UNTRUSTED', 'workspace directory is not readable', {
       detail: { reason: 'unreadable' },
@@ -273,7 +275,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   const profileKey = (directory: string): string =>
-    existsSync(directory) ? realpathSync(directory) : resolve(directory)
+    existsSync(directory) ? nativeRealpathSync(directory) : resolve(directory)
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
   if (adapters.size !== (options.sourceAdapters?.length ?? 0)) throw new TypeError('duplicate source adapter')
   const stamp = options.now ?? (() => new Date().toISOString())
@@ -378,15 +380,27 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   ): Promise<T> => {
     const key = profileKey(profileDir)
     if (!ordinaryRead) inventoryReads.delete(key)
-    return withLock(
-      profileDir,
-      async () => {
-        recoverPackageStore(storeFor(profileDir))
-        await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
-        recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
-        return fn()
-      },
-      op,
+    return (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
+      withLock(
+        profileDir,
+        async () => {
+          if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
+            withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
+          }
+          // A clean read validates the same complete snapshot set without entering recovery.
+          // Journals and abandoned temp state still take the original recovery path.
+          const recoveryNeeded = [
+            '.agnes-runtime-transaction.json',
+            '.agnes-runtime-transaction.json.tmp',
+            '.agnes-runtime-snapshots.json.tmp',
+          ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
+          if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
+          else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
+          recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
+          return fn()
+        },
+        op,
+      ),
     ).finally(() => {
       if (!ordinaryRead) inventoryReads.delete(key)
     })
@@ -433,7 +447,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   >()
   // Ids whose committed local change has not been reloaded yet; only a successful reload clears one.
   const localPending = new Set<string>()
-  const scanLocal = (profileDir: string): string[] => {
+  const scanLocal = async (profileDir: string): Promise<string[]> => {
     if (!options.localPlugins) return []
     let lock = load(profileDir)
     writable(lock)
@@ -462,7 +476,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const current = own(lock.packages, id)
         if (current && current.source.ref !== candidate.source.ref)
           throw new Error('package identity collision')
-        const checked = inspectStaged({
+        const checked = await inspectStaged({
           dir: stage,
           source: candidate.source,
           fetched: {
@@ -491,7 +505,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               dir: stage,
               version: pkg.version,
               integrity: prepared.integrity,
-              resolvedLocation: realpathSync(candidate.directory),
+              resolvedLocation: nativeRealpathSync(candidate.directory),
               dependencies: pkg.dependencies,
             },
             profileDir,
@@ -502,6 +516,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           current,
         )
         entry.treeIntegrity = checked.treeIntegrity
+        applyReviewedContract(entry, checked.preview)
         entry.contributions = checked.preview.contributions
         if (checked.preview.metadata) entry.metadata = checked.preview.metadata
         else delete entry.metadata
@@ -683,46 +698,50 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       await locked(profileDir, async () => {})
     },
     async inventory(profileDir, opts = {}) {
-      const key = profileKey(profileDir)
-      const boundary = readBoundary(profileDir)
-      if (opts.fresh) inventoryReads.delete(key)
-      const existing = inventoryReads.get(key)
-      if (existing?.boundary === boundary) return existing.promise
-      let reading: Promise<InstalledInventory>
-      const clear = () => {
-        if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
-      }
-      const read = async () => {
-        try {
-          const lock = load(profileDir)
-          return projectLocal(
-            await readInventoryAsync(lock, {
-              ...storeFor(profileDir),
-              ceiling: ceiling(lock),
-              ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
-            }),
-          )
-        } finally {
-          // No reader may join a finished verification, even before Promise settlement is observed.
-          clear()
+      return (opts.fresh ? withoutPackageVerification : withPackageVerification)(async () => {
+        const key = profileKey(profileDir)
+        const boundary = readBoundary(profileDir)
+        if (opts.fresh) inventoryReads.delete(key)
+        const existing = inventoryReads.get(key)
+        if (existing?.boundary === boundary) return existing.promise
+        let reading: Promise<InstalledInventory>
+        const clear = () => {
+          if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
         }
-      }
-      const scan = async () => {
-        // Let requests already arriving together join before the synchronous tree walk starts.
-        await setImmediate()
-        return read()
-      }
-      reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, true) : scan()).finally(clear)
-      if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
-      return reading
+        const read = async () => {
+          try {
+            const lock = load(profileDir)
+            return projectLocal(
+              await (opts.fresh ? readInventory : readInventoryAsync)(lock, {
+                ...storeFor(profileDir),
+                ceiling: ceiling(lock),
+                ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
+              }),
+            )
+          } finally {
+            // No reader may join a finished verification, even before Promise settlement is observed.
+            clear()
+          }
+        }
+        const scan = async () => {
+          // Let requests already arriving together join before the synchronous tree walk starts.
+          await setImmediate()
+          return read()
+        }
+        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
+        if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
+        return reading
+      })
     },
     async runtimePluginSnapshots(profileDir) {
-      return readRuntimePluginSnapshots(profileDir, {
-        store: storeFor(profileDir),
-        load: () => load(profileDir),
-        ceiling,
-        verificationCache: inventoryVerifications,
-      })
+      return withPackageVerification(() =>
+        readRuntimePluginSnapshots(profileDir, {
+          store: storeFor(profileDir),
+          load: () => load(profileDir),
+          ceiling,
+          verificationCache: inventoryVerifications,
+        }),
+      )
     },
     async pinRuntimeSnapshot(profileDir, request) {
       const frozen = structuredClone(request)
@@ -758,7 +777,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir)))
+      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)
@@ -799,7 +818,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const fetched = await acquire(source, stage, op, profileDir)
         const lock = load(profileDir)
         const previous = own(lock.packages, readPackageJson(stage).name)
-        const { preview } = inspectStaged({
+        const { preview } = await inspectStaged({
           dir: stage,
           source: fetched.source ?? source,
           fetched,
@@ -849,7 +868,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
                 code: 'E_PACKAGE_PREVIEW_STALE',
               })
-            const { preview, treeIntegrity } = inspectStaged({
+            const { preview, treeIntegrity } = await inspectStaged({
               dir: stage,
               source: fetched.source ?? source,
               fetched,
@@ -873,6 +892,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               undefined,
             )
             entry.contributions = preview.contributions
+            applyReviewedContract(entry, preview)
             if (preview.metadata) entry.metadata = preview.metadata
             else delete entry.metadata
             if (preview.declaredCapabilities !== undefined)
@@ -1152,7 +1172,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             next.state = { ...next.state, trusted: null, enabled: false }
             delete next.trustDecision
             const source = parseSource(next.source.ref)
-            const checked = inspectStaged({
+            const checked = await inspectStaged({
               dir: stage,
               source,
               fetched: {
@@ -1165,6 +1185,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               },
               ceiling: ceiling(lock),
               capabilityPolicy: readPluginCapabilityPolicy(profileDir),
+              // Only this integrity-verified retained tree may use historical manifest fields.
+              stored: true,
             })
             if (checked.preview.blockers.length)
               throw new PackageError('E_API_RANGE', 'previous package is blocked')
@@ -1275,10 +1297,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       // Accept only the configured startup workspace, never an arbitrary path.
       if (
         options.localPlugins &&
-        realpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
+        nativeRealpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
       ) {
         return locked(profileDir, async () => {
-          scanLocal(profileDir)
+          await scanLocal(profileDir)
           const lock = load(profileDir)
           writable(lock)
           if (lock.policySnapshot.workspacePackages === 'deny')
@@ -1380,7 +1402,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             source,
             {
               dir,
-              resolvedLocation: realpathSync(dir),
+              resolvedLocation: nativeRealpathSync(dir),
               version: pkg.version,
               integrity,
               license: pkg.license,
