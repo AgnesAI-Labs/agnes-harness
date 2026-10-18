@@ -4,6 +4,7 @@ import { Disclosure } from '../../ui/disclosure.js'
 import { Bubble } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
+import { listedCall, TurnUsagePanel } from '../turn-usage.js'
 import { ActivityIcon, ActivityRow, type ActivityState } from './activity-row.js'
 import type { AssistantNode, ConversationMessagesProps, ToolNode } from './context.js'
 import { markdownState } from './markdown-state.js'
@@ -168,6 +169,13 @@ function TurnView({
     (entry) =>
       entry.type === 'step' || entry.type === 'block' || (entry.type === 'narration' && !entry.quiet),
   ).length
+  const hasUsage =
+    !processActive &&
+    (turn.usage.calls.some(listedCall) ||
+      !!turn.usage.cost ||
+      !!turn.usage.credits ||
+      Object.values(turn.usage.totals).some((value) => value !== 0))
+  const hasProcess = processCount > 0 || hasUsage
   const settled = !processActive && Boolean(turn.finalAssistantId)
   const thinkingNow = (node: AssistantNode) =>
     markdownState(node, turn.status).streaming && node.text.trim() === ''
@@ -250,14 +258,14 @@ function TurnView({
         data-agnes-dynamic="turn-process"
         data-active={processActive ? 'true' : undefined}
         // A finished turn with nothing to unfold says how long it took in its action bar only.
-        hidden={processCount > 0 || turn.status === 'completed'}
+        hidden={hasProcess || turn.status === 'completed'}
       >
         {statusText}
       </p>
       <Disclosure
         className="turn-process"
         open={processOpen}
-        hidden={processCount === 0}
+        hidden={!hasProcess}
         data-active={processActive ? 'true' : undefined}
         onOpenChange={(open) => {
           preference.current = open
@@ -274,7 +282,11 @@ function TurnView({
             </svg>
           </span>
         }
-      />
+      >
+        {hasUsage && (
+          <TurnUsagePanel turn={turn} model={undefined} duration={undefined} settled t={t} compactSummary />
+        )}
+      </Disclosure>
       {turn.status === 'failed' && (
         <p className="turn-error" role="alert">
           {turn.error

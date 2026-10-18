@@ -21,6 +21,8 @@ describe('answer action row', () => {
     }
     expect(rule('  .turn-usage-panel .agh-disclosure-marker')).toContain('display: none')
     expect(rule('  .turn-usage-calls-body')).toContain('padding: 0 0.875rem')
+    expect(css).toContain('.turn-process > .agh-disclosure-content[hidden]')
+    expect(css).not.toContain('.turn-process > .agh-disclosure-content {')
     expect(rule('  .turn-call-share')).toContain('width: 3.625rem')
     expect(rule('  .turn-call > .agh-disclosure-summary')).toContain('display: flex')
     expect(rule('  .turn-call > .agh-disclosure-summary')).toContain('padding: 0.3125rem 0')

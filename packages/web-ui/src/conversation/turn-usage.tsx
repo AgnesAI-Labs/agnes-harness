@@ -3,7 +3,7 @@ import { Fragment, forwardRef } from 'react'
 import type { Translate } from '../locales/index.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { Icon } from '../ui/icon.js'
-import { compact, costDetails } from './cost-format.js'
+import { compact, costDetails, costSummary } from './cost-format.js'
 
 type Call = UITurn['usage']['calls'][number]
 
@@ -46,6 +46,8 @@ export interface TurnUsagePanelProps {
   /** Only once the answer settled; a running answer shows nothing here. */
   settled: boolean
   t: Translate
+  /** One inline total for the expanded process, without repeating model/time metadata. */
+  compactSummary?: boolean
 }
 
 /**
@@ -53,7 +55,7 @@ export interface TurnUsagePanelProps {
  * each model call on demand. Every value is one the turn already carries.
  */
 export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(function TurnUsagePanel(
-  { turn, model, duration, settled, t },
+  { turn, model, duration, settled, t, compactSummary = false },
   ref,
 ) {
   const { totals, cost, credits, billingComplete } = turn.usage
@@ -81,37 +83,63 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
   const shares = callShares(calls)
   const chevron = <Icon name="chevron-right" className="turn-usage-chevron" />
   return (
-    <div ref={ref} className="turn-usage-grid turn-usage-panel" data-testid="turn-usage-panel">
+    <div
+      ref={ref}
+      className={`${compactSummary ? 'turn-process-usage' : 'turn-usage-grid'} turn-usage-panel`}
+      data-testid="turn-usage-panel"
+    >
       {settled && (
         <>
-          <header className="turn-usage-head">
-            <span className="turn-usage-title">{t('turnactions.usage.title')}</span>
-            {model && <span className="turn-usage-model">{model}</span>}
-            {duration && <span className="turn-usage-took">{t('turnactions.usage.took', { duration })}</span>}
-          </header>
-          {amount && (
-            <p className="turn-usage-cost" data-testid="turn-usage-cost">
-              <span className="turn-usage-amount">{amount.value}</span>
-              <span className="turn-usage-tag">{amount.tag}</span>
-              {creditNote && <span className="turn-usage-credits">{creditNote}</span>}
+          {compactSummary ? (
+            <p className="turn-process-usage-total" data-testid="turn-process-usage-total">
+              {costSummary(
+                {
+                  kind: 'cost',
+                  id: turn.id,
+                  seq: turn.startSeq,
+                  tokens: totals,
+                  source: credits?.source ?? cost?.source ?? 'estimated',
+                  ...(cost ? { billing: cost } : {}),
+                  ...(credits ? { credits: credits.amount } : {}),
+                },
+                t,
+              )}
+              {!billingComplete && cost ? t('turnactions.billingPartial') : ''}
             </p>
+          ) : (
+            <>
+              <header className="turn-usage-head">
+                <span className="turn-usage-title">{t('turnactions.usage.title')}</span>
+                {model && <span className="turn-usage-model">{model}</span>}
+                {duration && (
+                  <span className="turn-usage-took">{t('turnactions.usage.took', { duration })}</span>
+                )}
+              </header>
+              {amount && (
+                <p className="turn-usage-cost" data-testid="turn-usage-cost">
+                  <span className="turn-usage-amount">{amount.value}</span>
+                  <span className="turn-usage-tag">{amount.tag}</span>
+                  {creditNote && <span className="turn-usage-credits">{creditNote}</span>}
+                </p>
+              )}
+              <dl className="turn-usage-tokens" data-cells={cached ? 3 : 2}>
+                <div>
+                  <dt>{t('turnactions.usage.input')}</dt>
+                  <dd>{totals.input.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>{t('turnactions.usage.output')}</dt>
+                  <dd>{totals.output.toLocaleString()}</dd>
+                </div>
+                {cached && (
+                  <div>
+                    <dt>{t('turnactions.usage.cache')}</dt>
+                    <dd>{`${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`}</dd>
+                  </div>
+                )}
+              </dl>
+            </>
           )}
-          <dl className="turn-usage-tokens" data-cells={cached ? 3 : 2}>
-            <div>
-              <dt>{t('turnactions.usage.input')}</dt>
-              <dd>{totals.input.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>{t('turnactions.usage.output')}</dt>
-              <dd>{totals.output.toLocaleString()}</dd>
-            </div>
-            {cached && (
-              <div>
-                <dt>{t('turnactions.usage.cache')}</dt>
-                <dd>{`${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`}</dd>
-              </div>
-            )}
-          </dl>
           {calls.length === 1 && calls[0] && (
             // One call needs no table; its own details stay one click away.
             <Disclosure

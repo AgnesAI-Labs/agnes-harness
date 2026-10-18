@@ -981,7 +981,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     usage: usageFor(call),
   }
   await act(async () => mount.render([user, say('assistant', 2, 'final answer'), cost], [completed]))
-  const details = transcript.querySelector<HTMLElement>('.agh-disclosure.call-usage')
+  const details = transcript.querySelector<HTMLElement>('.turn-footer .agh-disclosure.call-usage')
   const summary = details?.querySelector<HTMLElement>('.agh-disclosure-summary')
   if (!details || !summary) throw new Error('missing cost disclosure')
   setDisclosureOpen(details, true)
@@ -1001,7 +1001,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
         [{ ...completed, usage: usageFor(next) }],
       ),
     )
-    const article = transcript.querySelector('.agh-disclosure.call-usage')
+    const article = transcript.querySelector('.turn-footer .agh-disclosure.call-usage')
     expect(article).toBe(details)
     expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
     expect(details.dataset.open).toBe('true')
@@ -1029,7 +1029,7 @@ it('preserves complete React cost details, focus and order through the opt-in ti
       [{ ...completed, usage: { ...usageFor(call), calls: [] } }],
     ),
   )
-  expect(transcript.querySelector('.agh-disclosure.call-usage')).toBeNull()
+  expect(transcript.querySelector('.turn-footer .agh-disclosure.call-usage')).toBeNull()
   expect(details.isConnected).toBe(false)
   await act(async () => {
     registry.setSession('session-b')
