@@ -43,6 +43,7 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 
 async function settingsVisible(page: Page) {
   return (
+    (await page.locator('#config[open]').isVisible()) ||
     (await page.locator('#config-form').isVisible()) ||
     (await page.getByTestId('settings-navigation').isVisible()) ||
     (await page.getByTestId('settings-back').isVisible()) ||
@@ -53,6 +54,15 @@ async function settingsVisible(page: Page) {
 async function settingsRoot(page: Page) {
   // Nested SettingsDrill content is portaled outside the hidden root form.
   const subpage = page.locator('[data-testid="settings-subpage-header"]:visible')
+  // A real open dialog can precede its lazy navigation or deep-linked drill content.
+  await expect
+    .poll(
+      async () =>
+        (await page.getByTestId('settings-navigation').isVisible()) ||
+        (await page.getByTestId('settings-back').isVisible()) ||
+        (await subpage.count()) > 0,
+    )
+    .toBe(true)
   if (await subpage.count()) {
     await subpage.getByRole('button').first().click()
     await expect(subpage).toHaveCount(0)
