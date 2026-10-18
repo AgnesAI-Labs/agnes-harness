@@ -86,7 +86,7 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
   defineTool({
     name: 'tool_search',
     description:
-      'Search all available tools and ready Skills by name, description or parameter keywords. Call skill_read with the exact Skill name. Use tool_describe to load deferred tool schemas; already provided tools can be called directly.',
+      'Search all available tools and ready Skills by name, description or parameter keywords. Call skill_read with the exact Skill name. Use tool_describe to load deferred tool schemas; each result reports availability in the current model request.',
     parameters: Type.Object(
       {
         query: Type.String({ minLength: 1, maxLength: 256 }),
@@ -128,9 +128,7 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
           const tool = catalog.find((item) => item.name === name)
           return (
             `${name} — ${tool?.description ?? index.get(name)?.description ?? ''}` +
-            (tool && tool.meta.deferLoading !== true
-              ? '\nAlready provided in this session; call it directly or use tool_describe.'
-              : '')
+            `\n${ctx.tools.availability?.(name).message ?? 'Availability unknown (request snapshot unavailable); use the schemas supplied in the current model request and refresh discovery after the next model request.'}`
           )
         })
         const visibleTools = toolRows.slice(0, toolLimit)

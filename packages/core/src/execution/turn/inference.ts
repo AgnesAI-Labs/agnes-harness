@@ -79,6 +79,12 @@ import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
+import {
+  bindToolAvailability,
+  disclosureRestriction,
+  prepareToolAvailability,
+  toolAvailability,
+} from './tool-availability.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
@@ -394,20 +400,7 @@ export function discloseTools(s: SessionImpl): string[] {
         (d) => modelVisibleTool(d, true) && (d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)),
       )
       .map((d) => d.name)
-  let names: string[]
-  switch (s.preset.disclosure) {
-    case 'code':
-      names = eager().filter((name) => name === 'run_code')
-      break
-    case 'hybrid':
-      names = eager()
-      break
-    default:
-      names = eager().filter((name) => name !== 'run_code')
-  }
-  return s.preset.compaction.enabled && s.preset.compaction.agentCallable && s.compaction.runnable
-    ? names
-    : names.filter((name) => name !== 'compact')
+  return eager().filter((name) => !disclosureRestriction(s, { name }))
 }
 
 /**
@@ -676,6 +669,10 @@ export async function prepareInferenceRequest(
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
   out = await beforeLoopModelRequest(s, withLoopSampling(out, options), slot, attempt)
+  prepareToolAvailability(out, {
+    imageInput: computerUseAllowed,
+    defaultSelection: options.tools === undefined,
+  })
   return out
 }
 
@@ -839,6 +836,7 @@ export async function admitInferenceRequest(
     await s.endTurn('aborted')
     return { phase: 'terminal', reason: 'aborted' }
   }
+  bindToolAvailability(initial, wire)
   return { output: out, wire, calibration: cal }
 }
 
@@ -1297,10 +1295,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         else if (!offered.has(c.name))
           refusal = {
             code: 'TOOL_NOT_DISCLOSED',
-            text:
-              def.meta.deferLoading === true
-                ? `tool ${c.name} is deferred: call tool_describe with this exact name to load it, then call it again`
-                : 'tool was not disclosed in this request',
+            text: `tool ${c.name}: ${toolAvailability(s, c.name).message}`,
           }
         else {
           const argsError = toolArgumentError(def.parameters, c.args)
