@@ -30,6 +30,8 @@ for (const locale of ['en', 'zh-CN']) {
       const quality = async (frame: string) => {
         await translated(page)
         await accessible(page, info, frame)
+        // Static presentation frames have no timers to dismiss a captured success toast.
+        await expect(page.locator('.agh-toast')).toHaveCount(0)
         if (!behaviorOnly) await screen(page, info, `${frame}-${locale}-light-1440`)
         await snapshots?.capture(page, frame)
       }
