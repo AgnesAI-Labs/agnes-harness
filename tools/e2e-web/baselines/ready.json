@@ -17,7 +17,8 @@
     "Workspace file read clock only is normalized to 12:00; its localized label stays visible.",
     "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible.",
     "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible.",
-    "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored."
+    "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored.",
+    "Unified Trace runtime context path and current clock only are normalized; elapsed durations keep their localized units. Record-order view uses the real menu; source records, controls, statuses and evidence remain visible."
   ],
   "ready": [
     "first-run-en-light",
