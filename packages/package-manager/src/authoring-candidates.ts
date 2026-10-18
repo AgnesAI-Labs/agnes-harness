@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
+import { safeAuthoringDiagnostics, safeAuthoringOutput } from '@agnes/error-sanitization'
 import {
   type AuthoringCandidate,
   type AuthoringCandidateSummary,
@@ -11,6 +12,11 @@ import {
   jcs,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import {
+  candidateTreeStatus,
+  candidateWriteSummary,
+  requireCompleteCandidate,
+} from './authoring-diagnostics.js'
 import {
   authoringDirectory,
   authoringError,
@@ -43,6 +49,7 @@ const candidateSource = (path: string) => ({
   ref: 'file:' + path.split(sep).join('/'),
 })
 export class AuthoringCandidates {
+  private readonly rejections = new Map<string, string>()
   private readonly publications = new Set<string>()
   private readonly tails = new Map<string, Promise<unknown>>()
   constructor(
@@ -148,6 +155,8 @@ export class AuthoringCandidates {
         preview: null,
         reviewer: null,
         message: 'Candidate changed; test and request a new review',
+        diagnostics: candidateTreeStatus(readAuthoringFiles(record.tree)).diagnostics,
+        writeSummary: candidateWriteSummary(record.value.sourceFiles, readAuthoringFiles(record.tree)),
         sourceFiles: readAuthoringFiles(record.tree),
         files: readAuthoringFiles(record.tree).map((f) => ({ path: f.path, before: null, after: f.content })),
       }
@@ -254,25 +263,77 @@ export class AuthoringCandidates {
     if (['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state))
       authoringError('Candidate is terminal; create another candidate')
     const tree = join(this.root(profileDir), id, 'trees', randomUUID())
-    writeAuthoringFiles(tree, files)
-    const preview = await this.manager.inspect(profileDir, candidateSource(tree))
-    if (preview.id !== record.value.packageId) authoringError('Candidate package identity cannot change')
-    record.tree = tree
-    record.value = {
-      ...record.value,
-      candidateHash: hashDirectory(tree, { exclude: [] }),
-      state: 'draft',
-      reviewHash: null,
-      preview: null,
-      tests: null,
-      reviewer: null,
-      message: '',
-      sourceFiles: authoringFiles(files),
-      files: authoringFiles(files).map((f) => ({ path: f.path, before: null, after: f.content })),
+    let saved = false
+    try {
+      const checked = authoringFiles(files, true)
+      const summary = candidateWriteSummary(readAuthoringFiles(record.tree), checked)
+      const status = candidateTreeStatus(checked)
+      writeAuthoringFiles(tree, checked)
+      if (checked.some((f) => f.path === 'package.json')) {
+        try {
+          const preview = await this.manager.inspect(profileDir, candidateSource(tree))
+          if (preview.id !== record.value.packageId)
+            authoringError('Candidate package identity cannot change')
+        } catch (error) {
+          if (
+            !(error instanceof PackageError) ||
+            !status.diagnostics.length ||
+            !safeAuthoringDiagnostics(error.detail.diagnostics).every(
+              (d) => d.code === 'missing-required-file',
+            ) ||
+            !safeAuthoringDiagnostics(error.detail.diagnostics).length
+          )
+            throw error
+        }
+      }
+      record.tree = tree
+      record.value = {
+        ...record.value,
+        candidateHash: hashDirectory(tree, { exclude: [] }),
+        state: 'draft',
+        reviewHash: null,
+        preview: null,
+        tests: null,
+        reviewer: null,
+        message: summary.unchanged
+          ? 'No progress: read the diagnostics or read the candidate before editing again. / 无进展：请先阅读诊断或重新读取候选。'
+          : '',
+        writeSummary: summary,
+        diagnostics: status.diagnostics,
+        sourceFiles: checked,
+        files: checked.map((f) => ({ path: f.path, before: null, after: f.content })),
+      }
+      delete record.snapshot
+      this.save(profileDir, record)
+      saved = true
+      this.rejections.delete(profileDir + id + owner)
+      return this.project(record, profileDir)
+    } catch (error) {
+      if (
+        error instanceof PackageError &&
+        ['E_PACKAGE_SOURCE', 'E_PACKAGE_STATE', 'E_PACKAGE_BLOCKED'].includes(error.code)
+      ) {
+        const key = profileDir + id + owner
+        const fingerprint = authoringHash(jcs([error.code, error.detail]))
+        const repeated = this.rejections.get(key) === fingerprint
+        this.rejections.delete(key)
+        this.rejections.set(key, fingerprint)
+        if (this.rejections.size > 128) this.rejections.delete(this.rejections.keys().next().value!)
+        if (repeated)
+          throw new PackageError(error.legacyCode, error.reason, {
+            detail: {
+              ...error.detail,
+              diagnostics: safeAuthoringDiagnostics([
+                ...safeAuthoringDiagnostics(error.detail.diagnostics).slice(0, 15),
+                { code: 'no-progress', path: 'package.json', field: '', name: '' },
+              ]),
+            },
+          })
+      }
+      throw error
+    } finally {
+      if (!saved) rmSync(tree, { recursive: true, force: true })
     }
-    delete record.snapshot
-    this.save(profileDir, record)
-    return this.project(record, profileDir)
   }
   async test(
     profileDir: string,
@@ -286,6 +347,8 @@ export class AuthoringCandidates {
     this.verify(record, expected)
     if (['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state))
       authoringError('Candidate is terminal')
+    requireCompleteCandidate(readAuthoringFiles(record.tree))
+    await this.manager.inspect(profileDir, candidateSource(record.tree))
     const files = readAuthoringFiles(record.tree),
       work = mkdtempSync(join(tmpdir(), 'agh-candidate-test-'))
     try {
@@ -299,7 +362,12 @@ export class AuthoringCandidates {
       this.verify(record, expected)
       if (hashDirectory(work) !== expected)
         authoringError('Tests changed their source; passing results cannot be retained')
-      record.value.tests = { ...result, hash: expected, completedAt: new Date().toISOString() }
+      record.value.tests = {
+        ...result,
+        output: safeAuthoringOutput(result.output, 16384, work),
+        hash: expected,
+        completedAt: new Date().toISOString(),
+      }
       record.value.state = result.state === 'passed' ? 'tested' : 'failed'
       this.save(profileDir, record)
       return this.project(record, profileDir)
@@ -310,6 +378,7 @@ export class AuthoringCandidates {
   async submit(profileDir: string, id: string, owner: string, expected: string) {
     const record = this.load(profileDir, id, owner)
     this.verify(record, expected)
+    requireCompleteCandidate(readAuthoringFiles(record.tree))
     if (
       !['tested', 'review'].includes(record.value.state) ||
       record.value.tests?.state !== 'passed' ||

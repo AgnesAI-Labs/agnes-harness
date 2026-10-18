@@ -265,7 +265,9 @@ it.each([
   [{ streams: 'undeclared', selfGranted: true }, 'client-descriptor-content'],
 ] as const)('rejects invalid descriptor ownership %j', async (options, reason) => {
   const { inspect, dir } = fixture(options)
-  await expect(inspect()).rejects.toThrow(expect.objectContaining({ detail: { reason } }))
+  await expect(inspect()).rejects.toThrow(
+    expect.objectContaining({ detail: expect.objectContaining({ reason }) }),
+  )
   const out = mkdtempSync(join(tmpdir(), 'agnes-client-refused-'))
   roots.push(out)
   await expect(packPlugin(dir, join(out, 'refused.tgz'))).rejects.toMatchObject({
@@ -280,4 +282,37 @@ it('rejects a descriptor combined with the old executable extension list with a 
 
 it('refuses a symlinked asset before it can enter an immutable snapshot', async () => {
   await expect(fixture({ escape: true }).inspect()).rejects.toThrow(/symbolic link/)
+})
+
+it('names only unsupported skin tokens in bounded structured inspection diagnostics', async () => {
+  const { inspect, dir } = fixture({ skinsOnly: true })
+  writeFileSync(
+    join(dir, 'client/agnes.client.json'),
+    JSON.stringify({
+      skins: [
+        {
+          id: 'example-skin',
+          name: 'Example',
+          css: './skin.css',
+          tokens: {
+            '--agnes-text-primary': { light: 'red', dark: 'red' },
+            '--agnes-text-secondary': { light: 'blue', dark: 'blue' },
+            '--agnes-text-muted': { light: 'grey', dark: 'grey' },
+          },
+        },
+      ],
+    }),
+  )
+  await expect(inspect()).rejects.toMatchObject({
+    detail: {
+      diagnostics: [
+        {
+          code: 'unknown-theme-token',
+          path: './client/agnes.client.json',
+          field: 'skins.example-skin.tokens',
+          name: '--agnes-text-muted',
+        },
+      ],
+    },
+  })
 })

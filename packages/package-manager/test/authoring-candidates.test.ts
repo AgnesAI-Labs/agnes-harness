@@ -416,3 +416,136 @@ it('reviews capability increases against the installed hash, rejects altered rev
   )
   expect((await s.manager.inventory(s.profile)).packages[0]?.entry.integrity).toBe(initial.candidateHash)
 })
+
+it('retains incomplete replacement drafts with exact missing-file diagnostics and no stale evidence', async () => {
+  const s = setup()
+  const draft = await review(s)
+  let current = draft
+  for (const missing of ['index.mjs', 'package.json']) {
+    const nextFiles = files.filter((f) => f.path !== missing)
+    current = await s.candidates.write(
+      s.profile,
+      current.candidateId,
+      'owner',
+      current.candidateHash,
+      nextFiles,
+    )
+    expect(current).toMatchObject({
+      state: 'draft',
+      tests: null,
+      reviewHash: null,
+      diagnostics: [{ code: 'missing-required-file', name: missing }],
+      writeSummary: { missing: [missing] },
+    })
+    expect(current.sourceFiles).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ path: missing })]),
+    )
+    expect(validatePackageAdminData('AuthoringCandidate', current).ok).toBe(true)
+    const reopened = new AuthoringCandidates(s.manager, s.runner)
+    expect(reopened.show(s.profile, current.candidateId, 'owner').sourceFiles).toEqual(current.sourceFiles)
+    for (const action of [
+      () =>
+        reopened.test(
+          s.profile,
+          current.candidateId,
+          'owner',
+          current.candidateHash,
+          new AbortController().signal,
+        ),
+      () => reopened.submit(s.profile, current.candidateId, 'owner', current.candidateHash),
+    ]) {
+      await expect(action()).rejects.toMatchObject({ detail: { diagnostics: current.diagnostics } })
+    }
+    const repeated = await s.candidates.write(
+      s.profile,
+      current.candidateId,
+      'owner',
+      current.candidateHash,
+      nextFiles,
+    )
+    expect(repeated).toMatchObject({
+      candidateHash: current.candidateHash,
+      writeSummary: { unchanged: true },
+    })
+    expect(repeated.message).toContain('No progress')
+  }
+  const restored = await s.candidates.write(
+    s.profile,
+    current.candidateId,
+    'owner',
+    current.candidateHash,
+    files,
+  )
+  expect(restored).toMatchObject({ diagnostics: [], writeSummary: { added: ['package.json'], missing: [] } })
+  expect(
+    (
+      await s.candidates.test(
+        s.profile,
+        restored.candidateId,
+        'owner',
+        restored.candidateHash,
+        new AbortController().signal,
+      )
+    ).state,
+  ).toBe('tested')
+  const invalid = files.map((f) => (f.path === 'package.json' ? { ...f, content: '{invalid' } : f))
+  await expect(
+    s.candidates.write(s.profile, restored.candidateId, 'owner', restored.candidateHash, invalid),
+  ).rejects.toThrow()
+  await expect(
+    s.candidates.write(
+      s.profile,
+      restored.candidateId,
+      'owner',
+      restored.candidateHash,
+      invalid.map((f) => (f.path === 'package.json' ? { ...f, content: 'another invalid manifest' } : f)),
+    ),
+  ).rejects.toMatchObject({
+    detail: { diagnostics: [expect.objectContaining({ code: 'no-progress' })] },
+  })
+  expect(s.candidates.show(s.profile, restored.candidateId, 'owner').candidateHash).toBe(
+    restored.candidateHash,
+  )
+  const panelPkg = JSON.parse(files[0]!.content)
+  panelPkg.exports = { '.': { import: './index.mjs', default: './index.mjs' } }
+  panelPkg.main = './backup.mjs'
+  panelPkg.agnes.clientDescriptors = [{ rowId: 'ext:reviewed-tool/main', path: './client/agnes.client.json' }]
+  const panelFiles = files
+    .map((f) => (f.path === 'package.json' ? { ...f, content: JSON.stringify(panelPkg) } : f))
+    .concat([
+      { path: 'backup.mjs', content: '// declared main' },
+      { path: 'client/agnes.client.json', content: '{"client":{"entry":"./index.js"}}' },
+      { path: 'client/index.js', content: 'export function apply() {}' },
+    ])
+  const panel = await s.candidates.write(
+    s.profile,
+    restored.candidateId,
+    'owner',
+    restored.candidateHash,
+    panelFiles,
+  )
+  expect(panel.writeSummary).toMatchObject({
+    changed: ['package.json'],
+    entries: ['backup.mjs', 'client/agnes.client.json', 'client/index.js', 'index.mjs'],
+  })
+  const dropped = await s.candidates.write(
+    s.profile,
+    panel.candidateId,
+    'owner',
+    panel.candidateHash,
+    panelFiles.filter((f) => f.path !== 'client/index.js'),
+  )
+  expect(dropped).toMatchObject({
+    diagnostics: [expect.objectContaining({ name: 'client/index.js', field: 'client.entry' })],
+    writeSummary: { removed: ['client/index.js'] },
+  })
+  await expect(
+    s.candidates.test(
+      s.profile,
+      dropped.candidateId,
+      'owner',
+      dropped.candidateHash,
+      new AbortController().signal,
+    ),
+  ).rejects.toMatchObject({ detail: { diagnostics: dropped.diagnostics } })
+})

@@ -414,3 +414,93 @@ it.each([
   expect((result.structured as { verification: unknown }).verification).toEqual(verification(value))
   expect(JSON.stringify(result.content)).toContain('check light/dark mode, disable and restore')
 })
+
+it('projects allowlisted validation diagnostics and redacted failing assertions into ordinary model text', async () => {
+  const { authoringFailure } = await import('../src/authoring-error.js')
+  const diagnostics = [
+    {
+      code: 'unknown-theme-token',
+      path: 'client/agnes.client.json',
+      field: 'skins.demo.tokens',
+      name: '--agnes-text-muted',
+      hint: '/' + 'Users' + '/private/unsafe',
+      stack: 'raw stack',
+    },
+    { code: 'missing-required-file', path: 'package.json', field: 'files', name: 'package.json' },
+    { code: 'invalid-field', path: '/' + 'Users' + '/private/package.json', field: 'secret', name: 'unsafe' },
+  ]
+  const rejected = authoringFailure('candidate.write', 'candidate-' + 'a'.repeat(32), 'request', {
+    data: { reason: 'E_PACKAGE_STATE', diagnostics },
+  })!
+  const text = JSON.stringify(rejected.content)
+  expect(text).toContain('unsupported token --agnes-text-muted')
+  expect(text).toContain('complete file tree is missing package.json')
+  expect(text).not.toMatch(/text-primary|text-secondary|\/Users|raw stack/)
+  const candidateId = 'candidate-' + 'a'.repeat(32),
+    candidateHash = 'sha256-' + 'b'.repeat(64)
+  const value = {
+    candidateId,
+    candidateHash,
+    state: 'failed',
+    tests: {
+      state: 'failed',
+      hash: candidateHash,
+      count: 1,
+      output:
+        'not ok 1 - retains schedule\n  error: expected 2 entries, got 0\n  name: AssertionError\n  location: ./test/schedule.test.mjs:7:3\n  private: /' +
+        'Users' +
+        '/private/customer/data.json\n' +
+        'x'.repeat(20000),
+    },
+    diagnostics: [],
+    sourceFiles: [],
+  } as unknown as AuthoringCandidate
+  const ctx = {
+    signal: new AbortController().signal,
+    pluginManage: { request: async () => value },
+  } as unknown as ToolContext
+  const result = await pluginCreatorTools[2].execute({ candidateId, expectedHash: candidateHash }, ctx)
+  const failureText = JSON.stringify(result.content)
+  for (const expected of [
+    'retains schedule',
+    'expected 2 entries, got 0',
+    'AssertionError',
+    'test/schedule.test.mjs:7:3',
+    'tests.output',
+    '[truncated]',
+  ])
+    expect(failureText).toContain(expected)
+  expect(failureText).not.toContain('/' + 'Users' + '/private')
+  expect(Buffer.byteLength(failureText)).toBeLessThan(6500)
+  expect(JSON.stringify(result.structured)).not.toContain('/' + 'Users' + '/private')
+  const read = await pluginCreatorTools[5].execute({ candidateId }, ctx)
+  expect(read.structured).toMatchObject({ tests: { output: expect.stringContaining('AssertionError') } })
+  value.tests!.state = 'passed'
+  const passed = await pluginCreatorTools[2].execute({ candidateId, expectedHash: candidateHash }, ctx)
+  expect(JSON.stringify(passed.content)).not.toContain('AssertionError')
+  value.tests = null
+  value.state = 'draft'
+  value.diagnostics = [
+    {
+      code: 'missing-required-file',
+      path: 'package.json',
+      field: 'exports',
+      name: 'index.mjs',
+      hint: 'restore',
+    },
+  ]
+  value.writeSummary = {
+    added: [],
+    removed: ['index.mjs'],
+    changed: [],
+    entries: ['index.mjs'],
+    missing: ['index.mjs'],
+    unchanged: false,
+  }
+  const written = await pluginCreatorTools[4].execute(
+    { candidateId, expectedHash: candidateHash, files: [] },
+    ctx,
+  )
+  expect(JSON.stringify(written.content)).toContain('complete file tree is missing index.mjs')
+  expect(written.structured).toMatchObject({ writeSummary: { removed: ['index.mjs'] } })
+})

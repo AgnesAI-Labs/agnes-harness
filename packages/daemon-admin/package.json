@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@agnes/base": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*",
     "@agnes/daemon-foundation": "workspace:*",
     "@agnes/history-index": "workspace:*",
     "@agnes/host": "workspace:*",

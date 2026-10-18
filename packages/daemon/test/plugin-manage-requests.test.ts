@@ -706,3 +706,116 @@ it('continues a helper draft through real builtin registration and dispatch into
     await host.close()
   }
 })
+
+it('carries safe diagnostics from real candidate inspection through RPC and supervisor projection into creator text', async () => {
+  const s = await setup('allow')
+  const descriptor = {
+    path: 'client/agnes.client.json',
+    content: JSON.stringify({
+      skins: [
+        {
+          id: 'test-skin',
+          name: 'Test skin',
+          css: './skin.css',
+          tokens: {
+            '--agnes-text-primary': { light: 'red', dark: 'red' },
+            '--agnes-text-secondary': { light: 'blue', dark: 'blue' },
+          },
+        },
+      ],
+    }),
+  }
+  const pkg = JSON.parse(files[0].content)
+  pkg.agnes.clientDescriptors = [{ rowId: 'ext:test-plugin/main', path: './client/agnes.client.json' }]
+  const skinFiles = [
+    { path: 'package.json', content: JSON.stringify(pkg) },
+    files[1],
+    descriptor,
+    { path: 'client/skin.css', content: '/* synthetic */' },
+  ]
+  let candidate = await s.request({ action: 'candidate.create', files: skinFiles })
+  const ctx = {
+    signal: new AbortController().signal,
+    pluginManage: {
+      request: (input: unknown) =>
+        s.request(input).catch((error) => {
+          throw packageManageReplyError(error)
+        }),
+    },
+  } as unknown as import('@agnes/extension-api').ToolContext
+  const data = JSON.parse(descriptor.content)
+  data.skins[0].tokens['--agnes-text-muted'] = { light: 'grey', dark: 'grey' }
+  const invalid = skinFiles.map((f) =>
+    f.path === descriptor.path ? { ...f, content: JSON.stringify(data) } : f,
+  )
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const rejected = await pluginCreatorTools[4].execute(
+      { candidateId: candidate.candidateId, expectedHash: candidate.candidateHash, files: invalid },
+      ctx,
+    )
+    const text = JSON.stringify(rejected.content)
+    expect(rejected.isError).toBe(true)
+    expect(text).toContain('unsupported token --agnes-text-muted')
+    expect(text).not.toMatch(/text-primary|text-secondary|\/Users|\/private\/var/)
+    if (attempt) expect(text).toContain('read the same candidate')
+  }
+  expect(
+    (await s.request({ action: 'candidate.show', candidateId: candidate.candidateId })).candidateHash,
+  ).toBe(candidate.candidateHash)
+  s.testRunner.mockResolvedValueOnce({
+    state: 'failed',
+    count: 1,
+    runner: 'node-test',
+    output:
+      'not ok 1 - remembers trips\n  name: AssertionError\n  error: expected two trips\n  location: ./test/trips.test.mjs:4:1\n  private: /' +
+      'Users' +
+      '/synthetic/private/trips.json\n' +
+      'x'.repeat(20000),
+  })
+  const tested = await pluginCreatorTools[2].execute(
+    { candidateId: candidate.candidateId, expectedHash: candidate.candidateHash },
+    ctx,
+  )
+  expect(tested.isError).toBe(true)
+  const failureText = JSON.stringify(tested.content)
+  for (const detail of [
+    'remembers trips',
+    'AssertionError',
+    'expected two trips',
+    'test/trips.test.mjs:4:1',
+    '[truncated]',
+    'tests.output',
+  ])
+    expect(failureText).toContain(detail)
+  expect(JSON.stringify(tested)).not.toContain('/' + 'Users' + '/synthetic')
+  candidate = await s.request({ action: 'candidate.show', candidateId: candidate.candidateId })
+  const incomplete = await pluginCreatorTools[4].execute(
+    {
+      candidateId: candidate.candidateId,
+      expectedHash: candidate.candidateHash,
+      files: skinFiles.filter((f) => f.path !== 'index.mjs'),
+    },
+    ctx,
+  )
+  expect(incomplete.isError).not.toBe(true)
+  expect(JSON.stringify(incomplete.content)).toContain('complete file tree is missing index.mjs')
+  candidate = await s.request({ action: 'candidate.show', candidateId: candidate.candidateId })
+  for (const tool of [pluginCreatorTools[2], pluginCreatorTools[3]]) {
+    const refused = await tool.execute(
+      { candidateId: candidate.candidateId, expectedHash: candidate.candidateHash },
+      ctx,
+    )
+    expect(refused.isError).toBe(true)
+    expect(JSON.stringify(refused.content)).toContain('complete file tree is missing index.mjs')
+  }
+  const missingManifest = await pluginCreatorTools[4].execute(
+    {
+      candidateId: candidate.candidateId,
+      expectedHash: candidate.candidateHash,
+      files: skinFiles.filter((f) => f.path !== 'package.json'),
+    },
+    ctx,
+  )
+  expect(missingManifest.isError).not.toBe(true)
+  expect(JSON.stringify(missingManifest.content)).toContain('complete file tree is missing package.json')
+})

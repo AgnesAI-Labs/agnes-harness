@@ -1,3 +1,10 @@
+import {
+  authoringDiagnosticText,
+  authoringFailureSummary,
+  safeAuthoringDiagnostics,
+  safeAuthoringOutput,
+  safePackagePath,
+} from '@agnes/error-sanitization'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import type { AuthoringCandidate } from '@agnes/protocol'
 
@@ -22,6 +29,11 @@ const verification = (value: AuthoringCandidate) => ({
   browserAppearanceVerified: 'not-verified',
   published: value.state === 'published' ? 'verified' : 'not-verified',
 })
+const summaryKeys = ['added', 'removed', 'changed', 'entries', 'missing'] as const
+const writeSummary = (value: NonNullable<AuthoringCandidate['writeSummary']>) => ({
+  ...Object.fromEntries(summaryKeys.map((key) => [key, value[key].filter(safePackagePath).slice(0, 64)])),
+  unchanged: value.unchanged,
+})
 const receipt = (value: AuthoringCandidate) => ({
   verification: verification(value),
   browserCheck:
@@ -33,7 +45,9 @@ const receipt = (value: AuthoringCandidate) => ({
   baseHash: value.baseHash,
   reviewHash: value.reviewHash,
   message: value.message,
-  tests: value.tests,
+  tests: value.tests && { ...value.tests, output: safeAuthoringOutput(value.tests.output ?? '') },
+  diagnostics: safeAuthoringDiagnostics(value.diagnostics),
+  ...(value.writeSummary ? { writeSummary: writeSummary(value.writeSummary) } : {}),
 })
 
 /** Only adapts tool output; the Host retains full diffs and authoring authority. */
@@ -44,8 +58,30 @@ export async function candidateResult(
   operation?: string,
 ): Promise<ToolResult> {
   const summary = { ...receipt(value), operation, stage: 'result' }
-  const display = { ...summary, tests: value.tests && { ...value.tests, output: undefined } }
+  const display = {
+    ...summary,
+    tests: value.tests && { ...value.tests, output: undefined },
+    ...(value.writeSummary
+      ? {
+          writeSummary: Object.fromEntries(
+            Object.entries(summary.writeSummary ?? {}).map(([key, paths]) => [
+              key,
+              Array.isArray(paths)
+                ? { count: paths.length, paths: paths.filter(safePackagePath).slice(0, 3) }
+                : paths,
+            ]),
+          ),
+        }
+      : {}),
+  }
   let text = JSON.stringify(display)
+  const diagnosticText = authoringDiagnosticText(value.diagnostics)
+  if (diagnosticText) text += `\nWarning / 警告: ${diagnosticText}`
+  if (value.writeSummary?.unchanged)
+    text +=
+      '\nNo progress: read the diagnostics or read the candidate first. / 无进展：请先阅读诊断或读取候选。'
+  if (value.tests?.state === 'failed')
+    text += `\nTest failure / 测试失败:\n${authoringFailureSummary(value.tests.output ?? '')}\nFull redacted output: use run_code with tools.plugin_candidate_read({candidateId}) and inspect tests.output; assemble source pages first if returned. / 完整脱敏输出：通过 run_code 调用 plugin_candidate_read，必要时拼接分页后读取 tests.output。`
   if (read === undefined) {
     const failed =
       ['failed', 'interrupted', 'cancelled', 'rejected'].includes(value.state) ||
@@ -65,6 +101,7 @@ export async function candidateResult(
     candidateId: value.candidateId,
     candidateHash: value.candidateHash,
     sourceFiles: value.sourceFiles,
+    ...(value.tests ? { tests: summary.tests } : {}),
   }
   const json = JSON.stringify(snapshot),
     bytes = Buffer.from(json, 'utf8'),

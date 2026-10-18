@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
+import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import type {
   AuthoringTestRunner,
   CatalogRead,
@@ -74,6 +75,7 @@ import {
   reviewedUpdateOptions,
 } from './dependent-updates.js'
 import { metadataView } from './metadata-view.js'
+import { operationError } from './operation-error.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -274,6 +276,7 @@ function packageError(error: unknown): PackageAdminError {
     code,
     safeMessage: safeMessage[code],
     blockers,
+    diagnostics: safeAuthoringDiagnostics(detail?.diagnostics),
     ...pluginFailureHelp(
       blockers.some((b) => b.references.includes('capability-blocked'))
         ? 'capability blocked'
@@ -292,10 +295,6 @@ function operationWithHelp(operation: PackageOperation): PackageOperation {
     value.error = { ...value.error, ...help }
   }
   return value
-}
-
-function operationError(error: PackageAdminError): never {
-  throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
 }
 
 function projectSource(value: unknown): PackageInstalledDescriptor['source'] {

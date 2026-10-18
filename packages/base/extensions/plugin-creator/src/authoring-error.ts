@@ -1,3 +1,4 @@
+import { authoringDiagnosticText, safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import type { ToolResult } from '@agnes/extension-api'
 
 type FailureKind = 'unavailable-host-capability' | 'permission-denied' | 'stale-hash' | 'validation-failure'
@@ -37,7 +38,11 @@ export function authoringFailure(
   stage: 'host-capability' | 'request' | 'result',
   error: unknown,
 ): (ToolResult & { details: NonNullable<ToolResult['details']> }) | undefined {
-  const value = error as { code?: unknown; data?: { code?: unknown; reason?: unknown } } | null
+  const value = error as {
+    code?: unknown
+    diagnostics?: unknown
+    data?: { code?: unknown; reason?: unknown; diagnostics?: unknown }
+  } | null
   const code = [value?.data?.reason, value?.data?.code, value?.code].find((v) => typeof v === 'string')
   if (typeof code !== 'string') return undefined
   const kind: FailureKind | undefined = unavailable.has(code)
@@ -50,7 +55,11 @@ export function authoringFailure(
           ? 'validation-failure'
           : undefined
   if (!kind) return undefined
-  const detail = { code, kind, operation, stage, candidateId: candidateId ?? null }
+  const diagnostics =
+    kind === 'validation-failure'
+      ? safeAuthoringDiagnostics(value?.data?.diagnostics ?? value?.diagnostics)
+      : []
+  const detail = { code, kind, operation, stage, candidateId: candidateId ?? null, diagnostics }
   const guidance =
     kind === 'unavailable-host-capability'
       ? '宿主未提供受控作者能力；保留现有草稿。 / Host authoring capability is unavailable; keep the existing draft.'
@@ -63,6 +72,11 @@ export function authoringFailure(
     isError: true,
     details: detail,
     structured: detail,
-    content: [{ type: 'text', text: `${JSON.stringify(detail)}\n${guidance}` }],
+    content: [
+      {
+        type: 'text',
+        text: `${JSON.stringify(detail)}\n${guidance}\n${authoringDiagnosticText(diagnostics)}`,
+      },
+    ],
   }
 }

@@ -1,8 +1,16 @@
+import { type AuthoringDiagnostic, safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import { pluginFailureHelp, validatePackageAdminData } from '@agnes/protocol'
 
-/** Preserve fixed candidate-port and package error codes; never forward raw backend diagnostics. */
-export function packageManageReplyError(error: unknown): { code: string; message: string } {
-  const value = error as { code?: unknown; data?: { reason?: unknown; code?: unknown } } | null
+/** Preserve fixed candidate-port and package error codes; only forward allowlisted bounded diagnostics. */
+export function packageManageReplyError(error: unknown): {
+  code: string
+  message: string
+  diagnostics?: AuthoringDiagnostic[]
+} {
+  const value = error as {
+    code?: unknown
+    data?: { reason?: unknown; code?: unknown; diagnostics?: unknown }
+  } | null
   for (const code of [value?.data?.reason, value?.data?.code, value?.code]) {
     if (typeof code !== 'string') continue
     if (
@@ -32,6 +40,7 @@ export function packageManageReplyError(error: unknown): { code: string; message
     )
       return {
         code,
+        diagnostics: safeAuthoringDiagnostics(value?.data?.diagnostics),
         message: `${code}: ${code === 'E_PACKAGE_PREVIEW_STALE' ? 'Read the candidate again before editing or requesting review.' : pluginFailureHelp(code).fixHint}`,
       }
   }

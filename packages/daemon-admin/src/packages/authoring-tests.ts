@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { collectPackageSkillFiles, discoverPackageSkill, packageSkillLoadError } from '@agnes/base'
 import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
+import { safeAuthoringOutput } from '@agnes/error-sanitization'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
 import type { build as Build } from 'esbuild'
@@ -221,7 +222,7 @@ async function testCandidate(
           : 'failed',
       count,
       runner: 'node-test',
-      output: result.stdout.slice(-16384),
+      output: safeAuthoringOutput(result.stdout, 16384, directory),
     }
   } catch (error) {
     if (signal.aborted) throw error
@@ -229,7 +230,19 @@ async function testCandidate(
       state: 'failed',
       count: 0,
       runner: 'node-test',
-      output: 'Candidate test command or compilation failed; no passing result recorded.',
+      output: safeAuthoringOutput(
+        error && typeof error === 'object' && 'errors' in error && Array.isArray(error.errors)
+          ? error.errors
+              .slice(0, 16)
+              .map((issue) => {
+                const location = issue.location
+                return `CompileError: ${issue.text} (${location?.file ?? 'unknown'}:${location?.line ?? 0}:${location?.column ?? 0})`
+              })
+              .join('\n')
+          : `${error instanceof Error ? error.name + ': ' + error.message : 'Candidate test command failed'}; no passing result recorded.`,
+        16384,
+        directory,
+      ),
     }
   }
 }

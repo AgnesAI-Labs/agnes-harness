@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
 import { API_VERSION, checkManifest, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
 import {
   type PackageCapabilityDiff,
@@ -37,8 +38,10 @@ import { type FetchedSource, hashDirectory, type PackageSource } from './sources
 
 import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
 
-function invalid(reason: string): never {
-  throw new PackageError('E_EXT_LOAD', 'package static metadata is invalid', { detail: { reason } })
+function invalid(reason: string, diagnostics: unknown[] = []): never {
+  throw new PackageError('E_EXT_LOAD', 'package static metadata is invalid', {
+    detail: { reason, ...(diagnostics.length ? { diagnostics: safeAuthoringDiagnostics(diagnostics) } : {}) },
+  })
 }
 function checkedContribution(value: unknown, stored = false): PackageContributionSummary {
   const checked = validatePackageAdminData(
@@ -333,7 +336,30 @@ export function inspectVerifiedTree(
       },
       pkg.name as string,
     )
-    if (!synthetic.ok) invalid('client-descriptor-content')
+    if (!synthetic.ok)
+      invalid(
+        'client-descriptor-content',
+        synthetic.problems.map((problem) => {
+          const token =
+            /^(contributes\.skins\.[A-Za-z0-9_-]+\.tokens): (--[A-Za-z0-9_-]+) is not a themeable semantic token$/.exec(
+              problem,
+            )
+          const rawField = problem
+            .split(':')[0]!
+            .replace(/^contributes\./, '')
+            .replace(/^\//, '')
+            .replaceAll('/', '.')
+          const field = /^[A-Za-z0-9_.$[\]-]{1,160}$/.test(rawField) ? rawField : 'descriptor'
+          return token
+            ? {
+                code: 'unknown-theme-token',
+                path: item.path,
+                field: token[1]!.replace(/^contributes\./, ''),
+                name: token[2],
+              }
+            : { code: 'invalid-field', path: item.path, field, name: '' }
+        }),
+      )
     const manifest = synthetic.value
     const client = manifest.contributes?.client
     const directory = dirname(descriptorPath)

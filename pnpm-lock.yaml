@@ -668,6 +668,9 @@ importers:
 
   packages/daemon-admin:
     dependencies:
+      '@agnes/error-sanitization':
+        specifier: workspace:*
+        version: link:../error-sanitization
       '@agnes/base':
         specifier: workspace:*
         version: link:../base

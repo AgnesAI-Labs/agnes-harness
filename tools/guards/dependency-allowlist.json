@@ -293,6 +293,7 @@
     "@agnes/sdk"
   ],
   "@agnes/daemon-admin": [
+    "@agnes/error-sanitization",
     "@agnes/base",
     "@agnes/daemon-foundation",
     "@agnes/history-index",

@@ -189,7 +189,14 @@ export type WorkerReplyFrame = {
   kind: 'reply'
   requestId: string
   result?: unknown
-  error?: RpcError | { code: string; message: string; reason?: string }
+  error?:
+    | RpcError
+    | {
+        code: string
+        message: string
+        reason?: string
+        diagnostics?: import('@agnes/protocol').PackageAdminError['diagnostics']
+      }
 }
 export type SessionReplyFrame = WorkerReplyFrame & { sessionKey: string }
 export type RequestFrame = {

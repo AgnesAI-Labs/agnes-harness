@@ -16,6 +16,7 @@ import {
   renameWriteThroughSync,
   syncDirectorySync,
 } from '@agnes/system-node'
+import { requireCompleteCandidate } from './authoring-diagnostics.js'
 import { PackageError } from './errors.js'
 
 export const authoringHash = (value: string) => 'sha256-' + createHash('sha256').update(value).digest('hex')
@@ -31,13 +32,13 @@ export function authoringDirectory(directory: string): void {
     createPrivateDirectorySync(directory)
   }
 }
-export function authoringFiles(value: readonly AuthoringFile[]): AuthoringFile[] {
+export function authoringFiles(value: readonly AuthoringFile[], draft = false): AuthoringFile[] {
   const invalid = (message: string): never => {
     throw new PackageError('E_DEP_MISSING', message)
   }
   let size = 0
   const seen = new Set<string>()
-  if (!value.length || value.length > 64) invalid('Candidate file limit exceeded')
+  if ((!draft && !value.length) || value.length > 64) invalid('Candidate file limit exceeded')
   for (const f of value) {
     if (
       !/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/.test(f.path) ||
@@ -60,14 +61,14 @@ export function authoringFiles(value: readonly AuthoringFile[]): AuthoringFile[]
     seen.add(key)
     size += Buffer.byteLength(f.content)
   }
-  if (size > 262144 || !value.some((f) => f.path === 'package.json'))
-    invalid('Candidate tree is invalid or too large')
+  if (size > 262144) invalid('Candidate tree is too large')
+  if (!draft && !value.some((f) => f.path === 'package.json')) requireCompleteCandidate(value)
   return value.map((f) => ({ ...f })).sort((a, b) => a.path.localeCompare(b.path))
 }
 export function writeAuthoringFiles(directory: string, files: readonly AuthoringFile[]): void {
   authoringDirectory(directory)
   const dirs = new Set([directory])
-  for (const f of authoringFiles(files)) {
+  for (const f of authoringFiles(files, true)) {
     const target = join(directory, f.path)
     authoringDirectory(dirname(target))
     for (let d = dirname(target); d !== directory; d = dirname(d)) dirs.add(d)
@@ -99,7 +100,7 @@ export function readAuthoringFiles(directory: string): AuthoringFile[] {
     }
   }
   walk(directory, '')
-  return authoringFiles(result)
+  return authoringFiles(result, true)
 }
 export function saveAuthoringRecord(file: string, value: unknown): void {
   authoringDirectory(dirname(file))
