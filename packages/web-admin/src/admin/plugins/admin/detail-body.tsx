@@ -12,7 +12,6 @@ import {
   isBuiltinPlugin,
   PluginPrimaryStatus,
   PluginPurposeSections,
-  SettingsDetails,
   SettingsState,
   SettingsTechnicalDetails,
   sourceLabel,
@@ -267,7 +266,8 @@ export function PluginDetailBody({
         ]}
       />
       {installed && (
-        <SettingsDetails title={t('status.dimensions')}>
+        <SettingsTechnicalDetails data-testid="plugin-runtime-technical">
+          <p>{t('status.dimensions')}</p>
           <Facts
             rows={[
               [t('status.installed'), item.version],
@@ -295,7 +295,20 @@ export function PluginDetailBody({
               [t('status.reasonCode'), installed.primaryStatus?.reasonCode ?? t('fact.unavailable')],
             ]}
           />
-        </SettingsDetails>
+          <PluginDetailCopy
+            value={JSON.stringify(
+              {
+                packageId: item.id,
+                integrity: item.integrity,
+                actualIntegrity: installed.actualIntegrity,
+                currentGenerationId: view.state.generations?.currentGenerationId,
+                generation: generation?.state,
+              },
+              null,
+              2,
+            )}
+          />
+        </SettingsTechnicalDetails>
       )}
       <Actions actions={grouped('overview')} />
     </PluginConfigTab>

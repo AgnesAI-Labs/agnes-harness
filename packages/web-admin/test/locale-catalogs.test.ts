@@ -45,9 +45,15 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
         }
         for (const [language, entries] of Object.entries(catalog)) {
           if (!entries || typeof entries !== 'object') continue
-          for (const [key, text] of Object.entries(entries))
-            if (typeof text === 'string')
-              expect(text, `${name}/${language}/${key}`).not.toMatch(/\b(?:FDE|Bundle|Preset)s?\b/)
+          for (const [key, text] of Object.entries(entries)) {
+            if (typeof text !== 'string') continue
+            // Only this explanation, rendered inside Technical details, names the wire concepts.
+            const technical =
+              ['settingsCatalog', 'shellCatalog'].includes(name) && key === 'compositionDetailsHelp'
+            expect(text, `${name}/${language}/${key}`).not.toMatch(
+              technical ? /\bFDE\b/ : /\b(?:FDE|Bundle|Preset)s?\b/,
+            )
+          }
         }
         count += 1
         discovered.add(name)
