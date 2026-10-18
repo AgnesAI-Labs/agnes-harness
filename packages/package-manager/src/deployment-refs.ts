@@ -1,6 +1,7 @@
-import { lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { validateSurfaceInstance } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { PackageError } from './errors.js'
 import { freezeData } from './integrity.js'
 import type { PackageReferences } from './lifecycle.js'
@@ -8,10 +9,10 @@ import { readDeployManifest } from './workspace.js'
 
 /** Static files only. No discovery, secret resolution or runtime authority. */
 export function readSurfaceInstances(directory: string) {
-  const root = realpathSync(directory)
+  const root = nativeRealpathSync(directory)
   const safe = (path: string) => {
     const file = resolve(root, path),
-      rel = relative(root, realpathSync(file)),
+      rel = relative(root, nativeRealpathSync(file)),
       stat = lstatSync(file)
     if (
       isAbsolute(rel) ||

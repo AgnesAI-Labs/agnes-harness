@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import type { ApplicationAsset, ApplicationTemplate } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { validateApplicationImage } from './application-image.js'
 
 const MAX_BYTES = 128 * 1024
@@ -14,14 +15,14 @@ export async function readApplicationAsset(
   const path = (typeof asset === 'string' ? asset : asset.path).replace(/^\.\//, '')
   if (!path || /[\\:\0]/.test(path) || path.split('/').some((p) => !p || p === '.' || p === '..'))
     throw new Error('application-asset-path')
-  const root = realpathSync(directory)
+  const root = nativeRealpathSync(directory)
   let file = root
   for (const segment of path.split('/')) {
     file = join(file, segment)
     if (lstatSync(file).isSymbolicLink()) throw new Error('application-asset-symlink')
   }
-  const rel = relative(root, realpathSync(file))
-  if (rel.startsWith(`..${sep}`) || rel === '..') throw new Error('application-asset-path')
+  const rel = relative(root, nativeRealpathSync(file))
+  if (rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)) throw new Error('application-asset-path')
   const stat = lstatSync(file)
   if (
     !stat.isFile() ||

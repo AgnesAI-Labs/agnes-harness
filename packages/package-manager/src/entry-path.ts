@@ -1,5 +1,6 @@
-import { realpathSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { PackageError } from './errors.js'
 
 const MANIFEST_FILE = 'package.json'
@@ -19,8 +20,8 @@ export function containedEntry(dir: string, entry: string, kind: 'file' | 'direc
   let root: string
   let target: string
   try {
-    root = realpathSync(dir)
-    target = realpathSync(resolve(root, entry))
+    root = nativeRealpathSync(dir)
+    target = nativeRealpathSync(resolve(root, entry))
     if (!statSync(root).isDirectory()) throw new Error('root type')
     const stat = statSync(target)
     if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) throw new Error('target type')

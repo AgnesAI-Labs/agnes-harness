@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
 import { collectRead, collectReadAsync } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -282,8 +283,8 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
   try {
-    root = realpathSync(runtimeRoot(s))
-    actual = realpathSync(directory)
+    root = nativeRealpathSync(runtimeRoot(s))
+    actual = nativeRealpathSync(directory)
     if (lstatSync(runtimeRoot(s)).isSymbolicLink() || lstatSync(directory).isSymbolicLink())
       integrityFailure('runtime-path-symlink')
   } catch (error) {

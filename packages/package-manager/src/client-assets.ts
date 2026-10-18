@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import { realpathSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import type { ClientContribution } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 
@@ -277,11 +278,11 @@ export function resolveClientModuleAsset(snapshotRoot: string, pathname: string)
     if (revision === '' || revision === '.' || revision === '..' || revision.startsWith('_')) return null
     let base: string
     try {
-      base = realpathSync(join(snapshotRoot, id, revision))
+      base = nativeRealpathSync(join(snapshotRoot, id, revision))
       if (!statSync(base).isDirectory()) continue
       // revision 目录本身若是被埋进快照根的符号链接，realpath 后的 base 会指到快照根之外——
       // 以 base 为 containment 根会放行外部文件，所以 base 必须先证明自己仍在快照根内。
-      const canonicalRoot = realpathSync(snapshotRoot)
+      const canonicalRoot = nativeRealpathSync(snapshotRoot)
       const baseRel = relative(canonicalRoot, base)
       if (baseRel === '' || baseRel === '..' || baseRel.startsWith(`..${sep}`) || isAbsolute(baseRel))
         continue
@@ -302,7 +303,7 @@ export function resolveClientModuleAsset(snapshotRoot: string, pathname: string)
 function canonicalFile(target: string, root: string): string | null {
   let canonical: string
   try {
-    canonical = realpathSync(target)
+    canonical = nativeRealpathSync(target)
     if (!statSync(canonical).isFile()) return null
   } catch {
     return null

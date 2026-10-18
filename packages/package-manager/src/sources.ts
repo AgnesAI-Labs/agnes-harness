@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -17,6 +16,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { bundledExampleSource, bundledPluginSource } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
@@ -155,7 +155,7 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
   let root: string
   try {
     if (lstatSync(dir).isSymbolicLink()) throw sourceError('package directory is a symbolic link', 'symlink')
-    root = realpathSync(dir)
+    root = nativeRealpathSync(dir)
   } catch (error) {
     if (error instanceof PackageError) throw error
     throw sourceError('package directory is unavailable', 'directory-unavailable')
@@ -183,7 +183,7 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       if (!stat.isFile()) throw sourceError('package tree contains a special entry', 'special-entry')
       let actual: string
       try {
-        actual = realpathSync(file)
+        actual = nativeRealpathSync(file)
       } catch {
         throw sourceError('package file changed while hashing', 'tree-changed')
       }
@@ -470,7 +470,7 @@ function localSource(src: PackageSource, cwd: string): string {
   // this may have started in a different directory than whoever is calling it).
   let cwdRoot: string
   try {
-    cwdRoot = realpathSync(cwd)
+    cwdRoot = nativeRealpathSync(cwd)
   } catch {
     throw sourceError('package workspace root is unavailable', 'workspace-unavailable')
   }
@@ -479,7 +479,7 @@ function localSource(src: PackageSource, cwd: string): string {
     const candidate = resolve(cwdRoot, raw)
     if (lstatSync(candidate).isSymbolicLink())
       throw sourceError('local package source is a symbolic link', 'symlink', { workspaceRoot: cwdRoot })
-    from = realpathSync(candidate)
+    from = nativeRealpathSync(candidate)
   } catch (error) {
     if (error instanceof PackageError) throw error
     throw sourceError(
@@ -542,6 +542,9 @@ export async function fetchSource(
   ensureEmptyDestination(target)
   const parent = dirname(target)
   mkdirSync(parent, { recursive: true })
+  // The destination leaf does not exist yet; canonicalize its existing parent so an 8.3/subst
+  // spelling cannot hide a destination inside the native-resolved source tree.
+  const canonicalTarget = join(nativeRealpathSync(parent), basename(target))
   const work = mkdtempSync(join(parent, '.agnes-fetch-'))
   const payload = join(work, 'payload')
   const run = opts.exec ?? defaultExec
@@ -572,7 +575,7 @@ export async function fetchSource(
         const from = localSource(checked, opts.cwd)
         resolvedLocation = from
         sourceKind = lstatSync(from).isFile() ? 'tarball' : 'local-folder'
-        if (contained(from, target))
+        if (contained(from, canonicalTarget))
           throw sourceError('package destination is inside its source', 'destination-inside-source')
         if (statSync(from).isFile()) {
           await extractPluginArchive(from, payload, exec, opts.signal)
@@ -620,8 +623,8 @@ export async function fetchSource(
         let bytes: Buffer
         try {
           const archiveStat = lstatSync(tarball)
-          const archiveRealpath = realpathSync(tarball)
-          if (!archiveStat.isFile() || !contained(realpathSync(packDir), archiveRealpath))
+          const archiveRealpath = nativeRealpathSync(tarball)
+          if (!archiveStat.isFile() || !contained(nativeRealpathSync(packDir), archiveRealpath))
             throw new Error('unsafe archive')
           bytes = readFileSync(tarball)
         } catch {

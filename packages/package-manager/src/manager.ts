@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
@@ -9,6 +9,7 @@ import {
   type PackageSourcePolicy,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { isPackageError, PackageError } from './errors.js'
@@ -253,9 +254,9 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
   let root: string
   let deploy: string
   try {
-    root = realpathSync(profileDir)
+    root = nativeRealpathSync(profileDir)
     if (lstatSync(deployDir).isSymbolicLink()) throw new Error('symlink')
-    deploy = realpathSync(deployDir)
+    deploy = nativeRealpathSync(deployDir)
   } catch {
     throw new PackageError('E_WORKSPACE_UNTRUSTED', 'workspace directory is not readable', {
       detail: { reason: 'unreadable' },
@@ -273,7 +274,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   const profileKey = (directory: string): string =>
-    existsSync(directory) ? realpathSync(directory) : resolve(directory)
+    existsSync(directory) ? nativeRealpathSync(directory) : resolve(directory)
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
   if (adapters.size !== (options.sourceAdapters?.length ?? 0)) throw new TypeError('duplicate source adapter')
   const stamp = options.now ?? (() => new Date().toISOString())
@@ -491,7 +492,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               dir: stage,
               version: pkg.version,
               integrity: prepared.integrity,
-              resolvedLocation: realpathSync(candidate.directory),
+              resolvedLocation: nativeRealpathSync(candidate.directory),
               dependencies: pkg.dependencies,
             },
             profileDir,
@@ -1279,7 +1280,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       // Accept only the configured startup workspace, never an arbitrary path.
       if (
         options.localPlugins &&
-        realpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
+        nativeRealpathSync(requestedDeployDir) === localWorkspaceRoot(options.localPlugins)
       ) {
         return locked(profileDir, async () => {
           await scanLocal(profileDir)
@@ -1384,7 +1385,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             source,
             {
               dir,
-              resolvedLocation: realpathSync(dir),
+              resolvedLocation: nativeRealpathSync(dir),
               version: pkg.version,
               integrity,
               license: pkg.license,

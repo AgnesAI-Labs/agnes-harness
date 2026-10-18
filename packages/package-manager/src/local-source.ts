@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { readStaticJson } from './integrity.js'
 import { hashDirectory, type PackageSource } from './sources.js'
@@ -22,7 +23,7 @@ export function discoverLocalPlugins(roots: LocalPluginRoots): LocalPluginCandid
     const root = roots[scope]
     if (!existsSync(root)) continue
     if (
-      [resolve(root), realpathSync(root)].some((path) =>
+      [resolve(root), nativeRealpathSync(root)].some((path) =>
         path.split(/[\\/]/).includes('.authoring-candidates'),
       )
     )

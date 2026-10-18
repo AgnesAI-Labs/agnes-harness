@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { BUNDLED_EXAMPLES, bundledExampleSource } from './bundled-plugin-source.js'
 import { type CatalogRead, createCatalog, staticCatalogSource } from './catalog.js'
 import { PackageError } from './errors.js'
@@ -86,7 +87,7 @@ async function descriptor(
   let owned: string
   try {
     if (lstatSync(directory).isSymbolicLink()) return invalid('symlink')
-    owned = realpathSync(directory)
+    owned = nativeRealpathSync(directory)
   } catch {
     return invalid('directory')
   }
@@ -139,7 +140,7 @@ export async function createLocalExamplesCatalog(
 ): Promise<LocalExamplesCatalog> {
   let workspace: string
   try {
-    workspace = realpathSync(options.workspace)
+    workspace = nativeRealpathSync(options.workspace)
   } catch {
     return invalid('workspace')
   }
@@ -183,7 +184,7 @@ export async function bundledExamplesEntries(signal?: AbortSignal) {
         cwd: source.root,
         ...(signal ? { signal } : {}),
       })
-      const entry = await descriptor(realpathSync(staging), example.name, signal, example.ref)
+      const entry = await descriptor(nativeRealpathSync(staging), example.name, signal, example.ref)
       entries.push(entry)
     }
     return entries

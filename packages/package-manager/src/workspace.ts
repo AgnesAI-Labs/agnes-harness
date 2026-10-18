@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
 import {
@@ -8,6 +8,7 @@ import {
   validateDeployManifest,
   validateProfileFragment,
 } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { parse as parseYaml } from 'yaml'
 import { PackageError } from './errors.js'
 import type { Lockfile } from './lockfile.js'
@@ -125,7 +126,7 @@ export function readProfileFragment(
     })
   if (!existsSync(file)) return undefined
   try {
-    if (!isContained(realpathSync(deployDir), realpathSync(file)))
+    if (!isContained(nativeRealpathSync(deployDir), nativeRealpathSync(file)))
       throw new PackageError('E_EXT_LOAD', 'workspace profile fragment escapes through a symbolic link', {
         source: { file },
         detail: { reason: 'path-escape' },

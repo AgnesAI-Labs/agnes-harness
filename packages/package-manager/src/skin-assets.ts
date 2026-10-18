@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import type { InstalledInventory } from './inventory.js'
@@ -321,7 +322,8 @@ export function resolveSkinAsset(roster: SkinRoster, pathname: string): string |
 function canonicalFile(target: string, root: string | undefined): string | null {
   let canonical: string
   try {
-    canonical = realpathSync(target)
+    canonical = nativeRealpathSync(target)
+    if (root !== undefined) root = nativeRealpathSync(root)
     if (!statSync(canonical).isFile()) return null
   } catch {
     return null

@@ -1,5 +1,6 @@
-import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { Lockfile } from './lockfile.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
@@ -53,7 +54,7 @@ export function listWorkspaceDeployments(
   }
   let root: string
   try {
-    root = realpathSync(profileDir)
+    root = nativeRealpathSync(profileDir)
   } catch {
     return []
   }
@@ -68,7 +69,7 @@ export function listWorkspaceDeployments(
     if (deployments.length >= MAX_DEPLOYMENTS || !existsSync(join(deployDir, 'manifest.json'))) continue
     try {
       // Trust refuses a symlinked directory and anything that resolves outside the profile.
-      if (lstatSync(deployDir).isSymbolicLink() || realpathSync(deployDir) !== deployDir) continue
+      if (lstatSync(deployDir).isSymbolicLink() || nativeRealpathSync(deployDir) !== deployDir) continue
       const manifest = readDeployManifest(deployDir)
       if (!supportsHarness(manifest)) continue
       const signed = lock.workspace?.path === path ? lock.workspace : undefined
