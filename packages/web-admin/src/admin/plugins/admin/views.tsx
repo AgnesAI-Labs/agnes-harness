@@ -8,7 +8,6 @@ import {
   DetailContent,
   Field,
   Icon,
-  integrityLabel,
   Menu,
   OrphanPins,
   operationLabel,
@@ -20,6 +19,7 @@ import {
   SettingsDetails,
   SettingsPageHeader,
   SettingsSelect,
+  SettingsTechnicalDetails,
   SourceDialogContent,
   StateSwitch,
   StatusMessage,
@@ -32,6 +32,7 @@ import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
 import { KindFilter, pluginFailureMessage } from '../control-panel.js'
+import { PluginDetailCopy } from '../detail-copy.js'
 import { PluginOperationFeedback } from '../operation-feedback.js'
 import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
 import { PluginDetailBody } from './detail-body.js'
@@ -139,30 +140,33 @@ export function renderPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.orphanPinsHost,
     <UiLocaleProvider source={this.locale}>
-      <OrphanPins
-        pins={this.orphanPinList.map((pin) => ({
-          pinId: pin.pinId,
-          packageId: pin.packageId,
-          version: pin.version,
-          purpose: pinPurposeLabel(pin.purpose, this.t),
-          snapshotId: integrityLabel(pin.snapshotId),
-        }))}
-        errors={this.orphanPinErrors}
-        notice={
-          this.orphanPinNotice === undefined
-            ? undefined
-            : this.t('notice.pin-skipped', { count: this.orphanPinNotice })
-        }
-        fetchError={
-          this.orphanPinFetchError
-            ? this.orphanPinFetchError.localize
-              ? this.errorMessage(this.orphanPinFetchError.detail)
-              : this.orphanPinFetchError.detail.message
-            : undefined
-        }
-        canRelease={this.canEffect('packages.remove') && this.orphanPinList.length > 0}
-        onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
-      />
+      <SettingsTechnicalDetails>
+        <OrphanPins
+          pins={this.orphanPinList.map((pin) => ({
+            pinId: pin.pinId,
+            packageId: pin.packageId,
+            version: pin.version,
+            purpose: pinPurposeLabel(pin.purpose, this.t),
+            snapshotId: pin.snapshotId,
+          }))}
+          errors={this.orphanPinErrors}
+          notice={
+            this.orphanPinNotice === undefined
+              ? undefined
+              : this.t('notice.pin-skipped', { count: this.orphanPinNotice })
+          }
+          fetchError={
+            this.orphanPinFetchError
+              ? this.orphanPinFetchError.localize
+                ? this.errorMessage(this.orphanPinFetchError.detail)
+                : this.orphanPinFetchError.detail.message
+              : undefined
+          }
+          canRelease={this.canEffect('packages.remove') && this.orphanPinList.length > 0}
+          onRelease={(pinIds, trigger) => this.confirmReleasePins(pinIds, trigger)}
+        />
+        <PluginDetailCopy value={JSON.stringify(this.orphanPinList, null, 2)} />
+      </SettingsTechnicalDetails>
     </UiLocaleProvider>,
   )
   renderRegion(

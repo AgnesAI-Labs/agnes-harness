@@ -10,7 +10,7 @@ import {
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
-  SettingsPageDescription,
+  SettingsTechnicalDetails,
   scopedResourceKey,
   useResource,
 } from '@agnes/web-ui'
@@ -103,7 +103,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
     <SettingsDrill
       id="runtime-details"
       data-testid="plugin-diagnostics"
-      label={t('runtimeDetails')}
+      label={t('technicalDetails')}
       description={t('runtimeDetailsHelp')}
       onClick={() => setOpen(true)}
     >
@@ -208,7 +208,7 @@ const definitions: readonly [
     80,
     (c, t) => (
       <>
-        <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
+        <p className="agnes-settings-note">{t('runConfigIntro')}</p>
         <div id="settings-subsection-models" tabIndex={-1} className="agnes-settings-anchor">
           <SessionDefaultsPanel
             api={c.api}
@@ -217,7 +217,15 @@ const definitions: readonly [
             providers={c.snapshot?.providers}
           />
         </div>
-        <BundlesPanel api={c.api} canSave={c.canSave} t={c.pluginText} presets={c.snapshot?.presets ?? []} />
+        <SettingsTechnicalDetails title={t('technicalDetails')} data-testid="run-config-technical">
+          <p>{t('compositionDetailsHelp')}</p>
+          <BundlesPanel
+            api={c.api}
+            canSave={c.canSave}
+            t={c.pluginText}
+            presets={c.snapshot?.presets ?? []}
+          />
+        </SettingsTechnicalDetails>
         <div id="settings-subsection-context" tabIndex={-1} className="agnes-settings-anchor">
           <ContextPanel canSave={c.canSave} />
         </div>

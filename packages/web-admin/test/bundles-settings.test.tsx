@@ -93,6 +93,20 @@ it('names business agents from the catalog or their package, falls back to a sma
   expect(raw?.className).toContain('agnes-settings-id')
   // An agent whose plugin is gone is marked and can be turned off to remove it.
   expect(row('@agnes-fde/gone#gone').textContent).toContain('Unavailable')
+  // Full combination identifiers stay copyable behind an explicitly named, closed disclosure.
+  const details = row('@agnes-fde/finance-reconcile#finance-reconcile').querySelector<HTMLElement>(
+    '.agnes-settings-technical',
+  )
+  const toggleDetails = details?.querySelector<HTMLButtonElement>(':scope > button')
+  if (!details || !toggleDetails) throw new Error('combination technical details missing')
+  expect(toggleDetails.textContent).toContain('Technical details')
+  expect(toggleDetails.getAttribute('aria-expanded')).toBe('false')
+  await act(async () => toggleDetails.click())
+  expect(toggleDetails.getAttribute('aria-expanded')).toBe('true')
+  expect(details.textContent).toContain('@agnes-fde/finance-reconcile#finance-reconcile')
+  expect(
+    details.querySelector('[data-copy]') ?? details.querySelector('button[aria-label="Copy technical ID"]'),
+  ).not.toBeNull()
   // Every row has a handle; it moves only agents that are on, and only when there are two or more.
   expect(host.querySelectorAll('[data-testid="bundle-drag"]')).toHaveLength(4)
   const toggle = (id: string) =>

@@ -232,7 +232,7 @@ export const providersCatalog: LocaleCatalog = {
     capabilityEmpty: '未报告此类能力。',
     'capabilitySource.default': '内置默认',
     'capabilitySource.profile': '配置档案',
-    'capabilitySource.preset': '预设',
+    'capabilitySource.preset': '权限方案',
     'capabilitySource.admin': '管理默认',
     'capabilitySource.session': '会话选择',
     'capabilityCategory.tools': '工具',

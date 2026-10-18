@@ -12,6 +12,7 @@ import {
   SettingsDrill,
   SettingsItem,
   SettingsTag,
+  SettingsTechnicalDetails,
   StateSwitch,
   useUiText,
 } from '@agnes/web-ui'
@@ -179,7 +180,6 @@ export function BundlesPanel({
       entry?.displayName ?? entry?.label ?? resolvePluginMetadata(pkg?.metadata, locale)?.displayName
     return { name, version: entry?.version ?? pkg?.version }
   }
-  const nameOf = (id: string) => describe(id).name ?? id
   const locked = busy || !canSave
   const move = (id: string, offset: number) => {
     const from = selected.indexOf(id)
@@ -284,11 +284,14 @@ export function BundlesPanel({
                   description={
                     <>
                       {entry ? version : t('bundles.missing-help')}{' '}
-                      <CopyButton
-                        text={id}
-                        label={settingsText('copyId')}
-                        copiedLabel={settingsText('copiedId')}
-                      />
+                      <SettingsTechnicalDetails title={settingsText('technicalDetails')}>
+                        <code>{id}</code>{' '}
+                        <CopyButton
+                          text={id}
+                          label={settingsText('copyId')}
+                          copiedLabel={settingsText('copiedId')}
+                        />
+                      </SettingsTechnicalDetails>
                     </>
                   }
                 >
@@ -309,7 +312,7 @@ export function BundlesPanel({
             <SettingsDrill
               id="bundles-effective"
               data-testid="bundles-technical"
-              label={t('bundles.explain')}
+              label={settingsText('technicalDetails')}
               description={settingsText('dumpHelp')}
             >
               <SettingsBlock>

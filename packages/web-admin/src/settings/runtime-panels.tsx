@@ -212,7 +212,8 @@ export function GenerationsPanel({
                 <dl>
                   <dt>{t('generationId')}</dt>
                   <dd>
-                    <code>{generation.id}</code>
+                    <code>{generation.id}</code>{' '}
+                    <CopyButton text={generation.id} label={t('copyId')} copiedLabel={t('copiedId')} />
                   </dd>
                   <dt>{t('generationPackages')}</dt>
                   <dd>{generation.packages.map((pkg) => `${pkg.id} ${pkg.version}`).join(', ') || '—'}</dd>
@@ -376,7 +377,14 @@ export function PublicationPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapsh
               <SettingsRow
                 key={container.compositionHash}
                 title={
-                  <code title={container.compositionHash}>{container.compositionHash.slice(0, 12)}</code>
+                  <>
+                    <code title={container.compositionHash}>{container.compositionHash.slice(0, 12)}</code>{' '}
+                    <CopyButton
+                      text={container.compositionHash}
+                      label={t('copyId')}
+                      copiedLabel={t('copiedId')}
+                    />
+                  </>
                 }
                 actions={
                   <Badge tone={container.status === 'applied' ? 'ok' : 'bad'}>
@@ -580,9 +588,5 @@ export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; 
  * sandbox implementations are listed with the other plugin types.
  */
 export function IsolationDetailsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
-  return (
-    <>
-      <SecurityStatusPanel status={snapshot.security} t={t} view="details" />
-    </>
-  )
+  return <SecurityStatusPanel status={snapshot.security} t={t} view="details" />
 }

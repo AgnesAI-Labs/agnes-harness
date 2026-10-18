@@ -2,6 +2,7 @@ import type { PackagePinsInspectResult } from '@agnes/protocol'
 import {
   Banner,
   Button,
+  CopyButton,
   Icon,
   ListRow,
   SettingsList,
@@ -159,11 +160,13 @@ export function PinsPanel({
                 <dl>
                   <dt>{t('pinsId')}</dt>
                   <dd>
-                    <code>{pin.pinId}</code>
+                    <code>{pin.pinId}</code>{' '}
+                    <CopyButton text={pin.pinId} label={t('copyId')} copiedLabel={t('copiedId')} />
                   </dd>
                   <dt>{t('pinsSnapshot')}</dt>
                   <dd>
-                    <code>{pin.snapshotId}</code>
+                    <code>{pin.snapshotId}</code>{' '}
+                    <CopyButton text={pin.snapshotId} label={t('copyId')} copiedLabel={t('copiedId')} />
                   </dd>
                 </dl>
               </SettingsTechnicalDetails>
