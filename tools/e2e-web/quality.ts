@@ -7,6 +7,16 @@ import { localeKeys, unresolvedLabels } from './i18n.js'
 import { normalizeTraceVisual } from './trace-visual.js'
 
 let keys: Promise<string[]> | undefined
+async function scrollConversation(page: Page, start = false) {
+  await page
+    .getByRole('region', { name: /^(Conversation|对话)$/, exact: true })
+    .evaluate((viewport, start) => {
+      const behavior = viewport.style.scrollBehavior
+      viewport.style.scrollBehavior = 'auto'
+      viewport.scrollTop = start ? 0 : viewport.scrollHeight
+      viewport.style.scrollBehavior = behavior
+    }, start)
+}
 export async function settled(page: Page) {
   await expect
     .poll(
@@ -73,6 +83,7 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
     .toEqual([])
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
+  const reportFrame = /^narrow-workbench-.*-768$/.test(name)
   await page.mouse.move(0, 0)
   if (name.startsWith('new-session-')) await page.locator('#prompt').focus()
   await settled(page)
@@ -213,14 +224,19 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     name.startsWith('narrow-workbench-')
   ) {
     // Frame the latest completed conversation consistently after dock/viewport reflow.
-    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
-      const behavior = viewport.style.scrollBehavior
-      viewport.style.scrollBehavior = 'auto'
-      viewport.scrollTop = viewport.scrollHeight
-      viewport.style.scrollBehavior = behavior
-    })
+    await scrollConversation(page)
     const latest = page.getByRole('button', { name: /^(New content|有新内容)$/, exact: true })
     await expect(latest).toBeHidden()
+    if (reportFrame) {
+      // Earlier tool output can add fractional-height lines. Frame the report's stable start,
+      // retaining both the tail-follow check above and the real history-reading affordance.
+      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+      await scrollConversation(page, true)
+      const report = page.getByTestId('conversation-turn').first()
+      await expect(report).toBeInViewport()
+      await expect(report).toContainText('report.md')
+      await expect(latest).toBeVisible()
+    }
     await page.mouse.move(0, 0)
   }
   // The new workspace step can show its manual path. Normalize only the isolated
@@ -272,6 +288,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
     await expect(target).toHaveScreenshot(`${name}.png`, options)
   } finally {
+    if (reportFrame) await scrollConversation(page)
     await restoreTrace()
     await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
     await workspaceChoices.evaluateAll((nodes) => {

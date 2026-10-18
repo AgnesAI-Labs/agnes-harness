@@ -198,6 +198,10 @@ Read-only first-run frames settle that same preference before cloning the produc
 Authoring provenance frames capture the real Trace inspector, including its header, controls, version,
 test and review facts. Separate fact-chain and request gates retain full Trace coverage; live clock-hook
 record counts are not rewritten to make the authoring frame deterministic.
+Tablet file-workbench frames show the initial report-reading turn alongside the file pane. The capture
+still checks tail-follow first, then verifies the report and history-reading affordance, and restores
+the tail afterwards. Earlier tool output can change the fractional height of a long transcript, so its
+last-line position is not the visual anchor for this file-preview frame.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.
 
