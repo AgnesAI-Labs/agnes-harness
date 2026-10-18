@@ -140,6 +140,7 @@ function InspectorView({
     : row.tool?.toolUseId
       ? ({ kind: 'tool', toolUseId: row.tool.toolUseId } as const)
       : undefined
+  const sourceAnchor = focus?.kind === 'authoring' ? focus : anchor
   const detail = activeToolDetail?.status === 'ready' ? activeToolDetail.value : undefined
   const notice =
     activeToolDetail?.status === 'error' ? (
@@ -300,11 +301,11 @@ function InspectorView({
             {focus?.kind === 'authoring' && sessionId ? (
               <FeedbackProvenance sessionId={sessionId} candidateId={focus.candidateId} />
             ) : null}
-            {anchor && sessionId && options.readFactChain ? (
+            {sourceAnchor && sessionId && options.readFactChain ? (
               <TraceCard title={traceText('trace.provenance.title')}>
                 <TraceSourceRecord
                   sessionId={sessionId}
-                  anchor={anchor}
+                  anchor={sourceAnchor}
                   read={options.readFactChain}
                   loadArtifact={options.loadArtifact}
                   review={!row.review}

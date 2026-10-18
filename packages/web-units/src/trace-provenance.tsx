@@ -5,7 +5,7 @@ import type {
   FactChainParams,
   FactChainResult,
 } from '@agnes/protocol'
-import { Button } from '@agnes/web-ui'
+import { Button, Disclosure } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { type TraceMessageKey, traceText } from './trace-locale.js'
 import { TraceReview } from './trace-review.js'
@@ -189,6 +189,41 @@ export function ArtifactDownload({
   )
 }
 
+/** The recorded candidate and its matching evidence; hashes stay behind an explicit disclosure. */
+function AuthoringRecord({ node }: { node: Node<'authoring'> }) {
+  return (
+    <section className="trace-card" data-testid="trace-authoring">
+      <h4>
+        {node.packageId}
+        {node.version ? ` ${node.version}` : ''} · {traceText(`trace.authoring.${node.state}`)}
+      </h4>
+      <p>
+        {node.testsState
+          ? traceText(
+              node.testsState === 'passed' ? 'trace.authoring.testsPassed' : 'trace.authoring.testsFailed',
+              { n: node.testsCount },
+            )
+          : traceText('trace.authoring.noTests')}
+      </p>
+      <p>{traceText(node.reviewed ? 'trace.authoring.reviewed' : 'trace.authoring.unreviewed')}</p>
+      <Disclosure summary={traceText('trace.authoring.details')}>
+        <pre className="trace-pre">
+          {JSON.stringify(
+            {
+              candidateHash: node.candidateHash,
+              baseHash: node.baseHash,
+              testHash: node.testHash,
+              reviewHash: node.reviewHash,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      </Disclosure>
+    </section>
+  )
+}
+
 /**
  * The «来源» record, read in place through the fact-chain read: a request's provenance chain, or a
  * tool call's authorization (with future-call rules), receipt, artifacts and business-UI records.
@@ -203,7 +238,7 @@ export function TraceSourceRecord({
   review = true,
 }: {
   sessionId: string
-  anchor: Extract<FactChainAnchor, { kind: 'request' } | { kind: 'tool' }>
+  anchor: Extract<FactChainAnchor, { kind: 'request' } | { kind: 'tool' } | { kind: 'authoring' }>
   read: ReadFactChain
   loadArtifact?: LoadArtifact | undefined
   laneId?: string
@@ -242,12 +277,16 @@ export function TraceSourceRecord({
   const links = anchor.kind === 'request' ? provenanceLinks(result, anchor.callId) : toolLinks(result)
   const invocation = of(result, 'invocation')[0]
   const artifacts = of(result, 'artifact')
+  const authoring = of(result, 'authoring')
   const gaps = [...new Set(result.gaps.map((gap) => gap.reason))]
   return (
     <div className="trace-source-record">
+      {authoring.map((node) => (
+        <AuthoringRecord key={node.id} node={node} />
+      ))}
       {links.length ? (
         <Chain links={links} />
-      ) : (
+      ) : authoring.length ? null : (
         <p className="trace-detail-status">{traceText('trace.provenance.empty')}</p>
       )}
       {review && invocation?.review ? (

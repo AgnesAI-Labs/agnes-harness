@@ -266,6 +266,17 @@ it.each(['tool', 'feedback'])(
               kind: 'authoring',
               toolUseId: origin === 'tool' ? 'use-1' : 'feedback:source',
               turn: 1,
+              candidateId: `candidate-${'e'.repeat(32)}`,
+              packageId: 'reviewed-evidence',
+              version: '1.0.0',
+              state: 'published',
+              candidateHash: 'hash',
+              reviewHash: 'review',
+              baseHash: null,
+              testHash: 'hash',
+              testsState: 'passed',
+              testsCount: 1,
+              reviewed: true,
             },
           ],
         }) as unknown as FactChainResult,
@@ -280,20 +291,23 @@ it.each(['tool', 'feedback'])(
         new Response(
           JSON.stringify({
             items: [],
-            growth: [
-              {
-                feedbackId: 'source',
-                feedbackRevision: 1,
-                messageSeq: 3,
-                candidateId,
-                candidateHash: 'hash',
-                reviewHash: 'review',
-                state: 'published',
-                reviewer: 'local',
-                packageId: 'feedback-skill-evidence',
-                version: '1.0.0',
-              },
-            ],
+            growth:
+              origin === 'feedback'
+                ? [
+                    {
+                      feedbackId: 'source',
+                      feedbackRevision: 1,
+                      messageSeq: 3,
+                      candidateId,
+                      candidateHash: 'hash',
+                      reviewHash: 'review',
+                      state: 'published',
+                      reviewer: 'local',
+                      packageId: 'feedback-skill-evidence',
+                      version: '1.0.0',
+                    },
+                  ]
+                : [],
             counts: { up: 0, down: 1, withdrawn: 0, withCandidate: 1 },
             truncated: false,
           }),
@@ -302,10 +316,26 @@ it.each(['tool', 'feedback'])(
     await vi.waitFor(() => expect(selected(root)).toBe(origin === 'tool' ? 't1' : 'a1'))
     expect(pane(root)?.getAttribute('data-pane')).toBe('source')
     await vi.waitFor(() =>
-      expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')?.textContent).toContain(
-        'Published version: feedback-skill-evidence@1.0.0',
+      expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+        'reviewed-evidence 1.0.0 · Published',
       ),
     )
+    expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+      'Tests passed: 1',
+    )
+    expect(pane(root)?.querySelector('[data-testid="trace-authoring"]')?.textContent).toContain(
+      'Human review recorded',
+    )
+    expect(
+      pane(root)?.querySelector('[data-testid="trace-authoring"] .agh-disclosure')?.getAttribute('data-open'),
+    ).toBe('false')
+    if (origin === 'feedback')
+      await vi.waitFor(() =>
+        expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')?.textContent).toContain(
+          'Published version: feedback-skill-evidence@1.0.0',
+        ),
+      )
+    else expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')).toBeNull()
   },
 )
 
