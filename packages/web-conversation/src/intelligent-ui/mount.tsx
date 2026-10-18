@@ -127,22 +127,18 @@ export function mountIntelligentUi(options: {
     }
     notify()
   }
-  // The existing conversation.view list is the only inline mount point; no timeline formats added.
-  if (!options.registry.spec('conversation.view'))
-    options.registry.declare(
-      'conversation.view',
-      { kind: 'list', scope: 'session' },
-      'web-shell',
-      'conversation.session',
-    )
-  const removeInline = options.registry.register(
-    {
-      name: 'conversation.view',
-      id: 'builtin-intelligent-ui',
-      owner: '@agnes/web-intelligent-ui',
-      priority: 10,
-    },
-    () => <IntelligentInline binding={binding} />,
+  // The conversation frame owns this declaration. Follow its lifetime, including when
+  // the interaction module loads first or the selected frame is replaced.
+  const removeInline = options.registry.inject('conversation.view', () =>
+    options.registry.register(
+      {
+        name: 'conversation.view',
+        id: 'builtin-intelligent-ui',
+        owner: '@agnes/web-intelligent-ui',
+        priority: 10,
+      },
+      () => <IntelligentInline binding={binding} />,
+    ),
   )
   const listed = () => (current ? workbenchSurfaces(current.getSnapshot().surfaces) : [])
   // The tab counts the panels it shows; closed ones are listed below them with «show all».

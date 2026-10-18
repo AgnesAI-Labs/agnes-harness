@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, SESSION_VERSION_CODES } from '@agnes/protocol'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
@@ -67,6 +67,10 @@ for (const [issue, version, action] of [
     if (issue === 'corrupt') generation.compatibility = 42
     await writeFile(file, JSON.stringify(generation))
     await runtime.restart()
+    const restarted = await runtime.connect()
+    await expect(restarted.session.load(session.id, { cwd: runtime.workspace })).rejects.toMatchObject({
+      data: { code: SESSION_VERSION_CODES[issue] },
+    })
     await page.goto(`${runtime.url}/?session=${session.id}`)
     const banner = page.getByTestId('session-read-only')
     await expect(banner).toContainText('Read-only')

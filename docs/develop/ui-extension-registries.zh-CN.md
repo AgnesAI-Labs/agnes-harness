@@ -92,6 +92,8 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 默认捆绑包 `@agnes/goal-ui`、`@agnes/interaction-ui` 分别以优先级 100 注册
 `goal`、`interaction` 呈现角色；替换界面通常使用 0。角色卸载会同步撤销卡片、面板、
 输入命令、问题 dock、答案回执及折叠策略。预算准入与执行授权仍由平台后端负责。
+对话框架拥有 `conversation.view` 声明；交互呈现通过 `ctx.slots.inject()` 登记，
+随父声明挂载、卸载和恢复，不依赖模块加载顺序。
 
 客户端描述可以声明 `requiresBackendRows: ["ext:vendor/feature"]`，表示可选的呈现依赖。
 只有最后成功的运行目标（首次成功激活前使用 desired）中全部依赖后端行存在且启用，

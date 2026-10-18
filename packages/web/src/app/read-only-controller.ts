@@ -75,6 +75,9 @@ export function createReadOnlyController(
       if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
+      // Recorded views still need the session-scoped presentation seats, even though
+      // execution admission failed. This only binds the presentation identity.
+      context.clientModules.session.setSession(id)
       context.clientModules.session.setReadiness('history-only', id)
       context.projection = view.timeline
       context.windowAtStart = !view.history.hasEarlier
@@ -115,6 +118,11 @@ export function createReadOnlyController(
     if (!refusal) return false
     try {
       if (!(await load(id, PAGE, epoch))) return true
+      const ticket = latest
+      // Opening changed the roster identity. Commit the current profile presenters
+      // for that binding without admitting the refused session's client generation.
+      await context.clientModules.reconciler.reconcileNow()
+      if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return true
       banner(refusal, scan)
     } catch {
       return false

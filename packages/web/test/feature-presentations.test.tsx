@@ -64,6 +64,7 @@ it.each([
         }).map(([name, value]) => [name, { value }]),
       ),
     )
+    if (role === 'interaction') slots.declare('conversation.view', { kind: 'list', scope: 'session' })
     const stop = official.apply(services)
     let stopReplacement: (() => void) | undefined
     const host = document.createElement('div')
@@ -207,6 +208,73 @@ it.each([
       stopReplacement?.()
       await fiber.dispose()
       await ctx.fiber.dispose()
+    }
+  },
+)
+
+it.each(['interaction-first', 'conversation-first'] as const)(
+  'mounts and remounts the official conversation and interaction independently (%s)',
+  async (order) => {
+    const { clientModule, presentationRoles } = await import('@agnes/web-client')
+    const { startClientModules } = await import('../src/client-modules/boot.js')
+    const { apply: conversation } = await import('../src/presentations/conversation.js')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
+    const runtime = await startClientModules({
+      agnes: { sessions: { get: () => undefined } } as never,
+      rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
+      conversationContainer: host,
+    })
+    const modules = {
+      conversation: { apply: conversation, roles: ['conversation', 'composer'] },
+      interaction: { apply: interaction.apply, roles: ['interaction'] },
+    }
+    let replace: (() => void) | undefined
+    try {
+      for (const name of order === 'interaction-first'
+        ? (['interaction', 'conversation'] as const)
+        : (['conversation', 'interaction'] as const)) {
+        const mod = modules[name]
+        await runtime.ctx.plugin(clientModule({ apply: mod.apply }), {
+          packageId: `@agnes/${name}-ui`,
+          clientId: `${name}-ui`,
+          revision: 'fixture',
+          presentationRoles: mod.roles,
+          slotCatalogVersion: 'dsh-client-slots/v1',
+          binding: { owner: `ordering-${name}`, lifetime: 'profile', availability: 'active' },
+        } as never)
+      }
+      runtime.session.setSession('history')
+      await vi.waitFor(() => {
+        expect(host.querySelector('#transcript-content')).not.toBeNull()
+        expect(runtime.registry.entriesOfSlot('conversation.view').map((entry) => entry.id)).toEqual([
+          'builtin-conversation-view',
+          'builtin-intelligent-ui',
+        ])
+      })
+      replace = presentationRoles.register('fixture-frame', {
+        role: 'conversation',
+        priority: 0,
+        mount: () => () => {},
+      })
+      expect(runtime.registry.spec('conversation.view')).toBeUndefined()
+      expect(workbenchPanels.get('intelligent-ui')).toBeDefined()
+      replace()
+      replace = undefined
+      await vi.waitFor(() => {
+        expect(host.querySelector('#transcript-content')).not.toBeNull()
+        expect(runtime.registry.entriesOfSlot('conversation.view').map((entry) => entry.id)).toEqual([
+          'builtin-conversation-view',
+          'builtin-intelligent-ui',
+        ])
+      })
+      expect(presentationRoles.resolution('conversation').effective?.packageId).toBe('@agnes/conversation-ui')
+    } finally {
+      replace?.()
+      await runtime.dispose()
+      host.remove()
+      fetcher.mockRestore()
     }
   },
 )
