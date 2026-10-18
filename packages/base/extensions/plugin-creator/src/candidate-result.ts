@@ -10,7 +10,22 @@ const failure = (code: string, message: string): ToolResult => ({
   details: { code },
   content: [{ type: 'text', text: message }],
 })
+// Only explicit receipt evidence advances a verification stage. Browser checks are external.
+const verification = (value: AuthoringCandidate) => ({
+  draftGenerated: value.candidateId ? 'verified' : 'not-verified',
+  structureValidated: value.preview?.blockers?.length === 0 ? 'verified' : 'not-verified',
+  candidateTestPassed:
+    value.tests?.state === 'passed' && value.tests.hash === value.candidateHash && value.tests.count > 0
+      ? 'verified'
+      : 'not-verified',
+  installVerified: value.state === 'published' ? 'verified' : 'not-verified',
+  browserAppearanceVerified: 'not-verified',
+  published: value.state === 'published' ? 'verified' : 'not-verified',
+})
 const receipt = (value: AuthoringCandidate) => ({
+  verification: verification(value),
+  browserCheck:
+    '未验证：请检查亮暗模式、禁用及默认外观恢复。 / Not verified: check light/dark mode, disable and restore default appearance.',
   candidateId: value.candidateId,
   candidateHash: value.candidateHash,
   packageId: value.packageId,
@@ -26,8 +41,9 @@ export async function candidateResult(
   ctx: ToolContext,
   value: AuthoringCandidate,
   read?: ReadOptions,
+  operation?: string,
 ): Promise<ToolResult> {
-  const summary = receipt(value)
+  const summary = { ...receipt(value), operation, stage: 'result' }
   const display = { ...summary, tests: value.tests && { ...value.tests, output: undefined } }
   let text = JSON.stringify(display)
   if (read === undefined) {
@@ -86,7 +102,11 @@ export async function candidateResult(
     text += `\nSource page ${offset}..${end} of ${bytes.length} bytes; nextOffset=${end === bytes.length ? 'null' : end}.`
   }
   const displayBudget = Math.min(ctx.outputMaxBytes ?? 32768, 4096)
-  if (bytes.length + 256 <= displayBudget && read.offset === undefined) text = json
+  if (
+    read.offset === undefined &&
+    Buffer.byteLength(JSON.stringify([{ type: 'text', text: `${text}\n${json}` }])) <= displayBudget
+  )
+    text += `\n${json}`
   else if (offset === 0) {
     try {
       const ref = await ctx.artifacts.put(bytes, { mime: 'text/plain', name: 'candidate-source.json' })

@@ -25,6 +25,8 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 Before using the CLI review commands below, confirm `state: review`, `tests.state: passed` and `tests.count >= 1`. A draft has `reviewHash: null` and cannot be approved directly. After publication, submit `call my_text_stats {"text":"hello world"}` in a new session; expect `{"characters":11,"words":2}`. The [growing-skills demo](../../examples/demos/growing-skills/README.md) also provides an isolated offline exercise.
 
+The recommended authoring path is **guide → create once → read/write the same candidate → test its exact hash → submit for human review**. Use `plugin_helper_guide` and `plugin_helper_create`, then `plugin_candidate_read/write`, `plugin_test` and `plugin_install_local` when present in the current catalog. The helper’s older names remain compatibility aliases for the same service and candidate, not a separate workflow. The keyless Demo above exercises these aliases.
+
 The default **Plugin Helper** exposes three tools:
 
 1. `plugin_helper_guide` (`kind: tool|skill|skin`) returns a version-matched JavaScript template and Node contract test. Implement the requested behavior and strengthen the test, including invalid inputs.
@@ -33,9 +35,36 @@ The default **Plugin Helper** exposes three tools:
 
 For newly authored Markdown, `skill_helper_create` also writes a reviewed Skill package candidate; `skill_helper_install` uses test/commit/status for its candidate ID. Authored packages publish in this profile; code stays pinned per session and approved Skill resources refresh live; creation no longer accepts the old workspace/user scope or install-only flags. Importing existing Skills retains its workspace/user import approval workflow.
 
-The optional `agnes/plugin-creator` extension also provides `plugin_scaffold` (tool, tool-with-panel, mcp-skills, model-adapter, loop or skill), `plugin_candidate_read`, `plugin_candidate_write`, `plugin_test` and `plugin_install_local`. Writes replace the complete text tree and require the previous `candidateHash`; `plugin_install_local` submits the tested hash for human review. It never copies code into a discovery root.
+The builtin `agnes/plugin-creator` tools also provide `plugin_scaffold` (tool, tool-with-panel, mcp-skills, model-adapter, loop or skill), `plugin_candidate_read`, `plugin_candidate_write`, `plugin_test` and `plugin_install_local`. `plugin_creator_guide` includes the same recommended path and reports whether the Host port is supplied; supplied does not promise authorization. `plugin_scaffold` is an alternative initial template step when helper tools are absent. Writes replace the complete text tree and require the previous `candidateHash`; `plugin_install_local` submits the tested hash for human review. It never copies code into a discovery root.
 
 Both tool sets use the same Host-bound candidate service: a draft created by `plugin_helper_create` can be continued with `plugin_candidate_read` and `plugin_candidate_write`, using its existing ID and current hash. The Host records the actual calling package, its snapshot (or the builtin session’s pinned code generation), row and row lease, and checks each tool invocation’s lifetime. Subagents, cancelled or expired invocations, and callers without current owner authority cannot use this port. Builtin authoring tool errors identify the operation, stage and candidate ID, and distinguish unavailable Host capability, permission denial, stale hashes and validation failures. An unavailable capability does not mean an administrator disabled authoring; retain the draft and report the failed operation.
+
+## Report evidence and deliver a complete package
+
+Restate each actual receipt’s `operation`, `stage` and `candidateId`. If create succeeded and write later reports `unavailable-host-capability`, say that the draft was created and **write** failed; keep the same draft. Read its current hash before continuing. Never recreate it just to recover from a later-stage failure, infer an “admin disabled” setting, invent switches, or use shell/config edits to bypass a refusal. Create another draft only when the human explicitly requests one.
+
+Candidate tool summaries expose `verification`; it is a conservative display projection, not new durable state. Report these stages separately:
+
+| Stage | Required evidence |
+| --- | --- |
+| Draft generated | A successful create receipt with candidate ID/hash |
+| Structure validated | Explicit inspection evidence with no blockers, such as the submitted review preview or successful package packing; a draft receipt alone does not expose this evidence |
+| Candidate test passed | `tests.state: passed`, matching candidate hash and at least one executed test |
+| Install verified | Actual installed/runtime evidence; a `published` receipt includes runtime confirmation |
+| Browser/appearance verified | Browser observation for the installed skin in light and dark mode, then disable and restore default appearance |
+| Published | An actual `state: published` receipt after human review |
+
+The skin template’s Node test checks entry/manifest/descriptor/asset structure only. JSON/path/CSS string assertions never prove installation or appearance. Candidate results always mark browser appearance **not verified**; report a later browser check separately with its evidence. If it cannot run in this session, explicitly say “browser/appearance not verified” and give the human the light/dark and disable/restore checklist. Passing source tests do not justify saying “the skin is fine”.
+
+Before giving installation commands, verify the actual CLI executable/version and help, effective `AGH_HOME`, profile and daemon startup workspace; do not display credentials. This version has `agh dev <plugin-folder>`, `agh plugins add` and `agh plugins pack`. `dev` accepts a folder below the daemon startup workspace and follows normal management review. Its existence does not authorize agent self-installation, and there is no general requirement to stop the server.
+
+For a downloadable result, read **all** `sourceFiles` from the same candidate/hash with `plugin_candidate_read`; reconstruct paginated JSON completely before copying. Use ordinary authorized workspace writes to stage every file at its relative path in a new directory outside discovery roots and the private AGH home. Never execute the entry or package lifecycle scripts. Then use the verified version of the existing pack command:
+
+```sh
+agh plugins pack <staging-folder> <new-output.tgz>
+```
+
+This invokes `plugin-pack.ts`, validates the distributable tree and creates a directory archive. A skin includes `package.json`, `index.mjs`, its descriptor and every relative asset; packing also adds the bundled entry selected by the packed manifest. Keep the output outside the staging directory. After successful packing, call `present` with `files: [{path: "<workspace-output.tgz>", description: "Complete plugin package; installation and appearance checks remain separate"}]`. It offers one durable download (maximum 32 MiB). Loose CSS/JSON cards and `candidate-source.json` are source previews, not installable packages. If authorized workspace writes, pack or present are unavailable, report delivery as incomplete and preserve the candidate. Downloading does not install, trust, enable or publish; the human uses the existing admin flow.
 
 The binding takes effect when the updated Host assembles the tools. Already-running workers retain their assembled capabilities until restarted normally. Retained sessions keep their code pins; reopening does not rewrite them or upgrade their pinned tool code. Existing candidates and hashes remain readable, including drafts created through the helper. No draft cleanup or publication happens during this update.
 

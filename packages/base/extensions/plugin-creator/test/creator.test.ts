@@ -2,35 +2,39 @@ import { runInNewContext } from 'node:vm'
 import type { ToolContext } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
+import type { AuthoringCandidate } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import pluginCreator, { pluginCreatorTools } from '../src/index.js'
 
-it('returns large candidate sources as program data, with a bounded display and short write receipt', async () => {
-  const candidateId = `candidate-${'a'.repeat(32)}`,
-    candidateHash = `sha256-${'b'.repeat(64)}`
-  const sourceFiles = [{ path: 'large.md', content: '中文'.repeat(10_000) }]
-  const ctx = {
-    signal: new AbortController().signal,
-    outputMaxBytes: 4096,
-    pluginManage: {
-      request: async () => ({
-        candidateId,
-        candidateHash,
-        sourceFiles,
-        files: sourceFiles.map((f) => ({ path: f.path, before: null, after: f.content })),
-      }),
-    },
-  } as unknown as ToolContext
-  const read = await pluginCreatorTools[5].execute({ candidateId }, ctx)
-  expect(read).toMatchObject({ structured: { candidateId, candidateHash, sourceFiles } })
-  expect(Buffer.byteLength(JSON.stringify(read.content))).toBeLessThan(4096)
-  const written = await pluginCreatorTools[4].execute(
-    { candidateId, expectedHash: candidateHash, files: sourceFiles },
-    ctx,
-  )
-  expect(JSON.stringify(written)).not.toContain(sourceFiles[0]!.content)
-  expect(written).toMatchObject({ structured: { candidateId, candidateHash } })
-})
+it.each(['中文'.repeat(10_000), 'x'.repeat(3500)])(
+  'returns candidate sources as program data, with a bounded display and short write receipt',
+  async (content) => {
+    const candidateId = `candidate-${'a'.repeat(32)}`,
+      candidateHash = `sha256-${'b'.repeat(64)}`
+    const sourceFiles = [{ path: 'large.md', content }]
+    const ctx = {
+      signal: new AbortController().signal,
+      outputMaxBytes: 4096,
+      pluginManage: {
+        request: async () => ({
+          candidateId,
+          candidateHash,
+          sourceFiles,
+          files: sourceFiles.map((f) => ({ path: f.path, before: null, after: f.content })),
+        }),
+      },
+    } as unknown as ToolContext
+    const read = await pluginCreatorTools[5].execute({ candidateId }, ctx)
+    expect(read).toMatchObject({ structured: { candidateId, candidateHash, sourceFiles } })
+    expect(Buffer.byteLength(JSON.stringify(read.content))).toBeLessThan(4096)
+    const written = await pluginCreatorTools[4].execute(
+      { candidateId, expectedHash: candidateHash, files: sourceFiles },
+      ctx,
+    )
+    expect(JSON.stringify(written)).not.toContain(sourceFiles[0]!.content)
+    expect(written).toMatchObject({ structured: { candidateId, candidateHash } })
+  },
+)
 
 it.each(['中文🙂'.repeat(9000), '\u0001'.repeat(120_000), '\ufeffA\r\nB\n"\\'.repeat(9000)])(
   'reads exact source bytes across pages and rejects invalid offsets and changed hashes',
@@ -293,4 +297,120 @@ it.each([
       candidateId,
     },
   })
+})
+
+it('keeps the created draft and reports write as the failing operation without inventing an admin switch', async () => {
+  const tools = new Map<string, import('@agnes/extension-api').ToolDef>()
+  const { pluginHelper } = await import(
+    new URL('../../../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+  )
+  pluginHelper.apply({
+    tools: { register: (tool: import('@agnes/extension-api').ToolDef) => tools.set(tool.name, tool) },
+  })
+  const candidateId = `candidate-${'a'.repeat(32)}`,
+    candidateHash = `sha256-${'b'.repeat(64)}`
+  const sourceFiles = [{ path: 'package.json', content: '{}' }]
+  const ctx = {
+    signal: new AbortController().signal,
+    session: { depth: 0 },
+    pluginManage: {
+      request: async (input: { action: string; candidateId?: string }) => {
+        if (input.action === 'prepare') return { candidateId, candidateHash, state: 'draft', tests: null }
+        expect(input).toMatchObject({ action: 'candidate.write', candidateId })
+        throw Object.assign(new Error('unavailable'), { code: 'PLUGIN_MANAGEMENT_UNAVAILABLE' })
+      },
+    },
+  } as unknown as ToolContext
+  const helperGuide = tools.get('plugin_helper_guide'),
+    helperCreate = tools.get('plugin_helper_create')
+  if (!helperGuide || !helperCreate) throw new Error('Missing helper tools')
+  const guide = await helperGuide.execute({ kind: 'skin' }, ctx)
+  expect(guide.structured).toMatchObject({ authoringCapability: 'supplied-authorization-checked-per-call' })
+  const text = JSON.stringify(guide)
+  for (const instruction of [
+    'Continue the same draft',
+    'operation, stage and candidateId',
+    'never invent settings/switches',
+    'CLI executable/version',
+    'agh plugins pack',
+    'present',
+  ])
+    expect(text).toContain(instruction)
+  const created = await helperCreate.execute({ files: sourceFiles }, ctx)
+  expect(created).toMatchObject({
+    structured: {
+      candidateId,
+      state: 'draft',
+      operation: 'candidate.create',
+      verification: { draftGenerated: 'verified', installVerified: 'not-verified' },
+    },
+  })
+  const written = await pluginCreatorTools[4].execute(
+    { candidateId, expectedHash: candidateHash, files: sourceFiles },
+    ctx,
+  )
+  expect(written).toMatchObject({
+    isError: true,
+    structured: {
+      operation: 'candidate.write',
+      stage: 'request',
+      candidateId,
+      kind: 'unavailable-host-capability',
+    },
+  })
+  expect(JSON.stringify(written.content)).toContain('keep the existing draft')
+  expect(JSON.stringify(written.content)).not.toMatch(/admin|switch|create.*failed/i)
+  const builtinGuide = await pluginCreatorTools[0].execute({}, ctx)
+  const helperData = guide.structured as { authoringPath: string }
+  expect(JSON.stringify(builtinGuide.content)).toContain(
+    JSON.stringify(helperData.authoringPath).slice(1, -1),
+  )
+})
+
+it.each([
+  { state: 'draft', tests: null, passed: false, installed: false },
+  { state: 'tested', testHash: 'current', count: 1, passed: true, installed: false },
+  { state: 'tested', testHash: 'old', count: 1, passed: false, installed: false },
+  { state: 'tested', testHash: 'current', count: 0, passed: false, installed: false },
+  { state: 'failed', testHash: 'current', count: 1, passed: false, installed: false },
+  { state: 'review', testHash: 'current', count: 1, passed: true, installed: false },
+  { state: 'publishing', testHash: 'current', count: 1, passed: true, installed: false },
+  { state: 'published', testHash: 'current', count: 1, passed: true, installed: true },
+])('reports verification evidence for $state without claiming browser appearance', async (row) => {
+  const candidateId = `candidate-${'a'.repeat(32)}`,
+    candidateHash = `sha256-${'b'.repeat(64)}`
+  const value = {
+    candidateId,
+    candidateHash,
+    state: row.state,
+    tests: row.testHash
+      ? {
+          state: row.state === 'failed' ? 'failed' : 'passed',
+          hash: row.testHash === 'current' ? candidateHash : `sha256-${'c'.repeat(64)}`,
+          count: row.count,
+        }
+      : null,
+    preview: row.state === 'review' || row.state === 'published' ? { blockers: [] } : null,
+  } as unknown as AuthoringCandidate
+  const ctx = {
+    signal: new AbortController().signal,
+    pluginManage: { request: async () => value },
+  } as unknown as ToolContext
+  const result = await pluginCreatorTools[2].execute({ candidateId, expectedHash: candidateHash }, ctx)
+  const { verification } = await import(
+    new URL('../../../../package-manager/bundled-plugins/plugin-helper/src/authoring.mjs', import.meta.url)
+      .href
+  )
+  expect(result.structured).toMatchObject({
+    verification: {
+      draftGenerated: 'verified',
+      structureValidated: value.preview ? 'verified' : 'not-verified',
+      candidateTestPassed: row.passed ? 'verified' : 'not-verified',
+      installVerified: row.installed ? 'verified' : 'not-verified',
+      browserAppearanceVerified: 'not-verified',
+      published: row.installed ? 'verified' : 'not-verified',
+    },
+  })
+  expect((result.structured as { verification: unknown }).verification).toEqual(verification(value))
+  expect(JSON.stringify(result.content)).toContain('check light/dark mode, disable and restore')
 })

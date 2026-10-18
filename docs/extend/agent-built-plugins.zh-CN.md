@@ -33,9 +33,38 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。
 
-可选 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
+内置 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
 
 两组工具共用同一个由 Host 绑定的候选服务：`plugin_helper_create` 创建的草稿可以继续由 `plugin_candidate_read` 和 `plugin_candidate_write` 编辑，沿用原候选 ID 与当前哈希。Host 记录真实调用包、代码快照（内置工具使用该会话固定的代码代际）、行与行级 lease，并检查每次工具调用的生命期。子代理、已取消或过期的调用以及缺少当前 owner 授权的调用不能使用此端口。内置作者工具的错误回执标明操作、阶段、候选 ID，并区分宿主能力不可用、权限拒绝、哈希过期和验证失败。能力不可用不表示管理员关闭了作者功能；保留草稿并报告实际失败的操作。
+
+## 按证据报告并交付完整包
+
+推荐路径为 **指南 → 创建一次 → 读取／编辑同一候选 → 精确摘要测试 → 提交人工审阅**：先用 `plugin_helper_guide`、`plugin_helper_create`，再用当前工具目录中的 `plugin_candidate_read/write`、`plugin_test`、`plugin_install_local`。`plugin_creator_guide` 提供相同路径；helper 不可用时，`plugin_scaffold` 是初始模板步骤的替代入口。`plugin_helper_install test/commit/status` 保留为同一服务的兼容别名，`proposalId` 就是原候选 ID；commit 只提交审阅。指南中的 Host 端口 supplied 仅表示已提供端口，每次调用仍须授权。
+
+复述实际回执的 `operation`、`stage`、`candidateId`。创建成功、随后 write 返回 `unavailable-host-capability` 时，应说草稿已创建、**write** 失败，保留同一草稿并在继续前读取当前摘要。后续阶段失败不意味着创建失败；除非人工明确要求新草稿，否则不要重复创建。不得推测“管理员关闭”或编造设置开关，也不得用 shell／配置修改绕过拒绝。
+
+候选工具摘要中的 `verification` 是保守的展示投影，不是新的持久状态。各阶段分别报告：
+
+| 阶段 | 所需证据 |
+| --- | --- |
+| 草稿生成 | 成功创建回执中的候选 ID／摘要 |
+| 结构验证 | 明确且无 blocker 的检查证据，例如提交审阅后的 preview 或成功打包；单纯 draft 回执不包含此证据 |
+| 候选测试通过 | `tests.state: passed`、摘要一致且至少执行一个测试 |
+| 安装验证 | 实际安装／运行状态；`published` 回执包含运行时确认 |
+| 浏览器／外观验证 | 已安装皮肤的亮暗模式观察，以及禁用并恢复默认外观 |
+| 已发布 | 人工审阅后实际 `state: published` 回执 |
+
+皮肤模板的 Node 测试仅检查入口、清单、描述符与资产结构。JSON／路径／CSS 字符串断言不能证明安装或外观。候选回执始终将浏览器外观标为“未验证”；后续浏览器检查须单独报告证据。本会话无法运行时，明确说明“浏览器／外观未验证”，请人工检查亮暗模式和禁用恢复。不能仅据源码测试说“皮肤本身没问题”。
+
+给出安装命令前，核实实际 CLI 可执行文件／版本／帮助、有效 `AGH_HOME`、profile 和 daemon 启动工作区，不展示凭据。本版支持 `agh dev <plugin-folder>`、`agh plugins add`、`agh plugins pack`。dev 的目录须位于 daemon 启动工作区下，并走正常管理审阅；这不授权代理自行安装，也不存在通用的“必须停服务”前提。
+
+承诺下载成品时，用 `plugin_candidate_read` 读取同一候选／摘要的**全部** `sourceFiles`；分页 JSON 须先完整重组。通过普通、已授权的工作区写入，将每个文件按相对路径复制到新目录，位置须在发现目录及 AGH 私有 home 之外。不得执行入口或包生命周期脚本。随后使用核实后的现有命令：
+
+```sh
+agh plugins pack <staging-folder> <new-output.tgz>
+```
+
+该命令调用 `plugin-pack.ts`，验证发行树并生成目录压缩包。皮肤须包含 `package.json`、`index.mjs`、描述符及全部相对资产；打包还会添加由打包清单选择的 bundle 入口。输出放在 staging 目录之外。打包成功后，调用 `present`，参数为 `files: [{path: "<workspace-output.tgz>", description: "完整插件包；安装及外观需分别验证"}]`，提供一个持久下载（上限 32 MiB）。零散 CSS／JSON 卡片和 `candidate-source.json` 只是源码预览，不是可安装包。工作区写入、pack 或 present 不可用时，明确交付未完成并保留候选。下载不代表安装、信任、启用或发布；人工仍通过现有管理流程完成。
 
 更新后的 Host 重新装配工具时才获得此绑定。已经运行的 worker 在正常重启前继续使用原装配能力；保留会话仍沿用原代码 pin，重新打开不会改写 pin 或升级固定的工具代码。原候选与哈希保持可读，helper 创建的草稿也适用。本次更新不会清理草稿或自动发布。
 
