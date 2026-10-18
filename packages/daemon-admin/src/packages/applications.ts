@@ -9,7 +9,7 @@ import {
   readApplicationAssets,
   withLock,
 } from '@agnes/package-manager'
-import type { PackageAdminMethodName } from '@agnes/protocol'
+import type { ApplicationRoleTarget, PackageAdminMethodName, PresentationRole } from '@agnes/protocol'
 import {
   type ApplicationConfigSnapshot,
   type ApplicationPreview,
@@ -21,6 +21,7 @@ import {
 import type { PackageActivationAdapter } from './handler.js'
 import type { PackageAdminAuthority } from './permissions.js'
 import type { PackageProfileDirectory } from './project.js'
+import { previewRole, roleDigest, roleStates } from './role-selection.js'
 
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 const fail = (reason: string): never => {
@@ -225,11 +226,33 @@ export class Applications {
     try {
       const profile = data.profile as string
       if (method === '_agnes/v1/applications.get') return await this.get(profile)
-      if (method === '_agnes/v1/applications.preview')
+      if (method === '_agnes/v1/applications.preview') {
+        if (data.role !== undefined || data.targetClientId !== undefined) {
+          if (!data.role || !data.targetClientId) return fail('APPLICATION_ROLE_UNDECLARED')
+          return await this.previewRole(profile, data.role as PresentationRole, {
+            packageId: data.packageId as string,
+            clientId: data.targetClientId as string,
+          })
+        }
         return await this.preview(profile, data.packageId as string)
+      }
       if (data.clientId !== authority.clientId) throw rpcError('CAPABILITY_DENIED')
       if (method === '_agnes/v1/applications.clear')
-        return await this.clear(profile, data.expectedRevision as number)
+        return await this.clear(
+          profile,
+          data.expectedRevision as number,
+          data.role as PresentationRole | undefined,
+        )
+      if (data.role !== undefined || data.targetClientId !== undefined) {
+        if (!data.role || !data.targetClientId) return fail('APPLICATION_ROLE_UNDECLARED')
+        return await this.selectRole(
+          profile,
+          data.role as PresentationRole,
+          { packageId: data.packageId as string, clientId: data.targetClientId as string },
+          data.expectedRevision as number,
+          data.consentDigest as string,
+        )
+      }
       return await this.adopt(
         profile,
         data.packageId as string,
@@ -284,7 +307,18 @@ export class Applications {
       assets: {},
       candidates,
     }
-    if (!saved.selection) return fallback
+    const present = async (state: ApplicationState): Promise<ApplicationState> => ({
+      ...state,
+      roles: await roleStates(
+        packages,
+        profile,
+        saved.roleSelections,
+        state.effective,
+        this.options.active,
+        unavailable,
+      ),
+    })
+    if (!saved.selection) return present(fallback)
     const row = packages.find((p) => p.id === saved.selection?.packageId)
     const reason = unavailable
       ? 'inventory-unavailable'
@@ -301,14 +335,19 @@ export class Applications {
                   digest(row.entry.application) !== saved.selection.declarationDigest
                 ? 'declaration-changed'
                 : undefined
-    if (reason) return { ...fallback, reason }
+    if (reason) return present({ ...fallback, reason })
     try {
       const current = await this.reviewed(profile, saved.selection.packageId, packages, saved.selection)
       if (bindingDigest(current.preview) !== saved.selection.bindingDigest)
-        return { ...fallback, reason: 'dependencies-changed' }
-      return { ...fallback, status: 'active', effective: current.preview.declaration, assets: current.assets }
+        return present({ ...fallback, reason: 'dependencies-changed' })
+      return present({
+        ...fallback,
+        status: 'active',
+        effective: current.preview.declaration,
+        assets: current.assets,
+      })
     } catch {
-      return { ...fallback, reason: 'assets-or-references-unavailable' }
+      return present({ ...fallback, reason: 'assets-or-references-unavailable' })
     }
   }
 
@@ -347,9 +386,56 @@ export class Applications {
     return this.get(profile)
   }
 
-  async clear(profile: string, expectedRevision: number) {
+  async previewRole(profile: string, role: PresentationRole, target: ApplicationRoleTarget) {
+    const { directory } = await this.context(profile)
+    const { packages } = await this.options.manager.inventory(directory)
+    return previewRole(packages, profile, role, target, this.options.active)
+  }
+
+  async selectRole(
+    profile: string,
+    role: PresentationRole,
+    target: ApplicationRoleTarget,
+    expectedRevision: number,
+    consentDigest: string,
+  ) {
+    const { directory, config } = await this.context(profile)
+    const boundary = await packageBoundary(directory)
+    const { packages } = await this.options.manager.inventory(directory, { fresh: true })
+    await withLock(directory, async () => {
+      if ((await packageBoundary(directory)) !== boundary) return fail('APPLICATION_PREVIEW_STALE')
+      const saved = await config.application()
+      if (saved.revision !== expectedRevision) return fail('CONFIG_REVISION_CONFLICT')
+      const preview = await previewRole(packages, profile, role, target, this.options.active)
+      if (preview.consentDigest !== consentDigest) return fail('APPLICATION_PREVIEW_STALE')
+      await config.saveApplication({
+        ...saved,
+        roleSelections: {
+          ...saved.roleSelections,
+          [role]: {
+            ...target,
+            integrity: preview.integrity,
+            declarationDigest: preview.declarationDigest,
+            consentDigest,
+            bindingDigest: roleDigest(preview),
+            consentSnapshot: preview,
+          },
+        },
+      })
+    })
+    return this.get(profile)
+  }
+
+  async clear(profile: string, expectedRevision: number, role?: PresentationRole) {
     const { config } = await this.context(profile)
-    await config.saveApplication({ revision: expectedRevision, selection: null })
+    const saved = await config.application()
+    const roleSelections = { ...saved.roleSelections }
+    if (role) delete roleSelections[role]
+    await config.saveApplication({
+      revision: expectedRevision,
+      selection: role ? saved.selection : null,
+      roleSelections: role ? roleSelections : {},
+    })
     return this.get(profile)
   }
 }

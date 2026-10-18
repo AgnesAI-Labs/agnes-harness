@@ -92,6 +92,26 @@ it('filters standard product roles before priority so installing B cannot steal 
     { navigation: { packageId: 'b', clientId: 'ui' } },
   )
   expect([...visible]).toEqual(['b'])
+  const broken = roles.register(
+    'broken-owner',
+    {
+      ...provider('broken', -200),
+      mount() {
+        throw new Error('broken')
+      },
+    },
+    module('broken'),
+  )
+  roles.select(
+    { navigation: { packageId: 'a', clientId: 'ui' } },
+    { navigation: { packageId: 'broken', clientId: 'ui' } },
+  )
+  expect([...visible]).toEqual(['a'])
+  expect(roles.resolution('navigation')).toEqual({
+    effective: { packageId: 'a', clientId: 'ui' },
+    reason: 'mount-failed',
+  })
+  broken()
   roles.select({ navigation: { packageId: 'a', clientId: 'ui' } }, {})
   expect([...visible]).toEqual(['a'])
   roles.select()

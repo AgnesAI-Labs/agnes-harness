@@ -223,6 +223,39 @@ export class PluginAdminApi {
   clearApplication(expectedRevision: number): Promise<import('@agnes/protocol').ApplicationState> {
     return this.#effect('application/clear', { expectedRevision })
   }
+  previewRole(
+    role: import('@agnes/protocol').PresentationRole,
+    packageId: string,
+    targetClientId: string,
+  ): Promise<import('@agnes/protocol').ApplicationPreview> {
+    return this.#post('application/preview', {
+      profile: this.#context.profile,
+      role,
+      packageId,
+      targetClientId,
+    })
+  }
+  selectRole(
+    role: import('@agnes/protocol').PresentationRole,
+    packageId: string,
+    targetClientId: string,
+    expectedRevision: number,
+    consentDigest: string,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/adopt', {
+      role,
+      packageId,
+      targetClientId,
+      expectedRevision,
+      consentDigest,
+    })
+  }
+  clearRole(
+    role: import('@agnes/protocol').PresentationRole,
+    expectedRevision: number,
+  ): Promise<import('@agnes/protocol').ApplicationState> {
+    return this.#effect('application/clear', { role, expectedRevision })
+  }
   #candidateRead: Promise<import('@agnes/protocol').AuthoringCandidateList> | undefined
 
   candidatesList(): Promise<import('@agnes/protocol').AuthoringCandidateList> {

@@ -84,6 +84,26 @@ application or explicit user choice filters product candidates **before** priori
 unselected application's lower priority cannot take over. Ordinary pages, settings, cards and slots
 retain their existing scopes and semantics.
 
+## Choose one interface implementation
+
+In **Settings → Application → Interface implementations**, an administrator can replace each standard
+role independently. Keep application A's brand and navigation while choosing plugin B for deliverables,
+or keep the default AGH application and choose B without adopting any application. Each row shows the
+current implementation and its source (**Default / Application / Your choice**), candidates from
+installed, trusted, enabled packages, and **Restore default**. Only profile clients that statically
+declare the role in `presentationRoles` are candidates; authors need no application declaration.
+
+Preview the source/signature, package integrity, role and visible parts replaced, client entry and
+dependency trust surface, presentation-only scope and recovery before confirming. That information and
+the client declaration are bound to the consent digest. Selection uses the application configuration
+CAS revision and existing administrator permissions. Explicit role choice wins over the application's
+role, then the host default. Restoring one role removes only that choice, restoring the application's
+implementation when available. It never changes execution profiles or hashes.
+
+A disabled, untrusted, removed, changed or failing implementation remains saved as **unresolved**, with
+a reason. The host falls back to the application's implementation or its own default; it never chooses
+another community candidate automatically. Changed code/declarations require fresh preview and consent.
+
 The consent preview binds source and signature status, package/version/integrity, brand and assets,
 hidden entries, home/skin, agents, role code sources, dependency permissions/diff, scope and recovery.
 Adoption and clearing use the existing admin principal/method allowlists and configuration CAS revision.
@@ -100,7 +120,9 @@ order. Clearing removes application defaults and preserves user preferences. Eff
 Open **`/?admin`** for the separate host recovery bootstrap. It selects the host identity and skin
 before importing application JavaScript, CSS, roles or navigation. The URL grants no authority;
 mutations use the same authenticated BFF and admin checks. **`agh app clear [--profile NAME] [--json]`**
-is dispatched before generic boot, loads no plugins and only clears presentation. A running daemon
+is dispatched before generic boot, loads no plugins and clears both the application and all explicit
+role choices. The recovery page's clear action does the same; execution settings and unrelated user
+preferences remain intact. A running daemon
 uses online CAS; otherwise an atomic write uses the shared configuration lock and revision.
 
 The [Acme reference application](../../examples/acme/README.md) supplies a tool, a default-Loop agent, raster identity assets, an additional page and executable SDK preview/adoption commands.

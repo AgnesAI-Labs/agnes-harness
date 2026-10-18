@@ -6,8 +6,8 @@ import {
   homeEntries,
   homeNavigation,
   presentationDefault,
-  presentationRoles,
   resolveHomeEntry,
+  selectPresentationRoles,
 } from '@agnes/web-client'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { preserveRouteParams } from '@agnes/web-ui'
@@ -55,7 +55,7 @@ export function projectApplication(state: ApplicationState | undefined): void {
   const touch = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')
   if (touch) touch.href = assets.mark ?? '/favicon.png'
   updateApplicationTitle()
-  presentationRoles.select(effectiveApplication()?.presentation?.roles)
+  selectPresentationRoles(state)
   for (const url of old) URL.revokeObjectURL(url)
   const requested = homeNavigation.getSnapshot()
   const automatic = (requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault

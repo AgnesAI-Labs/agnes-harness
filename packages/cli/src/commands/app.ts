@@ -66,14 +66,14 @@ export async function clearApplicationCommand(p: ParsedArgs, io: MainIO, home: s
     } else {
       const config = createConfigurationService({ home, profile: name })
       const current = await config.application()
-      await config.saveApplication({ revision: current.revision, selection: null })
+      await config.saveApplication({ revision: current.revision, selection: null, roleSelections: {} })
     }
     io.stdout.write(
       json
         ? '{"cleared":true}\n'
         : io.env.AGNES_LOCALE === 'zh-CN'
-          ? '已清除当前应用展示选择。\n'
-          : 'Current application presentation cleared.\n',
+          ? '已清除当前应用与界面实现选择。\n'
+          : 'Current application and interface choices cleared.\n',
     )
     return 0
   } catch (error) {

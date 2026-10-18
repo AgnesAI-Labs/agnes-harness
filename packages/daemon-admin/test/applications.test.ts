@@ -16,8 +16,10 @@ import {
   parseSource,
   writeLock,
 } from '@agnes/package-manager'
+import { validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { Applications } from '../src/packages/applications.js'
+import { requirePackageAdmin } from '../src/packages/permissions.js'
 
 const homes: string[] = []
 afterEach(async () => {
@@ -51,10 +53,11 @@ async function fixture() {
     },
   })
   let packages = [make('a'), make('b')]
+  const inactive = new Set<string>()
   const applications = new Applications({
     manager: { inventory: async () => ({ profile: 'local-dev', hash: '', packages }) },
     profileDirectory: async () => directory,
-    active: async () => true,
+    active: async (_profile, id) => !inactive.has(id),
     home,
     configuration: () => config,
   })
@@ -70,6 +73,10 @@ async function fixture() {
     applications,
     adopt,
     packages: () => packages,
+    setActive(id: string, active: boolean) {
+      if (active) inactive.delete(id)
+      else inactive.add(id)
+    },
     replace: (next: InstalledPackage[]) => {
       packages = next
     },
@@ -203,10 +210,27 @@ it('switches presentation without changing execution profile, hash, composition 
     expect(resolveComposition(after)).toEqual(tree)
     expect(sessions.read('old-session')).toEqual(binding)
   }
+  const roleOwner = f.packages()[1]
+  if (!roleOwner) throw new Error('fixture')
+  f.replace([f.packages()[0]!, { ...roleOwner, contributions: [roleClient()] }])
+  const rolePreview = await f.applications.previewRole('local-dev', 'deliverables', {
+    packageId: 'b',
+    clientId: 'ui',
+  })
+  await f.applications.selectRole(
+    'local-dev',
+    'deliverables',
+    { packageId: 'b', clientId: 'ui' },
+    (await f.config.application()).revision,
+    rolePreview.consentDigest,
+  )
+  expect(await resolve()).toEqual(before)
+  expect((await f.config.get()).executionRevision).toBe(0)
   await f.config.saveSessionDefaults({
     revision: (await f.config.application()).revision,
     defaults: { preset: 'standard' },
   })
+  expect((await f.config.application()).roleSelections?.deliverables?.packageId).toBe('b')
   expect((await f.config.application()).selection?.packageId).toBe('b')
 })
 
@@ -350,3 +374,216 @@ it('installs, previews and adopts the Acme application through a real locking pa
   ).rejects.toMatchObject({ data: { reason: 'APPLICATION_PREVIEW_STALE' } })
   expect((await f.config.application()).selection).toBeNull()
 }, 15_000)
+
+function roleClient(role: 'deliverables' | 'navigation' = 'deliverables', entry = 'client.js') {
+  return {
+    kind: 'client' as const,
+    id: 'ui-row',
+    rowId: 'ext:synthetic/ui',
+    path: './client.json',
+    client: { id: 'ui', entry, lifetime: 'profile' as const, presentationRoles: [role] },
+  }
+}
+
+it('chooses a community role with the host app, overrides an application, restores its default and recovers all choices', async () => {
+  const f = await fixture(),
+    [a, b] = f.packages()
+  if (!a || !b) throw new Error('fixture')
+  const { application: _unused, ...community } = b.entry
+  f.replace([
+    {
+      ...a,
+      contributions: [roleClient()],
+      entry: {
+        ...a.entry,
+        application: {
+          id: 'a',
+          presentation: { roles: { deliverables: { packageId: 'a', clientId: 'ui' } } },
+        },
+      },
+    },
+    { ...b, contributions: [roleClient()], entry: community },
+  ])
+  const preview = await f.applications.previewRole('local-dev', 'deliverables', {
+    packageId: 'b',
+    clientId: 'ui',
+  })
+  expect(preview).toMatchObject({
+    scope: 'presentation-only-no-execution-change',
+    recovery: '/?admin; agh app clear',
+  })
+  expect(preview.replacedRoles).toContainEqual(
+    expect.objectContaining({
+      role: 'deliverables',
+      visibleParts: ['deliverable-cards', 'deliverables-workbench'],
+    }),
+  )
+  const chosen = await f.applications.selectRole(
+    'local-dev',
+    'deliverables',
+    { packageId: 'b', clientId: 'ui' },
+    0,
+    preview.consentDigest,
+  )
+  expect(validatePackageAdminCall('_agnes/v1/applications.get', 'result', chosen).ok).toBe(true)
+  const authority = {
+    audience: 'admin' as const,
+    principalId: 'synthetic-admin',
+    clientId: 'connection',
+    permissions: ['packages.activate' as const],
+  }
+  const params = {
+    profile: 'local-dev',
+    packageId: 'b',
+    role: 'deliverables',
+    targetClientId: 'ui',
+    clientId: 'spoof',
+    expectedRevision: chosen.revision,
+    consentDigest: preview.consentDigest,
+    commandId: 'select-ui',
+  }
+  expect(validatePackageAdminCall('_agnes/v1/applications.adopt', 'params', params).ok).toBe(true)
+  await expect(f.applications.call('_agnes/v1/applications.adopt', params, authority)).rejects.toMatchObject({
+    code: expect.any(Number),
+  })
+  expect(() =>
+    requirePackageAdmin('_agnes/v1/applications.adopt', {
+      ...authority,
+      methods: ['_agnes/v1/applications.get'],
+    }),
+  ).toThrow()
+  await f.applications.call(
+    '_agnes/v1/applications.adopt',
+    { ...params, clientId: authority.clientId },
+    authority,
+  )
+  expect(chosen.status).toBe('host')
+  expect(chosen.selection).toBeNull()
+  expect(chosen.roles).toContainEqual(
+    expect.objectContaining({
+      role: 'deliverables',
+      source: 'choice',
+      status: 'resolved',
+      effective: { packageId: 'b', clientId: 'ui' },
+    }),
+  )
+  const adopted = await f.adopt('a')
+  expect(adopted.roles).toContainEqual(
+    expect.objectContaining({
+      role: 'deliverables',
+      source: 'choice',
+      effective: { packageId: 'b', clientId: 'ui' },
+    }),
+  )
+  const cleared = await f.applications.clear('local-dev', adopted.revision, 'deliverables')
+  expect(cleared.roles).toContainEqual(
+    expect.objectContaining({
+      role: 'deliverables',
+      selection: null,
+      source: 'application',
+      effective: { packageId: 'a', clientId: 'ui' },
+    }),
+  )
+  const selected = await f.applications.selectRole(
+    'local-dev',
+    'deliverables',
+    { packageId: 'b', clientId: 'ui' },
+    cleared.revision,
+    preview.consentDigest,
+  )
+  await expect(
+    f.applications.selectRole(
+      'local-dev',
+      'deliverables',
+      { packageId: 'b', clientId: 'ui' },
+      cleared.revision,
+      preview.consentDigest,
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'CONFIG_REVISION_CONFLICT' } })
+  const recovered = await f.applications.clear('local-dev', selected.revision)
+  expect(recovered.selection).toBeNull()
+  expect(recovered.roleSelections).toBeUndefined()
+  expect(recovered.roles?.every((role) => role.selection === null && role.source === 'default')).toBe(true)
+})
+
+it('retains unresolved role identity without choosing another plugin and binds declarations, code, dependencies and consent', async () => {
+  const f = await fixture(),
+    [a, b] = f.packages()
+  if (!a || !b) throw new Error('fixture')
+  const owner = { ...b, contributions: [roleClient()] }
+  const app = {
+    ...a,
+    contributions: [roleClient()],
+    entry: {
+      ...a.entry,
+      application: { id: 'a', presentation: { roles: { deliverables: { packageId: 'a', clientId: 'ui' } } } },
+    },
+  }
+  f.replace([app, owner])
+  await f.adopt('a')
+  const preview = await f.applications.previewRole('local-dev', 'deliverables', {
+    packageId: 'b',
+    clientId: 'ui',
+  })
+  const selected = await f.applications.selectRole(
+    'local-dev',
+    'deliverables',
+    { packageId: 'b', clientId: 'ui' },
+    1,
+    preview.consentDigest,
+  )
+  for (const [reason, next] of [
+    ['disabled', [app, { ...owner, enabled: false }]],
+    ['untrusted', [app, { ...owner, trusted: false }]],
+    ['removed', [app]],
+    ['package-changed', [app, { ...owner, entry: { ...owner.entry, integrity: 'new-content' } }]],
+    ['declaration-changed', [app, { ...owner, contributions: [roleClient('deliverables', 'different.js')] }]],
+  ] as const) {
+    f.replace([...next])
+    const state = await f.applications.get('local-dev')
+    expect(state.roles).toContainEqual(
+      expect.objectContaining({
+        role: 'deliverables',
+        status: 'unresolved',
+        reason,
+        selection: selected.roleSelections?.deliverables,
+        source: 'application',
+        effective: { packageId: 'a', clientId: 'ui' },
+      }),
+    )
+  }
+  f.replace([app, owner])
+  f.setActive('b', false)
+  expect((await f.applications.get('local-dev')).roles).toContainEqual(
+    expect.objectContaining({
+      role: 'deliverables',
+      status: 'unresolved',
+      reason: 'code-or-references-unavailable',
+      source: 'application',
+    }),
+  )
+  f.setActive('b', true)
+  f.replace([app, { ...owner, contributions: [roleClient('deliverables', 'different.js')] }])
+  await expect(
+    f.applications.selectRole(
+      'local-dev',
+      'deliverables',
+      { packageId: 'b', clientId: 'ui' },
+      selected.revision,
+      preview.consentDigest,
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'APPLICATION_PREVIEW_STALE' } })
+  f.replace([app, owner])
+  await expect(
+    f.applications.previewRole('local-dev', 'navigation', { packageId: 'b', clientId: 'ui' }),
+  ).rejects.toMatchObject({ data: { reason: 'APPLICATION_ROLE_UNDECLARED' } })
+  await expect(
+    f.applications.previewRole('local-dev', 'deliverables', { packageId: 'missing', clientId: 'ui' }),
+  ).rejects.toBeDefined()
+  const changedTrust = { ...owner, capabilityHash: 'f'.repeat(64) }
+  f.replace([app, changedTrust])
+  expect(
+    (await f.applications.previewRole('local-dev', 'deliverables', { packageId: 'b', clientId: 'ui' }))
+      .consentDigest,
+  ).not.toBe(preview.consentDigest)
+})

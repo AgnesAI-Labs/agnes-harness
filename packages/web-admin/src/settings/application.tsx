@@ -7,6 +7,7 @@ import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
 import { Button, SettingsBlock, SettingsPageDescription, useDocumentLanguage } from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { InterfaceImplementations } from './interface-implementations.js'
 
 function PreviewBrand({ preview }: { preview: ApplicationPreview }) {
   const [mark, setMark] = useState<string>()
@@ -203,7 +204,9 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           </section>
         )}
         <Button
-          disabled={busy || !canSave || !state?.selection}
+          disabled={
+            busy || !canSave || (!state?.selection && !Object.keys(state?.roleSelections ?? {}).length)
+          }
           onClick={() =>
             void run(async () => {
               if (!api || !state) return
@@ -212,12 +215,15 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             })
           }
         >
-          {tr('Clear application', '清除应用')}
+          {tr('Clear application and interface choices', '清除应用与界面实现选择')}
         </Button>
         <p>
           <a href="/?admin">{tr('Host recovery', '宿主恢复')}</a> · <code>{clearCommand}</code>
         </p>
       </SettingsBlock>
+      {state && (
+        <InterfaceImplementations api={api} state={state} canSave={canSave && !busy} onChange={setState} />
+      )}
     </>
   )
 }

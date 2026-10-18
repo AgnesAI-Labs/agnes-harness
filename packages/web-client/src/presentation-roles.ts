@@ -1,4 +1,4 @@
-import type { ApplicationRoleTarget, PresentationRole } from '@agnes/protocol'
+import type { ApplicationRoleTarget, ApplicationState, PresentationRole } from '@agnes/protocol'
 import { notifyListeners } from '@agnes/sdk/browser'
 import type { ClientContext } from './client-module.js'
 import { ownContribution } from './contribution-scope.js'
@@ -64,32 +64,48 @@ export class PresentationRoleRegistry {
       }
     }
   }
-  private admitted(entry: Candidate): boolean {
-    const { role } = entry.provider
-    if (!STANDARD_PRESENTATION_ROLES.some((r) => r === role) || !entry.module) return true
-    const selected = this.overrides[role as PresentationRole] ?? this.selection[role as PresentationRole]
-    return selected
-      ? selected.packageId === entry.module.packageId && selected.clientId === entry.module.clientId
-      : defaults[role as PresentationRole] === entry.module.packageId
+  private rank(entry: Candidate): number {
+    const role = entry.provider.role as PresentationRole
+    if (!STANDARD_PRESENTATION_ROLES.includes(role) || !entry.module) return 0
+    const matches = (target: ApplicationRoleTarget | undefined) =>
+      target && target.packageId === entry.module?.packageId && target.clientId === entry.module?.clientId
+    if (matches(this.overrides[role])) return 0
+    if (matches(this.selection[role])) return 1
+    return defaults[role] === entry.module.packageId ? 2 : Infinity
+  }
+  /** Actual mounted owner, including local module/mount failures unavailable to the backend. */
+  resolution(role: PresentationRole): { effective: ApplicationRoleTarget | null; reason?: string } {
+    const entry = this.active.get(role)?.entry
+    const effective = entry?.module?.clientId
+      ? { packageId: entry.module.packageId, clientId: entry.module.clientId }
+      : null
+    const requested = this.overrides[role]
+    return {
+      effective,
+      ...(requested &&
+      (requested.packageId !== effective?.packageId || requested.clientId !== effective?.clientId)
+        ? {
+            reason: [...this.failed].some(
+              (entry) =>
+                entry.provider.role === role &&
+                entry.module?.packageId === requested.packageId &&
+                entry.module.clientId === requested.clientId,
+            )
+              ? 'mount-failed'
+              : 'code-unavailable',
+          }
+        : {}),
+    }
   }
   private reconcile(role: string): void {
     const entries = [...this.entries]
-      .filter(
-        (e) =>
-          e.provider.role === role &&
-          !this.failed.has(e) &&
-          (this.admitted(e) || defaults[role as PresentationRole] === e.module?.packageId),
-      )
-      .sort(
-        (a, b) =>
-          Number(!this.admitted(a)) - Number(!this.admitted(b)) ||
-          (a.provider.priority ?? 0) - (b.provider.priority ?? 0),
-      )
+      .filter((e) => e.provider.role === role && !this.failed.has(e) && Number.isFinite(this.rank(e)))
+      .sort((a, b) => this.rank(a) - this.rank(b) || (a.provider.priority ?? 0) - (b.provider.priority ?? 0))
     if (
       entries.some(
         (e, i) =>
           i > 0 &&
-          this.admitted(e) === this.admitted(entries[i - 1]!) &&
+          this.rank(e) === this.rank(entries[i - 1]!) &&
           (entries[i - 1]!.provider.priority ?? 0) === (e.provider.priority ?? 0),
       )
     ) {
@@ -121,6 +137,8 @@ export class PresentationRoleRegistry {
         throw error
       }
     }
+    this.diagnostics = [...this.diagnostics]
+    notifyListeners(this.listeners, 'presentation owner')
   }
   register(owner: string, provider: HostPresentationProvider, module?: ModuleIdentity): () => void {
     const { role } = provider
@@ -147,6 +165,18 @@ export class PresentationRoleRegistry {
 }
 
 export const presentationRoles = new PresentationRoleRegistry()
+/** Host projection shared by roster updates and explicit administration writes. */
+export function selectPresentationRoles(state: ApplicationState | undefined): void {
+  const overrides: Partial<Record<PresentationRole, ApplicationRoleTarget>> = {}
+  for (const item of state?.roles ?? []) {
+    if (item.source === 'choice' && item.status === 'resolved' && item.effective)
+      overrides[item.role] = item.effective
+  }
+  presentationRoles.select(
+    state?.status === 'active' ? state.effective?.presentation?.roles : undefined,
+    overrides,
+  )
+}
 export function scopedPresentationRoles(
   module: ModuleIdentity,
   effect: (off: () => void) => void,

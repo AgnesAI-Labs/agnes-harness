@@ -77,6 +77,7 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
+| `agh app clear [--profile NAME] [--json]` | 在插件启动前清除当前应用及全部界面角色选择，复用配置 CAS |
 | `agh app-server --stdio` / `schema --out DIR` | 桥接共享 daemon / 不启动服务地导出生成合同 |
 | `agh doctor --json` / `doctor --probe --json` | 本地检查 / 显式账号测试，可能产生费用 |
 

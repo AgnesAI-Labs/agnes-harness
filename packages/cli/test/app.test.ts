@@ -20,6 +20,16 @@ it('dispatches app clear before generic boot, ignores broken plugins, and only c
   const config = createConfigurationService({ home: root, profile: 'local-dev' })
   await config.saveApplication({
     revision: 0,
+    roleSelections: {
+      deliverables: {
+        packageId: 'broken-ui',
+        clientId: 'ui',
+        integrity: 'one',
+        declarationDigest: 'a'.repeat(64),
+        consentDigest: 'b'.repeat(64),
+        bindingDigest: 'c'.repeat(64),
+      },
+    },
     selection: {
       packageId: 'broken',
       applicationId: 'broken',

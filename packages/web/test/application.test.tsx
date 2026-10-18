@@ -8,6 +8,7 @@ import {
   homeNavigation,
   LocaleService,
   presentationDefault,
+  presentationRoles,
   reserveHomeEntry,
 } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -51,7 +52,32 @@ it('projects title, favicon and localized assistant display name, then restores 
     },
     candidates: [],
   }
+  let visible = ''
+  const offRole = presentationRoles.register(
+    'community-ui',
+    {
+      role: 'deliverables',
+      mount() {
+        visible = 'community'
+        return () => {
+          visible = ''
+        }
+      },
+    },
+    { packageId: 'community/gallery', clientId: 'ui', revision: 'one' },
+  )
+  state.roles = [
+    {
+      role: 'deliverables',
+      source: 'choice',
+      status: 'resolved',
+      selection: null,
+      effective: { packageId: 'community/gallery', clientId: 'ui' },
+      candidates: [],
+    },
+  ]
   projectApplication(state)
+  expect(visible).toBe('community')
   expect(document.title).toBe('Task · Acme Workbench')
   expect(document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href).toContain('blob:synthetic-asset')
   expect(applicationBrand().name).toBe('Acme')
@@ -61,6 +87,8 @@ it('projects title, favicon and localized assistant display name, then restores 
   updateApplicationTitle()
   expect(document.title).toBe('Task · 艾克米工作台')
   expect(locale.t('brand.agent')).toBe('小艾')
+  projectApplication({ ...state, status: 'host', effective: null })
+  expect(visible).toBe('community')
   projectApplication(undefined)
   expect(document.title).toBe('Task · Agnes Harness')
   expect(document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.getAttribute('href')).toBe(
@@ -72,6 +100,8 @@ it('projects title, favicon and localized assistant display name, then restores 
   expect(presentationDefault(undefined, undefined, 'app', 'host')).toBe('app')
   expect(presentationDefault(undefined, undefined, undefined, 'host')).toBe('host')
   expect(applicationIdentity.getSnapshot()).toBeUndefined()
+  expect(visible).toBe('')
+  offRole()
 })
 
 it('chooses recovery before the workbench can load third-party modules, CSS, roles or navigation', async () => {

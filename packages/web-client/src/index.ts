@@ -79,7 +79,12 @@ export type {
   NavigationPresentationPort,
 } from './presentation-ports.js'
 export type { PresentationProvider } from './presentation-roles.js'
-export { PresentationRoleRegistry, presentationRoles } from './presentation-roles.js'
+export {
+  PresentationRoleRegistry,
+  presentationRoles,
+  STANDARD_PRESENTATION_ROLES,
+  selectPresentationRoles,
+} from './presentation-roles.js'
 export type { RegisterOptions } from './registry.js'
 export { SlotRegistry } from './registry.js'
 export type {

@@ -74,7 +74,7 @@ export function Recovery() {
         )}
         {error && state && <p role="alert">{error}</p>}
         <Button disabled={!state || !api || pending} onClick={() => void clear()}>
-          {text('Clear current application', '清除当前应用')}
+          {text('Clear application and interface choices', '清除应用与界面实现选择')}
         </Button>
         <p>
           <a href="/">{text('Return to workbench', '返回工作台')}</a>

@@ -450,6 +450,9 @@ export {
   ApplicationPreviewParams,
   ApplicationSelection,
   ApplicationState,
+  PresentationRoleSelection,
+  PresentationRoleSelections,
+  PresentationRoleState,
 } from '../gen/ts/package-admin.js'
 export type {
   PluginStreamClose,

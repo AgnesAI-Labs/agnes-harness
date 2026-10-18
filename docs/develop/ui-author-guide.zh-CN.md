@@ -47,3 +47,7 @@ const dispose = ctx.workbenchPanels.register({
 颜色使用语义 `var(--agnes-*)`，间距用 `--s4/8/12/16/24/32/48`，圆角用 `--radius-control/card/surface/pill`，字重和动效用共享 token。原始色值仅进入色板或皮肤浅深成对覆盖。品牌色用于主动作、选择、链接和焦点；状态色同时配文字。不自写按钮样式，不用 `!important` 覆盖共享控件。保留 `data-agnes-region` 钩子。
 
 交付前检查两种语言、两种主题、桌面与 390px。Tab 顺序自然，焦点可见，对话框和抽屉关闭后回到触发器，窄屏命中区至少 44px。共享按钮扩大命中区并保留图标视觉尺寸，相邻动作留足空间。紧凑的自定义指针控件可用 `.agh-touch-target` 扩大命中区，只读代码块保留键盘滚动。F6/Shift+F6 循环可见任务区域，不干扰弹窗焦点。检查加载、空态、失败重试和成功，尊重 reduced-motion。颜色对使用[token 对比度测试](../../packages/web-ui/test/token-contrast.test.ts)验证，再运行受影响的行为与无障碍检查。
+
+## 提供标准界面角色
+
+profile client 在 descriptor 中声明 `presentationRoles: ["deliverables"]`（也可选择 `navigation`、`conversation`、`composer`、`goal`、`interaction`），使用稳定的 `client.id`，再通过 scoped client facade 注册对应角色。管理员在 **设置 → 应用 → 界面实现** 中预览并选择。安装或注册不会自动选中，无需声明应用；可以只替换单个角色并保留当前应用的品牌和其他默认值。详见[应用指南](../extend/applications.zh-CN.md)。

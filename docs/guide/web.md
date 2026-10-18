@@ -63,6 +63,12 @@ If a group changes after several pages have loaded, the list offers Reload inste
 
 The sidebar lists **New conversation**, **Plugins**, **Agents**, **Automation**, then workspaces and conversation history. Only **Settings** is at the bottom. Agents come from explicit plugin launch declarations; the built-in **General assistant** lets you choose a **Running mode** directly. Plugins use one inventory with **Source** and **Capability** filters, with separate **Skills** and **Connections (MCP)** tabs. Declared capabilities and observed registrations are shown separately. Settings groups are **General / Models / Permissions / Application / Advanced**; **Advanced → Run configuration** retains the execution configuration, including **Additional combinations for all conversations**. Application settings let you preview, adopt or clear an application. The Agents page follows the effective application’s visible-agent list and places its default agent first; execution bindings of existing sessions stay unchanged.
 
+In **Settings → Application → Interface implementations**, preview and choose individual navigation,
+conversation, composer, goal, interaction or deliverables implementations from trusted enabled plugins.
+Rows show **Default / Application / Your choice**. **Restore default** removes just one role override.
+Unavailable choices remain unresolved and fall back to the application or host. `/?admin` and
+`agh app clear` clear the application and all role choices without changing execution settings.
+
 On desktop, collapsing the sidebar keeps an icon rail for New conversation, Plugins, Agents, Automation and Settings. The icons keep the same actions, show their labels on hover or keyboard focus, and mark the current page. On narrow screens, closing the sidebar hides the drawer instead.
 
 The thin ticks along the left edge of the conversation are the prompt navigator: one per prompt you sent, with the one you are reading drawn darker. All ticks stay short until the pointer enters the navigator, then nearby ticks lengthen; hover one to preview that prompt and the start of its answer, and click to jump to it with a brief highlight. Press Option+↑ / Option+↓ (Alt+↑ / Alt+↓ on Windows and Linux) for the previous or next prompt; when the window is narrow or the workbench leaves no room on the left, the ticks hide and the shortcuts still work. The bookmark button on the preview marks a prompt; bookmarks are saved with the session and show as a small dot beside the tick.
