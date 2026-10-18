@@ -236,6 +236,14 @@ export interface CodeRuntime {
   kill(): Promise<void>
 }
 
+/** Read-only facts about the model request that led to this tool invocation, not permission. */
+export type ToolRequestAvailability = Readonly<{
+  status: 'offered' | 'deferred' | 'unavailable'
+  reason?: 'mode' | 'policy' | 'model_capability' | 'request_selection' | 'catalog' | 'unknown'
+  /** Safe explanation and next step; never includes private policy details. */
+  message: string
+}>
+
 export interface ToolContext {
   readonly decisions: DecisionPort
   /** Active main-conversation request only; Host owns validation and native approval. */
@@ -344,6 +352,8 @@ export interface ToolContext {
   readonly tools: {
     invoke(name: string, args: JsonValue, opts?: { signal?: AbortSignal }): Promise<ToolResult>
     list(): ToolDef[]
+    /** Exact request disclosure when known. Absence must not be inferred from catalog metadata. */
+    availability?(name: string): ToolRequestAvailability
     /** Include an available tool's schema in later model requests. Grants no execution permission. */
     disclose?(name: string): Promise<void>
   }
