@@ -30,7 +30,7 @@ import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
-import { openApplicationHome, projectApplication } from './application.js'
+import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -247,7 +247,7 @@ const appSessionContext: AppSessionContext = {
     approvalSearchTicket = value
   },
   get beginNewDraft() {
-    return beginNewDraft
+    return beginExplicitNewDraft
   },
   get clearSessionRecovery() {
     return clearSessionRecovery
@@ -638,7 +638,7 @@ const sessionController = createSessionController(appSessionContext, sessionBind
 const turnController = createTurnController(appSessionContext)
 const readOnlyController = createReadOnlyController(appSessionContext, {
   open: (id) => open(id),
-  beginNewDraft: () => beginNewDraft(),
+  beginNewDraft: () => beginExplicitNewDraft(),
 })
 
 const composerDraftKey: string = 'agnes-web-composer-draft'
@@ -802,12 +802,12 @@ const clientModules = await startClientModules({
   sidebar: {
     actions: {
       newSession: (workspace) => {
-        homeNavigation.close()
+        requestNewSession()
         run(() => beginNewDraft(workspace === undefined, workspace))
       },
       addWorkspace: () =>
         run(async () => {
-          homeNavigation.close()
+          requestNewSession()
           if (!draftingNew) await beginNewDraft()
           openNewSessionDialog()
         }),
@@ -969,7 +969,7 @@ const homePages = mountHomePages(hosts.homePage, {
       }),
     startDraft: (prompt) =>
       run(async () => {
-        homeNavigation.close()
+        requestNewSession()
         if (!draftingNew) await beginNewDraft(false)
         if (prompt) composerRuntime.setDraft(prompt)
         composerRuntime.focus()
@@ -1002,6 +1002,7 @@ const newSessionDialog = mountNewSessionDialog(hosts.newSession, {
   pick: () => run(pickWorkspace),
   select: (workspace) => {
     selectedWorkspace = workspace
+    requestNewSession()
     closeNewSessionDialog()
     renderControls()
     composerRuntime.focus()
@@ -1313,7 +1314,7 @@ const firstRun = createFirstRunController({
   details: async () => statusCheck.open(),
   start: async () => {
     settings.close()
-    homeNavigation.close()
+    requestNewSession()
     await beginNewDraft(true)
   },
   saved: savedConfiguration,
@@ -1489,7 +1490,7 @@ function renderSessionRecovery(message = ''): void {
       run(() => open(id))
     },
     create() {
-      if (!recoveryDisabled()) run(() => beginNewDraft())
+      if (!recoveryDisabled()) run(() => beginExplicitNewDraft())
     },
   })
 }
@@ -1639,6 +1640,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     workspaceRows = [result.workspace, ...workspaceRows.filter((row) => row.path !== result.workspace.path)]
     updateWorkspaceOptions()
     await list()
+    requestNewSession()
     closeNewSessionDialog()
     composerRuntime.focus()
   } catch (error) {
@@ -1677,6 +1679,10 @@ async function pickWorkspace(): Promise<void> {
     workspacePickerBusy = false
     renderNewSessionControls()
   }
+}
+function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
+  requestNewSession()
+  return beginNewDraft(showWorkspacePicker, workspace)
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || submissions.sending) return
@@ -1886,7 +1892,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
         label: t('app.permission.useInNew', { mode: label }),
         run: () =>
           run(async () => {
-            await beginNewDraft(false)
+            await beginExplicitNewDraft(false)
             await selectPermission(mode)
           }),
       })
@@ -2300,6 +2306,7 @@ run(async () => {
   if (!sessionBinding.isCurrent(startupSelection)) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
+    requestNewSession()
     sessionPending = false
     await beginNewDraft(configured)
     if (requestedLoop) {

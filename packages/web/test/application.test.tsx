@@ -11,7 +11,12 @@ import {
   reserveHomeEntry,
 } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { openApplicationHome, projectApplication, updateApplicationTitle } from '../src/application.js'
+import {
+  openApplicationHome,
+  projectApplication,
+  requestNewSession,
+  updateApplicationTitle,
+} from '../src/application.js'
 
 afterEach(() => {
   projectApplication(undefined)
@@ -157,3 +162,48 @@ it('never resolves an adopted home against another package with the same page na
     homeNavigation.close()
   }
 })
+
+it.each(['automatic', 'url', 'workspace', 'late'] as const)(
+  'keeps explicit new-session intent above the application home (%s)',
+  (entry) => {
+    const state: ApplicationState = {
+      revision: 1,
+      selection: null,
+      status: 'active',
+      assets: {},
+      candidates: [],
+      effective: { id: 'acme', presentation: { home: 'acme#desk' } },
+    }
+    const stop = homeEntries.subscribe(openApplicationHome)
+    let off = () => {}
+    try {
+      if (entry === 'url') history.replaceState(null, '', '/?new=1')
+      if (entry !== 'late')
+        off = reserveHomeEntry(
+          'acme-row',
+          { id: 'desk', icon: 'home', titleKey: 'Desk', order: 0, component: () => null },
+          'acme',
+        )
+      projectApplication(state)
+      if (entry === 'workspace') {
+        expect(homeNavigation.getSnapshot()?.pageRef).toBe('acme#desk')
+        requestNewSession()
+      }
+      if (entry === 'late') {
+        requestNewSession()
+        off = reserveHomeEntry(
+          'acme-row',
+          { id: 'desk', icon: 'home', titleKey: 'Desk', order: 0, component: () => null },
+          'acme',
+        )
+      }
+      openApplicationHome()
+      projectApplication({ ...state, revision: 2 })
+      expect(homeNavigation.getSnapshot()?.pageRef).toBe(entry === 'automatic' ? 'acme#desk' : undefined)
+    } finally {
+      stop()
+      off()
+      homeNavigation.close()
+    }
+  },
+)
