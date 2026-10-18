@@ -223,6 +223,7 @@ it('shows a failed read as one line with retry and keeps what is shown', async (
   expect($(host, '[data-testid="loadable-error"]').textContent).toMatch(/Couldn’t load|读取失败/)
   expect(host.textContent).toContain('Agnes AI')
   expect($(host, '.agnes-settings-info').getAttribute('title')).toBe('The account new sessions use')
+  expect($(host, '.agnes-settings-info').classList.contains('agh-touch-target')).toBe(true)
   await act(async () => $<HTMLButtonElement>(host, '[data-testid="loadable-retry"]').click())
   expect(reload).toHaveBeenCalledOnce()
 })

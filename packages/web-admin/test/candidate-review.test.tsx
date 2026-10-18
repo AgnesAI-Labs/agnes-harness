@@ -32,6 +32,14 @@ it.each([
   ['text', 'text\n'],
   ['old\n'.repeat(1000), 'new\n'.repeat(1000)],
 ])('preserves both complete file versions in the line diff', (before, after) => {
+  const css = readFileSync(
+    resolve(import.meta.dirname, '../../web/public/styles/23-plugin-review.css'),
+    'utf8',
+  )
+  const header = css.match(/\.plugin-candidates \.candidate-file \.agh-disclosure-summary \{([^}]*)\}/)?.[1]
+  expect(header).toContain('position: sticky')
+  expect(header).toContain('top: 0')
+  expect(header).toContain('background: var(--agnes-bg-surface)')
   const html = renderToStaticMarkup(
     <CandidateFileDiff file={{ path: 'skill.test.mjs', before, after }} t={t} />,
   )

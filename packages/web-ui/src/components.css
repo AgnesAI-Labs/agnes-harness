@@ -1332,13 +1332,22 @@
     .ant-select-item-option {
       min-height: var(--control-height-touch);
     }
+  }
+
+  @media (max-width: 900px) {
     .agh-touch-target {
+      --agh-touch-size: var(--s32);
       position: relative;
     }
     .agh-touch-target::after {
       content: "";
       position: absolute;
-      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+      inset: min(0px, calc((100% - var(--agh-touch-size)) / 2));
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-touch-target {
+      --agh-touch-size: var(--control-height-touch);
     }
   }
 
