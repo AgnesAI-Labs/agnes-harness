@@ -1222,6 +1222,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       notices,
     })
     runtimeStore?.onDesired((artifact) => {
+      // Candidate publication can change static Skills without creating a package operation.
+      skillWatcher?.changed({ rootKey: 'package' })
       pool.noteRuntimeTarget(artifact.digest)
       notifyRuntimeTarget(artifact)
       if (runtimeDelivery?.stageStartup(artifact)) return
