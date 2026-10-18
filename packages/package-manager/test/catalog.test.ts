@@ -270,6 +270,14 @@ describe('local example catalog', () => {
       )
       // Shipped agents inherit the selected deployment model, including homes without a Demo route.
       expect(manifest.agnes.bundles[name].presets[name].model).toBeUndefined()
+      // Keyed tool views are mounted only under the declared public slot contract.
+      for (const descriptor of manifest.agnes.clientDescriptors ?? []) {
+        const { client } = JSON.parse(
+          readFileSync(new URL(`../../../examples/fde/${name}/${descriptor.path}`, import.meta.url), 'utf8'),
+        )
+        if (client.slots?.includes('tool.call.toolview'))
+          expect(client.slotCatalogVersion).toBe('dsh-client-slots/v1')
+      }
     }
     expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
     // Their policy lives in plugin code, which a listing never runs: the summary says so instead of
