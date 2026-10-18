@@ -107,6 +107,8 @@ export const pluginHelper = {
             authoringPath: authoringGuidance,
             guidance:
               'Working tool-with-panel scaffold: a shared to-do tool/owner store, profile list query and add/toggle effect, and a React ESM page calling ctx.profile.services. Rename package, row, tool, service and client IDs together. Extend this SAME candidate using the author reference, not Host/installed source searches; private install dirs are denied by design. Inherited tests exercise DOM interactions/errors and Host restart retention; real-browser appearance and installation still need verification. / 可读写待办模板：工具与 profile query/effect 共享 owner store，页面从 react 导入 React 并调用 ctx.profile.services。在同一候选扩展，保持服务等名称一致，使用作者参考，不翻查私有安装源码猜 API。继承测试覆盖 DOM 交互、错误及 Host 重建后的数据保留；安装与真实浏览器外观仍须验证。',
+            initialCandidate:
+              'Do not reconstruct the template from previewFiles. If plugin_scaffold is in the current catalog, call plugin_scaffold({template:"tool-with-panel",name:"my-agh-plugin"}) ONCE to save the complete canonical tree, including manifest, client and tests. Otherwise, use run_code: const guide = await tools.plugin_helper_guide({kind:"tool-with-panel"}); const created = await tools.plugin_helper_create({files:guide.files}); return {candidateId:created.candidateId,candidateHash:created.candidateHash}; Then read/edit that SAME candidate with run_code and retain all files. / 不要从预览手抄或重建模板；优先调用现有 plugin_scaffold 一次保存完整模板（包含清单、客户端和测试），之后用 run_code 在同一候选中读改完整树。',
             files: panelFiles,
           }
           // Keep the model-visible guide valid JSON within the default 32 KiB output budget.

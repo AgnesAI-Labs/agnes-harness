@@ -173,6 +173,9 @@ it('scaffolds complete inert text through the host rather than reading virtual a
       expect(descriptor.client.slots).toEqual([])
       expect(descriptor.client.lifetime).toBe('profile')
       expect(descriptor.client.homeEntries).toMatchObject([{ id: 'review-demo', placement: 'secondary' }])
+      expect(pkg.agnes.plugins[0].capabilities.store).toBe(true)
+      expect(input.files.some((file) => file.path === 'client/index.js')).toBe(true)
+      expect(input.files.some((file) => file.path === 'test/panel.test.mjs')).toBe(true)
     }
     expect(pkg.agnes.plugins[0].inject).toEqual(
       {
@@ -390,6 +393,18 @@ it('keeps the created draft and reports write as the failing operation without i
     const full = (await helperGuide.execute({ kind }, ctx)).structured as { authoringPath: string }
     expect(full.authoringPath).toContain(authorReference)
     for (const token of THEME_TOKEN_NAMES) expect(full.authoringPath).toContain(token)
+    if (kind === 'tool-with-panel') {
+      const panel = await helperGuide.execute({ kind }, ctx)
+      const display = JSON.parse((panel.content[0] as { text: string }).text)
+      expect(display.initialCandidate).toContain('plugin_scaffold({template:"tool-with-panel"')
+      expect(display.initialCandidate).toContain('files:guide.files')
+      expect(display.previewFiles.some((file: { path: string }) => file.path === 'package.json')).toBe(false)
+      expect(
+        (panel.structured as { files: { path: string }[] }).files.some(
+          (file) => file.path === 'package.json',
+        ),
+      ).toBe(true)
+    }
   }
   const helperData = guide.structured as { authoringPath: string }
   expect(JSON.stringify(builtinGuide.content)).toContain(
