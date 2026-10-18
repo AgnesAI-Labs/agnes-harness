@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { satisfiesApiRange } from '@agnes/extension-api'
-import { withLock } from '@agnes/package-manager'
+import { PackageError, withLock } from '@agnes/package-manager'
 import type {
   AgentPlan,
   ClientModuleRosterRow,
@@ -12,6 +12,7 @@ import type {
 } from '@agnes/protocol'
 import { jcs } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
+import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Owner = { version: string; principal: string; profile: string; row: ClientModuleRosterRow }
 type Review = {
@@ -23,10 +24,9 @@ type Review = {
   removal?: boolean
   launch?: AgentPlan
 }
-type Operation = {
+type Operation = RetainedOperation & {
   owner: string
   digest: string
-  state: 'running' | 'completed' | 'failed' | 'unknown'
   code?: string
   sessionId?: string
   review: Review
@@ -153,6 +153,28 @@ export function createExamplePackages(options: {
       // Receipts are atomic files and can be read while a long activation is still running.
       if (action === 'read') {
         const who = await owner(rowId)
+        // Give up acquiring the sweep lock promptly when an activation owns it.
+        const signal = AbortSignal.timeout(1)
+        let entered = false
+        try {
+          await withLock(
+            options.directory,
+            async () => {
+              entered = true
+              const state = read()
+              if (sweepReceipts(state.operations, now())) await save(state)
+            },
+            { signal },
+          )
+        } catch (error) {
+          if (
+            entered ||
+            !signal.aborted ||
+            !(error instanceof PackageError) ||
+            error.code !== 'E_PACKAGE_CANCELLED'
+          )
+            throw error
+        }
         const op = read().operations[digest([identity(who), id(request.operationId)])]
         if (!op || op.owner !== identity(who)) deny()
         return {
@@ -165,6 +187,7 @@ export function createExamplePackages(options: {
         const who = await owner(rowId)
         const scope = identity(who)
         const state = read()
+        if (sweepReceipts(state.operations, now())) await save(state)
         if (action === 'stop') {
           const entry = (await entries(who)).find((entry) => entry.id === field(request.exampleId)) ?? deny()
           const installed = (await backend.installed()).find((item) => item.id === entry.id)
@@ -266,6 +289,7 @@ export function createExamplePackages(options: {
           if (op.state === 'running') {
             op.state = 'unknown'
             op.code = 'OUTCOME_UNKNOWN'
+            op.terminalAt = now()
             await save(state)
           }
           if (op.state === 'completed')
@@ -286,7 +310,7 @@ export function createExamplePackages(options: {
             (action === 'remove') !== Boolean(review.removal)
           )
             deny()
-          if (Object.keys(state.operations).length >= 10_000) deny('OVERLOADED')
+          if (Object.keys(state.operations).length >= OPERATION_CAPACITY) deny('OVERLOADED')
           op = { owner: scope, digest: payload, state: 'running', review }
           state.operations[operationKey] = op
           await save(state)
@@ -311,6 +335,7 @@ export function createExamplePackages(options: {
             await check()
           }
           op.state = 'completed'
+          op.terminalAt = now()
           await save(state)
           return action === 'start'
             ? {
@@ -328,6 +353,7 @@ export function createExamplePackages(options: {
               : 'OUTCOME_UNKNOWN'
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
+          op.terminalAt = now()
           await save(state)
           return deny(code)
         }

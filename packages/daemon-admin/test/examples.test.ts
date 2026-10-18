@@ -16,6 +16,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 function fixture(parentVersion = '1.0.0') {
+  let time = 1
   const directory = mkdtempSync(join(tmpdir(), 'agh-example-'))
   roots.push(directory)
   const row: ClientModuleRosterRow = {
@@ -125,9 +126,22 @@ function fixture(parentVersion = '1.0.0') {
       return session
     },
   }
-  const create = () => createExamplePackages({ directory, backend })
+  const create = () => createExamplePackages({ directory, backend, now: () => time })
   const call = (request: Record<string, unknown>) => create().call(row.rowId, request)
-  return { row, entry, preview, backend, sessions, inputs, call, directory }
+  return {
+    row,
+    entry,
+    preview,
+    backend,
+    sessions,
+    inputs,
+    call,
+    directory,
+    now: () => time,
+    advance: (ms: number) => {
+      time += ms
+    },
+  }
 }
 it.each(['1.0.0', '0.1.0-alpha.0'])(
   'reviews an exact %s parent pin, enables it and creates one durable session per operation',
@@ -306,4 +320,192 @@ it('ordinary agent review binds caller workspace and activation, refuses drift a
   backend.open = f.backend.open
   await expect(call(retry)).rejects.toThrow('OUTCOME_UNKNOWN')
   expect(f.sessions.size).toBe(1)
+})
+
+const receiptWindow = 7 * 24 * 60 * 60 * 1000
+async function retentionFixture(kind: 'agent' | 'example') {
+  const f = fixture()
+  let call = f.call
+  if (kind === 'agent') {
+    const plan = await f.backend.resolveAgent('acme/kit#work')
+    const backend = {
+      caller: async () => ({ principal: 'user', profile: 'test', workspace: '/synthetic', activation: 'a1' }),
+      resolve: async () => plan,
+      open: (...args: Parameters<ExampleBackend['open']>) => f.backend.open(...args),
+    }
+    call = (request) => createAgentLaunches({ directory: f.directory, backend, now: f.now }).call(request)
+  } else {
+    const { reviewId } = (await call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
+    await call({ action: 'enable', reviewId, operationId: 'enable' })
+  }
+  const prepare = () =>
+    call(
+      kind === 'agent'
+        ? { action: 'prepare', agent: 'acme/kit#work' }
+        : { action: 'prepare', exampleId: f.entry.id, launchId: 'work' },
+    ) as Promise<{ launchTicket: string }>
+  const { launchTicket } = await prepare()
+  const request = { action: 'start', launchTicket, operationId: 'retained' }
+  const file = join(f.directory, kind === 'agent' ? 'agent-operations.json' : 'operations.json')
+  const load = () => JSON.parse(readFileSync(file, 'utf8'))
+  const store = (state: ReturnType<typeof load>) => writeFileSync(file, JSON.stringify(state))
+  return { ...f, call, prepare, request, load, store }
+}
+
+for (const kind of ['agent', 'example'] as const) {
+  it.each(['prepare', 'start', 'read'])(
+    `${kind}: %s prunes 10,000 old receipts but preserves live capacity`,
+    async (sweepPath) => {
+      const f = await retentionFixture(kind)
+      await f.call(f.request)
+      const history = f.load()
+      const seed = Object.values(history.operations)[0]
+      history.operations = Object.fromEntries(Array.from({ length: 10_000 }, (_, i) => [`old-${i}`, seed]))
+      f.advance(receiptWindow + 1)
+      if (sweepPath === 'prepare') f.store(history)
+      if (sweepPath === 'read') {
+        history.operations['one-more'] = seed
+        f.store(history)
+        await expect(f.call({ action: 'read', operationId: f.request.operationId })).rejects.toThrow('DENIED')
+        // Even an oversized synthetic history takes at most the admission cap per sweep.
+        expect(Object.keys(f.load().operations)).toHaveLength(1)
+      }
+      const { launchTicket } = await f.prepare()
+      const fresh = { launchTicket }
+      if (sweepPath === 'start') {
+        const state = f.load()
+        state.operations = history.operations
+        f.store(state)
+      }
+      expect(await f.call({ ...f.request, ...fresh, operationId: 'fresh' })).toEqual({
+        sessionId: 'session-2',
+      })
+      expect(Object.keys(f.load().operations)).toHaveLength(1)
+      const live = f.load()
+      const current = { ...(seed as object), terminalAt: f.now() }
+      live.operations = Object.fromEntries(Array.from({ length: 10_000 }, (_, i) => [`live-${i}`, current]))
+      f.store(live)
+      await expect(f.call({ ...f.request, ...fresh, operationId: 'overloaded' })).rejects.toThrow(
+        'OVERLOADED',
+      )
+      expect(Object.keys(f.load().operations)).toHaveLength(10_000)
+      expect(f.sessions.size).toBe(2)
+    },
+  )
+
+  it(`${kind}: retains dedupe and reads for seven days after completion, then refuses the pruned id's expired ticket`, async () => {
+    const f = await retentionFixture(kind)
+    const open = f.backend.open
+    f.backend.open = async (...args) => {
+      // The receipt window starts at completion, even when open outlives its ticket.
+      f.advance(300_001)
+      return open(...args)
+    }
+    const receipt = await f.call(f.request)
+    f.backend.open = async () => {
+      throw new Error('must not dispatch an expired or duplicate launch')
+    }
+    f.advance(receiptWindow - 1)
+    expect(await f.call({ action: 'read', operationId: f.request.operationId })).toMatchObject({
+      state: 'completed',
+      ...(receipt as object),
+    })
+    expect(await f.call(f.request)).toEqual(receipt)
+    await expect(f.call({ ...f.request, launchTicket: 'different' })).rejects.toThrow('STALE')
+    f.advance(1)
+    await expect(f.call(f.request)).rejects.toThrow('STALE')
+    await expect(f.call({ action: 'read', operationId: f.request.operationId })).rejects.toThrow('DENIED')
+    expect(Object.keys(f.load().operations)).toHaveLength(0)
+    expect(f.sessions.size).toBe(1)
+  })
+
+  it(`${kind}: recovers expired running receipts as unknown and never replays failed or unknown operations`, async () => {
+    const f = await retentionFixture(kind)
+    await f.call(f.request)
+    const state = f.load()
+    for (const op of Object.values(state.operations) as {
+      state: string
+      sessionId?: string
+      terminalAt?: number
+    }[]) {
+      if (op.sessionId) {
+        op.state = 'running'
+        delete op.terminalAt
+      }
+    }
+    f.store(state)
+    // A running receipt with a valid ticket is preserved by a read sweep.
+    expect(await f.call({ action: 'read', operationId: f.request.operationId })).toMatchObject({
+      state: 'running',
+    })
+    f.advance(300_000)
+    expect(await f.call({ action: 'read', operationId: f.request.operationId })).toMatchObject({
+      state: 'unknown',
+      code: 'OUTCOME_UNKNOWN',
+    })
+    f.advance(receiptWindow - 1)
+    await expect(f.call(f.request)).rejects.toThrow('OUTCOME_UNKNOWN')
+    f.advance(1)
+    await expect(f.call(f.request)).rejects.toThrow('STALE')
+    expect(f.sessions.size).toBe(1)
+    const { launchTicket } = await f.prepare()
+    const ticket = { launchTicket }
+    f.backend.open = async () => {
+      throw new Error('E_PACKAGE_STATE')
+    }
+    const failed = { ...f.request, ...ticket, operationId: 'failed' }
+    await expect(f.call(failed)).rejects.toThrow('E_PACKAGE_STATE')
+    f.backend.open = async () => {
+      throw new Error('must not replay')
+    }
+    f.advance(receiptWindow - 1)
+    expect(await f.call({ action: 'read', operationId: 'failed' })).toMatchObject({
+      state: 'failed',
+      code: 'E_PACKAGE_STATE',
+    })
+    await expect(f.call(failed)).rejects.toThrow('E_PACKAGE_STATE')
+    f.advance(1)
+    await expect(f.call({ action: 'read', operationId: 'failed' })).rejects.toThrow('DENIED')
+    expect(Object.keys(f.load().operations)).toHaveLength(0)
+  })
+
+  it(`${kind}: conservatively dates pre-existing terminal receipts on first observation`, async () => {
+    const f = await retentionFixture(kind)
+    await f.call(f.request)
+    const state = f.load()
+    for (const op of Object.values(state.operations) as { terminalAt?: number }[]) delete op.terminalAt
+    f.store(state)
+    f.advance(receiptWindow * 2)
+    expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
+    f.advance(receiptWindow - 1)
+    expect(await f.call(f.request)).toEqual({ sessionId: 'session-1' })
+    f.advance(1)
+    await expect(f.call(f.request)).rejects.toThrow('STALE')
+    expect(f.sessions.size).toBe(1)
+  })
+}
+
+it('example receipts remain readable while an activation owns the write lock', async () => {
+  const f = fixture()
+  const { reviewId } = (await f.call({ action: 'inspect', exampleId: f.entry.id })) as { reviewId: string }
+  let signalStarted = () => {}
+  const started = new Promise<void>((resolve) => {
+    signalStarted = resolve
+  })
+  let release = () => {}
+  const finish = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  f.backend.enable = async () => {
+    signalStarted()
+    await finish
+  }
+  const enabling = f.call({ action: 'enable', reviewId, operationId: 'in-flight' })
+  await started
+  try {
+    expect(await f.call({ action: 'read', operationId: 'in-flight' })).toEqual({ state: 'running' })
+  } finally {
+    release()
+    await enabling
+  }
 })

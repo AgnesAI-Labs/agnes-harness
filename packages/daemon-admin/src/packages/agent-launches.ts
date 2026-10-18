@@ -4,13 +4,13 @@ import { join } from 'node:path'
 import { withLock } from '@agnes/package-manager'
 import { type AgentPlan, jcs, parseAgentRef } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
+import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Caller = { principal: string; profile: string; workspace: string; activation: string }
 type Review = { owner: string; activation: string; expires: number; plan: AgentPlan }
-type Operation = {
+type Operation = RetainedOperation & {
   payload: string
   review: Review
-  state: 'running' | 'completed' | 'failed' | 'unknown'
   sessionId?: string
   code?: string
 }
@@ -92,6 +92,7 @@ export function createAgentLaunches(options: {
         const owner = scope(caller)
         const state = read()
         if (action === 'resolve') return backend.resolve(parseAgentRef(request.agent))
+        if (sweepReceipts(state.operations, now())) await save(state)
         if (action === 'prepare') {
           const plan = await backend.resolve(parseAgentRef(request.agent))
           // Caller activation may change while a container is being admitted.
@@ -125,13 +126,14 @@ export function createAgentLaunches(options: {
           if (op.state === 'running') {
             op.state = 'unknown'
             op.code = 'OUTCOME_UNKNOWN'
+            op.terminalAt = now()
             await save(state)
           }
           return deny(op.code ?? 'OUTCOME_UNKNOWN')
         }
         const review = state.reviews[token(request.launchTicket)] ?? deny()
         await check(review, caller)
-        if (Object.keys(state.operations).length >= 10_000) deny('OVERLOADED')
+        if (Object.keys(state.operations).length >= OPERATION_CAPACITY) deny('OVERLOADED')
         op = { payload, review, state: 'running' }
         state.operations[key] = op
         await save(state)
@@ -140,6 +142,7 @@ export function createAgentLaunches(options: {
           op.sessionId = await backend.open(review.plan, `agent:${key}`)
           await check(review, await backend.caller(), true)
           op.state = 'completed'
+          op.terminalAt = now()
           await save(state)
           return result(op)
         } catch (error) {
@@ -159,6 +162,7 @@ export function createAgentLaunches(options: {
             ) ?? 'OUTCOME_UNKNOWN'
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
+          op.terminalAt = now()
           await save(state)
           return deny(code)
         }
