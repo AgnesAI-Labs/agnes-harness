@@ -90,12 +90,7 @@ export function SidebarDshFrame({
           />
         ),
         panellist: outlet('sidebar.panellist'),
-        footerAction: (
-          <>
-            <HomeEntriesNav management t={dependencies.translate} onSelect={() => handle.current?.close()} />
-            {outlet('sidebar.footer.action')}
-          </>
-        ),
+        footerAction: outlet('sidebar.footer.action'),
         settings: outlet('sidebar.settings'),
         workspaces: (
           <span className="sidebar-slot-group">
