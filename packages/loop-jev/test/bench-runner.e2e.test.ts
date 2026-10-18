@@ -367,7 +367,7 @@ describe('bench runner', () => {
     // Other side calls never reach the cost the gates compare.
     const configured = await createConfigurationService({ home, profile: 'local-dev' }).profileInput()
     const chatPrice = configured.provider?.routes
-      .find((route) => route.route === 'deepseek')
+      ?.find((route) => route.route === 'deepseek')
       ?.models?.find((model) => model.id === 'deepseek-flash')?.cost
     if (!chatPrice) throw new Error('Saved chat model has no catalogue price')
     const ledgerCost = (lane: string) =>
