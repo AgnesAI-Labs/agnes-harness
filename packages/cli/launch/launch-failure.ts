@@ -7,6 +7,7 @@ export function launchFailure(error: unknown): { status: number; code: string } 
     E_PACKAGE_PREVIEW_STALE: 409,
     E_PACKAGE_BLOCKED: 409,
     E_PACKAGE_STATE: 409,
+    E_PACKAGE_BUSY: 409,
     E_PACKAGE_INTEGRITY: 409,
     E_PRESET_UNSUPPORTED: 409,
     E_PRESET_UNRESOLVED: 409,

@@ -509,3 +509,58 @@ it('example receipts remain readable while an activation owns the write lock', a
     await enabling
   }
 })
+
+it('ordinary agent receipts remain readable during slow starts without leaking owners or activation', async () => {
+  const f = fixture()
+  const caller = { principal: 'user', profile: 'test', workspace: '/synthetic', activation: 'a1' }
+  let entered = () => {}
+  const started = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  let release = () => {}
+  const finish = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const plan = await f.backend.resolveAgent('acme/kit#work')
+  const facade = createAgentLaunches({
+    directory: f.directory,
+    now: f.now,
+    backend: {
+      caller: async () => ({ ...caller }),
+      resolve: async () => plan,
+      open: async (...args) => {
+        entered()
+        await finish
+        return f.backend.open(...args)
+      },
+    },
+  })
+  const { launchTicket } = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    launchTicket: string
+  }
+  const request = { action: 'start', launchTicket, operationId: 'slow' }
+  const pending = facade.call(request)
+  await started
+  try {
+    // A deadline fails this regression promptly instead of waiting for the ten-second lock timeout.
+    const snapshot = await Promise.race([
+      facade.call({ action: 'read', operationId: 'slow' }),
+      new Promise((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('read blocked')), 1000)
+        timer.unref()
+      }),
+    ])
+    expect(snapshot).toEqual({ state: 'running' })
+    for (const field of ['principal', 'profile', 'workspace', 'activation'] as const) {
+      const previous = caller[field]
+      caller[field] = 'another'
+      await expect(facade.call({ action: 'read', operationId: 'slow' })).rejects.toThrow('CAPABILITY_DENIED')
+      caller[field] = previous
+    }
+  } finally {
+    release()
+    await pending
+  }
+  expect(await facade.call(request)).toEqual({ sessionId: 'session-1' })
+  expect(f.sessions.size).toBe(1)
+})

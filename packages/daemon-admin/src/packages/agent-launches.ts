@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { withLock } from '@agnes/package-manager'
+import { PackageError, withLock } from '@agnes/package-manager'
 import { type AgentPlan, jcs, parseAgentRef } from '@agnes/protocol'
 import { renameWriteThrough } from '@agnes/system-node'
 import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
@@ -87,6 +87,40 @@ export function createAgentLaunches(options: {
         keys.some((key) => typeof request[key] !== 'string')
       )
         deny('INVALID_REQUEST')
+      // The atomic journal remains readable while start owns the write lock across backend.open.
+      if (action === 'read') {
+        const caller = await backend.caller()
+        const signal = AbortSignal.timeout(1)
+        let entered = false
+        try {
+          await withLock(
+            options.directory,
+            async () => {
+              entered = true
+              const state = read()
+              if (sweepReceipts(state.operations, now())) await save(state)
+            },
+            { signal },
+          )
+        } catch (error) {
+          if (
+            entered ||
+            !signal.aborted ||
+            !(error instanceof PackageError) ||
+            error.code !== 'E_PACKAGE_CANCELLED'
+          )
+            throw error
+        }
+        const owner = scope(caller)
+        const op = read().operations[hash([owner, token(request.operationId)])]
+        if (!op || op.review.owner !== owner || op.review.activation !== caller.activation)
+          return deny('CAPABILITY_DENIED')
+        return {
+          state: op.state,
+          ...(op.code ? { code: op.code } : {}),
+          ...(op.sessionId ? result(op) : {}),
+        }
+      }
       return withLock(options.directory, async () => {
         const caller = await backend.caller()
         const owner = scope(caller)
@@ -108,16 +142,6 @@ export function createAgentLaunches(options: {
         }
         const key = hash([owner, token(request.operationId)])
         let op = state.operations[key]
-        if (action === 'read') {
-          if (!op) return deny('CAPABILITY_DENIED')
-          if (op.review.owner !== owner || op.review.activation !== caller.activation)
-            return deny('CAPABILITY_DENIED')
-          return {
-            state: op.state,
-            ...(op.code ? { code: op.code } : {}),
-            ...(op.sessionId ? result(op) : {}),
-          }
-        }
         const payload = hash(request)
         if (op) {
           if (op.payload !== payload) deny()
