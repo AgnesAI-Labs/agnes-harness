@@ -239,8 +239,10 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
         // package-root refresh; this is never a free-form package directory scan.
         if (rootKey === 'package') await refreshPackageSkills()
         const bound = await boundWorkspace(workspaceId)
-        const snapshotRevision = await currentSnapshotRevision()
         const link = await sharedWorker(signal)
+        // Boot may overlap another resource admission. Bind the scan to the durable decisions
+        // after worker acquisition; the worker still rejects any later snapshot mismatch.
+        const snapshotRevision = await currentSnapshotRevision()
         const raw = await link.command(
           'resourceSkillScan',
           { workspaceRoot: bound.path, ...(rootKey ? { rootKey } : {}), snapshotRevision },
