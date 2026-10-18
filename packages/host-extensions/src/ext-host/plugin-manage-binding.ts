@@ -42,8 +42,8 @@ export function pluginManageForCall(
     request: async (input: unknown) => {
       const assertLive = () => {
         lease.assertInvocationAlive()
-        signal.throwIfAborted()
         if (finished()) throw new Error('plugins management invocation expired')
+        signal.throwIfAborted()
         if (context.session.depth !== 0 || context.session.generationDepth > 0)
           throw Object.assign(new Error('Subagents cannot manage plugins'), { code: 'CAPABILITY_DENIED' })
       }
