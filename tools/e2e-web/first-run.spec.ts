@@ -243,7 +243,9 @@ test('first run Demo reaches a conversation without storing an account', async (
   await page.evaluate(() => document.fonts.ready)
   const height = () => composer.evaluate((input) => input.getBoundingClientRect().height)
   const restingHeight = await height()
-  await composer.fill(Array.from({ length: 8 }, (_, row) => `Demo draft line ${row + 1}`).join('\n'))
+  const multilineDraft = Array.from({ length: 8 }, (_, row) => `Demo draft line ${row + 1}`).join('\n')
+  await composer.fill(multilineDraft)
+  await expect(composer).toHaveValue(multilineDraft)
   await expect
     .poll(height, { message: 'The composer grows to show a multiline draft' })
     .toBeGreaterThan(restingHeight)
