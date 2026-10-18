@@ -36,6 +36,7 @@ const pages = [
   'jobs',
   'schedules',
   'security',
+  'application',
   'history',
   'archived',
   'computer-use',
@@ -83,11 +84,14 @@ for (const locale of ['en', 'zh-CN'])
       }
       await quality('first-run', true)
       await chooseWorkspace(page, runtime, locale)
-      const suggestions = page.getByTestId('agent-suggestion')
-      await expect(suggestions).toHaveCount(3)
-      await expect(suggestions.first().locator('.empty-state-agent-line')).not.toHaveText('')
-      await page.getByTestId('agent-suggestions-all').click()
+      // The hero now offers one composer hint; browse the same agents from the sidebar gallery.
+      await page.getByTestId('home-entry-agents').click()
       await expect(page.getByTestId('home-page-agents')).toBeVisible()
+      for (const id of ['code-review', 'knowledge-qa', 'data-report']) {
+        const card = page.locator(`[data-agent-ref="@agnes-fde/${id}#${id}"]`)
+        await expect(card.locator('h3')).not.toHaveText('')
+        await expect(card.getByRole('button')).toBeEnabled()
+      }
       await closeSettings(page, locale)
       await expect(page.locator('#empty-state')).toBeVisible()
       await advanced(page)
@@ -104,29 +108,20 @@ for (const locale of ['en', 'zh-CN'])
       await page.keyboard.press('Escape')
       await settings(page, locale)
       await section(page, 'model')
-      const add = page.getByRole('button', {
-        name: locale === 'en' ? 'Add account' : '添加账户',
-        exact: true,
-      })
+      const add = page.locator('.config-accounts-welcome [data-provider="deepseek"]')
       await expect(add).toBeEnabled()
       await expand(page.getByTestId('auxiliary-models'))
       await expect(page.getByTestId('model-slot-fast')).toHaveValue('')
       await expect(page.getByTestId('model-slot-verifier')).toHaveValue('')
       await quality('accounts', true)
       await add.click()
-      const account = page.getByRole('dialog', {
-        name: locale === 'en' ? 'Add account' : '添加账户',
-        exact: true,
-      })
+      const account = page.getByTestId('account-page-add')
       await expect(account).toBeVisible()
       await quality('add-account', true)
-      await account
-        .getByRole('button', {
-          name: locale === 'en' ? 'Close account details' : '关闭账户详情',
-          exact: true,
-        })
-        .click()
-      await expect(add).toBeFocused()
+      await page.locator('#config-account-cancel').click()
+      await page.locator('#config-account-discard-confirm').click()
+      await expect(account).toBeHidden()
+      await expect(add).toBeVisible()
       let fieldSurface = ''
       let popupSurface = ''
       for (const id of pages) {
@@ -142,6 +137,7 @@ for (const locale of ['en', 'zh-CN'])
           'system-prompt',
           'context',
           'security',
+          'application',
           'providers',
         ].includes(id)
         if (catalogPage) await expect(page.getByTestId('settings-refresh')).toBeVisible()
@@ -237,7 +233,7 @@ for (const locale of ['en', 'zh-CN'])
           await quality('mcp-local-connection')
           await page.locator('#mcp-cancel').click()
           await expect(page.getByTestId('mcp-create')).toBeFocused()
-          await expect(page.locator('#resource-detail')).toBeHidden()
+          await expect(page.getByRole('dialog', { name: 'Synthetic MCP', exact: true })).toBeHidden()
         }
         if (id === 'providers') {
           const disclosures = page.getByTestId('provider-technical-details')

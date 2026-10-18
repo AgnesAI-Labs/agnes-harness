@@ -27,6 +27,7 @@ const sections = [
   'jobs',
   'schedules',
   'security',
+  'application',
   'history',
   'archived',
   'computer-use',
@@ -100,6 +101,26 @@ async function usable(page: Page, info: TestInfo, name: string) {
       viewport: innerWidth,
       rootScrollWidth: document.documentElement.scrollWidth,
       bodyScrollWidth: document.body.scrollWidth,
+      overflow: [...document.querySelectorAll<HTMLElement>('body *')]
+        .filter(visible)
+        .flatMap((node) => {
+          const rect = node.getBoundingClientRect()
+          return rect.right > innerWidth + 1 && rect.top < innerHeight && rect.bottom > 0
+            ? [
+                {
+                  tag: node.tagName,
+                  className: node.className,
+                  id: node.id,
+                  text: node.textContent?.slice(0, 80),
+                  right: rect.right,
+                  width: rect.width,
+                  display: getComputedStyle(node).display,
+                  minWidth: getComputedStyle(node).minWidth,
+                },
+              ]
+            : []
+        })
+        .slice(0, 40),
       reportProblem: report ? { left: report.left, right: report.right, width: report.width } : null,
     }
   })
@@ -136,12 +157,6 @@ for (const locale of ['en', 'zh-CN'])
           await conversation.evaluate((viewport) => viewport.scrollTo({ top: 0, behavior: 'instant' }))
           await expect.poll(() => conversation.evaluate((viewport) => viewport.scrollTop)).toBe(0)
         }
-        if (surface === 'facts') {
-          // Frame the rail independently of the earlier inspection of its last tab.
-          await page.getByTestId('workbench-tab-facts').evaluate((button) => {
-            if (button.parentElement) button.parentElement.scrollLeft = 0
-          })
-        }
         // Frame the review itself, independent of the preceding plugin pane's scroll anchor.
         if (surface === 'settings' && width === 375) {
           await page.getByTestId('candidate-review').evaluate((review) => {
@@ -153,6 +168,7 @@ for (const locale of ['en', 'zh-CN'])
         await screen(page, info, key, [
           page.locator('.trace-stats .trace-stat'),
           page.getByTestId('request-trace').locator('time'),
+          page.locator('.trace-inspector-meta'),
           ...(surface === 'settings' && width === 768
             ? [page.getByTestId('memory-root'), page.getByTestId('memory-workspace')]
             : []),
@@ -307,8 +323,8 @@ for (const locale of ['en', 'zh-CN'])
         )
         await expect(delivery).toContainText('Delivery report.md')
         const rightToggle = page.getByTestId('workbench-right-toggle')
-        await delivery.getByTestId('deliverable-open').first().click()
-        await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
+        await delivery.locator('.agh-list-row-title').first().click()
+        await expect(page.getByTestId('workbench-deliverables')).toContainText('Delivery report.md')
         await page
           .locator('#workbench-right')
           .getByRole('button', { name: name('Close this dock', '关闭此停靠面板'), exact: true })
@@ -358,9 +374,70 @@ for (const locale of ['en', 'zh-CN'])
           )
           const evidence = page.getByTestId('tool-fact-chain').first()
           await evidence.click()
-          await expect(page.getByTestId('fact-chain').locator('[data-fact-kind="receipt"]')).toBeVisible()
+          const inspector = page.locator('.trace-inspector')
+          await expect(inspector.locator('[data-link="receipt"]')).toBeVisible()
+          // On narrow screens the inspector replaces the toolbar; close it to change timeline mode.
+          const selectedId = await page
+            .locator('.trace-row[aria-current="true"]')
+            .getAttribute('data-trace-row-id')
+          const sourceRow = page.locator(`.trace-row[data-trace-row-id="${selectedId}"]`)
+          await inspector.locator('.trace-inspector-close').click()
+          await page.getByTestId('trace-toolbar-more').click()
+          await page.getByTestId('trace-timeline-sequence').click()
+          await sourceRow.click()
+          await expect(inspector).toBeInViewport()
           await usable(page, info, `facts-${viewport.width}`)
           if (viewport.width === 375) await capture('facts', viewport.width)
+          await inspector.locator('.trace-inspector-close').press('Escape')
+          await expect(sourceRow).toBeFocused()
+          await page.locator('#view-chat').click()
+          await expect(evidence).toBeVisible()
+          await evidence.click()
+          await page.keyboard.press('F6')
+          expect(
+            await page.locator('#trace-panel').evaluate((node) => node.contains(document.activeElement)),
+          ).toBe(true)
+          await inspector.locator('.trace-inspector-close').click()
+          await page.locator('.trace-search').focus()
+          await expect(page.locator('#composer')).toBeHidden()
+          for (const key of ['F6', 'Shift+F6']) {
+            await page.keyboard.press(key)
+            expect(
+              await page.locator('#trace-panel').evaluate((node) => node.contains(document.activeElement)),
+            ).toBe(true)
+          }
+          const chip = page.locator('.trace-chip[data-kind="assistant"]')
+          if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click()
+          await usable(page, info, `trace-${viewport.width}`)
+          await page.locator('.trace-row').first().click()
+          await page.locator('.trace-tab[data-pane="request"]').click()
+          await expect(page.getByTestId('request-trace')).toBeVisible()
+          for (const section of ['system', 'tools', 'messages', 'params']) {
+            await expand(page.getByTestId(`request-trace-section-${section}`))
+            await usable(page, info, `request-${section}-${viewport.width}`)
+          }
+          await page.locator('.trace-tab[data-pane="usage"]').click()
+          await expect(page.getByTestId('request-trace-summary')).toBeVisible()
+          await usable(page, info, `request-tokens-${viewport.width}`)
+          await page.locator('.trace-tab[data-pane="request"]').click()
+          await page
+            .getByTestId('request-trace-mode')
+            .getByRole('radio', { name: name('Sent JSON', '实际发送 JSON'), exact: true })
+            .check()
+          await usable(page, info, `request-raw-${viewport.width}`)
+          await page
+            .getByTestId('request-trace-mode')
+            .getByRole('radio', { name: name('Logical request', '逻辑请求'), exact: true })
+            .check()
+          await capture('request', viewport.width)
+          await page.locator('.trace-inspector-close').press('Escape')
+          await expect(page.locator('.trace-row').first()).toBeFocused()
+          await page.locator('#view-chat').click()
+          await workbenchTab(page, 'files')
+          await page.getByTestId('files-panel').locator('[data-path="report.md"]').click()
+          await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+          await usable(page, info, `files-${viewport.width}`)
+          if (viewport.width === 768) await capture('workbench', viewport.width)
           const boundary = await page.locator('#workbench-right').evaluate((host) => {
             const nodes = [
               ...host.querySelectorAll<HTMLElement>(
@@ -385,51 +462,13 @@ for (const locale of ['en', 'zh-CN'])
           await page.keyboard.press('Tab')
           await expect(first).toBeFocused()
           await page.keyboard.press('Escape')
-          await expect(evidence).toBeFocused()
-          await evidence.click()
-          await expect(page.getByTestId('workbench-tab-facts')).toBeFocused()
+          await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
+          await workbenchTab(page, 'files')
           await page.keyboard.press('F6')
-          await expect(page.locator('#workbench-right')).toBeHidden()
           expect(
             await page.locator('#composer').evaluate((node) => node.contains(document.activeElement)),
           ).toBe(true)
-          await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
-          await page.locator('#view-trace').click()
-          await page.locator('.trace-type-filter').focus()
-          // The trace layout hides the composer at these widths; cycle only visible regions.
-          await expect(page.locator('#composer')).toBeHidden()
-          for (const key of ['F6', 'Shift+F6']) {
-            await page.keyboard.press(key)
-            expect(
-              await page.locator('#trace-panel').evaluate((node) => node.contains(document.activeElement)),
-            ).toBe(true)
-          }
-          await page.locator('.trace-type-filter').selectOption('assistant')
-          await usable(page, info, `trace-${viewport.width}`)
-          await page.locator('.trace-row').first().click()
-          await expect(page.getByTestId('request-trace')).toBeVisible()
-          const selectPane = async (pane: string) => {
-            const picker = page.getByTestId('request-trace-pane')
-            const tab = page.getByTestId(`request-trace-tab-${pane}`)
-            await expect.poll(async () => (await picker.isVisible()) || (await tab.isVisible())).toBe(true)
-            if (await picker.isVisible()) await picker.selectOption(pane)
-            else await tab.click()
-          }
-          for (const pane of ['system', 'tools', 'messages', 'params', 'tokens', 'raw']) {
-            await selectPane(pane)
-            await usable(page, info, `request-${pane}-${viewport.width}`)
-          }
-          await selectPane('system')
-          await capture('request', viewport.width)
-          await page.locator('.trace-inspector-close').press('Escape')
-          await expect(page.locator('.trace-row').first()).toBeFocused()
-          await page.locator('#view-chat').click()
-          await page.getByTestId('workbench-right-toggle').click()
           await workbenchTab(page, 'files')
-          await page.getByTestId('files-panel').locator('[data-path="report.md"]').click()
-          await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
-          await usable(page, info, `files-${viewport.width}`)
-          if (viewport.width === 768) await capture('workbench', viewport.width)
           await workbenchTab(page, 'goal')
           await expect(page.getByTestId('goal-panel-phase')).toBeVisible()
           await usable(page, info, `goal-${viewport.width}`)
@@ -441,7 +480,7 @@ for (const locale of ['en', 'zh-CN'])
           await page.getByTestId('changes-mention').click()
           await expect(page.locator('#workbench-right')).toBeHidden()
           await expect(page.locator('#prompt')).toBeFocused()
-          await expect(page.locator('#prompt')).toHaveValue('"review notes.ts"')
+          await expect(page.locator('#prompt')).toHaveValue('@review notes.ts ')
           await page.locator('#prompt').fill('')
           if ((await page.getByTestId('workbench-right-toggle').getAttribute('aria-expanded')) === 'true')
             await page
@@ -480,7 +519,7 @@ for (const locale of ['en', 'zh-CN'])
               .filter((job) => job.owner === 'human')
               .every((job) => job.status === 'running'),
           ).toBe(true)
-          await page.locator('.sidebar-toggle').click()
+          await settings(page, locale)
           await settings(page, locale)
           for (const id of sections) {
             await section(page, id)
