@@ -57,6 +57,7 @@ export function Tooltip({ title, children, disabled = false, shortcut, ...props 
         aria-label={disabled ? title : undefined}
         onFocusCapture={() => setOpen(true)}
         onBlurCapture={() => setOpen(false)}
+        onClickCapture={() => setOpen(false)}
         onKeyDownCapture={(event) => {
           if (event.key === 'Escape' && open) {
             // Dismiss the hint without cancelling the surrounding modal's Escape behavior.

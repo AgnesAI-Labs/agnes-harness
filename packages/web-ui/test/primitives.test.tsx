@@ -162,6 +162,9 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
     '⌘',
     'K',
   ])
+  // Activating navigation must dismiss its focused hint before it can cover the next action.
+  button.click()
+  await vi.waitFor(() => expect(button.getAttribute('aria-describedby')).toBeNull())
 })
 it('announces success without stealing focus and cleans up the expiry on unmount', async () => {
   const dismiss = vi.fn()
