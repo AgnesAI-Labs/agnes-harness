@@ -6,6 +6,26 @@
   body.sidebar-collapsed {
     grid-template-columns: 3.5rem minmax(0, 1fr);
   }
+  @media (min-width: 768px) and (max-width: 900px) {
+    body[data-agnes-region="app"]
+      :is(
+        .deliverable-row .agh-list-row-title,
+        .trace-search-box .trace-search,
+        .trace-fold-all.agh-btn--icon,
+        .workbench-files-filter .agh-search-bar-field > input,
+        .workbench-changes-file.agnes-ui-button,
+        .agnes-settings-chip-input
+      ) {
+      min-height: var(--s32);
+    }
+    .trace-search-box {
+      height: auto;
+      min-height: var(--s32);
+    }
+    body[data-agnes-region="app"] .trace-fold-all.agh-btn--icon {
+      min-width: var(--s32);
+    }
+  }
   @media (min-width: 901px) {
     body.sidebar-collapsed .sidebar {
       align-items: center;

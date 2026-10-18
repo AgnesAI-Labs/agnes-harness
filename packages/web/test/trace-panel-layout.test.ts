@@ -115,6 +115,20 @@ describe('trace region layout', () => {
     const overlay = '[data-agnes-region="trace"]:has(.trace-inspector:not([hidden]))'
     expect(declarations(overlay)).toContain('grid-template-rows: minmax(0, 1fr)')
     expect(declarations(`${overlay} .trace-body`)).toContain('grid-row: 1')
+    const tablet =
+      [...css.matchAll(/@media \(min-width: 768px\) and \(max-width: 900px\) \{([\s\S]*?)\n  \}/g)]
+        .map((match) => match[1] ?? '')
+        .find((block) => block.includes('.workbench-changes-file.agnes-ui-button')) ?? ''
+    for (const selector of [
+      '.deliverable-row .agh-list-row-title',
+      '.trace-search-box .trace-search',
+      '.trace-fold-all.agh-btn--icon',
+      '.workbench-files-filter .agh-search-bar-field > input',
+      '.workbench-changes-file.agnes-ui-button',
+      '.agnes-settings-chip-input',
+    ])
+      expect(tablet).toContain(selector)
+    expect(tablet).toContain('min-height: var(--s32)')
   })
 
   it('keeps shared control retuning out of the trace', () => {
