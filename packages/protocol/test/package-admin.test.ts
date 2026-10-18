@@ -101,7 +101,8 @@ describe('PM4 management contracts', () => {
     // capability/source authoring boundaries.
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
     // Three binding rows cover history-only session ownership and reject invalid availability/owner.
-    expect(result.total).toBe(669)
+    // Twenty-three role selection rows cover attested bindings, closed roles and state boundaries.
+    expect(result.total).toBe(692)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
