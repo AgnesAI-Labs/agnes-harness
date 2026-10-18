@@ -2,11 +2,12 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { loadSuite, type Turn } from '../bench/lib.mjs'
 import { buildSuite } from '../bench/suites/make-read-heavy.mjs'
 
-const path = new URL('../bench/suites/read-heavy.json', import.meta.url).pathname
+const path = fileURLToPath(new URL('../bench/suites/read-heavy.json', import.meta.url))
 // The write probes call `str.removesuffix`, so an interpreter older than Python 3.9 skips the run.
 const python = ['python3', 'python'].find(
   (name) =>
