@@ -8,6 +8,7 @@ import {
   createPackageManager,
   developmentPluginRows,
   loadPackagePlugins,
+  packageDir,
   parseSource,
   readLock,
   withLock,
@@ -183,111 +184,156 @@ it('starts from the real pre-unification store without rewriting pins, records o
   expect(state().pins['session-original']).toEqual(JSON.parse(before).pins['session-original'])
 })
 
-it('writes current snapshots for reviewed updates while the original session resumes its pinned bytes', async () => {
-  const m = manager()
-  const original = await m.resolveRuntimePin(profile(), { pinId: 'session-original' })
-  const old = state()
-  const dir = join(root, 'current')
-  mkdirSync(dir)
-  const launch = { title: { en: 'Work' }, description: { en: 'Work safely' }, preset: 'safe' }
-  const application = { id: 'acme', agents: ['acme/legacy#work'], defaultAgent: 'acme/legacy#work' }
-  writeFileSync(
-    join(dir, 'package.json'),
-    JSON.stringify({
-      name: 'acme/legacy',
-      version: '2.0.0',
-      license: 'MIT',
-      dependencies: { 'acme/parent': '^1.0.0' },
-      exports: './index.mjs',
-      agnes: {
-        plugins: [{ apiRange: '^4.0.0', id: 'ext:acme/legacy', export: 'runtime', runtime: 'in-process' }],
-        bundles: { work: { presets: { safe: { name: 'safe' } }, launch } },
-        application,
+it.each(['keep', 'plain', 'activation', 'tampered'] as const)(
+  'writes current snapshots and preserves historical pins through %s rollback',
+  async (rollback) => {
+    const m = manager()
+    const original = await m.resolveRuntimePin(profile(), { pinId: 'session-original' })
+    const old = state()
+    const dir = join(root, 'current')
+    mkdirSync(dir)
+    const launch = { title: { en: 'Work' }, description: { en: 'Work safely' }, preset: 'safe' }
+    const application = { id: 'acme', agents: ['acme/legacy#work'], defaultAgent: 'acme/legacy#work' }
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'acme/legacy',
+        version: '2.0.0',
+        license: 'MIT',
+        dependencies: { 'acme/parent': '^1.0.0' },
+        exports: './index.mjs',
+        agnes: {
+          plugins: [{ apiRange: '^4.0.0', id: 'ext:acme/legacy', export: 'runtime', runtime: 'in-process' }],
+          bundles: { work: { presets: { safe: { name: 'safe' } }, launch } },
+          application,
+        },
+      }),
+    )
+    writeFileSync(
+      join(dir, 'index.mjs'),
+      "export const runtime = { apply() {} }; export default () => 'current-v2-bytes'\n",
+    )
+    const source = parseSource('file:./current')
+    const preview = await m.inspect(profile(), source)
+    if (!preview.capabilityHash) throw new Error('missing reviewed capability hash')
+    const interrupted = createPackageManager({
+      dataDir: root,
+      cwd: root,
+      agnesVersion: '0.1.0',
+      references: async () => [],
+      checkpoint(point) {
+        if (point === 'old-moved') throw new Error('interrupted-upgrade')
       },
-    }),
-  )
-  writeFileSync(
-    join(dir, 'index.mjs'),
-    "export const runtime = { apply() {} }; export default () => 'current-v2-bytes'\n",
-  )
-  const source = parseSource('file:./current')
-  const preview = await m.inspect(profile(), source)
-  if (!preview.capabilityHash) throw new Error('missing reviewed capability hash')
-  const interrupted = createPackageManager({
-    dataDir: root,
-    cwd: root,
-    agnesVersion: '0.1.0',
-    references: async () => [],
-    checkpoint(point) {
-      if (point === 'old-moved') throw new Error('interrupted-upgrade')
-    },
-  })
-  await expect(
-    interrupted.update(profile(), 'acme/legacy', source, { expectedIntegrity: preview.integrity }),
-  ).rejects.toThrow('interrupted-upgrade')
-  await manager().recover(profile())
-  expect((await manager().resolveRuntimePin(profile(), { pinId: 'session-original' })).snapshot).toEqual(
-    original.snapshot,
-  )
-  await m.update(profile(), 'acme/legacy', source, { expectedIntegrity: preview.integrity })
-  await expect(
-    m.pinRuntimeSnapshot(profile(), {
-      pinId: 'unreviewed',
-      operationId: 'unreviewed',
-      packageId: 'acme/legacy',
-      purpose: 'candidate',
+    })
+    await expect(
+      interrupted.update(profile(), 'acme/legacy', source, { expectedIntegrity: preview.integrity }),
+    ).rejects.toThrow('interrupted-upgrade')
+    await manager().recover(profile())
+    expect((await manager().resolveRuntimePin(profile(), { pinId: 'session-original' })).snapshot).toEqual(
+      original.snapshot,
+    )
+    await m.update(profile(), 'acme/legacy', source, { expectedIntegrity: preview.integrity })
+    await expect(
+      m.pinRuntimeSnapshot(profile(), {
+        pinId: 'unreviewed',
+        operationId: 'unreviewed',
+        packageId: 'acme/legacy',
+        purpose: 'candidate',
+        selector: {
+          kind: 'installed',
+          expectedIntegrity: preview.integrity,
+          expectedTreeIntegrity: preview.integrity,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
+    await m.trust(profile(), 'acme/legacy', {
+      integrity: preview.integrity,
+      capabilityHash: preview.capabilityHash,
+    })
+    const row = (await m.inventory(profile())).packages.find((row) => row.id === 'acme/legacy')
+    if (!row?.entry.treeIntegrity) throw new Error('missing updated row')
+    const pinId = activeRuntimePinId({ packageId: row.id, integrity: row.entry.integrity })
+    const current = await m.pinRuntimeSnapshot(profile(), {
+      pinId,
+      operationId: pinId,
+      packageId: row.id,
+      purpose: 'active',
       selector: {
         kind: 'installed',
-        expectedIntegrity: preview.integrity,
-        expectedTreeIntegrity: preview.integrity,
+        expectedIntegrity: row.entry.integrity,
+        expectedTreeIntegrity: row.entry.treeIntegrity,
       },
-    }),
-  ).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
-  await m.trust(profile(), 'acme/legacy', {
-    integrity: preview.integrity,
-    capabilityHash: preview.capabilityHash,
-  })
-  const row = (await m.inventory(profile())).packages.find((row) => row.id === 'acme/legacy')
-  if (!row?.entry.treeIntegrity) throw new Error('missing updated row')
-  const pinId = activeRuntimePinId({ packageId: row.id, integrity: row.entry.integrity })
-  const current = await m.pinRuntimeSnapshot(profile(), {
-    pinId,
-    operationId: pinId,
-    packageId: row.id,
-    purpose: 'active',
-    selector: {
-      kind: 'installed',
-      expectedIntegrity: row.entry.integrity,
-      expectedTreeIntegrity: row.entry.treeIntegrity,
-    },
-  })
-  expect(current.snapshot.agents).toEqual([{ ref: 'acme/legacy#work', launch }])
-  expect(current.snapshot.application).toEqual(application)
-  await m.enable(profile(), row.id, true)
-  expect(
-    (await m.runtimePluginSnapshots(profile())).find(
-      (source) => source.snapshot.integrity === current.snapshot.integrity,
-    )?.snapshot.agents,
-  ).toEqual(current.snapshot.agents)
-  expect(state().snapshots[current.snapshot.snapshotId].version).toBe(2)
-  for (const [id, record] of Object.entries(old.snapshots)) expect(state().snapshots[id]).toEqual(record)
-  for (const [id, pin] of Object.entries(old.pins)) expect(state().pins[id]).toEqual(pin)
-  const resumed = await manager().resolveRuntimePin(profile(), {
-    pinId: 'session-original',
-    expectedSnapshotId: original.snapshot.snapshotId,
-  })
-  expect(resumed).toEqual(original)
-  expect((await import(pathToFileURL(join(resumed.snapshot.directory, 'index.mjs')).href)).default()).toBe(
-    'original-v1-bytes',
-  )
-  const tampered = state()
-  tampered.snapshots[current.snapshot.snapshotId].agents[0].launch.title.en = 'tampered'
-  writeFileSync(stateFile(), JSON.stringify(tampered))
-  await expect(manager().listRuntimePins(profile())).rejects.toMatchObject({
-    code: 'E_PACKAGE_INTEGRITY',
-    detail: { reason: 'snapshot-identity' },
-  })
-})
+    })
+    expect(current.snapshot.agents).toEqual([{ ref: 'acme/legacy#work', launch }])
+    expect(current.snapshot.application).toEqual(application)
+    await m.enable(profile(), row.id, true)
+    expect(
+      (await m.runtimePluginSnapshots(profile())).find(
+        (source) => source.snapshot.integrity === current.snapshot.integrity,
+      )?.snapshot.agents,
+    ).toEqual(current.snapshot.agents)
+    expect(state().snapshots[current.snapshot.snapshotId].version).toBe(2)
+    for (const [id, record] of Object.entries(old.snapshots)) expect(state().snapshots[id]).toEqual(record)
+    for (const [id, pin] of Object.entries(old.pins)) expect(state().pins[id]).toEqual(pin)
+    const resumed = await manager().resolveRuntimePin(profile(), {
+      pinId: 'session-original',
+      expectedSnapshotId: original.snapshot.snapshotId,
+    })
+    expect(resumed).toEqual(original)
+    expect((await import(pathToFileURL(join(resumed.snapshot.directory, 'index.mjs')).href)).default()).toBe(
+      'original-v1-bytes',
+    )
+    if (rollback !== 'keep') {
+      const target = row.entry.previous
+      if (!target) throw new Error('missing previous snapshot')
+      if (rollback === 'tampered') {
+        writeFileSync(
+          join(packageDir(root, 'local-dev', row.id), '..', `.previous-${snapshotHash(row.id)}`, 'index.mjs'),
+          'tampered',
+        )
+        await expect(m.rollback(profile(), row.id)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+        return
+      }
+      await m.rollback(
+        profile(),
+        row.id,
+        rollback === 'activation'
+          ? {
+              expectedTargetIntegrity: target.integrity,
+              activation: {
+                expectedInstalledIntegrity: row.entry.integrity,
+                trust: { integrity: target.integrity, capabilityHash: original.snapshot.capabilityHash },
+              },
+            }
+          : {},
+      )
+      const restored = readLock(profile(), { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[row.id]
+      expect(restored).toMatchObject({
+        integrity: target.integrity,
+        state: { enabled: rollback === 'activation' },
+      })
+      await manager().recover(profile())
+      if (rollback === 'plain') {
+        await m.trust(profile(), row.id, {
+          integrity: target.integrity,
+          capabilityHash: original.snapshot.capabilityHash,
+        })
+        await m.enable(profile(), row.id, true)
+      }
+      for (const [id, record] of Object.entries(old.snapshots)) expect(state().snapshots[id]).toEqual(record)
+      for (const [id, pin] of Object.entries(old.pins)) expect(state().pins[id]).toEqual(pin)
+      expect(await m.resolveRuntimePin(profile(), { pinId: 'session-original' })).toEqual(original)
+      return
+    }
+    const tampered = state()
+    tampered.snapshots[current.snapshot.snapshotId].agents[0].launch.title.en = 'tampered'
+    writeFileSync(stateFile(), JSON.stringify(tampered))
+    await expect(manager().listRuntimePins(profile())).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+      detail: { reason: 'snapshot-identity' },
+    })
+  },
+)
 
 it.each(['hash', 'launch', 'shape', 'bytes', 'version', 'lock'])(
   'refuses a tampered historical %s and preserves the evidence',
