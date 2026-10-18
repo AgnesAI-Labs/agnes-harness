@@ -56,6 +56,6 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 输入可带 `config: AutoReviewConfig`、`read/write/external` 类别、保留的可信人工 `instructions`，以及待调用工具的说明、参数 schema 和定义指纹。工具参数与说明属于数据，不能授予权限。可选 `ToolPolicyPorts` 提供会话级持久尝试预算 `reserve(limit)` 与无工具模型操作 `model({ slot: 'fast' | 'verifier', prompt }, signal, onUsage?)`。模型返回 `{ text, model, cost, costSource? }`；不会自动重试，遵守当前请求成本上限，并记录用量。用量回调返回 `{ model, cost, costSource }`，中断时可提供估算。中断的预算预留不退还；传播取消，端口不可用时转为 `ask`。
 
-策略结果可以携带协议拥有的 `ToolReviewFact`：模型、提示词哈希、参数/范围哈希、`allow/deny/escalate` 决定、风险、理由、延迟、成本、成本来源，以及 `model/human-override/fallback` 来源。决定必须与 effect 一致（`escalate` 对应 `ask`）。Core 在副作用之前保存并复用绑定事实。公开 `_agnes/v1/autoReview.get` 与 `.save` 使用 `AutoReviewConfig`；Node SDK 提供 `client.autoReview.get()` 和 `.save(config)`，浏览器通过同源管理接口操作。
+策略结果可以携带协议拥有的 `ToolReviewFact`：模型、提示词哈希、参数/范围哈希、`allow/deny/escalate` 决定、风险、理由、延迟、成本、成本来源，以及 `model/human-override/fallback` 来源。决定必须与 effect 一致（`escalate` 对应 `ask`）。Core 在副作用之前保存并复用绑定事实。可选 `scopePreview` 包含有长度限制的 `args`、`cwd` 和 `mode` 展示文本。工具节点与轨迹跨度使用相同的 `ToolReviewFact` 契约；预览文本不授予权限。公开 `_agnes/v1/autoReview.get` 与 `.save` 使用 `AutoReviewConfig`；Node SDK 提供 `client.autoReview.get()` 和 `.save(config)`，浏览器通过同源管理接口操作。
 
 输出一致性、工具范围、自动放行风险和显式未来规则由策略插件拥有；Core 仅提供模型执行、预算预留与事实持久化，不内置审查算法。硬拒绝与私有状态限制不可由模型推翻。默认值和操作流程见[安全与信任](../guide/security.zh-CN.md#审批)。
