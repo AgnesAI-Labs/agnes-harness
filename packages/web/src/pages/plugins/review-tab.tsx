@@ -14,13 +14,11 @@ export function ReviewTab({
   t,
   pending,
   sources,
-  onPendingCount,
 }: {
   view: PluginView
   t: Text
   pending: number
   sources: ReturnType<typeof useCandidateSources>
-  onPendingCount(count: number): void
 }) {
   // A draft under review is a page over this list: `review:<candidate>` in the address.
   const pages = usePushStack()
@@ -82,7 +80,6 @@ export function ReviewTab({
           onPublished={() => view.refresh()}
           sessionTitle={sources.sessionTitle}
           sessionTurnTime={sources.sessionTurnTime}
-          onPendingCount={onPendingCount}
           openId={opened}
           onSelectedChange={(id) => {
             if (id) {

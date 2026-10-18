@@ -14,6 +14,7 @@ import { panelContext } from './context.js'
 import { type DiffRow, diffSide, foldDiff, parseDiff, textRows } from './diff-lines.js'
 import { fileType } from './file-types.js'
 import { changesCount } from './tab-counts.js'
+import { visiblePoll } from './visible-poll.js'
 
 type Selection = { sessionId: string; path: string; revision?: string }
 function fileSelection(value: unknown, sessionId?: string): Selection | undefined {
@@ -70,7 +71,6 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
   useEffect(() => {
     if (!session) return
     let alive = true
-    let timer: ReturnType<typeof setTimeout> | undefined
     const read = async () => {
       try {
         const result = await session.workspaceChanges({
@@ -86,17 +86,14 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
         if (alive)
           setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
       } finally {
-        if (alive) {
-          setLoading(false)
-          timer = setTimeout(() => void read(), 3000)
-        }
+        if (alive) setLoading(false)
       }
     }
     setLoading(true)
-    void read()
+    const stop = visiblePoll(read, 3000)
     return () => {
       alive = false
-      clearTimeout(timer)
+      stop()
     }
   }, [session, scope, path, expectedRevision, refresh, t])
   if (!session)

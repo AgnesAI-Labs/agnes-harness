@@ -166,20 +166,37 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
       active = false
     }
   }, [session, refresh, version])
+  // A new read authority or path must never display the previous file, even for one paint.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the read scope changes.
+  useLayoutEffect(() => {
+    setFile(undefined)
+    setReadError('')
+  }, [session, selected])
   // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate workspace reads.
   useEffect(() => {
     let active = true
-    setFile(undefined)
     setReadError('')
     if (!session || !selected) return
     void session
       .workspaceRead(selected)
       .then((value) => {
-        if (active) setFile(value)
+        if (active)
+          setFile((previous) =>
+            previous?.revision === value.revision &&
+            previous.text === value.text &&
+            previous.binary === value.binary &&
+            previous.truncated === value.truncated &&
+            previous.size === value.size
+              ? previous
+              : value,
+          )
       })
       .catch((cause) => {
-        if (active)
+        if (active) {
+          // A failed read cannot establish continuing visibility (including deletion/revocation).
+          setFile(undefined)
           setReadError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
+        }
       })
     return () => {
       active = false

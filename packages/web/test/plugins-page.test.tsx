@@ -528,3 +528,82 @@ it('filters a single inventory by provenance source and declared capabilities in
   expect(matchesPluginFilters(base, 'official', 'tool')).toBe(false)
   expect(matchesPluginFilters(base, 'community', 'loop')).toBe(false)
 })
+
+it('coalesces pending-review reads and rejects a response invalidated in flight', async () => {
+  const { PluginAdminApi } = await import('@agnes/web-admin/admin/plugins/api')
+  const { PluginsPage } = await import('../src/pages/plugins-page.js')
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}))
+  vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
+    profile: 'synthetic',
+    clientId: 'web',
+    permissions: ['packages.read'],
+    readOnly: false,
+  })
+  vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+  vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+  vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+  vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+  vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockResolvedValue({ orphans: [] } as never)
+  let hidden = false
+  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const reads: ((value: unknown) => void)[] = []
+  const failures: ((reason: Error) => void)[] = []
+  vi.spyOn(PluginAdminApi.prototype, 'candidatesList').mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        reads.push(resolve as (value: unknown) => void)
+        failures.push(reject)
+      }),
+  )
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    document.body.append(dialog)
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const context = {
+    t: (key: string) => key,
+    data: { call: async () => ({}), sessionId: () => undefined, openSettings() {}, startDraft() {} },
+  }
+  const badge = () => host.querySelector('[data-testid="plugins-tab-review"]')?.textContent
+  try {
+    await act(async () => root.render(createElement(PluginsPage, { context })))
+    await vi.waitFor(() => expect(reads.length).toBe(1))
+    await act(async () => reads[0]?.({ candidates: [] }))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidates-changed')))
+    await vi.waitFor(() => expect(reads.length).toBe(2))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidate-count-changed')))
+    // True invalidations are queued, never read in parallel or accepted as an older snapshot.
+    expect(reads).toHaveLength(2)
+    await act(async () => reads[1]?.({ candidates: [{ state: 'review' }] }))
+    expect(badge()).not.toContain('1')
+    await vi.waitFor(() => expect(reads).toHaveLength(3))
+    await act(async () => reads[2]?.({ candidates: [{ state: 'review' }, { state: 'review' }] }))
+    await vi.waitFor(() => expect(badge()).toContain('2'))
+    await act(async () => window.dispatchEvent(new Event('agnes:candidates-changed')))
+    expect(reads).toHaveLength(4)
+    await act(async () => failures[3]?.(new Error('unavailable')))
+    expect(badge()).toContain('2')
+    hidden = true
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('agnes:candidates-changed'))
+    })
+    expect(reads).toHaveLength(4)
+    hidden = false
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(reads).toHaveLength(5)
+    await act(async () => reads[4]?.({ candidates: [{ state: 'review' }] }))
+    expect(badge()).toContain('1')
+  } finally {
+    await act(async () => root.unmount())
+    fetcher.mockRestore()
+    vi.restoreAllMocks()
+  }
+})

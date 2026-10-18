@@ -4,6 +4,7 @@ import type { SessionJob } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { fireEvent, within } from '@testing-library/dom'
+import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
@@ -310,6 +311,19 @@ it('reads a tab count once per session watermark and lets an open panel share a 
   await new Promise((resolve) => setTimeout(resolve, 0))
   // A failed read keeps the last value.
   expect(count.read(context('s', 2))).toBe(5)
+  let finish!: (value: number) => void
+  read.mockImplementationOnce(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve
+      }),
+  )
+  expect(count.read(context('s', 3))).toBe(5)
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(4))
+  count.set('s', 8) // The open panel has already observed a newer count.
+  finish(1)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(count.read(context('s', 3))).toBe(8)
   stop()
 })
 
@@ -357,3 +371,41 @@ it.each(['zh-CN', 'en'] as const)(
     }
   },
 )
+
+it('pauses terminal reads while hidden and catches up output once on return', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+  let hidden = false
+  const visibility = vi
+    .spyOn(document, 'visibilityState', 'get')
+    .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const terminal = job({ owner: 'human', stdout: 'before hidden' })
+  const { session, host, jobsControl } = mount([terminal])
+  const reads = vi.spyOn(session, 'jobsRead')
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    const before = reads.mock.calls.length
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reads.mock.calls.length - before).toBe(0)
+    terminal.stdout += '\noutput while hidden'
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    await act(async () => vi.advanceTimersByTimeAsync(0))
+    expect(reads.mock.calls.length - before).toBe(1)
+    expect(host.textContent).toContain('output while hidden')
+    expect(jobsControl).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'kill' }))
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(reads.mock.calls.length - before).toBe(2)
+    unmountRegion(host)
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(reads.mock.calls.length - before).toBe(2)
+  } finally {
+    unmountRegion(host)
+    visibility.mockRestore()
+    reads.mockRestore()
+    vi.useRealTimers()
+  }
+})

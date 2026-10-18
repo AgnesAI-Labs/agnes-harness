@@ -158,7 +158,7 @@ export function FilePreview({
       {text !== undefined &&
         (mode === 'preview' && kind ? (
           <div className="workbench-file-rendered" data-testid="file-rendered" data-kind={kind}>
-            <Rendered kind={kind} text={text} title={name} />
+            <Rendered key={file?.revision} kind={kind} text={text} title={name} />
           </div>
         ) : (
           // biome-ignore lint/a11y/useSemanticElements: the pre is the scrollport, so it keeps the region role.
