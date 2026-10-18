@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { devNull } from 'node:os'
 import { dirname, join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
@@ -240,15 +241,15 @@ test('session terminal survives UI detachment, follows agent output and honors p
     await expect(resize).toHaveAttribute('aria-valuenow', String(320 + (i + 1) * 16))
   }
   // Agent jobs are attached automatically; selecting its tab follows the real output.
-  await panel.getByRole('option').filter({ hasText: agent.command }).click()
+  await panel.getByTestId('terminal-tab').filter({ hasText: agent.command }).click()
   await expect.poll(async () => (await session.jobsRead(agent.id)).job?.stdout).toContain('AGENT_END')
   await expect(
     panel.getByTestId('workbench-terminal-output').locator('.xterm-accessibility-tree'),
   ).toContainText('AGENT_END')
   await expect(panel.getByTestId('terminal-kill')).toHaveCount(0)
   await panel.getByRole('button', { name: 'Stop following', exact: true }).click()
-  await expect(panel.getByRole('option')).toHaveCount(1)
-  await panel.getByRole('option').first().click()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(1)
+  await panel.getByTestId('terminal-tab').first().click()
   const output = panel.getByTestId('workbench-terminal-output')
   const terminalText = output.locator('.xterm-accessibility-tree')
   const terminalInput = output.locator('textarea')
@@ -259,29 +260,32 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await terminalInput.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
   await expect
-    .poll(async () => (await session.jobsRead(human.id)).job?.stdout)
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
     .toMatch(/\nE2E_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('E2E_TERMINAL_OK')
   await terminalInput.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
   await expect
-    .poll(async () => (await session.jobsRead(human.id)).job?.stdout)
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
     .toMatch(/\nWB1_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('WB1_TERMINAL_OK')
   await panel.getByTestId('terminal-new').click()
-  await expect(panel.getByRole('option')).toHaveCount(2)
-  await panel.getByRole('option').last().press('ArrowLeft')
-  await expect(panel.getByRole('option').first()).toBeFocused()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+  await panel.getByTestId('terminal-tab').last().press('ArrowLeft')
+  await expect(panel.getByTestId('terminal-tab').first()).toBeFocused()
   await page.getByTestId('workbench-right-toggle').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await session.detach()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await page.reload()
   await page.getByTestId('workbench-right-toggle').click()
-  await expect(panel.getByRole('option')).toHaveCount(2)
-  await panel.getByRole('option').first().click()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+  await panel.getByTestId('terminal-tab').first().click()
   await expect(terminalText).toContainText('WB1_TERMINAL_OK')
-  await panel.getByRole('option', { selected: true }).click({ button: 'right' })
+  await panel
+    .getByTestId('terminal-tab')
+    .and(page.locator('[aria-pressed="true"]'))
+    .click({ button: 'right' })
   await page.getByTestId('terminal-interrupt').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   // Another client's read can precede the UI's control receipt; keyboard actions do not wait for enabled.
@@ -289,7 +293,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await terminalInput.pressSequentially("printf 'WB1_AFTER_INTERRUPT\\n'")
   await terminalInput.press('Enter')
   await expect
-    .poll(async () => (await session.jobsRead(human.id)).job?.stdout)
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
     .toMatch(/\nWB1_AFTER_INTERRUPT\r?\n/)
   await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   await translated(page)
@@ -308,7 +312,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
           { locale, theme },
         )
         await page.reload()
-        await expect(panel.getByRole('option')).toHaveCount(2)
+        await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
         await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
         await settled(page)
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
@@ -334,12 +338,13 @@ test('session terminal survives UI detachment, follows agent output and honors p
     otherUrl = new URL(originalUrl)
   otherUrl.searchParams.set('session', second.id)
   await page.goto(otherUrl.toString())
-  await expect(panel.getByRole('option')).toHaveCount(0)
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(0)
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await page.goto(originalUrl)
-  await expect(panel.getByRole('option')).toHaveCount(2)
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(session.setPreset('read-only')).rejects.toMatchObject({
-    data: { code: 'PRESET_SWITCH_REJECTED' },
+    code: -32008,
+    data: { code: 'E_PRESET_UNSUPPORTED' },
   })
   for (const path of protectedFiles) {
     await mkdir(dirname(path), { recursive: true })
@@ -389,9 +394,12 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect
     .poll(async () => (await session.jobsRead(human.id)).job?.status, { timeout: 30_000 })
     .toBe('killed')
-  await expect(panel.getByRole('option')).toHaveCount(1)
-  await panel.getByRole('option').first().click()
-  await panel.getByRole('option', { selected: true }).click({ button: 'right' })
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(1)
+  await panel.getByTestId('terminal-tab').first().click()
+  await panel
+    .getByTestId('terminal-tab')
+    .and(page.locator('[aria-pressed="true"]'))
+    .click({ button: 'right' })
   const remaining = (await session.jobsRead()).jobs.find(
     (job) => job.owner === 'human' && job.status === 'running',
   )

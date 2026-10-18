@@ -17,13 +17,18 @@ for (const locale of ['en', 'zh-CN'])
         })
         const turns = page.getByTestId('conversation-turn')
         const before = await turns.count()
+        await expect(page.locator('#composer')).toHaveAttribute('data-busy', 'false')
         await input.fill(text)
+        await expect(page.locator('#send')).toBeEnabled()
         await input.press('Enter')
         await expect(turns).toHaveCount(before + 1, { timeout: 25_000 })
         await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
       }
       async function request() {
-        await page.locator('#view-trace').click()
+        await expect(page.locator('#prompt')).toBeEditable()
+        const trace = page.locator('#view-trace')
+        if ((await trace.getAttribute('aria-selected')) !== 'true') await trace.click()
+        await expect(trace).toHaveAttribute('aria-selected', 'true')
         const chip = page.locator('.trace-chip[data-kind=assistant]')
         if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click()
         await page.locator('.trace-row').last().click()
@@ -119,6 +124,19 @@ for (const locale of ['en', 'zh-CN'])
       const boxes = await Promise.all(tabs.map((tab) => tab.boundingBox()))
       expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1)
       if (locale === 'zh-CN') await expect(page.locator('.trace-inspector-head')).not.toContainText('Step 1')
+      // Keep request controls and the real unavailable-body explanation visible in this frame.
+      await page.locator('.trace-tab[data-pane=request]').click()
+      await expect(page.locator('.trace-tab[data-pane=request]')).toHaveAttribute('aria-selected', 'true')
+      await page
+        .getByTestId('request-trace-mode')
+        .getByRole('radio', { name: locale === 'en' ? 'Sent JSON' : '实际发送 JSON', exact: true })
+        .check()
+      await expect(page.getByTestId('request-trace-content')).toContainText(
+        locale === 'en' ? 'Final provider body unavailable' : '最终发送正文不可用',
+      )
+      await page.locator('.trace-inspector-body').evaluate((body) => {
+        body.scrollTop = 0
+      })
       // Runtime elapsed time changes both text and toolbar geometry; keep a synthetic visual value.
       const elapsed = page.locator('.trace-stats .trace-stat').first()
       const originalElapsed = await elapsed.textContent()
@@ -129,7 +147,6 @@ for (const locale of ['en', 'zh-CN'])
         await screen(page, info, `request-trace-${locale}-${theme}`, [
           page.locator('.trace-stat'),
           page.locator('.request-trace-summary time'),
-          page.locator('.trace-inspector-pane'),
         ])
       } finally {
         await elapsed.evaluate((element, original) => {

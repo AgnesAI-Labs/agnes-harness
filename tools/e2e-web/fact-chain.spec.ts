@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences } from './ui.js'
+import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences, traceSequence } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -51,16 +51,14 @@ for (const locale of ['en', 'zh-CN'])
       await expect(facts.getByTestId('trace-provenance')).not.toContainText(/[a-f0-9]{64}/)
       await translated(page)
       await accessible(page, info, `fact-tool-${locale}-${theme}`)
-      await page.getByTestId('trace-toolbar-more').click()
-      await page.getByTestId('trace-timeline-sequence').click()
+      await traceSequence(page)
       await screen(page, info, `fact-tool-${locale}-${theme}`)
       await page.locator('#view-chat').click()
       await expect(entry).toBeVisible()
       await expect(facts).toBeHidden()
 
       await page.locator('#view-trace').click()
-      await page.getByTestId('trace-toolbar-more').click()
-      await page.getByTestId('trace-timeline-sequence').click()
+      await traceSequence(page)
       await page.locator('.trace-chip[data-kind="assistant"]').click()
       await page.locator('.trace-row').last().click()
       await page.locator('.trace-tab[data-pane="source"]').click()
@@ -70,6 +68,9 @@ for (const locale of ['en', 'zh-CN'])
       await expand(page.getByTestId('request-trace-section-tools'))
       await expect(page.getByTestId('request-trace-content')).toContainText('read')
       await accessible(page, info, `fact-request-${locale}-${theme}`)
+      await page.locator('.trace-inspector-body').evaluate((body) => {
+        body.scrollTop = 0
+      })
       await screen(page, info, `fact-request-${locale}-${theme}`, [
         page.locator('.trace-stats .trace-stat'),
         page.locator('.trace-inspector-meta'),
@@ -220,8 +221,8 @@ for (const locale of ['en', 'zh-CN'])
       await expect(facts.locator('[data-link="ui"]')).toContainText(
         locale === 'en' ? 'Action succeeded' : '动作成功',
       )
-      await expect(facts.locator('[data-link="ui"]')).toContainText(locale === 'en' ? 'Revision 1' : '修订 1')
-      await page.locator('#view-trace').click()
+      await expect(facts.locator('[data-link="ui"]')).toContainText(locale === 'en' ? 'revision 1' : '修订 1')
+      await expect(page.locator('#view-trace')).toHaveAttribute('aria-selected', 'true')
       await expect(
         page
           .locator('.trace-row')
