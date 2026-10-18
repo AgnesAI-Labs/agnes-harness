@@ -168,7 +168,9 @@ export class PluginAdminApi {
     return this.agentLaunch({ action: 'read', operationId })
   }
   private async agentLaunch<T>(request: Record<string, unknown>): Promise<T> {
-    const response = await this.#fetch('/api/agents/launch', {
+    // Keep native fetch unbound; `this.#fetch(...)` would rebind its receiver to this facade.
+    const fetcher = this.#fetch
+    const response = await fetcher('/api/agents/launch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request }),

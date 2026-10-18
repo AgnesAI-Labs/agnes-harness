@@ -136,6 +136,13 @@ it('calls a stored fetch without rebinding its browser receiver to the API facad
   } as typeof fetch
   await new PluginConfigApi(context, configFetcher).get('fixture/plugin')
   expect(receiver).toBeUndefined()
+  receiver = 'not-called'
+  const agentFetcher = function (this: unknown): Promise<Response> {
+    receiver = this
+    return Promise.resolve(Response.json({ state: 'unknown' }))
+  } as typeof fetch
+  await new PluginAdminApi(context, agentFetcher).readAgent('op-1')
+  expect(receiver).toBeUndefined()
 })
 
 it('reads validated same-origin Surface links from the admin BFF', async () => {
