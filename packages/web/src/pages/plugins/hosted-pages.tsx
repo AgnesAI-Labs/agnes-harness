@@ -20,6 +20,7 @@ export function useHostedDialog({
   owns,
   open,
   ready,
+  returnFocus,
 }: {
   /** The host's element id. */
   id: string
@@ -30,14 +31,17 @@ export function useHostedDialog({
   open(segment: string): HostedOpen
   /** Changes whenever the controller's data changes, so a pending link is tried again. */
   ready: unknown
+  /** Focus the invoking control after a page closes and its parent is visible again. */
+  returnFocus?(): HTMLElement | null | undefined
 }): HTMLDialogElement | undefined {
   const nav = usePushStack()
   const navRef = useRef(nav)
   navRef.current = nav
-  const latest = useRef({ pageOf, owns, open })
-  latest.current = { pageOf, owns, open }
+  const latest = useRef({ pageOf, owns, open, returnFocus })
+  latest.current = { pageOf, owns, open, returnFocus }
   const [host, setHost] = useState<HTMLDialogElement>()
   const shown = useRef<string>()
+  const [restoreFocus, setRestoreFocus] = useState(false)
   useLayoutEffect(() => {
     const element = document.getElementById(id)
     if (!(element instanceof HTMLDialogElement)) return
@@ -45,6 +49,7 @@ export function useHostedDialog({
     hostedOwners.add(owner)
     element.dataset.presentation = 'page'
     setHost(element)
+    let active = true
     const observer = new MutationObserver(() => {
       const top = navRef.current.stack.at(-1)
       if (element.open) {
@@ -64,11 +69,16 @@ export function useHostedDialog({
       // wait for it, and finish only if nothing replaced this page. A completed controller flow
       // commits its route at once; a pending history traversal could reopen it on a data refresh.
       setTimeout(() => {
-        if (navRef.current.stack.at(-1) === closed) navRef.current.finish()
+        if (!active) return
+        if (navRef.current.stack.at(-1) === closed) {
+          navRef.current.finish()
+          setRestoreFocus(true)
+        }
       })
     })
     observer.observe(element, { attributes: true, attributeFilter: ['open'] })
     return () => {
+      active = false
       observer.disconnect()
       hostedOwners.delete(owner)
       delete element.dataset.presentation
@@ -88,7 +98,10 @@ export function useHostedDialog({
       if (!showing || navRef.current.stack.includes(showing)) return
       shown.current = undefined
       // The controller commits synchronously when it closes; let this commit finish first.
-      queueMicrotask(() => cancelDialogHost(host))
+      queueMicrotask(() => {
+        cancelDialogHost(host)
+        setRestoreFocus(true)
+      })
       return
     }
     if (!top || !latest.current.owns(top)) return
@@ -105,6 +118,11 @@ export function useHostedDialog({
       current = false
     }
   }, [host, top, levels, ready])
+  useEffect(() => {
+    if (!restoreFocus) return
+    if (!isHosted(top)) latest.current.returnFocus?.()?.focus({ preventScroll: true })
+    setRestoreFocus(false)
+  }, [restoreFocus, top])
   return host
 }
 
