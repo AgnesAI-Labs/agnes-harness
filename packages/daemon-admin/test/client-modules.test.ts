@@ -204,16 +204,19 @@ describe('client module immutable snapshots', () => {
   })
   it('uses current profile entries beside historical session renderers and revokes only the global entry', async () => {
     const f = fixture()
-    const row = installed({
+    const base = installed({
       directory: f.packageDirectory,
       lifetime: 'profile',
       homeEntries: [{ id: 'alpha', placement: 'primary' }],
     })
-    row.entry = {
-      ...row.entry,
-      version: '1.0.0',
-      source: { type: 'file', ref: 'file:./synthetic' },
-      dependencies: {},
+    const row: InstalledPackage = {
+      ...base,
+      entry: {
+        ...base.entry,
+        version: '1.0.0',
+        source: { type: 'file', ref: 'file:./synthetic' },
+        dependencies: {},
+      },
     }
     const profile = row.contributions[0]
     if (!profile || !('client' in profile) || !profile.client) throw new Error('missing profile client')

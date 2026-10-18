@@ -463,7 +463,7 @@ it('chooses a community role with the host app, overrides an application, restor
   const declaration = roleClient().client
   const project = (client = declaration, integrity = owner.entry.integrity) =>
     contributionProjection(
-      owner,
+      f.packages().find((p) => p.id === 'b') ?? owner,
       client,
       'owner',
       integrity,
@@ -475,22 +475,20 @@ it('chooses a community role with the host app, overrides an application, restor
   )
   expect((await project({ ...declaration, entry: 'different.js' })).presentationRoleBindings).toEqual({})
   expect((await project(declaration, 'different-integrity')).presentationRoleBindings).toEqual({})
-  const originalCapability = owner.capabilityHash
-  owner.capabilityHash = 'f'.repeat(64)
+  const originalPackages = f.packages()
+  f.replace(originalPackages.map((p) => (p.id === 'b' ? { ...p, capabilityHash: 'f'.repeat(64) } : p)))
   expect((await project()).presentationRoleBindings?.deliverables).not.toBe(
     chosen.roleSelections?.deliverables?.bindingDigest,
   )
-  owner.capabilityHash = originalCapability
-  const dependency = f.packages().find((p) => p.id === 'a')
-  if (!dependency) throw new Error('fixture')
-  const dependencies = owner.entry.dependencies,
-    previousCapability = dependency.capabilityHash
-  owner.entry.dependencies = { a: '*' }
+  f.replace(
+    originalPackages.map((p) =>
+      p.id === 'b' ? { ...p, entry: { ...p.entry, dependencies: { a: '*' } } } : p,
+    ),
+  )
   const withDependency = (await project()).presentationRoleBindings?.deliverables
-  dependency.capabilityHash = 'e'.repeat(64)
+  f.replace(f.packages().map((p) => (p.id === 'a' ? { ...p, capabilityHash: 'e'.repeat(64) } : p)))
   expect((await project()).presentationRoleBindings?.deliverables).not.toBe(withDependency)
-  dependency.capabilityHash = previousCapability
-  owner.entry.dependencies = dependencies
+  f.replace(originalPackages)
   expect(chosen.status).toBe('host')
   expect(chosen.selection).toBeNull()
   expect(chosen.roles).toContainEqual(
