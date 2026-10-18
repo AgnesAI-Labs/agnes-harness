@@ -7,7 +7,7 @@ import type {
 } from '@agnes/protocol'
 import { Button, Disclosure } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
-import { type TraceMessageKey, traceText } from './trace-locale.js'
+import { type TraceMessageKey, traceCatalog, traceText } from './trace-locale.js'
 import { TraceReview } from './trace-review.js'
 
 export type ReadFactChain = (params: FactChainParams, signal?: AbortSignal) => Promise<FactChainResult>
@@ -105,7 +105,11 @@ export function toolLinks(result: FactChainResult): Link[] {
       key: 'ui',
       label: traceText('trace.facts.ui'),
       value: traceText('trace.facts.uiCount', { n: ui.length }),
-      detail: ui.map((node) => `${node.label} · ${traceText('trace.ui.revision', { n: node.revision })}`),
+      detail: ui.map((node) => {
+        const key = `trace.ui.${node.event}` as TraceMessageKey
+        const event = Object.hasOwn(traceCatalog.en, key) ? traceText(key) : node.event
+        return `${event} · ${node.label} · ${traceText('trace.ui.revision', { n: node.revision })}`
+      }),
     })
   return links
 }

@@ -3,13 +3,18 @@ import type { CandidateText } from './candidate-review.js'
 
 /** Presentation facts come from the inspected candidate, never from its package name. */
 export function candidateIdentity(value: AuthoringCandidate) {
-  let manifest: { version?: unknown; agnes?: { provides?: unknown } } | undefined
+  let manifest: { version?: unknown; agnes?: { contributions?: unknown } } | undefined
   try {
     manifest = JSON.parse(value.sourceFiles.find((file) => file.path === 'package.json')?.content ?? '{}')
   } catch {
     // Edited drafts can contain invalid JSON; leave their version unavailable.
   }
-  const kinds = value.preview?.provides ?? manifest?.agnes?.provides
+  const declared = manifest?.agnes?.contributions
+  const kinds =
+    value.preview?.presentation?.includes?.provides ??
+    (Array.isArray(declared) && declared.length > 0 && declared.every((item) => item && item.kind === 'skill')
+      ? ['skills']
+      : [])
   const type = Array.isArray(kinds) && kinds.length === 1 && kinds[0] === 'skills' ? 'skill' : 'plugin'
   const version =
     value.preview?.version ?? (typeof manifest?.version === 'string' ? manifest.version : undefined)

@@ -124,6 +124,17 @@ const toolChain: FactChainResult = {
       externalOutcome: 'unknown',
     },
     {
+      id: 'ui-action',
+      kind: 'plugin-fact',
+      seq: 7,
+      namespace: 'agnes/intelligent-ui',
+      event: 'action.succeeded',
+      label: 'Review report',
+      state: 'succeeded',
+      surfaceId: 'review',
+      revision: 1,
+    },
+    {
       id: 'art',
       kind: 'artifact',
       seq: 5,
@@ -215,6 +226,8 @@ it('reveals a filtered or folded tool and shows its authorization with future-ca
   await vi.waitFor(() =>
     expect(pane(root)?.querySelector('[data-link="receipt"]')?.textContent).toContain('Completed'),
   )
+  expect(pane(root)?.querySelector('[data-link="ui"]')?.textContent).toContain('Action succeeded')
+  expect(pane(root)?.querySelector('[data-link="ui"]')?.textContent).toContain('Review report · revision 1')
   expect(pane(root)?.querySelector('[data-testid="trace-gaps"]')?.textContent).toContain('not retained')
   const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
     init?.method === 'POST'

@@ -106,7 +106,11 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     const newPlugin = {
       ...candidate,
       baseHash: null,
-      preview: { ...preview, provides: ['tool'] as ['tool'], version: '0.1.0' },
+      preview: {
+        ...preview,
+        presentation: { includes: { provides: ['tools'] as ['tools'], counts: { tools: 1 } }, rows: [] },
+        version: '0.1.0',
+      },
     }
     const update = {
       ...newPlugin,
@@ -119,7 +123,12 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
       sourceFiles: [
         {
           path: 'package.json',
-          content: JSON.stringify({ version: '1.0.0', agnes: { provides: ['skills'] } }),
+          content: JSON.stringify({
+            version: '1.0.0',
+            agnes: {
+              contributions: [{ kind: 'skill', id: 'reviewed/main', path: './skills/method/SKILL.md' }],
+            },
+          }),
         },
       ],
     }
@@ -131,6 +140,15 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     expect(html(newPlugin)).toContain('0.1.0')
     expect(html(update)).toContain(text('candidates.update'))
     expect(html(update)).toContain('0.2.0')
+    expect(
+      candidateIdentity({
+        ...skill,
+        preview: {
+          ...preview,
+          presentation: { includes: { provides: ['skills'], counts: { skills: 1 } }, rows: [] },
+        },
+      }).type,
+    ).toBe('skill')
     expect(html(skill)).toContain(text('candidates.type.skill'))
     expect(html(skill)).toContain(text('candidates.new.skill'))
     expect(html(skill)).toContain(text('candidates.minutesAgo', { count: 2 }))
@@ -283,7 +301,10 @@ it.each([
       candidateId: 'skill-review',
       packageId: '@example/weekly-report',
       state: 'review' as const,
-      preview: { ...plainPreview, provides: ['skills'] as ['skills'] },
+      preview: {
+        ...plainPreview,
+        presentation: { includes: { provides: ['skills'] as ['skills'], counts: { skills: 1 } }, rows: [] },
+      },
       sourceFiles: [
         ...candidate.sourceFiles,
         { path: 'SKILL.md', content: `---\n${header}\n---\nInert body.\n` },
@@ -293,7 +314,10 @@ it.each([
       ...candidate,
       candidateId: 'plugin-review',
       state: 'review' as const,
-      preview: { ...preview, provides: ['tool'] as ['tool'] },
+      preview: {
+        ...preview,
+        presentation: { includes: { provides: ['tools'] as ['tools'], counts: { tools: 1 } }, rows: [] },
+      },
     }
     let listedSkill: AuthoringCandidate = skill
     let unavailable = false
@@ -361,7 +385,10 @@ it('closes a published review, links to the skill, and keeps terminal history wi
     ...candidate,
     state: 'review' as const,
     reviewHash: 'review-hash',
-    preview: { ...preview, provides: ['skills'] as ['skills'] },
+    preview: {
+      ...preview,
+      presentation: { includes: { provides: ['skills'] as ['skills'], counts: { skills: 1 } }, rows: [] },
+    },
     sourceFiles: [
       ...candidate.sourceFiles,
       { path: 'SKILL.md', content: '---\nname: published-skill\ndescription: Synthetic skill\n---\nBody' },
