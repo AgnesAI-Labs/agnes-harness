@@ -74,7 +74,7 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await files.locator('[data-path="report.md"]').click()
   await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
   await page.getByTestId('file-mention').click()
-  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('"report.md"')
+  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('@report.md ')
   await turn(page, 'call read {"path":"report.md"}')
   const client = await runtime.connect()
   const id = new URL(page.url()).searchParams.get('session')

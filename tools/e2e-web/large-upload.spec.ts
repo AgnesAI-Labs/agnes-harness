@@ -86,6 +86,9 @@ for (const locale of ['en', 'zh-CN'])
     // Cancel a second file after one chunk has reached the worker, with another request in flight.
     const cancelled = join(runtime.workspace, 'synthetic-scan.bin')
     await synthetic(cancelled, 50 * MiB)
+    const cancelledFile = await open(cancelled, 'r+')
+    await cancelledFile.write(new Uint8Array([1]), 0, 1, 0)
+    await cancelledFile.close()
     let resumeCancelled: (() => void) | undefined
     const hold = new Promise<void>((resolve) => {
       resumeCancelled = resolve
@@ -102,7 +105,12 @@ for (const locale of ['en', 'zh-CN'])
     await expect(chip).toHaveAttribute('data-state', 'cancelled')
     resumeCancelled?.()
     await page.unroute('**/api/attachments/upload?*')
-    const stored = await files(join(runtime.workspace, '.agnes-attachments'))
+    // Original uploads now live in the selected artifact provider, outside the workspace.
+    // The cancelled file has a different digest, so CAS deduplication cannot mask publication.
+    expect(await files(join(runtime.workspace, '.agnes-attachments'))).toEqual([])
+    const stored: string[] = []
+    for (const path of await files(runtime.home))
+      if (path.includes('/artifacts/sha256/') && (await stat(path)).size === 50 * MiB) stored.push(path)
     expect(stored).toHaveLength(1)
     expect(await digest(stored[0] ?? '')).toBe(await digest(source))
     expect(stored.some((file) => file.includes('.partial-'))).toBe(false)
@@ -125,7 +133,7 @@ for (const locale of ['en', 'zh-CN'])
     const rows = (await readSessionEvents(session)).filter((row) => row.type === 'user/message').slice(0, 10)
     const saved = JSON.stringify(rows)
     expect(saved.length).toBeLessThan(4096)
-    expect(saved).toContain('agnes-upload://')
+    expect(saved).toContain('artifact://')
     expect(saved).toContain('synthetic-contract.bin')
   })
 

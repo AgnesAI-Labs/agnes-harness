@@ -11,6 +11,7 @@ import {
   chooseWorkspace,
   closeSettings,
   expand,
+  expandActivityGroups,
   fresh,
   openGoal,
   pluginTab,
@@ -90,22 +91,22 @@ async function quality(page: Page, info: Parameters<typeof accessible>[1], name:
   await translated(page)
   await accessible(page, info, name)
 }
-async function detail(page: Page, tool: string) {
+async function detail(page: Page, tool: string, summary = tool) {
   await page.getByRole('textbox', { name: 'Task content', exact: true }).click()
   await settled(page)
   const session = page.getByTestId('conversation-turn').last()
   const process = session.getByTestId('turn-process-toggle')
-  const toggle = session.getByTestId('tool-detail-toggle')
+  const card = session.locator(`[data-tool-name="${tool}"]`).last()
+  const toggle = card.getByTestId('tool-detail-toggle')
   if (!(await process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true')))
     await process.click()
   await expect
     .poll(() => process.evaluate((summary) => summary.parentElement?.getAttribute('data-open') === 'true'))
     .toBe(true)
+  await expandActivityGroups(session)
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-  await expect(
-    session.getByRole('article').filter({ has: page.getByTestId('tool-detail-toggle') }),
-  ).toContainText(tool)
-  return session.getByTestId('tool-detail-text')
+  await expect(card).toContainText(summary)
+  return card.getByTestId('tool-detail-text')
 }
 
 test('UI first run, Agent selection, demo read/cancel, account save and restart persistence', async ({
@@ -119,7 +120,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   await turn(page, 'call read {"path":"report.md"}')
   const demo = await current(page, runtime)
   expect(JSON.stringify(await toolResult(demo, 'read'))).toContain('Synthetic delivery')
-  await expect(await detail(page, 'report.md')).toContainText('Synthetic delivery')
+  await expect(await detail(page, 'read', 'report.md')).toContainText('Synthetic delivery')
   // Cancellation must exercise an in-flight tool even when the OS command sandbox is unavailable.
   await install(await runtime.connect(), 'tools/e2e-web/fixtures/cancel-tool')
   await fresh(page)
@@ -136,20 +137,22 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   const provider = await startProviderFixture('UI_CREDENTIAL_PERSISTED', undefined, model)
   try {
     await settings(page)
+    await page.getByTestId('settings-nav-model').click()
     await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'empty')
-    await page.getByRole('button', { name: 'Add account', exact: true }).click()
-    const dialog = page.locator('#account-dialog')
-    await expect(dialog).toHaveAccessibleName('Add account')
-    await dialog.locator('[data-provider="deepseek"]').click()
-    await expect(dialog).toHaveAccessibleName('Connect DeepSeek')
+    await page.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
+    const dialog = page.locator('.account-dialog-body[data-page="add"]')
+    await expect(page.getByRole('heading', { name: 'Add account', exact: true })).toBeVisible()
+    await expect(dialog).toHaveAttribute('data-account-step', 'connection')
+    await expect(dialog.locator('#config-provider-trigger')).toContainText('DeepSeek')
     await expand(dialog.locator('#config-account-advanced'))
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-    await dialog.getByTestId('account-network-details').locator('summary, .agh-disclosure-summary').click()
-    await dialog.getByTestId('account-network-requestMs').fill('90000')
-    await dialog.getByTestId('account-network-connectMs').fill('4000')
-    await dialog.getByTestId('account-network-streamIdleMs').fill('15000')
+    for (const [key, seconds] of [['requestMs', '90'], ['connectMs', '4'], ['streamIdleMs', '15']]) {
+      await selectValue(page, `account-network-${key}`, 'custom')
+      await dialog.getByTestId(`account-network-${key}-custom`).fill(seconds!)
+      await dialog.getByTestId(`account-network-${key}-custom`).blur()
+    }
     await expect(dialog.locator('#config-state')).toContainText('Connected.')
     await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: 'Save', exact: true }).click()
@@ -218,9 +221,10 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
   if (!model) throw new Error('The local provider catalog must contain a model')
   const provider = await startProviderFixture(
     'E2E_SKILL_RESPONSE',
-    { name: 'mcp__e2e__echo', args: { text: 'UI_MCP_STDIO' } },
+    { name: 'tool_describe', args: { name: 'mcp__e2e__echo' } },
     model,
   )
+  provider.queueTool({ name: 'mcp__e2e__echo', args: { text: 'UI_MCP_STDIO' } })
   try {
     const config = await client.config.get()
     await client.config.save({
@@ -236,6 +240,8 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
     await open(page, runtime)
     await turn(page, 'Invoke the configured MCP stdio fixture')
     const session = await current(page, runtime)
+    expect(JSON.stringify(await toolResult(session, 'tool_describe'))).toContain('mcp__e2e__echo')
+    expect(provider.requests.some(({ tools }) => tools.includes('mcp__e2e__echo'))).toBe(true)
     expect((await toolResult(session, 'mcp__e2e__echo'))?.content).toEqual([
       { type: 'text', text: 'UI_MCP_STDIO' },
     ])

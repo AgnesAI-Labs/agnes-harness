@@ -1,7 +1,7 @@
 import { memoryCollector } from '@agnes/observability/testkit'
 import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, expand, preferences, section, settings } from './ui.js'
 
 test('OTLP settings save and collector connection test in both languages', async ({
   page,
@@ -15,28 +15,32 @@ test('OTLP settings save and collector connection test in both languages', async
       await chooseWorkspace(page, runtime, locale)
       await settings(page, locale)
       await section(page, 'diagnostics')
-      await page.getByTestId('diagnostics-runtime-toggle').click()
-      const card = page.getByTestId('otlp-settings')
-      await expect(card).toHaveAttribute('aria-busy', 'false')
+      await expand(page.getByTestId('otlp-settings'))
+      await expect(page.getByTestId('otlp-endpoint')).toBeEnabled()
       await page.getByTestId('otlp-endpoint').fill(collector.endpoint)
-      await page.getByTestId('otlp-enabled').selectOption('on')
-      await page.getByTestId('otlp-redaction').selectOption('content')
+      await page.getByTestId('otlp-endpoint').blur()
+      const enabled = page.getByTestId('otlp-enabled')
+      if ((await enabled.getAttribute('aria-checked')) !== 'true') await enabled.click()
+      await expect(enabled).toBeChecked()
+      await page.locator('input[name="otlp-redaction"][value="content"]').click()
       await expect(page.getByTestId('otlp-privacy')).toBeVisible()
-      await page.getByTestId('otlp-redaction').selectOption('metadata')
-      await page.getByTestId('otlp-limits-toggle').click()
-      await page.getByTestId('otlp-headers').fill('{"authorization":"synthetic-plaintext"}')
-      await page.getByTestId('otlp-save').click()
-      await expect(page.getByTestId('otlp-error')).toBeVisible()
-      await expect(page.getByTestId('otlp-error')).not.toContainText('synthetic-plaintext')
-      await page.getByTestId('otlp-refresh').click()
-      await expect(card).toHaveAttribute('aria-busy', 'false')
-      await expect(page.getByTestId('otlp-error')).toHaveCount(0)
-      await page.getByTestId('otlp-headers').fill('{}')
-      await page.getByTestId('otlp-limits-toggle').click()
-      await page.getByTestId('otlp-save').click()
-      await expect(page.getByTestId('otlp-notice')).toContainText(
-        locale === 'en' ? 'Settings saved' : '设置已保存',
-      )
+      await page.locator('input[name="otlp-redaction"][value="metadata"]').click()
+      // The current editor accepts environment references, never raw header secrets.
+      await page.getByTestId('otlp-header-name').fill('authorization')
+      await page.getByTestId('otlp-header-env').fill('synthetic-plaintext')
+      await page.getByTestId('otlp-header-add').click()
+      await expect(page.getByTestId('otlp-header-env')).toHaveAttribute('aria-invalid', 'true')
+      await expect(page.getByRole('alert')).not.toContainText('synthetic-plaintext')
+      await expect(page.getByTestId('otlp-header')).toHaveCount(0)
+      await page.getByTestId('otlp-header-env').fill('SYNTHETIC_OTLP_TOKEN')
+      await page.getByTestId('otlp-header-add').click()
+      await expect(page.getByTestId('otlp-header')).toContainText('env:SYNTHETIC_OTLP_TOKEN')
+      await page.getByTestId('otlp-header').getByRole('button').click()
+      await expect(page.getByTestId('otlp-header')).toHaveCount(0)
+      const client = await runtime.connect()
+      await expect
+        .poll(async () => (await client.request('_agnes/v1/admin.observability', {})).settings)
+        .toMatchObject({ enabled: true, endpoint: collector.endpoint, redaction: 'metadata', headers: {} })
       await page.getByTestId('otlp-test').click()
       await expect(page.getByTestId('otlp-notice')).toContainText(locale === 'en' ? 'accepted' : '已接受')
       expect(collector.requests.map((row) => row.path)).toEqual(
@@ -55,7 +59,8 @@ test('OTLP settings save and collector connection test in both languages', async
     await chooseWorkspace(page, runtime, 'zh-CN')
     await settings(page, 'zh-CN')
     await section(page, 'diagnostics')
-    await expect(page.getByTestId('otlp-enabled')).toHaveValue('on')
+    await expand(page.getByTestId('otlp-settings'))
+    await expect(page.getByTestId('otlp-enabled')).toBeChecked()
     await expect(page.getByTestId('otlp-endpoint')).toHaveValue(collector.endpoint)
   } finally {
     await collector.close()

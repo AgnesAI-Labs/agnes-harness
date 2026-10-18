@@ -435,6 +435,9 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
     preset: 'full-access',
   })
   await session.attach()
+  // MCP tools are deferred; discover the schema without bypassing normal tool authorization.
+  await prompt(session, 'call tool_describe {"name":"mcp__e2e__echo"}')
+  expect(JSON.stringify(await toolResult(session, 'tool_describe'))).toContain('mcp__e2e__echo')
   await prompt(session, 'call mcp__e2e__echo {"text":"E2E_MCP_STDIO"}')
   expect((await toolResult(session, 'mcp__e2e__echo'))?.content).toEqual([
     { type: 'text', text: 'E2E_MCP_STDIO' },
