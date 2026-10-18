@@ -342,6 +342,20 @@ for (const locale of ['en', 'zh-CN'])
               '当前模型已不可用，请重新选择模型',
             ),
           )
+          const input = page.locator('#prompt')
+          await expect(input).toHaveValue('')
+          await expect
+            .poll(
+              () =>
+                input.evaluate((node) =>
+                  Math.abs(
+                    node.getBoundingClientRect().height -
+                      2 * Number.parseFloat(getComputedStyle(node).lineHeight),
+                  ),
+                ),
+              { message: 'The empty prompt follows two current line heights after viewport changes' },
+            )
+            .toBeLessThanOrEqual(1)
           const process = page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle')
           if ((await process.getAttribute('aria-expanded')) !== 'true') await process.click()
           await expect(process).toHaveAttribute('aria-expanded', 'true')

@@ -39,6 +39,17 @@ const INPUT_ATTRIBUTES: SenderInputAttributes = {
   'aria-describedby': 'composer-hint composer-suggestion',
 }
 const AUTO_SIZE = { minRows: 2, maxRows: 8 }
+// Native content sizing follows CSS font/viewport changes without stale pixel measurements.
+const NATIVE_INPUT_STYLES = {
+  input: {
+    fieldSizing: 'content',
+    width: '100%',
+    height: 'auto',
+    minHeight: `${AUTO_SIZE.minRows}lh`,
+    maxHeight: `${AUTO_SIZE.maxRows}lh`,
+    overflowY: 'auto',
+  },
+} as const
 const SENDER_CLASSES = { content: 'composer-content', footer: 'composer-footer' }
 
 /**
@@ -75,6 +86,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }: ComposerProps,
   ref: ForwardedRef<ComposerHandle>,
 ) {
+  const nativeSizing =
+    typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content') && CSS.supports('min-height', '1lh')
   const [view, setView] = useState<ComposerView>(initialView)
   const [draft, setDraft] = useState(initialDraft)
   // The host reads the draft synchronously (set, then submit) before React commits the state.
@@ -381,7 +394,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             value={draft}
             disabled={view.input.disabled}
             placeholder={view.input.placeholder}
-            autoSize={AUTO_SIZE}
+            autoSize={nativeSizing ? false : AUTO_SIZE}
+            {...(nativeSizing ? { styles: NATIVE_INPUT_STYLES } : {})}
             onChange={changeDraft}
             onKeyDown={(event) => {
               const native = event.nativeEvent as KeyboardEvent
