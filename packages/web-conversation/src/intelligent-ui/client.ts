@@ -386,8 +386,9 @@ export class IntelligentUiClient {
     const record = this.record(id)
     let draft = this.drafts.get(id)
     if (!draft || draft.revision !== record?.surface.revision) {
+      const revision = record?.surface.revision ?? 0
       draft = {
-        revision: record?.surface.revision ?? 0,
+        revision,
         input: {},
         selection: {},
         invalid: new Set(),
@@ -400,7 +401,7 @@ export class IntelligentUiClient {
       // A pending command survives reload with its immutable payload. Show that submitted draft
       // while receipts keep it locked; an older revision must never seed the current form.
       const submitted = this.commandsFor(id)
-        .filter((command) => command.revision === draft.revision)
+        .filter((command) => command.revision === revision)
         .at(-1)
       if (record?.status === 'open' && submitted) {
         draft.input = structuredClone(submitted.input)

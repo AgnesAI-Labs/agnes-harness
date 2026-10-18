@@ -173,8 +173,9 @@ it('discovers panel capability on the same shared authoring path and reuses the 
   for (const term of [
     'tool-with-panel',
     'SAME candidate',
-    'COMPLETE tree',
-    'sourceFiles.map',
+    'mode: "merge"',
+    'Untouched files',
+    'remove',
     'FINAL candidateHash',
     'WORKSPACE access',
     '--agnes-text-primary',

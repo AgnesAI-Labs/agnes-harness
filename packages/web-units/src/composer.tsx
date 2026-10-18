@@ -331,7 +331,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }}
         onInputCapture={(event) => {
           // Capture the edit before pausing the hint can commit the controlled textarea's old value.
-          if (event.target === prompt.current) changeDraft(prompt.current.value)
+          if (example.visible && event.target === prompt.current) changeDraft(prompt.current.value)
           example.pause()
         }}
         onPasteCapture={() => example.pause()}
