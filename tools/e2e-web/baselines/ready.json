@@ -346,7 +346,7 @@
       "prompt-trace",
       "first-run"
     ],
-    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest narrow refresh covers responsive native Composer sizing. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest narrow, permission-menu and workbench refresh covers responsive native Composer sizing. Authoring provenance uses the actual Trace inspector; other frames keep their full-page capture. Linux and unrelated baselines retain their earlier capture.",
     "previousBatch": {
       "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
       "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
