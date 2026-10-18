@@ -53,6 +53,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@agnes/ai": "workspace:*"
+    "@agnes/ai": "workspace:*",
+    "@agnes/web-client": "workspace:*"
   }
 }

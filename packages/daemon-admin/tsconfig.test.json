@@ -20,6 +20,9 @@
     },
     {
       "path": "../daemon-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "../web-client"
     }
   ]
 }

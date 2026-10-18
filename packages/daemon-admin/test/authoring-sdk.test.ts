@@ -25,7 +25,7 @@ it('resolves the public real-Host testkit inside the existing candidate runner a
     {
       path: 'test/sdk.test.mjs',
       content:
-        "import {test} from 'node:test'; import {createPluginTestHost} from '@agnes/host/author-testkit'; test('real registration',async()=>{const host=await createPluginTestHost({apply(){}});await host.dispose()})",
+        "import React from 'react'; import {createClientPanelTestHost} from '@agnes/web-client/testkit'; import {test} from 'node:test'; import {createPluginTestHost} from '@agnes/host/author-testkit'; test('real registration',async()=>{if(typeof createClientPanelTestHost!=='function'||typeof React.createElement!=='function')throw Error('Browser test SDK missing');const host=await createPluginTestHost({apply(){}});await host.dispose()})",
     },
   ]
   try {

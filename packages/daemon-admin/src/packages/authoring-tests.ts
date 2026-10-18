@@ -83,6 +83,8 @@ async function testCandidate(
     '@agnes/plugin-runtime/testkit': [],
     '@agnes/host/testkit': ['createPluginTestRegistration'],
     '@agnes/host/author-testkit': [],
+    '@agnes/web-client/testkit': [],
+    react: [],
   }
   const sdkExports = join(dirname(sdk), 'authoring-sdk-exports.json')
   if (existsSync(sdk)) {
@@ -126,14 +128,19 @@ async function testCandidate(
                 external: true,
               }
             })
-            b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox)/ }, (args) => {
+            b.onResolve({ filter: /^(?:@agnes\/|@sinclair\/typebox|react$)/ }, (args) => {
               if (!insideCandidate(args.importer)) return undefined
               if (!Object.hasOwn(modules, args.path))
                 throw new Error('Only public author SDK modules are available in candidate tests')
               return existsSync(sdk)
                 ? { path: args.path, namespace: 'authoring-sdk' }
                 : {
-                    path: sdkRequire.resolve(
+                    path: (args.path === 'react'
+                      ? createRequire(require.resolve('@agnes/web-client/testkit'))
+                      : args.path === '@agnes/web-client/testkit'
+                        ? require
+                        : sdkRequire
+                    ).resolve(
                       args.path === '@agnes/host/testkit'
                         ? '@agnes/host/testkit/plugin-registration'
                         : args.path,
@@ -147,10 +154,11 @@ async function testCandidate(
             b.onLoad({ filter: /.*/, namespace: 'authoring-sdk' }, (args) => ({
               loader: 'js',
               contents: `import { namespaces } from ${JSON.stringify(sdk)};\n${(modules[args.path] ?? [])
-                .filter((k) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) && k !== 'default')
-                .map(
-                  (k) =>
-                    `export const ${k} = namespaces[${JSON.stringify(args.path)}][${JSON.stringify(k)}];`,
+                .filter((k) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k))
+                .map((k) =>
+                  k === 'default'
+                    ? `export default namespaces[${JSON.stringify(args.path)}].default;`
+                    : `export const ${k} = namespaces[${JSON.stringify(args.path)}][${JSON.stringify(k)}];`,
                 )
                 .join('\n')}`,
             }))

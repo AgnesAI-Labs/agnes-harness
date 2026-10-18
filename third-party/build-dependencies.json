@@ -182,9 +182,9 @@
       "version": "20.14.3",
       "license": "MIT",
       "source": "https://github.com/capricorn86/happy-dom",
-      "purpose": "DOM-based Web Markdown and streaming interaction regression tests.",
-      "rationale": "Runs isolated selection, focus, safe rendering and clipboard lifecycle tests without adding a browser runtime dependency to the product.",
-      "consumers": ["."]
+      "purpose": "DOM-based Web Markdown, streaming interaction and public client-panel author tests.",
+      "rationale": "Runs isolated DOM interaction tests and the Node-only author-test SDK without adding a browser runtime dependency to the product.",
+      "consumers": [".", "packages/web-client"]
     },
     {
       "name": "@playwright/test",

@@ -420,6 +420,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -714,6 +717,9 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
     devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
@@ -1685,6 +1691,9 @@ importers:
         specifier: workspace:*
         version: link:../web-units
     devDependencies:
+      happy-dom:
+        specifier: 20.14.3
+        version: 20.14.3
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12
