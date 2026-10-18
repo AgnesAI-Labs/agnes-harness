@@ -359,6 +359,8 @@ it('stops on typing and paste, resumes only empty and unfocused, and stops for a
   })
   await act(async () => vi.advanceTimersByTime(5000))
   expect(hint()).toBeNull()
+  expect(prompt.value).toBe('my task')
+  expect(handle.getDraft()).toBe('my task')
   await act(async () => {
     type(prompt, '')
   })

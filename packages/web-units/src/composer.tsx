@@ -133,6 +133,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     draftRef.current = value
     setDraft(value)
     onDraftChange(value)
+    // Native input adoption and hint dismissal must share the same edit, after the value is owned.
+    example.pause()
   }
   const adoptDraft = useRef(changeDraft)
   adoptDraft.current = changeDraft
@@ -328,11 +330,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
-        }}
-        onInputCapture={(event) => {
-          // Capture the edit before pausing the hint can commit the controlled textarea's old value.
-          if (example.visible && event.target === prompt.current) changeDraft(prompt.current.value)
-          example.pause()
         }}
         onPasteCapture={() => example.pause()}
         data-busy={view.send.mode === 'busy'}
