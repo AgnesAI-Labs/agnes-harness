@@ -1047,9 +1047,21 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const runtimeStore = jobTables
       ? new CompositeTargetStore(jobTables.table('composite_runtime'), o.profile.name)
       : undefined
+    const notifyRuntimeTarget = (artifact: RuntimeTargetArtifact) =>
+      notices.emit('tree_changed', {
+        detail: {
+          profile: o.profile.name,
+          targetDigest: artifact.digest,
+          identity: artifact.identity,
+          hash: artifact.digest,
+        },
+      })
     let revertFailedDesired: (() => Promise<void>) | undefined
     const runtimeDelivery = runtimeStore
-      ? new CompositeRuntimeDelivery(runtimeStore, { onFailureRecorded: () => revertFailedDesired?.() })
+      ? new CompositeRuntimeDelivery(runtimeStore, {
+          onFailureRecorded: () => revertFailedDesired?.(),
+          onConverged: notifyRuntimeTarget,
+        })
       : undefined
     const runtimeTargetProbe = runtimeStore
       ? createRuntimeTargetProbeLauncher({
@@ -1211,14 +1223,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     })
     runtimeStore?.onDesired((artifact) => {
       pool.noteRuntimeTarget(artifact.digest)
-      notices.emit('tree_changed', {
-        detail: {
-          profile: o.profile.name,
-          targetDigest: artifact.digest,
-          identity: artifact.identity,
-          hash: artifact.digest,
-        },
-      })
+      notifyRuntimeTarget(artifact)
       if (runtimeDelivery?.stageStartup(artifact)) return
       void deliverDesiredToWorkers(pool, artifact).catch((error) => {
         o.audit?.({
