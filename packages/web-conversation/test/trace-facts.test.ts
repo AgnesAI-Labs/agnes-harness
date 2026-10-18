@@ -249,15 +249,61 @@ it('opens the record that produced an artifact and downloads it from the source 
   )
 })
 
-it('follows a feedback candidate to the tool call that drafted it', async () => {
-  const { root, panel } = mount()
-  const candidateId = `candidate-${'e'.repeat(32)}`
-  expect(
-    panel.focusFact?.({ sessionId: 's', laneId: 'main', anchor: { kind: 'authoring', candidateId } }),
-  ).toBe(true)
-  await vi.waitFor(() => expect(selected(root)).toBe('t1'))
-  expect(pane(root)?.getAttribute('data-pane')).toBe('source')
-})
+it.each(['tool', 'feedback'])(
+  'follows a %s candidate to its source and published version',
+  async (origin) => {
+    const { root, panel } = mount({
+      readFactChain: async () =>
+        ({
+          ...toolChain,
+          nodes: [
+            {
+              id: 'au',
+              kind: 'authoring',
+              toolUseId: origin === 'tool' ? 'use-1' : 'feedback:source',
+              turn: 1,
+            },
+          ],
+        }) as unknown as FactChainResult,
+    })
+    const candidateId = `candidate-${'e'.repeat(32)}`
+    expect(
+      panel.focusFact?.({ sessionId: 's', laneId: 'main', anchor: { kind: 'authoring', candidateId } }),
+    ).toBe(true)
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            items: [],
+            growth: [
+              {
+                feedbackId: 'source',
+                feedbackRevision: 1,
+                messageSeq: 3,
+                candidateId,
+                candidateHash: 'hash',
+                reviewHash: 'review',
+                state: 'published',
+                reviewer: 'local',
+                packageId: 'feedback-skill-evidence',
+                version: '1.0.0',
+              },
+            ],
+            counts: { up: 0, down: 1, withdrawn: 0, withCandidate: 1 },
+            truncated: false,
+          }),
+        ),
+    )
+    await vi.waitFor(() => expect(selected(root)).toBe(origin === 'tool' ? 't1' : 'a1'))
+    expect(pane(root)?.getAttribute('data-pane')).toBe('source')
+    await vi.waitFor(() =>
+      expect(pane(root)?.querySelector('[data-testid="feedback-provenance"]')?.textContent).toContain(
+        'Published version: feedback-skill-evidence@1.0.0',
+      ),
+    )
+  },
+)
 
 it('opens the turn from the usage popover on its source tab', () => {
   const { root, conversation } = mount()

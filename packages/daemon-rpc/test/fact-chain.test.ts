@@ -1,6 +1,6 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { AuthoringCandidate, EventEnvelope, FactChainParams, FactChainResult } from '@agnes/protocol'
-import { rpcError } from '@agnes/protocol'
+import { rpcError, validateMethod } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { registerFactChain } from '../src/local/methods/fact-chain.js'
 
@@ -193,6 +193,43 @@ it('checks the candidate owner and exact drafting session before revealing tests
   )
   expect(denied.result).toMatchObject({ nodes: [], gaps: [{ at: null, reason: 'source-unavailable' }] })
   expect(JSON.stringify(denied)).not.toContain(candidate.candidateHash)
+  // Feedback drafting is a system operation, so its origin has no tool/call event.
+  const feedback = endpoint()
+  registerFactChain(feedback, {
+    requireSessionOwner: owner,
+    scan: () => scan([]),
+    candidate: async () => ({
+      ...candidate,
+      origin: {
+        ...candidate.origin,
+        toolUseId: 'feedback:source',
+        feedbackId: 'source',
+        feedbackRevision: 1,
+      },
+    }),
+  })
+  const published = (await rpc(feedback, input)).result!
+  expect(published.nodes).toContainEqual(
+    expect.objectContaining({
+      kind: 'authoring',
+      candidateId,
+      state: 'published',
+      version: '1.0.0',
+      turn: 1,
+    }),
+  )
+  expect(validateMethod('_agnes/v1/session.factChain', 'result', published).ok).toBe(true)
+  expect(published.edges).toEqual([])
+  expect(published.gaps).toContainEqual({ at: `authoring:${candidateId}`, reason: 'source-unavailable' })
+  const foreignFeedback = await rpc(
+    make({
+      ...candidate,
+      origin: { ...candidate.origin, sessionKey: 'foreign', feedbackId: 'source', feedbackRevision: 1 },
+    }),
+    input,
+  )
+  expect(foreignFeedback.result?.nodes).toEqual([])
+  expect(JSON.stringify(foreignFeedback)).not.toContain(candidate.candidateHash)
 })
 
 it('bounds long ledgers, fixes the watermark and reports truncation instead of claiming completeness', async () => {
