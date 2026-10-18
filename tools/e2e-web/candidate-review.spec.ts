@@ -12,6 +12,7 @@ import {
   preferences,
   section,
   settings,
+  traceSequence,
 } from './ui.js'
 
 test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
@@ -41,29 +42,53 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     preset: 'full-access',
   })
   await old.attach()
+  const authoringIdle = async () => {
+    const view = await old.projectUI(undefined, { surface: 'web' })
+    return { op: view.opState, pending: view.pendingInputs ?? [] }
+  }
+  const promptOld = async (input: string) => {
+    const before = (await old.projectUI(undefined, { surface: 'web' })).upto
+    // Authoring receipts may continue in a backend turn. Queue the next input once through the
+    // supported SDK, then require this exact input's durable completed turn, without resubmitting.
+    await old.followUp(input, { commandId: crypto.randomUUID() })
+    await expect
+      .poll(
+        async () => {
+          const view = await old.projectUI(undefined, { surface: 'web' })
+          const user = view.nodes.findLast(
+            (node) =>
+              node.kind === 'user' &&
+              node.seq > before &&
+              node.content.some((block) => block.type === 'text' && block.text === input),
+          )
+          const turn = user && view.turns.find((turn) => turn.nodeIds.includes(user.id))
+          return turn && { status: turn.status, reason: turn.reason }
+        },
+        { timeout: 20_000 },
+      )
+      .toEqual({ status: 'completed', reason: 'completed' })
+  }
   expect((await old.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   await client.session.rename(old.id, 'Text statistics workshop')
   old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   const { prompt } = await import('./sdk.js')
-  await prompt(old, 'call plugin_helper_guide {"kind":"tool"}')
+  await promptOld('call plugin_helper_guide {"kind":"tool"}')
   const guide = JSON.parse(
     (await toolResult(old, 'plugin_helper_guide'))!.content[0]!.type === 'text'
       ? ((await toolResult(old, 'plugin_helper_guide'))!.content[0] as { text: string }).text
       : '{}',
   ) as { files: { path: string; content: string }[] }
-  await prompt(old, 'call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
+  await promptOld('call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
   const createdResult = (await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }
   const draft = JSON.parse(createdResult.text) as import('@agnes/protocol').AuthoringCandidate
   expect(draft).toMatchObject({ state: 'draft', installer: 'agent', origin: { turn: 2 } })
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
   ).toBe(false)
-  await prompt(
-    old,
+  await promptOld(
     'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: draft.candidateId }),
   )
-  await prompt(
-    old,
+  await promptOld(
     'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: draft.candidateId }),
   )
   const reviewed = await client.request('_agnes/v1/plugins.candidates.show', {
@@ -149,8 +174,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await accessible(page, info, `fact-authoring-${locale}-${theme}`)
     // The originating candidate is selected in the unified Trace source inspector.
     await expect(page.locator('.trace-tab[data-pane="source"]')).toHaveAttribute('aria-selected', 'true')
-    await page.getByTestId('trace-toolbar-more').click()
-    await page.getByTestId('trace-timeline-sequence').click()
+    await traceSequence(page)
     await page.mouse.move(0, 0)
     await screen(page, info, `fact-authoring-${locale}-${theme}`)
   }
@@ -269,13 +293,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
   await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
   expect((await toolResult(freshSession, 'my_text_stats'))!.structured).toEqual({ characters: 11, words: 2 })
-  await prompt(old, 'call read {"path":"report.md"}')
+  await promptOld('call read {"path":"report.md"}')
   expect(JSON.stringify(await toolResult(old, 'read'))).toContain('Synthetic delivery')
   // Authored Markdown and adjacent scripts stay inert, and rejection never publishes a Skill.
   const skillBody =
     '---\nname: Reviewed method\ndescription: Synthetic reusable workflow.\n---\n\nUse the normal approved shell tool for scripts.\n'
-  await prompt(
-    old,
+  await promptOld(
     'call skill_helper_create ' +
       JSON.stringify({
         name: 'reviewed-method',
@@ -292,12 +315,10 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
   ) as import('@agnes/protocol').AuthoringCandidate
   expect(skill).toMatchObject({ state: 'draft', installer: 'agent' })
-  await prompt(
-    old,
+  await promptOld(
     'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: skill.candidateId }),
   )
-  await prompt(
-    old,
+  await promptOld(
     'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: skill.candidateId }),
   )
   await reviewType('skill')
@@ -350,12 +371,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === skill.packageId),
   ).toBe(false)
   // A reviewed update supplies a genuine replacement diff, and the inbox shows all three review outcomes.
+  await expect.poll(authoringIdle).toEqual({ op: null, pending: [] })
   const updateFiles = guide.files.map((file) =>
     file.path === 'index.mjs' ? { ...file, content: file.content + '\n// Reviewed update\n' } : file,
   )
   // Escape template text so the demo's natural-language authoring shortcut does not replace this explicit call.
-  await prompt(
-    old,
+  await promptOld(
     'call plugin_helper_create ' +
       JSON.stringify({ files: updateFiles }).replace(/[Pp]/g, (letter) =>
         letter === 'P' ? '\\u0050' : '\\u0070',
@@ -364,15 +385,18 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const update = JSON.parse(
     ((await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }).text,
   ) as import('@agnes/protocol').AuthoringCandidate
-  expect(update.files.find((file) => file.path === 'index.mjs')?.after).toBe(
+  const updateReview = await client.request('_agnes/v1/plugins.candidates.show', {
+    profile: 'local-dev',
+    candidateId: update.candidateId,
+  })
+  expect(updateReview.files.find((file) => file.path === 'index.mjs')?.after).toBe(
     updateFiles.find((file) => file.path === 'index.mjs')!.content,
   )
-  await prompt(
-    old,
+  await expect.poll(authoringIdle).toEqual({ op: null, pending: [] })
+  await promptOld(
     'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: update.candidateId }),
   )
-  await prompt(
-    old,
+  await promptOld(
     'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: update.candidateId }),
   )
   for (const [locale, theme] of [
@@ -498,23 +522,31 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await reviewType('plugin')
-  await prompt(
-    old,
+  await promptOld(
     'call skill_helper_create ' +
       JSON.stringify({
         name: 'reviewed-published',
-        files: [{ path: 'SKILL.md', content: skillBody }],
+        files: [
+          {
+            path: 'SKILL.md',
+            content: skillBody.replace('name: Reviewed method', 'name: reviewed-published'),
+          },
+          {
+            path: 'scripts/check.mjs',
+            content: "throw new Error('This script must never run during review')\n",
+          },
+        ],
       }),
   )
+  await expect.poll(authoringIdle).toEqual({ op: null, pending: [] })
   const publishSkill = JSON.parse(
     ((await toolResult(old, 'skill_helper_create'))!.content[0] as { text: string }).text,
   ) as import('@agnes/protocol').AuthoringCandidate
-  await prompt(
-    old,
+  expect(publishSkill).toMatchObject({ state: 'draft', installer: 'agent', candidateId: expect.any(String) })
+  await promptOld(
     'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: publishSkill.candidateId }),
   )
-  await prompt(
-    old,
+  await promptOld(
     'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: publishSkill.candidateId }),
   )
   await reviewType('skill')
@@ -536,6 +568,21 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     'href',
     /page=plugins&tab=skills/,
   )
+  // Approved static resources are discovered automatically; do not request a manual refresh.
+  await expect
+    .poll(async () => {
+      const result = await client.resources.list({ profile: 'local-dev', kind: 'skill' })
+      return result.items.find(
+        (resource) => resource.kind === 'skill' && resource.name === 'reviewed-published',
+      )
+    })
+    .toMatchObject({
+      kind: 'skill',
+      name: 'reviewed-published',
+      trust: 'trusted',
+      desired: 'enabled',
+      actual: 'ready',
+    })
   const skillSession = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
@@ -544,10 +591,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await skillSession.attach()
   await prompt(skillSession, 'call skill_read {"name":"reviewed-published"}')
   expect(JSON.stringify(await toolResult(skillSession, 'skill_read'))).toContain(
-    'Synthetic reusable workflow.',
+    'Use the normal approved shell tool for scripts.',
   )
-  await prompt(old, 'call skill_read {"name":"reviewed-published"}')
-  expect(JSON.stringify(await toolResult(old, 'skill_read'))).toContain('Synthetic reusable workflow.')
+  await promptOld('call skill_read {"name":"reviewed-published"}')
+  expect(JSON.stringify(await toolResult(old, 'skill_read'))).toContain(
+    'Use the normal approved shell tool for scripts.',
+  )
   expect((await old.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(false)
   const list = JSON.parse(await runtime.cli(['plugins', 'candidates', 'list', '--json'])) as {
     candidates: { state: string }[]

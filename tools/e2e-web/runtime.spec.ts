@@ -449,6 +449,9 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
   const workspace = await client.workspace.add(runtime.workspace)
   const workspaceId = workspace.workspace.workspaceId
   if (!workspaceId) throw new Error('Workspace registration must return a durable id')
+  await expect
+    .poll(() => runtime.cli(['skills', 'list', '--workspace-id', workspaceId]))
+    .toContain('e2e-playbook')
   const skills = await runtime.cli(['skills', 'list', '--workspace-id', workspaceId])
   expect(skills).toContain('e2e-playbook')
   expect(skills).toContain('trust=trusted')

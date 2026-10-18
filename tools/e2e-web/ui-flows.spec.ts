@@ -401,7 +401,9 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   }
   const goalForm = page.getByTestId('goal-card').locator('form')
   await settled(page)
-  expect(await goalForm.evaluate((form) => form.checkValidity())).toBe(true)
+  expect(await goalForm.evaluate((form) => form instanceof HTMLFormElement && form.checkValidity())).toBe(
+    true,
+  )
   await page.getByTestId('goal-save').click()
   await expect.poll(goalPhase).toBe('blocked')
   await page.keyboard.press('Escape')
