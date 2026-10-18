@@ -32,13 +32,19 @@ test('selects workspace file chips and versioned session references and links th
   await composer.press('Enter')
   await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
   await expect(composer).toHaveValue('@reference.txt ')
-  await composer.fill('@reference.txt @session needle')
+  await composer.press('End')
+  await composer.pressSequentially('@session needle')
   const sourceOption = page.getByTestId('reference-option').first()
   await expect(sourceOption).toBeVisible()
   await composer.press('Tab')
   await expect(page.getByTestId('reference-draft-chips').locator('li')).toHaveCount(1)
   await writeFile(join(runtime.workspace, 'reference.txt'), 'new send-time file contents')
-  await composer.fill('@reference.txt Compare these references.')
+  // Continue typing after the chosen file chip; replacing the entire input would remove it.
+  await expect(composer).toHaveValue('@reference.txt ')
+  await composer.press('End')
+  await composer.pressSequentially('Compare these references.')
+  await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
+  await expect(page.getByTestId('reference-option')).toHaveCount(0)
   await composer.press('Enter')
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 30_000,
