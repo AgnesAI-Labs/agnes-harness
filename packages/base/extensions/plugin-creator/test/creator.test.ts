@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import type { ToolContext } from '@agnes/extension-api'
+import { THEME_TOKEN_NAMES, type ToolContext } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { AuthoringCandidate } from '@agnes/protocol'
@@ -208,6 +208,22 @@ it('reads the bundled creator skill without executing commands and fails closed 
   } as unknown as ExtensionAPI)
   expect(sections[0]?.content).toContain('8 KiB')
   expect(sections[0]?.content).toContain('OUTPUT_LIMIT')
+  const context = sections.map((section) => section.content).join('\n')
+  expect(Buffer.byteLength(context, 'utf8')).toBeLessThanOrEqual(4096)
+  expect(context).toContain('plugin_helper_guide')
+  expect(context).toContain('plugin_creator_guide')
+  for (const token of THEME_TOKEN_NAMES) {
+    expect(context).not.toContain(token)
+    expect(guide).toContain(token)
+  }
+  const { authorReference } = await import(
+    new URL(
+      '../../../../package-manager/bundled-plugins/plugin-helper/src/reference.generated.mjs',
+      import.meta.url,
+    ).href
+  )
+  expect(context).not.toContain(authorReference)
+  expect(guide).toContain(authorReference)
   // Execute the shipped bounded-edit example against the real tools and a synthetic author port.
   const candidateId = `candidate-${'a'.repeat(32)}`,
     candidateHash = `sha256-${'b'.repeat(64)}`
@@ -364,6 +380,17 @@ it('keeps the created draft and reports write as the failing operation without i
   expect(JSON.stringify(written.content)).toContain('keep the existing draft')
   expect(JSON.stringify(written.content)).not.toMatch(/admin|switch|create.*failed/i)
   const builtinGuide = await pluginCreatorTools[0].execute({}, ctx)
+  const { authorReference } = await import(
+    new URL(
+      '../../../../package-manager/bundled-plugins/plugin-helper/src/reference.generated.mjs',
+      import.meta.url,
+    ).href
+  )
+  for (const kind of ['tool', 'tool-with-panel', 'skill', 'skin']) {
+    const full = (await helperGuide.execute({ kind }, ctx)).structured as { authoringPath: string }
+    expect(full.authoringPath).toContain(authorReference)
+    for (const token of THEME_TOKEN_NAMES) expect(full.authoringPath).toContain(token)
+  }
   const helperData = guide.structured as { authoringPath: string }
   expect(JSON.stringify(builtinGuide.content)).toContain(
     JSON.stringify(helperData.authoringPath).slice(1, -1),

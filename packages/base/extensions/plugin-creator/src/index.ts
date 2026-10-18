@@ -163,7 +163,7 @@ export default defineAgnesPlugin({
           {
             id: 'plugin-creator',
             order: 165,
-            content: `${creatorAssets.authoringGuidance}\nNever write drafts to discovery roots. Old sessions keep their pinned generation. Keep new text <=8 KiB per reply; use run_code for incremental full-tree edits. After OUTPUT_LIMIT, read and continue the same candidate.`,
+            content: creatorAssets.authoringContextGuidance,
           },
         ],
       })),
