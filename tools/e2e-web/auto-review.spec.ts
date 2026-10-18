@@ -21,7 +21,7 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime, 'en')
   // Keep the default workspace permission mode so the baseline policy still asks for approval.
-  await page.getByRole('button', { name: 'New session', exact: true }).click()
+  await page.getByRole('button', { name: 'New conversation', exact: true }).click()
   await settings(page, 'en')
   await advanced(page)
   await section(page, 'security')
@@ -86,7 +86,7 @@ test('reviewer defaults and session overrides are configurable from Web in both 
   await preferences(page, 'en', 'light')
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime, 'en')
-  await page.getByRole('button', { name: 'New session', exact: true }).click()
+  await page.getByRole('button', { name: 'New conversation', exact: true }).click()
   await settings(page, 'en')
   await advanced(page)
   await section(page, 'security')

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 let fixture: ChildProcess, url: string
 test.beforeAll(async () => {
@@ -30,57 +30,74 @@ test.afterAll(async () => {
     fixture.kill('SIGTERM')
   })
 })
+/** Questions now live above the composer; their card is the submission confirmation. */
+async function answer(page: Page, single: 'A' | 'B', multi: string[], text: string) {
+  const card = page.getByTestId('question-card')
+  await card.getByTestId('question-step-0').click()
+  await card.getByTestId(`question-option-single-${single === 'A' ? 0 : 1}`).check()
+  await card.getByTestId('question-next').click()
+  for (const [index, option] of ['A', 'B'].entries())
+    await card.getByTestId(`question-option-multi-${index}`).setChecked(multi.includes(option))
+  await card
+    .getByTestId('question-other-multi')
+    .fill(multi.find((value) => !['A', 'B'].includes(value)) ?? '')
+  await card.getByTestId('question-next').click()
+  await card.getByTestId('question-text-text').fill(text)
+  return card
+}
 for (const locale of ['en', 'zh-CN'])
   test(`question forms share choices, recover receipts and preserve answers (${locale})`, async ({
     page,
   }) => {
     await page.goto(`${url}/?locale=${locale}`)
-    const inline = page.getByTestId('intelligent-ui-inline')
-    await expect(inline.getByTestId('ui-option-single-1')).toHaveCount(0)
-    await inline.getByTestId('ui-expand').click()
-    const card = page.getByTestId('intelligent-ui-panel')
-    await card.getByTestId('ui-option-single-1').check()
-    await card.getByTestId('ui-option-multi-0').check()
-    await card.getByTestId('ui-option-multi-1').check()
-    await card.getByTestId('ui-free-multi').fill('C')
-    await card.getByTestId('ui-form-answers').getByRole('textbox', { name: 'Explain' }).fill('Human answer')
-    await page.getByTestId('workbench-right-toggle').click()
-    await expect(card).toBeHidden()
-    await inline.getByTestId('ui-expand').click()
-    const panel = page.getByTestId('intelligent-ui-panel')
-    await expect(panel.getByTestId('ui-option-single-1')).toBeChecked()
-    await expect(panel.getByTestId('ui-option-multi-1')).toBeChecked()
-    await panel.getByTestId('ui-action-submit').click()
-    await panel.getByTestId('ui-confirm').click()
-    await expect(card.locator('[data-status=received]')).toBeVisible()
+    const card = await answer(page, 'B', ['A', 'B', 'C'], 'Human answer')
+    await expect(page.getByTestId('intelligent-ui-panel')).toBeHidden()
+    // Folding and moving among steps keeps the same draft, without a second workbench form.
+    await card.getByTestId('question-toggle').click()
+    await expect(card.getByTestId('question-text-text')).toBeHidden()
+    await card.getByTestId('question-toggle').click()
+    await card.getByTestId('question-step-0').click()
+    await expect(card.getByTestId('question-option-single-1')).toBeChecked()
+    await card.getByTestId('question-step-1').click()
+    await expect(card.getByTestId('question-option-multi-1')).toBeChecked()
+    await expect(card.getByTestId('question-other-multi')).toHaveValue('C')
+    await card.getByTestId('question-step-2').click()
+    await expect(card.getByTestId('question-text-text')).toHaveValue('Human answer')
+    await card.getByTestId('question-submit').click()
+    await expect(card.getByTestId('question-submit')).toBeDisabled()
     await expect(page.getByTestId('fixture-requests')).toContainText(
       '"answers":{"single":"B","multi":["A","B","C"],"text":"Human answer"}',
     )
+    await expect
+      .poll(async () => JSON.parse(await page.getByTestId('fixture-requests').innerText()).length)
+      .toBe(1)
     await page.reload()
-    await inline.getByTestId('ui-expand').click()
-    await expect(card.locator('[data-status=received]')).toBeVisible()
-    await expect(card.getByTestId('ui-action-submit')).toBeDisabled()
-    await page.getByTestId('fixture-complete').evaluate((button) => (button as HTMLButtonElement).click())
-    await expect(card.locator('[data-status=succeeded]')).toContainText('Human answer')
-    await expect(card.getByTestId('ui-surface-questions')).toHaveAttribute('data-revision', '1')
+    await expect(card.getByTestId('question-option-single-1')).toBeChecked()
+    await card.getByTestId('question-step-2').click()
+    await expect(card.getByTestId('question-submit')).toBeDisabled()
+    await expect
+      .poll(async () => JSON.parse(await page.getByTestId('fixture-requests').innerText()).length)
+      .toBe(1)
+    await page.getByTestId('fixture-complete').click()
+    await expect(card).toBeHidden()
+    await expect(page.getByTestId('question-answers')).toContainText('Human answer')
+    await expect(page.getByTestId('question-answers')).toContainText('B')
   })
 test('question submission rejects a stale revision and an ordinary policy refusal', async ({ page }) => {
   await page.goto(url)
-  await page.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
-  const card = page.getByTestId('intelligent-ui-panel')
-  await card.getByTestId('ui-option-single-0').check()
-  await card.getByTestId('ui-option-multi-0').check()
-  await card.getByTestId('ui-form-answers').getByRole('textbox', { name: 'Explain' }).fill('Answer')
-  await page.getByTestId('fixture-change').evaluate((button) => (button as HTMLButtonElement).click())
-  await card.getByTestId('ui-action-submit').click()
-  await card.getByTestId('ui-confirm').click()
-  await expect(card.getByTestId('ui-reconfirm-message')).toContainText('Data changed')
-  await card.getByTestId('ui-review-current').click()
-  await card.getByTestId('ui-option-single-0').check()
-  await card.getByTestId('ui-option-multi-0').check()
-  await card.getByTestId('ui-form-answers').getByRole('textbox', { name: 'Explain' }).fill('Reviewed answer')
-  await page.getByTestId('fixture-deny').evaluate((button) => (button as HTMLButtonElement).click())
-  await card.getByTestId('ui-action-submit').click()
-  await card.getByTestId('ui-confirm').click()
-  await expect(card.locator('[data-status=rejected]').last()).toContainText('permission was denied')
+  const card = await answer(page, 'A', ['A'], 'Answer')
+  await page.getByTestId('fixture-change').click()
+  await card.getByTestId('question-submit').click()
+  await expect(card.getByTestId('question-recovery')).toHaveText(
+    'This question changed or closed. Reload it before answering.',
+  )
+  await card.getByTestId('question-recover').click()
+  await answer(page, 'A', ['A'], 'Reviewed answer')
+  await page.getByTestId('fixture-deny').click()
+  await card.getByTestId('question-submit').click()
+  await expect(card.getByRole('alert')).toHaveText('Denied')
+  await expect(card.getByTestId('question-submit')).toBeEnabled()
+  const requests = JSON.parse(await page.getByTestId('fixture-requests').innerText())
+  expect(requests.map((request: { revision: number }) => request.revision)).toEqual([1, 2])
+  expect(requests[1].input.answers.text).toBe('Reviewed answer')
 })

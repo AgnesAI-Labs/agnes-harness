@@ -343,7 +343,9 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
 }
 
 export async function fresh(page: Page, locale = 'en') {
-  await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
+  await page
+    .getByRole('button', { name: locale === 'en' ? 'New conversation' : '新对话', exact: true })
+    .click()
   await fullAccess(page, locale)
 }
 
