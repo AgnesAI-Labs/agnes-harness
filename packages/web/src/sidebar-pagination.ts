@@ -28,10 +28,15 @@ export function createSidebarPagination(
     initialised = false,
     touched = false,
     refreshRows = false,
+    refreshingMetadata = false,
     refreshing: Promise<void> | undefined
   const snapshot = (): SidebarPaging => ({
     groups: groups.map(
-      ({ generation: _g, firstNext: _f, pageRevision: _r, pending: _p, retryAppend: _a, ...view }) => view,
+      ({ generation: _g, firstNext: _f, pageRevision: _r, pending: _p, retryAppend: _a, ...view }) => ({
+        ...view,
+        // Waiting for the summary is part of an open group's background refresh too.
+        loading: view.loading || (loading && view.opened),
+      }),
     ),
     ready,
     loading,
@@ -40,6 +45,8 @@ export function createSidebarPagination(
   const rows = () => groups.flatMap((group) => group.items)
   const failCode = (value: unknown): string | undefined => (value as { data?: { code?: string } })?.data?.code
   const load = (group: Group, append = false): Promise<void> => {
+    // A summary read may replace the cursor even before a page request starts.
+    if (append && refreshing) return refreshing
     if (group.pending) return group.pending
     if (!group.opened || !group.ready || (append && (!group.next || group.stale))) return Promise.resolve()
     const generation = ++group.generation,
@@ -106,12 +113,17 @@ export function createSidebarPagination(
     group.loading = false
   }
   const refresh = (metadata = false): Promise<void> => {
+    if (refreshing) {
+      // Focus and visibility can request the same metadata already being read.
+      refreshRows ||= metadata && !refreshingMetadata
+      return refreshing
+    }
     refreshRows ||= metadata
-    if (refreshing) return refreshing
     const connection = epoch,
       mutation = mutations,
       readRows = refreshRows
     refreshRows = false
+    refreshingMetadata = readRows
     loading = true
     error = undefined
     changed()
@@ -169,8 +181,8 @@ export function createSidebarPagination(
         if (connection === epoch) {
           loading = false
           refreshing = undefined
-          changed()
           if (mutation !== mutations || refreshRows) await refresh(readRows)
+          else changed()
         }
       }
     })

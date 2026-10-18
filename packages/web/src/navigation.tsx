@@ -404,7 +404,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   <>
                     {page.loading && !page.loaded && <p role="status">{t('nav.loading')}</p>}
                     {!page.ready && <p role="status">{t('nav.initializing')}</p>}
-                    {(page.error || (page.stale && !page.loading)) && (
+                    {!page.loading && (page.error || page.stale) && (
                       <p role={page.error ? 'alert' : 'status'}>
                         {page.error ?? t('nav.updated')}{' '}
                         <Button
