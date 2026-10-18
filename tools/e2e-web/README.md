@@ -195,6 +195,9 @@ The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP r
 Screenshots temporarily use the public reduced-motion preference for JavaScript example hints,
 then restore the original preference; CSS motion is disabled by Playwright.
 Read-only first-run frames settle that same preference before cloning the production DOM.
+Authoring provenance frames capture the real Trace inspector, including its header, controls, version,
+test and review facts. Separate fact-chain and request gates retain full Trace coverage; live clock-hook
+record counts are not rewritten to make the authoring frame deterministic.
 Finite UI motion and pending controls must settle before axe or screenshots; no fixed sleeps
 or error exemptions are used. Automated axe checks complement manual accessibility review.
 

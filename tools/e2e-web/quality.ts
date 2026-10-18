@@ -250,9 +250,13 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   await expect(page.locator('.composer-example-hint')).toHaveCount(0)
   await settled(page)
   const restoreTrace = await normalizeTraceVisual(page)
-  const options = { animations: 'disabled' as const, fullPage: true, mask }
+  // Authoring provenance owns this frame. Live clock-hook records can vary outside its inspector;
+  // full Trace layout and record controls retain their separate fact-chain/request pixel gates.
+  const inspector = name.startsWith('fact-authoring-')
+  const target = inspector ? page.locator('.trace-inspector') : page
+  const options = { animations: 'disabled' as const, mask, ...(inspector ? {} : { fullPage: true }) }
   try {
-    await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
+    await target.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
     if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
       info.annotations.push({
         type: 'pixel-snapshot-deferred',
@@ -265,7 +269,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       return
     }
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
-    await expect(page).toHaveScreenshot(`${name}.png`, options)
+    await expect(target).toHaveScreenshot(`${name}.png`, options)
   } finally {
     await restoreTrace()
     await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
