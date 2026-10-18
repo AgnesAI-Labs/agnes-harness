@@ -1,4 +1,6 @@
 /** @vitest-environment happy-dom */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
 import { clearResources, createRegionRenderer } from '@agnes/web-ui'
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom'
@@ -12,6 +14,7 @@ afterEach(() => {
   stop?.()
   stop = undefined
   document.body.replaceChildren()
+  document.getElementById('inline-link-test-style')?.remove()
   clearResources()
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -93,6 +96,15 @@ it.each(['known', 'unknown'])(
     expect(summary?.textContent).toContain(
       diffStatus === 'known' ? 'Removed dependencies: acme/old' : 'Changes are unknown',
     )
+    const css = readFileSync(resolve(import.meta.dirname, '../../web-ui/src/tokens.css'), 'utf8')
+    const rule = css.match(/\.agnes-settings-card p a[^{}]*\{[^}]*\}/)?.[0]
+    expect(rule).toBeDefined()
+    const style = document.createElement('style')
+    style.id = 'inline-link-test-style'
+    style.textContent = rule!
+    document.head.append(style)
+    const recovery = getByRole(document.body, 'link', { name: 'Host recovery', exact: true })
+    expect(getComputedStyle(recovery).textDecorationLine).toBe('underline')
     const technical = document.querySelector<HTMLElement>('[data-testid="consent-technical"]')
     if (!technical) throw new Error('technical details missing')
     const toggle = getByRole(technical, 'button', { name: 'Technical details' })

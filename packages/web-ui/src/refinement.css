@@ -321,6 +321,18 @@
     color: var(--agnes-text-tertiary);
     cursor: not-allowed;
   }
+  @media (max-width: 900px) {
+    .agh-segmented > .agh-segmented-option {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-segmented > .agh-segmented-option {
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .agh-segmented-thumb {
       transition: none;

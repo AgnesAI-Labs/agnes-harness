@@ -593,7 +593,7 @@
   }
   @media (max-width: 767px) {
     .topbar {
-      min-width: calc(2 * var(--control-height-touch) + var(--s8));
+      min-width: var(--control-height-touch);
     }
   }
 }

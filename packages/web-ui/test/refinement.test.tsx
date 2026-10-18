@@ -135,6 +135,9 @@ describe('refined primitives', () => {
     expect(new Set(radios.map((radio) => radio.name)).size).toBe(1)
     expect(radios[2]?.disabled).toBe(true)
     expect(group.querySelectorAll('.agh-segmented-thumb')).toHaveLength(1)
+    expect(readFileSync(resolve(import.meta.dirname, '../src/refinement.css'), 'utf8')).toMatch(
+      /@media \(max-width: 767px\) \{\s*\.agh-segmented > \.agh-segmented-option \{[^}]*min-height: var\(--control-height-touch\);/,
+    )
     radios[1]?.focus()
     radios[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     expect(document.activeElement).toBe(radios[0])
