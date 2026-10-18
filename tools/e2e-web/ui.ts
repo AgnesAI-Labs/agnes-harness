@@ -61,11 +61,16 @@ export async function expand(root: import('@playwright/test').Locator) {
     await expect(root).toHaveAttribute('aria-expanded', 'true')
     return
   }
-  const toggle = root.locator(':scope > summary, :scope > .agh-disclosure-summary').first()
+  const toggle = root
+    .locator(
+      ':scope > summary, :scope > .agh-disclosure-summary, :scope > button.agnes-settings-drill[aria-expanded]',
+    )
+    .first()
   const native = (await root.evaluate((node) => node.tagName)) === 'DETAILS'
   const open = native
     ? (await root.getAttribute('open')) !== null
-    : (await root.getAttribute('data-open')) === 'true'
+    : (await root.getAttribute('data-open')) === 'true' ||
+      (await toggle.getAttribute('aria-expanded')) === 'true'
   if (!open) await toggle.click()
   if (native) await expect(root).toHaveAttribute('open', '')
   else await expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -82,7 +87,12 @@ export async function expandActivityGroups(turn: import('@playwright/test').Loca
 }
 
 export async function sidebar(page: Page) {
-  if (!(await page.locator('#settings').isVisible())) await page.locator('#sidebar-toggle').click()
+  // A session URL can render before the navigation presentation has attached.
+  const settings = page.locator('#settings')
+  const toggle = page.locator('#sidebar-toggle')
+  await expect.poll(async () => (await settings.isVisible()) || (await toggle.isVisible())).toBe(true)
+  if (!(await settings.isVisible())) await toggle.click()
+  await expect(settings).toBeVisible()
 }
 
 export async function homePage(page: Page, id: string, tab?: string) {
@@ -246,10 +256,12 @@ export async function section(page: Page, id: string) {
         : id
   if (['models', 'diagnostics'].includes(canonical)) await advanced(page)
   await page.getByTestId(`settings-nav-${canonical}`).click()
-  if (['models', 'bundles', 'system-prompt', 'context'].includes(id)) {
-    const subsection = page.getByTestId(`settings-subsection-${id}`)
-    await expand(subsection)
-  }
+  if (id === 'models') await expect(page.locator('#settings-subsection-models')).toBeVisible()
+  else if (id === 'bundles') {
+    await expand(page.getByTestId('run-config-technical'))
+    await expand(page.getByTestId('settings-drill-bundles'))
+  } else if (id === 'system-prompt') await expand(page.getByTestId('settings-drill-system-prompt'))
+  else if (id === 'context') await expect(page.locator('#settings-subsection-context')).toBeVisible()
   if (id === 'providers') {
     await expand(page.getByTestId('plugin-diagnostics'))
     await expand(page.getByTestId('settings-subsection-provider-types'))
@@ -387,6 +399,8 @@ export async function fullAccess(page: Page, locale = 'en') {
 }
 
 export async function send(page: Page, input: string) {
+  // This helper submits a new turn; busy input intentionally queues guidance instead.
+  await expect(page.locator('#composer')).toHaveAttribute('data-busy', 'false')
   const turns = page.getByTestId('conversation-turn')
   const before = await turns.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-turn-id')))
   const locale = await page.locator('html').getAttribute('lang')

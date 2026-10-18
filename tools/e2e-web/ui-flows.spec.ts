@@ -148,7 +148,11 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-    for (const [key, seconds] of [['requestMs', '90'], ['connectMs', '4'], ['streamIdleMs', '15']]) {
+    for (const [key, seconds] of [
+      ['requestMs', '90'],
+      ['connectMs', '4'],
+      ['streamIdleMs', '15'],
+    ]) {
       await selectValue(page, `account-network-${key}`, 'custom')
       await dialog.getByTestId(`account-network-${key}-custom`).fill(seconds!)
       await dialog.getByTestId(`account-network-${key}-custom`).blur()

@@ -65,7 +65,11 @@ test('selects workspace file chips and versioned session references and links th
     data: {
       content: [
         { type: 'text', text: '@reference.txt Compare these references.' },
-        { type: 'resource_link', uri: pathToFileURL(await realpath(join(runtime.workspace, 'reference.txt'))).href, name: 'reference.txt' },
+        {
+          type: 'resource_link',
+          uri: pathToFileURL(await realpath(join(runtime.workspace, 'reference.txt'))).href,
+          name: 'reference.txt',
+        },
       ],
     },
   })

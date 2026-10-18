@@ -90,9 +90,9 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
     await page.mouse.move(0, 0)
   }
-  // Frame runtime status at its lower edge independently of the self-check block.
+  // Frame the health status together with its service footer.
   if (name.startsWith('diagnostics-status-'))
-    await page.getByTestId('diagnostics-runtime').evaluate((card) => {
+    await page.getByTestId('diagnostics-doctor').evaluate((card) => {
       card.scrollIntoView({ block: 'end', behavior: 'instant' })
     })
   // Candidate navigation can retain the plugin pane's browser scroll anchor. The review
@@ -129,7 +129,9 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       row.textContent = new Date(2026, 9, 11, 12).toLocaleString(document.documentElement.lang || 'en')
     }
   })
-  const disk = page.getByTestId('doctor-space')
+  const disk = page
+    .getByTestId('doctor-space')
+    .or(page.getByTestId('doctor-check-disk').getByTestId('doctor-check-value'))
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {
     for (const row of rows) {
