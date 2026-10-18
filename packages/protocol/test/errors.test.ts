@@ -83,6 +83,7 @@ it('publishes safe, stable envelopes for every transport without leaking nested 
     { code: -32602, data: { code: 'PATTERN', messageKey: 'appServer.errors.invalidParams' } },
   )
   expect(errorMessageKey('CONFIG_CREDENTIAL_REJECTED')).toBe(error.data.messageKey)
+  expect(httpRpcError(409, 'E_PRESET_UNRESOLVED').data.messageKey).toBe('appServer.errors.unavailable')
   expect(errorMessageKey('untrusted-secret')).toBe('appServer.errors.internal')
   expect(APP_SERVER_SCHEMA['x-version']).toBe(1)
   const row = diagnosticRecords().find((row) => row.diagnosticId === error.data.diagnosticId)

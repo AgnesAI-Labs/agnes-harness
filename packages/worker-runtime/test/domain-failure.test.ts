@@ -70,3 +70,15 @@ it('preserves attachment admission reasons on the wire with fixed text and no ar
   expect(new JsonlDecoder().feed(encodeFrame(frame))).toEqual([frame])
   expect(JSON.stringify(failure)).not.toContain('private')
 })
+
+it.each(['E_PRESET_UNSUPPORTED', 'E_PRESET_UNRESOLVED', 'E_MODEL_UNSUPPORTED'])(
+  'preserves %s as a safe RPC refusal across the worker and daemon',
+  async (code) => {
+    const { workerDomainFailure } = await import('../src/worker-errors.js')
+    expect(workerDomainFailure({ code, message: 'private path', detail: { secret: 'private' } })).toEqual({
+      code: -32008,
+      message: 'PRESET_SWITCH_REJECTED',
+      data: { code },
+    })
+  },
+)

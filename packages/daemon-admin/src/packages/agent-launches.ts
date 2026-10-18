@@ -143,13 +143,20 @@ export function createAgentLaunches(options: {
           await save(state)
           return result(op)
         } catch (error) {
+          const value = error as { message?: unknown; data?: { code?: unknown } } | null
+          const known = [
+            'E_PACKAGE_PREVIEW_STALE',
+            'E_PACKAGE_STATE',
+            'E_PACKAGE_BLOCKED',
+            'CAPABILITY_DENIED',
+            'E_PRESET_UNRESOLVED',
+            'E_PRESET_UNSUPPORTED',
+            'E_MODEL_UNSUPPORTED',
+          ]
           const code =
-            error instanceof Error &&
-            ['E_PACKAGE_PREVIEW_STALE', 'E_PACKAGE_STATE', 'E_PACKAGE_BLOCKED', 'CAPABILITY_DENIED'].includes(
-              error.message,
-            )
-              ? error.message
-              : 'OUTCOME_UNKNOWN'
+            [value?.data?.code, value?.message].find(
+              (code): code is string => typeof code === 'string' && known.includes(code),
+            ) ?? 'OUTCOME_UNKNOWN'
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
           await save(state)

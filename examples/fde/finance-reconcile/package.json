@@ -86,14 +86,6 @@
           "finance-reconcile": {
             "name": "finance-reconcile",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.finance-reconcile"
@@ -109,7 +101,14 @@
           "description": {
             "en": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval."
           },
-          "preset": "finance-reconcile"
+          "preset": "finance-reconcile",
+          "prompt": {
+            "text": {
+              "en": "Reconcile the sample bank and book ledgers to the cent, explain each mismatch, and ask me before recording the proposed adjusting entries.",
+              "zh-CN": "把示例银行流水和账簿逐分对平，解释每一笔差异，记录拟定的调整分录前先问我。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

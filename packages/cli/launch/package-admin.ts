@@ -44,6 +44,7 @@ import type { LocalBackend } from './backend.js'
 import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
+import { launchFailure } from './launch-failure.js'
 import { pluginStreamProxy } from './plugin-stream-proxy.js'
 import { profileServiceRelay } from './profile-service-relay.js'
 
@@ -605,19 +606,7 @@ export function localPackageAdmin(
             : await examples.call(typeof body.rowId === 'string' ? body.rowId : '', body.request),
         )
       } catch (error) {
-        const code =
-          error instanceof Error &&
-          [
-            'E_PACKAGE_PREVIEW_STALE',
-            'E_PACKAGE_BLOCKED',
-            'E_PACKAGE_STATE',
-            'OUTCOME_UNKNOWN',
-            'INVALID_REQUEST',
-            'OVERLOADED',
-          ].includes(error.message)
-            ? error.message
-            : 'CAPABILITY_DENIED'
-        const status = code === 'CAPABILITY_DENIED' ? 403 : 409
+        const { code, status } = launchFailure(error)
         serviceReply(response, status, { error: httpRpcError(status, code) })
       }
       return true

@@ -263,6 +263,13 @@ describe('local example catalog', () => {
       expect(prompt?.en).toBeTruthy()
       expect(prompt?.['zh-CN']).toBeTruthy()
       expect(prompt?.en).not.toMatch(/^Run the .* workflow/)
+      expect(entry.agents?.[0]?.launch.prompt).toEqual({ mode: 'draft', text: prompt })
+      const name = entry.id.slice('@agnes-fde/'.length)
+      const manifest = JSON.parse(
+        readFileSync(new URL(`../../../examples/fde/${name}/package.json`, import.meta.url), 'utf8'),
+      )
+      // Shipped agents inherit the selected deployment model, including homes without a Demo route.
+      expect(manifest.agnes.bundles[name].presets[name].model).toBeUndefined()
     }
     expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
     // Their policy lives in plugin code, which a listing never runs: the summary says so instead of

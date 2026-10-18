@@ -25,7 +25,7 @@ FDE 工程师将流程、连接器、审核策略与手册一起交付。下面�
 
 按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`，在示例目录运行 `agh plugins add .` 并审阅权限，然后从 Web 的「智能体」页选择，或运行 `agh --new --agent PACKAGE#NAME -p "任务"`。每个 `agnes.bundles.<id>.launch` 显式选择预设，不按包名前缀推测。安装不会自动启动智能体。进阶组合见[组合与配置档](../../docs/extend/bundles-and-profiles.zh-CN.md)。FDE 指为企业构建应用这项工作；显式采纳应用参见 [Acme](../acme/README.zh-CN.md)。
 
-全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署须保留该路由或配置真实模型。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
+智能体预设继承部署当前选择的模型。全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署使用已配置的模型，模型请求可能产生费用。启动智能体时会审阅最终模型、权限、来源和可编辑草稿；确认只创建空会话并填入输入框，点击发送后才提交提示词。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
 
 发送、CRM 备注、运维重启、设备动作与招聘后续评审先交付草稿，再调用官方 `ask_user_question`。持久保存的 Proceed/Cancel 问题暂停流程，经校验的用户答案恢复执行。工具授权仍独立控制，不可用的权限会拒绝动作；财务保留既有复核表面，通过输入阶段消费结构化动作回执。业务选择可在 Web/TUI 完成。依据流程可无交互完成，仅允许生成输出，拒绝源数据修改。Demo 成果仍为确定性结果，真实模型解读保留为审核草稿。
 

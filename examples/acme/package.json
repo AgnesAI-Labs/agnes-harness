@@ -59,15 +59,7 @@
         "presets": {
           "acme": {
             "name": "acme",
-            "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            }
+            "extends": "standard"
           }
         },
         "launch": {

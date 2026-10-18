@@ -88,14 +88,6 @@
           "ops-runbook": {
             "name": "ops-runbook",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.ops-runbook"
@@ -111,7 +103,14 @@
           "description": {
             "en": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation."
           },
-          "preset": "ops-runbook"
+          "preset": "ops-runbook",
+          "prompt": {
+            "text": {
+              "en": "Follow the sample runbook: run the diagnostic in the background, show me its output, and ask me before the restart step. Then verify the restart receipt.",
+              "zh-CN": "按示例运维手册执行：在后台运行诊断并给我看输出，重启这一步先问我，之后核对重启回执。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

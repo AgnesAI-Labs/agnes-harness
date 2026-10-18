@@ -286,6 +286,17 @@ it('ordinary agent review binds caller workspace and activation, refuses drift a
   await expect(
     call({ action: 'enable', reviewId: first.launchTicket, operationId: 'escalate' }),
   ).rejects.toThrow('INVALID')
+  const rejected = await prepare()
+  backend.open = async () => {
+    throw { code: -32008, message: 'PRESET_SWITCH_REJECTED', data: { code: 'E_PRESET_UNRESOLVED' } }
+  }
+  const refusal = { action: 'start', launchTicket: rejected.launchTicket, operationId: 'model-refused' }
+  await expect(call(refusal)).rejects.toThrow('E_PRESET_UNRESOLVED')
+  expect(await call({ action: 'read', operationId: refusal.operationId })).toMatchObject({
+    state: 'failed',
+    code: 'E_PRESET_UNRESOLVED',
+  })
+  await expect(call(refusal)).rejects.toThrow('E_PRESET_UNRESOLVED')
   const unknown = await prepare()
   backend.open = async () => {
     throw new Error('uncertain')

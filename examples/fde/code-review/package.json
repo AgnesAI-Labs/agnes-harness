@@ -82,14 +82,6 @@
           "code-review": {
             "name": "code-review",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.code-review"
@@ -105,7 +97,14 @@
           "description": {
             "en": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer."
           },
-          "preset": "code-review"
+          "preset": "code-review",
+          "prompt": {
+            "text": {
+              "en": "Review the sample patch: run the debug-log and dynamic-eval checks in parallel, then give me one report listing each finding with its file, line and severity.",
+              "zh-CN": "审查这份示例补丁：并行检查调试日志和动态 eval 两类风险，再合并成一份报告，逐条给出文件、行号和严重程度。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

@@ -83,14 +83,6 @@
           "support-triage": {
             "name": "support-triage",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.support-triage"
@@ -106,7 +98,14 @@
           "description": {
             "en": "Classifies sample support tickets and requests approval before recording a simulated reply."
           },
-          "preset": "support-triage"
+          "preset": "support-triage",
+          "prompt": {
+            "text": {
+              "en": "Look up the sample support ticket, classify its type and priority, draft a reply to the customer, and ask me before sending it.",
+              "zh-CN": "查询示例客服工单，判断类型和优先级，起草给客户的回复，发送前先问我。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

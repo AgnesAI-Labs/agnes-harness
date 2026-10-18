@@ -82,14 +82,6 @@
           "contract-review": {
             "name": "contract-review",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.contract-review"
@@ -105,7 +97,14 @@
           "description": {
             "en": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer."
           },
-          "preset": "contract-review"
+          "preset": "contract-review",
+          "prompt": {
+            "text": {
+              "en": "Review the sample supplier contract clause by clause, flag unlimited liability and one-sided change terms, and prepare a risk report for a qualified reviewer.",
+              "zh-CN": "逐条审查示例供应商合同，标出无限责任和单方变更条款，并整理一份供专业审核者复核的风险报告。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

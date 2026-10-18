@@ -82,14 +82,6 @@
           "compliance-audit": {
             "name": "compliance-audit",
             "extends": "standard",
-            "model": {
-              "route": {
-                "primary": {
-                  "route": "demo",
-                  "model": "demo-model"
-                }
-              }
-            },
             "providers": {
               "tool-policy": {
                 "provider": "fde.compliance-audit"
@@ -105,7 +97,14 @@
           "description": {
             "en": "Checks local sample evidence against a checklist and reports gaps for human follow-up."
           },
-          "preset": "compliance-audit"
+          "preset": "compliance-audit",
+          "prompt": {
+            "text": {
+              "en": "Audit the sample control checklist against the local evidence files. For each control, tell me whether it is evidenced, a gap or missing, with severity and the source quote.",
+              "zh-CN": "对照本地证据文件审计示例控制清单。逐项说明是已有证据、存在缺口还是缺失，并给出严重程度和原文引用。"
+            },
+            "mode": "draft"
+          }
         }
       }
     },

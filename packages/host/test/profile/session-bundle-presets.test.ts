@@ -507,13 +507,13 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
 
 it('binds an agent review to published row config and the admitted tools without revealing config', async () => {
   const original = pluginSource(
-    "const t=tool('fixture_review'); t.meta.isReadOnly=config?.readOnly!==false; t.meta.replay='never'; ctx.tools.register(t)",
+    "const t=tool('fixture_review'); t.meta.isReadOnly=config?.readOnly!==false; t.meta.replay='never'; ctx.tools.register(t); const image=tool('fixture_image'); image.meta.requiresImageInput=true; ctx.tools.register(image)",
   )
   const file = join(original.snapshot.directory, 'package.json')
   const manifest = JSON.parse(readFileSync(file, 'utf8'))
   manifest.agnes.bundles = {
     work: {
-      profile: { tools: ['fixture_review'], toolPolicy: { readOnly: true } },
+      profile: { tools: ['fixture_review', 'fixture_image'], toolPolicy: { readOnly: true } },
       presets: { safe: { name: 'safe', extends: 'standard' } },
       launch: { title: { en: 'Review' }, description: { en: 'Synthetic' }, preset: 'safe' },
     },
@@ -532,7 +532,9 @@ it('binds an agent review to published row config and the admitted tools without
     provider: (profile) =>
       new ScriptedProvider({
         scripts: [],
-        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
       }),
     script: [],
     disableSessionTitle: true,
