@@ -108,7 +108,7 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
       baseHash: null,
       preview: {
         ...preview,
-        presentation: { includes: { provides: ['tools'] as ['tools'], counts: { tools: 1 } }, rows: [] },
+        presentation: { includes: { provides: ['tool'] as ['tool'], counts: { tools: 1 } }, rows: [] },
         version: '0.1.0',
       },
     }
@@ -316,7 +316,7 @@ it.each([
       state: 'review' as const,
       preview: {
         ...preview,
-        presentation: { includes: { provides: ['tools'] as ['tools'], counts: { tools: 1 } }, rows: [] },
+        presentation: { includes: { provides: ['tool'] as ['tool'], counts: { tools: 1 } }, rows: [] },
       },
     }
     let listedSkill: AuthoringCandidate = skill

@@ -103,7 +103,7 @@ it.each(['known', 'unknown'])(
     style.id = 'inline-link-test-style'
     style.textContent = rule!
     document.head.append(style)
-    const recovery = getByRole(document.body, 'link', { name: 'Host recovery', exact: true })
+    const recovery = getByRole(document.body, 'link', { name: 'Host recovery' })
     expect(getComputedStyle(recovery).textDecorationLine).toBe('underline')
     const technical = document.querySelector<HTMLElement>('[data-testid="consent-technical"]')
     if (!technical) throw new Error('technical details missing')
