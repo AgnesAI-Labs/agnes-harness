@@ -157,6 +157,26 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
         },
       }).type,
     ).toBe('skill')
+    // Code-registered Skills (including feedback drafts) declare their kind before inspection.
+    expect(
+      candidateIdentity({
+        ...skill,
+        sourceFiles: [
+          {
+            path: 'package.json',
+            content: JSON.stringify({
+              version: '1.0.0',
+              agnes: {
+                provides: ['skills'],
+                plugins: [
+                  { id: 'ext:reviewed/main', export: 'main', apiRange: '^4.0.0', inject: ['skills'] },
+                ],
+              },
+            }),
+          },
+        ],
+      }).type,
+    ).toBe('skill')
     expect(html(skill)).toContain(text('candidates.type.skill'))
     expect(html(skill)).toContain(text('candidates.new.skill'))
     expect(html(skill)).toContain(text('candidates.minutesAgo', { count: 2 }))
