@@ -24,17 +24,21 @@ export function createBundledExtensions(
   const { rowExtensions } = rowHosts
   // Builtin manifests remain descriptive input for verified Cordis rows. Packaged builds supply
   // the same manifests through embeddedExtensions when no package files exist beside the binary.
-  const findBundledExtension = (
-    id: string,
-  ):
-    | {
-        spec: ExtensionSpec
-        packageId: string
-        packageDirectory: string
-        extensionDirectory: string
-        embedded?: ExtensionManifest
-      }
-    | undefined => {
+  // Builtin locations belong to this Host's deployment. Index them once rather than scanning
+  // every bundled manifest for each row/tool lookup. Admission and loading still preflight the
+  // selected manifest; authorManifestOf also reads it afresh, so this is not a grant cache.
+  const locations = new Map<
+    string,
+    {
+      spec: ExtensionSpec
+      packageId: string
+      packageDirectory: string
+      extensionDirectory: string
+      embedded?: ExtensionManifest
+    }
+  >()
+  const declaredExtensionIds = new Set(EXT_ROW_EXTENSION_IDS)
+  const indexLocations = () => {
     for (const pkg of ctx.profile.packages) {
       if (!pkg.enabled || pkg.trust !== 'builtin') continue
       const packageDirectory = dirs.get(pkg.id)
@@ -53,8 +57,9 @@ export function createBundledExtensions(
         } catch {
           continue
         }
-        if (manifest.id !== id) continue
-        return {
+        if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
+        if (locations.has(manifest.id)) continue
+        locations.set(manifest.id, {
           spec: {
             id: manifest.id,
             package: pkg.id,
@@ -68,12 +73,13 @@ export function createBundledExtensions(
           packageId: pkg.id,
           packageDirectory,
           extensionDirectory,
-        }
+        })
       }
       // Packaged builds embed the reviewed builtin manifest.
-      const embedded = modules.get(pkg.id)?.embeddedExtensions?.find((m) => m.id === id)
-      if (embedded && pkg.trust === 'builtin')
-        return {
+      for (const embedded of modules.get(pkg.id)?.embeddedExtensions ?? []) {
+        if (embedded.liveResources?.length) declaredExtensionIds.add(embedded.id)
+        if (locations.has(embedded.id)) continue
+        locations.set(embedded.id, {
           spec: {
             id: embedded.id,
             package: pkg.id,
@@ -88,10 +94,12 @@ export function createBundledExtensions(
           packageDirectory,
           extensionDirectory: packageDirectory,
           embedded,
-        }
+        })
+      }
     }
-    return undefined
   }
+  indexLocations()
+  const findBundledExtension = (id: string) => locations.get(id)
   // Third-party plugin rows may have registered before the kernel existed; they get their
   // registrations now. A tool name a builtin extension declares belongs to that extension's row.
   // `'unreadable'` is a builtin whose manifest cannot be read: nothing is known about what it declares.
@@ -100,7 +108,8 @@ export function createBundledExtensions(
     if (!found) return undefined
     if (found.embedded) return found.embedded
     try {
-      return readAuthorManifest(found.extensionDirectory)
+      const manifest = readAuthorManifest(found.extensionDirectory)
+      return manifest.id === extensionId ? manifest : ('unreadable' as const)
     } catch {
       return 'unreadable' as const
     }
@@ -108,23 +117,6 @@ export function createBundledExtensions(
   const consumesSkills = (extensionId: string) => {
     const manifest = authorManifestOf(extensionId)
     return manifest !== 'unreadable' && !!manifest?.liveResources?.includes('skills')
-  }
-  // A replacement bundled extension can declare the same public resource contract under any id.
-  const declaredExtensionIds = new Set(EXT_ROW_EXTENSION_IDS)
-  for (const pkg of ctx.profile.packages) {
-    if (!pkg.enabled || pkg.trust !== 'builtin') continue
-    for (const manifest of modules.get(pkg.id)?.embeddedExtensions ?? [])
-      if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
-    const directory = dirs.get(pkg.id)
-    if (!directory) continue
-    try {
-      for (const extensionDirectory of readBundledExtensionDirs(directory, true)) {
-        const manifest = readAuthorManifest(extensionDirectory)
-        if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
-      }
-    } catch {
-      /* Admission below remains fail-closed for unreadable manifests. */
-    }
   }
   const reservedToolName = (name: string) => name.toLowerCase().replace(/^_+|_+$/g, '')
   const reservedTools = new Map<string, string>()

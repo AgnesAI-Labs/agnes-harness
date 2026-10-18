@@ -103,7 +103,7 @@ Failed plugin states carry a short fix hint and a documentation link. In plugin 
 
 ## Built-in helper plugins
 
-AGH includes four official helpers. On each startup, missing release defaults that the profile has never been offered are automatically installed, trusted, enabled and activated without a network download:
+AGH includes five official helpers. On each startup, missing release defaults that the profile has never been offered are automatically installed, trusted, enabled and activated without a network download:
 
 | Plugin | Purpose |
 | --- | --- |
@@ -111,6 +111,7 @@ AGH includes four official helpers. On each startup, missing release defaults th
 | `@agnes/mcp-helper` | Prepare MCP integrations and query actual connection state |
 | `@agnes/plugin-helper` | Create tool or Skill plugins, inspect packages, and install/enable them after confirmation |
 | `@agnes/document-reader` | Read PDF text and page images, scanned PDF, DOC, DOCX, and selected ZIP entries; OCR runs offline |
+| `@agnes/browser-runtime` | Operate a separate headless browser; Chrome for Testing downloads on first use |
 
 The distribution also includes `@agnes/deliverables-ui`, `@agnes/goal-ui` and `@agnes/interaction-ui` as the default file, goal and interaction presentations. Startup also adds these presentations to existing profiles that have never been offered them. If the profile's capability ceiling blocks an optional UI package, AGH records it as offered and omitted, so later startups do not retry it automatically; other verification failures still stop initialization.
 
@@ -119,6 +120,47 @@ Existing installations keep their pinned plugin snapshots when the application i
 They appear under Settings → Plugin management → Installed and can be disabled or removed. Later startups and upgrades respect that choice. Removing a helper does not delete plugins, Skills, or MCP services it previously created or integrated. Installing third-party capabilities still requires the relevant confirmation.
 
 The bootstrap receipt remembers offered defaults, including ones omitted under the capability ceiling. Older receipts preserve offers proven by their recorded integrity hashes or currently installed defaults, then add any remaining missing defaults. Previously offered defaults stay removed or disabled; defaults marked for fresh profiles only are never backfilled. Existing packages with the same IDs retain their enabled/trusted state during initialization. After initial setup, you can reinstall a removed helper from discovery. Initial installation follows deployment policy, preserves failure records, and resumes after recovery without marking a failed installation as enabled.
+
+The transitional local build from 2026-10-17 wrote version 4 receipts without an `offered` field. Startup validates and atomically migrates this exact legacy format, preserving its seven historical default offers so removed plugins stay removed. Later additions still follow normal provisioning. Do not delete `default-helpers/state.json` to recover; other malformed or unknown formats remain rejected.
+
+## Independent browser and optional viewer
+
+The default `@agnes/browser-runtime` gives the agent browser tools even without a viewer. It starts
+a separate headless Chrome for Testing only when asked to open a page. The first use needs a browser
+download; a slow download can exceed the tool timeout. The plugin does not import personal Chrome/Edge
+profiles, cookies or extensions, discover existing debugging ports, or control desktop windows.
+Each session/lane has its own temporary profile and Host-owned process tree. Only owned processes are
+closed. A profile that excludes the declared process/network/filesystem capabilities skips this default.
+
+To see the browser, install `file:./bundled-plugins/browser-ui` through **Settings → Plugin management**.
+This optional UI adds a **Browser** tab on the right. The panel shows the same page the agent operates,
+with **Fit** and **Actual size** views. It currently supports observation; request clicks and typing in
+the conversation. Removing the UI stops viewing without removing the agent's browser tools.
+
+The viewer uses existing authenticated profile queries and streams. The backend verifies access to the
+current session and gives that viewer a short-lived read ticket. It does not give the UI a browser control
+port. The stream is capped at 20 fps and discards obsolete frames; actual smoothness depends on page load,
+network and rendering cost. This is a browsing/inspection viewer, not a guaranteed video player.
+After first installing the runtime, use a new conversation or the supported session migration action;
+existing conversations keep their pinned plugin generation.
+
+For generated projects, ask the agent to start the project's local server using existing background jobs,
+then open its HTTP URL. `localhost` refers to the machine running the backend. Existing deliverables cards
+and file previews continue using `@agnes/deliverables-ui`. A direct iframe can preview an embeddable local
+project sharply, but opens a separate browsing context and many public sites refuse embedding; it cannot
+mirror the agent's independent browser. The browser viewer therefore transports that browser's rendered
+frames instead of putting the target URL in an iframe.
+
+Mac and Windows use the same pinned `chrome-headless-shell` browser and agent-browser protocol;
+only the downloaded executable differs. Windows ARM relies on x64 emulation. First use downloads the
+official Chrome for Testing archive through Host-managed `curl` and `tar`, into the private
+`~/.agent-browser/agh-headless` cache. No desktop shell or personal browser installation is needed.
+Chrome's own sandbox stays enabled on Mac and Windows. This is separate from AGH's process isolation:
+Mac can use Seatbelt; AGH currently has no Windows restricted-token sandbox, and Windows Job Objects
+only manage owned process lifetimes. Startup failure reports an error without attaching to a personal browser
+or disabling Chrome's sandbox. Existing Host authorization still applies; restrictive policies may refuse
+cache writes, temporary profiles or network access. Platform acceptance uses the real-browser test on
+the target OS with `AGNES_BROWSER_E2E=1`; it has no sandbox-disabling option.
 
 <a id="管理其他插件"></a>
 
@@ -186,6 +228,10 @@ A package declaring `metadata.exampleOf` is managed only on its parent plugin’
 ## Update and roll back
 
 Rebuilding AGH preserves an installed package’s reviewed capability snapshot. Immutable package bytes are verified again at startup. Older client descriptors that were normalized without their declared streams remain usable with their original grants and capability hash; discovering those streams does not authorize them. Use the normal reviewed update flow, even from the same source and version, to approve the current declarations. Changed installed bytes still fail integrity verification.
+
+Startup compares unchanged bundled helpers without copying them into temporary inspection directories. Matching bootstrap and deployment snapshots can also be reused after their contents and compatibility are verified. A missing or mismatched snapshot is rebuilt; reuse does not bypass current trust checks or change the version used by an open session.
+
+Runtime source reads verify installed and archived trees concurrently, then recheck the lock and transaction boundary before returning. Identical service schemas reuse bounded in-memory validators; changed schemas are compiled separately. On Windows, runtime assembly can reuse successful PowerShell discovery for up to 30 seconds when the executable path and file identity are unchanged. Candidate selection still runs each time, failed probes are not cached, and direct diagnostic probes remain fresh. This does not change macOS shell selection or execution authorization.
 
 Runtime snapshot records carry a format version. Earlier plugin-core records (including records without a version) are verified using their original metadata and capability digest rules, with the same byte and tree checks. A format upgrade needs no manual recovery and does not rewrite snapshot identities, trust decisions or session pins. New snapshots use the current format; obtaining new agent or application declarations follows the normal integrity-verified, reviewed package update path. Retained package-operation results also keep their historical metadata and labels on disk; management responses project them into the current display contract. Corrupt records and modified bytes still fail closed.
 

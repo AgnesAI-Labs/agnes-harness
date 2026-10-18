@@ -15,6 +15,7 @@ import {
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createClientModuleRegistry } from '../src/packages/client-modules.js'
+import { withDefaultHelperState } from '../src/packages/default-helper-state.js'
 import {
   activateDefaultHelpers,
   initializeDefaultHelpers,
@@ -53,6 +54,17 @@ function setup(restrictCeiling = false) {
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
   mkdirSync(profileDir, { recursive: true })
+  // Bootstrap/upgrade tests exercise real declarations and code, without copying browser binaries or OCR models.
+  // Executable assets are covered by CLI bundled-plugin-packaging and the reader/browser runtime tests.
+  for (const helper of ['browser-runtime', 'document-reader']) {
+    const ref = `file:./bundled-plugins/${helper}`
+    const source = bundledPluginSource(ref)!
+    const payload = join(root, `${helper}-payload`)
+    mkdirSync(payload)
+    for (const name of ['package.json', 'index.mjs', 'src', 'LICENSE', 'README.md'])
+      cpSync(join(source.root, source.path, name), join(payload, name), { recursive: true })
+    payloads.set(ref, { root, path: `${helper}-payload` })
+  }
   const exec = vi.fn(async () => {
     throw new Error('Network forbidden')
   })
@@ -155,6 +167,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
+    ['@agnes/browser-runtime', true, true],
     ['@agnes/conversation-ui', true, true],
     ['@agnes/deliverables-ui', true, true],
     ['@agnes/document-reader', true, true],
@@ -251,6 +264,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
   expect(
     (await s.manager.inventory(s.profileDir)).packages.map((p) => [p.id, p.entry.state.enabled]),
   ).toEqual([
+    ['@agnes/browser-runtime', true],
     ['@agnes/conversation-ui', true],
     ['@agnes/deliverables-ui', true],
     ['@agnes/document-reader', true],
@@ -299,8 +313,9 @@ it.each([
     }
     await initializeDefaultHelpers(s)
     const packages = (await s.manager.inventory(s.profileDir)).packages
-    expect(packages).toHaveLength(restricted ? 4 : 9)
+    expect(packages).toHaveLength(restricted ? 4 : 10)
     for (const id of [
+      '@agnes/browser-runtime',
       '@agnes/conversation-ui',
       '@agnes/deliverables-ui',
       '@agnes/goal-ui',
@@ -321,6 +336,7 @@ it.each([
     const receipt = JSON.parse(readFileSync(file, 'utf8'))
     expect(receipt).toMatchObject({ version: 4, phase: 'complete' })
     for (const id of [
+      '@agnes/browser-runtime',
       '@agnes/conversation-ui',
       '@agnes/deliverables-ui',
       '@agnes/goal-ui',
@@ -346,7 +362,7 @@ it.each([
       { ...receipt, unexpected: true },
       { ...receipt, offered: {} },
       { ...receipt, phase: ['complete'] },
-      { version: 4, phase: 'complete', integrity: {} },
+      { version: 4, phase: 'complete', integrity: {}, offered: null },
       { ...receipt, offered: ['@agnes/not-a-default'] },
       { ...receipt, offered: [...receipt.offered, receipt.offered[0]] },
       { ...receipt, offered: [] },
@@ -462,6 +478,52 @@ it('retries target publication after failure and never reactivates completed def
   expect(publish).toHaveBeenCalledTimes(2)
 })
 
+it.each(['pending', 'installed', 'complete'] as const)(
+  'migrates the legacy v4 %s receipt atomically without weakening record validation',
+  async (phase) => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-legacy-receipt-'))
+    roots.push(root)
+    const directory = join(root, 'default-helpers')
+    mkdirSync(directory)
+    const file = join(directory, 'state.json')
+    const integrity = { '@agnes/goal-ui': `sha256-${'a'.repeat(64)}` }
+    const legacy = { version: 4, phase, integrity }
+    writeFileSync(file, JSON.stringify(legacy))
+    const read = vi.fn(async () => {})
+    await withDefaultHelperState(root, read)
+    const migrated = JSON.parse(readFileSync(file, 'utf8'))
+    expect(migrated).toEqual({
+      ...legacy,
+      offered: [
+        '@agnes/skill-helper',
+        '@agnes/mcp-helper',
+        '@agnes/plugin-helper',
+        '@agnes/goal-ui',
+        '@agnes/interaction-ui',
+        '@agnes/deliverables-ui',
+        '@agnes/document-reader',
+      ],
+    })
+    expect(read).toHaveBeenCalledWith(migrated, expect.any(Function))
+    await withDefaultHelperState(root, async (state) => expect(state).toEqual(migrated))
+    for (const invalid of [
+      { ...legacy, integrity: { '@agnes/browser-runtime': `sha256-${'a'.repeat(64)}` } },
+      { ...legacy, integrity: { '@agnes/goal-ui': 'broken' } },
+      { ...legacy, unexpected: true },
+      { ...legacy, offered: null },
+      { ...legacy, phase: 'existing' },
+      { ...legacy, version: 5 },
+    ]) {
+      const bytes = JSON.stringify(invalid)
+      writeFileSync(file, bytes)
+      const run = vi.fn(async () => {})
+      await expect(withDefaultHelperState(root, run)).rejects.toThrow('Invalid')
+      expect(run).not.toHaveBeenCalled()
+      expect(readFileSync(file, 'utf8')).toBe(bytes)
+    }
+  },
+)
+
 it('migrates the earlier existing marker without enabling or replacing an installed helper', async () => {
   const s = setup()
   await s.initializePolicy()
@@ -488,7 +550,7 @@ it('migrates the earlier existing marker without enabling or replacing an instal
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(8)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(9)
 })
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
@@ -503,6 +565,7 @@ it('records completion without activation when all helpers are already installed
     'interaction-ui',
     'deliverables-ui',
     'document-reader',
+    'browser-runtime',
   ]) {
     const source = parseSource(`file:./bundled-plugins/${name}`)
     const preview = await s.manager.inspect(s.profileDir, source)
@@ -520,13 +583,19 @@ it('records completion without activation when all helpers are already installed
   )
 })
 
-it.each([1, 2, 3, 4])(
+it.each([1, 2, 3, 4, 'legacy-4'] as const)(
   'backfills never-offered defaults in a completed v%s receipt and preserves prior choices',
   async (version) => {
     const s = setup()
     await s.initializePolicy()
     const integrity: Record<string, string> = {}
-    for (const name of ['skill-helper', 'mcp-helper', 'plugin-helper', 'document-reader']) {
+    for (const name of [
+      'skill-helper',
+      'mcp-helper',
+      'plugin-helper',
+      'document-reader',
+      ...(version === 'legacy-4' ? ['goal-ui', 'interaction-ui', 'deliverables-ui'] : []),
+    ]) {
       const source = parseSource(`file:./bundled-plugins/${name}`)
       const preview = await s.manager.inspect(s.profileDir, source)
       await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
@@ -544,6 +613,12 @@ it.each([1, 2, 3, 4])(
       await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
       await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
     }
+    // The October 17 v4 writer recorded only its latest batch, not all past offers.
+    // A removed older helper must stay removed even when absent from that batch.
+    if (version === 'legacy-4')
+      for (const id of Object.keys(integrity))
+        if (!['@agnes/goal-ui', '@agnes/interaction-ui', '@agnes/deliverables-ui'].includes(id))
+          delete integrity[id]
     const before = await s.manager.inventory(s.profileDir)
     let target: RuntimeTargetArtifact | undefined
     for (const pkg of before.packages.filter((pkg) => pkg.enabled))
@@ -558,7 +633,7 @@ it.each([1, 2, 3, 4])(
     writeFileSync(
       file,
       JSON.stringify({
-        version,
+        version: version === 'legacy-4' ? 4 : version,
         phase: 'complete',
         integrity,
         ...(version === 4 ? { offered: [...Object.keys(integrity)] } : {}),
@@ -566,7 +641,7 @@ it.each([1, 2, 3, 4])(
     )
     await initializeDefaultHelpers(s)
     const inventory = await s.manager.inventory(s.profileDir)
-    expect(inventory.packages).toHaveLength(version === 3 ? 9 : 8)
+    expect(inventory.packages).toHaveLength(version === 3 ? 10 : 9)
     expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
     expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
       version === 3 ? [] : ['@agnes/skill-helper'],
@@ -604,7 +679,7 @@ it.each([1, 2, 3, 4])(
       phase: 'complete',
       offered: expect.arrayContaining(inventory.packages.map((pkg) => pkg.id)),
     })
-    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(9)
+    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(10)
     await s.manager.setEnabled(s.profileDir, '@agnes/goal-ui', false)
     await s.manager.remove(s.profileDir, '@agnes/goal-ui')
     await s.manager.setEnabled(s.profileDir, '@agnes/interaction-ui', false)

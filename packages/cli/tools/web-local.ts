@@ -2,11 +2,13 @@
 import { startWebDevBuild } from '@agnes/web/dev'
 import { resolveLaunchResources } from '../launch/resources.js'
 import { runWebCommand } from '../launch/web-command.js'
+import { prepareBrowserRuntime } from './browser-runtime.js'
 import { prepareDocumentReader } from './document-reader.js'
 
 /** Development entry point; production uses the sibling resources in `dist/local`. */
 
 await prepareDocumentReader()
+await prepareBrowserRuntime()
 const frontend = await startWebDevBuild()
 try {
   await runWebCommand(process.argv.slice(2), {

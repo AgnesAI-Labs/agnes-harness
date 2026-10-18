@@ -1,0 +1,164 @@
+{
+  "name": "@agnes/browser-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "dist",
+    "NOTICE",
+    "README.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "browserRuntime",
+        "id": "ext:browser-runtime/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "tools",
+          "hooks",
+          "services",
+          "profileRuntime"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true,
+          "tools": {
+            "prefix": "browser_"
+          },
+          "hooks": [
+            "shutdown"
+          ],
+          "network": [
+            "*"
+          ],
+          "exec": [
+            "*agent-browser-*",
+            "*chrome-headless-shell*",
+            "*/curl",
+            "*\\curl.exe",
+            "*/tar",
+            "*\\tar.exe"
+          ],
+          "filesystem": {
+            "read": [
+              "*/.agent-browser/agh-headless/*",
+              "*\\.agent-browser\\agh-headless\\*",
+              "*/agh-b-*/*",
+              "*\\agh-b-*\\*",
+              "*/dist/bin/*",
+              "*\\dist\\bin\\*"
+            ],
+            "write": [
+              "*/.agent-browser/agh-headless/*",
+              "*\\.agent-browser\\agh-headless\\*",
+              "*/agh-b-*/*",
+              "*\\agh-b-*\\*"
+            ]
+          },
+          "services": [
+            {
+              "name": "browser.observe",
+              "scope": "profile",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "required": [
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 5000,
+              "maxResultBytes": 16384
+            }
+          ],
+          "streams": [
+            {
+              "name": "browser.frames",
+              "scope": "profile",
+              "directions": [
+                "outbound"
+              ],
+              "lane": "media",
+              "inputSchema": {
+                "type": "object",
+                "required": [
+                  "ticket"
+                ],
+                "properties": {
+                  "ticket": {
+                    "type": "string",
+                    "minLength": 36,
+                    "maxLength": 36
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxFrameBytes": 1048576,
+              "maxBufferedBytes": 1048576,
+              "maxBytesPerSecond": 4194304
+            }
+          ],
+          "managedServices": [
+            {
+              "id": "browser",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "apiVersion": "1.0.0",
+              "healthPath": "/health",
+              "listeners": [],
+              "requires": [],
+              "startupTimeoutMs": 10000,
+              "shutdownTimeoutMs": 5000
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Independent browser runtime",
+          "summary": "Private headless browser tools with an authenticated optional viewer.",
+          "description": "Owns a separate Chrome for Testing process per session. Never attaches to personal browsers."
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:browser-runtime/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Independent browser runtime",
+      "summary": "Private headless browser tools with an authenticated optional viewer.",
+      "description": "Owns a separate Chrome for Testing process per session. Never attaches to personal browsers."
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "agent-browser": "0.39.1"
+  }
+}

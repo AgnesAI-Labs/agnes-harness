@@ -376,8 +376,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     profileDir: string,
     fn: () => Promise<T>,
     op: { signal?: AbortSignal } = {},
-    ordinaryRead = false,
+    readMode?: 'ordinary' | 'fresh',
   ): Promise<T> => {
+    const ordinaryRead = readMode === 'ordinary'
     const key = profileKey(profileDir)
     if (!ordinaryRead) inventoryReads.delete(key)
     return (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
@@ -394,7 +395,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             '.agnes-runtime-transaction.json.tmp',
             '.agnes-runtime-snapshots.json.tmp',
           ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
-          if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
+          if (readMode && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
           else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
           recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
           return fn()
@@ -712,7 +713,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           try {
             const lock = load(profileDir)
             return projectLocal(
-              await (opts.fresh ? readInventory : readInventoryAsync)(lock, {
+              // Fresh means independent verification, not blocking the event loop. Keep the
+              // profile lock and bypass both memo layers while yielding during filesystem reads.
+              await readInventoryAsync(lock, {
                 ...storeFor(profileDir),
                 ceiling: ceiling(lock),
                 ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
@@ -728,7 +731,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           await setImmediate()
           return read()
         }
-        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
+        reading = (
+          existsSync(profileDir) ? locked(profileDir, scan, {}, opts.fresh ? 'fresh' : 'ordinary') : scan()
+        ).finally(clear)
         if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
         return reading
       })
@@ -777,7 +782,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)
+      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, 'ordinary')
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

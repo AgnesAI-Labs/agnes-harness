@@ -238,6 +238,32 @@ describe('hashDirectory', () => {
     await expect(hashDirectoryAsync(root, { signal: abort.signal })).rejects.toMatchObject({
       code: 'E_PACKAGE_CANCELLED',
     })
+    const duringRead = new AbortController()
+    const open = asyncFs.open
+    let closed = false
+    const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args)
+      const read = handle.read.bind(handle)
+      const close = handle.close.bind(handle)
+      vi.spyOn(handle, 'read').mockImplementation(async (...input) => {
+        const result = await read(...input)
+        duringRead.abort()
+        return result
+      })
+      vi.spyOn(handle, 'close').mockImplementation(async () => {
+        await close()
+        closed = true
+      })
+      return handle
+    })
+    try {
+      await expect(hashDirectoryAsync(root, { signal: duringRead.signal })).rejects.toMatchObject({
+        code: 'E_PACKAGE_CANCELLED',
+      })
+      expect(closed).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

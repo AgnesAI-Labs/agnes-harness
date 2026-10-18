@@ -63,7 +63,7 @@ it.each([
     if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
     const catalog = await discoverLocalExamples(root)
     const result = await catalog.read({ offline: true })
-    expect(result.entries).toHaveLength(optional ? 27 : 26)
+    expect(result.entries).toHaveLength(optional ? 28 : 27)
     if (!optional) expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
     expect(
       result.entries

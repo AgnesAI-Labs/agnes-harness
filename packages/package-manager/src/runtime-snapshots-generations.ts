@@ -728,8 +728,11 @@ export class RuntimeGenerationSnapshotStore {
       resourcesDigest?: string
       seams?: GenerationSeams
     }>,
+    recordedHeadId?: string,
   ): PluginGenerationSnapshot | undefined {
-    const id = this.headId(compositionKey)
+    // A caller may retain the pre-bootstrap head while publishing an intermediate base target.
+    // It is only a candidate: all identity, byte and collection checks below still apply.
+    const id = recordedHeadId ?? this.headId(compositionKey)
     if (!id) return undefined
     try {
       const snapshot = this.read(id)

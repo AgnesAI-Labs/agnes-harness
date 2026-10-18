@@ -1,5 +1,5 @@
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
-import { userImagePolicy } from '@agnes/protocol'
+import { ARTIFACT_REGISTERED_EVENT, userImagePolicy } from '@agnes/protocol'
 import { decodeSafeImageBytes } from '@agnes/protocol-validation'
 import { REQUEST_MEDIA_MIN_DIMENSION } from '../orchestrator/request-media.js'
 import { resolveModel } from '../step/inference.js'
@@ -57,6 +57,12 @@ export async function imageInput(
       return text('The image exceeds the active model or runtime dimension limits.', true)
     abort()
     const ref = await session.d.runtime.artifactPut(image.bytes, { mime: image.mime, name: input.name })
+    abort()
+    // The bytes must have a trusted session/lane root before the next inference reads them.
+    // Tool-result roots only cover legacy built-ins, not arbitrary image-producing plugins.
+    await session.d.log.append([
+      session.ev(ARTIFACT_REGISTERED_EVENT, { artifact: ref }, { ignorable: true }),
+    ])
     abort()
     return {
       content: [

@@ -27,8 +27,9 @@ const fixture = () => {
   return root
 }
 
-it('keeps an empty optional catalogue without reserving ordinary workspace sources', () => {
-  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+it('ships the browser viewer as optional without reserving ordinary workspace sources', () => {
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.id)).toEqual(['@agnes/browser-ui'])
+  expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((pkg) => pkg.id === '@agnes/browser-ui')).toBe(false)
   expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
   expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
 })
@@ -86,7 +87,22 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
+      policySnapshot: {
+        capabilityCeiling: [
+          'tools',
+          'ui',
+          'hooks',
+          'services',
+          'store',
+          'streams',
+          'managedServices',
+          'exec',
+          'network',
+          'filesystem.read',
+          'filesystem.write',
+        ],
+        workspacePackages: 'require-project-trust',
+      },
     })
     const exec = vi.fn(async () => {
       throw new Error('Network forbidden')

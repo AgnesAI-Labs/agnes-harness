@@ -2,6 +2,8 @@ packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
   - packages/package-manager/bundled-plugins/deliverables-ui
+  - packages/package-manager/bundled-plugins/browser-runtime
+  - packages/package-manager/bundled-plugins/browser-ui
   - packages/package-manager/bundled-plugins/goal-ui
   - packages/package-manager/bundled-plugins/navigation-ui
   - packages/package-manager/bundled-plugins/conversation-ui

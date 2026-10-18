@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_ENABLED_BUNDLED_PACKAGES, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
+import { prepareBrowserRuntime } from '../tools/browser-runtime.js'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
 
 const roots: string[] = []
@@ -22,9 +23,9 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.id)).toEqual(['@agnes/browser-ui'])
   expect((await readdir(join(output, 'bundled-plugins'))).sort()).toEqual(
-    DEFAULT_ENABLED_BUNDLED_PACKAGES.map((pkg) => pkg.name).sort(),
+    [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.name).sort(),
   )
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
     [
@@ -66,6 +67,23 @@ it.each([
   })
   const relocated = join(root, 'relocated-runtime')
   await rename(output, relocated)
+  if (helper.name === 'skill-helper') {
+    const browser = join(relocated, 'bundled-plugins/browser-runtime')
+    const provenance = JSON.parse(await readFile(join(browser, 'dist/provenance.json'), 'utf8'))
+    expect(provenance.version).toBe('0.39.1')
+    expect(await readFile(join(browser, 'dist/agent-browser-LICENSE'), 'utf8')).toContain('Apache License')
+    // Exercise the relocated native payload, without launching Chrome or requiring a browser download.
+    const arch = process.platform === 'win32' && process.arch === 'arm64' ? 'x64' : process.arch
+    const binary = `agent-browser-${process.platform}-${arch}${process.platform === 'win32' ? '.exe' : ''}`
+    expect(await readdir(join(browser, 'dist/bin'))).toEqual([binary])
+    expect(provenance.binaries).toEqual([binary])
+    expect(
+      execFileSync(join(browser, 'dist/bin', binary), ['--version'], { windowsHide: true, encoding: 'utf8' }),
+    ).toContain('0.39.1')
+    expect(await readFile(join(relocated, 'bundled-plugins/browser-ui/src/browser.css'), 'utf8')).toContain(
+      '@layer app',
+    )
+  }
   expect(
     execFileSync(process.execPath, [join(relocated, 'probe.mjs')], {
       cwd: root,
@@ -90,6 +108,30 @@ it.each([
     expect.arrayContaining(['dist/local/bundled-plugins', 'dist/sea/bundled-plugins']),
   )
   expect(await readFile(new URL('../sea/build.mjs', import.meta.url), 'utf8')).toContain("'bundled-plugins'")
+})
+
+it.each([
+  ['win32', 'x64', 'agent-browser-win32-x64.exe'],
+  ['win32', 'arm64', 'agent-browser-win32-x64.exe'],
+  ['darwin', 'arm64', 'agent-browser-darwin-arm64'],
+  ['darwin', 'x64', 'agent-browser-darwin-x64'],
+  ['linux', 'x64', 'agent-browser-linux-x64'],
+  ['linux', 'arm64', 'agent-browser-linux-arm64'],
+] as const)('ships only the %s/%s browser payload, including on rebuild', async (platform, arch, binary) => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-browser-delivery-'))
+  roots.push(root)
+  const bin = join(root, 'dist/bin')
+  await mkdir(bin, { recursive: true })
+  // Simulate an older build that bundled every platform; preserve unrelated files.
+  for (const name of ['agent-browser-win32-x64.exe', 'agent-browser-darwin-arm64', 'NOTICE'])
+    await writeFile(join(bin, name), 'old build')
+  await prepareBrowserRuntime(root, { platform, arch })
+  expect((await readdir(bin)).sort()).toEqual([binary, 'NOTICE'].sort())
+  const { binaries } = JSON.parse(await readFile(join(root, 'dist/provenance.json'), 'utf8'))
+  expect(binaries).toEqual([binary])
+  expect((await readFile(join(bin, binary))).byteLength).toBeGreaterThan(1_000_000)
+  await expect(prepareBrowserRuntime(root, { platform, arch: 'ia32' })).rejects.toThrow('Unsupported')
+  expect((await readdir(bin)).sort()).toEqual([binary, 'NOTICE'].sort())
 })
 
 it('ships all official example payloads with runnable community entries and no checkout-only files', async () => {

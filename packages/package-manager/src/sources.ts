@@ -235,10 +235,29 @@ export async function hashDirectoryAsync(
     }
   }
   await walk(root)
-  // One bounded scratch buffer per traversal, reused only after each awaited read/hash completes.
-  const chunk = new Uint8Array(256 * 1024)
-  const outer = createHash('sha256')
-  for (const { rel, file, observed } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  // Bound open handles and scratch memory while overlapping filesystem waits. Always drain
+  // started work on failure before returning to callers that may remove the verified tree.
+  const visitFiles = async (visit: (index: number, chunk: Uint8Array) => Promise<void>) => {
+    let next = 0
+    let failed = false
+    const workers = await Promise.allSettled(
+      Array.from({ length: Math.min(4, files.length) }, async () => {
+        const chunk = new Uint8Array(256 * 1024)
+        try {
+          while (!failed && next < files.length) await visit(next++, chunk)
+        } catch (error) {
+          failed = true
+          throw error
+        }
+      }),
+    )
+    const failure = workers.find((worker) => worker.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+  }
+  const digests: Uint8Array[] = []
+  await visitFiles(async (index, chunk) => {
+    const { rel, file, observed } = files[index]!
     checkCancelled(opts.signal)
     if (!contained(root, await asyncFs.realpath(file)))
       throw sourceError('package file escapes its source tree', 'path-escape')
@@ -268,14 +287,15 @@ export async function hashDirectoryAsync(
         after.ctimeMs !== before.ctimeMs
       )
         throw sourceError('package file changed while hashing', 'tree-changed')
-      outer.update(inner.digest())
+      digests[index] = inner.digest()
     } finally {
       await handle.close()
     }
-  }
+  })
   // A previously closed file can change while a later file yields. Recheck the entire observation,
   // including ctime: same-size writes with a restored mtime must still refuse this traversal.
-  for (const { file, observed } of files) {
+  await visitFiles(async (index) => {
+    const { file, observed } = files[index]!
     checkCancelled(opts.signal)
     const current = await asyncFs.lstat(file)
     if (
@@ -284,7 +304,7 @@ export async function hashDirectoryAsync(
       !contained(root, await asyncFs.realpath(file))
     )
       throw sourceError('package file changed while hashing', 'tree-changed')
-  }
+  })
   const finalRoot = await asyncFs.lstat(dir)
   if (
     finalRoot.isSymbolicLink() ||
@@ -294,6 +314,8 @@ export async function hashDirectoryAsync(
   )
     throw sourceError('package directory changed while hashing', 'tree-changed')
   checkCancelled(opts.signal)
+  const outer = createHash('sha256')
+  for (const digest of digests) outer.update(digest)
   return `sha256-${outer.digest('hex')}`
 }
 

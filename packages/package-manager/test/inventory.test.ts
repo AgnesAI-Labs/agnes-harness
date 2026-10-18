@@ -142,6 +142,7 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   const failures = await Promise.allSettled([
     f.manager.inventory(f.profileDir),
     f.manager.inventory(f.profileDir),
+    f.manager.inventory(f.profileDir, { fresh: true }),
   ])
   expect(failures.every((result) => result.status === 'rejected')).toBe(true)
   writeFileSync(join(f.directory, 'index.mjs'), 'export const main = () => {}\n')

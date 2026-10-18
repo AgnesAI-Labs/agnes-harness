@@ -3,6 +3,7 @@ import type { ToolContext } from '@agnes/extension-api'
 import {
   type ContentBlock,
   type ModelRecord,
+  sessionArtifactRoots,
   USER_MESSAGE_IMAGE_LIMITS,
   sha256Hex as uploadSessionHash,
 } from '@agnes/protocol'
@@ -514,21 +515,26 @@ it('runs a long image conversation and reloads originals through the existing to
   ).rejects.toThrow('cancelled')
 })
 
-it.each([true, false])(
-  'projects confined workspace images into the model request only when vision=%s',
-  async (vision) => {
+it.each([
+  ['read', true],
+  ['read', false],
+  ['browser_screenshot', true],
+  ['browser_screenshot', false],
+] as const)(
+  'projects %s images through ledger-authorized reads only when vision=%s',
+  async (toolName, vision) => {
     const bytes = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQAAAADsdIMmAAAACHRFWHRtYXJrZXIAME95DiIAAAALSURBVHicY2BABQAAEAABOb2PZQAAAABJRU5ErkJggg==',
       'base64',
     )
     const artifacts = new Map<string, Uint8Array>()
-    const scripts = [toolTurn('read', { path: 'picture.png' }), textTurn('finished')]
+    const scripts = [toolTurn(toolName, { path: 'picture.png' }), textTurn('finished')]
     const provider = fakeProvider(scripts)
     provider.models = () => [{ ...model, input: vision ? ['text', 'image'] : ['text'] }]
     const registry = new ToolRegistry()
     registry.add(
       {
-        name: 'read',
+        name: toolName,
         description: 'Read through the confined tool port and prepare model pixels',
         parameters: Type.Object({ path: Type.String() }),
         meta: {
@@ -578,7 +584,15 @@ it.each([true, false])(
         },
       }),
       requestMedia: {
-        readArtifact: async ({ sha256 }) => artifacts.get(sha256),
+        readArtifact: async ({ sha256, nodeSeq }) => {
+          // Production readers require a ledger root before the image enters the model request.
+          const events = await log.scan({ limit: 4096 })
+          const authorized = events.some(
+            (event) =>
+              event.seq <= nodeSeq && sessionArtifactRoots(event)?.some((root) => root.sha256 === sha256),
+          )
+          return authorized ? artifacts.get(sha256) : undefined
+        },
         surfaceLimits: {
           maxLedgerEvents: 4096,
           maxSurfaceNodes: 512,
@@ -611,7 +625,7 @@ it.each([true, false])(
     expect(artifacts.size).toBe(vision ? 1 : 0)
     const results = await log.scan({ type: 'tool/result', limit: 10 })
     expect(JSON.stringify(results)).toContain(vision ? 'untrusted data' : 'pixels were not inspected')
-    scripts.push(toolTurn('read', { path: '/outside/picture.png' }), textTurn('refused outside path'))
+    scripts.push(toolTurn(toolName, { path: '/outside/picture.png' }), textTurn('refused outside path'))
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Inspect outside image' }], actor })
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(reads).toEqual(['/w/picture.png'])

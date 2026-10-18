@@ -441,6 +441,9 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   symlinkSync(join(root, 'missing-journal'), journal, process.platform === 'win32' ? 'junction' : 'dir')
   try {
     await expect(manager().inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+    await expect(manager().inventory(profile, { fresh: true })).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+    })
     await expect(manager().listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   } finally {
     unlinkSync(journal)
@@ -479,7 +482,9 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
     stamp = statSync(dataFile)
   writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
   utimesSync(dataFile, stamp.atime, stamp.mtime)
+  await expect(m.inventory(profile, { fresh: true })).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  await expect(m.runtimePluginSnapshots(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   writeFileSync(dataFile, original)
   utimesSync(dataFile, stamp.atime, stamp.mtime)
   writeFileSync(join(pin.snapshot.directory, 'tampered'), 'preserve')

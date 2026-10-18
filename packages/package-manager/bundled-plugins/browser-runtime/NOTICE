@@ -1,0 +1,6 @@
+AGH independent browser runtime uses agent-browser 0.39.1 by Vercel, Inc.
+Source: https://github.com/vercel-labs/agent-browser/tree/v0.39.1
+License: Apache-2.0. The upstream license and binary provenance are included in dist/.
+The first browser_open downloads the official Chrome for Testing chrome-headless-shell 155.0.8059.84
+archive through Host-managed curl and tar. Chrome is a separate runtime dependency, not included
+in this source distribution. Vendor licenses and notices remain in the extracted archive.

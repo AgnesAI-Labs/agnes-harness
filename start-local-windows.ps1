@@ -1,6 +1,6 @@
-# Local-only helper: install missing dependencies, build, stop the old local server, and run the new build.
+# Local development: prepare the backend, watch frontend sources, and refresh connected pages.
 # Run from PowerShell: .\start-local-windows.ps1
-# Old builds and conversation data are retained. No git operations are performed.
+# Conversation data is retained. Backend edits require rerunning this script. No git operations.
 
 $ErrorActionPreference = 'Stop'
 $repoDir = $PSScriptRoot
@@ -22,12 +22,11 @@ function Resolve-LocalDataDir([string]$AghHome, [string]$AgnesHome, [string]$OsH
 }
 
 $dataDir = Resolve-LocalDataDir -AghHome $env:AGH_HOME -AgnesHome $env:AGNES_HOME -OsHome $env:HOME -UserProfile $env:USERPROFILE
-$outputDir = Join-Path $repoDir (
-    'packages\cli\dist\local-dev-' + (Get-Date -Format 'yyyyMMdd-HHmmssfff')
-)
+$outputDir = Join-Path $repoDir 'packages\cli\dist\local'
 $entry = Join-Path $outputDir 'agnes.mjs'
+$devEntry = Join-Path $repoDir 'packages\cli\tools\web-local.ts'
 
-# Fail closed: only the exact launcher grammar and this repository's build outputs qualify.
+# Fail closed: accept only this repository's packaged launchers or exact development command.
 function Test-LocalAgnesProcess($ProcessInfo, [string]$Kind) {
     if ($null -eq $ProcessInfo -or $ProcessInfo.Name -ne 'node.exe') { return $false }
     $command = $ProcessInfo.CommandLine
@@ -37,16 +36,23 @@ function Test-LocalAgnesProcess($ProcessInfo, [string]$Kind) {
     })
     if ($tokens.Count -lt 3) { return $false }
     try {
-        $buildEntry = [IO.Path]::GetFullPath($tokens[1])
-        $distRoot = [IO.Path]::GetFullPath((Join-Path $repoDir 'packages\cli\dist')) + '\'
-        if (-not [IO.Path]::IsPathRooted($tokens[1]) -or
-            -not $buildEntry.StartsWith($distRoot, [StringComparison]::OrdinalIgnoreCase)) { return $false }
-        $index = 2
-        if ($Kind -eq 'web') {
-            if ([IO.Path]::GetFileName($buildEntry) -ne 'agnes.mjs' -or $tokens[2] -ne 'serve') { return $false }
-            $index = 3
+        if ($Kind -eq 'web' -and $tokens.Count -ge 5 -and $tokens[1] -ceq '--import' -and $tokens[2] -ceq 'tsx') {
+            $expected = [IO.Path]::GetFullPath((Join-Path $repoDir 'packages\cli\tools\web-local.ts'))
+            if (-not [IO.Path]::IsPathRooted($tokens[3]) -or
+                [IO.Path]::GetFullPath($tokens[3]) -ne $expected -or $tokens[4] -cne 'serve') { return $false }
+            $index = 5
         } else {
-            if ([IO.Path]::GetFileName($buildEntry) -ne 'daemon.mjs') { return $false }
+            $buildEntry = [IO.Path]::GetFullPath($tokens[1])
+            $distRoot = [IO.Path]::GetFullPath((Join-Path $repoDir 'packages\cli\dist')) + '\'
+            if (-not [IO.Path]::IsPathRooted($tokens[1]) -or
+                -not $buildEntry.StartsWith($distRoot, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            $index = 2
+            if ($Kind -eq 'web') {
+                if ([IO.Path]::GetFileName($buildEntry) -ne 'agnes.mjs' -or $tokens[2] -ne 'serve') { return $false }
+                $index = 3
+            } else {
+                if ([IO.Path]::GetFileName($buildEntry) -ne 'daemon.mjs') { return $false }
+            }
         }
         $flags = @{}
         for (; $index -lt $tokens.Count; $index += 2) {
@@ -99,16 +105,7 @@ try {
         }
     }
 
-    Write-Host '[2/5] Building the current local code...'
-    & pnpm --filter @agnes/cli build:local --output-dir $outputDir
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Build failed. The existing server has not been stopped.'
-    }
-    if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) {
-        throw 'Build output is missing. The existing server has not been stopped.'
-    }
-
-    Write-Host '[3/5] Checking the existing server on port 4180...'
+    Write-Host '[2/5] Checking the existing server on port 4180...'
     $listeners = @(Get-NetTCPConnection -LocalPort 4180 -State Listen -ErrorAction SilentlyContinue)
     $processIds = @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)
     foreach ($processId in $processIds) {
@@ -117,24 +114,44 @@ try {
             throw "Port 4180 belongs to another application (PID $processId). Nothing was stopped."
         }
     }
-    Write-Host '[4/5] Stopping the old daemon and cleaning verified local leftovers...'
-    & node $entry daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
+    Write-Host '[3/5] Stopping the old daemon and cleaning verified local leftovers...'
+    # Stop the launcher first: while compiling its frontend it may not have spawned the daemon yet.
+    # Otherwise it can spawn a new daemon after the stop/discovery pass and leave native DLLs locked.
+    $launchers = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object {
+        Test-LocalAgnesProcess $_ 'web'
+    })
+    foreach ($launcher in $launchers) { Stop-VerifiedLocalProcess $launcher 'web' }
+    if (Test-Path -LiteralPath $entry -PathType Leaf) {
+        & node $entry daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
+    } else {
+        & node --import tsx (Join-Path $repoDir 'packages\cli\src\bin.ts') daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Warning 'Normal daemon stop failed; checking for verified local leftovers.'
     }
-    foreach ($kind in @('daemon', 'web')) {
-        $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object {
-            Test-LocalAgnesProcess $_ $kind
-        })
-        foreach ($candidate in $candidates) { Stop-VerifiedLocalProcess $candidate $kind }
-    }
+    $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" | Where-Object {
+        Test-LocalAgnesProcess $_ 'daemon'
+    })
+    foreach ($candidate in $candidates) { Stop-VerifiedLocalProcess $candidate 'daemon' }
     if (@(Get-NetTCPConnection -LocalPort 4180 -State Listen -ErrorAction SilentlyContinue).Count -gt 0) {
         throw 'Port 4180 is still occupied. The new server was not started.'
     }
 
-    Write-Host '[5/5] Starting the new build. Keep this terminal open.'
+    # Development resolves its composed backend from dist/local. Stop its old processes first:
+    # Windows may hold native files open and prevent that directory from being replaced.
+    Write-Host '[4/5] Building the development backend...'
+    & pnpm --filter @agnes/cli build:local --output-dir $outputDir
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Backend build failed. The old local instance was stopped; fix the error and rerun this script.'
+    }
+    if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) {
+        throw 'Backend build output is missing. The development server was not started.'
+    }
+
+    Write-Host '[5/5] Starting development mode. Keep this terminal open.'
+    Write-Host 'Frontend edits rebuild and refresh automatically. Rerun this script after backend edits.'
     Write-Host 'Open the FULL new URL printed below. Re-running this script replaces this local instance.'
-    & node $entry serve --port 4180 --profile local-dev --cwd $repoDir --data-dir $dataDir
+    & node --import tsx $devEntry serve --port 4180 --profile local-dev --cwd $repoDir --data-dir $dataDir
     if ($LASTEXITCODE -ne 0) {
         throw 'The web server exited with an error. See the output above.'
     }

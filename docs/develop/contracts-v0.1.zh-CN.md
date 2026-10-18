@@ -56,7 +56,7 @@ Windows 任务 Shell 复用 Host 已选定的 PowerShell。实验性 `SHELL_STDI
 | 插件管理、SDK 会话选择、generation 迁移/发布 API | experimental | 认证操作与后台持久绑定；浏览器模块不获得 Node 凭据 |
 | Extension fixtures、transport cases、provider/persistence conformance、plugin-runtime 作者 helper/testkit | experimental | 可复用校验、受控 probe 与真实 Host 集成；mock 不是部署资格验证 |
 
-`@agnes/protocol` 为后台 ledger 投影导出 `ARTIFACT_REGISTERED_EVENT` 与 `sessionArtifactRoots`。解析器输入为已验证的服务端 ledger 记录，输出仅是候选引用；会话/lane 归属、元数据和字节校验仍由服务端负责。工具产物登记先于 `artifacts.put` 返回提交，插件可通过现有 Intelligent UI 能力立即发布文件卡片。
+`@agnes/protocol` 为后台 ledger 投影导出 `ARTIFACT_REGISTERED_EVENT` 与 `sessionArtifactRoots`。解析器输入为已验证的服务端 ledger 记录，输出仅是候选引用；会话/lane 归属、元数据和字节校验仍由服务端负责。工具产物登记先于 `artifacts.put` 返回提交，插件可通过现有 Intelligent UI 能力立即发布文件卡片。`session.imageInput` 也会在返回前登记成功保存的图片，让产出图片的插件走同一条经过授权校验的模型图片读取路径，无需为工具名称单独开例外。
 
 登记确认 provider 成功存储，不承诺 Web 可读性：`put` 保留通用大小和 provider 合同。当前 Web adapter 读取本地 CAS，最多 32 MiB；远端独有或超限引用、Web 不支持的 MIME 不能发布文件卡片，但不阻断后续会话事件或恢复。
 

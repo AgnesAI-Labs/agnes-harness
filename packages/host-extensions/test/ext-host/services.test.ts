@@ -3,6 +3,7 @@ import type { ExtensionManifest, ServiceContext, ServiceDef } from '@agnes/exten
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import type { Actor, ExtensionCallParams, JsonValue } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { compileExtensionSchema } from '../../src/ext-host/json-schema.js'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import {
   isServicePreDispatchFailure,
@@ -225,6 +226,20 @@ describe('S3 Service registration and invocation', () => {
     ]) {
       expect(() => setup({ outputSchema })).toThrow(/schema/)
     }
+    // Identical $ids in separate registrations must not share incompatible validators, and
+    // mutating an author's schema must neither alter an existing registration nor hit stale data.
+    const schema = { $id: 'urn:fixture:shared', type: 'number' }
+    const numeric = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    const duplicate = compileExtensionSchema({ ...schema }, 'E_SERVICE_DEF')
+    schema.type = 'string'
+    const text = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    expect(numeric(3)).toBe(true)
+    expect(duplicate('three')).toBe(false)
+    expect(text('three')).toBe(true)
+    expect(text(3)).toBe(false)
+    schema.type = 'invalid'
+    expect(() => compileExtensionSchema(schema, 'E_PROJECTION_DEF')).toThrow(/schema/)
+    expect(numeric('three')).toBe(false)
   })
 
   it('injects authenticated identity, authorizes first and returns a copied result', async () => {

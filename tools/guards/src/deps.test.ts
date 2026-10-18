@@ -146,6 +146,8 @@ const LAYER: Record<string, number> = {
   // Independently installed bundled plugins consume public Host/UI contracts.
   '@agnes/deliverables-ui': 10,
   '@agnes/document-reader': 10,
+  '@agnes/browser-runtime': 10,
+  '@agnes/browser-ui': 10,
   '@agnes/goal-ui': 10,
   '@agnes/interaction-ui': 10,
   '@agnes/navigation-ui': 10,

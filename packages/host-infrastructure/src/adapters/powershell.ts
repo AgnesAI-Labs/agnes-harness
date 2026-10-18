@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { realpath, stat } from 'node:fs/promises'
 import { win32 } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -19,7 +20,39 @@ export function resolveConfiguredPowerShell(env: NodeJS.ProcessEnv): Promise<Pow
   return resolvePowerShell(
     request === 'auto' || request === '5.1' || request === '7' ? request : { path: request },
     powerShellCandidates(env),
+    cachedPowerShellProbe,
   )
+}
+
+// Generation containers in one worker use the same shell installation. Reuse only successful
+// discovery briefly; candidate selection still runs each time and direct diagnostic probes stay fresh.
+const probeResults = new Map<string, { expires: number; value: PowerShellDescriptor }>()
+async function shellIdentity(path: string): Promise<string> {
+  const actual = await realpath(path)
+  const file = await stat(actual, { bigint: true })
+  if (!file.isFile()) throw new Error('not an executable file')
+  return JSON.stringify([
+    actual,
+    file.dev.toString(),
+    file.ino.toString(),
+    file.size.toString(),
+    file.mtimeNs.toString(),
+    file.ctimeNs.toString(),
+  ])
+}
+async function cachedPowerShellProbe(path: string): Promise<PowerShellDescriptor> {
+  // Some executable aliases can launch even when their filesystem identity is unavailable.
+  // In that case retain the original fresh-probe behavior instead of rejecting a usable shell.
+  const identity = await shellIdentity(path).catch(() => undefined)
+  if (identity === undefined) return probePowerShell(path)
+  const previous = probeResults.get(identity)
+  if (previous && previous.expires > Date.now()) return previous.value
+  const value = await probePowerShell(path)
+  if (identity === (await shellIdentity(path).catch(() => undefined))) {
+    if (probeResults.size >= 16) probeResults.clear()
+    probeResults.set(identity, { value, expires: Date.now() + 30_000 })
+  }
+  return value
 }
 
 const execute = promisify(execFile)

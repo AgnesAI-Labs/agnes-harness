@@ -104,6 +104,11 @@ describe('durable composition head', () => {
     expect(later.reusableHead('composition-a', expected('c'))).toBeUndefined()
     expect(later.reusableHead('composition-a', { ...expected('a'), compatibility: 'other' })).toBeUndefined()
     expect(later.reusableHead('composition-b', expected('a'))).toBeUndefined()
+    const remembered = later.headId('composition-a')
+    later.setHead('composition-a', create(later, 'c').id)
+    expect(later.reusableHead('composition-a', expected('a'))).toBeUndefined()
+    expect(later.reusableHead('composition-a', expected('a'), remembered)?.id).toBe(snapshot.id)
+    expect(later.reusableHead('composition-a', expected('c'), remembered)).toBeUndefined()
   })
 
   it('keeps a head generation after its creator is gone and ignores an unreadable pointer', async () => {

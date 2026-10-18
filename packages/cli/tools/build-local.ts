@@ -25,6 +25,7 @@ import {
 import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
+import { prepareBrowserRuntime } from './browser-runtime.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
@@ -71,6 +72,7 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
       await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
     if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
     if (helper === 'document-reader') await prepareDocumentReader(destination)
+    if (helper === 'browser-runtime') await prepareBrowserRuntime(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)
   }

@@ -186,6 +186,10 @@ export async function createRuntimeGenerationHost(
       })
   }
   const headKey = options.compositionPin?.hash ?? 'default'
+  const bootstrapHeadKey = `${headKey}:bootstrap`
+  // Bootstrap publishes the builtin base before applying the deployment target. Preserve the
+  // previous complete head so that intermediate publication does not force unchanged plugin copies.
+  let headBeforeBootstrap = store.headId(headKey)
   const snapshotTarget = (
     target: RuntimeTarget,
     sources: readonly RuntimePluginSnapshot[],
@@ -216,20 +220,28 @@ export async function createRuntimeGenerationHost(
         }),
       )
     // Workers of one composition share a recorded head instead of each snapshotting the same target.
-    const reused = reuseHead
-      ? store.reusableHead(headKey, {
+    // Consume the saved head at bootstrap only; live updates retain their own generation lifecycle.
+    const recordedHead = reuseHead ? undefined : headBeforeBootstrap
+    if (!reuseHead) headBeforeBootstrap = undefined
+    if (reuseHead || recordedHead) {
+      const reused = store.reusableHead(
+        reuseHead ? bootstrapHeadKey : headKey,
+        {
           artifactDigest: encodeRuntimeTargetArtifact(target).digest,
           compatibility,
           packages,
           resourcesDigest: generationResourcesDigest(resources),
           seams,
-        })
-      : undefined
-    return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
+        },
+        recordedHead,
+      )
+      if (reused && !live.has(reused.id)) return reused
+    }
+    return store.create(target, sources, compatibility, packages, resources, seams)
   }
-  const recordHead = (id: string): void => {
+  const recordHead = (id: string, key = headKey): void => {
     try {
-      store.setHead(headKey, id)
+      store.setHead(key, id)
     } catch {
       // The pointer is a shortcut; the next worker snapshots afresh.
     }
@@ -239,6 +251,7 @@ export async function createRuntimeGenerationHost(
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw new Error('E_GENERATION_TARGET_MISSING: Host has no runtime snapshot')
     const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources, undefined, true)
+    recordHead(snapshot.id, bootstrapHeadKey)
     recordHead(snapshot.id)
     current = { snapshot, host: initial }
     if (options.profileAuthorityPublication !== 'retained') current.host.profileServices?.publishCurrent()

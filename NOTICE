@@ -67,6 +67,12 @@ following material retains its original notices and license terms:
   See packages/web-ui/THIRD_PARTY_NOTICES.md and third-party/runtime-dependencies.json.
 
 
+- The independent browser runtime bundles agent-browser 0.39.1 native binaries.
+  Vercel, Inc., Apache License 2.0. Upstream license and version provenance are
+  retained in the plugin's dist directory. Chrome for Testing's chrome-headless-shell is downloaded
+  separately on first use and is subject to its own distribution terms.
+  See third-party/build-dependencies.json and the browser-runtime NOTICE.
+
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.

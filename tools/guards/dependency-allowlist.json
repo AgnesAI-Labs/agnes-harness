@@ -353,6 +353,8 @@
   "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
+  "@agnes/browser-runtime": ["@agnes/web-client"],
+  "@agnes/browser-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/goal-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/navigation-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/conversation-ui": ["@agnes/web-client", "@agnes/web-ui"],

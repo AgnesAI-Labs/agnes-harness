@@ -1,0 +1,55 @@
+{
+  "name": "@agnes/browser-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "agnes": {
+    "provides": [
+      "ui"
+    ],
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:browser-ui/main",
+        "apiRange": "^4.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Browser viewer",
+          "summary": "Watch the agent browser in the right workbench.",
+          "description": "Adds a read-only live browser panel. Disabling the viewer does not stop browser tools."
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:browser-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Browser viewer",
+      "summary": "Watch the agent browser in the right workbench.",
+      "description": "Adds a read-only live browser panel. Disabling the viewer does not stop browser tools."
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

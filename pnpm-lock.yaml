@@ -1292,6 +1292,27 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  packages/package-manager/bundled-plugins/browser-runtime:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      agent-browser:
+        specifier: 0.39.1
+        version: 0.39.1
+
+  packages/package-manager/bundled-plugins/browser-ui:
+    devDependencies:
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/package-manager/bundled-plugins/conversation-ui:
     devDependencies:
       '@agnes/web-client':
@@ -1937,6 +1958,10 @@ importers:
   tools/guards: {}
 
 packages:
+
+  agent-browser@0.39.1:
+    resolution: {integrity: sha512-0zdIq0v2r9Gio7K5wIe/e2W9nyLoVC6tUGpGV+btuynBQT9aCgOk5IEIyK+6OtfKRzQjp96DQ/3akBqxccigTQ==}
+    hasBin: true
 
   '@ant-design/colors@8.0.1':
     resolution: {integrity: sha512-foPVl0+SWIslGUtD/xBr1p9U4AKzPhNYEseXYRRo5QSzGACYZrQbe11AYJbYfAWnWSpGBx6JjBmSeugUsD9vqQ==}
@@ -5148,6 +5173,8 @@ packages:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
 snapshots:
+
+  agent-browser@0.39.1: {}
 
   '@ant-design/colors@8.0.1':
     dependencies:

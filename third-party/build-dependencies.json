@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used for building, testing, type checking or development.",
   "packages": [
     {
+      "name": "agent-browser",
+      "version": "0.39.1",
+      "license": "Apache-2.0",
+      "source": "https://github.com/vercel-labs/agent-browser/tree/v0.39.1",
+      "purpose": "Bundle native browser automation daemons for the independent browser runtime.",
+      "rationale": "Provides macOS and Windows browser control and screencasting without a desktop shell or personal browser attachment.",
+      "consumers": ["packages/package-manager/bundled-plugins/browser-runtime"]
+    },
+    {
       "name": "@hyzyla/pdfium",
       "version": "2.1.13",
       "license": "MIT",

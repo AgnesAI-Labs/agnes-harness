@@ -49,6 +49,14 @@ export const BUNDLED_HELPERS = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/document-reader',
   },
+  {
+    name: 'browser-runtime',
+    id: '@agnes/browser-runtime',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/browser-runtime',
+    optionalUnderCeiling: true,
+  },
 ])
 
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */
@@ -59,7 +67,16 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   license: string
   ref: string
   sourcePath: string
-}[] = Object.freeze([])
+}[] = Object.freeze([
+  {
+    name: 'browser-ui',
+    id: '@agnes/browser-ui',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/browser-ui',
+    sourcePath: 'package-manager/bundled-plugins/browser-ui',
+  },
+])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([

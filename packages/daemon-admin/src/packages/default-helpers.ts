@@ -5,6 +5,7 @@ import {
   bundledPluginSource,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
+  hashDirectoryAsync,
   type InstalledInventory,
   isRuntimePackageEligible,
   lockPath,
@@ -143,9 +144,8 @@ export async function refreshDefaultHelpers(options: {
   publish(target: RuntimeTargetArtifact): Promise<void>
 }): Promise<void> {
   for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
-    const current = (await options.manager.inventory(options.profileDir, { fresh: true })).packages.find(
-      (pkg) => pkg.id === helper.id,
-    )
+    const inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+    const current = inventory.packages.find((pkg) => pkg.id === helper.id)
     if (
       !current ||
       !isRuntimePackageEligible(current) ||
@@ -153,33 +153,53 @@ export async function refreshDefaultHelpers(options: {
       current.entry.source.ref !== helper.ref
     )
       continue
-    const source = parseSource(helper.ref)
-    const preview = await options.manager.inspect(options.profileDir, source)
-    if (
-      preview.id !== helper.id ||
-      preview.version === '0.0.0' ||
-      preview.blockers.length ||
-      preview.capabilityHash !== current.capabilityHash
-    )
-      continue
-    if (current.entry.integrity !== preview.integrity || current.entry.version !== preview.version) {
-      try {
-        await options.manager.update(options.profileDir, helper.id, source, {
-          expectedIntegrity: preview.integrity,
-          expectedInstalledIntegrity: current.entry.integrity,
-          activation: {
+    // Equal release bytes are already verified by inventory under the installed grant. Avoid
+    // copying unchanged UI bundles into a new inspection directory on every startup.
+    const bundled = bundledPluginSource(helper.ref)
+    const unchanged =
+      bundled &&
+      current.entry.version !== '0.0.0' &&
+      (await hashDirectoryAsync(join(bundled.root, bundled.path))) === current.entry.integrity
+    if (!unchanged) {
+      const source = parseSource(helper.ref)
+      const preview = await options.manager.inspect(options.profileDir, source)
+      if (
+        preview.id !== helper.id ||
+        preview.version === '0.0.0' ||
+        preview.blockers.length ||
+        preview.capabilityHash !== current.capabilityHash
+      )
+        continue
+      if (current.entry.integrity !== preview.integrity || current.entry.version !== preview.version) {
+        try {
+          await options.manager.update(options.profileDir, helper.id, source, {
+            expectedIntegrity: preview.integrity,
             expectedInstalledIntegrity: current.entry.integrity,
-            trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
-          },
-        })
-      } catch (error) {
-        // Dependencies, deployment references and pins retain their ordinary refusal semantics.
-        // The catalog still offers the candidate for a reviewed update.
-        if (error instanceof PackageError && error.legacyCode === 'E_API_RANGE') continue
-        throw error
+            activation: {
+              expectedInstalledIntegrity: current.entry.integrity,
+              trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+            },
+          })
+        } catch (error) {
+          // Dependencies, deployment references and pins retain their ordinary refusal semantics.
+          // The catalog still offers the candidate for a reviewed update.
+          if (error instanceof PackageError && error.legacyCode === 'E_API_RANGE') continue
+          throw error
+        }
       }
     }
     const previous = options.previous()
+    // An unchanged target needs no publication. Any publication still gets an independent fresh
+    // inventory below, including retries after an earlier package update committed without a target.
+    if (unchanged) {
+      const existing = rebuildDesiredFromInventory({
+        previous,
+        inventory,
+        packageId: helper.id,
+        operation: 'update',
+      })
+      if (!existing || existing.digest === previous?.digest) continue
+    }
     const target = rebuildDesiredFromInventory({
       previous,
       inventory: await options.manager.inventory(options.profileDir, { fresh: true }),

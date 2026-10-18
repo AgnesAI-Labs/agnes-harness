@@ -1,0 +1,9 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "styles": ["./browser.css"],
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": []
+  }
+}

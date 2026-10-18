@@ -35,12 +35,20 @@ export async function readRuntimePluginSnapshots(
     const boundary = committed()
     try {
       const beforeLock = load()
-      const before = await readInventoryAsync(beforeLock, {
-        ...store,
-        ceiling: ceiling(beforeLock),
-        verificationCache,
-      })
-      const pins = await listRuntimePinsStoreAsync(store, beforeLock)
+      // Both readers use the same lock observation but inspect independent trees. Drain both
+      // before retrying or ending the verification scope, including when one refuses a tree.
+      const [inventoryRead, pinsRead] = await Promise.allSettled([
+        readInventoryAsync(beforeLock, {
+          ...store,
+          ceiling: ceiling(beforeLock),
+          verificationCache,
+        }),
+        listRuntimePinsStoreAsync(store, beforeLock),
+      ])
+      if (inventoryRead.status === 'rejected') throw inventoryRead.reason
+      if (pinsRead.status === 'rejected') throw pinsRead.reason
+      const before = inventoryRead.value
+      const pins = pinsRead.value
       const afterLock = load()
       const after = await readInventoryAsync(afterLock, {
         ...store,

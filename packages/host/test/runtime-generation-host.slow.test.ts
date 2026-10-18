@@ -273,6 +273,20 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         resources: { mcp: [], skills: {} },
       }).target
     await expect(host.applyRuntimeTarget(target(one))).resolves.toMatchObject({ ok: true })
+    const publishedBeforeRestart = host.pluginGenerationStatus?.().currentGenerationId
+    expect(publishedBeforeRestart).toBeDefined()
+    const generationsBeforeRestart = required(host.pluginGenerationStatus?.())
+      .generations.map((generation) => generation.id)
+      .sort()
+    await host.close()
+    host = (await createTestHost(options)).host
+    await expect(host.applyRuntimeTarget(target(one))).resolves.toMatchObject({ ok: true })
+    expect(host.pluginGenerationStatus?.().currentGenerationId).toBe(publishedBeforeRestart)
+    expect(
+      required(host.pluginGenerationStatus?.())
+        .generations.map((generation) => generation.id)
+        .sort(),
+    ).toEqual(generationsBeforeRestart)
     const a = await host.createSession({ key: 'session-a', cwd: root })
     const kernelAdmission = host.kernel.session
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
