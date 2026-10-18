@@ -2,14 +2,20 @@
 import { Context } from '@agnes/cordis'
 import type { ApplicationState } from '@agnes/protocol'
 import {
+  AgnesClientService,
   applicationBrand,
   applicationIdentity,
+  type ClientContext,
+  CommandService,
   homeEntries,
   homeNavigation,
   LocaleService,
   presentationDefault,
   presentationRoles,
   reserveHomeEntry,
+  SessionService,
+  SlotRegistry,
+  ThemeService,
 } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
@@ -18,6 +24,7 @@ import {
   requestNewSession,
   updateApplicationTitle,
 } from '../src/application.js'
+import { createReconciler, type ReadyClientModule } from '../src/client-modules/reconcile.js'
 
 afterEach(() => {
   projectApplication(undefined)
@@ -64,14 +71,35 @@ it('projects title, favicon and localized assistant display name, then restores 
         }
       },
     },
-    { packageId: 'community/gallery', clientId: 'ui', revision: 'one' },
+    {
+      packageId: 'community/gallery',
+      clientId: 'ui',
+      revision: 'one',
+      binding: {
+        packageId: 'community/gallery',
+        integrity: 'one',
+        owner: 'community-ui',
+        profileId: 'test',
+        activationId: 'one',
+        lifetime: 'profile',
+        availability: 'active',
+      },
+      presentationRoleBindings: { deliverables: 'b'.repeat(64) },
+    },
   )
   state.roles = [
     {
       role: 'deliverables',
       source: 'choice',
       status: 'resolved',
-      selection: null,
+      selection: {
+        packageId: 'community/gallery',
+        clientId: 'ui',
+        integrity: 'one',
+        declarationDigest: 'a'.repeat(64),
+        consentDigest: 'a'.repeat(64),
+        bindingDigest: 'b'.repeat(64),
+      },
       effective: { packageId: 'community/gallery', clientId: 'ui' },
       candidates: [],
     },
@@ -234,6 +262,124 @@ it.each(['automatic', 'url', 'workspace', 'late'] as const)(
       stop()
       off()
       homeNavigation.close()
+    }
+  },
+)
+
+it.each(['integrity', 'declaration', 'dependency'] as const)(
+  'rejects stale role consent at the real module mount boundary after %s drift, in either read order',
+  async (drift) => {
+    for (const choiceFirst of [true, false]) {
+      const ctx = new Context(),
+        mounted: string[] = []
+      await ctx.plugin(SlotRegistry)
+      new AgnesClientService(ctx, { sessions: { get: () => undefined } } as never)
+      new CommandService(ctx, async () => true)
+      new SessionService(ctx)
+      new ThemeService(ctx, 'light')
+      const locale = new LocaleService(ctx, 'en')
+      const selection = {
+        packageId: 'community/gallery',
+        clientId: 'ui',
+        integrity: 'one',
+        declarationDigest: 'a'.repeat(64),
+        consentDigest: 'a'.repeat(64),
+        bindingDigest: 'a'.repeat(64),
+      }
+      const application: ApplicationState = {
+        revision: 1,
+        selection: null,
+        status: 'host',
+        effective: null,
+        assets: {},
+        candidates: [],
+        roles: [
+          {
+            role: 'deliverables',
+            source: 'choice',
+            status: 'resolved',
+            selection,
+            effective: { packageId: selection.packageId, clientId: selection.clientId },
+            candidates: [],
+          },
+        ],
+      }
+      const revision = drift === 'integrity' ? 'two' : 'one'
+      const row: ReadyClientModule = {
+        packageId: selection.packageId,
+        clientId: 'ui',
+        rowId: 'web:gallery',
+        revision,
+        entryUrl: '/upgraded.js',
+        styleUrls: [],
+        slots: [],
+        extIds: [],
+        presentationRoles: ['deliverables'],
+        presentationRoleBindings: { deliverables: 'b'.repeat(64) },
+        binding: {
+          owner: 'web:gallery',
+          packageId: selection.packageId,
+          integrity: revision,
+          profileId: 'test',
+          activationId: 'new',
+          lifetime: 'profile',
+          availability: 'active',
+        },
+      }
+      let current = row
+      const reconciler = createReconciler({
+        ctx,
+        locale,
+        source: {
+          list: async () => ({
+            revision: current.presentationRoleBindings?.deliverables ?? '',
+            modules: [current],
+            statuses: [],
+          }),
+        },
+        importer: async () => ({
+          apply(child: ClientContext) {
+            child.presentationRoles.register({
+              role: 'deliverables',
+              mount() {
+                mounted.push('upgraded')
+                return () => {}
+              },
+            })
+          },
+        }),
+      })
+      try {
+        if (choiceFirst) projectApplication(application)
+        await reconciler.reconcileNow()
+        await vi.waitFor(() => expect(reconciler.snapshot().get('web:gallery')?.phase).toBe('active'))
+        if (!choiceFirst) projectApplication(application)
+        expect(mounted).toEqual([])
+        expect(presentationRoles.resolution('deliverables')).toEqual({
+          effective: null,
+          reason: 'consent-mismatch',
+        })
+        // The settings save path uses this exact projection too. Only matching reviewed identity mounts.
+        projectApplication({
+          ...application,
+          roles: [
+            {
+              ...application.roles![0]!,
+              selection: { ...selection, integrity: revision, bindingDigest: 'b'.repeat(64) },
+            },
+          ],
+        })
+        expect(mounted).toEqual(['upgraded'])
+        mounted.length = 0
+        current = { ...row, presentationRoleBindings: { deliverables: 'c'.repeat(64) } }
+        await reconciler.reconcileNow()
+        await vi.waitFor(() => expect(reconciler.snapshot().get('web:gallery')?.phase).toBe('active'))
+        expect(mounted).toEqual([])
+        expect(presentationRoles.resolution('deliverables').reason).toBe('consent-mismatch')
+      } finally {
+        projectApplication(undefined)
+        await ctx.fiber.dispose()
+      }
     }
   },
 )

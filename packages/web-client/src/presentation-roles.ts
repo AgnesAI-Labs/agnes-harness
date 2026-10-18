@@ -29,6 +29,7 @@ const defaults: Partial<Record<PresentationRole, string>> = {
   interaction: '@agnes/interaction-ui',
   deliverables: '@agnes/deliverables-ui',
 }
+type ConsentedRoleTarget = ApplicationRoleTarget & { integrity: string; bindingDigest: string }
 type HostPresentationProvider = Omit<PresentationProvider, 'mount'> & { mount(): () => void }
 type Candidate = { owner: string; provider: HostPresentationProvider; module?: ModuleIdentity }
 export class PresentationRoleRegistry {
@@ -51,7 +52,7 @@ export class PresentationRoleRegistry {
   }
   private readonly active = new Map<string, { entry: Candidate; stop: () => void }>()
   private selection: Partial<Record<PresentationRole, ApplicationRoleTarget>> = {}
-  private overrides: Partial<Record<PresentationRole, ApplicationRoleTarget>> = {}
+  private overrides: Partial<Record<PresentationRole, ConsentedRoleTarget>> = {}
   /** Host presentation policy is applied before priority, independently of execution selection. */
   select(selection: typeof this.selection = {}, overrides: typeof this.overrides = this.overrides): void {
     this.selection = structuredClone(selection)
@@ -66,12 +67,34 @@ export class PresentationRoleRegistry {
   }
   private rank(entry: Candidate): number {
     const role = entry.provider.role as PresentationRole
-    if (!STANDARD_PRESENTATION_ROLES.includes(role) || !entry.module) return 0
+    if (!STANDARD_PRESENTATION_ROLES.includes(role)) return 0
+    if (!entry.module) return this.overrides[role] ? Infinity : 0
     const matches = (target: ApplicationRoleTarget | undefined) =>
       target && target.packageId === entry.module?.packageId && target.clientId === entry.module?.clientId
-    if (matches(this.overrides[role])) return 0
+    if (matches(this.overrides[role])) {
+      if (this.consented(entry, role)) return 0
+      // A name-matched but unconsented version cannot re-enter through the app fallback.
+      return defaults[role] === entry.module.packageId ? 2 : Infinity
+    }
     if (matches(this.selection[role])) return 1
     return defaults[role] === entry.module.packageId ? 2 : Infinity
+  }
+  private consented(entry: Candidate | undefined, role: PresentationRole): boolean {
+    const target = this.overrides[role],
+      module = entry?.module
+    return !!(
+      target &&
+      module?.packageId === target.packageId &&
+      module.clientId === target.clientId &&
+      target.integrity &&
+      target.bindingDigest &&
+      module.revision === target.integrity &&
+      module.binding?.packageId === target.packageId &&
+      module.binding.integrity === target.integrity &&
+      module.binding.lifetime === 'profile' &&
+      module.binding.availability === 'active' &&
+      module.presentationRoleBindings?.[role] === target.bindingDigest
+    )
   }
   /** Actual mounted owner, including local module/mount failures unavailable to the backend. */
   resolution(role: PresentationRole): { effective: ApplicationRoleTarget | null; reason?: string } {
@@ -82,17 +105,24 @@ export class PresentationRoleRegistry {
     const requested = this.overrides[role]
     return {
       effective,
-      ...(requested &&
-      (requested.packageId !== effective?.packageId || requested.clientId !== effective?.clientId)
+      ...(requested && !this.consented(entry, role)
         ? {
-            reason: [...this.failed].some(
-              (entry) =>
-                entry.provider.role === role &&
-                entry.module?.packageId === requested.packageId &&
-                entry.module.clientId === requested.clientId,
+            reason: [...this.entries].some(
+              (candidate) =>
+                candidate.provider.role === role &&
+                candidate.module?.packageId === requested.packageId &&
+                candidate.module.clientId === requested.clientId &&
+                !this.consented(candidate, role),
             )
-              ? 'mount-failed'
-              : 'code-unavailable',
+              ? 'consent-mismatch'
+              : [...this.failed].some(
+                    (entry) =>
+                      entry.provider.role === role &&
+                      entry.module?.packageId === requested.packageId &&
+                      entry.module.clientId === requested.clientId,
+                  )
+                ? 'mount-failed'
+                : 'code-unavailable',
           }
         : {}),
     }
@@ -167,10 +197,14 @@ export class PresentationRoleRegistry {
 export const presentationRoles = new PresentationRoleRegistry()
 /** Host projection shared by roster updates and explicit administration writes. */
 export function selectPresentationRoles(state: ApplicationState | undefined): void {
-  const overrides: Partial<Record<PresentationRole, ApplicationRoleTarget>> = {}
+  const overrides: Partial<Record<PresentationRole, ConsentedRoleTarget>> = {}
   for (const item of state?.roles ?? []) {
     if (item.source === 'choice' && item.status === 'resolved' && item.effective)
-      overrides[item.role] = item.effective
+      overrides[item.role] = {
+        ...item.effective,
+        integrity: item.selection?.integrity ?? '',
+        bindingDigest: item.selection?.bindingDigest ?? '',
+      }
   }
   presentationRoles.select(
     state?.status === 'active' ? state.effective?.presentation?.roles : undefined,

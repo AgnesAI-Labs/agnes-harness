@@ -689,6 +689,8 @@ const rosterSource: RosterSource = {
   },
   async list() {
     if (!profileName) return { revision: '', modules: [], statuses: [] }
+    // These reads can cross an upgrade: the role registry admits only the roster binding
+    // matching the full consent identity, synchronously before every mount.
     const [roster, application] = await Promise.all([
       client.clientModules.list(profileName, moduleSessionId),
       client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),

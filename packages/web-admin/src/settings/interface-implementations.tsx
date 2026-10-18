@@ -21,6 +21,7 @@ const reasons: Record<string, [string, string]> = {
   untrusted: ['Package is untrusted', '插件未受信任'],
   'package-changed': ['Package changed', '插件内容已变更'],
   'declaration-changed': ['Client declaration changed', '界面声明已变更'],
+  'consent-mismatch': ['Loaded interface does not match your consent', '已加载的界面与同意内容不一致'],
   'consent-changed': ['Reviewed content changed', '已审阅内容发生变更'],
   'mount-failed': ['Interface failed to load', '界面加载失败'],
   'code-unavailable': ['Interface is unavailable', '界面不可用'],

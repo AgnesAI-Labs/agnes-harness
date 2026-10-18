@@ -19,6 +19,7 @@ import {
 import { validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { Applications } from '../src/packages/applications.js'
+import { contributionProjection } from '../src/packages/contribution-roster.js'
 import { requirePackageAdmin } from '../src/packages/permissions.js'
 
 const homes: string[] = []
@@ -457,6 +458,39 @@ it('chooses a community role with the host app, overrides an application, restor
     { ...params, clientId: authority.clientId },
     authority,
   )
+  const owner = f.packages().find((p) => p.id === 'b')
+  if (!owner) throw new Error('fixture')
+  const declaration = roleClient().client
+  const project = (client = declaration, integrity = owner.entry.integrity) =>
+    contributionProjection(
+      owner,
+      client,
+      'owner',
+      integrity,
+      { profile: 'local-dev', inventory: { profile: 'local-dev', hash: '', packages: f.packages() } },
+      'active',
+    )
+  expect((await project()).presentationRoleBindings?.deliverables).toBe(
+    chosen.roleSelections?.deliverables?.bindingDigest,
+  )
+  expect((await project({ ...declaration, entry: 'different.js' })).presentationRoleBindings).toEqual({})
+  expect((await project(declaration, 'different-integrity')).presentationRoleBindings).toEqual({})
+  const originalCapability = owner.capabilityHash
+  owner.capabilityHash = 'f'.repeat(64)
+  expect((await project()).presentationRoleBindings?.deliverables).not.toBe(
+    chosen.roleSelections?.deliverables?.bindingDigest,
+  )
+  owner.capabilityHash = originalCapability
+  const dependency = f.packages().find((p) => p.id === 'a')
+  if (!dependency) throw new Error('fixture')
+  const dependencies = owner.entry.dependencies,
+    previousCapability = dependency.capabilityHash
+  owner.entry.dependencies = { a: '*' }
+  const withDependency = (await project()).presentationRoleBindings?.deliverables
+  dependency.capabilityHash = 'e'.repeat(64)
+  expect((await project()).presentationRoleBindings?.deliverables).not.toBe(withDependency)
+  dependency.capabilityHash = previousCapability
+  owner.entry.dependencies = dependencies
   expect(chosen.status).toBe('host')
   expect(chosen.selection).toBeNull()
   expect(chosen.roles).toContainEqual(

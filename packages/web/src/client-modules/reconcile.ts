@@ -326,11 +326,15 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         state.active?.revision === mod.revision &&
         state.active.entryUrl === mod.entryUrl &&
         JSON.stringify(state.active.binding) === JSON.stringify(mod.binding) &&
+        JSON.stringify(state.active.presentationRoleBindings) ===
+          JSON.stringify(mod.presentationRoleBindings) &&
         state.phase === 'active'
       const pending =
         state.target?.revision === mod.revision &&
         state.target.entryUrl === mod.entryUrl &&
         JSON.stringify(state.target.binding) === JSON.stringify(mod.binding) &&
+        JSON.stringify(state.target.presentationRoleBindings) ===
+          JSON.stringify(mod.presentationRoleBindings) &&
         (state.phase === 'loading' || state.phase === 'active')
       const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
       if (!forced && (unchanged || pending)) continue

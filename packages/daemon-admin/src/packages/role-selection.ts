@@ -178,3 +178,31 @@ export async function roleStates(
     }),
   )
 }
+
+/** Attests the roster's actual immutable declaration, never a name-only installed candidate. */
+export async function clientRoleBindings(
+  packages: readonly InstalledPackage[],
+  profile: string,
+  row: InstalledPackage,
+  client: import('@agnes/protocol').ClientContribution,
+  integrity: string,
+  clientId: string,
+): Promise<Partial<Record<PresentationRole, string>>> {
+  const bindings: Partial<Record<PresentationRole, string>> = {}
+  if (integrity !== row.entry.integrity || client.lifetime !== 'profile') return bindings
+  for (const role of client.presentationRoles ?? []) {
+    try {
+      const preview = await previewRole(
+        packages,
+        profile,
+        role,
+        { packageId: row.id, clientId },
+        async () => true,
+      )
+      if (preview.declarationDigest === roleDigest(client)) bindings[role] = roleDigest(preview)
+    } catch {
+      // Ineligible, ambiguous or drifted declarations have no admission identity.
+    }
+  }
+  return bindings
+}

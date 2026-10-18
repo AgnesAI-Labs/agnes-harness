@@ -9,10 +9,12 @@ import {
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
+import { projectClientModuleRows } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createClientModuleRegistry, runtimeArtifactsFromStore } from '../src/packages/client-modules.js'
 import { createPackageAdminService, type PackageActivationObservation } from '../src/packages/handler.js'
 import { FilePackageOperationStore } from '../src/packages/operations.js'
+import { previewRole, roleDigest } from '../src/packages/role-selection.js'
 
 const roots: string[] = []
 
@@ -207,6 +209,16 @@ describe('client module immutable snapshots', () => {
       lifetime: 'profile',
       homeEntries: [{ id: 'alpha', placement: 'primary' }],
     })
+    row.entry = {
+      ...row.entry,
+      version: '1.0.0',
+      source: { type: 'file', ref: 'file:./synthetic' },
+      dependencies: {},
+    }
+    const profile = row.contributions[0]
+    if (!profile || !('client' in profile) || !profile.client) throw new Error('missing profile client')
+    profile.client.id = 'profile-ui'
+    profile.client.presentationRoles = ['navigation']
     const session = structuredClone(row.contributions[0]) as Extract<
       InstalledPackage['contributions'][number],
       { kind: 'extension' }
@@ -214,6 +226,8 @@ describe('client module immutable snapshots', () => {
     session.id = 'acme/history'
     if (session.client) {
       session.client.lifetime = 'session'
+      session.client.id = 'history-ui'
+      delete session.client.presentationRoles
       delete session.client.homeEntries
     }
     const mixed = { ...row, contributions: [...row.contributions, session] }
@@ -223,10 +237,10 @@ describe('client module immutable snapshots', () => {
     if (!originalRow) throw new Error('missing row')
     const artifact = buildRuntimeTarget({
       rows: [
-        { ...originalRow, id: 'web:acme/panel:acme/panel' },
+        { ...originalRow, id: 'web:acme/panel:profile-ui' },
         {
           ...originalRow,
-          id: 'web:acme/panel:acme/history',
+          id: 'web:acme/panel:history-ui',
           plugin: `acme/panel@${row.entry.integrity}/client/history`,
         },
       ],
@@ -268,6 +282,18 @@ describe('client module immutable snapshots', () => {
     try {
       const active = await registry.list({ ...input(), sessionId: 'old-session' })
       const global = active.rows?.find((row) => row.binding?.lifetime === 'profile')
+      const preview = await previewRole(
+        current.packages,
+        'local-dev',
+        'navigation',
+        { packageId: row.id, clientId: 'profile-ui' },
+        async () => true,
+      )
+      expect(global?.presentationRoleBindings?.navigation).toBe(roleDigest(preview))
+      expect(
+        projectClientModuleRows(active).rows?.find((row) => row.binding?.lifetime === 'profile')
+          ?.presentationRoleBindings?.navigation,
+      ).toBe(roleDigest(preview))
       expect(global?.entryUrl).not.toContain('/generations/')
       expect(active.rows?.find((row) => row.binding?.lifetime === 'session')?.entryUrl).toContain(
         '/generations/',

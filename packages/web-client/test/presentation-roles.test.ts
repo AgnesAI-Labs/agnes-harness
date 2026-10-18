@@ -72,7 +72,27 @@ it('revokes a profile role before asynchronous module disposal and prevents late
 it('filters standard product roles before priority so installing B cannot steal A, and explicit user choice wins', () => {
   const roles = new PresentationRoleRegistry()
   const visible = new Set<string>()
-  const module = (packageId: string) => ({ packageId, clientId: 'ui', revision: 'one' })
+  const consent = (packageId: string) => ({
+    packageId,
+    clientId: 'ui',
+    integrity: 'one',
+    bindingDigest: 'a'.repeat(64),
+  })
+  const module = (packageId: string) => ({
+    packageId,
+    clientId: 'ui',
+    revision: 'one',
+    binding: {
+      packageId,
+      integrity: 'one',
+      lifetime: 'profile' as const,
+      availability: 'active' as const,
+      owner: packageId,
+      profileId: 'test',
+      activationId: 'one',
+    },
+    presentationRoleBindings: { navigation: 'a'.repeat(64) },
+  })
   const provider = (id: string, priority: number) => ({
     role: 'navigation',
     priority,
@@ -87,10 +107,7 @@ it('filters standard product roles before priority so installing B cannot steal 
   const a = roles.register('a-owner', provider('a', 10), module('a'))
   const b = roles.register('b-owner', provider('b', -100), module('b'))
   expect([...visible]).toEqual(['a'])
-  roles.select(
-    { navigation: { packageId: 'a', clientId: 'ui' } },
-    { navigation: { packageId: 'b', clientId: 'ui' } },
-  )
+  roles.select({ navigation: { packageId: 'a', clientId: 'ui' } }, { navigation: consent('b') })
   expect([...visible]).toEqual(['b'])
   const broken = roles.register(
     'broken-owner',
@@ -102,10 +119,7 @@ it('filters standard product roles before priority so installing B cannot steal 
     },
     module('broken'),
   )
-  roles.select(
-    { navigation: { packageId: 'a', clientId: 'ui' } },
-    { navigation: { packageId: 'broken', clientId: 'ui' } },
-  )
+  roles.select({ navigation: { packageId: 'a', clientId: 'ui' } }, { navigation: consent('broken') })
   expect([...visible]).toEqual(['a'])
   expect(roles.resolution('navigation')).toEqual({
     effective: { packageId: 'a', clientId: 'ui' },
@@ -164,3 +178,47 @@ it('reports conflict sources and restores the release default after an applicati
     reason: 'conflict',
   })
 })
+
+it.each(['integrity', 'binding', 'missing', 'inactive'] as const)(
+  'refuses a name-matched role with %s consent drift and diagnoses it before mount',
+  (drift) => {
+    const roles = new PresentationRoleRegistry(),
+      mounted: string[] = []
+    const target = { packageId: 'community', clientId: 'ui', integrity: 'one', bindingDigest: 'a'.repeat(64) }
+    roles.select({ deliverables: target }, { deliverables: target })
+    const stop = roles.register(
+      'candidate',
+      {
+        role: 'deliverables',
+        mount() {
+          mounted.push('upgraded')
+          return () => {}
+        },
+      },
+      {
+        packageId: 'community',
+        clientId: 'ui',
+        revision: drift === 'integrity' ? 'two' : 'one',
+        binding: {
+          packageId: 'community',
+          integrity: drift === 'integrity' ? 'two' : 'one',
+          owner: 'candidate',
+          profileId: 'test',
+          activationId: 'one',
+          lifetime: 'profile',
+          availability: drift === 'inactive' ? 'disabled' : 'active',
+        },
+        ...(drift === 'missing'
+          ? {}
+          : {
+              presentationRoleBindings: {
+                deliverables: drift === 'binding' ? 'b'.repeat(64) : target.bindingDigest,
+              },
+            }),
+      },
+    )
+    expect(mounted).toEqual([])
+    expect(roles.resolution('deliverables')).toEqual({ effective: null, reason: 'consent-mismatch' })
+    stop()
+  },
+)

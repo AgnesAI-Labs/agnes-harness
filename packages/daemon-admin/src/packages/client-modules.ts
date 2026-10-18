@@ -1329,14 +1329,14 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         rows.push({
           rowId: item.rowId,
           moduleName: item.moduleName,
-          ...contributionProjection(
+          ...(await contributionProjection(
             row,
             item.client,
             item.rowId,
             selectedRevision,
-            input.profile,
+            input,
             state.activations?.[row.id]?.id,
-          ),
+          )),
           packageId: row.id,
           enabled: true,
           phase: 'ready',

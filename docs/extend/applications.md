@@ -103,6 +103,9 @@ implementation when available. It never changes execution profiles or hashes.
 A disabled, untrusted, removed, changed or failing implementation remains saved as **unresolved**, with
 a reason. The host falls back to the application's implementation or its own default; it never chooses
 another community candidate automatically. Changed code/declarations require fresh preview and consent.
+At each role mount, the host matches the stored consent against the actual module integrity and its
+attested client/dependency binding. A stale selection response cannot admit a newer roster entry;
+missing or mismatched bindings remain unresolved until a matching reviewed implementation is available.
 
 The consent preview binds source and signature status, package/version/integrity, brand and assets,
 hidden entries, home/skin, agents, role code sources, dependency permissions/diff, scope and recovery.
