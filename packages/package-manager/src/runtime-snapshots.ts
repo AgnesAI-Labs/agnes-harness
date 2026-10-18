@@ -312,6 +312,7 @@ function* verifyRecordSteps(
     actual,
     contributionCeiling(checkedRecord),
     treeIntegrity,
+    s.verificationCache,
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,

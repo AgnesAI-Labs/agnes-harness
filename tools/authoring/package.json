@@ -1,0 +1,13 @@
+{
+  "name": "@agnes/authoring-eval",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

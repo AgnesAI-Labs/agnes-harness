@@ -103,7 +103,7 @@ Failed plugin states carry a short fix hint and a documentation link. In plugin 
 
 ## Built-in helper plugins
 
-AGH includes five official helpers. On each startup, missing release defaults that the profile has never been offered are automatically installed, trusted, enabled and activated without a network download:
+AGH includes five official helpers. On each startup, missing release defaults that the profile has never been offered are automatically installed and trusted without a network download. The browser is initially disabled; other defaults are enabled and activated:
 
 | Plugin | Purpose |
 | --- | --- |
@@ -123,25 +123,32 @@ The bootstrap receipt remembers offered defaults, including ones omitted under t
 
 The transitional local build from 2026-10-17 wrote version 4 receipts without an `offered` field. Startup validates and atomically migrates this exact legacy format, preserving its seven historical default offers so removed plugins stay removed. Later additions still follow normal provisioning. Do not delete `default-helpers/state.json` to recover; other malformed or unknown formats remain rejected.
 
-## Independent browser and optional viewer
+## Built-in browser (initially disabled)
 
-The default `@agnes/browser-runtime` gives the agent browser tools even without a viewer. It starts
+`@agnes/browser-runtime` is installed but initially disabled. Enable it in **Settings → Plugin management → Installed**,
+then start a new conversation. One switch provides agent browser tools and the right-side Browser panel.
+The choice survives restarts; existing installations retain their current state. It starts
 a separate headless Chrome for Testing only when asked to open a page. The first use needs a browser
 download; a slow download can exceed the tool timeout. The plugin does not import personal Chrome/Edge
 profiles, cookies or extensions, discover existing debugging ports, or control desktop windows.
 Each session/lane has its own temporary profile and Host-owned process tree. Only owned processes are
 closed. A profile that excludes the declared process/network/filesystem capabilities skips this default.
 
-To see the browser, install `file:./bundled-plugins/browser-ui` through **Settings → Plugin management**.
-This optional UI adds a **Browser** tab on the right. The panel shows the same page the agent operates,
-with **Fit** and **Actual size** views. It currently supports observation; request clicks and typing in
-the conversation. Removing the UI stops viewing without removing the agent's browser tools.
+No separate viewer is required. The panel shows the same page the agent operates, with **Fit** and
+**Actual size** views. Request clicks and typing in the conversation. The legacy `@agnes/browser-ui`
+remains compatible and does not duplicate the panel. Disabling removes the current UI and excludes the
+tools from new sessions; existing sessions keep the normal pinned-version semantics.
+
+`WEB_SEARCH_UNAVAILABLE` means host search is unconfigured; `WEB_REDIRECT_BLOCKED` belongs to text fetching.
+Neither is an independent browser failure. Ask explicitly to use the built-in browser: `browser_open`
+and its companion tools need no search API key and never control personal browsers through Computer Use.
+Sites may still present CAPTCHAs or refuse access.
 
 The viewer uses existing authenticated profile queries and streams. The backend verifies access to the
 current session and gives that viewer a short-lived read ticket. It does not give the UI a browser control
 port. The stream is capped at 20 fps and discards obsolete frames; actual smoothness depends on page load,
 network and rendering cost. This is a browsing/inspection viewer, not a guaranteed video player.
-After first installing the runtime, use a new conversation or the supported session migration action;
+After enabling the browser, use a new conversation or the supported session migration action;
 existing conversations keep their pinned plugin generation.
 
 For generated projects, ask the agent to start the project's local server using existing background jobs,

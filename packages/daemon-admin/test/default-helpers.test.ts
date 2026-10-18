@@ -6,7 +6,7 @@ import { loadTemplate } from '@agnes/host'
 import {
   bundledPluginSource,
   createPackageManager,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  DEFAULT_BUNDLED_PACKAGES,
   installedRuntimeSnapshotId,
   parseSource,
   readLock,
@@ -29,8 +29,8 @@ vi.mock('../../package-manager/src/bundled-plugin-source.js', async (original) =
   const module = await original<typeof import('../../package-manager/src/bundled-plugin-source.js')>()
   return {
     ...module,
-    DEFAULT_ENABLED_BUNDLED_PACKAGES: [
-      ...module.DEFAULT_ENABLED_BUNDLED_PACKAGES,
+    DEFAULT_BUNDLED_PACKAGES: [
+      ...module.DEFAULT_BUNDLED_PACKAGES,
       {
         name: 'test-console',
         id: '@agnes/test-console',
@@ -39,6 +39,7 @@ vi.mock('../../package-manager/src/bundled-plugin-source.js', async (original) =
         ref: 'file:./bundled-plugins/test-console',
         sourcePath: 'test-console',
         freshOnly: true,
+        enabledByDefault: true,
       },
     ],
     bundledPluginSource: (ref: string) => payloads.get(ref) ?? module.bundledPluginSource(ref),
@@ -167,7 +168,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
-    ['@agnes/browser-runtime', true, true],
+    ['@agnes/browser-runtime', false, true],
     ['@agnes/conversation-ui', true, true],
     ['@agnes/deliverables-ui', true, true],
     ['@agnes/document-reader', true, true],
@@ -264,7 +265,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
   expect(
     (await s.manager.inventory(s.profileDir)).packages.map((p) => [p.id, p.entry.state.enabled]),
   ).toEqual([
-    ['@agnes/browser-runtime', true],
+    ['@agnes/browser-runtime', false],
     ['@agnes/conversation-ui', true],
     ['@agnes/deliverables-ui', true],
     ['@agnes/document-reader', true],
@@ -275,6 +276,48 @@ it('installs release defaults and registers a synthetic primary entry offline on
     ['@agnes/plugin-helper', true],
     ['@agnes/test-console', false],
   ])
+  // The opt-in browser is installed and trusted, but absent from the published runtime.
+  expect(
+    decodeRuntimeTargetArtifact(published!).tree.rows.some((row) => row.id === 'ext:browser-runtime/main'),
+  ).toBe(false)
+  expect(s.exec).not.toHaveBeenCalled()
+})
+it('backfills only the opt-in browser without publishing an active runtime', async () => {
+  const s = setup()
+  await withDefaultHelperState(s.profileDir, async (_state, save) => {
+    save({
+      version: 4,
+      phase: 'complete',
+      integrity: {},
+      offered: DEFAULT_BUNDLED_PACKAGES.filter((helper) => helper.id !== '@agnes/browser-runtime').map(
+        (helper) => helper.id,
+      ),
+    })
+  })
+  await initializeDefaultHelpers(s)
+  const inventory = await s.manager.inventory(s.profileDir)
+  expect(inventory.packages.map((pkg) => [pkg.id, pkg.enabled, pkg.trusted])).toEqual([
+    ['@agnes/browser-runtime', false, true],
+  ])
+  const publish = vi.fn()
+  await activateDefaultHelpers({ profileDir: s.profileDir, inventory, previous: undefined, publish })
+  expect(publish).not.toHaveBeenCalled()
+  await initializeDefaultHelpers(s)
+  await withDefaultHelperState(s.profileDir, async (state) => {
+    expect(state?.phase).toBe('complete')
+  })
+  await s.manager.setEnabled(s.profileDir, '@agnes/browser-runtime', true)
+  await initializeDefaultHelpers(s)
+  expect(
+    (await s.manager.inventory(s.profileDir)).packages.find((p) => p.id === '@agnes/browser-runtime')
+      ?.enabled,
+  ).toBe(true)
+  await s.manager.setEnabled(s.profileDir, '@agnes/browser-runtime', false)
+  await initializeDefaultHelpers(s)
+  expect(
+    (await s.manager.inventory(s.profileDir)).packages.find((p) => p.id === '@agnes/browser-runtime')
+      ?.enabled,
+  ).toBe(false)
   expect(s.exec).not.toHaveBeenCalled()
 })
 it.each([
@@ -412,7 +455,11 @@ it.each([
     expect(pending.integrity['@agnes/goal-ui']).toMatch(/^sha256-/)
     expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(step === 'trust' ? 1 : 0)
     await initializeDefaultHelpers(s)
-    expect((await s.manager.inventory(s.profileDir)).packages.every((p) => p.entry.state.enabled)).toBe(true)
+    expect(
+      (await s.manager.inventory(s.profileDir)).packages
+        .filter((p) => !p.entry.state.enabled)
+        .map((p) => p.id),
+    ).toEqual(['@agnes/browser-runtime'])
     expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase).toBe(
       'installed',
     )
@@ -644,7 +691,7 @@ it.each([1, 2, 3, 4, 'legacy-4'] as const)(
     expect(inventory.packages).toHaveLength(version === 3 ? 10 : 9)
     expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
     expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
-      version === 3 ? [] : ['@agnes/skill-helper'],
+      version === 3 ? ['@agnes/browser-runtime'] : ['@agnes/browser-runtime', '@agnes/skill-helper'],
     )
     expect(inventory.packages.some((pkg) => pkg.id === '@agnes/mcp-helper')).toBe(version === 3)
     for (const pkg of before.packages)
@@ -697,7 +744,7 @@ it.each([1, 2, 3, 4, 'legacy-4'] as const)(
   },
 )
 
-it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
+it.each(DEFAULT_BUNDLED_PACKAGES)(
   'refreshes $id across distribution upgrades with unchanged grants and durable target retry',
   async (helper) => {
     const s = setup()
@@ -713,6 +760,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     manifest.version = oldVersion
     writeFileSync(file, JSON.stringify(manifest))
     await initializeDefaultHelpers(s)
+    if (!helper.enabledByDefault) await s.manager.setEnabled(s.profileDir, helper.id, true)
     let target: RuntimeTargetArtifact | undefined
     const publish = async (next: RuntimeTargetArtifact) => {
       target = next
@@ -919,7 +967,7 @@ it('retains a changed-capability release for explicit review, and preserves a di
     previous: target,
     publish,
   })
-  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES[0]!
+  const helper = DEFAULT_BUNDLED_PACKAGES[0]!
   const source = bundledPluginSource(helper.ref)!
   const payload = join(s.root, 'release')
   cpSync(join(source.root, source.path), payload, { recursive: true })
@@ -949,7 +997,7 @@ it('retains a changed-capability release for explicit review, and preserves a di
   expect(
     (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id),
   ).toMatchObject({ trusted: true, enabled: true, capabilityHash: preview.capabilityHash })
-  const other = DEFAULT_ENABLED_BUNDLED_PACKAGES[1]!
+  const other = DEFAULT_BUNDLED_PACKAGES[1]!
   const otherBefore = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === other.id)!
   await s.manager.untrust(s.profileDir, other.id, {
     integrity: otherBefore.entry.integrity,

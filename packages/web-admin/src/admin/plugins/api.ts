@@ -37,6 +37,7 @@ import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.
 export const ADMIN_API_ROOT = '/admin/plugins/api'
 
 type FetchLike = typeof fetch
+const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
 const METHOD_BY_PATH = {
   'candidates/list': '_agnes/v1/plugins.candidates.list',
   'candidates/show': '_agnes/v1/plugins.candidates.show',
@@ -189,6 +190,16 @@ export class PluginAdminApi {
   }
 
   static async context(fetcher: FetchLike = fetch): Promise<AdminContext> {
+    let pending = pendingContexts.get(fetcher)
+    if (!pending) {
+      pending = PluginAdminApi.readContext(fetcher).finally(() => pendingContexts.delete(fetcher))
+      pendingContexts.set(fetcher, pending)
+    }
+    // Share only in-flight I/O, never completed authority or one caller's mutable response object.
+    return structuredClone(await pending)
+  }
+
+  private static async readContext(fetcher: FetchLike): Promise<AdminContext> {
     const response = await fetcher(`${ADMIN_API_ROOT}/context`, {
       method: 'GET',
       credentials: 'same-origin',

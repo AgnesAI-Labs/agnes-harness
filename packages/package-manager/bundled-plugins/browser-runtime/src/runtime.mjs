@@ -26,6 +26,7 @@ export class BrowserRuntime {
   async execute(input, context) {
     const command = commandFor(input)
     if (this.closed) throw new Error('Browser runtime is closed')
+    context.signal.throwIfAborted()
     const key = keyOf(context.session)
     let record = this.sessions.get(key)
     if (input.action === 'close') {
@@ -51,10 +52,11 @@ export class BrowserRuntime {
     const current = record
     const work = async () => {
       const signal = AbortSignal.any([context.signal, current.controller.signal])
-      signal.throwIfAborted()
       current.lastUsed = this.now()
       if (!current.browser) {
         try {
+          // Cancellation can happen after queuing but before startup. Release that slot too.
+          signal.throwIfAborted()
           current.browser = await this.engine.start({ ...context, signal })
           signal.throwIfAborted()
           current.state = 'ready'
@@ -68,6 +70,7 @@ export class BrowserRuntime {
           throw error
         }
       }
+      signal.throwIfAborted()
       const result = await current.browser.call(command, signal, Math.min(context.timeoutMs ?? 30000, 30000))
       if (input.action === 'open') current.url = command.url
       return result

@@ -169,18 +169,34 @@ export function BrowserPanel({ ctx }) {
   )
 }
 
+// Compatibility viewer for older browser-runtime releases. New runtimes own the panel.
 export function apply(ctx) {
   return ctx.presentationRoles.register({
     role: 'browser-viewer',
     priority: 100,
-    mount: (mounted) =>
-      mounted.workbenchPanels.register({
-        id: 'browser',
-        order: 56,
-        edge: 'right',
-        titleKey: 'browser.title',
-        title: () => (mounted.locale.locale === 'zh-CN' ? '浏览器' : 'Browser'),
-        component: () => h(BrowserPanel, { ctx: mounted }),
-      }),
+    mount: (mounted) => {
+      let stopPanel
+      const reconcile = () => {
+        if (browserViews.entries().length && !stopPanel) {
+          stopPanel = mounted.workbenchPanels.register({
+            id: 'browser',
+            order: 56,
+            edge: 'right',
+            titleKey: 'browser.title',
+            title: () => (mounted.locale.locale === 'zh-CN' ? '浏览器' : 'Browser'),
+            component: () => h(BrowserPanel, { ctx: mounted }),
+          })
+        } else if (!browserViews.entries().length && stopPanel) {
+          stopPanel()
+          stopPanel = undefined
+        }
+      }
+      const unsubscribe = browserViews.subscribe(reconcile)
+      reconcile()
+      return () => {
+        unsubscribe()
+        stopPanel?.()
+      }
+    },
   })
 }

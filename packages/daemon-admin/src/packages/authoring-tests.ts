@@ -234,6 +234,10 @@ async function testCandidate(
     }
   } catch (error) {
     if (signal.aborted) throw error
+    const partial =
+      error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string'
+        ? error.stdout
+        : ''
     return {
       state: 'failed',
       count: 0,
@@ -247,7 +251,7 @@ async function testCandidate(
                 return `CompileError: ${issue.text} (${location?.file ?? 'unknown'}:${location?.line ?? 0}:${location?.column ?? 0})`
               })
               .join('\n')
-          : `${error instanceof Error ? error.name + ': ' + error.message : 'Candidate test command failed'}; no passing result recorded.`,
+          : `${error instanceof Error ? `${error.name}: ${error.message}` : 'Candidate test command failed'}; no passing result recorded.\n${partial}`,
         16384,
         directory,
       ),

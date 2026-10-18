@@ -26,6 +26,7 @@ import {
   withLock,
   writeLock,
 } from '../src/index.js'
+import * as inspection from '../src/inspect.js'
 import * as sourceModule from '../src/sources.js'
 
 const id = 'acme/runtime-snapshot'
@@ -138,9 +139,17 @@ it('lets a worker read validated active snapshots while a package effect owns th
   await withLock(profile, async () => {
     const hash = vi.spyOn(sourceModule, 'hashDirectory')
     const asyncHash = vi.spyOn(sourceModule, 'hashDirectoryAsync')
+    const inspect = vi.spyOn(inspection, 'inspectVerifiedTree')
     const sourcesRead = await m.runtimePluginSnapshots(profile)
     expect(hash.mock.calls.length).toBe(0)
     expect(asyncHash.mock.calls.length).toBe(2)
+    const inspected = inspect.mock.calls.length
+    expect(inspected).toBeGreaterThan(0)
+    expect(await m.runtimePluginSnapshots(profile)).toEqual(sourcesRead)
+    // A later read hashes both trees again, but identical verified metadata needs no reinspection.
+    expect(asyncHash.mock.calls.length).toBe(4)
+    expect(inspect.mock.calls.length).toBe(inspected)
+    inspect.mockRestore()
     hash.mockRestore()
     asyncHash.mockRestore()
     const sources = sourcesRead
@@ -477,6 +486,7 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
     pin.snapshot,
     second.snapshot,
   ])
+  await m.runtimePluginSnapshots(profile) // Warm inspection before same-size, restored-mtime tampering.
   const dataFile = join(pin.snapshot.directory, 'data.json'),
     original = readFileSync(dataFile, 'utf8'),
     stamp = statSync(dataFile)
@@ -541,22 +551,24 @@ it('does not resolve a retained pin after its package trust is revoked', async (
   const m = await installTrusted()
   const expected = await identity()
   const pin = await m.pinRuntimeSnapshot(profile, {
-    pinId: 'candidate-revoked',
+    pinId: activeRuntimePinId({ packageId: id, integrity: expected.integrity }),
     operationId: 'operation-revoked',
     packageId: id,
-    purpose: 'candidate',
+    purpose: 'active',
     selector: {
       kind: 'installed',
       expectedIntegrity: expected.integrity,
       expectedTreeIntegrity: expected.treeIntegrity,
     },
   })
+  expect(await m.runtimePluginSnapshots(profile)).toHaveLength(1)
   const lock = readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
   const entry = lock.packages[id]
   if (!entry) throw new Error('missing package lock')
   entry.state.trusted = null
   delete entry.trustDecision
   writeLock(profile, lock)
+  expect(await m.runtimePluginSnapshots(profile)).toEqual([])
   await expect(m.resolveRuntimePin(profile, { pinId: pin.pinId })).rejects.toMatchObject({
     code: 'E_PACKAGE_STATE',
     detail: { reason: 'package-not-eligible' },

@@ -56,6 +56,7 @@ export const BUNDLED_HELPERS = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/browser-runtime',
     optionalUnderCeiling: true,
+    enabledByDefault: false,
   },
 ])
 
@@ -79,20 +80,24 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
 ])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
-export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
+export const DEFAULT_BUNDLED_PACKAGES = Object.freeze([
   ...BUNDLED_HELPERS.map((helper) => ({
     optionalUnderCeiling: false,
+    enabledByDefault: true,
     ...helper,
     sourcePath: `package-manager/bundled-plugins/${helper.name}`,
     freshOnly: false,
   })),
 ])
 
+/** Initial active subset; the installed catalog also contains opt-in plugins. */
+export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze(
+  DEFAULT_BUNDLED_PACKAGES.filter((helper) => helper.enabledByDefault),
+)
+
 /** Resolve reserved release payloads independently of the caller's workspace. */
 export function bundledPluginSource(ref: string): { root: string; path: string } | undefined {
-  const pkg = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].find(
-    (item) => item.ref === ref,
-  )
+  const pkg = [...DEFAULT_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].find((item) => item.ref === ref)
   if (!pkg) return undefined
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const sea = process.getBuiltinModule('node:sea').isSea()

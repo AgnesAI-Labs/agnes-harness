@@ -136,9 +136,9 @@
           ]
         },
         "metadata": {
-          "displayName": "Independent browser runtime",
-          "summary": "Private headless browser tools with an authenticated optional viewer.",
-          "description": "Owns a separate Chrome for Testing process per session. Never attaches to personal browsers."
+          "displayName": "内置浏览器 / Built-in browser",
+          "summary": "独立浏览器工具和右侧实时预览，首次默认关闭。",
+          "description": "手动启用后新建会话即可使用，重启记住选择。只操作 AGH 独立浏览器，不接管个人浏览器或桌面。"
         }
       }
     ],
@@ -149,16 +149,20 @@
       }
     ],
     "metadata": {
-      "displayName": "Independent browser runtime",
-      "summary": "Private headless browser tools with an authenticated optional viewer.",
-      "description": "Owns a separate Chrome for Testing process per session. Never attaches to personal browsers."
+      "displayName": "内置浏览器 / Built-in browser",
+      "summary": "独立浏览器工具和右侧实时预览，首次默认关闭。",
+      "description": "手动启用后新建会话即可使用，重启记住选择。只操作 AGH 独立浏览器，不接管个人浏览器或桌面。"
     }
   },
   "peerDependencies": {
-    "@agnes/web-client": "0.0.0"
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
   },
   "devDependencies": {
     "@agnes/web-client": "workspace:*",
-    "agent-browser": "0.39.1"
+    "agent-browser": "0.39.1",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
   }
 }

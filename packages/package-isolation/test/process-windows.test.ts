@@ -48,9 +48,16 @@ describe.skipIf(process.platform !== 'win32')('bounded Windows package commands'
     await expect(
       runIsolatedCommand(process.execPath, ['-e', 'process.stdout.write("中文x")'], options),
     ).rejects.toThrow('command output exceeded limit')
-    await expect(runIsolatedCommand(process.execPath, ['-e', 'process.exit(7)'], options)).rejects.toThrow(
-      'command exited with status 7',
-    )
+    await expect(
+      runIsolatedCommand(
+        process.execPath,
+        ['-e', 'process.stdout.write("failed assertion");process.exit(7)'],
+        { ...options, maxOutputBytes: 1024 },
+      ),
+    ).rejects.toMatchObject({
+      message: 'command exited with status 7',
+      stdout: 'failed assertion',
+    })
     await expect(runIsolatedCommand('agnes-no-such-command', [], options)).rejects.toMatchObject({
       code: 'ENOENT',
     })

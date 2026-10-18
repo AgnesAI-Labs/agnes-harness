@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_ENABLED_BUNDLED_PACKAGES, withLock } from '@agnes/package-manager'
+import { DEFAULT_BUNDLED_PACKAGES, withLock } from '@agnes/package-manager'
 
 export type DefaultHelperState = {
   phase: 'pending' | 'installed' | 'complete' | 'existing'
@@ -49,7 +49,7 @@ function decode(raw: unknown): DefaultHelperState {
   if (
     Object.entries(integrity).some(
       ([id, hash]) =>
-        !DEFAULT_ENABLED_BUNDLED_PACKAGES.some((h) => h.id === id) ||
+        !DEFAULT_BUNDLED_PACKAGES.some((h) => h.id === id) ||
         typeof hash !== 'string' ||
         !/^sha256-[a-f0-9]{64}$/.test(hash),
     )
@@ -59,7 +59,7 @@ function decode(raw: unknown): DefaultHelperState {
     s.version === 4 &&
     (s.phase === 'existing' ||
       !Array.isArray(s.offered) ||
-      s.offered.some((id) => !DEFAULT_ENABLED_BUNDLED_PACKAGES.some((helper) => helper.id === id)) ||
+      s.offered.some((id) => !DEFAULT_BUNDLED_PACKAGES.some((helper) => helper.id === id)) ||
       new Set(s.offered).size !== s.offered.length ||
       Object.keys(integrity).some((id) => !(s.offered as unknown[]).includes(id)))
   )

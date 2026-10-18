@@ -1297,9 +1297,15 @@ importers:
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../web-ui
       agent-browser:
         specifier: 0.39.1
         version: 0.39.1
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
 
   packages/package-manager/bundled-plugins/browser-ui:
     devDependencies:
@@ -1935,6 +1941,19 @@ importers:
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
+
+  tools/authoring:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
 
   tools/e2e-web:
     dependencies:

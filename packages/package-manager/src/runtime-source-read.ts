@@ -43,7 +43,7 @@ export async function readRuntimePluginSnapshots(
           ceiling: ceiling(beforeLock),
           verificationCache,
         }),
-        listRuntimePinsStoreAsync(store, beforeLock),
+        listRuntimePinsStoreAsync({ ...store, verificationCache }, beforeLock),
       ])
       if (inventoryRead.status === 'rejected') throw inventoryRead.reason
       if (pinsRead.status === 'rejected') throw pinsRead.reason

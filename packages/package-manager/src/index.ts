@@ -10,6 +10,7 @@ export {
   bundledExampleSource,
   bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_BUNDLED_PACKAGES,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'

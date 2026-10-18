@@ -110,6 +110,7 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
           ? (await resolveConfiguredPowerShell({ ...process.env, AGNES_POWERSHELL: '5.1' })).path
           : version
       const shell = await resolveConfiguredPowerShell({ ...process.env, AGNES_POWERSHELL: selected })
+      vi.stubEnv('LOCALAPPDATA', 'C:\\synthetic\\local appdata')
       const exec = createExec({ windowsNodeExecutable: process.execPath, windowsPowerShell: shell })
       const jobs = new ShellJobs()
       const base = fakeToolContext({ cwd: tmpdir(), timeoutMs: 20000 })
@@ -128,10 +129,15 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         return tool.execute({ command, ...extra }, ctx)
       }
       try {
-        const ordinary = await run("[Console]::Write('中文' + $PSVersionTable.PSVersion.Major); exit 7")
+        const ordinary = await run(
+          "[Console]::Write('中文' + $PSVersionTable.PSVersion.Major); [Console]::Write((Join-Path $env:LOCALAPPDATA 'AgnesAudit')); exit 7",
+        )
         expect(ordinary.isError).toBe(true)
         expect(JSON.stringify(ordinary)).toContain(version === '7' ? '中文7' : '中文5')
         expect(ordinary.details).toMatchObject({ code: 7 })
+        expect(JSON.stringify(ordinary)).toContain(
+          JSON.stringify('C:\\synthetic\\local appdata\\AgnesAudit').slice(1, -1),
+        )
         const streams = await run(
           "Write-Host '中文 host'; Write-Warning '中文 warning'; [Console]::Write($env:PYTHONUTF8 + ':' + $env:PYTHONUNBUFFERED)",
         )
@@ -140,8 +146,12 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         expect(JSON.stringify(streams)).toContain('中文 warning')
         expect(JSON.stringify(streams)).toContain('1:1')
         expect(JSON.stringify(streams)).not.toContain('CLIXML')
-        const first = await run("$kept = '变量中文'; [Console]::Write($kept)", { persistent: true })
+        const first = await run(
+          "$kept = '变量中文'; [Console]::Write($kept); [Console]::Write($env:LOCALAPPDATA)",
+          { persistent: true },
+        )
         expect(first.isError, JSON.stringify(first)).toBeUndefined()
+        expect(JSON.stringify(first)).toContain(JSON.stringify('C:\\synthetic\\local appdata').slice(1, -1))
         const next = await run('[Console]::Write($kept)', { persistent: true })
         expect(next.isError, JSON.stringify(next)).toBeUndefined()
         expect(JSON.stringify(next)).toContain('变量中文')
@@ -177,6 +187,7 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
       } finally {
         await jobs.dispose()
         await exec.killAll()
+        vi.unstubAllEnvs()
       }
     },
     90000,

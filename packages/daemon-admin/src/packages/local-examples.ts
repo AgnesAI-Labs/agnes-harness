@@ -5,7 +5,7 @@ import {
   bundledPluginSource,
   createCatalog,
   createLocalExamplesCatalog,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  DEFAULT_BUNDLED_PACKAGES,
   hashDirectory,
   type LocalExamplesCatalog,
   OPTIONAL_BUNDLED_PACKAGES,
@@ -13,9 +13,7 @@ import {
 } from '@agnes/package-manager'
 
 /** Read the actual shipped payload; never advertise an unavailable Git fallback. */
-function helperEntry(
-  helper: Pick<(typeof DEFAULT_ENABLED_BUNDLED_PACKAGES)[number], 'id' | 'license' | 'ref'>,
-) {
+function helperEntry(helper: Pick<(typeof DEFAULT_BUNDLED_PACKAGES)[number], 'id' | 'license' | 'ref'>) {
   const source = bundledPluginSource(helper.ref)
   if (!source) throw new Error('Bundled plugin root unavailable')
   const directory = join(source.root, source.path)
@@ -45,7 +43,7 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     staticCatalogSource('builtin-plugins', async () => ({
       issuedAt: new Date().toISOString(),
       ttlMs: 86_400_000,
-      entries: [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(helperEntry),
+      entries: [...DEFAULT_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(helperEntry),
     })),
     staticCatalogSource('official-examples', async (signal) => ({
       issuedAt: new Date().toISOString(),

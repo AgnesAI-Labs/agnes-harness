@@ -29,6 +29,8 @@
 
 Windows 任务 Shell 复用 Host 已选定的 PowerShell。实验性 `SHELL_STDIN_SENTINEL` 仅允许作为单元素 argv 传给非 PTY 的 `openProcess`；选定的 provider 必须声明 `shellStdin: true`。不支持时在启动前拒绝，不切换 provider，也不回退到本地程序。显式指定 Shell 的含义不变。启动仍须调用授权；交接后由会话持有进程。`ProcessExit.error` 单独报告清理失败，不替代命令退出码；重复调用 `close()` 也必须报告该失败。现有权限和记忆策略不变。
 
+默认 Windows 执行环境还会继承 `USERPROFILE`、`APPDATA`、`LOCALAPPDATA`、`HOMEDRIVE` 和 `HOMEPATH`，供普通命令和后台进程定位用户配置与缓存。显式环境变量仍优先；调用方自行提供基础环境时，以该环境为准。POSIX 和远程执行的默认环境不变。
+
 外部子代理通过可选的 `ChildAgentProviderStartOptions.launch.windowsNodeExecutable` 接收 Host 运行时路径。该字段不属于模型、会话启动参数或已保存的子代理设置；Host 覆盖调用者传入的启动信息。Windows SDK/ACP 和一次性引擎复用现有 Job 启动机制。普通 batch 使用 `script`；可信的程序化 provider 配置可以为已核实的转发包装脚本明确指定 `windowsBatch: 'argv-proxy'`，已保存设置不增加模式选择项。未经核实的包装脚本不承诺兼容。batch argv 包含换行或超过现有命令行长度限制时拒绝；原生 exe/Node 参数和 SDK/ACP stdin 正文能力不变。这是部分 batch 兼容，不代表所有已安装的 Codex/Claude 包装入口都支持任意任务正文。
 
 作者通过声明的包出口导入合同。[Extension API 根入口](../../packages/extension-api/src/index.ts)维护类型出口与[运行时快照](../../packages/extension-api/api-surface.json)；Protocol 维护 wire schema 与生成参考。仅类型出口也是公开 API，即使不出现在 `Object.keys()` 和运行时快照中。

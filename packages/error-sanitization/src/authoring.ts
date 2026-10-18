@@ -2,6 +2,9 @@ import { DEFAULT_RULES, redactText } from './redact.js'
 import { looksLikeSecret } from './secret-shapes.js'
 
 const hints = {
+  'conflicting-write-path': 'A path cannot be in both files and remove. / 同一路径不能同时写入和删除。',
+  'missing-remove-path':
+    'Remove only a path present in the current candidate. / 只能删除当前候选中存在的路径。',
   'unknown-theme-token': 'Use a supported semantic theme token. / 请使用受支持的语义主题 token。',
   'invalid-field': 'Correct this field using the package contract. / 请按插件合同修正此字段。',
   'missing-required-file':
@@ -65,19 +68,31 @@ export function authoringDiagnosticText(value: unknown): string {
 export function safeAuthoringOutput(value: string, maxBytes = 16384, directory?: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: Strip terminal escape sequences from untrusted test output.
   let text = value.slice(0, 262144).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-  if (directory)
-    text = text
-      .split(`file://${directory}/node_modules/.authoring-tests/`)
-      .join('./')
-      .split(`file://${directory}/`)
-      .join('./')
-      .split(directory + '/node_modules/.authoring-tests/')
-      .join('./')
-      .split(directory + '/')
-      .join('./')
+  if (directory) {
+    const windows = /^[A-Za-z]:[\\/]|^\\\\/.test(directory)
+    const path = (windows ? directory.replace(/\\/g, '/') : directory).replace(/\/$/, '')
+    // Stay browser-safe: encode only the known candidate directory, never arbitrary output.
+    const urlPath = path.startsWith('//') ? path.slice(2) : path.startsWith('/') ? path : `/${path}`
+    const url = `file://${encodeURI(urlPath).replace(/[?#]/g, encodeURIComponent)}`
+    const prefixes = [url, `file://${path}`, path, directory.replace(/[\\/]$/, '')]
+    // Node's TAP reporter quotes Windows locations with doubled backslashes.
+    if (windows) prefixes.push(directory.replace(/[\\/]$/, '').replace(/\\/g, '\\\\'))
+    for (const prefix of new Set(prefixes)) {
+      const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const separator = windows ? '[\\\\/]+' : '/'
+      const pattern = new RegExp(
+        `${escaped}${separator}(?:node_modules${separator}\\.authoring-tests${separator})?([^\\s'"<>]*)`,
+        windows ? 'gi' : 'g',
+      )
+      text = text.replace(
+        pattern,
+        (_match, relative: string) => `./${windows ? relative.replace(/\\+/g, '/') : relative}`,
+      )
+    }
+  }
   let stackIndent: number | undefined
   text = redactText(text, DEFAULT_RULES)
-    .text.replace(/(?:file:\/\/)?(?:[A-Za-z]:[\\/]|\/|\\\\)[^\s'"<>]+/g, (path, offset, source) =>
+    .text.replace(/(?:file:\/\/|[A-Za-z]:[\\/]|\/|\\\\)[^\s'"<>]+/g, (path, offset, source) =>
       offset > 0 && /[A-Za-z0-9_.]/.test(source[offset - 1]) ? path : '[REDACTED:path]',
     )
     .split('\n')

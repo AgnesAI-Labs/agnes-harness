@@ -202,7 +202,7 @@
       "source": "https://github.com/microsoft/playwright",
       "purpose": "Run the real daemon/Web end-to-end merge gate with cached Chromium and failure traces.",
       "rationale": "Provides stable browser assertions, visual comparison, lifecycle fixtures and CI reports.",
-      "consumers": ["."]
+      "consumers": [".", "tools/authoring"]
     },
     {
       "name": "@axe-core/playwright",

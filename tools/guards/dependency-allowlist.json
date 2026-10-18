@@ -1,4 +1,5 @@
 {
+  "@agnes/authoring-eval": ["@agnes/ai", "@agnes/sdk"],
   "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol", "@agnes/observability"],
   "@agnes/cosmokit": [],
   "@agnes/cordis": ["@agnes/cosmokit"],
@@ -353,7 +354,7 @@
   "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
-  "@agnes/browser-runtime": ["@agnes/web-client"],
+  "@agnes/browser-runtime": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/browser-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/goal-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/navigation-ui": ["@agnes/web-client", "@agnes/web-ui"],

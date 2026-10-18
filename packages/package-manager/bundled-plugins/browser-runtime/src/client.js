@@ -1,8 +1,10 @@
 import { browserViews } from '@agnes/web-client'
+import { createElement as h } from 'react'
+import { BrowserPanel } from './panel.js'
 
-// This adapter has no panel, DOM or stream subscriptions until a viewer requests one.
+// Enabling supplies both transport and panel; viewing never launches Chromium.
 export function apply(ctx) {
-  return ctx.presentationRoles.register({
+  const stopTransport = ctx.presentationRoles.register({
     role: 'browser-transport',
     priority: 100,
     mount: (mounted) =>
@@ -14,4 +16,28 @@ export function apply(ctx) {
         watch: (ticket, signal) => mounted.profile.streams.open('browser.frames', { ticket }, { signal }),
       }),
   })
+  let stopViewer
+  try {
+    stopViewer = ctx.presentationRoles.register({
+      role: 'browser-viewer',
+      // Older standalone viewers use 100. Prefer this owner without duplicate panels.
+      priority: 50,
+      mount: (mounted) =>
+        mounted.workbenchPanels.register({
+          id: 'browser',
+          order: 56,
+          edge: 'right',
+          titleKey: 'browser.title',
+          title: () => (mounted.locale.locale === 'zh-CN' ? '浏览器' : 'Browser'),
+          component: () => h(BrowserPanel, { ctx: mounted }),
+        }),
+    })
+  } catch (error) {
+    stopTransport()
+    throw error
+  }
+  return () => {
+    stopViewer()
+    stopTransport()
+  }
 }

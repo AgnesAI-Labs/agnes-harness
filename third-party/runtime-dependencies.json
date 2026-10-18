@@ -56,6 +56,7 @@
         "examples/community/deliverables-gallery",
         "examples/ui/interaction-renderer",
         "examples/ui/tool-result-card",
+        "packages/package-manager/bundled-plugins/browser-runtime",
         "packages/package-manager/bundled-plugins/browser-ui",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/goal-ui",

@@ -1,7 +1,11 @@
 # Independent browser runtime
 
-Release-default backend plugin. Tools work without installing the optional `@agnes/browser-ui` viewer.
-The small client adapter contributes no panel and does not subscribe to frames by itself.
+Built-in, installed but disabled on first provisioning. Enable it in Settings → Plugin management,
+then start a new conversation: the same switch supplies browser tools and the right-side Browser panel.
+The enabled/disabled choice survives restarts. Existing installations retain their current choice;
+older conversations retain their pinned tool versions. CLI/headless use does not require opening the UI.
+No process or download starts until `browser_open`. No separate viewer installation is required.
+The legacy `@agnes/browser-ui` remains compatible; this plugin wins panel selection to avoid duplicates.
 
 Uses pinned agent-browser 0.39.1 native binaries (Apache-2.0) and Chrome for Testing's official
 chrome-headless-shell 155.0.8059.84 on every platform. The first `browser_open` downloads the fixed vendor

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_ENABLED_BUNDLED_PACKAGES, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import { DEFAULT_BUNDLED_PACKAGES, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
 import { afterEach, expect, it, vi } from 'vitest'
 import { discoverLocalExamples } from '../src/packages/local-examples.js'
 
@@ -58,7 +58,7 @@ it.each([
         join(payload, 'package.json'),
         JSON.stringify({ name: pkg.id, version: pkg.version, license: pkg.license }),
       )
-      expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((entry) => entry.id === pkg.id)).toBe(false)
+      expect(DEFAULT_BUNDLED_PACKAGES.some((entry) => entry.id === pkg.id)).toBe(false)
     }
     if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
     const catalog = await discoverLocalExamples(root)
@@ -70,7 +70,7 @@ it.each([
         .filter((entry) => entry.sourceId === 'builtin-plugins')
         .map((entry) => entry.id)
         .sort(),
-    ).toEqual([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.id).sort())
+    ).toEqual([...DEFAULT_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.id).sort())
     const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
     expect(examples).toHaveLength(17)
     expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)

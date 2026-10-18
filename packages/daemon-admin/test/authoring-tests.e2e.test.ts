@@ -42,7 +42,7 @@ it.each(['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skil
   60_000,
 )
 it('does not accept missing or failing tests, lifecycle success claims or private SDK imports', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'agh-author-test-'))
+  const directory = mkdtempSync(join(tmpdir(), 'agh-author-test-中文 #%-'))
   try {
     const files = [
       { path: 'package.json', content: '{"name":"test","scripts":{"test":"echo pass"}}' },
@@ -58,6 +58,7 @@ it('does not accept missing or failing tests, lifecycle success claims or privat
     })
     expect(await runAuthoringTests(directory, files, new AbortController().signal)).toMatchObject({
       state: 'failed',
+      output: expect.stringMatching(/location: ['"]?\.\/test\/fail\.test\.mjs:\d+:\d+/),
     })
     const blocked = files.map((f) =>
       f.path.endsWith('.mjs') ? { ...f, content: 'import "@agnes/host";' } : f,

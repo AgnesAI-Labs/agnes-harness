@@ -66,6 +66,34 @@ it('keeps process launches in the authorized workspace and cleans staging on ref
     expect(openProcess).toHaveBeenCalledOnce()
     if (!marker) throw new Error('Missing installation marker')
     await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+    let markStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let endInstallation: (error: Error) => void = () => {}
+    const installation = new Promise<void>((_resolve, reject) => {
+      endInstallation = reject
+    })
+    engine.install = () => {
+      markStarted()
+      return installation
+    }
+    const owner = engine.ensureChrome(ctx).catch(() => {})
+    await started
+    const waiting = new AbortController()
+    let ownerSettled = false
+    void owner.then(() => {
+      ownerSettled = true
+    })
+    try {
+      const second = engine.ensureChrome({ ...ctx, signal: waiting.signal })
+      waiting.abort(new Error('cancel waiting session'))
+      await expect(second).rejects.toThrow('cancel waiting session')
+      expect(ownerSettled).toBe(false)
+    } finally {
+      endInstallation(new Error('fixture download finished'))
+      await owner
+    }
   } finally {
     await rm(cache, { recursive: true, force: true })
   }
@@ -180,6 +208,16 @@ it('is lazy, isolates sessions and lanes, and never launches through a viewer qu
   }
   const runtime = new BrowserRuntime(engine)
   expect(runtime.observe('one', { kind: 'human' })).toEqual({ state: 'idle' })
+  expect(engine.start).not.toHaveBeenCalled()
+  for (const when of ['before', 'queued']) {
+    const abort = new AbortController()
+    const ctx = { ...context(`cancelled-${when}`), signal: abort.signal }
+    if (when === 'before') abort.abort()
+    const cancelled = runtime.execute({ action: 'open', url: 'https://example.com' }, ctx)
+    abort.abort()
+    await expect(cancelled).rejects.toThrow()
+    expect(runtime.observe(ctx.session.key, { kind: 'human' })).toEqual({ state: 'idle' })
+  }
   expect(engine.start).not.toHaveBeenCalled()
   await expect(runtime.execute({ action: 'snapshot' }, context())).rejects.toThrow('Open a URL')
   await runtime.execute({ action: 'open', url: 'https://example.com' }, context())

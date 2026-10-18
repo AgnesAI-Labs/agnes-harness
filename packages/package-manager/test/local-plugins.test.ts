@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { type FSWatcher, mkdirSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -6,6 +7,17 @@ import { localPluginRoots } from '../src/local-source.js'
 import { localWorkspaceTrustHash } from '../src/local-workspace-trust.js'
 import { emptyLock, readLock, withLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
+
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return { ...fs, watch: vi.fn(fs.watch) }
+})
+function quietWatchRoots() {
+  // Lock/retry tests drive scans explicitly. Native events cannot share their fake clock.
+  // Real filesystem delivery is covered by local-watcher.slow.test.ts.
+  for (let i = 0; i < 2; i++)
+    vi.mocked(watch).mockReturnValueOnce(Object.assign(new EventEmitter(), { close() {} }) as FSWatcher)
+}
 
 const roots: string[] = []
 afterEach(() => {
@@ -177,9 +189,9 @@ it('rejects a rescan that lost the profile lock and retries it once the lock is 
     readLock(f.profileDir, { profile: 'test', agnesVersion: '0.0.0' }).packages.hello?.integrity
   const before = integrity()
   writeFileSync(join(plugin, 'plugin.ts'), 'export default { apply() { /* edited */ } }')
-  // Create both roots and let fixture FS events drain before any fake-timer debounce exists.
+  // Both roots still exist; only unsolicited native notifications are disabled in this test.
   mkdirSync(f.localPlugins.workspace, { recursive: true })
-  await new Promise((resolve) => setTimeout(resolve, 300))
+  quietWatchRoots()
   const reloadPlugin = vi.fn(async (_id: string) => {})
   const watcher = f.manager.watchLocalPlugins(f.profileDir, { reloadPlugin })
   try {
@@ -207,7 +219,7 @@ it('keeps a reload that lost the profile lock pending, and Rescan retries it onc
   mkdirSync(plugin, { recursive: true })
   writeFileSync(join(plugin, 'plugin.ts'), 'export default { apply() {} }')
   mkdirSync(f.localPlugins.workspace, { recursive: true })
-  await new Promise((resolve) => setTimeout(resolve, 300))
+  quietWatchRoots()
   let release!: () => void
   let holder: Promise<void> | undefined
   let entered!: () => void

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import {
   bundledPluginSource,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  DEFAULT_BUNDLED_PACKAGES,
   hashDirectory,
   hashDirectoryAsync,
   type InstalledInventory,
@@ -29,12 +29,12 @@ export async function initializeDefaultHelpers(options: {
     // Old receipts only prove offers through their hashes and the current inventory. Never infer
     // past offers from a version number: that would hide newly shipped defaults again.
     const offered = new Set(state?.version === 4 ? state.offered : Object.keys(state?.integrity ?? {}))
-    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES)
+    for (const helper of DEFAULT_BUNDLED_PACKAGES)
       if (inventory?.packages.some((pkg) => pkg.id === helper.id)) offered.add(helper.id)
     const unfinished = state?.phase === 'pending' || state?.phase === 'installed' ? state : undefined
     const integrity: Record<string, string> = unfinished ? { ...unfinished.integrity } : {}
     let planned = false
-    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    for (const helper of DEFAULT_BUNDLED_PACKAGES) {
       if (helper.freshOnly && (state || inventory)) continue
       if (offered.has(helper.id)) continue
       const source = bundledPluginSource(helper.ref)
@@ -57,7 +57,7 @@ export async function initializeDefaultHelpers(options: {
     await options.initializePolicy()
     if (state.phase !== 'pending') return
     await options.manager.recover(options.profileDir)
-    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+    for (const helper of DEFAULT_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
@@ -98,7 +98,7 @@ export async function initializeDefaultHelpers(options: {
         integrity: preview.integrity,
         capabilityHash: preview.capabilityHash,
       })
-      await options.manager.setEnabled(options.profileDir, helper.id, true, {
+      await options.manager.setEnabled(options.profileDir, helper.id, helper.enabledByDefault, {
         expectedInstalledIntegrity: preview.integrity,
       })
     }
@@ -117,8 +117,10 @@ export async function activateDefaultHelpers(options: {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
     if (state?.phase !== 'installed') return
     let target = options.previous
-    for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
-      if (!Object.hasOwn(state.integrity, helper.id)) continue
+    const active = DEFAULT_BUNDLED_PACKAGES.filter(
+      (helper) => Object.hasOwn(state.integrity, helper.id) && helper.enabledByDefault,
+    )
+    for (const helper of active) {
       const pkg = options.inventory.packages.find((p) => p.id === helper.id)
       if (!pkg || !isRuntimePackageEligible(pkg) || pkg.entry.integrity !== state.integrity[helper.id])
         throw new Error('Bundled helper activation verification failed')
@@ -129,8 +131,11 @@ export async function activateDefaultHelpers(options: {
         operation: 'enable',
       })
     }
-    if (!target) throw new Error('Bundled helper target unavailable')
-    await options.publish(target)
+    // A batch containing only opt-in defaults does not change the active runtime.
+    if (active.length) {
+      if (!target) throw new Error('Bundled helper target unavailable')
+      await options.publish(target)
+    }
     save({ ...state, phase: 'complete' })
   })
 }
@@ -143,7 +148,7 @@ export async function refreshDefaultHelpers(options: {
   previous(): RuntimeTargetArtifact | undefined
   publish(target: RuntimeTargetArtifact): Promise<void>
 }): Promise<void> {
-  for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
+  for (const helper of DEFAULT_BUNDLED_PACKAGES) {
     const inventory = await options.manager.inventory(options.profileDir, { fresh: true })
     const current = inventory.packages.find((pkg) => pkg.id === helper.id)
     if (

@@ -1,4 +1,5 @@
 import type { PackageContributionSummary, PluginCapabilities, PluginMetadata } from '@agnes/protocol'
+import type { InventoryVerificationCache } from './inventory.js'
 import type { LockEntry } from './lockfile.js'
 import type { PackageStore } from './store.js'
 
@@ -52,7 +53,10 @@ export type RuntimeSnapshotCollection = Readonly<{
   retained: readonly string[]
 }>
 
-export type RuntimeSnapshotStore = PackageStore
+export type RuntimeSnapshotStore = PackageStore & {
+  /** Read-only inspection reuse after full tree verification; mutation paths leave this unset. */
+  verificationCache?: InventoryVerificationCache
+}
 
 export type SnapshotRecord = {
   /** Missing/1 retains the original identity; 2 includes the record format in its identity.

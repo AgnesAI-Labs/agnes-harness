@@ -10,6 +10,7 @@ import {
   bundledExampleSource,
   bundledPluginSource,
   bundledPluginSourceRoot,
+  DEFAULT_BUNDLED_PACKAGES,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
@@ -28,12 +29,16 @@ const fixture = () => {
 }
 
 it('ships the browser viewer as optional without reserving ordinary workspace sources', () => {
+  expect(DEFAULT_BUNDLED_PACKAGES.find((pkg) => pkg.id === '@agnes/browser-runtime')?.enabledByDefault).toBe(
+    false,
+  )
+  expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((pkg) => pkg.id === '@agnes/browser-runtime')).toBe(false)
   expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.id)).toEqual(['@agnes/browser-ui'])
-  expect(DEFAULT_ENABLED_BUNDLED_PACKAGES.some((pkg) => pkg.id === '@agnes/browser-ui')).toBe(false)
+  expect(DEFAULT_BUNDLED_PACKAGES.some((pkg) => pkg.id === '@agnes/browser-ui')).toBe(false)
   expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
   expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
 })
-it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
+it.each([...DEFAULT_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'uses $id runtime payload instead of workspace impostor without network commands',
   async (helper) => {
     const cwd = fixture()

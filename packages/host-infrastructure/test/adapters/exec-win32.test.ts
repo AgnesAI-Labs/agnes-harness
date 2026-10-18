@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createExec, type ExecAdapter } from '../../src/adapters/exec.js'
 
 const adapters: ExecAdapter[] = []
@@ -10,6 +10,7 @@ const roots: string[] = []
 afterEach(async () => {
   for (const adapter of adapters.splice(0)) await adapter.killAll()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 function setup() {
   const cwd = mkdtempSync(join(tmpdir(), 'agnes-win-exec-中文 '))
@@ -45,16 +46,28 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
         [
           process.execPath,
           '-e',
-          'process.stdout.write(JSON.stringify({path:process.env.PATH,keys:Object.keys(process.env).filter(k=>k.toUpperCase()==="PATH")}))',
+          'process.stdout.write(JSON.stringify({path:process.env.PATH,keys:Object.keys(process.env).filter(k=>k.toUpperCase()==="PATH"),localAppData:process.env.LOCALAPPDATA??null}))',
         ],
         { cwd, env },
       )
       expect(result.code).toBe(0)
-      expect(JSON.parse(result.stdout)).toEqual({ path: Object.values(env)[0], keys: Object.keys(env) })
+      expect(JSON.parse(result.stdout)).toEqual({
+        path: Object.values(env)[0],
+        keys: Object.keys(env),
+        localAppData: null,
+      })
     }
   })
 
   it('keeps argv, stdin, UTF-8 and explicit env while excluding host secrets', async () => {
+    const profileEnv = {
+      USERPROFILE: 'C:\\synthetic\\profile',
+      APPDATA: 'C:\\synthetic\\roaming',
+      LOCALAPPDATA: 'C:\\synthetic\\local',
+      HOMEDRIVE: 'C:',
+      HOMEPATH: '\\synthetic\\profile',
+    }
+    for (const [key, value] of Object.entries(profileEnv)) vi.stubEnv(key, value)
     const { cwd, exec } = setup()
     const previous = process.env.AGNES_EXEC_TEST_PRIVATE
     process.env.AGNES_EXEC_TEST_PRIVATE = 'private'
@@ -66,7 +79,7 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
           `
         let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>text+=c);
         process.stdin.on('end',()=>{
-          process.stdout.write(JSON.stringify({args:process.argv.slice(1),text,visible:process.env.VISIBLE,hidden:process.env.AGNES_EXEC_TEST_PRIVATE??null}));
+          process.stdout.write(JSON.stringify({args:process.argv.slice(1),text,visible:process.env.VISIBLE,hidden:process.env.AGNES_EXEC_TEST_PRIVATE??null,profile:Object.fromEntries(${JSON.stringify(Object.keys(profileEnv))}.map(k=>[k,process.env[k]]))}));
           process.stderr.write('错误');process.exitCode=2;
         });
       `,
@@ -74,7 +87,7 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
           '中文 "引用"',
           '$HOME && echo nope',
         ],
-        { cwd, stdin: '输入🌱', env: { VISIBLE: 'yes' } },
+        { cwd, stdin: '输入🌱', env: { VISIBLE: 'yes', localappdata: 'C:\\explicit' } },
       )
       expect(result).toMatchObject({ code: 2, stderr: '错误', timedOut: false, truncated: false })
       expect(JSON.parse(result.stdout)).toEqual({
@@ -82,6 +95,7 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
         text: '输入🌱',
         visible: 'yes',
         hidden: null,
+        profile: { ...profileEnv, LOCALAPPDATA: 'C:\\explicit' },
       })
     } finally {
       if (previous === undefined) delete process.env.AGNES_EXEC_TEST_PRIVATE

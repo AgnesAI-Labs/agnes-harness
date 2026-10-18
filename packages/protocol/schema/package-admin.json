@@ -1576,7 +1576,14 @@
             "additionalProperties": false,
             "properties": {
               "code": {
-                "enum": ["unknown-theme-token", "invalid-field", "missing-required-file", "no-progress"]
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
               },
               "path": {
                 "type": "string",
@@ -3507,7 +3514,14 @@
             "additionalProperties": false,
             "properties": {
               "code": {
-                "enum": ["unknown-theme-token", "invalid-field", "missing-required-file", "no-progress"]
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
               },
               "path": {
                 "type": "string",
@@ -3820,7 +3834,7 @@
         },
         "files": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 64,
           "items": {
             "type": "object",
@@ -3838,6 +3852,21 @@
             },
             "required": ["path", "content"]
           }
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["replace", "merge"],
+          "description": "Defaults to replace. Merge retains untouched files and applies explicit removals."
+        },
+        "remove": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "description": "Existing paths to delete; valid only with mode merge."
         }
       },
       "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "files"]

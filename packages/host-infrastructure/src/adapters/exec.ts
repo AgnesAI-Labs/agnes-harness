@@ -129,6 +129,14 @@ export function createExec(
   const interactive = new Set<SandboxProcess>()
   const base = opts.baseEnv ?? baseEnvironment()
   if (opts.windowsNodeExecutable) {
+    // Windows tools resolve user configuration and caches through these variables. Keep an
+    // explicitly supplied environment authoritative, and leave the POSIX/remote floor unchanged.
+    if (opts.baseEnv === undefined) {
+      for (const key of ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH']) {
+        const value = process.env[key]
+        if (value !== undefined) base[key] = value
+      }
+    }
     const windows = createWindowsExec({
       nodeExecutable: opts.windowsNodeExecutable,
       baseEnv: base,

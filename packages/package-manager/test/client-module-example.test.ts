@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
@@ -155,7 +155,12 @@ it.each(['component-library', 'interaction-renderer', 'tool-result-card'])(
   'inspects the public Intelligent UI %s example without private runtime imports',
   async (name) => {
     const source = join(dirname(fileURLToPath(import.meta.url)), '../../../examples/ui', name)
-    cpSync(source, join(root, name), { recursive: true })
+    // Inspect the shipped example source, without copying workspace dependency junctions.
+    cpSync(source, join(root, name), {
+      recursive: true,
+      filter: (path) => basename(path) !== 'node_modules',
+    })
+    expect(existsSync(join(root, name, 'node_modules'))).toBe(false)
     const manager = createPackageManager({
       dataDir: root,
       cwd: root,

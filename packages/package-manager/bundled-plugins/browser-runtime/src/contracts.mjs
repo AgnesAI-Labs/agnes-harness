@@ -47,7 +47,7 @@ export const tools = [
     'browser_open',
     'open',
     object({ url: text(8192) }),
-    'Use for requests to open a browser or inspect an HTTP(S) page: opens this session’s private headless browser. First use downloads Chrome for Testing. For a generated web project, start its local server with the shell job tools, then open its localhost URL. Never attaches to personal Chrome/Edge or controls desktop windows. If unavailable, report the error; do not switch to a personal browser, desktop control or system URL opener unless the user explicitly requests that.',
+    'Use for requests to open the built-in browser, browse a website (including search pages), or preview a generated web project. Unlike web_fetch, this renders JavaScript and follows page navigation; no web_search API key is needed. Start with browser_open, then browser_snapshot and browser_click/browser_fill to interact: opens this session’s private headless browser. First use downloads Chrome for Testing. For a generated web project, start its local server with the shell job tools, then open its localhost URL. Never attaches to personal Chrome/Edge or controls desktop windows. If unavailable, report the error; do not switch to a personal browser, desktop control or system URL opener as a fallback.',
   ],
   [
     'browser_snapshot',

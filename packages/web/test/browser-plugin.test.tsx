@@ -11,7 +11,7 @@ import * as transport from '../../package-manager/bundled-plugins/browser-runtim
 // @ts-expect-error Shipped ESM is exercised directly, without release-generated declarations.
 import * as viewer from '../../package-manager/bundled-plugins/browser-ui/src/client.js'
 
-it('adds a panel only with the viewer, binds session reads, disconnects on switching and preserves the backend transport', async () => {
+it('enables transport and panel together, tolerates the legacy viewer, and disconnects on switch or disable', async () => {
   const roles = new PresentationRoleRegistry()
   const session = new SessionService(new Context(), 'one')
   const closed = vi.fn()
@@ -31,11 +31,15 @@ it('adds a panel only with the viewer, binds session reads, disconnects on switc
         roles.register(owner, { ...provider, mount: () => provider.mount(ctx(owner)) }),
     },
   })
+  expect(workbenchPanels.get('browser')).toBeUndefined()
   const stopTransport = transport.apply(ctx('backend'))
   expect(browserViews.entries()).toHaveLength(1)
-  expect(workbenchPanels.get('browser')).toBeUndefined()
+  expect(workbenchPanels.get('browser')).toBeDefined()
   expect(query).not.toHaveBeenCalled()
+  const ownPanel = workbenchPanels.get('browser')
   const stopViewer = viewer.apply(ctx('viewer'))
+  expect(workbenchPanels.get('browser')).toBe(ownPanel)
+  expect(roles.getSnapshot()).toEqual([])
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -59,10 +63,12 @@ it('adds a panel only with the viewer, binds session reads, disconnects on switc
     expect(host.textContent).not.toContain('https://one.example')
     await act(async () => {
       root.unmount()
-      stopViewer()
     })
+    expect(workbenchPanels.get('browser')).toBe(ownPanel)
+    // Even an installed legacy viewer must disappear when the browser plugin is disabled.
+    stopTransport()
     expect(workbenchPanels.get('browser')).toBeUndefined()
-    expect(browserViews.entries()).toHaveLength(1)
+    expect(browserViews.entries()).toHaveLength(0)
   } finally {
     stopViewer()
     stopTransport()

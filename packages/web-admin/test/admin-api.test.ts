@@ -177,13 +177,26 @@ it('keeps a read-only recovery context available when inventory reads need separ
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValue(new Response(JSON.stringify(recovery), { status: 200 }))
+  const otherContext = { ...recovery, authScope: 'auth.other-scope' }
+  const otherFetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(otherContext))
 
-  await expect(PluginAdminApi.context(fetcher)).resolves.toEqual(recovery)
+  const contexts = await Promise.all([
+    PluginAdminApi.context(fetcher),
+    PluginAdminApi.context(fetcher),
+    PluginAdminApi.context(fetcher),
+    PluginAdminApi.context(otherFetcher),
+  ])
+  expect(contexts).toEqual([recovery, recovery, recovery, otherContext])
+  expect(contexts[0]).not.toBe(contexts[1])
+  expect(fetcher).toHaveBeenCalledTimes(1)
   expect(fetcher).toHaveBeenCalledWith('/admin/plugins/api/context', {
     method: 'GET',
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
   })
+  fetcher.mockResolvedValueOnce(Response.json(context))
+  await expect(PluginAdminApi.context(fetcher)).resolves.toEqual(context)
+  expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
 it('accepts a legacy context but treats every optional hot-update feature as unsupported', async () => {
@@ -298,6 +311,8 @@ it('rejects unknown context fields instead of widening the browser boundary', as
   await expect(PluginAdminApi.context(fetcher)).rejects.toMatchObject({
     details: { code: 'ADMIN_CONTEXT_INVALID' },
   })
+  fetcher.mockResolvedValueOnce(Response.json(context))
+  await expect(PluginAdminApi.context(fetcher)).resolves.toEqual(context)
 })
 
 it('rejects unknown fields in successful BFF results', async () => {

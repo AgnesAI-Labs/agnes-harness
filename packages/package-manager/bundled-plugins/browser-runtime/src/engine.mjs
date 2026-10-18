@@ -37,10 +37,23 @@ export class BrowserEngine {
   }
 
   async ensureChrome(ctx) {
+    ctx.signal.throwIfAborted()
     const payload = browserPayload(this.cache)
     if (await installedBrowser(payload)) return payload.executable
     if (this.installing) {
-      await this.installing
+      // Waiting sessions can cancel independently without killing the install owner's process.
+      const installing = this.installing
+      let abort
+      try {
+        await new Promise((resolve, reject) => {
+          abort = () => reject(ctx.signal.reason)
+          ctx.signal.addEventListener('abort', abort, { once: true })
+          if (ctx.signal.aborted) abort()
+          installing.then(resolve, reject)
+        })
+      } finally {
+        ctx.signal.removeEventListener('abort', abort)
+      }
       return this.ensureChrome(ctx)
     }
     this.installing = this.install(ctx)
