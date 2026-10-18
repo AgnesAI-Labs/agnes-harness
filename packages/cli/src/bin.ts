@@ -21,7 +21,7 @@ import {
   runResourceCliCommand,
 } from '@agnes/resource-control-cli'
 import { TransportClosed } from '@agnes/sdk'
-import { ensureLocalBackend } from './boot/backend.js'
+import { ensureLocalBackend, resolveLocalControlScope } from './boot/backend.js'
 import { bootDefault } from './boot/default.js'
 import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
 import { bootLocal, type LocalBootDeps } from './boot/local.js'
@@ -523,7 +523,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         write: (text) => io.stdout.write(text),
         // The command line parser above has already made these explicit selections. Reusing the
         // daemon's control path keeps owner identity and stale PID handling in one place.
-        scope: resolveDaemonScope,
+        scope: resolveLocalControlScope,
         ...(parsed.command === 'status' ? { status: daemonStatus } : { stop: stopDaemon }),
       })
       return controlExit ?? ExitCode.ERROR
