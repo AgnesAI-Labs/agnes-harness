@@ -149,8 +149,10 @@ export function decodeAnswers(answers: unknown, c: CompiledQuestions): DecodeRes
         const memberAnswer = answerFor(answers, c, head)
         if (memberAnswer === null) return { ok: false, reason: `Invalid answer for the ${head} head.` }
         consumed.push(consumedChoice('target_member', head, memberAnswer))
-        confidences.push(memberAnswer.confidence)
-        if (memberAnswer.choice === 'include') selected.push(candidate)
+        if (memberAnswer.choice === 'include') {
+          selected.push(candidate)
+          confidences.push(memberAnswer.confidence)
+        }
       }
       if (selected.length > max)
         return {
@@ -209,7 +211,15 @@ export function decodeAnswers(answers: unknown, c: CompiledQuestions): DecodeRes
     }
   }
 
-  const stochastic = consumed.flatMap((item) => (item.confidence === null ? [] : [item.confidence]))
+  // The step's confidence covers the heads that chose what runs: phase, action and the chosen target or
+  // included members. The one/many head and skipped members stay in `consumed` but do not lower it.
+  const stochastic = consumed.flatMap((item) =>
+    item.confidence === null ||
+    item.role === 'target_mode' ||
+    (item.role === 'target_member' && item.selected !== 'include')
+      ? []
+      : [item.confidence],
+  )
   const pathConfidences = consumed.flatMap((item) =>
     (item.role === 'phase' || item.role === 'action') && item.confidence !== null ? [item.confidence] : [],
   )

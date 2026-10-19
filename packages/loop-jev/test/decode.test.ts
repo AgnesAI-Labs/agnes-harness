@@ -221,6 +221,11 @@ const decisionOf = (r: DecodeResult) => {
   return r.decision
 }
 const mode = (pickId: 'one' | 'many', confidence = 0.8) => pick(['one', 'many'], pickId, confidence)
+/** A legal argmax whose reported confidence is independent of its probability, as Jev reports them. */
+const doubtful = (options: string[], pickId: string, confidence: number) => ({
+  ...pick(options, pickId, 0.6),
+  confidence,
+})
 
 describe('observed bindings', () => {
   it('decodes an observed read target into its displayed arguments', () => {
@@ -409,23 +414,70 @@ describe('observed bindings', () => {
     for (const call of d.batch ?? []) call.limit = 999
     expect(q.targetCandidates['INSPECT/read']?.map((candidate) => candidate.args.limit)).toEqual([200, 200])
   })
-  it('takes targetConfidence from the lowest member head even when it is skipped', () => {
+  it('takes targetConfidence from the included members only; a doubtful skip or mode answer does not lower it', () => {
     const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md', 'c.md') })
     const r = decodeAnswers(
       {
         ...base(q),
-        target_mode__inspect__read: mode('many'),
+        target_mode__inspect__read: doubtful(['one', 'many'], 'many', 0.12),
         include__inspect__read__0: member('include', 0.8),
         include__inspect__read__1: member('include', 0.9),
-        include__inspect__read__2: member('skip', 0.55),
+        include__inspect__read__2: doubtful(['include', 'skip'], 'skip', 0.05),
       },
       q,
     )
     expect(decisionOf(r)).toMatchObject({
-      targetConfidence: 0.55,
-      confidence: 0.55,
+      targetConfidence: 0.8,
+      confidence: 0.8,
       operationPathConfidence: 0.9,
     })
+    expect(decisionOf(r).consumed.map((x: ConsumedHead) => x.confidence)).toEqual([
+      0.9, 0.9, 0.12, 0.8, 0.9, 0.05,
+    ])
+  })
+  it('does not let a doubtful one/many answer lower a confident single target', () => {
+    const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md') })
+    const r = decodeAnswers(
+      {
+        ...base(q),
+        target_mode__inspect__read: doubtful(['one', 'many'], 'one', 0.12),
+        target__inspect__read: pick(['a.md', 'b.md', 'LLM_PARAMETERS'], 'a.md', 0.98),
+      },
+      q,
+    )
+    expect(decisionOf(r)).toMatchObject({ target: 'a.md', targetConfidence: 0.98, confidence: 0.9 })
+  })
+  it('still lets a doubtful target, phase or included member lower the step', () => {
+    const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md') })
+    const target = decodeAnswers(
+      {
+        ...base(q),
+        target_mode__inspect__read: mode('one'),
+        target__inspect__read: doubtful(['a.md', 'b.md', 'LLM_PARAMETERS'], 'a.md', 0.3),
+      },
+      q,
+    )
+    expect(decisionOf(target).confidence).toBe(0.3)
+    const included = decodeAnswers(
+      {
+        ...base(q),
+        target_mode__inspect__read: mode('many'),
+        include__inspect__read__0: doubtful(['include', 'skip'], 'include', 0.35),
+        include__inspect__read__1: member('include', 0.9),
+      },
+      q,
+    )
+    expect(decisionOf(included).confidence).toBe(0.35)
+    const phase = decodeAnswers(
+      {
+        ...base(q),
+        phase: doubtful(criteriaOf(q, 'phase'), 'INSPECT', 0.4),
+        target_mode__inspect__read: mode('one'),
+        target__inspect__read: pick(['a.md', 'b.md', 'LLM_PARAMETERS'], 'a.md', 0.95),
+      },
+      q,
+    )
+    expect(decisionOf(phase).confidence).toBe(0.4)
   })
   it('honours LLM_PARAMETERS even when observed candidates exist', () => {
     const q = compileQuestions(READ_ALL, { read: files('a.md', 'b.md') })
