@@ -1345,6 +1345,9 @@ importers:
 
   packages/package-manager/bundled-plugins/goal-ui:
     devDependencies:
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../../../protocol

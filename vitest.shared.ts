@@ -37,7 +37,10 @@ const heavy = ['**/*.e2e.test.{ts,tsx,jsx}', '**/*.slow.test.{ts,tsx,jsx}']
 export default defineConfig({
   test: {
     exclude,
-    globalSetup: [ensureJevPayload, fileURLToPath(new URL('./tools/presentation-test-setup.mjs', import.meta.url))],
+    globalSetup: [
+      ensureJevPayload,
+      fileURLToPath(new URL('./tools/presentation-test-setup.mjs', import.meta.url)),
+    ],
     reporters: ['default', zeroTestReporter],
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
