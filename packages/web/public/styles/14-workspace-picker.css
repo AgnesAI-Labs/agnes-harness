@@ -1,52 +1,69 @@
 @layer app {
   /* The dialog owns the inset: the form starts on the title's left edge. */
   #new-session-form {
+    display: grid;
+    gap: var(--s12);
     max-height: var(--dialog-max-height);
     padding: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  #new-session-form > .dialog-intro {
+    margin-top: calc(-1 * var(--s8));
+  }
   .workspace-options {
     min-inline-size: 0;
     padding: 0;
     border: 0;
-    margin: var(--s16) 0;
-  }
-  /* Browsing is one more way to pick, listed under the recent folders; confirming stays the
-   dialog's only primary action. */
-  .workspace-picker-action {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s8) var(--s12);
-  }
-  #workspace-picker-state {
     margin: 0;
-  }
-  .workspace-manual {
-    margin-top: var(--s12);
-    color: var(--agnes-text-secondary);
-  }
-  .workspace-manual > .agh-disclosure-summary {
-    width: fit-content;
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-  }
-  .workspace-manual > .agh-disclosure-content > .form-field {
-    margin-top: 0.625rem;
   }
   .workspace-option-items {
     display: grid;
-    gap: var(--s8);
+    gap: var(--s2);
   }
-  .workspace-option {
+  /* A row: the select button, then a remove control that shows on hover or focus. */
+  .workspace-option-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s4);
+    border-radius: var(--radius-lg);
+  }
+  .workspace-option-row:hover,
+  .workspace-option-row:focus-within {
+    background: var(--agnes-bg-hover);
+  }
+  .workspace-option-row[data-current="true"] {
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .workspace-option.agnes-ui-button {
+    display: grid;
+    grid-template-columns: var(--s32) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s10);
     width: 100%;
+    height: auto;
     min-height: 3.25rem;
-    justify-content: flex-start;
-    padding: var(--s8) var(--s12);
-    border-color: var(--agnes-line-primary);
+    padding: var(--s8);
+    border: 0;
+    border-radius: var(--radius-lg);
     text-align: start;
     background: transparent;
+    box-shadow: none;
+  }
+  .workspace-option-icon {
+    display: grid;
+    place-items: center;
+    width: var(--s32);
+    height: var(--s32);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  .workspace-option-row[data-current="true"] .workspace-option-icon {
+    color: var(--agnes-text-emphasis);
+    background: var(--agnes-bg-selected);
   }
   .workspace-option-copy {
     min-width: 0;
@@ -54,10 +71,17 @@
     justify-items: start;
   }
   .workspace-option-name {
+    max-width: 100%;
+    overflow: hidden;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .workspace-option-path {
+  .workspace-option-path,
+  .workspace-option-reason,
+  .workspace-option-time {
     max-width: 100%;
     overflow: hidden;
     color: var(--agnes-text-tertiary);
@@ -66,12 +90,147 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .workspace-option[data-available="false"] {
-    opacity: 0.62;
+  .workspace-option-path {
+    font-family: var(--font-mono);
+  }
+  .workspace-option-reason {
+    color: var(--agnes-status-warning-text);
+  }
+  .workspace-option-current {
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-emphasis);
+    background: var(--agnes-bg-selected);
+    font-size: var(--font-size-xs);
+  }
+  .workspace-option-row[data-available="false"] .workspace-option-name {
+    color: var(--agnes-text-tertiary);
+  }
+  .workspace-option-remove,
+  .workspace-option-drop {
+    margin-inline-end: var(--s8);
+  }
+  @media (hover: hover) {
+    .workspace-option-row:not(:hover, :focus-within) .workspace-option-remove {
+      opacity: 0;
+    }
+  }
+  .workspace-option-confirm {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    padding: 0 var(--s8) var(--s8);
+  }
+  .workspace-option-confirm p {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+  }
+  .workspace-option-none {
+    margin: 0;
+    padding: var(--s12) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  /* 「用新的目录」: picker button, 或, then a path field with its own 使用 button. */
+  .workspace-new {
+    display: grid;
+    gap: var(--s8);
+    padding-top: var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .workspace-empty + .workspace-new {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .workspace-new-heading {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+  .workspace-new-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .workspace-new-or {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .workspace-path {
+    flex: 1 1 14rem;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .workspace-path #new-session-cwd {
+    width: 100%;
+    padding-inline-end: 4.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+  .workspace-path[data-invalid="true"] #new-session-cwd {
+    border-color: var(--agnes-status-danger-border);
+  }
+  .workspace-path #new-session-create {
+    position: absolute;
+    inset-inline-end: var(--s4);
+  }
+  #workspace-picker-state {
+    margin: 0;
+  }
+  .workspace-picker-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s10);
+    padding: var(--s10) var(--s12);
+    border-radius: var(--radius-lg);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .workspace-picker-note > svg {
+    flex: none;
+    margin-top: var(--s4);
+  }
+  .workspace-empty.agh-empty-state {
+    padding-block: var(--s16) var(--s8);
+  }
+  .workspace-empty .agh-empty-state-icon {
+    color: var(--agnes-text-emphasis);
+    background: var(--agnes-brand-emphasis-soft);
   }
   .dialog-kicker {
     margin: 0 0 var(--s4);
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
+  }
+  /* The composer's workspace chip: name, then the `~`-shortened folder. */
+  #composer-workspace {
+    max-width: min(20rem, 100%);
+  }
+  #composer-workspace [data-workspace-label] {
+    flex: none;
+    max-width: 10rem;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  #composer-workspace [data-workspace-path] {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

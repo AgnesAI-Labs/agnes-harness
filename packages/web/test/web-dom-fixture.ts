@@ -91,6 +91,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     submit() {},
     pick() {},
     select() {},
+    remove() {},
     restoreFocus() {},
   })
   const dispose = runtime.dispose.bind(runtime)

@@ -297,7 +297,6 @@ async function openSettingsAccount(page) {
 }
 async function fillWorkspacePath(page, value) {
   const input = page.locator('#new-session-cwd')
-  if (!(await input.isVisible())) await page.locator('#workspace-manual summary').click()
   await input.fill(value)
 }
 async function startNextTask(page) {
@@ -412,6 +411,14 @@ try {
   await page.locator('#config-close').click()
   await page.locator('#config[open]').waitFor({ state: 'hidden' })
   await page.locator('#new').click()
+  // The picker opens on its own only without an available workspace; otherwise the chip opens it.
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#new-session[open]') ||
+      document.querySelector('#composer-workspace:not([disabled])'),
+  )
+  if (!(await page.locator('#new-session[open]').isVisible()))
+    await page.locator('#composer-workspace').click()
   await page.locator('#new-session[open]').waitFor()
   await page.screenshot({ path: join(artifacts, '00-new-task.png'), fullPage: true, animations: 'disabled' })
   await fillWorkspacePath(page, cwd)

@@ -360,11 +360,16 @@ async function leaveCurrentSession(): Promise<void> {
   await vi.waitFor(() =>
     expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true),
   )
-  document.getElementById('new-session-cancel')?.click()
+  closeWorkspacePicker()
   await vi.waitFor(() =>
     expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
   )
   await vi.waitFor(() => expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false))
+}
+
+/** The picker has no cancel button; its ✕ closes it. */
+function closeWorkspacePicker(): void {
+  document.querySelector<HTMLButtonElement>('#new-session .ant-modal-close')?.click()
 }
 
 /** The model trigger opens the complete model list; the popover mounts with the render after the click. */
@@ -1881,14 +1886,13 @@ describe('web session selection', () => {
     newButton.click()
     expect(newSession.open).toBe(true)
     const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
-    const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
     expect(create).not.toHaveBeenCalled()
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('detach cleanup failed'),
     )
     expect(prompt.disabled).toBe(false)
     newSessionCwd.value = '/cancelled-directory'
-    newSessionCancel.click()
+    closeWorkspacePicker()
     expect(newSession.open).toBe(false)
     expect(create).not.toHaveBeenCalled()
 
@@ -2006,7 +2010,6 @@ describe('web session selection', () => {
       await vi.waitFor(() => expect(newSession.open).toBe(true))
       const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
       const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
-      const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
       const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
       expect(create).not.toHaveBeenCalled()
       newSessionCwd.value = '/workspace/not-present'
@@ -2020,7 +2023,7 @@ describe('web session selection', () => {
       )
       expect(newSession.open).toBe(true)
       expect(add).toHaveBeenCalledWith('/workspace/not-present')
-      newSessionCancel.click()
+      closeWorkspacePicker()
       expect(newSession.open).toBe(false)
       expect(create).not.toHaveBeenCalled()
     },
@@ -2096,17 +2099,30 @@ describe('web session selection', () => {
     )
   })
 
-  it('selects the workspace a forwarded resources link names', async () => {
+  // A draft names its workspace in the address, so a refresh (which keeps `?new=1`) restores it
+  // without asking again; without one it reuses the most recent available workspace.
+  it.each([
+    ['a forwarded resources link', `?workspaceId=${'b'.repeat(64)}`, true, 'linked'],
+    ['a refreshed draft', `?new=1&workspaceId=${'b'.repeat(64)}`, true, 'linked'],
+    ['a draft without a workspace', '?new=1', true, 'first'],
+    ['a draft when no workspace is available', '?new=1', false, undefined],
+    [
+      'a refreshed draft whose workspace list fails',
+      `?new=1&workspaceId=${'b'.repeat(64)}`,
+      'unreadable',
+      undefined,
+    ],
+  ] as const)('starts %s in the right workspace', async (_name, search, available, expected) => {
     installPublicFixture()
     const linked = 'b'.repeat(64)
-    history.replaceState(null, '', `/?workspaceId=${linked}#test-launcher-token`)
+    history.replaceState(null, '', `/${search}#test-launcher-token`)
     const row = (name: string, workspaceId: string) => ({
       path: `/workspace/${name}`,
       name,
       workspaceId,
       lastUsedAt: null,
       sessionCount: 0,
-      available: true,
+      available: available === true,
     })
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -2121,15 +2137,52 @@ describe('web session selection', () => {
       initialize: vi.fn(initialized),
       on: vi.fn(),
       workspace: {
-        list: vi.fn(async () => ({ items: [row('first', 'a'.repeat(64)), row('linked', linked)] })),
+        list: vi.fn(async () => {
+          if (available === 'unreadable') throw new Error('workspace list offline')
+          return {
+            items: [
+              { ...row('gone', 'c'.repeat(64)), available: false },
+              row('first', 'a'.repeat(64)),
+              row('linked', linked),
+            ],
+          }
+        }),
         add: vi.fn(),
       },
       session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
     })
 
     await bootApp()
+    const dialog = document.getElementById('new-session') as HTMLDialogElement
+    if (!expected) {
+      await vi.waitFor(() => expect(dialog.open).toBe(true))
+      expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
+        search.includes('workspaceId') ? linked : null,
+      )
+      return
+    }
     await vi.waitFor(() =>
-      expect(document.getElementById('composer-workspace')?.textContent).toContain('linked'),
+      expect(document.querySelector('[data-workspace-label]')?.textContent).toBe(expected),
+    )
+    expect(dialog.open).toBe(false)
+    if (!search.includes('new=1')) return
+    expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
+      expected === 'linked' ? linked : 'a'.repeat(64),
+    )
+    // Choosing another workspace in the picker moves the address with it.
+    const chip = document.getElementById('composer-workspace') as HTMLButtonElement
+    expect(chip.textContent).toContain(`/workspace/${expected}`)
+    await vi.waitFor(() => expect(chip.disabled).toBe(false))
+    chip.click()
+    await vi.waitFor(() => expect(dialog.open).toBe(true))
+    const other = expected === 'linked' ? 'first' : 'linked'
+    ;[...document.querySelectorAll<HTMLButtonElement>('.workspace-option')]
+      .find((button) => button.textContent?.includes(other))
+      ?.click()
+    await vi.waitFor(() => expect(dialog.open).toBe(false))
+    expect(document.querySelector('[data-workspace-label]')?.textContent).toBe(other)
+    expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
+      other === 'linked' ? linked : 'a'.repeat(64),
     )
   })
 

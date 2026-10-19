@@ -1,6 +1,15 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, EmptyState, Icon, IconButton, PushCrumbs, renderRegion, SettingsInput } from '@agnes/web-ui'
+import {
+  Button,
+  EmptyState,
+  Icon,
+  IconButton,
+  PushCrumbs,
+  renderRegion,
+  SettingsInput,
+  shortenHome,
+} from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import {
   type SidebarNavigationOptions,
@@ -18,7 +27,7 @@ const FOLDER_CLOSED =
 const FOLDER_OPEN =
   'M14.8882 7.43937C14.7797 7.27754 14.6048 7.18094 14.4203 7.18094H13.0118V5.05978C13.0118 4.71287 12.7519 4.43062 12.4324 4.43062H7.94002L6.90381 3.20368C6.79449 3.07423 6.63884 3 6.47679 3H2.57931C2.25988 3 2 3.28223 2 3.62914V13.5309C2 13.784 2.19469 13.9892 2.43501 13.9894L12.5436 14C12.7867 14 13.0064 13.8332 13.0902 13.5849L14.9642 8.03053C15.0313 7.83148 15.003 7.61049 14.8882 7.43937ZM2.86667 12.1904V3.91258H6.34273L7.37891 5.1395C7.48823 5.26896 7.64389 5.3432 7.80597 5.3432H12.1451V7.18094H5.33423C5.1065 7.18094 4.89848 7.32662 4.80427 7.5521L2.86667 12.1904V12.1904ZM12.3382 13.0874H3.43876L5.52489 8.0935H14.0232L12.3382 13.0874V13.0874Z'
 
-export function FolderIcon({
+function FolderIcon({
   open = false,
   className = 'icon icon-folder',
   region = false,
@@ -45,30 +54,105 @@ export function workspaceLabel(workspace: WorkspaceEntry): string {
   )
 }
 
+const DAY_MS = 86_400_000
+
+/** The picker's recent workspaces: one click selects; a folder that is gone can only be removed. */
 export function WorkspaceOptions({
   workspaces,
+  current,
+  t,
   select,
+  remove,
 }: {
   workspaces: readonly WorkspaceEntry[]
+  current?: string | undefined
+  t: Translate
   select(workspace: WorkspaceEntry): void
+  remove?(workspace: WorkspaceEntry): void
 }) {
+  // Removing archives the folder's sessions, so a folder that has any asks once, in place.
+  const [confirming, setConfirming] = useState<string>()
+  if (!workspaces.length) return <p className="workspace-option-none">{t('index-shell.noWorkspaceMatch')}</p>
+  const relative = new Intl.RelativeTimeFormat(document.documentElement.lang || 'en', { numeric: 'auto' })
+  const ask = (workspace: WorkspaceEntry) =>
+    workspace.sessionCount > 0 ? setConfirming(workspace.path) : remove?.(workspace)
   return (
     <>
-      {workspaces.map((workspace) => (
-        <Button
-          key={workspace.path}
-          className="workspace-option"
-          data-available={String(workspace.available)}
-          disabled={!workspace.available}
-          onClick={() => select(workspace)}
-        >
-          <FolderIcon />
-          <span className="workspace-option-copy">
-            <span className="workspace-option-name">{workspaceLabel(workspace)}</span>
-            <span className="workspace-option-path">{workspace.path}</span>
-          </span>
-        </Button>
-      ))}
+      {workspaces.map((workspace) => {
+        const selected = workspace.path === current
+        const used = workspace.lastUsedAt ? Date.parse(workspace.lastUsedAt) : Number.NaN
+        return (
+          <div
+            key={workspace.path}
+            className="workspace-option-row"
+            data-available={String(workspace.available)}
+            data-current={selected ? 'true' : undefined}
+          >
+            <Button
+              className="workspace-option"
+              data-available={String(workspace.available)}
+              disabled={!workspace.available}
+              aria-current={selected ? 'true' : undefined}
+              title={workspace.path}
+              onClick={() => select(workspace)}
+            >
+              <span className="workspace-option-icon">
+                <FolderIcon />
+              </span>
+              <span className="workspace-option-copy">
+                <span className="workspace-option-name">{workspaceLabel(workspace)}</span>
+                {workspace.available ? (
+                  <span className="workspace-option-path">{shortenHome(workspace.path)}</span>
+                ) : (
+                  <span className="workspace-option-reason">{t('index-shell.workspaceGone')}</span>
+                )}
+              </span>
+              {selected ? (
+                <span className="workspace-option-current">{t('index-shell.currentWorkspace')}</span>
+              ) : (
+                workspace.available &&
+                Number.isFinite(used) && (
+                  <span className="workspace-option-time">
+                    {relative.format(Math.round((used - Date.now()) / DAY_MS), 'day')}
+                  </span>
+                )
+              )}
+            </Button>
+            {remove &&
+              !selected &&
+              (workspace.available ? (
+                <IconButton
+                  className="workspace-option-remove"
+                  name="x"
+                  label={t('index-shell.removeWorkspace')}
+                  onClick={() => ask(workspace)}
+                />
+              ) : (
+                <Button className="workspace-option-drop" size="small" onClick={() => ask(workspace)}>
+                  {t('index-shell.removeWorkspace')}
+                </Button>
+              ))}
+            {confirming === workspace.path && (
+              <div className="workspace-option-confirm">
+                <p>{t('workspace.remove.description', { count: workspace.sessionCount })}</p>
+                <Button size="small" onClick={() => setConfirming(undefined)}>
+                  {t('workspace.remove.cancel')}
+                </Button>
+                <Button
+                  size="small"
+                  appearance="danger"
+                  onClick={() => {
+                    setConfirming(undefined)
+                    remove?.(workspace)
+                  }}
+                >
+                  {t('workspace.remove.confirm')}
+                </Button>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </>
   )
 }
@@ -77,8 +161,9 @@ export function renderWorkspaceOptions(
   container: HTMLElement,
   workspaces: readonly WorkspaceEntry[],
   select: (workspace: WorkspaceEntry) => void,
+  t: Translate,
 ): void {
-  renderRegion(container, <WorkspaceOptions workspaces={workspaces} select={select} />)
+  renderRegion(container, <WorkspaceOptions workspaces={workspaces} t={t} select={select} />)
 }
 
 const COLLAPSED_KEY = 'agnes.sidebar.collapsed-workspaces.v1'

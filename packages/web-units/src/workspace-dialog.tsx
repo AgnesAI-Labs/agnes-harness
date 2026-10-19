@@ -1,5 +1,5 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
-import { Button, Dialog, Disclosure, SettingsInput } from '@agnes/web-ui'
+import { Button, Dialog, EmptyState, Icon, SettingsInput } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useRef } from 'react'
 import type { Translate } from './locales/index.js'
 
@@ -7,42 +7,59 @@ export interface WorkspaceDialogState {
   open: boolean
   path: string
   error: string
-  manual: boolean
+  /** Filters the recent workspaces by name or path. */
+  query: string
   workspaces: readonly WorkspaceEntry[]
+  /** The path of the draft's workspace, marked in the list. */
+  current: string | undefined
   connected: boolean
   pending: boolean
   creating: boolean
   pickerBusy: boolean
   pickerReady: boolean | undefined
 }
+/** Recent workspaces switch on one click; a new folder comes from the system picker or a typed path. */
 export function WorkspaceDialog({
   view,
   t,
   options,
-  folderIcon,
   onClose,
   onSubmit,
   onPick,
   onPathChange,
-  onManualChange,
+  onQueryChange,
 }: {
   view: WorkspaceDialogState
   t: Translate
   options: ReactNode
-  folderIcon: ReactNode
   onClose(): void
   onSubmit(): void
   onPick(): void
   onPathChange(path: string): void
-  onManualChange(open: boolean): void
+  onQueryChange(query: string): void
 }) {
   const input = useRef<HTMLInputElement>(null)
   const picker = useRef<HTMLButtonElement>(null)
   const blocked = !view.connected || view.pending || view.creating || view.pickerBusy
+  const empty = view.workspaces.length === 0
+  const remote = view.pickerReady === false
   const focus = useCallback(() => {
     if (view.pickerReady) picker.current?.focus()
     else input.current?.focus()
   }, [view.pickerReady])
+  const pick = (primary: boolean) => (
+    <Button
+      id="workspace-pick"
+      ref={picker}
+      appearance={primary ? 'primary' : 'secondary'}
+      disabled={blocked || !view.pickerReady}
+      aria-busy={view.pending || view.creating || view.pickerBusy || view.pickerReady === undefined}
+      onClick={onPick}
+    >
+      <Icon name={primary ? 'folder' : 'folder-plus'} />
+      <span>{t(view.pickerBusy ? 'app.newSession.opening' : 'app.newSession.pickFolder')}</span>
+    </Button>
+  )
   return (
     <dialog
       id="new-session"
@@ -63,14 +80,7 @@ export function WorkspaceDialog({
         afterOpenChange={(open) => {
           if (open) focus()
         }}
-        title={
-          <div>
-            <p className="dialog-kicker" aria-hidden="true">
-              {t('index-shell.newSessionKicker')}
-            </p>
-            <h2 id="new-session-title">{t('index-shell.pickWorkspaceTitle')}</h2>
-          </div>
-        }
+        title={<h2 id="new-session-title">{t('index-shell.pickWorkspaceTitle')}</h2>}
       >
         <form
           id="new-session-form"
@@ -80,81 +90,87 @@ export function WorkspaceDialog({
           }}
         >
           <p className="dialog-intro">{t('index-shell.pickWorkspaceIntro')}</p>
-          <fieldset id="workspace-options" className="workspace-options">
-            <legend className="visually-hidden">{t('index-shell.recentLegend')}</legend>
-            <div id="workspace-option-items" className="workspace-option-items">
-              {options}
-            </div>
-          </fieldset>
-          <div className="workspace-picker-action">
-            <Button
-              id="workspace-pick"
-              ref={picker}
-              appearance="secondary"
-              disabled={blocked || !view.pickerReady}
-              hidden={view.pickerReady === false}
-              aria-busy={view.pending || view.creating || view.pickerBusy || view.pickerReady === undefined}
-              onClick={onPick}
-            >
-              {folderIcon}
-              <span>{t(view.pickerBusy ? 'app.newSession.opening' : 'app.newSession.pickFolder')}</span>
-            </Button>
-            <p id="workspace-picker-state" className="field-hint" aria-live="polite">
-              {t(
-                view.pickerBusy
-                  ? 'app.newSession.pickSystemHint'
-                  : view.pickerReady === undefined
-                    ? 'app.newSession.checkingPicker'
-                    : view.pickerReady
-                      ? 'app.newSession.pickMachine'
-                      : 'app.newSession.noPicker',
-              )}
+          {remote && (
+            <p id="workspace-picker-state" className="workspace-picker-note" aria-live="polite">
+              <Icon name="monitor" />
+              <span>{t('app.newSession.noPicker')}</span>
             </p>
-          </div>
-          <Disclosure
-            id="workspace-manual"
-            className="workspace-manual"
-            open={view.manual || view.pickerReady === false}
-            onOpenChange={(manual) => {
-              if (view.manual !== manual) onManualChange(manual)
-            }}
-            summaryProps={{ 'data-testid': 'workspace-manual-toggle' }}
-            summary={t('index-shell.manualPath')}
-          >
-            <label className="form-field" htmlFor="new-session-cwd">
-              <span>{t('index-shell.cwdLabel')}</span>
+          )}
+          {empty ? (
+            <EmptyState
+              className="workspace-empty"
+              icon={<Icon name="folder" size={20} />}
+              title={t('index-shell.emptyTitle')}
+              description={t('index-shell.emptyBody')}
+              actions={remote ? undefined : pick(true)}
+            />
+          ) : (
+            <>
               <SettingsInput
-                id="new-session-cwd"
-                ref={input}
-                value={view.path}
+                id="workspace-search"
+                type="search"
+                value={view.query}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={t('index-shell.cwdPlaceholder')}
-                aria-describedby="cwd-hint"
-                disabled={view.pickerBusy}
-                onInput={(event) => onPathChange(event.currentTarget.value)}
+                placeholder={t('index-shell.searchWorkspaces')}
+                aria-label={t('index-shell.searchWorkspaces')}
+                onInput={(event) => onQueryChange(event.currentTarget.value)}
               />
-            </label>
-            <p id="cwd-hint" className="field-hint">
-              {t('index-shell.cwdHint')}
+              <fieldset id="workspace-options" className="workspace-options">
+                <legend className="visually-hidden">{t('index-shell.recentLegend')}</legend>
+                <div id="workspace-option-items" className="workspace-option-items">
+                  {options}
+                </div>
+              </fieldset>
+            </>
+          )}
+          <div id="workspace-manual" className="workspace-new">
+            {!empty && <p className="workspace-new-heading">{t('index-shell.newFolder')}</p>}
+            <div className="workspace-new-row">
+              {!empty && !remote && pick(false)}
+              {!remote && <span className="workspace-new-or">{t('index-shell.or')}</span>}
+              <span className="workspace-path" data-invalid={view.error ? 'true' : undefined}>
+                <SettingsInput
+                  id="new-session-cwd"
+                  ref={input}
+                  value={view.path}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={t('index-shell.cwdPlaceholder')}
+                  aria-label={t('index-shell.cwdLabel')}
+                  aria-invalid={view.error ? true : undefined}
+                  aria-describedby="new-session-error"
+                  disabled={view.pickerBusy}
+                  onInput={(event) => onPathChange(event.currentTarget.value)}
+                />
+                <Button
+                  id="new-session-create"
+                  appearance={view.path.trim() ? 'primary' : 'secondary'}
+                  size="small"
+                  htmlType="submit"
+                  disabled={blocked || !view.path.trim()}
+                  aria-busy={view.pending || view.creating || view.pickerBusy}
+                >
+                  {t(view.creating ? 'app.newSession.verifying' : 'app.newSession.useWorkspace')}
+                </Button>
+              </span>
+            </div>
+            <p id="new-session-error" role="alert">
+              {view.error}
             </p>
-          </Disclosure>
-          <p id="new-session-error" role="alert">
-            {view.error}
-          </p>
-          <div className="dialog-actions">
-            <Button id="new-session-cancel" disabled={view.creating || view.pickerBusy} onClick={onClose}>
-              {t('index-shell.cancel')}
-            </Button>
-            <Button
-              id="new-session-create"
-              appearance="primary"
-              htmlType="submit"
-              disabled={blocked || !view.path.trim()}
-              aria-busy={view.pending || view.creating || view.pickerBusy}
-            >
-              {t(view.creating ? 'app.newSession.verifying' : 'app.newSession.useWorkspace')}
-            </Button>
+            {!remote && (
+              <p id="workspace-picker-state" className="field-hint" aria-live="polite">
+                {t(
+                  view.pickerBusy
+                    ? 'app.newSession.pickSystemHint'
+                    : view.pickerReady === undefined
+                      ? 'app.newSession.checkingPicker'
+                      : empty
+                        ? 'app.newSession.pickMachine'
+                        : 'app.newSession.pickMachineList',
+                )}
+              </p>
+            )}
           </div>
         </form>
       </Dialog>

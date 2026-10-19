@@ -249,7 +249,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     }
   })
   const workspaceChoices = page.locator(
-    '.workspace-option-path, #memory-workspace option, [data-testid="memory-root"]',
+    '.workspace-option-path, [data-workspace-path], #memory-workspace option, [data-testid="memory-root"]',
   )
   await workspaceChoices.evaluateAll((nodes) => {
     for (const node of nodes) {

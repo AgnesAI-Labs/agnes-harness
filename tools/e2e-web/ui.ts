@@ -405,14 +405,21 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
     name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
     exact: true,
   })
-  await expect.poll(async () => (await skip.isVisible()) || (await workspace.isVisible())).toBe(true)
+  const chip = page.locator('#composer-workspace')
+  await expect
+    .poll(async () => (await skip.isVisible()) || (await workspace.isVisible()) || (await chip.isVisible()))
+    .toBe(true)
   if (await skip.isVisible()) await skip.click()
+  // The picker opens on its own only when no workspace is available; otherwise the chip opens it.
+  if (!(await workspace.isVisible())) {
+    await expect(chip).toBeEnabled()
+    await chip.click()
+  }
   await expect(workspace).toBeVisible()
-  await workspace.getByTestId('workspace-manual-toggle').click()
-  await workspace.getByRole('textbox').fill(runtime.workspace)
+  await workspace.locator('#new-session-cwd').fill(runtime.workspace)
   await workspace
     .getByRole('button', {
-      name: locale === 'en' ? 'Use this workspace' : '使用此工作区',
+      name: locale === 'en' ? 'Use' : '使用',
       exact: true,
     })
     .click()

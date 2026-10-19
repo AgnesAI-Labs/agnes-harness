@@ -580,6 +580,7 @@ async function configureWorkbench(page, runtime) {
     ) {
       await openMobileSidebar(page)
       await page.locator('#new').click()
+      await chipOpensPicker(page)
     } else {
       if (
         await page
@@ -599,9 +600,18 @@ async function configureWorkbench(page, runtime) {
   await ensureSessionModel(page)
 }
 
+// A new draft reuses the last available workspace; the picker then opens from the composer chip.
+async function chipOpensPicker(page) {
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#new-session[open]') ||
+      document.querySelector('#composer-workspace:not([disabled])'),
+  )
+  if (!(await visible(page, '#new-session[open]'))) await page.locator('#composer-workspace').click()
+}
+
 async function fillWorkspacePath(page, cwd) {
   const input = page.locator('#new-session-cwd')
-  if (!(await input.isVisible())) await page.locator('#workspace-manual summary').click()
   await input.fill(cwd)
 }
 
@@ -690,6 +700,7 @@ async function setupState(page, runtime, stateId) {
       if (!(await visible(page, '#composer-workspace'))) {
         await openMobileSidebar(page)
         await page.locator('#new').click()
+        await chipOpensPicker(page)
       } else {
         if (await visible(page, 'body.sidebar-open')) await page.locator('#sidebar-close').click()
         await page.locator('#composer-workspace').click()
@@ -921,7 +932,7 @@ async function keyboardContract(page) {
       .catch(() => {})
     await press('Escape', '#config-close')
   } else if (await visible(page, '#new-session[open]')) {
-    await press('Enter', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
     await page
       .locator('#new')
       .click()
@@ -930,7 +941,7 @@ async function keyboardContract(page) {
       .locator('#new-session[open]')
       .waitFor()
       .catch(() => {})
-    await press('Escape', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
   } else if (await visible(page, '#account-dialog[open]')) {
     await press('Enter', '#account-dialog-close')
     await page
@@ -956,7 +967,7 @@ async function keyboardContract(page) {
     await press('Escape', '#composer-permission')
   } else {
     await press('Enter', '#new')
-    await press('Escape', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
   }
   return { tab, keys: events }
 }

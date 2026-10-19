@@ -12,7 +12,7 @@ import {
 } from '@agnes/web-conversation/presentation'
 import { renderSessionActions } from '@agnes/web-conversation/session-actions'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
-import { shortcutLabel, trackPageRequest } from '@agnes/web-ui'
+import { shortcutLabel, shortenHome, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
@@ -438,7 +438,9 @@ export function createComposerController(
       stopping: context.stopping,
       usage: context.projection?.usage,
       workspace: {
-        ...(context.selectedWorkspace?.path ? { root: context.selectedWorkspace.path } : {}),
+        ...(context.selectedWorkspace?.path
+          ? { root: context.selectedWorkspace.path, path: shortenHome(context.selectedWorkspace.path) }
+          : {}),
         visible: !context.current || context.draftingNew,
         disabled: !available || context.submissions.sending || context.sessionPending,
         label:

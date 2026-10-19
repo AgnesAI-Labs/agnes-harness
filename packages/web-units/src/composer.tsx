@@ -615,6 +615,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           >
             <Icon name="folder" />
             <span data-workspace-label={true}>{view.workspace.label}</span>
+            {view.workspace.path && <span data-workspace-path={true}>{view.workspace.path}</span>}
             <Icon name="chevron-down" className="model-chevron" />
           </Button>
         </div>

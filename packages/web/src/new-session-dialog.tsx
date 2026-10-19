@@ -3,13 +3,14 @@ import type { Translate } from '@agnes/web-conversation/presentation'
 import { createExternalStore, mountRegion, useStoreSelector } from '@agnes/web-ui'
 import { WorkspaceDialog, type WorkspaceDialogState } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
-import { FolderIcon, WorkspaceOptions } from './navigation.js'
+import { WorkspaceOptions } from './navigation.js'
 
 interface WorkspaceDialogActions {
   translate: Translate
   submit(): void
   pick(): void
   select(workspace: WorkspaceEntry): void
+  remove(workspace: WorkspaceEntry): void
   restoreFocus(): void
 }
 
@@ -19,8 +20,9 @@ export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialo
     open: false,
     path: '',
     error: '',
-    manual: false,
+    query: '',
     workspaces: [],
+    current: undefined,
     connected: false,
     pending: false,
     creating: false,
@@ -39,17 +41,28 @@ export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialo
   }
   function WorkspaceDialogBridge() {
     const view = useStoreSelector(store, (value) => value)
+    const query = view.query.trim().toLowerCase()
+    const shown = query
+      ? view.workspaces.filter((row) => `${row.name}\n${row.path}`.toLowerCase().includes(query))
+      : view.workspaces
     return (
       <WorkspaceDialog
         view={view}
         t={actions.translate}
-        options={<WorkspaceOptions workspaces={view.workspaces} select={actions.select} />}
-        folderIcon={<FolderIcon region />}
+        options={
+          <WorkspaceOptions
+            workspaces={shown}
+            current={view.current}
+            t={actions.translate}
+            select={actions.select}
+            remove={actions.remove}
+          />
+        }
         onClose={close}
         onSubmit={actions.submit}
         onPick={actions.pick}
         onPathChange={(path) => update({ path })}
-        onManualChange={(manual) => update({ manual })}
+        onQueryChange={(query) => update({ query })}
       />
     )
   }
@@ -65,7 +78,7 @@ export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialo
     },
     update,
     show() {
-      update({ open: true, manual: snapshot().manual || snapshot().pickerReady === false })
+      update({ open: true, query: '' })
     },
     close,
     dispose() {

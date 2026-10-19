@@ -173,7 +173,7 @@ it.each([
     { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
     zhT,
   )
-  renderWorkspaceOptions(picker, [workspace], () => {})
+  renderWorkspaceOptions(picker, [workspace], () => {}, zhT)
   expect(nav.querySelector('.workspace-name')?.textContent).toBe(label)
   expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain(label)
   expect(picker.querySelector('.workspace-option-name')?.textContent).toBe(label)

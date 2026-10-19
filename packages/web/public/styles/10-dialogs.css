@@ -41,7 +41,7 @@
       overlay var(--transition) allow-discrete;
   }
   #new-session {
-    width: min(30rem, calc(100% - 2rem));
+    width: min(36rem, calc(100% - 2rem));
   }
   #new-session-error {
     margin: 0;

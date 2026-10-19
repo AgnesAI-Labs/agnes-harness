@@ -9,7 +9,6 @@ import {
   advanced,
   chooseWorkspace,
   closeSettings,
-  expand,
   expandActivityGroups,
   section,
   sectionSurface,
@@ -99,7 +98,6 @@ for (const locale of ['zh-CN', 'en'])
               .isVisible()
           ) {
             if (!workspace) throw new Error('Set AGH_UI_WORKSPACE to an isolated workspace for a fresh home')
-            await expand(page.locator('#workspace-manual'))
             await page.locator('#new-session-cwd').fill(workspace)
             await page.locator('#new-session-create').click()
           } else {
@@ -114,9 +112,6 @@ for (const locale of ['zh-CN', 'en'])
                 .isVisible()
             ) {
               if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for workspace selection')
-              await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
-                element.open = true
-              })
               await page.locator('#new-session-cwd').fill(workspace)
               await page.locator('#new-session-create').click()
             }

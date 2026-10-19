@@ -58,17 +58,13 @@ import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-a
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
-import {
-  errorNotice,
-  type KnownSessionModel,
-  type Translate,
-  workspaceErrorNotice,
-} from '@agnes/web-conversation/presentation'
+import { errorNotice, type KnownSessionModel, type Translate } from '@agnes/web-conversation/presentation'
 import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { attachmentErrorMessage } from '@agnes/web-units/shell'
+import { createWorkspaceController } from './app/workspace-controller.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
@@ -86,7 +82,6 @@ import {
   type NewSessionCatalog,
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
-import { mountNewSessionDialog } from './new-session-dialog.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
@@ -109,7 +104,7 @@ import { createSidebarPagination } from './sidebar-pagination.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
-import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
+import { requestWorkspacePicker } from './workspace-picker.js'
 
 installBrowserLogCapture()
 const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
@@ -164,7 +159,7 @@ export interface AppSessionContext {
   newSessionCatalog: typeof newSessionCatalog
   notice: typeof notice
   open: typeof open
-  openNewSessionDialog: typeof openNewSessionDialog
+  openNewSessionDialog(transitioning?: boolean): void
   pendingSessionKey: typeof pendingSessionKey
   permissionChangePending: typeof permissionChangePending
   permissionConnectionEpoch: typeof permissionConnectionEpoch
@@ -179,7 +174,7 @@ export interface AppSessionContext {
   refreshSessionControls: typeof refreshSessionControls
   render: typeof render
   renderControls: typeof renderControls
-  renderNewSessionControls: typeof renderNewSessionControls
+  renderNewSessionControls(): void
   renderer: typeof renderer
   run: typeof run
   sessionIsolation: typeof sessionIsolation
@@ -411,7 +406,7 @@ const appSessionContext: AppSessionContext = {
     return open
   },
   get openNewSessionDialog() {
-    return openNewSessionDialog
+    return workspaceController.open
   },
   get pendingSessionKey() {
     return pendingSessionKey
@@ -477,7 +472,7 @@ const appSessionContext: AppSessionContext = {
     return renderControls
   },
   get renderNewSessionControls() {
-    return renderNewSessionControls
+    return workspaceController.renderControls
   },
   get renderer() {
     return renderer
@@ -817,7 +812,7 @@ const clientModules = await startClientModules({
         run(async () => {
           requestNewSession()
           if (!draftingNew) await beginNewDraft()
-          openNewSessionDialog()
+          workspaceController.open()
         }),
       openSettings: () => {
         settingsRegion.open('model')
@@ -838,14 +833,7 @@ const clientModules = await startClientModules({
           )
           return
         }
-        if (!workspace.workspaceId) throw new Error(t('workspace.remove.unavailable'))
-        await client.call('_agnes/v1/workspace.remove', {
-          workspaceId: workspace.workspaceId,
-          ...(workspace.revision !== undefined ? { expectedRevision: workspace.revision } : {}),
-        })
-        applyWorkspaces(await client.workspace.list())
-        await list()
-        if (archivedSessions.getSnapshot().filter === 'archived') await archivedSessions.reload()
+        await workspaceController.remove(workspace)
       },
       sessionAction: (action, id, title, trigger) => {
         void sessionActions.act(action, id, title, trigger)
@@ -1003,19 +991,7 @@ if (!renderer) throw new Error('missing transcript region')
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
-const newSessionDialog = mountNewSessionDialog(hosts.newSession, {
-  translate: t,
-  submit: () => run(chooseWorkspace),
-  pick: () => run(pickWorkspace),
-  select: (workspace) => {
-    selectedWorkspace = workspace
-    requestNewSession()
-    closeNewSessionDialog()
-    renderControls()
-    composerRuntime.focus()
-  },
-  restoreFocus: () => clientModules.sidebar?.focusNew(),
-})
+const workspaceController = createWorkspaceController(appSessionContext, hosts.newSession)
 setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 
@@ -1067,9 +1043,6 @@ let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
 let stopping = false
 let sessionPending = new URLSearchParams(location.search).get('new') === '1'
-let newSessionCreating = false
-let workspacePickerReady: boolean | undefined
-let workspacePickerBusy = false
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
@@ -1235,7 +1208,7 @@ function updateSidebar(): void {
           ? { currentId: readOnly.id }
           : {}),
     sessionPending,
-    newDisabled: !connected || submissions.sending || sessionPending || newSessionCreating,
+    newDisabled: !connected || submissions.sending || sessionPending || workspaceController.creating,
   })
 }
 
@@ -1298,7 +1271,7 @@ const firstRun = createFirstRunController({
       if (result.status === 'unavailable') throw new Error(t('app.newSession.pickerFailed'))
       path = result.path
     }
-    await registerWorkspace(path.trim())
+    await workspaceController.register(path.trim())
     return selectedWorkspace?.name
   },
   closeSettings: () => settings.close(),
@@ -1436,7 +1409,7 @@ function showError(error: unknown): void {
     notice.setText(message)
     notice.setKind('error')
   } else notice.error(message)
-  if (newSessionDialog.open) newSessionDialog.update({ error: message })
+  if (workspaceController.dialog.open) workspaceController.dialog.update({ error: message })
   const data =
     error && typeof error === 'object' && 'data' in error
       ? (error.data as { code?: unknown; modelRoute?: unknown })
@@ -1449,7 +1422,7 @@ function showError(error: unknown): void {
   }
 }
 function run(op: () => Promise<void>): void {
-  newSessionDialog.update({ error: '' })
+  workspaceController.dialog.update({ error: '' })
   if (sessionRecovery) renderSessionRecovery()
   else {
     notice.setText('')
@@ -1471,7 +1444,7 @@ function showSessionRecovery(error: unknown, id: string): void {
   renderSessionRecovery()
 }
 function recoveryDisabled(): boolean {
-  return !connected || submissions.sending || sessionPending || newSessionCreating
+  return !connected || submissions.sending || sessionPending || workspaceController.creating
 }
 function renderSessionRecovery(message = ''): void {
   if (!sessionRecovery) return
@@ -1611,76 +1584,6 @@ function prepareAttachmentSession(): Promise<string> {
 function forkTurn(turn: UITurn): Promise<void> {
   return sessionController.forkTurn(turn)
 }
-function renderNewSessionControls(): void {
-  newSessionDialog.update({
-    connected,
-    pending: sessionPending,
-    creating: newSessionCreating,
-    pickerBusy: workspacePickerBusy,
-    pickerReady: workspacePickerReady,
-  })
-}
-function openNewSessionDialog(transitioning = false): void {
-  if (!connected || (sessionPending && !transitioning) || newSessionCreating) return
-  newSessionDialog.show()
-}
-function closeNewSessionDialog(): void {
-  newSessionDialog.close()
-}
-function updateWorkspaceOptions(): void {
-  newSessionDialog.update({ workspaces: workspaceRows })
-}
-async function registerWorkspace(cwd: string): Promise<void> {
-  if (!connected || sessionPending || newSessionCreating) return
-  if (!cwd) return
-  newSessionCreating = true
-  renderControls()
-  try {
-    const result = await client.workspace.add(cwd)
-    selectedWorkspace = result.workspace
-    workspaceRows = [result.workspace, ...workspaceRows.filter((row) => row.path !== result.workspace.path)]
-    updateWorkspaceOptions()
-    await list()
-    requestNewSession()
-    closeNewSessionDialog()
-    composerRuntime.focus()
-  } catch (error) {
-    const failure = new Error(workspaceErrorNotice(error, t), { cause: error })
-    newSessionDialog.update({ error: failure.message })
-    throw failure
-  } finally {
-    newSessionCreating = false
-    renderControls()
-  }
-}
-async function chooseWorkspace(): Promise<void> {
-  await registerWorkspace(newSessionDialog.path.trim())
-}
-async function pickWorkspace(): Promise<void> {
-  if (!workspacePickerReady || workspacePickerBusy || newSessionCreating) return
-  workspacePickerBusy = true
-  renderNewSessionControls()
-  try {
-    const result = await requestWorkspacePicker().catch(() => undefined)
-    if (!result) {
-      workspacePickerReady = false
-      newSessionDialog.update({ manual: true })
-      newSessionDialog.update({ error: t('app.newSession.pickerFailed') })
-      return
-    }
-    if (result.status === 'cancelled') return
-    if (result.status === 'unavailable') {
-      workspacePickerReady = false
-      newSessionDialog.update({ manual: true })
-      return
-    }
-    newSessionDialog.update({ path: result.path })
-    await registerWorkspace(result.path)
-  } finally {
-    workspacePickerBusy = false
-    renderNewSessionControls()
-  }
-}
 function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   requestNewSession()
   return beginNewDraft(showWorkspacePicker, workspace)
@@ -1689,7 +1592,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (sessionPending || submissions.sending) return
   selectComposerDraft()
   sessionPending = true
-  if (workspace) selectedWorkspace = workspace
+  workspaceController.resolveDraft(workspace)
   clearSessionRecovery()
   const { binding: epoch, previous } = sessionBinding.begin()
   references.clear()
@@ -1724,7 +1627,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   history.replaceState(null, '', preserveRouteParams(url))
   topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
   render()
-  if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog(true)
+  if (!selectedWorkspace?.available && showWorkspacePicker) workspaceController.open(true)
   else composerRuntime.focus()
   sessionPending = true
   renderControls()
@@ -1771,16 +1674,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
 function selectComposerDraft(id?: string, preserve = false): void {
   composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), preserve))
   if (!preserve) composerRuntime.clearImageBlocks()
-}
-function applyWorkspaces(page: { items: WorkspaceEntry[] }): void {
-  workspaceRows = page.items
-  if (selectedWorkspace) selectedWorkspace = workspaceRows.find((row) => row.path === selectedWorkspace?.path)
-  updateWorkspaceOptions()
-  updateSidebar()
-}
-async function refreshWorkspacePicker(): Promise<void> {
-  workspacePickerReady = await workspacePickerAvailable()
-  renderNewSessionControls()
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
@@ -2208,7 +2101,7 @@ onPageHide(() => {
   sessionSearch.dispose()
   homePages.dispose()
   removeHomeEntries()
-  newSessionDialog.dispose()
+  workspaceController.dialog.dispose()
   unbindDialogSheets()
   firstRun.dispose()
   const dockHost = dockControlsHost
@@ -2235,7 +2128,7 @@ run(async () => {
   }
   setConnection('connected')
   reconnect.reset()
-  void refreshWorkspacePicker()
+  void workspaceController.refreshPicker()
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
   profileName = snapshot.profile
@@ -2252,13 +2145,11 @@ run(async () => {
   ])
   if (models.status === 'rejected') showError(models.reason)
   if (workspaces.status === 'fulfilled') {
-    applyWorkspaces(workspaces.value)
+    workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
     const requested = workspaceRows.find((row) => row.workspaceId === requestedWorkspaceId)
-    if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection)) {
+    if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection))
       selectedWorkspace = requested
-      updateWorkspaceOptions()
-    }
   } else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
   if (sessions.status === 'rejected') throw sessions.reason
   const page = sessions.value

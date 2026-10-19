@@ -144,7 +144,15 @@ export interface ComposerView {
   stopping: boolean
   usage: UsageView | undefined
   /** `root` is the absolute workspace path that `@` file references resolve against. */
-  workspace: { disabled: boolean; label: string; title: string; visible?: boolean; root?: string }
+  workspace: {
+    disabled: boolean
+    label: string
+    title: string
+    visible?: boolean
+    root?: string
+    /** The `~`-shortened folder shown after the name. */
+    path?: string
+  }
 }
 
 export interface ComposerHandle {
