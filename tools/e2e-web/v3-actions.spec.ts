@@ -312,7 +312,8 @@ test('v3 pending review inbox opens a real Demo-authored draft and preserves its
   const session = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'workspace-write',
+    preset: 'standard',
+    permission: 'workspace-write',
   })
   await session.attach()
   session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))

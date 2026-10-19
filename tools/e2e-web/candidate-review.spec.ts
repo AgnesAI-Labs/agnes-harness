@@ -627,7 +627,8 @@ test('full access candidate submission publishes without a human offer and retai
   const session = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await session.attach()
   // No approval handler: any attempted human delivery makes the real tool flow fail.

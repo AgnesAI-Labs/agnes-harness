@@ -188,7 +188,12 @@ test('full access auto-allows memory and retains private-store isolation and off
   const path = `${state.inspection!.root}/MEMORY.md`
   const alias = `${cwd}/memory-alias`
   await symlink(state.inspection!.root, alias)
-  const session = await client.session.new({ sessionKey: randomUUID(), cwd, preset: 'full-access' })
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd,
+    preset: 'standard',
+    permission: 'full-access',
+  })
   let reviews = 0
   const verdict: 'rejected' | 'allowed-once' = 'rejected'
   session.onPermissionRequest(async (request) => {
