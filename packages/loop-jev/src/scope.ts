@@ -27,6 +27,7 @@ export type StepEvent = {
   bindingMode: string | null
   llm?: JsonObject
   dispatch?: JsonObject
+  binding?: JsonObject
   refusal?: JsonObject
 }
 
@@ -168,6 +169,8 @@ export function recordRefusal(
     stage: ErrorStage
     message: string
     status?: 'refused' | 'held'
+    /** The fingerprint of the refused calls; lets the no-progress limit see the same refusal repeat. */
+    intentFp?: string
   },
 ): Observation {
   const status = input.status ?? 'refused'
@@ -190,7 +193,7 @@ export function recordRefusal(
         recoverability: 'recoverable',
         message: clip(input.message, ERROR_MESSAGE_CHARS),
       },
-      intentFp: null,
+      intentFp: input.intentFp ?? null,
       observationFp: fingerprint(`${status}:${input.code}`),
       dispatched: false,
     },

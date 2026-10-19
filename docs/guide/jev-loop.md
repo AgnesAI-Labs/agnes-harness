@@ -14,7 +14,7 @@ At every step the loop asks TypeSafe Jev, through a [side model call](typesafe-j
 - **Review:** Jev is unsure, or the last result needs judgement, so the conversation model decides the next call.
 - **Answer:** the conversation model writes the reply to the user.
 
-In this version Jev chooses among seven built-in tools (`ls`, `read`, `grep`, `find`, `write`, `edit`, `shell`). The loop also offers `tool_search` and `tool_describe` to the conversation model when they are available. Approvals, budgets and the stop checks work as with the default loop.
+Jev chooses among the tools the default loop would offer in the same session, except `compact` and `run_code`, which only the default loop can use, and `tool_search` and `tool_describe`, which stay with the conversation model. A tool that is loaded during the turn joins the choice from then on. For the seven built-in file and shell tools (`ls`, `read`, `grep`, `find`, `write`, `edit`, `shell`) Jev also chooses the arguments when it can: a directory or file that an earlier `ls` result listed, a file that an earlier `find` or `grep` result listed, or a file that an earlier `read`, `write` or `edit` call was given as its path, can be listed or read directly, and up to four files can be read in one step. Every other tool, MCP and plugin tools included, gets its arguments from the conversation model. Approvals, budgets and the stop checks work as with the default loop.
 
 The loop needs both a Jev route and an ordinary conversation model. The `state` and `questions` of every Jev call include the task text and excerpts of tool results, and are sent to the vendor; see [Network and privacy](typesafe-jev.md#network-and-privacy).
 
@@ -56,7 +56,7 @@ In a bundle the same `plugins` map goes in the bundle's `profile` patch. A row's
 | `jev.maxRetries` | 0–3 | 2 | Retries within a step, for `RATE_LIMIT` only |
 | `llmMaxAttempts` | 1–5 | 2 | Attempts for a conversation-model request that fails with a retryable error |
 | `thresholds.escalate` | 0–1 | 0.5 | Confidence Jev must reach for its choice to run without review; below it the conversation model reviews the choice, or writes the arguments when only the arguments are uncertain |
-| `thresholds.externalWriteMin` | 0–1 | 0.6 | Higher threshold for tools classed as external writes; none of the tools in this version is in that class |
+| `thresholds.externalWriteMin` | 0–1 | 0.6 | Higher threshold for tools classed as external writes: tools that are not read-only and that the tool metadata marks as open-world, such as many MCP tools; none of the built-in tools is in that class |
 | `thresholds.ambiguityGate` | 0–1 or `null` | 0.4 | While inspecting or verifying, a read-only choice below `escalate` still runs when Jev's ambiguity is at most this value; `null` turns this off |
 | `thresholds.answerProgressFloor` | 0–3 or `null` | `null` | When Jev answers before any tool has run in the turn and reports progress below this value, the conversation model reviews; `null` turns this off |
 | `stepCap` | 1–200 | 30 | Steps per turn before the turn ends with `max_steps` |
@@ -96,10 +96,12 @@ A rate limit is retried within the step, up to `jev.maxRetries` times, waiting a
 
 This version does not yet:
 
-- offer MCP tools or tools from other plugins to Jev: they are left out of the loop's tool set;
 - support pause or interrupt; steering a running turn is supported;
 - run background jobs or child agents from the loop;
-- keep more than 8 KiB of the text and thinking that the conversation model writes together with a call: the transcript cuts them to 8 KiB;
-- give Jev observation views, references or batched reads, or mark earlier file reads as out of date after a file changes.
+- keep more than 8 KiB of the text and thinking that the conversation model writes together with a call: the transcript cuts them to 8 KiB.
+
+Within a turn, Jev is told which files were read and which have changed since. A file written or edited after it was read is marked to be read again; after a shell command has run, or after a call that could have changed files and whose result was lost, none of the earlier reads of the turn counts as current; a lost `ls`, `read`, `grep` or `find` does not change that. A call with the same tool and arguments is not run a third time when its last two runs returned the same result and no other call has changed files, or may have changed them, in between; the step is refused with `DUPLICATE_NO_PROGRESS` and the conversation model reviews the next step instead.
+
+The loop does not work in a session whose model is offered `run_code`: the **ptc** preset (see [Programmatic tools and workflows](code-workflows.md)) and any custom preset that offers code mode, with the code runtime loaded. It also does not work in a session whose preset offers code mode only, even when the runtime is missing. Every turn of such a session ends at once with the error `JEV_UNSUPPORTED_DISCLOSURE`, before any Jev or conversation-model call. Use the default loop for it, or select a preset that does not offer `run_code`, such as **standard**.
 
 A session that restarts in the middle of a turn continues from the loop's last checkpoint. A conversation-model request that may already have been sent is not sent again; the next step asks the conversation model to review instead.

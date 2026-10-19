@@ -1,5 +1,5 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
-import type { LoopTurnView, ToolResult } from '@agnes/extension-api'
+import type { LoopToolMeta, LoopTurnView, ToolResult } from '@agnes/extension-api'
 import type {
   HistoryEntry,
   JsonObject,
@@ -7,6 +7,7 @@ import type {
   Note,
   Observation,
   Phase,
+  ReferenceKind,
   ResolvedTool,
   StepError,
   ToolSchema,
@@ -15,6 +16,8 @@ import type {
 import { canonicalJson, clip, fingerprint, tail } from './util.js'
 
 export const BUILTIN_TOOLS = ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell'] as const
+/** The most targets one read step may take; the same bound limits decoded, replayed and checkpointed batches. */
+export const MAX_BATCH = 4
 export const DISCOVERY_TOOLS = ['tool_search', 'tool_describe'] as const
 type BuiltinTool = (typeof BUILTIN_TOOLS)[number]
 
@@ -37,6 +40,8 @@ type Profile = {
   readonly readOnly: boolean
   readonly targetParam: string | null
   readonly defaults: JsonObject | null
+  readonly bindingDefaults: JsonObject | null
+  readonly referenceKind: ReferenceKind | null
 }
 const READ_PHASES: readonly Phase[] = ['INSPECT', 'VERIFY']
 const PROFILES: Readonly<Record<BuiltinTool, Profile>> = {
@@ -46,18 +51,62 @@ const PROFILES: Readonly<Record<BuiltinTool, Profile>> = {
     readOnly: true,
     targetParam: 'path',
     defaults: { path: '.' },
+    bindingDefaults: {},
+    referenceKind: 'directory',
   },
-  read: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: 'path', defaults: null },
-  grep: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: null, defaults: null },
-  find: { phases: READ_PHASES, writeClass: 'read', readOnly: true, targetParam: null, defaults: null },
-  write: { phases: ['ACT'], writeClass: 'workspace', readOnly: false, targetParam: 'path', defaults: null },
-  edit: { phases: ['ACT'], writeClass: 'workspace', readOnly: false, targetParam: 'path', defaults: null },
+  read: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: { offset: 1, limit: 200 },
+    referenceKind: 'file',
+  },
+  grep: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: null,
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  find: {
+    phases: READ_PHASES,
+    writeClass: 'read',
+    readOnly: true,
+    targetParam: null,
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  write: {
+    phases: ['ACT'],
+    writeClass: 'workspace',
+    readOnly: false,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
+  edit: {
+    phases: ['ACT'],
+    writeClass: 'workspace',
+    readOnly: false,
+    targetParam: 'path',
+    defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
+  },
   shell: {
     phases: ['INSPECT', 'ACT', 'VERIFY'],
     writeClass: 'workspace',
     readOnly: false,
     targetParam: null,
     defaults: null,
+    bindingDefaults: null,
+    referenceKind: null,
   },
 }
 
@@ -90,48 +139,137 @@ export function completeArgs(schema: unknown, args: JsonObject): boolean {
   return true
 }
 
-/** The profile of a built-in tool, or `null` for any other tool (only the built-in tools have a profile). */
-export function resolveTool(tool: ToolSchema): ResolvedTool | null {
+/**
+ * How a tool writes, from whether it is read-only and its metadata: `shell` is always a workspace
+ * write; otherwise a read-only tool reads, a mutable open-world tool writes outside the workspace
+ * and any other mutable tool writes the workspace. `fallback` applies when there is no metadata.
+ */
+function writeClassOf(
+  name: string,
+  readOnly: boolean,
+  meta: LoopToolMeta | undefined,
+  fallback: WriteClass,
+): WriteClass {
+  if (name === 'shell') return 'workspace'
+  if (readOnly) return 'read'
+  if (meta === undefined) return fallback
+  return meta.isOpenWorld ? 'external' : 'workspace'
+}
+
+/**
+ * The profile of a built-in tool, or `null` for any other tool (only the built-in tools have a
+ * profile). The tool's metadata, when given, decides whether it is read-only and how it writes.
+ */
+export function resolveTool(tool: ToolSchema, meta?: LoopToolMeta): ResolvedTool | null {
   if (!isBuiltin(tool.name)) return null
   const profile = PROFILES[tool.name]
   const defaults =
     profile.defaults !== null && completeArgs(tool.parameters, profile.defaults)
       ? { ...profile.defaults }
       : null
+  const readOnly = meta?.isReadOnly ?? profile.readOnly
   return {
     name: tool.name,
     phases: profile.phases,
-    writeClass: profile.writeClass,
-    readOnly: profile.readOnly,
+    writeClass: writeClassOf(tool.name, readOnly, meta, profile.writeClass),
+    readOnly,
     profiled: true,
     criteria: JEV_CRITERIA[tool.name],
     targetParam: profile.targetParam,
     defaults,
+    multiTargetMax: tool.name === 'read' ? MAX_BATCH : 1,
+    bindingDefaults: profile.bindingDefaults === null ? null : { ...profile.bindingDefaults },
+    referenceKind: profile.referenceKind,
+  }
+}
+
+/**
+ * A tool without a profile: a read-only tool is inspected, any other acts; its parameters always
+ * come from the model and Jev sees its own description. Without metadata it is a mutable tool
+ * that writes outside the workspace.
+ */
+export function resolveUnprofiled(tool: ToolSchema, meta: LoopToolMeta | undefined): ResolvedTool {
+  const readOnly = meta?.isReadOnly ?? false
+  return {
+    name: tool.name,
+    phases: readOnly ? ['INSPECT'] : ['ACT'],
+    writeClass: writeClassOf(tool.name, readOnly, meta, 'external'),
+    readOnly,
+    profiled: false,
+    criteria: tool.description.trim(),
+    targetParam: null,
+    defaults: null,
     multiTargetMax: 1,
+    bindingDefaults: null,
+    referenceKind: null,
   }
 }
 
 /** Built-in tools in the catalog plus the discovery tools it has, sorted. */
-export function stageOneToolNames(view: Pick<LoopTurnView, 'tools'>): string[] {
+export function builtinToolNames(view: Pick<LoopTurnView, 'tools'>): string[] {
   const offered = new Set(view.tools.map((tool) => tool.name))
   const wanted: readonly string[] = [...BUILTIN_TOOLS, ...DISCOVERY_TOOLS]
   return wanted.filter((name) => offered.has(name)).sort()
 }
 
-/** The tools Jev chooses among: `toolNames` without the discovery tools, in built-in order. */
+/** Tools a turn of this loop never sends: `compact` only works in the default loop, `run_code` only in code modes. */
+const NEVER_SENT: readonly string[] = ['compact', 'run_code']
+
+/**
+ * The tool names of a turn: the names a request without `tools` would send, without `compact` and
+ * `run_code`, deduplicated and sorted; the built-in names when the view does not carry them.
+ */
+export function turnToolNames(view: Pick<LoopTurnView, 'tools' | 'disclosedTools'>): string[] {
+  if (view.disclosedTools === undefined) return builtinToolNames(view)
+  const names = new Set(view.disclosedTools.filter((name) => !NEVER_SENT.includes(name)))
+  return [...names].sort()
+}
+
+/**
+ * True when the turn's disclosure is `code` or `hybrid`: it offers `run_code`, or none of the
+ * built-in tools the catalog has. Only the `standard` disclosure leaves `run_code` out and the
+ * built-in tools in. A view without `disclosedTools` says nothing, so it is never refused.
+ */
+export function codeDisclosure(view: Pick<LoopTurnView, 'tools' | 'disclosedTools'>): boolean {
+  const disclosed = view.disclosedTools
+  if (disclosed === undefined) return false
+  if (disclosed.includes('run_code')) return true
+  const builtin: readonly string[] = BUILTIN_TOOLS
+  return (
+    !disclosed.some((name) => builtin.includes(name)) &&
+    view.tools.some((tool) => builtin.includes(tool.name))
+  )
+}
+
+const byName = (a: ResolvedTool, b: ResolvedTool): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+
+/**
+ * The tools Jev chooses among: `toolNames` without the discovery tools and without the tools the
+ * view's model is not offered; the built-in tools first in built-in order, then the others by name.
+ * Tools without a profile take part only when the view carries tool metadata.
+ */
 export function decisionTools(
-  view: Pick<LoopTurnView, 'tools'>,
+  view: Pick<LoopTurnView, 'tools' | 'toolMeta'>,
   toolNames: readonly string[],
 ): ResolvedTool[] {
-  const picked = new Set(toolNames)
-  const found: ResolvedTool[] = []
-  for (const name of BUILTIN_TOOLS) {
-    if (!picked.has(name)) continue
+  const builtin: ResolvedTool[] = []
+  const others: ResolvedTool[] = []
+  for (const name of new Set(toolNames)) {
+    if (isDiscovery(name)) continue
+    const meta = view.toolMeta?.[name]
+    if (meta?.offered === false) continue
     const schema = view.tools.find((tool) => tool.name === name)
-    const resolved = schema === undefined ? null : resolveTool(schema)
-    if (resolved !== null) found.push(resolved)
+    if (schema === undefined) continue
+    if (isBuiltin(name)) {
+      const resolved = resolveTool(schema, meta)
+      if (resolved !== null) builtin.push(resolved)
+    } else if (view.toolMeta !== undefined) {
+      others.push(resolveUnprofiled(schema, meta))
+    }
   }
-  return found
+  const order = (tool: ResolvedTool) => (BUILTIN_TOOLS as readonly string[]).indexOf(tool.name)
+  builtin.sort((a, b) => order(a) - order(b))
+  return [...builtin, ...others.sort(byName)]
 }
 
 /**
@@ -181,6 +319,8 @@ export type ClassifyInput = {
   cwd: string
   confidence: number | null
   escalated: boolean
+  /** Whether the tool is read-only; a failed call of a read-only tool without a profile changed nothing. */
+  readOnly?: boolean
 }
 type Common = Pick<ClassifyInput, 'phase' | 'cwd' | 'confidence' | 'escalated'>
 type Call = { name: string; args: JsonValue }
@@ -198,7 +338,8 @@ function summaryOf(op: string, targets: readonly string[], input: Common): strin
   return `${op}(${targets.join(', ')}) conf=${confidence}${input.escalated ? ' [escalated]' : ''}`
 }
 
-function intentFpOf(calls: readonly Call[]): string {
+/** The fingerprint of what a step asks for: its calls, in any order. */
+export function intentFingerprint(calls: ReadonlyArray<{ name: string; args: JsonValue }>): string {
   const keyed = calls.map((call) => {
     const pair: JsonValue = [call.name, call.args]
     return { key: canonicalJson(pair), pair }
@@ -222,13 +363,13 @@ type Outcome = Pick<HistoryEntry, 'status' | 'disposition' | 'error'>
 const SUCCEEDED: Outcome = { status: 'succeeded', disposition: 'SUCCEEDED' }
 const NOT_APPLIED = (error: StepError): Outcome => ({ status: 'failed', disposition: 'NOT_APPLIED', error })
 
-function failureOutcome(name: string, text: string): Outcome {
+function failureOutcome(name: string, text: string, readOnly: boolean): Outcome {
   if (name === 'shell') {
     return text.startsWith('command could not be started')
       ? NOT_APPLIED(stepError('EXECUTION_FAILED', 'recoverable', text))
       : { status: 'failed', disposition: 'UNKNOWN', error: stepError('EFFECT_UNKNOWN', 'unsafe', text) }
   }
-  if (isBuiltin(name) || isDiscovery(name))
+  if (isBuiltin(name) || isDiscovery(name) || readOnly)
     return NOT_APPLIED(stepError('EXECUTION_FAILED', 'recoverable', text))
   return { status: 'failed', disposition: 'UNKNOWN', error: stepError('EFFECT_UNKNOWN', 'unsafe', text) }
 }
@@ -259,7 +400,7 @@ function entryOf(
     summary: summaryOf(op, labels, input),
     ...(command === null ? {} : { command_excerpt: clip(command, 250) }),
     output_excerpt: tail(text, 500),
-    intentFp: intentFpOf(calls),
+    intentFp: intentFingerprint(calls),
     observationFp: fingerprint({ text, isError }),
     dispatched: true,
   }
@@ -278,7 +419,7 @@ export function classifyResult(input: ClassifyInput): Observation {
   if (isError && notStarted(name, text)) {
     return { entry: build(NOT_APPLIED(stepError('TOOL_NOT_STARTED', 'recoverable', text))), notes }
   }
-  const entry = build(isError ? failureOutcome(name, text) : SUCCEEDED)
+  const entry = build(isError ? failureOutcome(name, text, input.readOnly === true) : SUCCEEDED)
   if (!isError) {
     if (name === 'read' && target !== null) {
       entry.read_files = [target]

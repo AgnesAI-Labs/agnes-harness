@@ -7,73 +7,19 @@ import { boundContent } from '../src/scope.js'
 import type { JsonObject } from '../src/types.js'
 import { digest16 } from '../src/util.js'
 import {
-  type FakeJev,
-  fakeJev,
-  type JevAct,
-  PICK_LS,
-  PICK_READ,
-  PICK_RESPOND,
-  PICK_WRITE,
-} from './helpers/fake-jev.js'
+  callReply,
+  errorReply,
+  jevState,
+  ok,
+  recordWrites,
+  run,
+  textReply,
+  toolPort,
+  withPorts,
+} from './helpers/drive.js'
+import { fakeJev, type JevAct, PICK_LS, PICK_READ, PICK_RESPOND, PICK_WRITE } from './helpers/fake-jev.js'
 import { turnView } from './helpers/view.js'
 
-const ok = (text: string) => ({ content: [{ type: 'text' as const, text }] })
-const textReply = (text: string) =>
-  [
-    { type: 'text_delta', delta: text },
-    { type: 'done', reason: 'stop' },
-  ] as never
-const callReply = (name: string, args: object) =>
-  [
-    { type: 'toolcall_end', call: { toolUseId: '', name, args, ordinal: 0 }, via: 'native' },
-    { type: 'done', reason: 'toolUse' },
-  ] as never
-const errorReply = (code: string, retryable: boolean) =>
-  [{ type: 'error', reason: 'error', code, message: code, retryable }] as never
-function toolPort(results: Record<string, (args: JsonObject) => unknown> = {}) {
-  const executed: Array<{ name: string; args: unknown; options: unknown }> = []
-  return {
-    executed,
-    port: {
-      execute: async (call: { name: string; args: JsonObject }, _s: unknown, options: unknown) => {
-        executed.push({ name: call.name, args: call.args, options })
-        return (results[call.name] ?? (() => ok('done')))(call.args)
-      },
-      batch: async () => [],
-    } as never,
-  }
-}
-/** The state Jev was sent in its `i`-th prepared call. */
-function jevState(jev: FakeJev, i: number): JsonObject {
-  const payload = jev.prepared[i]?.payload as { state: JsonObject } | undefined
-  if (!payload) throw new Error(`Jev was prepared fewer than ${i + 1} times`)
-  return payload.state
-}
-/** The factory with `ports` laid over the context its drivers see. */
-function withPorts(factory: LoopFactory, ports: (ctx: LoopContext) => Record<string, unknown>): LoopFactory {
-  const wrap = (ctx: LoopContext): LoopContext =>
-    Object.create(
-      ctx,
-      Object.fromEntries(
-        Object.entries(ports(ctx)).map(([key, value]) => [key, { value, enumerable: true }]),
-      ),
-    ) as LoopContext
-  return {
-    ...factory,
-    create: (ctx, stop) => factory.create(wrap(ctx), stop),
-    resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
-  }
-}
-/** Records every checkpoint the driver writes. */
-const recordWrites = (written: JsonObject[]) => (ctx: LoopContext) => ({
-  checkpoints: {
-    read: () => ctx.checkpoints.read(),
-    write: async (checkpoint: Parameters<LoopContext['checkpoints']['write']>[0], association?: never) => {
-      written.push(structuredClone(checkpoint.state) as JsonObject)
-      await ctx.checkpoints.write(checkpoint, association)
-    },
-  },
-})
 const budgetError = () =>
   Object.assign(new Error('budget'), { code: 'E_BUDGET', detail: { reason: 'max_steps' } })
 /** The stop gate keeps the first completion open, as a verifier asking for more work would. */
@@ -96,36 +42,6 @@ function holdFirstCompletion(factory: LoopFactory): LoopFactory {
     create: (ctx, stop) => factory.create(wrap(ctx), stop),
     resume: (ctx, checkpoint, stop) => factory.resume(wrap(ctx), checkpoint, stop),
   }
-}
-async function run(
-  acts: JevAct[],
-  o: {
-    replies?: unknown[][]
-    tools?: ReturnType<typeof toolPort>
-    goal?: string
-    config?: object
-    inputs?: object[]
-    sideCall?: boolean
-    until?: 'turn-end' | 'idle'
-    view?: Parameters<typeof turnView>[0]
-    wrap?: (factory: LoopFactory) => LoopFactory
-  } = {},
-) {
-  const jev = fakeJev((n) => acts[n] ?? { pick: PICK_RESPOND })
-  const tools = o.tools ?? toolPort()
-  const factory = createJevLoopFactory(o.config ?? {})
-  const result = await driveLoop(o.wrap ? o.wrap(factory) : factory, {
-    inputs: (o.inputs ?? [{ content: [{ type: 'text', text: o.goal ?? 'list the workspace' }] }]) as never,
-    turnView: turnView(o.view),
-    replies: (o.replies ?? []) as never,
-    tools: tools.port,
-    maxSteps: 40,
-    ...(o.sideCall === false ? {} : { sideCall: jev }),
-    ...(o.until ? { until: o.until } : {}),
-  })
-  const steps = result.events.filter((e) => e.type === 'jev.step').map((e) => e.data as JsonObject)
-  const metrics = result.events.filter((e) => e.type === 'jev.metrics').map((e) => e.data as JsonObject)
-  return { ...result, jev, tools, steps, metrics }
 }
 
 describe('Jev loop driver', () => {
@@ -657,5 +573,25 @@ describe('Jev loop driver', () => {
         expect.objectContaining({ endReason: 'aborted', llm: expect.objectContaining({ answer: 1 }) }),
       ])
     })
+  })
+  it('reports the step before it ends the turn on a second internal relation error', async () => {
+    const relation = () => {
+      throw Object.assign(new Error('unsettled'), { code: 'E_RELATION' })
+    }
+    // The first refusal is recoverable, so the second step is an arbitration whose call hits the same error.
+    const r = await run([{ pick: PICK_LS }, { pick: PICK_LS }], {
+      tools: toolPort({ ls: relation }),
+      replies: [callReply('ls', { path: '.' })],
+    })
+    expect(r.steps.map((s) => (s.refusal as JsonObject | undefined)?.code)).toEqual([
+      'INTERNAL_RELATION',
+      'INTERNAL_RELATION',
+    ])
+    expect(r.steps[1]).toMatchObject({
+      route: 'arbitration',
+      llm: { attempts: 1 },
+      refusal: { recoverability: 'terminal' },
+    })
+    expect(r.finished?.[1]).toMatchObject({ code: 'JEV_LOOP_FAILED' })
   })
 })

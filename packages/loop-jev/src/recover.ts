@@ -21,6 +21,7 @@ import {
   handleReply,
   jevDeps,
   llmStep,
+  readOnlyOf,
   routeEvent,
   stepTools,
 } from './step.js'
@@ -226,6 +227,8 @@ async function continueApproval(s: Scope, signal: AbortSignal): Promise<LoopStep
   }
   const route = savedRoute(s)
   const { decision } = route
+  const only = calls.length === 1 ? calls[0] : undefined
+  const readOnly = only === undefined ? undefined : readOnlyOf(view, st.toolNames, only.name)
   const obs = observeDispatch({
     phase: decision.phase,
     calls,
@@ -233,10 +236,16 @@ async function continueApproval(s: Scope, signal: AbortSignal): Promise<LoopStep
     cwd: s.cwd,
     confidence: decision.confidence,
     escalated: route.kind === 'arbitration',
+    ...(readOnly === undefined ? {} : { readOnly }),
   })
   if (route.kind === 'direct' && obs.entry.status === 'succeeded') st.counters.directSuccess++
+  if (obs.refs?.source === 'text') st.counters.textReferences++
   delete st.cur.calls
-  return endStep(s, obs, { ...routeEvent(route), ...recordedLlm(s), dispatch: dispatchEvent(calls, results) })
+  return endStep(s, obs, {
+    ...routeEvent(route),
+    ...recordedLlm(s),
+    dispatch: dispatchEvent(calls, results, obs.refs),
+  })
 }
 
 /**
