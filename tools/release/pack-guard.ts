@@ -75,7 +75,7 @@ export function guardPackedFiles(files: ReadonlyMap<string, Buffer>, triple: str
     'dist/THIRD-PARTY-NOTICES/index.json',
     'dist/authoring/THIRD-PARTY-NOTICES/index.json',
     'dist/web/THIRD-PARTY-NOTICES/index.json',
-    'dist/bundled-plugins/document-reader/src/runtime/THIRD-PARTY-NOTICES/index.json',
+    'dist/bundled-plugins/document-reader/dist/runtime/THIRD-PARTY-NOTICES/index.json',
     'dist/license-provenance/sources.json',
     `dist/vendor/@esbuild/${triple}/${triple.startsWith('win32') ? 'esbuild.exe' : 'bin/esbuild'}`,
     `dist/ripgrep/${triple.startsWith('win32') ? 'rg.exe' : 'rg'}`,

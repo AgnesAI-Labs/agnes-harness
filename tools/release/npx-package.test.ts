@@ -84,7 +84,7 @@ function packedFixture(): Map<string, Buffer> {
     'dist',
     'dist/authoring',
     'dist/web',
-    'dist/bundled-plugins/document-reader/src/runtime',
+    'dist/bundled-plugins/document-reader/dist/runtime',
   ])
     files.set(`${directory}/THIRD-PARTY-NOTICES/index.json`, Buffer.from('[]'))
   files.set('bin/agh', Buffer.from('#!/usr/bin/env node\n'))
