@@ -19,8 +19,7 @@ type Text = (key: string, vars?: Record<string, string | number>) => string
 const BATCH = 64
 
 /**
- * Plugin versions that nothing uses any more but that are still held on disk. The plugins page only
- * says they exist; this is where each one is read and released.
+ * Read and release unused plugin retention records on demand, independently of the plugin list.
  */
 export function PinsPanel({
   api,
@@ -102,6 +101,7 @@ export function PinsPanel({
         )
       }
     >
+      {!pins && !failed && <SettingsState>{t('pinsChecking')}</SettingsState>}
       {failed && (
         <Banner tone="error" action={<Button onClick={() => void load()}>{t('retry')}</Button>}>
           {t('pinsUnavailable')}

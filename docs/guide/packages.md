@@ -244,3 +244,10 @@ Privileged generation migration requires a closed session and checks durable exe
 Implementation: [shell commands](../../packages/cli/src/commands/package.ts), [SDK](../../packages/sdk/src/package-admin.node.ts), [Web administration](../../packages/web-admin/src/admin/plugins/admin.tsx), [EntryTree](../../packages/cordis-loader/src/entry-tree.ts), [Host publication](../../packages/host-providers/src/runtime-target-publisher.ts).
 
 The shipped local-dev and enterprise templates explicitly admit the modern declaration categories used by the bundled examples. Existing custom profiles with narrower ceilings must add any newly declared categories they intend to admit; this changes admission only, not the operating-system rights of trusted code.
+
+
+### Plugin list refresh and file cleanup
+
+The Web plugin page checks its administrative context when opened. It can reuse a recent inventory for 30 seconds when that context is unchanged. Returning focus does not repeatedly reload fresh data; plugin change notifications and the refresh button still trigger a read. A background refresh retains the displayed list. Backend authorization and operation previews remain authoritative.
+
+Open **Settings → Runtime & diagnostics → Plugin file cleanup** to inspect unused retention records. This check runs when you open the cleanup panel, independently of the plugin list. A failed check displays a retry action, not a claim that records exist. Clearing a record requires confirmation and the removal permission; the backend rechecks usage and skips records that are in use again. Releasing retention records allows files to be reclaimed; it does not promise immediate disk-space recovery.

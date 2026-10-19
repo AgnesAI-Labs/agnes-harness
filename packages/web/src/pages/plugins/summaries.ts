@@ -26,6 +26,7 @@ export function useCapabilitySummaries(
 ): CapabilitySummaries {
   const [summaries, setSummaries] = useState<CapabilitySummaries>({})
   useEffect(() => {
+    if (!api) return
     const pending = new AbortController()
     const put = (id: Capability, value: CapabilitySummary | undefined) => {
       if (!pending.signal.aborted && value) setSummaries((current) => ({ ...current, [id]: value }))

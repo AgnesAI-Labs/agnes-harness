@@ -69,11 +69,13 @@ export function DiagnosticsPanel({
   api = browserApi,
   download = downloadDiagnostics,
   integrations,
+  maintenance,
 }: {
   api?: DiagnosticsApi
   download?: (bundle: DiagnosticsExportResult) => void
   /** More rows of 集成 (the runtime details), given by the page. */
   integrations?: ReactNode
+  maintenance?: ReactNode
 }) {
   const { t } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
   const { t: doctorText } = useUiText(FIRST_RUN_NAMESPACE, firstRunCatalog)
@@ -330,6 +332,7 @@ export function DiagnosticsPanel({
           </SettingsItem>
         </SettingsBlock>
       )}
+      {maintenance}
       <SettingsBlock
         label={`${t('recent')} · ${count}`}
         data-testid="diagnostics-errors"

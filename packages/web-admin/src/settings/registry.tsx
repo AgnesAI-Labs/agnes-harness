@@ -76,7 +76,7 @@ for (const [id, group, pane, navigationId, key, order] of [
 }
 
 /**
- * 运行详情 under 集成: a subpage of seven records, each opening in place. The runtime catalog is
+ * 运行详情 under 集成: a subpage of technical records, each opening in place. The runtime catalog is
  * cached when the subpage opens and revalidated on window focus.
  */
 function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionContext['t'] }) {
@@ -112,9 +112,6 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
         onReload={resource.reload}
         data-testid="runtime-details"
       >
-        <SettingsExpand label={t('pinsTitle')} hint={t('pinsHelp')} data-testid="runtime-pins">
-          <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
-        </SettingsExpand>
         {snapshot && (
           <>
             <SettingsExpand
@@ -237,7 +234,21 @@ const definitions: readonly [
     'advanced',
     'diagnostics',
     81,
-    (c, t) => <DiagnosticsPanel integrations={<RuntimeDetails c={c} t={t} />} />,
+    (c, t) => (
+      <DiagnosticsPanel
+        maintenance={
+          <SettingsDrill
+            id="plugin-file-cleanup"
+            data-testid="runtime-pins"
+            label={t('pinsTitle')}
+            description={t('pinsHelp')}
+          >
+            <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
+          </SettingsDrill>
+        }
+        integrations={<RuntimeDetails c={c} t={t} />}
+      />
+    ),
   ],
 ]
 for (const [group, id, order, render] of definitions) {
