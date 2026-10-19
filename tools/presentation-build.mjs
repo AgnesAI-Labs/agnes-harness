@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { notices } from './presentation-notices.mjs'
 import { assertClientExternals, clientPlatformExternals } from './web-client-externals.mjs'
@@ -20,33 +20,39 @@ const digest = (bytes) => `sha256-${createHash('sha256').update(bytes).digest('h
 const json = (data) => `${JSON.stringify(data, null, 2)}\n`
 const payloadRoot = (name) => join(presentationRoot, 'packages/package-manager/bundled-plugins', name)
 
-async function commonInputs() {
-  const paths = [
+async function inputHash(inputs) {
+  const paths = new Set([
     'pnpm-lock.yaml',
+    'package.json',
+    '.node-version',
     'tools/presentation-build.mjs',
     'tools/presentation-notices.mjs',
     'tools/web-client-externals.mjs',
     'packages/web/public/index.html',
-  ]
-  for (const parent of ['packages', 'packages/package-manager/bundled-plugins'])
-    for (const name of (await readdir(join(presentationRoot, parent))).sort()) {
-      const path = `${parent}/${name}/package.json`
+    ...inputs,
+  ])
+  // Hash resolution metadata only for actual input owners. Shared platform implementation
+  // changes must not change a plugin's input digest or its trust identity.
+  for (const input of inputs) {
+    let directory = dirname(input)
+    while (directory !== '.') {
+      const manifest = join(directory, 'package.json').replaceAll('\\', '/')
       try {
-        await readFile(join(presentationRoot, path))
-        paths.push(path)
-      } catch {}
+        await readFile(join(presentationRoot, manifest))
+        paths.add(manifest)
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+      directory = dirname(directory)
     }
-  return paths
-}
-async function inputHash(inputs) {
+  }
   const hash = createHash('sha256').update(`presentation-v1:${esbuildVersion}\0`)
-  for (const path of [...new Set([...(await commonInputs()), ...inputs])].sort()) {
+  for (const path of [...paths].sort())
     hash
       .update(path)
       .update('\0')
       .update(await readFile(join(presentationRoot, path)))
       .update('\0')
-  }
   return `sha256-${hash.digest('hex')}`
 }
 async function atomicWrite(path, bytes) {
