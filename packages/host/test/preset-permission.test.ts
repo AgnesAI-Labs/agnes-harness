@@ -122,6 +122,19 @@ describe('resolving a recipe under a chosen permission', () => {
     expect(resolvePreset('standard-windows', docs).permission).toBeUndefined()
   })
 
+  it('refuses a legacy level name whose base recipe was replaced by one with its own table', () => {
+    const custom = {
+      ...docs,
+      standard: { ...docs.standard!, sandbox: { level: 'L0', on_unavailable: 'allow' } },
+    }
+    for (const alias of ['read-only', 'full-access'])
+      expect(() => resolvePreset(alias, custom)).toThrow('does not allow')
+    // The default level is what a recipe runs under as written, so its name keeps working.
+    expect(resolvePreset('workspace-write', custom).permission).toBeUndefined()
+    // The recipe itself still runs as written.
+    expect(resolvePreset('standard', custom).permission).toBeUndefined()
+  })
+
   it('never lets an overlay lower a required sandbox to L0', () => {
     expect(() => resolvePreset('claw', docs, { permission: 'full-access' })).toThrow('requires sandbox')
     expect(resolvePreset('claw', docs, { permission: 'read-only' }).doc.sandbox).toMatchObject({

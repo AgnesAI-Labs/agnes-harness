@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isHostError } from '../../src/errors.js'
+import { allowedPermissions } from '../../src/presets/admission.js'
 import { mergePackages, mergeRoutes, resolveProfile } from '../../src/profile/resolve.js'
 import type { LockState, ProfileInputs, ResolveEnv, RuntimeProfileManifest } from '../../src/profile/types.js'
 
@@ -72,6 +73,47 @@ describe('resolveProfile (single layer)', () => {
     })
     expect(p.hash).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(Object.isFrozen(p)).toBe(true)
+  })
+  it('derives permissions from a user layer that sets only presets, not from the builtin block', async () => {
+    // Narrowing `presets` must narrow what is granted, and a pre-split default naming a level keeps it.
+    const narrow = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock,
+        user: { name: 'u', presets: { default: 'standard', allowed: ['standard'] } },
+      },
+      env,
+    )
+    expect(narrow.permissions).toBeUndefined()
+    expect(allowedPermissions(narrow)).toEqual(['workspace-write'])
+    const legacy = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock,
+        user: { name: 'u', presets: { default: 'read-only', allowed: ['read-only', 'standard'] } },
+      },
+      env,
+    )
+    expect(legacy.permissions).toBeUndefined()
+    expect(allowedPermissions(legacy)).toEqual(['read-only', 'workspace-write'])
+  })
+  it('lets a user layer that sets both keys choose its own permissions', async () => {
+    const p = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock,
+        user: {
+          name: 'u',
+          presets: { default: 'standard', allowed: ['standard'] },
+          permissions: { default: 'read-only' },
+        },
+      },
+      env,
+    )
+    expect(p.permissions).toEqual({
+      default: 'read-only',
+      allowed: ['read-only', 'workspace-write', 'full-access'],
+    })
   })
   it('carries lockfile version and integrity onto each resolved package', async () => {
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)

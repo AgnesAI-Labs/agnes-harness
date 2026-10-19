@@ -180,6 +180,10 @@ function mergeManifest(
         break
       case 'presets':
         out.presets = { ...(base.presets ?? {}), ...(v as RuntimeProfileManifest['presets']) }
+        // The permissions an earlier layer granted were written next to its own `presets`. A layer
+        // that rewrites `presets` and says nothing about permissions gets them derived from its list,
+        // as before the split, so narrowing the recipes can never leave a wider level granted.
+        if (layer !== 'builtin' && over.permissions === undefined) delete out.permissions
         break
       case 'permissions':
         out.permissions = { ...(base.permissions ?? {}), ...(v as RuntimeProfileManifest['permissions']) }
