@@ -25,6 +25,11 @@ afterAll(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()))
   rmSync(out, { recursive: true, force: true })
 })
+/** A machine that cannot sandbox a workspace (some CI runners) refuses every session; those runs cannot say anything about the runner. */
+const lacksSandbox = (r: { stderr?: string; stdout?: string }) =>
+  /E_SANDBOX_WORKSPACE/.test(`${r.stderr ?? ''}${r.stdout ?? ''}`)
+const NO_SANDBOX = 'no workspace sandbox on this machine'
+
 /** The message of a failed exit-status check: the runner's stderr, plus the tail of its stdout where the report verdict is printed. */
 const why = (r: { stderr?: string; stdout?: string }) =>
   `${r.stderr ?? ''}\n--- stdout tail ---\n${(r.stdout ?? '').slice(-2000)}`
@@ -252,7 +257,7 @@ describe('bench runner', () => {
     expect(noK.stderr).toContain('warning: no --k or --k-from given')
   })
 
-  it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', () => {
+  it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', (ctx) => {
     // The output directory sits inside a git work tree; the sessions' workspaces must not.
     const repo = join(out, 'repo')
     mkdirSync(join(repo, '.git'), { recursive: true })
@@ -272,6 +277,7 @@ describe('bench runner', () => {
       '--k-from',
       pilotReport,
     ])
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, why(r)).toBe(0)
     const report = readJson(join(dir, 'report.json'))
     expect(report).toMatchObject({ k: 1.5, kSource: `pilot report ${pilotReport}`, verdict: { valid: true } })
@@ -294,7 +300,7 @@ describe('bench runner', () => {
     expect(md).toMatch(/- jev: \d+ requests, 1 tool schema hashes, 0 switches/)
   }, 300_000)
 
-  it('takes the routes from the accounts saved in Settings and runs both lanes', async () => {
+  it('takes the routes from the accounts saved in Settings and runs both lanes', async (ctx) => {
     const chat = await startChat('deepseek-flash')
     const jevFake = await startJev()
     const home = await settingsHome({
@@ -321,6 +327,7 @@ describe('bench runner', () => {
         BENCH_PYTHON: stub,
       },
     )
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, why(r)).toBe(0)
     expect(r.stdout).toContain('jev route account-jev-side')
     const report = readJson(join(dir, 'report.json'))
@@ -404,7 +411,7 @@ describe('bench runner', () => {
     expect(readdirSync(join(home, 'profiles', 'local-dev'))).not.toContain('profile.yaml')
   }, 300_000)
 
-  it('reports each turn of a multi-turn session with its own requests, steps, cost and wall time', async () => {
+  it('reports each turn of a multi-turn session with its own requests, steps, cost and wall time', async (ctx) => {
     // Turn n makes n model requests on the default lane: n - 1 `ls` calls, then the answer.
     const chat = await startChat('deepseek-flash', (turn) => turn - 1)
     const jevFake = await startJev()
@@ -434,6 +441,7 @@ describe('bench runner', () => {
     )
     const dir = join(out, 'window', 'run')
     const r = await runAsync(['--suite', multi, '--lanes', 'default,jev', '--out', dir, '--home', home])
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, why(r)).toBe(0)
     const records = readRecords(dir)
     const events = (lane: string) =>
@@ -562,13 +570,14 @@ describe('bench runner', () => {
     expect(wrong.stderr).toContain('account-jev-a is not a chat model route')
   }, 120_000)
 
-  it('runs the baseline pilot on a home with only a chat account and reports k', async () => {
+  it('runs the baseline pilot on a home with only a chat account and reports k', async (ctx) => {
     const home = await settingsHome({
       name: 'pilot',
       chat: [{ baseUrl: (await startChat('deepseek-flash')).baseUrl }],
     })
     const dir = join(out, 'pilot', 'run')
     const r = await runAsync(['--suite', suite, '--out', dir, '--home', home, '--pilot'])
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, why(r)).toBe(0)
     const report = readJson(join(dir, 'report.json'))
     expect(report.lanes).toEqual(['default'])
@@ -579,7 +588,7 @@ describe('bench runner', () => {
     expect(readFileSync(join(dir, 'report.md'), 'utf8')).toContain('## Pilot')
   }, 300_000)
 
-  it('cancels a turn that outlives its watchdog, keeps it as a failure and exits 1', async () => {
+  it('cancels a turn that outlives its watchdog, keeps it as a failure and exits 1', async (ctx) => {
     const chat = await startChat('deepseek-flash')
     const jevFake = await startJev({ hang: true })
     const home = await settingsHome({
@@ -600,6 +609,7 @@ describe('bench runner', () => {
       '--turn-timeout-ms',
       '3000',
     ])
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, r.stderr).toBe(1)
     const [record] = readRecords(dir)
     expect(record).toMatchObject({
