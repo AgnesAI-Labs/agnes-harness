@@ -1,4 +1,3 @@
-import { readdirSync } from 'node:fs'
 import type {
   ComputerUseDoctorResult,
   ComputerUseStatusResult,
@@ -453,40 +452,9 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   }
 }
 
-/** '/…' completes against the fixed command table; '@…' completes against `cwd`'s entries. */
-export function completeToken(prefix: string, cwd: string): string[] {
+/** '/…' completes against the fixed command table; '@' mentions have their own menu (file-mentions.ts). */
+export function completeToken(prefix: string): string[] {
   if (prefix.startsWith('/'))
     return SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(prefix)).map((cmd) => cmd.name)
-  if (prefix.startsWith('@')) {
-    const needle = prefix.slice(1)
-    let entries: string[]
-    try {
-      entries = readdirSync(cwd)
-    } catch {
-      // An unreadable or vanished cwd offers nothing, as a prefix that matches nothing does. Tab calls this
-      // from the terminal's input callback, where a throw would exit the process in the alternate screen.
-      return []
-    }
-    return entries
-      .filter((entry) => entry.startsWith(needle))
-      .slice(0, 20)
-      .map((entry) => `@${entry}`)
-  }
   return []
-}
-
-/**
- * Turns every `@path` mention in a line into a `resource_link` block and strips the `@` from the
- * text left behind, so a submitted prompt reads naturally while the path also travels as its own
- * attachment block. The path travels verbatim (whatever followed `@`), not resolved against `cwd`:
- * ContentBlock's `resource_link.uri` is an unconstrained string, and resolving it here would silently
- * change what the user typed into something the completion list never offered.
- */
-export function attachmentsFrom(text: string): ContentBlock[] {
-  const links: ContentBlock[] = []
-  const cleaned = text.replace(/@(\S+)/g, (_match, path: string) => {
-    links.push({ type: 'resource_link', uri: `file://${path}`, name: path })
-    return path
-  })
-  return [{ type: 'text', text: cleaned }, ...links]
 }

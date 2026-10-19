@@ -15,6 +15,8 @@ export type Scene = {
   ready?: string[]
   act?: (ctx: Ctx) => void
   done?: string[]
+  /** Files the scene's working directory holds, for the `@` menu. */
+  files?: string[]
   /** What the composer rail's git probe answers; the bare gallery cwd otherwise. */
   workspace?: WorkspaceInfo
 }
@@ -199,6 +201,14 @@ export const SCENES: Scene[] = [
     done: ['Always allow'],
   },
   { id: 'slash-menu', title: 'Open slash menu', timeline: timeline([]), act: typed('/'), done: ['/help'] },
+  {
+    id: 'mention-menu',
+    title: 'Open @ file menu',
+    timeline: timeline([]),
+    files: ['README.md', 'packages/cli-tui/src/editor.ts', 'packages/cli-tui/src/app.ts', 'docs/cli/tui.md'],
+    act: typed('look at @tui'),
+    done: ['packages/cli-tui/'],
+  },
   {
     id: 'model-picker',
     title: 'Model picker',

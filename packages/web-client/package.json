@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "node ../../tools/toolchain/run.mjs exec vitest run packages/web-client/test --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/cordis": "workspace:*",
