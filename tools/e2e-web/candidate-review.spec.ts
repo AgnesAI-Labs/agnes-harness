@@ -7,6 +7,7 @@ import {
   chooseWorkspace,
   closeSettings,
   expand,
+  expandActivityGroups,
   fresh,
   pluginTab,
   preferences,
@@ -676,6 +677,7 @@ test('full access candidate submission publishes without a human offer and retai
     if (!(await toggle.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
       await toggle.click()
   }
+  for (const turn of await page.getByTestId('conversation-turn').all()) await expandActivityGroups(turn)
   await expect(page.getByTestId('approval-card')).toHaveCount(0)
   await expect(
     page.getByTestId('approval-step').filter({ hasText: 'Auto-allowed (Full access)' }).first(),

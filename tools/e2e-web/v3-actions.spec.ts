@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installDeveloperExample } from './developer-example.js'
@@ -7,6 +8,7 @@ import {
   chooseWorkspace,
   closeSettings,
   expand,
+  expandActivityGroups,
   fresh,
   homePage,
   preferences,
@@ -362,10 +364,11 @@ for (const locale of ['en', 'zh-CN']) {
   }) => {
     await preferences(page, locale)
     await page.goto(runtime.url)
-    await chooseWorkspace(page, runtime)
+    await chooseWorkspace(page, runtime, locale)
     const owner = await runtime.connect()
+    const cwd = await realpath(runtime.workspace)
     const memory = await owner.request('_agnes/v1/admin.memory', {
-      cwd: runtime.workspace,
+      cwd,
       settings: { mode: 'ask' },
     })
     await fresh(page, locale)
@@ -394,6 +397,7 @@ for (const locale of ['en', 'zh-CN']) {
     const process = written.getByTestId('turn-process-toggle')
     if (!(await process.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
       await process.click()
+    await expandActivityGroups(written)
     await expect(
       page
         .getByTestId('approval-step')
@@ -404,16 +408,16 @@ for (const locale of ['en', 'zh-CN']) {
     expect(
       await page.evaluate(() => (window as typeof window & { approvalPrompts?: number }).approvalPrompts),
     ).toBe(0)
-    expect(
-      (await owner.request('_agnes/v1/admin.memory', { cwd: runtime.workspace, file: 'MEMORY.md' })).file
-        ?.content,
-    ).toBe('Synthetic automatic preference.')
+    expect((await owner.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })).file?.content).toBe(
+      'Synthetic automatic preference.',
+    )
     await page.reload()
     await expect(page.getByTestId('approval-card')).toHaveCount(0)
     const restored = page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle')
     await expect(restored).toBeVisible()
     if (!(await restored.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
       await restored.click()
+    await expandActivityGroups(page.getByTestId('conversation-turn').last())
     await expect(
       page
         .getByTestId('approval-step')
