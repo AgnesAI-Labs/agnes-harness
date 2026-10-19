@@ -11,13 +11,14 @@ const env = (os: ResolveEnv['platform']['os']): ResolveEnv => ({
 describe('Windows builtin default preset selection', () => {
   it.each(['linux', 'darwin', 'win32'] as const)('selects the builtin default for %s', async (os) => {
     const profile = await resolveProfile({ builtin: 'local-dev' }, env(os))
-    const expected = 'workspace-write'
     expect(profile.presets).toEqual({
-      default: expected,
-      allowed:
-        os === 'win32'
-          ? ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal']
-          : ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],
+      default: 'standard',
+      allowed: os === 'win32' ? ['standard', 'standard-windows', 'minimal'] : ['standard', 'minimal', 'ptc'],
+    })
+    // The permission is its own choice and does not change with the platform.
+    expect(profile.permissions).toEqual({
+      default: 'workspace-write',
+      allowed: ['read-only', 'workspace-write', 'full-access'],
     })
   })
   it.each([
@@ -30,8 +31,8 @@ describe('Windows builtin default preset selection', () => {
     const before = structuredClone(inputs)
     const profile = await resolveProfile(inputs, env('win32'))
     expect(profile.presets).toEqual({
-      default: 'workspace-write',
-      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],
+      default: 'standard',
+      allowed: ['standard', 'minimal', 'ptc'],
       ...presets,
     })
     expect(inputs).toEqual(before)
@@ -46,14 +47,12 @@ describe('Windows builtin default preset selection', () => {
       env('win32'),
     )
     expect(profile.presets).toEqual({
-      default: 'workspace-write',
-      allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+      default: 'standard',
+      allowed: ['standard', 'standard-windows', 'minimal'],
     })
   })
   it('does not change enterprise defaults or waive workspace verification', async () => {
-    expect((await resolveProfile({ builtin: 'enterprise' }, env('win32'))).presets.default).toBe(
-      'workspace-write',
-    )
+    expect((await resolveProfile({ builtin: 'enterprise' }, env('win32'))).presets.default).toBe('standard')
     await expect(
       resolveProfile({ builtin: 'local-dev', workspaceOverlay: {} }, env('win32')),
     ).rejects.toThrow('E_WORKSPACE_UNTRUSTED')
@@ -63,6 +62,6 @@ describe('Windows builtin default preset selection', () => {
     const a = await resolveProfile(inputs, env('win32'))
     const b = await resolveProfile(inputs, env('win32'))
     expect(a.hash).toBe(b.hash)
-    expect((await resolveProfile(inputs, env('linux'))).presets.default).toBe('workspace-write')
+    expect((await resolveProfile(inputs, env('linux'))).presets.default).toBe('standard')
   })
 })

@@ -1,4 +1,5 @@
 import { HostError } from '../errors.js'
+import { isPermission } from '../presets/permission.js'
 import type { ResolvedProfile } from './types.js'
 
 const map = (value: unknown): value is Record<string, unknown> =>
@@ -53,6 +54,12 @@ export function checkSavedProfile(value: unknown): ResolvedProfile {
   const presets = value.presets
   if (!map(presets) || typeof presets.default !== 'string' || !strings(presets.allowed))
     fail('invalid presets')
+  const permissions = value.permissions
+  if (
+    permissions !== undefined &&
+    (!map(permissions) || !isPermission(permissions.default) || !Array.isArray(permissions.allowed))
+  )
+    fail('invalid permissions')
   const policy = value.policy
   if (!map(policy) || !strings(policy.capabilityCeiling)) fail('invalid policy')
   for (const key of ['reconcile', 'approvals', 'computerUse'] as const)

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { HostError, type Layer } from '../errors.js'
+import { isPermission } from '../presets/permission.js'
 import { providerSelectionProblems } from './seam-selection.js'
 import type { RouteDecl, RuntimeProfileManifest } from './types.js'
 
@@ -35,6 +36,7 @@ const TOP_LEVEL_KEYS = new Set([
   'cacheDir',
   'limits',
   'presets',
+  'permissions',
   'policy',
   'reconcile',
   'approvals',
@@ -86,6 +88,16 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
     bad('presets.default and presets.allowed are required')
   const allowed = presets?.allowed as unknown[]
   if (!allowed.includes(presets?.default)) bad('presets.default must be in presets.allowed')
+  const permissions = m.permissions as { default?: unknown; allowed?: unknown } | undefined
+  if (permissions !== undefined) {
+    if (
+      !isPermission(permissions.default) ||
+      !Array.isArray(permissions.allowed) ||
+      !permissions.allowed.every(isPermission) ||
+      !permissions.allowed.includes(permissions.default)
+    )
+      bad('permissions.default must be one of permissions.allowed, and both name permission levels')
+  }
   const approvals = m.approvals as { mode?: unknown } | undefined
   if (approvals?.mode === 'smart')
     bad(

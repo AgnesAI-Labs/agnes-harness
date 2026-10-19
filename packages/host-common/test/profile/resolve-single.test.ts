@@ -65,9 +65,10 @@ describe('resolveProfile (single layer)', () => {
     expect(p.seams.approval).toEqual({ provider: 'local-prompt' })
     expect(p.seams).not.toHaveProperty('platform')
     expect(p.seams).not.toHaveProperty('sandbox')
-    expect(p.presets).toEqual({
+    expect(p.presets).toEqual({ default: 'standard', allowed: ['standard', 'minimal', 'ptc'] })
+    expect(p.permissions).toEqual({
       default: 'workspace-write',
-      allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],
+      allowed: ['read-only', 'workspace-write', 'full-access'],
     })
     expect(p.hash).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(Object.isFrozen(p)).toBe(true)

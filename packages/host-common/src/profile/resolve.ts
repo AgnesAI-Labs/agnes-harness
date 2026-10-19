@@ -5,6 +5,8 @@ import { readSandboxStartupConfig } from '@agnes/host-common/profile/sandbox-sta
 import { type ApprovalMode, type ApprovalProfile, validateCommandHooksPolicy } from '@agnes/protocol'
 import { HostError, type Layer } from '../errors.js'
 import { cacheDir as defaultCacheDir, dataDir as defaultDataDir } from '../paths.js'
+import { allowedPermissions } from '../presets/admission.js'
+import { DEFAULT_PERMISSION } from '../presets/permission.js'
 import { canonicalJson, sha256hex } from './canonical.js'
 import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
@@ -44,6 +46,19 @@ const APPROVAL_MODE_RANK = { off: 0, 'auto-review': 1, manual: 2 } as const sati
 const SMART_MODE_REMOVED =
   'approvals.mode "smart" was removed; use "auto-review" (a model reviews tool calls and may approve them) or "manual"'
 const MAX_TIMER_MS = 2_147_483_647
+
+/**
+ * `permissions` is written by profiles that know the split. An older profile has none, and the
+ * levels it grants are derived from `presets.allowed` wherever they are needed (see
+ * `allowedPermissions`), so nothing is invented here for it.
+ */
+function resolvePermissions(m: RuntimeProfileManifest): Pick<ResolvedProfile, 'permissions'> {
+  if (!m.permissions) return {}
+  const allowed = m.permissions.allowed ?? [
+    ...allowedPermissions({ presets: { allowed: m.presets?.allowed ?? ['standard'] } }),
+  ]
+  return { permissions: { default: m.permissions.default ?? DEFAULT_PERMISSION, allowed } }
+}
 
 function resolveReconcilePolicy(value: unknown, layer: Layer): ReconcilePolicy {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -165,6 +180,9 @@ function mergeManifest(
         break
       case 'presets':
         out.presets = { ...(base.presets ?? {}), ...(v as RuntimeProfileManifest['presets']) }
+        break
+      case 'permissions':
+        out.permissions = { ...(base.permissions ?? {}), ...(v as RuntimeProfileManifest['permissions']) }
         break
       case 'policy':
         if (layer === 'workspace') {
@@ -320,8 +338,8 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
       local.manifest = {
         ...local.manifest,
         presets: {
-          default: 'workspace-write',
-          allowed: ['standard', 'standard-windows', 'read-only', 'workspace-write', 'full-access', 'minimal'],
+          default: 'standard',
+          allowed: ['standard', 'standard-windows', 'minimal'],
         },
       }
   }
@@ -631,6 +649,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     cacheDir: expand(m.cacheDir ?? defaultCacheDir(home)),
     limits: m.limits ?? {},
     presets: { default: m.presets?.default ?? 'standard', allowed: m.presets?.allowed ?? ['standard'] },
+    ...resolvePermissions(m),
     policy: {
       capabilityCeiling: m.policy?.capabilityCeiling ?? [],
       workspacePackages: m.policy?.workspacePackages ?? 'require-project-trust',
