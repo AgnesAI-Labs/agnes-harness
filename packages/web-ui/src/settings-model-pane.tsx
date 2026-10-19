@@ -48,6 +48,37 @@ function AccountPageHost({ mode }: { mode: 'add' | 'edit' }) {
   return <div ref={host} className="account-page-host" data-testid={`account-page-${mode}`} />
 }
 
+/** What shows the side-model editor inside a settings page: the side-models panel registers it. */
+export type SettingsSideModelPage = {
+  /** Put the editor into `host`; the returned function is called when the page closes. */
+  attach(host: HTMLElement, mode: 'add' | 'edit'): () => void
+}
+let sideModelPage: SettingsSideModelPage | undefined
+const sideModelPageListeners = new Set<() => void>()
+export function setSettingsSideModelPage(page: SettingsSideModelPage | undefined): void {
+  sideModelPage = page
+  for (const listener of sideModelPageListeners) listener()
+}
+/** The settings drill ids of the two side-model pages, for opening them from the list. */
+export const SIDE_MODEL_PAGE_IDS = { add: 'add-side-model', edit: 'side-model' } as const
+const subscribeSideModelPage = (listener: () => void) => {
+  sideModelPageListeners.add(listener)
+  return () => {
+    sideModelPageListeners.delete(listener)
+  }
+}
+
+function SideModelPageHost({ mode }: { mode: 'add' | 'edit' }) {
+  const host = useRef<HTMLDivElement>(null)
+  const page = useSyncExternalStore(subscribeSideModelPage, () => sideModelPage)
+  useLayoutEffect(() => {
+    const node = host.current
+    if (!node || !page) return
+    return page.attach(node, mode)
+  }, [mode, page])
+  return <div ref={host} className="side-model-page-host" data-testid={`side-model-page-${mode}`} />
+}
+
 export function SettingsModelPane({
   beforeAccounts,
   afterAccounts,
@@ -104,6 +135,13 @@ export function SettingsModelPane({
         description={t('accounts.context')}
       >
         <AccountPageHost mode="edit" />
+      </SettingsDrill>
+      {/* The side-model editor pages open from the side-model list; their rows stay hidden too. */}
+      <SettingsDrill id={SIDE_MODEL_PAGE_IDS.add} hidden label={t('settings-shell.addSideModel')}>
+        <SideModelPageHost mode="add" />
+      </SettingsDrill>
+      <SettingsDrill id={SIDE_MODEL_PAGE_IDS.edit} hidden label={t('settings-shell.editSideModel')}>
+        <SideModelPageHost mode="edit" />
       </SettingsDrill>
     </SettingsPage>
   )

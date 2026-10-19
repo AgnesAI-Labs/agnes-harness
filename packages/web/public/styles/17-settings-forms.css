@@ -1215,4 +1215,223 @@
       min-height: var(--control-height-touch);
     }
   }
+
+  /* Side models: the account list's card rows, a counted heading, a one-line note above and the
+   jev.route hint below. */
+  .side-models {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .side-models-count {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-weight: 400;
+  }
+  .side-models-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  :is(.side-models-note, .side-model-confirm, .side-editor-route) code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .side-models-note code {
+    color: var(--agnes-brand-primary);
+  }
+  .side-models-empty {
+    border-style: dashed;
+  }
+  .side-models-empty .agh-empty-state {
+    max-width: none;
+    justify-items: start;
+    padding: var(--s24);
+    text-align: start;
+  }
+  .side-model-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+  }
+  /* The route is what a loop plugin names: monospaced, tinted, with its copy button inside. */
+  .side-model-route {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding-inline-start: var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-family: var(--font-mono);
+    font-size: 0.78125rem;
+  }
+  /* The meta line clips its first item; the pill keeps its copy button and clips only the name. */
+  .config-account-meta > .side-model-route {
+    max-width: 100%;
+    overflow: visible;
+  }
+  .side-model-route-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .side-model-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0 var(--s8);
+    border-radius: var(--radius-full);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+    font-size: var(--font-size-xs);
+  }
+  .side-model-notice[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Removing is confirmed in a strip under the row, inside the same card. */
+  .side-model-confirm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    padding: var(--s12) var(--s16);
+    border-top: 1px solid var(--agnes-status-danger-border);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  .side-model-confirm > span {
+    flex: 1 1 16rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* The side-model page: three titled groups, each its note on the left and fields on the right. */
+  .side-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .side-editor > .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12.5rem) minmax(0, 1fr);
+    gap: var(--s24);
+    padding: var(--s20) 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .side-editor-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    justify-items: stretch;
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .side-editor-static {
+    display: grid;
+    justify-items: start;
+    gap: var(--s4);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .side-editor-chip {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    justify-self: start;
+    min-height: var(--control-height);
+    padding: 0 var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-sm);
+  }
+  .side-editor-route {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .side-editor-route code {
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .side-editor-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .side-editor-model {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+  }
+  .side-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s12) var(--s16);
+    justify-self: stretch;
+  }
+  .side-editor-new-credential {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: var(--s12);
+  }
+  :is(.side-editor-link, .side-editor-fold).agnes-ui-button {
+    justify-self: start;
+    padding-inline: 0;
+  }
+  .side-editor-link.agnes-ui-button {
+    color: var(--agnes-brand-primary);
+    font-weight: 600;
+  }
+  /* The optional test and the outcome on the left, 取消 / 保存 on the right, kept in view. */
+  .side-editor-footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s12) var(--s16);
+    padding: var(--s16) 0;
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+  }
+  .side-editor-test {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    min-width: 0;
+  }
+  .side-editor-test > [data-tone] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+  }
+  .side-editor-test > [data-tone="success"] {
+    color: var(--agnes-status-success-text);
+  }
+  @media (max-width: 720px) {
+    .side-editor > .agnes-settings-section,
+    .side-editor-grid,
+    .side-editor-new-credential {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s12);
+    }
+  }
 }

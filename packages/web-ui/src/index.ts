@@ -147,7 +147,10 @@ export {
   ACCOUNT_PAGE_IDS,
   type SettingsAccountPage,
   SettingsModelPane,
+  type SettingsSideModelPage,
+  SIDE_MODEL_PAGE_IDS,
   setSettingsAccountPage,
+  setSettingsSideModelPage,
 } from './settings-model-pane.js'
 export {
   mountSettingsSelectOptions,

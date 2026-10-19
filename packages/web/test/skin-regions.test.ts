@@ -40,9 +40,9 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     // the top bar's Conversation/Trace glyphs (replacing its overflow menu), the empty session list's
     // illustration and search/filter actions, the trace toolbar's fold-all chevron and ⋯ menu, and
     // the settings pages' ⓘ explanations (General twice, the accounts label once), and the chevrons
-    // of the two hidden account page rows. Adding an account now renders with the loaded list,
-    // so the unloaded shell has no header-plus glyph.
-    icon: ['svg', 39],
+    // of the two hidden account page rows, plus the side-model list page's two glyphs. Adding an
+    // account now renders with the loaded list, so the unloaded shell has no header-plus glyph.
+    icon: ['svg', 41],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 3],
