@@ -59,6 +59,13 @@ for (const [locale, theme] of [
   )
   const page = await context.newPage()
   page.on('pageerror', (error) => evidence.errors.push(error.message))
+  page.on('response', async (response) => {
+    if (!response.ok() && /\/application\/preview$/.test(new URL(response.url()).pathname))
+      evidence.previewFailures = [
+        ...(evidence.previewFailures ?? []),
+        { status: response.status(), body: await response.json().catch(() => null) },
+      ]
+  })
   pages.push({ page, locale, theme })
 }
 async function shot(label, item) {
@@ -447,6 +454,7 @@ try {
       next,
       '使用刚人工发布的校准到期预警技能：设备 2024-10-17 使用、校准 2024-10-20 到期，是否应预警？请实际验证规则。',
       'learned-next-run',
+      ['skill_read'],
     )
     const learnedTools = evidence.steps.at(-1).tools
     assert.ok(
