@@ -351,6 +351,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      permission: string | null
       agent: string | null
       bundles: string | null
       loop: string | null
@@ -369,6 +370,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== o.cwd ||
           pending.preset !== (o.preset ?? null) ||
+          pending.permission !== (o.permission ?? null) ||
           pending.agent !== (o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest])) ||
           pending.bundles !== (o.bundles === undefined ? null : JSON.stringify(o.bundles)) ||
           pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
@@ -380,6 +382,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       this.opening.set(o.key, {
         cwd: o.cwd,
         preset: o.preset ?? null,
+        permission: o.permission ?? null,
         agent: o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest]),
         bundles: o.bundles === undefined ? null : JSON.stringify(o.bundles),
         loop: o.loop ? JSON.stringify(o.loop) : null,
@@ -404,6 +407,13 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         ? await active.session.currentPreset()
         : this.workspaces.metadata(o.key)?.preset
       if (currentPreset !== null && currentPreset !== undefined && currentPreset !== o.preset)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
+    }
+    // Only a live worker reports the level; the durable projection does not record it, and `default`
+    // names whatever the deployment default is, which only the Host resolves.
+    if (o.key && o.permission !== undefined && o.permission !== 'default') {
+      const active = this.inner.get(o.key)
+      if (active && (await active.session.status()).permission !== o.permission)
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
     }
     const cwd = persisted ?? o.cwd
@@ -470,7 +480,10 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
   preset(key: string): Promise<string | null> {
     return this.inner.require(key).session.currentPreset()
   }
-  status(key: string, cwd?: string): Promise<{ lastSeq: number; preset: string | null }> {
+  status(
+    key: string,
+    cwd?: string,
+  ): Promise<{ lastSeq: number; preset: string | null; permission?: string }> {
     const existing = this.inner.get(key)
     if (existing) return existing.session.status()
     throw rpcError('SESSION_NOT_FOUND', { sessionId: key, ...(cwd ? { cwd } : {}) })
@@ -537,7 +550,7 @@ export function supervisorLister(
       const items: SessionMetaRow[] = []
       for (const { key, projected } of page) {
         const active = registry.get(key)
-        let state = projected
+        let state: { lastSeq: number; preset: string | null; permission?: string } = projected
           ? { lastSeq: projected.lastSeq, preset: projected.preset }
           : { lastSeq: active?.session.lastSeq ?? 0, preset: null }
         if (active) {
@@ -558,6 +571,7 @@ export function supervisorLister(
           // PageSessionMeta requires a string. `default` is the profile's unconfigured sentinel and
           // is used only when an old/incomplete projection has no recorded start preset.
           preset: state.preset ?? 'default',
+          ...(state.permission ? { permission: state.permission } : {}),
           ...(projected?.loop ? { loop: projected.loop } : {}),
           ...(projected?.title ? { title: projected.title } : {}),
           ...(cwd !== undefined ? { cwd } : {}),
@@ -2356,7 +2370,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             const link = await pool.acquireSharedWorker()
             const catalog = (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as Pick<
               import('@agnes/protocol').RuntimeAdminSnapshot,
-              'providers' | 'presets' | 'publication' | 'bundles' | 'security'
+              'providers' | 'presets' | 'permissions' | 'publication' | 'bundles' | 'security'
             >
             const localPluginFolders = o.packageRuntime?.manager.localPluginRoots
             if (!localPluginFolders)
@@ -2364,6 +2378,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             return {
               providers: catalog.providers,
               presets: catalog.presets,
+              ...(catalog.permissions ? { permissions: catalog.permissions } : {}),
               ...(catalog.bundles ? { bundles: catalog.bundles } : {}),
               ...(catalog.security ? { security: catalog.security } : {}),
               localPluginFolders,

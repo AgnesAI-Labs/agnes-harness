@@ -50,7 +50,14 @@ describe.each(['standard', 'standard-windows'])('%s command floor and approval d
   })
   it('inherits all non-policy behavior from standard', () => {
     const standard = resolvePreset('standard', docs).doc
-    expect({ ...preset, name: standard.name, approval: standard.approval }).toEqual(standard)
+    // It states its own permission (table, sandbox, isolation), so it takes no overlay; the explicit
+    // default tool policy the overlay adds to `standard` is the only other difference.
+    expect({
+      ...preset,
+      name: standard.name,
+      approval: standard.approval,
+      providers: standard.providers,
+    }).toEqual(standard)
   })
   it.each(['C:\\work\\repo', '\\\\server\\share\\repo'])(
     'approves contained edits under %s',

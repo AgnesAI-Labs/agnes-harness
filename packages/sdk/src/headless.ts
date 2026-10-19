@@ -52,6 +52,7 @@ export type HeadlessOptions = {
   cwd: string
   input: string | ContentBlock[]
   preset?: string
+  permission?: string
   agent?: string
   loop?: LoopSelection
   model?: Parameters<Session['setModel']>[0]
@@ -86,6 +87,7 @@ export async function runHeadless(
     cwd: options.cwd,
     sessionKey: `agnes:headless:${globalThis.crypto.randomUUID()}`,
     ...(options.preset ? { preset: options.preset } : {}),
+    ...(options.permission ? { permission: options.permission } : {}),
     ...(options.loop ? { loop: options.loop } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
   })

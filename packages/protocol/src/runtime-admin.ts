@@ -31,6 +31,21 @@ const enforcement = Type.Object(
   },
   { additionalProperties: false },
 )
+const securityPolicy = Type.Object(
+  {
+    id: text,
+    level: Type.Union([Type.Literal('L0'), Type.Literal('L1')]),
+    required: Type.Boolean(),
+    onUnavailable: Type.Union([
+      Type.Literal('deny'),
+      Type.Literal('allow'),
+      Type.Literal('allow-if-unimplemented'),
+    ]),
+    approvalPolicy: text,
+    networkMode: Type.Union([Type.Literal('deny'), Type.Literal('allow-list'), Type.Literal('unrestricted')]),
+  },
+  { additionalProperties: false },
+)
 export const RuntimeSecurityStatus = Type.Object(
   {
     platform: Type.Object(
@@ -53,34 +68,16 @@ export const RuntimeSecurityStatus = Type.Object(
       },
       { additionalProperties: false },
     ),
-    presetPolicies: Type.Array(
-      Type.Object(
-        {
-          id: text,
-          level: Type.Union([Type.Literal('L0'), Type.Literal('L1')]),
-          required: Type.Boolean(),
-          onUnavailable: Type.Union([
-            Type.Literal('deny'),
-            Type.Literal('allow'),
-            Type.Literal('allow-if-unimplemented'),
-          ]),
-          approvalPolicy: text,
-          networkMode: Type.Union([
-            Type.Literal('deny'),
-            Type.Literal('allow-list'),
-            Type.Literal('unrestricted'),
-          ]),
-        },
-        { additionalProperties: false },
-      ),
-      { maxItems: 256 },
-    ),
+    presetPolicies: Type.Array(securityPolicy, { maxItems: 256 }),
+    /** What each permission level grants, one entry per level the deployment allows. */
+    permissionPolicies: Type.Optional(Type.Array(securityPolicy, { maxItems: 8 })),
     workspaces: Type.Array(
       Type.Object(
         {
           sessionId: text,
           path: text,
           preset: text,
+          permission: Type.Optional(text),
           provider: text,
           state: Type.Union([Type.Literal('ready'), Type.Literal('closing'), Type.Literal('unavailable')]),
           policyDigest: Type.Optional(text),
@@ -133,6 +130,12 @@ export const RuntimeAdminSnapshot = Type.Object(
     presets: Type.Array(
       Type.Object({ id: text, isDefault: Type.Boolean() }, { additionalProperties: false }),
       { maxItems: 256 },
+    ),
+    /** Permission levels this deployment allows; absent from an older Host. */
+    permissions: Type.Optional(
+      Type.Array(Type.Object({ id: text, isDefault: Type.Boolean() }, { additionalProperties: false }), {
+        maxItems: 8,
+      }),
     ),
     localPluginFolders: Type.Object({ home: text, workspace: text }, { additionalProperties: false }),
     /**

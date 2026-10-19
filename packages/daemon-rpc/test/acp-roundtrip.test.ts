@@ -4,7 +4,7 @@ import { noticeParams } from '@agnes/daemon-foundation/local/attached'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { notify } from '@agnes/daemon-foundation/rpc'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { Feed } from '../src/local/methods/acp.js'
 import { openTestHost, say, slowProvider } from './host.js'
@@ -213,6 +213,36 @@ describe('local endpoint: ACP round trip', () => {
       },
     })
     expect(missing).toMatchObject({ error: { code: -32011, data: { code: 'BUNDLE_UNAVAILABLE' } } })
+    await ep.close()
+    await h.close()
+  })
+
+  it('carries a named permission to the Host and refuses one that is not a level', async () => {
+    const h = await openTestHost()
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    await ep.handle(init)
+    await addWorkspace(ep, h.dataDir)
+    const create = vi.spyOn(h.host, 'createSession').mockRejectedValue(new Error('stop after capture'))
+    const open = (id: number, meta: Record<string, unknown>) =>
+      ep.handle({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': meta } },
+      })
+    for (const permission of ['root', 7])
+      expect(await open(2, { permission })).toMatchObject({
+        error: { code: -32011, data: { reason: 'invalid permission' } },
+      })
+    expect(await open(3, { agent: 'acme/pkg#agent', permission: 'read-only' })).toMatchObject({
+      error: { code: -32011, data: { reason: 'invalid agent selection' } },
+    })
+    expect(create).not.toHaveBeenCalled()
+    await open(4, { preset: 'standard', permission: 'full-access', sessionKey: 'agnes:permission:a' })
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ preset: 'standard', permission: 'full-access' })
+    await open(5, { preset: 'standard', sessionKey: 'agnes:permission:b' })
+    expect(create.mock.calls[1]?.[0]).toMatchObject({ preset: 'standard' })
+    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('permission')
     await ep.close()
     await h.close()
   })

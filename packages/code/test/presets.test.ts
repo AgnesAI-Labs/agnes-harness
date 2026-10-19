@@ -52,8 +52,6 @@ const STANDARD_KEYS = [
   'tools',
   'mcp',
   'budget',
-  'approval',
-  'sandbox',
   'subagent',
   'ext_ui',
   'hooks',
@@ -76,8 +74,12 @@ function expectPresetShape(name: string): Record<string, unknown> {
 
 describe('standard.yaml', () => {
   const doc = loadPreset('standard')
-  const policy = (doc.approval as { command_policy: Array<{ tool: string; argv: string; action: string }> })
-    .command_policy
+  // The edit/write table is part of the workspace-write permission, merged after every recipe.
+  const policy = (
+    loadPreset('permission-workspace-write').approval as {
+      command_policy: Array<{ tool: string; argv: string; action: string }>
+    }
+  ).command_policy
 
   // The rule ships as a string and whoever compiles it chooses the flags, so the flags are part of
   // the rule and are pinned here rather than left to whatever the call site happens to pass. No
@@ -230,12 +232,13 @@ describe('standard.yaml', () => {
       ],
     })
     expect(doc.mcp).toEqual({ defer: true })
-    expect(doc.sandbox).toEqual({ level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' })
+    // The permission is not the recipe's: sandbox, approval table and subagent isolation come from the
+    // overlay (checked below), so the recipe states none of them.
+    expect(doc.sandbox).toBeUndefined()
+    expect(doc.approval).toBeUndefined()
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
-    // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
-    // parses just as well and is a containment change, so the value is pinned, not just the key.
-    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4, isolation: 'worktree' })
+    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4 })
     expect(doc.ext_ui).toEqual({ input: 'prompt', unattended: 'decline' })
     expect(doc.hooks).toEqual(['session_start', 'tool_call', 'tool_result', 'format_deviation'])
   })
@@ -243,20 +246,34 @@ describe('standard.yaml', () => {
   // The seam between this file and the prompt order table: a typo in `prompt_sections` names a
   // section nobody registered, and assembly would silently drop it. Neither task owns this check,
   // so it lives here, next to the list it validates.
-  it('ships permission presets with paired sandbox and approval policies', () => {
-    expect(loadPreset('workspace-write')).toMatchObject({
-      extends: 'standard',
+  it('ships permission overlays with paired sandbox and approval policies', () => {
+    // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
+    // parses just as well and is a containment change, so the value is pinned, not just the key.
+    expect(loadPreset('permission-workspace-write')).toMatchObject({
       providers: { 'tool-policy': { provider: 'default' } },
-      sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+      sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      subagent: { isolation: 'worktree' },
     })
-    expect(loadPreset('read-only')).toMatchObject({
+    expect(loadPreset('permission-read-only')).toMatchObject({
       providers: { 'tool-policy': { provider: 'read-only' } },
-      sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+      approval: { command_policy: [] },
+      sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      subagent: { isolation: 'shared' },
     })
-    expect(loadPreset('full-access')).toMatchObject({
+    expect(loadPreset('permission-full-access')).toMatchObject({
       providers: { 'tool-policy': { provider: 'full-access' } },
-      sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
+      approval: { command_policy: [] },
+      sandbox: { level: 'L0', on_unavailable: 'allow' },
+      subagent: { isolation: 'worktree' },
     })
+    // An overlay never carries what belongs to the recipe: required isolation and approval delivery.
+    for (const name of ['permission-read-only', 'permission-workspace-write', 'permission-full-access'])
+      expect(JSON.stringify(loadPreset(name))).not.toMatch(/required|on_unavailable":"park|"park"/)
+  })
+
+  it('keeps the permission-level names as aliases of the standard recipe', () => {
+    for (const name of ['read-only', 'workspace-write', 'full-access'])
+      expect(Object.keys(loadPreset(name)).sort()).toEqual(['extends', 'name'])
   })
 
   it('names only registered prompt sections, each supplied by a package that exists', () => {
@@ -361,6 +378,9 @@ describe('standard.yaml', () => {
       'standard-windows',
       'minimal',
       'ptc',
+      'permission-read-only',
+      'permission-workspace-write',
+      'permission-full-access',
     ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])
@@ -401,7 +421,7 @@ describe('claw', () => {
   // platform without L1 is asserted where a host exists to refuse it, in
   // packages/host/test/shipped-presets.test.ts.
   it('declares the L1 sandbox requirement', () => {
-    expect(doc.sandbox).toEqual({ level: 'L1', required: true })
+    expect(doc.sandbox).toEqual({ required: true })
   })
 
   // What is asserted here is only that the file does not restate the rule. That the inherited rule

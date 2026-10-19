@@ -359,7 +359,11 @@ describe('sandbox providers', () => {
       profileInputs: {
         user: { name: 'local-dev', presets: { default: 'workspace-write', allowed: selected } },
       },
-      presets: Object.fromEntries(selected.map((name) => [name, loadPreset(name)])),
+      presets: Object.fromEntries(
+        [...selected, 'permission-read-only', 'permission-workspace-write', 'permission-full-access'].map(
+          (name) => [name, loadPreset(name)],
+        ),
+      ),
       packages: {
         '@agnes/base': {
           sandboxWorkspaceProbe: (input) =>

@@ -561,6 +561,7 @@ export class SessionLogImpl {
       actor: Event['actor']
       agnesVersion: string
       preset: string | null
+      permission?: 'read-only' | 'workspace-write' | 'full-access'
       resolvedProfileHash: string | null
       resolvedPresetHash?: string
       writerRunId: string
@@ -668,6 +669,7 @@ export class SessionLogImpl {
             resolvedProfileHash: opener.resolvedProfileHash,
             ...(opener.resolvedPresetHash ? { resolvedPresetHash: opener.resolvedPresetHash } : {}),
             preset: opener.preset,
+            ...(opener.permission ? { permission: opener.permission } : {}),
             agnesVersion: opener.agnesVersion,
             ...(opener.delegation ? { delegation: opener.delegation } : {}),
           },

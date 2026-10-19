@@ -8,7 +8,7 @@ import { ExitCode, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageE
 import type { Booted, ParsedArgs } from '../types.js'
 
 export const RUN_USAGE =
-  'Advanced composition runner: agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]\nFor an agent, use agh --new --agent <package#agent> -p <prompt>.'
+  'Advanced composition runner: agh run --bundle <package#id|path> --input <file|-> --json [--batch] [--profile <p>] [--preset <p>] [--permission <level>] [--loop <id>@<version>] [--model <slot>=<route>/<model>] [--cwd <dir>]\nFor an agent, use agh --new --agent <package#agent> -p <prompt>.'
 export type RunArgs = {
   bundle: string
   input: string
@@ -35,9 +35,17 @@ export function parseRunArgs(rest: string[]): RunArgs {
       continue
     }
     if (
-      !['--bundle', '--input', '--profile', '--preset', '--agent', '--loop', '--model', '--cwd'].includes(
-        flag,
-      )
+      ![
+        '--bundle',
+        '--input',
+        '--profile',
+        '--preset',
+        '--permission',
+        '--agent',
+        '--loop',
+        '--model',
+        '--cwd',
+      ].includes(flag)
     )
       throw new UsageError(`unknown run option ${flag}\n${RUN_USAGE}`)
     const value = rest[++index]
@@ -186,6 +194,7 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
           runId,
           signal: ac.signal,
           ...(parsed.args.preset ? { preset: parsed.args.preset } : {}),
+          ...(parsed.args.permission ? { permission: parsed.args.permission } : {}),
           ...(parsed.args.loop ? { loop: parsed.args.loop } : {}),
           ...(parsed.args.agent ? { agent: parsed.args.agent } : {}),
           ...(parsed.args.model ? { model: parsed.args.model } : {}),

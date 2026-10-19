@@ -58,6 +58,8 @@ export type ParsedArgs = {
   version: boolean
   profile?: string
   preset?: string
+  /** A permission level, or `default` for the deployment default; travels with `preset` on session/new. */
+  permission?: 'read-only' | 'workspace-write' | 'full-access' | 'default'
   agent?: string
   loop?: LoopSelection
   cwd?: string

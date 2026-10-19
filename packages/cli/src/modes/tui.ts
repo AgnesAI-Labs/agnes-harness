@@ -48,6 +48,7 @@ export async function runTui(
             cwd: io.cwd,
             sessionKey: freshTuiSessionKey(booted.profileName),
             ...(p.preset ? { preset: p.preset } : {}),
+            ...(p.permission ? { permission: p.permission } : {}),
             ...(p.loop ? { loop: p.loop } : {}),
             ...(p.agent ? { agent: p.agent } : {}),
           })

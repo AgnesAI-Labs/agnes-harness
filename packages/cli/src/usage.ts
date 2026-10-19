@@ -45,7 +45,7 @@ export function usage(locale = 'en'): string {
     locale === 'zh-CN'
       ? '高级：运行配置与组合（Bundle / Preset）'
       : 'Advanced: run configuration and composition (Bundle / Preset)',
-    'agh [prompt] --preset <name>     agh config dump [--profile <name>] [--preset <name>]',
+    'agh [prompt] --preset <name> [--permission <level>]     agh config dump [--profile <name>] [--preset <name>]',
     'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
   ].join('\n')
 }

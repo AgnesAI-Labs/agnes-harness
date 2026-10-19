@@ -480,6 +480,10 @@
           "type": "string",
           "maxLength": 128
         },
+        "permission": {
+          "type": "string",
+          "maxLength": 16
+        },
         "sessionKey": {
           "type": "string",
           "maxLength": 512
@@ -5421,6 +5425,10 @@
         "preset": {
           "anyOf": [{ "type": "string" }, { "type": "null" }]
         },
+        "permission": {
+          "type": "string",
+          "maxLength": 16
+        },
         "title": {
           "type": "string",
           "maxLength": 256
@@ -6835,6 +6843,9 @@
               "minLength": 1,
               "maxLength": 256,
               "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            "permission": {
+              "enum": ["read-only", "workspace-write", "full-access"]
             },
             "providers": {
               "type": "object",

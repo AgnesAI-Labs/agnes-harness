@@ -1,6 +1,8 @@
 import { HostError } from '@agnes/host-common/errors'
+import type { Permission } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { normalizeSandboxStaticConfig, sandboxStaticConfigHash } from '@agnes/host-common/workspace-policy'
 import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-selection'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
@@ -17,10 +19,46 @@ import { checkPresetHardRequirements } from './session.js'
  * handlers) must go through first: resolve and validate here, then hand the already-validated value
  * to `session.setPreset()`/`session.setModel()` - never the raw client-supplied name.
  */
-export function validatePresetSwitch(profile: ResolvedProfile, a: Assembled, name: string): ResolvedPreset {
-  const resolved = resolvePreset(name, a.presets, a.sessionPresetLimits())
+export function validatePresetSwitch(
+  profile: ResolvedProfile,
+  a: Assembled,
+  name: string,
+  /** The running session's permission: a recipe switch keeps it, a permission-level name changes it. */
+  carry?: Permission,
+): ResolvedPreset {
+  const resolved = resolvePreset(name, a.presets, {
+    ...a.sessionPresetLimits(),
+    ...(carry ? { carry } : {}),
+  })
   checkPresetHardRequirements(profile, a, resolved, name)
   return resolved
+}
+
+/**
+ * A running session cannot change what its sandbox enforces: the workspace runtime was fitted for it
+ * when it opened. Switching recipe is fine while the sandbox plan is identical; a different
+ * permission level changes the plan and needs a new session. Every entry that applies a switch to a
+ * live session runs this, the in-process ones included.
+ */
+export function assertSandboxUnchanged(
+  a: Assembled,
+  current: { name: string; permission?: Permission },
+  next: ResolvedPreset,
+  target: string,
+): void {
+  const before = resolvePreset(current.name, a.presets, {
+    ...a.sessionPresetLimits(),
+    ...(current.permission ? { permission: current.permission } : {}),
+  })
+  if (
+    sandboxStaticConfigHash(normalizeSandboxStaticConfig(before.doc)) !==
+    sandboxStaticConfigHash(normalizeSandboxStaticConfig(next.doc))
+  )
+    throw new HostError(
+      'E_PRESET_UNSUPPORTED',
+      'changing sandbox permissions requires a new session; select the preset with --preset or in admin session defaults',
+      { detail: { reason: 'workspace-sandbox-change', source: target } },
+    )
 }
 
 /**
@@ -120,7 +158,7 @@ export async function replaySwitchesOnOpen(
   // Names can agree while session/start has restored older model settings. A later preset always
   // supersedes that initial snapshot, even after switching away and back to the original name.
   if (lastPreset) {
-    const resolved = validatePresetSwitch(profile, a, lastPreset.to)
+    const resolved = validatePresetSwitch(profile, a, lastPreset.to, session.preset.permission)
     applyPresetInMemory(
       session,
       pinPresetRoutes(resolved.view, materializeRoutes(resolved.view, profile, a.modelAdapterCatalog())),

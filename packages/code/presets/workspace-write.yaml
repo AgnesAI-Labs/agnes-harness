@@ -1,8 +1,4 @@
-# Default product permission preset: workspace writes, closed command network, shell approvals.
+# Compatibility alias: the standard recipe under the workspace-write permission, which is also the
+# default permission (permission-workspace-write.yaml).
 name: workspace-write
 extends: standard
-
-sandbox: { level: L1, required: false, on_unavailable: allow-if-unimplemented }
-
-providers:
-  tool-policy: { provider: default }

@@ -26,6 +26,9 @@ export const PRESET_NAMES = [
   'standard-windows',
   'minimal',
   'ptc',
+  'permission-read-only',
+  'permission-workspace-write',
+  'permission-full-access',
 ] as const
 export type PresetName = (typeof PRESET_NAMES)[number]
 

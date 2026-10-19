@@ -12,6 +12,15 @@ import {
 import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { HostError } from '@agnes/host-common/errors'
+import { selectionAllowed } from '@agnes/host-common/presets/admission'
+import {
+  aliasedPermission,
+  DEFAULT_PERMISSION,
+  FOLLOW_DEFAULT_PERMISSION,
+  isPermission,
+  legacyPermission,
+  type Permission,
+} from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import { loopPatch } from '@agnes/host-common/profile/composition'
 import { policyDigest } from '@agnes/host-common/profile/policy-digest'
@@ -51,6 +60,13 @@ export type CreateSessionOptions = {
   loop?: LoopSelection
   key?: string
   preset?: string
+  /**
+   * A permission level, or `default` to follow the deployment default. Absent means a legacy request:
+   * a permission-level preset name keeps its level and every other recipe runs under workspace-write.
+   */
+  permission?: string
+  /** Set by the Host from the administrator's defaults; not part of what a caller asks for. */
+  defaultPermission?: Permission
   bundles?: readonly string[]
   /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
   cwd?: string
@@ -110,7 +126,7 @@ export function checkPresetHardRequirements(
       detail: { source: name, ...detail },
     })
   }
-  if (!profile.presets.allowed.includes(name))
+  if (!selectionAllowed(profile, name, resolved.permission))
     unsupported('is not in presets.allowed', { capability: 'preset' })
 
   // hard requirements, checked against what this deployment can actually provide
@@ -265,14 +281,62 @@ function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): b
   }
 }
 
+/**
+ * The recipe and permission a session opens under. A child inherits both from its parent. A request
+ * that names a permission uses it (`default` meaning the deployment default); one that names only a
+ * recipe is a pre-split request, so the recipe's own permission applies and an administrator changing
+ * the default later never moves it; one that names nothing takes both deployment defaults.
+ * `permission: undefined` leaves the choice to the resolver, which then applies exactly that rule.
+ */
+export function sessionSelection(
+  profile: ResolvedProfile,
+  input: {
+    parent?: { name: string; permission?: Permission }
+    preset?: string
+    permission?: string
+    /** An administrator's chosen default; the profile's own default applies when this is absent. */
+    defaultPermission?: Permission
+  },
+): { name: string; permission?: Permission; fallback?: Permission } {
+  const { parent, preset, permission } = input
+  const aliasLevel = preset === undefined ? aliasedPermission(profile.presets.default) : undefined
+  // A profile written before the split names a permission level as its default recipe. That level is
+  // the profile's default permission, which an administrator's default or a `permissions` block
+  // overrides; the recipe is then `standard` under that level, named by its permission-level alias
+  // where the profile allows no other spelling.
+  const defaultPermission =
+    input.defaultPermission ?? profile.permissions?.default ?? aliasLevel ?? DEFAULT_PERMISSION
+  if (parent) return { name: parent.name, ...(parent.permission ? { permission: parent.permission } : {}) }
+  const name =
+    aliasLevel !== undefined && aliasLevel !== defaultPermission
+      ? profile.presets.allowed.includes(defaultPermission)
+        ? defaultPermission
+        : 'standard'
+      : (preset ?? profile.presets.default)
+  // The deployment default is a fallback, not a demand: a recipe that fixes its own permission, or a
+  // permission-level name, keeps what it has instead of failing because the default differs.
+  if (permission === undefined) return preset === undefined ? { name, fallback: defaultPermission } : { name }
+  if (permission === FOLLOW_DEFAULT_PERMISSION) return { name, fallback: defaultPermission }
+  if (!isPermission(permission))
+    throw new HostError('E_PRESET_UNSUPPORTED', 'unknown permission', {
+      detail: { capability: 'permission', source: name },
+    })
+  return { name, permission }
+}
+
 /** Cold recovery may fit a bootstrap model view, only after finding this session's start record. */
 export async function sessionPresetForOpen(
   profile: ResolvedProfile,
   a: Assembled,
   name: string,
   key?: string,
+  choice: { permission?: Permission; fallback?: Permission } = {},
 ): Promise<ResolvedPreset> {
-  const preset = resolvePreset(name, a.presets, a.sessionPresetLimits())
+  const preset = resolvePreset(name, a.presets, {
+    ...a.sessionPresetLimits(),
+    ...(choice.permission ? { permission: choice.permission } : {}),
+    ...(choice.fallback ? { carry: choice.fallback } : {}),
+  })
   if (
     a.retainedModelBootstrap &&
     key &&
@@ -320,12 +384,18 @@ export async function createSession(
     throw new HostError('E_WORKSPACE_REQUIRED', 'session has no authoritative workspace', {
       detail: { reason: 'workspace-binding-required' },
     })
-  const name = parentSession?.preset.name ?? opts.preset ?? profile.presets.default
-  if (!profile.presets.allowed.includes(name))
+  const selection = sessionSelection(profile, {
+    ...(parentSession ? { parent: parentSession.preset } : {}),
+    ...(opts.preset !== undefined ? { preset: opts.preset } : {}),
+    ...(opts.permission !== undefined ? { permission: opts.permission } : {}),
+    ...(opts.defaultPermission !== undefined ? { defaultPermission: opts.defaultPermission } : {}),
+  })
+  const name = selection.name
+  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback ?? legacyPermission(name)))
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
       detail: { source: name, capability: 'preset' },
     })
-  const preset = await sessionPresetForOpen(profile, a, name, opts.key ?? opts.binding?.sessionKey)
+  const preset = await sessionPresetForOpen(profile, a, name, opts.key ?? opts.binding?.sessionKey, selection)
 
   // 2 hard requirements, checked against what this deployment can actually provide.
   // checkPresetHardRequirements repeats the allowed-list check above - harmless here since `name`

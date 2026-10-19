@@ -48,6 +48,9 @@ describe('delivered preset schema conformance', () => {
       'full-access',
       'minimal',
       'minimal-rl',
+      'permission-full-access',
+      'permission-read-only',
+      'permission-workspace-write',
       'ptc',
       'read-only',
       'standard',
@@ -57,7 +60,9 @@ describe('delivered preset schema conformance', () => {
     for (const [name, doc] of Object.entries(docs)) {
       const before = JSON.stringify(doc)
       expect(validatePreset(doc), `${name}: raw YAML`).toMatchObject({ ok: true })
-      expect(validatePreset(resolvePreset(name, docs).doc), `${name}: merged`).toMatchObject({ ok: true })
+      // An overlay is not a recipe: it is checked raw above and exercised by every merge below.
+      if (!name.startsWith('permission-'))
+        expect(validatePreset(resolvePreset(name, docs).doc), `${name}: merged`).toMatchObject({ ok: true })
       expect(JSON.stringify(doc), `${name}: validation must not fill defaults`).toBe(before)
     }
   })
@@ -65,42 +70,40 @@ describe('delivered preset schema conformance', () => {
 
 // This follows the default assembly and session entry points; direct validatePreset alone would
 // stay green if production forgot to call the validator or supplied a different default document.
+const recipes = Object.keys(docs).filter((name) => !name.startsWith('permission-'))
 describe('shipped presets through host assembly and session creation', () => {
-  it.each(Object.keys(docs))(
-    '%s opens from its exact shipped YAML through the real resolver',
-    async (name) => {
-      const { mkdtempSync, rmSync } = await import('node:fs')
-      const { tmpdir } = await import('node:os')
-      const { join } = await import('node:path')
-      const { createTestHost } = await import('../testkit/index.js')
-      const dataDir = mkdtempSync(join(tmpdir(), 'agnes-preset-schema-'))
-      const { base, ...product } = docs
-      if (!base) throw new Error('missing base recipe')
-      const { host } = await createTestHost({
-        dataDir,
-        allowed: Object.keys(docs),
-        packages: { '@agnes/base': { presets: { base } }, '@agnes/code': { presets: product, runtimes } },
+  it.each(recipes)('%s opens from its exact shipped YAML through the real resolver', async (name) => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { createTestHost } = await import('../testkit/index.js')
+    const dataDir = mkdtempSync(join(tmpdir(), 'agnes-preset-schema-'))
+    const { base, ...product } = docs
+    if (!base) throw new Error('missing base recipe')
+    const { host } = await createTestHost({
+      dataDir,
+      allowed: recipes,
+      packages: { '@agnes/base': { presets: { base } }, '@agnes/code': { presets: product, runtimes } },
+    })
+    try {
+      const session = await host.createSession({
+        cwd: dataDir,
+        ...(name === 'standard' ? {} : { preset: name }),
       })
-      try {
-        const session = await host.createSession({
-          cwd: dataDir,
-          ...(name === 'standard' ? {} : { preset: name }),
-        })
-        const start = (await session.scan({ type: 'session/start', limit: 1 }))[0]
-        expect(start?.data).toMatchObject({
-          preset: name,
-        })
-        expect(session.preset.name).toBe(name)
-        const resolved = resolvePreset(name, docs).view
-        expect(session.toolPolicy().id).toBe(resolved.approval.policy ?? 'default')
-        expect(session.preset.compaction).toEqual(resolved.compaction)
-        expect(session.preset.budget).toEqual(resolved.budget)
-      } finally {
-        await host.close()
-        rmSync(dataDir, { recursive: true, force: true })
-      }
-    },
-  )
+      const start = (await session.scan({ type: 'session/start', limit: 1 }))[0]
+      expect(start?.data).toMatchObject({
+        preset: name,
+      })
+      expect(session.preset.name).toBe(name)
+      const resolved = resolvePreset(name, docs).view
+      expect(session.toolPolicy().id).toBe(resolved.approval.policy ?? 'default')
+      expect(session.preset.compaction).toEqual(resolved.compaction)
+      expect(session.preset.budget).toEqual(resolved.budget)
+    } finally {
+      await host.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
   it('the default assembly refuses an unknown nested field before a session can open', async () => {
     const { mkdtempSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')

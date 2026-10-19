@@ -1,9 +1,3 @@
-# Explicit opt-in: ordinary tool approvals are disabled; private providers can still require OS isolation.
-# Principal authorization and hard secret/integrity denials remain authoritative.
+# Compatibility alias: the standard recipe under the full-access permission (permission-full-access.yaml).
 name: full-access
 extends: standard
-approval: { command_policy: [] }
-sandbox: { level: L0, required: false, on_unavailable: allow }
-
-providers:
-  tool-policy: { provider: full-access }

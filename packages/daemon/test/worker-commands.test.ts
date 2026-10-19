@@ -195,6 +195,8 @@ describe('worker command dispatch against a real host+session', () => {
   it('ping reports lastSeq and projectUI/projectUIPatch cross the worker command boundary', async () => {
     const t = await openTestHost({ script: [say('hi')] })
     const session = await t.host.createSession({ cwd: t.dataDir })
+    // Stands in for a level the Host resolved; this test Host ships no permission overlays.
+    Object.assign(session, { preset: { ...session.preset, permission: 'read-only' } })
     const aborts = new Map<string, AbortController>()
     const ping = (await handleCommand(
       session,
@@ -203,11 +205,13 @@ describe('worker command dispatch against a real host+session', () => {
     )) as {
       ok: boolean
       lastSeq: number
+      permission?: string
     }
     expect(ping).toEqual({
       ok: true,
       lastSeq: session.lastSeq,
       preset: session.preset.name,
+      permission: 'read-only',
       parent: null,
     })
     const timeline = (await handleCommand(

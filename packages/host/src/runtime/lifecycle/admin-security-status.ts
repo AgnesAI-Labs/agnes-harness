@@ -1,3 +1,5 @@
+import { allowedPermissions } from '@agnes/host-common/presets/admission'
+import { overlayName, type Permission } from '@agnes/host-common/presets/permission'
 import { presetProvider } from '@agnes/host-common/presets/provider'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -7,6 +9,34 @@ import type { PlatformBackend } from '@agnes/host-infrastructure/adapters/platfo
 import type { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
 import type { HostSession } from './host.js'
+
+/** What a recipe, or a recipe under one permission level, grants: sandbox, approval policy, network. */
+function securityPolicy(
+  id: string,
+  presets: Record<string, PresetDoc>,
+  profile: ResolvedProfile,
+  permission?: Permission,
+) {
+  // A permission level is shown on the standard recipe; a recipe is shown under its own level.
+  const doc = resolvePreset(permission ? 'standard' : id, presets, {
+    limits: profile.limits,
+    ...(permission ? { permission } : {}),
+  }).doc
+  const sandbox = normalizeSandboxStaticConfig(doc)
+  return {
+    id,
+    level: sandbox.level,
+    required: sandbox.required,
+    onUnavailable: sandbox.onUnavailable,
+    approvalPolicy: presetProvider(doc, 'tool-policy') ?? 'default',
+    networkMode:
+      sandbox.level === 'L0'
+        ? ('unrestricted' as const)
+        : sandbox.networkAllow.length
+          ? ('allow-list' as const)
+          : ('deny' as const),
+  }
+}
 
 export function adminSecurityStatus(
   profile: ResolvedProfile,
@@ -28,30 +58,18 @@ export function adminSecurityStatus(
           }
         : { level: 'unprobed', scope: [] },
     },
-    presetPolicies: profile.presets.allowed.map((id) => {
-      const doc = resolvePreset(id, presets, { limits: profile.limits }).doc
-      const sandbox = normalizeSandboxStaticConfig(doc)
-      const approvalPolicy = presetProvider(doc, 'tool-policy') ?? 'default'
-      return {
-        id,
-        level: sandbox.level,
-        required: sandbox.required,
-        onUnavailable: sandbox.onUnavailable,
-        approvalPolicy,
-        networkMode:
-          sandbox.level === 'L0'
-            ? ('unrestricted' as const)
-            : sandbox.networkAllow.length
-              ? ('allow-list' as const)
-              : ('deny' as const),
-      }
-    }),
+    presetPolicies: profile.presets.allowed.map((id) => securityPolicy(id, presets, profile)),
+    // A catalogue without the permission documents (a hand-built one) has nothing to describe.
+    permissionPolicies: allowedPermissions(profile)
+      .filter((permission) => presets[overlayName(permission)] !== undefined)
+      .map((permission) => securityPolicy(permission, presets, profile, permission)),
     workspaces: [...sessions].map((session) => {
       const workspace = workspaces.securityStatus(session.key)
       return {
         sessionId: session.key,
         path: workspace?.root ?? session.workspaceRoot,
         preset: session.preset.name,
+        ...(session.preset.permission ? { permission: session.preset.permission } : {}),
         provider: profile.sandbox?.provider ?? 'local',
         state: workspace?.state ?? 'unavailable',
         ...(workspace?.policyDigest ? { policyDigest: workspace.policyDigest } : {}),

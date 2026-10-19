@@ -323,6 +323,7 @@
         },
         "presetId": { "type": ["string", "null"], "maxLength": 128 },
         "resolvedPresetHash": { "type": ["string", "null"], "maxLength": 128 },
+        "permission": { "enum": ["read-only", "workspace-write", "full-access"] },
         "platform": {
           "type": "object",
           "additionalProperties": false,

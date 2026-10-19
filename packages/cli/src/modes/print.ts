@@ -84,6 +84,10 @@ export function refuseWhatCannotBeHonoured(p: ParsedArgs): void {
     )
   if (p.preset !== undefined && (p.continue || resumedSessionId(p) !== undefined))
     throw new UsageError('--preset cannot be applied to a resumed session: session/load takes no preset')
+  if (p.permission !== undefined && (p.continue || resumedSessionId(p) !== undefined))
+    throw new UsageError(
+      '--permission cannot be applied to a resumed session: session/load takes no permission',
+    )
 }
 
 async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<Session> {
@@ -101,6 +105,7 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   return booted.client.session.new({
     cwd,
     ...(p.preset ? { preset: p.preset } : {}),
+    ...(p.permission ? { permission: p.permission } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
     ...(p.agent ? { agent: p.agent } : {}),
     ...(p.agent || p.loop || p.newSession

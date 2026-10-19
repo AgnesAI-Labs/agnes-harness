@@ -53,7 +53,7 @@ const hostFor = async (
       '@agnes/base': { presets: basePresets as Record<string, PresetDoc> },
       '@agnes/code': { runtimes },
     },
-    allowed: [...PRESET_NAMES],
+    allowed: [...RECIPES],
     ...(platformCaps ? { platformCaps } : {}),
     script: [
       () => [
@@ -63,11 +63,14 @@ const hostFor = async (
     ],
   })
 
+// Permission overlays are merged after a recipe; they are not recipes a session can open.
+const RECIPES = PRESET_NAMES.filter((name) => !name.startsWith('permission-'))
+
 describe('the shipped presets, loaded from disk', () => {
   // One Host and one session per shipped recipe: each is about a second on the Windows runner.
   it('every registered recipe is a document the assembly accepts and a session opens on', async () => {
-    expect(PRESET_NAMES.length).toBeGreaterThan(0)
-    for (const name of PRESET_NAMES) {
+    expect(RECIPES.length).toBeGreaterThan(0)
+    for (const name of RECIPES) {
       const dataDir = tmp()
       const t = await hostFor(dataDir, name)
       try {

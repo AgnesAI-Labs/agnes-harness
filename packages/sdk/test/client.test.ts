@@ -721,7 +721,7 @@ it('gives auth.build an isolated snapshot of the completed handshake fields', as
   }
 })
 
-it('carries validated loop, preset and ordered bundles on new-session metadata', async () => {
+it('carries validated loop, preset, permission and ordered bundles on new-session metadata', async () => {
   const f = fakeEndpoint({
     initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
     'session/new': () => ({ sessionId: 'loop-session' }),
@@ -736,6 +736,7 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
     await c.createSession({ cwd: '/w', loop })
     await c.session.new({ cwd: '/w', agent: 'acme/kit#work' })
     await c.session.new({ cwd: '/w', loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] })
+    await c.createSession({ cwd: '/w', preset: 'standard', permission: 'full-access' })
     expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { agent: 'acme/kit#work' } } },
@@ -744,6 +745,7 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
         mcpServers: [],
         _meta: { [META_KEY]: { loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] } },
       },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { preset: 'standard', permission: 'full-access' } } },
     ])
     await expect(c.createSession({ cwd: '/w', loop: { id: '', version: '1' } })).rejects.toThrow('nonempty')
     await expect(c.session.new({ cwd: '/w', bundles: ['same', 'same'] })).rejects.toThrow('unique')
@@ -751,6 +753,9 @@ it('carries validated loop, preset and ordered bundles on new-session metadata',
     await expect(c.session.new({ cwd: '/w', agent: 'missing-ref' })).rejects.toThrow('package#bundle')
     await expect(c.session.new({ cwd: '/w', agent: '' })).rejects.toThrow('package#bundle')
     await expect(c.session.new({ cwd: '/w', agent: 'acme/kit#work', loop })).rejects.toThrow('overrides')
+    await expect(
+      c.session.new({ cwd: '/w', agent: 'acme/kit#work', permission: 'read-only' }),
+    ).rejects.toThrow('overrides')
   } finally {
     await c.close()
   }

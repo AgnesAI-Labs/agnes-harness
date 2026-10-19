@@ -3297,10 +3297,11 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
   },
   NewSessionMeta: {
-    valid: {},
+    valid: { preset: 'standard', permission: 'default' },
     invalid: [
       { preset: 123 }, // wrong type
       { preset: rep(129) }, // boundary: maxLength:128
+      { permission: rep(17) }, // boundary: maxLength:16
       { sessionKey: rep(513) }, // boundary: maxLength:512
     ],
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
@@ -4160,7 +4161,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{ events: [], lastSeq: 0 }],
   },
   SessionMeta: {
-    valid: { sessionId: 's', createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' },
+    valid: {
+      sessionId: 's',
+      createdAt: '2026-09-10T00:00:00Z',
+      lastSeq: 3,
+      generation: 1,
+      preset: 'code',
+      permission: 'full-access',
+    },
     invalid: [
       { createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' }, // missing sessionId
       {
@@ -4176,6 +4184,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
         lastSeq: 3,
         generation: -1, // unopened sessions may have generation zero
         preset: 'code',
+      },
+      {
+        sessionId: 's',
+        createdAt: '2026-09-10T00:00:00Z',
+        lastSeq: 3,
+        generation: 1,
+        preset: 'code',
+        permission: rep(17), // boundary: maxLength:16
       },
     ],
     note: 'one page row of session.list; lastSeq/generation boundaries and the five required fields',

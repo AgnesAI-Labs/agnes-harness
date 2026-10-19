@@ -231,6 +231,7 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    permission?: string
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]

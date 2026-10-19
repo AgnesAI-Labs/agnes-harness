@@ -93,6 +93,7 @@ import {
 } from './configuration-payload-only.js'
 import { presentationSnapshot, updatePresentation } from './configuration-presentation.js'
 import { payloadOnlyRoutes } from './payload-only-routes.js'
+import { permissionLevelDefaults } from './session-defaults-permission.js'
 
 type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
 
@@ -1382,7 +1383,7 @@ export function createConfigurationService(
       }),
     async sessionDefaults() {
       const state = await loadState()
-      return { revision: state?.revision ?? 0, defaults: structuredClone(state?.sessionDefaults ?? {}) }
+      return { revision: state?.revision ?? 0, defaults: permissionLevelDefaults(state?.sessionDefaults) }
     },
     saveSessionDefaults: (input) =>
       serialized(async () => {

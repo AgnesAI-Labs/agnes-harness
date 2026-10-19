@@ -55,6 +55,7 @@ type SessionWorkerAcquireOptions = Readonly<{
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  permission?: string
   agent?: string
   agentDigest?: string
   bundles?: readonly string[]
@@ -257,12 +258,12 @@ export class WorkerPool {
     if (!slot) throw new Error('shared worker slot disappeared')
     const existing = slot.channels.get(sessionKey)
     if (existing?.alive) return existing
-    let channel: WorkerSessionChannel
-    channel = link.session(
+    const channel: WorkerSessionChannel = link.session(
       sessionKey,
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.permission ? { permission: opts.permission } : {}),
         ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
         ...(opts.agentDigest !== undefined ? { agentDigest: opts.agentDigest } : {}),
         ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),

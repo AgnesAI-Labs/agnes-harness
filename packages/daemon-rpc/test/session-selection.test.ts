@@ -31,7 +31,8 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
   const catalog = () =>
     hostSessionCatalog({
       profile: {
-        presets: { default: 'workspace-write', allowed: ['read-only', 'workspace-write', 'full-access'] },
+        presets: { default: 'standard', allowed: ['standard', 'minimal'] },
+        permissions: { default: 'workspace-write', allowed: ['read-only', 'workspace-write'] },
         provider: { routes: [] },
       },
       kernel: { loops: { catalog: () => [loop] } },
@@ -72,7 +73,7 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     expect(await request(ep, 'reloadLocal')).toMatchObject({ result: {} })
     expect(rescanned).toBe(true)
     expect(await request(ep, 'loops')).toMatchObject({
-      result: { loops: [loop], presets: ['read-only', 'workspace-write', 'full-access'] },
+      result: { loops: [loop], presets: ['standard', 'minimal'] },
     })
     expect(await request(ep, 'modelAdapters')).toMatchObject({
       result: { modelAdapters: [{ ...adapter, models: [{ id: 'model', route: 'account' }] }] },
@@ -80,7 +81,8 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     const input = {
       revision: 0,
       defaults: {
-        preset: 'read-only',
+        preset: 'minimal',
+        permission: 'read-only',
         providers: {
           loop: { provider: loop.id, version: loop.version },
           'model-adapter': { provider: adapter.id, version: adapter.version },

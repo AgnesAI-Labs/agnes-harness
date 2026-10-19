@@ -264,6 +264,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     seamBindings: () => t.bootRows.boundSeams(),
     modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
     sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
+    sessionPermissionDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.permission,
     sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
     sessionModelSlots: () => sessionConfiguration.modelSlots(),
     compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),

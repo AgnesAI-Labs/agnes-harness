@@ -69,8 +69,8 @@ describe('checkCommandRule', () => {
     // Unlike a top-level `|`, one inside `(...)` cannot let the match skip the leading `/`.
     expect(checkCommandRule({ tool: 'edit', argv: '^/(a|b)/', action: 'allow' })).toBeUndefined()
   })
-  it('accepts the shipped standard preset absolute-path rule at session open', () => {
-    const approval = loadPreset('standard').approval as { command_policy: CommandRule[] }
+  it('accepts the shipped workspace-write absolute-path rule at session open', () => {
+    const approval = loadPreset('permission-workspace-write').approval as { command_policy: CommandRule[] }
     expect(approval.command_policy).toContainEqual(
       expect.objectContaining({ tool: 'edit|write', action: 'allow' }),
     )

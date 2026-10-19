@@ -27,6 +27,8 @@ export type AdminModelAdapter = Readonly<{
 /** Admin defaults select providers in the same `providers.<kind>` table as every other artifact. */
 export type SessionDefaults = Readonly<{
   preset?: string
+  /** The permission level new sessions start under when the request names none. */
+  permission?: 'read-only' | 'workspace-write' | 'full-access'
   providers?: Readonly<{
     loop?: Readonly<{ provider: string; version: string }>
     'model-adapter'?: Readonly<{ provider: string; version: string }>
@@ -55,6 +57,7 @@ export type SessionDefaultsSnapshot = Readonly<{
 export type SessionDefaultsUpdate = SessionDefaultsSnapshot
 export interface AdminSessionCatalog {
   presets?(): Promise<readonly string[]>
+  permissions?(): Promise<readonly string[]>
   loops(): Promise<readonly AdminLoop[]>
   modelAdapters(): Promise<readonly AdminModelAdapter[]>
 }
@@ -63,6 +66,7 @@ export interface AdminSessionSelection extends AdminSessionCatalog {
   saveDefaults(input: SessionDefaultsUpdate): Promise<SessionDefaultsSnapshot>
 }
 
+const PERMISSION_LEVELS = ['read-only', 'workspace-write', 'full-access'] as const
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): value is string =>
@@ -77,9 +81,10 @@ const keys = (value: Record<string, unknown>, allowed: readonly string[]) =>
   Object.keys(value).every((key) => allowed.includes(key))
 
 export function isSessionDefaults(value: unknown): value is SessionDefaults {
-  if (!record(value) || !keys(value, ['preset', 'providers', 'model'])) return false
-  const { preset, providers, model } = value
+  if (!record(value) || !keys(value, ['preset', 'permission', 'providers', 'model'])) return false
+  const { preset, permission, providers, model } = value
   if (preset !== undefined && !text(preset)) return false
+  if (permission !== undefined && !PERMISSION_LEVELS.includes(permission as never)) return false
   if (model !== undefined && !text(model)) return false
   if (providers === undefined) return model === undefined
   if (!record(providers) || !keys(providers, ['loop', 'model-adapter'])) return false

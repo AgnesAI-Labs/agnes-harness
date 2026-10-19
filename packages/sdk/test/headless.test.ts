@@ -65,6 +65,8 @@ it('streams durable JSONL records and per-turn usage, without reusing a session 
         cwd: '/workspace',
         input: 'Hello',
         runId: 'run-1',
+        preset: 'standard',
+        permission: 'read-only',
         write: (record) => {
           records.push(record)
         },
@@ -90,7 +92,13 @@ it('streams durable JSONL records and per-turn usage, without reusing a session 
       },
     })
     expect(f.calls.find((row) => row.method === 'session/new')?.params).toMatchObject({
-      _meta: { [META_KEY]: { sessionKey: expect.stringMatching(/^agnes:headless:/) } },
+      _meta: {
+        [META_KEY]: {
+          sessionKey: expect.stringMatching(/^agnes:headless:/),
+          preset: 'standard',
+          permission: 'read-only',
+        },
+      },
     })
     expect(f.calls.at(-1)?.method).toBe('_agnes/v1/session.detach')
   } finally {
