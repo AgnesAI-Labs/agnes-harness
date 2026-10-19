@@ -462,6 +462,10 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
   const pinsRelease = vi.fn(async (ids: string[]) => ({
     results: ids.map((pinId) => ({ pinId, outcome: 'released' as const })),
   }))
+  const pinsInspect = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('forbidden'))
+    .mockResolvedValue({ orphans: [pin] })
   const root = createRoot(host)
   const runtime = vi.fn(async () => {
     throw new Error('unavailable catalog')
@@ -495,9 +499,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     ),
   )
   try {
-    const admin = adminOf({ runtime, pinsInspect: async () => ({ orphans: [pin] }), pinsRelease }, [
-      'packages.remove',
-    ])
+    const admin = adminOf({ runtime, pinsInspect, pinsRelease }, ['packages.remove'])
     flushSync(() => root.render(createElement(SettingsPages, { admin })))
     await vi.waitFor(() =>
       expect(host.querySelector('[data-testid="diagnostics-doctor"]')?.getAttribute('aria-busy')).toBe(
@@ -510,15 +512,17 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
     expect(host.querySelector('[data-testid="runtime-generations"]')).toBeNull()
     // Leftover plugin files are read and released here, without the plugins page being open.
-    // Leftover files are the first record of the 运行详情 subpage, opened in place.
+    // Cleanup opens directly from diagnostics, without loading technical runtime details.
     expect(host.querySelector('[data-testid="runtime-occupancy"]')).toBeNull()
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="plugin-diagnostics"]')?.click(),
-    )
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="runtime-pins-toggle"]')?.click(),
-    )
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="runtime-pins"]')!.click())
+    expect(runtime).not.toHaveBeenCalled()
     const occupancy = host.querySelector<HTMLElement>('[data-testid="runtime-occupancy"]')
+    await vi.waitFor(() => expect(occupancy?.textContent).toContain('Unable to check plugin cleanup status'))
+    expect(occupancy?.querySelector('[data-testid="pin-row"]')).toBeNull()
+    expect(occupancy?.textContent).not.toContain('No retention records need cleanup')
+    const retry = occupancy?.querySelector<HTMLButtonElement>('button')
+    expect(retry?.textContent).toBe('Retry')
+    await act(async () => retry!.click())
     await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).not.toBeNull())
     expect(occupancy?.textContent).toContain('@acme/tool 1.0.0')
     await act(async () => occupancy?.querySelector<HTMLButtonElement>('[data-testid="pin-release"]')?.click())
@@ -531,7 +535,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     // The page names itself once; the open subpage has its own title and the refresh.
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
       'Runtime & diagnostics',
-      'Technical details',
+      'Plugin file cleanup',
     ])
     expect(
       host.querySelector('[data-testid="settings-subpage-header"] [data-testid="settings-refresh"]'),

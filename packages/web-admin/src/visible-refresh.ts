@@ -1,9 +1,11 @@
 /** Visible admin reads: no timer, one concurrent read, one follow-up for invalidations in flight. */
 export function visibleRefresh(
-  read: () => Promise<void>,
+  read: () => Promise<void | boolean>,
   events: readonly string[] = [],
   deferInvalidation = () => false,
+  freshForMs: number | (() => number) = 0,
 ) {
+  let lastRead = Number.NEGATIVE_INFINITY
   let stopped = false
   let dirty = false
   let pending: Promise<void> | undefined
@@ -19,7 +21,9 @@ export function visibleRefresh(
         do {
           dirty = false
           if (stopped || !visible()) break
-          await read()
+          lastRead = Number.NEGATIVE_INFINITY
+          const succeeded = await read()
+          lastRead = succeeded === false ? Number.NEGATIVE_INFINITY : Date.now()
         } while (dirty && !stopped && visible() && !deferInvalidation())
       } finally {
         pending = undefined
@@ -32,10 +36,13 @@ export function visibleRefresh(
     if (!deferInvalidation()) void request().catch(() => undefined)
   }
   const wake = () => {
-    if (visible()) invalidate()
+    const freshness = typeof freshForMs === 'function' ? freshForMs() : freshForMs
+    if (!visible() || pending || (!dirty && Date.now() - lastRead < freshness)) return
+    if (deferInvalidation()) dirty = true
+    else void request().catch(() => undefined)
   }
   for (const event of events) window.addEventListener(event, invalidate)
-  window.addEventListener('online', wake)
+  window.addEventListener('online', invalidate)
   window.addEventListener('focus', wake)
   document.addEventListener('visibilitychange', wake)
   return {
@@ -45,7 +52,7 @@ export function visibleRefresh(
       stopped = true
       dirty = false
       for (const event of events) window.removeEventListener(event, invalidate)
-      window.removeEventListener('online', wake)
+      window.removeEventListener('online', invalidate)
       window.removeEventListener('focus', wake)
       document.removeEventListener('visibilitychange', wake)
     },

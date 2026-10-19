@@ -545,7 +545,7 @@ it('coalesces pending-review reads and rejects a response invalidated in flight'
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
   vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
   vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
-  vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockResolvedValue({ orphans: [] } as never)
+  const pins = vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockRejectedValue(new Error('forbidden'))
   let hidden = false
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
   const reads: ((value: unknown) => void)[] = []
@@ -573,6 +573,13 @@ it('coalesces pending-review reads and rejects a response invalidated in flight'
     await act(async () => root.render(createElement(PluginsPage, { context })))
     await vi.waitFor(() => expect(reads.length).toBe(1))
     await act(async () => reads[0]?.({ candidates: [] }))
+    expect(pins).not.toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="plugin-held-versions"]')).toBeNull()
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(reads).toHaveLength(1)
     await act(async () => window.dispatchEvent(new Event('agnes:candidates-changed')))
     await vi.waitFor(() => expect(reads.length).toBe(2))
     await act(async () => window.dispatchEvent(new Event('agnes:candidate-count-changed')))

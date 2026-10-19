@@ -56,14 +56,18 @@ import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { manageExample } from './example-parent.js'
 import { InstallFlow, operationFailure } from './install-flow.js'
-import { rememberInventory, seededState } from './inventory-cache.js'
+import {
+  INVENTORY_FRESH_MS,
+  readInventorySnapshot,
+  rememberInventory,
+  seededState,
+} from './inventory-cache.js'
 import {
   bundledUpdate,
   bundledUpdateAction,
   canCombineUpdate,
   hasClientContribution,
   isClientOnly,
-  readBundledCatalog,
   safeMessage,
   sourceForCatalog,
 } from './model.js'
@@ -516,11 +520,13 @@ export class PluginAdminPage {
     return bundledUpdate(item, this.#bundledCatalog)
   }
 
+  #reuseInventory = true
   #refreshOptions: { preserveError?: boolean } = {}
   readonly #refresh = visibleRefresh(
     () => this.readInventory(),
     ['agnes:plugins-invalidated'],
     () => this.#submittingPackages.size > 0 || this.#operationBackoff.active,
+    () => (this.#surface ? INVENTORY_FRESH_MS : 0),
   )
 
   refresh(options: { preserveError?: boolean } = {}): Promise<void> {
@@ -528,8 +534,10 @@ export class PluginAdminPage {
     return this.#refresh.request()
   }
 
-  private async readInventory(): Promise<void> {
-    if (this.#lifetime.signal.aborted) return
+  private async readInventory(): Promise<boolean> {
+    if (this.#lifetime.signal.aborted) return false
+    const reuse = this.#reuseInventory && !!this.#surface
+    this.#reuseInventory = false
     const generation = ++this.#generation
     this.#state = {
       ...this.#state,
@@ -540,7 +548,7 @@ export class PluginAdminPage {
     let resolvedContext: AdminContext | undefined
     try {
       const context = await PluginAdminApi.context()
-      if (generation !== this.#generation) return
+      if (generation !== this.#generation) return false
       resolvedContext = context
       if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api)
         this.#api = new PluginAdminApi(context)
@@ -548,15 +556,9 @@ export class PluginAdminPage {
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
       // Independent read models can load together. Optional feeds never block a valid inventory.
-      const [list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog] = await Promise.all([
-        this.#api.list(),
-        this.#api.surfaceLinks().catch(() => undefined),
-        this.#api.treeList().catch(() => undefined),
-        this.#api.runtime().catch(() => undefined),
-        this.#api.composition().catch(() => undefined),
-        readBundledCatalog(this.#api).catch(() => []),
-      ])
-      if (generation !== this.#generation) return
+      const { list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog } =
+        await readInventorySnapshot(this.#api, context, reuse)
+      if (generation !== this.#generation) return false
       this.#bundledCatalog = bundledCatalog
       this.#presentationRuntime = runtimeCatalog
       this.#presentationComposition = composition
@@ -573,30 +575,32 @@ export class PluginAdminPage {
         connection: 'connected',
       })
       this.render()
-      try {
-        const { orphans } = await this.#api.pinsInspect()
-        if (generation !== this.#generation) return
-        this.#orphanPinList = [...orphans]
-        this.#orphanPinErrors = new Map()
-        this.#orphanPinNotice = undefined
-        this.#orphanPinFetchError = undefined
-      } catch (error) {
-        // Orphan-pin visibility is supplementary to the primary installed-package view above;
-        // a failure here must not turn an otherwise-successful refresh into an offline state. But
-        // a stale list must not keep being shown as current once it is no longer verified, and the
-        // failure must be visible rather than silent -- so clear the list and surface a status.
-        if (generation !== this.#generation) return
-        this.#orphanPinList = []
-        this.#orphanPinErrors = new Map()
-        this.#orphanPinFetchError = {
-          detail: safeMessage(error),
-          localize: !(error instanceof AdminApiError),
+      if (!this.#surface) {
+        try {
+          const { orphans } = await this.#api.pinsInspect()
+          if (generation !== this.#generation) return false
+          this.#orphanPinList = [...orphans]
+          this.#orphanPinErrors = new Map()
+          this.#orphanPinNotice = undefined
+          this.#orphanPinFetchError = undefined
+        } catch (error) {
+          // Orphan-pin visibility is supplementary to the primary installed-package view above;
+          // a failure here must not turn an otherwise-successful refresh into an offline state. But
+          // a stale list must not keep being shown as current once it is no longer verified, and the
+          // failure must be visible rather than silent -- so clear the list and surface a status.
+          if (generation !== this.#generation) return false
+          this.#orphanPinList = []
+          this.#orphanPinErrors = new Map()
+          this.#orphanPinFetchError = {
+            detail: safeMessage(error),
+            localize: !(error instanceof AdminApiError),
+          }
         }
       }
       this.restoreOperations(context)
       if (this.#tab === 'discover') await this.loadCatalog()
     } catch (error) {
-      if (generation !== this.#generation) return
+      if (generation !== this.#generation) return false
       const detail = safeMessage(error)
       this.#state = {
         ...this.#state,
@@ -609,6 +613,7 @@ export class PluginAdminPage {
       }
     }
     this.render()
+    return this.#state.connection === 'connected'
   }
 
   async selectTab(tab: 'installed' | 'discover'): Promise<void> {

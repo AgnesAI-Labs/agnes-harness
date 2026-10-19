@@ -62,7 +62,7 @@ export type AdminPageState = {
   operations: ReadonlyMap<string, PackageOperation>
   /** Browser-only module truth; backend desired/actual remain authoritative separately. */
   runtime: ReadonlyMap<string, PluginRuntimeState>
-  /** True only after the current page successfully read the installed inventory. */
+  /** True after checking the current context and reading a fresh inventory snapshot. */
   inventoryAuthoritative: boolean
   /** The last terminal DTO is retained only for an honest completion notice. */
   lastOperation?: PackageOperation | undefined
