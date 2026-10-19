@@ -402,6 +402,7 @@ it.each([false, true])(
       await vi.waitFor(() => expect(host.querySelectorAll('[data-application]')).toHaveLength(1))
       expect(host.querySelectorAll('.application-roles li')).toHaveLength(5)
       expect(host.textContent).toContain('5 role agents')
+      expect(host.querySelectorAll('.application-roles li button')).toHaveLength(offline ? 1 : 0)
       expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(0)
     } finally {
       await act(async () => root.unmount())

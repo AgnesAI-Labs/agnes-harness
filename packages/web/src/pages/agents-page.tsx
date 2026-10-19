@@ -135,6 +135,7 @@ function AgentList({
             key={entry.id}
             entry={entry}
             data={data}
+            startableAgents={cards.map((card) => card.ref)}
             onStartAgent={
               cards.some((card) => card.entry.id === entry.id)
                 ? (ref) => {

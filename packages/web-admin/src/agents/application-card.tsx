@@ -62,10 +62,12 @@ export function ApplicationCard({
   entry,
   data,
   onStartAgent,
+  startableAgents,
 }: {
   entry: PackageCatalogDescriptor | PackageInstalledDescriptor
   data: BusinessAgentsData
   onStartAgent?: ((ref: string) => void) | undefined
+  startableAgents?: readonly string[] | undefined
 }) {
   const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const tr = (en: string, zh: string) => (locale === 'zh-CN' ? zh : en)
@@ -161,7 +163,7 @@ export function ApplicationCard({
               <li key={agent.ref}>
                 <strong>{agent.launch.title[locale] ?? agent.launch.title.en}</strong>
                 <p>{agent.launch.description[locale] ?? agent.launch.description.en}</p>
-                {ready && onStartAgent && (
+                {ready && onStartAgent && (!startableAgents || startableAgents.includes(agent.ref)) && (
                   <Button onClick={() => onStartAgent(agent.ref)}>{t('start')}</Button>
                 )}
               </li>
