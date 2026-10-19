@@ -78,8 +78,18 @@ vi.mock('@agnes/web-ui', () => ({
 
 it('seeds loaded surfaces on every session and reveals only first appearances', () => {
   let switched!: () => void
+  let readinessChanged!: () => void
+  let status = 'history-only'
+  const previous = controls.clients.length
   const session = {
     sessionId: 'first',
+    readiness: {
+      getSnapshot: () => ({ status }),
+      subscribe: (listener: () => void) => {
+        readinessChanged = listener
+        return () => {}
+      },
+    },
     subscribe: (listener: () => void) => {
       switched = listener
       return () => {}
@@ -89,7 +99,11 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
   const dispose = mountIntelligentUi({
     contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
-    registry: { spec: () => ({}), register: () => () => {} } as never,
+    registry: {
+      spec: () => ({}),
+      register: () => () => {},
+      inject: (_name: string, install: () => () => void) => install(),
+    } as never,
     session: session as never,
     locale: { register: () => () => {} } as never,
     approval: () => {},
@@ -100,6 +114,12 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
   const live = structuredClone(old)
   live.surface.revision = 2
   try {
+    expect(controls.clients.length).toBe(previous)
+    status = 'connecting'
+    readinessChanged()
+    expect(controls.clients.length).toBe(previous)
+    status = 'ready'
+    readinessChanged()
     const first = controls.clients.at(-1)!
     first.publish(false, [old])
     first.publish(true, [old])
@@ -133,11 +153,19 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
 })
 
 it('names the tab «Views» and counts the panels it lists', () => {
-  const session = { sessionId: 'counted', subscribe: () => () => {} }
+  const session = {
+    sessionId: 'counted',
+    subscribe: () => () => {},
+    readiness: { getSnapshot: () => ({ status: 'ready' }), subscribe: () => () => {} },
+  }
   const dispose = mountIntelligentUi({
     contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
-    registry: { spec: () => ({}), register: () => () => {} } as never,
+    registry: {
+      spec: () => ({}),
+      register: () => () => {},
+      inject: (_name: string, install: () => () => void) => install(),
+    } as never,
     session: session as never,
     locale: { register: () => () => {}, t: (key: string) => `t:${key}` } as never,
     approval: () => {},

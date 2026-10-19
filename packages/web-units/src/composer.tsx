@@ -354,6 +354,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           event.preventDefault()
           const steer = submitAsSteer.current
           submitAsSteer.current = false
+          if (view.loading || view.send.disabled) return
           onSubmit(steer ? { steer } : undefined)
         }}
       >
@@ -573,6 +574,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <SettingsInput
           ref={fileInput}
           type="file"
+          disabled={imageDisabled}
           data-testid="attachment-file-input"
           hidden={true}
           multiple={true}

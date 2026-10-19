@@ -129,6 +129,8 @@ profile client 须先在 descriptor 声明显式 `client.id` 和 `presentationRo
 
 `ctx.session.readiness` 提供 `getSnapshot()` 与 `subscribe(listener)`。readiness 订阅与 `ctx.session.subscribe` 的身份通知独立；同一会话重连只更新 readiness，卸载呈现不改变会话身份或清空草稿附件。快照包含 `status`（`no-session`、`connecting`、`ready`、`history-only`、`failed`）、绑定后的 `sessionId` 和单调失效的 `epoch`。实时查询须等 `ready`，保存快照，快照变化后忽略旧结果，并在每次会话绑定变化时重查。不要自动重试 effect。[服务面板示例](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) 覆盖冷挂载和过期结果。
 
+宿主可用 `SessionService.setSession(id, 'connecting' | 'history-only')` 绑定呈现身份，避免短暂发布 `ready`。Web 在已准入会话的窗口、事件订阅和 controls 建立后发布 `ready`；交互呈现再复用该订阅，不在挂载期间从头 attach 历史。
+
 **懒加载页面模块只交付页面**：混入其他登记会使其等到页面首次打开。设置分区、dock 视图和角色应拆到没有懒加载导航元数据的独立 eager descriptor。profile 页面不依赖会话。
 
 默认 `@agnes/navigation-ui`、`@agnes/conversation-ui` 与 goal、interaction、deliverables 采用相同的发行默认包和补装机制。它们只消费公开 `ctx.presentation.navigation/conversation/composer` 端口和 scoped registry；对话包分别登记 `conversation` 与 `composer`。当前投影、动作、会话绑定、提交和队列仍由宿主拥有；卸载不取消后台会话。外层地标、设置/恢复/管理、dock 容器及授权保留在宿主。

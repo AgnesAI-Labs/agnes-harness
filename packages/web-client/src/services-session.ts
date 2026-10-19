@@ -49,17 +49,19 @@ export class SessionService extends Service {
   }
 
   /** 仅宿主调用。 */
-  setSession(sessionId: string | undefined): void {
+  setSession(sessionId: string | undefined, readiness?: 'connecting' | 'ready' | 'history-only'): void {
     if (
       sessionId === this.currentSessionId &&
-      this.readinessSnapshot.status === (sessionId ? 'ready' : 'no-session')
+      this.readinessSnapshot.status === (sessionId ? (readiness ?? 'ready') : 'no-session')
     )
       return
     const changed = sessionId !== this.currentSessionId
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
-    this.setReadiness(!sessionId ? 'no-session' : this.currentHandle ? 'ready' : 'connecting')
+    this.setReadiness(
+      !sessionId ? 'no-session' : (readiness ?? (this.currentHandle ? 'ready' : 'connecting')),
+    )
     if (changed) notifyListeners(this.listeners, 'session identity')
   }
 

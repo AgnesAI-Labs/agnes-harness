@@ -3,13 +3,25 @@ import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 import type { WebSessionBinding } from '../session-binding.js'
 
 /** Identity survives attachment, but never a switch, detach or reload of the same session. */
-export type SessionBinding = Readonly<{ generation: number }>
+export type SessionBinding = Readonly<{ generation: number; sessionId?: string }>
 
 export class SessionBindingOwner {
   private binding: SessionBinding = { generation: 0 }
   private selected: Session | undefined
   private permission: (() => void) | undefined
   private projection: LiveProjection | undefined
+  private loading: AbortController | undefined
+
+  get targetId(): string | undefined {
+    return this.binding.sessionId ?? this.selected?.id
+  }
+  loadingSignal(binding: SessionBinding): AbortSignal {
+    return this.isCurrent(binding) && this.loading ? this.loading.signal : AbortSignal.abort()
+  }
+  loadingPermission(binding: SessionBinding, off: () => void): void {
+    if (this.isCurrent(binding)) this.permission = off
+    else off()
+  }
 
   get session(): Session | undefined {
     return this.selected
@@ -32,9 +44,13 @@ export class SessionBindingOwner {
   }
 
   /** Invalidate callbacks synchronously; the controller retains the bounded async cleanup order. */
-  begin(): { binding: SessionBinding; previous: ReturnType<SessionBindingOwner['release']> } {
-    this.binding = { generation: this.binding.generation + 1 }
+  begin(sessionId?: string): {
+    binding: SessionBinding
+    previous: ReturnType<SessionBindingOwner['release']>
+  } {
+    this.binding = { generation: this.binding.generation + 1, ...(sessionId ? { sessionId } : {}) }
     const previous = this.release(this.binding)
+    this.loading = new AbortController()
     return { binding: this.binding, previous }
   }
 
@@ -56,6 +72,8 @@ export class SessionBindingOwner {
     if (!this.isCurrent(binding)) return {}
     const session = this.selected
     const stop = this.stop
+    this.loading?.abort(new Error('session selection changed'))
+    this.loading = undefined
     this.selected = undefined
     this.projection = undefined
     this.permission?.()

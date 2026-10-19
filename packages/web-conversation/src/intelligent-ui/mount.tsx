@@ -88,14 +88,16 @@ export function mountIntelligentUi(options: {
     },
   }
   const switchSession = () => {
+    const id = options.session.sessionId
+    const admitted = options.session.readiness.getSnapshot().status === 'ready'
+    const sdkSession = admitted && id ? options.client.sessions.get(id) : undefined
+    if (sdkSession && current?.sessionId === id) return
     stopWatch?.()
     stopWatch = undefined
     seenSurfaces = new Set()
     current?.dispose()
     current = undefined
     target = undefined
-    const id = options.session.sessionId,
-      sdkSession = id ? options.client.sessions.get(id) : undefined
     if (sdkSession) {
       let storage: Storage | undefined
       try {
@@ -222,9 +224,11 @@ export function mountIntelligentUi(options: {
   ]
   const stopClaims = conversationCards.subscribe(notify)
   const stopSession = options.session.subscribe(switchSession)
+  const stopReadiness = options.session.readiness.subscribe(switchSession)
   switchSession()
   return () => {
     stopSession()
+    stopReadiness()
     stopWatch?.()
     current?.dispose()
     current = undefined

@@ -2,6 +2,8 @@
 
 English | [简体中文](sessions.zh-CN.md)
 
+In Web, recorded content becomes readable before execution admission finishes. You can edit a local text draft while “Preparing session…” is shown; sending, file references, attachments and approval actions wait for admission. Drafts belong to the current profile and session. Switching sessions cancels the old opening wait, preserves its text draft and leaves running agents alone. A failed admission keeps the record readable and offers a new-session recovery path; preparation never sends your draft automatically.
+
 <a id="会话与恢复让工作接续起来"></a>
 
 [Documentation](../README.md) · [Security boundaries](security.md)

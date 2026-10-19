@@ -94,6 +94,67 @@ it('never falls back after admission refusal and cancels just the caller-owned o
   }
 })
 
+it('reconnect restoration of an admission-only Web handle never asks for ACP replay', async () => {
+  let attaches = 0
+  const f = fakeEndpoint({
+    initialize: () => ({
+      protocolVersion: 1,
+      agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+    }),
+    '_agnes/v1/session.open': () => ({}),
+    '_agnes/v1/session.attach': () => {
+      if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'web' })
+      return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+    },
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const session = await client.session.open('web', { cwd: '/workspace' })
+    await session.attach()
+    await session.recover()
+    expect(f.calls.filter((call) => call.method === '_agnes/v1/session.open')).toHaveLength(2)
+    expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+  } finally {
+    await client.close()
+  }
+})
+
+it('cancels an opening during a shared handshake without cancelling initialization for the next selection', async () => {
+  let finish!: (value: unknown) => void
+  const f = fakeEndpoint({
+    initialize: () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    'session/load': () => ({}),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const controller = new AbortController()
+    const opening = client.session.open('cancelled', { signal: controller.signal })
+    const rejected = expect(opening).rejects.toThrow('switched before initialization')
+    await flush()
+    controller.abort(new Error('switched before initialization'))
+    await rejected
+    finish({ protocolVersion: 1, agentCapabilities: {} })
+    await client.initialize()
+    await client.session.open('next')
+    expect(f.calls.filter((call) => call.method === 'session/load').map((call) => call.params)).toEqual([
+      { sessionId: 'next', cwd: '', mcpServers: [] },
+    ])
+  } finally {
+    await client.close()
+  }
+})
+
 const meta = (seq: number, phase: string, extra: Record<string, unknown> = {}) => ({
   [META_KEY]: { promptTurnId: '1', eventSequence: seq, generation: 1, lane: 'main', phase, ...extra },
 })

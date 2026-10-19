@@ -68,6 +68,7 @@ export function createComposerController(
     | 'sessionControls'
     | 'sessionIsolation'
     | 'sessionPending'
+    | 'sessionBinding'
     | 'sessionYoloEnabled'
     | 'settingsText'
     | 'stopping'
@@ -223,51 +224,53 @@ export function createComposerController(
       connected: context.connected,
       configured: context.configured,
       hasSession: context.current !== undefined || context.draftingNew || context.readOnly !== undefined,
-      hint: context.readOnly
-        ? {
-            kind: 'state',
-            text: context.t(context.sessionPending ? 'composer.action.preparing' : 'composer.hint.readOnly'),
-          }
-        : busy && context.sessionControls?.sessionId !== context.current?.id
-          ? { kind: 'state', text: context.t('composer.control.syncing') }
-          : busy && !permissionUnknown
-            ? // When queued messages arrive is said by the queue tray, not by a line under the input.
-              { kind: 'state', text: '' }
-            : permissionUnknown
-              ? {
-                  kind: 'state',
-                  text: context.permissionRefreshPending
-                    ? context.t('composer.hint.permissionSyncing')
-                    : context.t('composer.hint.permissionRequired'),
-                }
-              : context.knownSessionModel && !context.selectedModelAvailable()
-                ? fallbackModel
-                  ? {
-                      kind: 'state',
-                      text: context.t('composer.hint.modelGone'),
-                      action: {
-                        label: context.t('composer.hint.useModel', {
-                          model: fallbackModel.label
-                            ? `${fallbackModel.label} · ${fallbackModel.id}`
-                            : fallbackModel.id,
-                        }),
-                        model: fallbackModel,
-                      },
-                    }
-                  : { kind: 'state', text: context.t('composer.hint.modelUnavailable') }
-                : imageUnsupported
-                  ? { kind: 'state', text: context.t('composer.hint.imageUnsupported') }
-                  : composerHintPresentation(
-                      {
-                        connected: context.connected,
-                        configured: context.configured,
-                        hasSession: context.current !== undefined || context.draftingNew,
-                        busy,
-                        stopping: context.stopping,
-                        loading: context.sessionPending,
-                      },
-                      context.t,
-                    ),
+      hint: context.sessionPending
+        ? { kind: 'state', text: context.t('composer.action.preparing') }
+        : context.readOnly
+          ? {
+              kind: 'state',
+              text: context.t('composer.hint.readOnly'),
+            }
+          : busy && context.sessionControls?.sessionId !== context.current?.id
+            ? { kind: 'state', text: context.t('composer.control.syncing') }
+            : busy && !permissionUnknown
+              ? // When queued messages arrive is said by the queue tray, not by a line under the input.
+                { kind: 'state', text: '' }
+              : permissionUnknown
+                ? {
+                    kind: 'state',
+                    text: context.permissionRefreshPending
+                      ? context.t('composer.hint.permissionSyncing')
+                      : context.t('composer.hint.permissionRequired'),
+                  }
+                : context.knownSessionModel && !context.selectedModelAvailable()
+                  ? fallbackModel
+                    ? {
+                        kind: 'state',
+                        text: context.t('composer.hint.modelGone'),
+                        action: {
+                          label: context.t('composer.hint.useModel', {
+                            model: fallbackModel.label
+                              ? `${fallbackModel.label} · ${fallbackModel.id}`
+                              : fallbackModel.id,
+                          }),
+                          model: fallbackModel,
+                        },
+                      }
+                    : { kind: 'state', text: context.t('composer.hint.modelUnavailable') }
+                  : imageUnsupported
+                    ? { kind: 'state', text: context.t('composer.hint.imageUnsupported') }
+                    : composerHintPresentation(
+                        {
+                          connected: context.connected,
+                          configured: context.configured,
+                          hasSession: context.current !== undefined || context.draftingNew,
+                          busy,
+                          stopping: context.stopping,
+                          loading: context.sessionPending,
+                        },
+                        context.t,
+                      ),
       input: {
         ...(!context.draftingNew &&
         !context.readOnly &&
@@ -285,9 +288,11 @@ export function createComposerController(
         exampleHint: context.draftingNew && !context.readOnly,
         disabled:
           !available ||
-          (!context.current && !context.draftingNew) ||
+          (!context.current &&
+            !context.draftingNew &&
+            !(context.sessionPending && context.sessionBinding.targetId)) ||
           context.stopping ||
-          context.sessionPending ||
+          (!!context.readOnly && !context.sessionPending) ||
           initialSubmissionPending,
         // The slash hint is a promise that typing "/" offers something: only with a command registered.
         placeholder: busy
@@ -523,7 +528,11 @@ export function createComposerController(
   }
 
   function handleComposerDraftChange(value: string): void {
-    sessionStorage.setItem(context.composerDraftKey, value)
+    try {
+      sessionStorage.setItem(context.composerDraftKey, value)
+    } catch {
+      // The current draft stays in the composer and is retained in memory on a switch.
+    }
     renderControls()
   }
 

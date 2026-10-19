@@ -570,8 +570,9 @@ export class Client {
     view: (
       sessionId: string,
       o: { maxNodes?: number } = {},
+      options: CallOptions = {},
     ): Promise<import('@agnes/protocol').SessionViewResult> =>
-      this.call('_agnes/v1/session.view', { sessionId, ...o }),
+      this.call('_agnes/v1/session.view', { sessionId, ...o }, options),
     rename: (sessionId: string, title: string): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.rename', { sessionId, title }),
     archive: (sessionId: string, archived: boolean): Promise<SessionPreferences> =>
@@ -636,7 +637,7 @@ export class Client {
     admissionOnly = false,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    const info = await this.initialize()
+    const info = signal ? await untilAborted(() => this.initialize(), signal) : await this.initialize()
     signal?.throwIfAborted()
     const meta = info.capabilities._meta as Record<string, { sessionOpen?: boolean }> | undefined
     const open = admissionOnly && meta?.[META_KEY]?.sessionOpen === true

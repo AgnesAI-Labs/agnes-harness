@@ -8,6 +8,81 @@ import { accessible, translated } from './quality.js'
 import { command, complete, install, prompt, toolResult } from './sdk.js'
 import { preferences } from './ui.js'
 
+test('session admission keeps history readable, drafts editable and sending gated across a stale switch', async ({
+  page,
+  runtime,
+}) => {
+  await preferences(page)
+  const client = await runtime.connect()
+  const a = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  const b = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await prompt(a, 'Admission history A')
+  await prompt(b, 'Admission history B')
+  await client.session.rename(a.id, 'Admission A')
+  await client.session.rename(b.id, 'Admission B')
+  const sent: { method?: string; params?: { sessionId?: string; requestId?: string } }[] = []
+  let release: (() => void) | undefined
+  let hold = true
+  await page.routeWebSocket('**', (socket) => {
+    const server = socket.connectToServer()
+    const pending = new Map<string | number, string>()
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      sent.push(message)
+      if (message.method === '_agnes/v1/session.open' && message.params.sessionId === a.id && hold) {
+        pending.set(message.id, a.id)
+        hold = false
+      }
+      server.send(raw)
+    })
+    server.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (pending.has(message.id)) {
+        pending.delete(message.id)
+        release = () => socket.send(raw)
+      } else socket.send(raw)
+    })
+  })
+  await page.goto(`${runtime.url}/?session=${a.id}`)
+  await expect(page.getByTestId('conversation-turn')).toContainText('Admission history A')
+  await expect.poll(() => typeof release).toBe('function')
+  const input = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await expect(input).toBeEnabled()
+  await input.fill('/plan Local draft A')
+  await input.press('Enter')
+  await expect(input).toHaveValue('/plan Local draft A')
+  await expect(page.getByRole('button', { name: 'Preparing session…', exact: true })).toBeDisabled()
+  await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
+  await page.getByText('Admission B', { exact: true }).first().click()
+  await input.fill('Local draft B')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  await expect
+    .poll(() =>
+      sent.some(
+        (m) =>
+          m.method === '_agnes/v1/session.loadingCancel' &&
+          m.params?.sessionId === a.id &&
+          !!m.params.requestId,
+      ),
+    )
+    .toBe(true)
+  release?.()
+  await expect(input).toHaveValue('Local draft B')
+  await expect(page).toHaveURL(new RegExp(`session=${b.id}`))
+  await page.getByText('Admission A', { exact: true }).first().click()
+  await expect(input).toHaveValue('/plan Local draft A')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  expect(sent.some((m) => m.method === 'session/load' || m.method === 'session/prompt')).toBe(false)
+})
+
 for (const [issue, version, action] of [
   ['newer', 9, 'Reopen after upgrading'],
   ['older', 1, 'Start a new session'],

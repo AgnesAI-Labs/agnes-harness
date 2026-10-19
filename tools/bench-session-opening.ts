@@ -128,7 +128,7 @@ try {
     const received = wire
     const started = performance.now()
     await action()
-    await page
+    const visible = page
       .getByTestId('conversation-turn')
       .filter({ hasText: `Synthetic ${id}` })
       .last()
@@ -137,19 +137,22 @@ try {
         process.stderr.write(`${(await page.locator('body').innerText()).slice(-8000)}\n`)
         throw error
       })
-    const visibleMs = performance.now() - started
+      .then(() => performance.now() - started)
     const input = page.getByRole('textbox', { name: 'Task content', exact: true })
-    await input.waitFor()
-    await expect(input)
+    const editable = expect(input)
       .toBeEnabled({ timeout: 120_000 })
       .catch(async (error) => {
         process.stderr.write(`${(await page.locator('body').innerText()).slice(-8000)}\n`)
         throw error
       })
-    const editableMs = performance.now() - started
-    await input.fill('Local benchmark draft')
-    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled({ timeout: 120_000 })
-    const sendableMs = performance.now() - started
+      .then(() => performance.now() - started)
+    const sendable = editable.then(async () => {
+      await input.fill('Local benchmark draft')
+      await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled({ timeout: 120_000 })
+      return performance.now() - started
+    })
+    // Observe independently: local editing can become ready before the selected history arrives.
+    const [visibleMs, editableMs, sendableMs] = await Promise.all([visible, editable, sendable])
     measurements.push({ kind, visibleMs, editableMs, sendableMs, ...received })
     process.stderr.write(
       `${kind}: visible=${visibleMs.toFixed(1)} editable=${editableMs.toFixed(1)} sendable=${sendableMs.toFixed(1)}ms\n`,

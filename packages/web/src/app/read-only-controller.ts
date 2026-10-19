@@ -61,6 +61,7 @@ export function createReadOnlyController(
   // Bumped by every request and by clear(), so only the newest request of the current selection
   // may write shared state.
   let latest = 0
+  let reading: AbortController | undefined
   // The scan marker of the view on screen; the banner states it next to the refusal.
   let scan: ViewScan
   let openingProgress:
@@ -70,15 +71,17 @@ export function createReadOnlyController(
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
   async function load(id: string, maxNodes: number, epoch: SessionBinding): Promise<boolean> {
     const ticket = ++latest
+    reading?.abort()
+    const request = new AbortController()
+    reading = request
     try {
-      const view = await context.client.session.view(id, { maxNodes })
+      const view = await context.client.session.view(id, { maxNodes }, { signal: request.signal })
       if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
       // Recorded views still need the session-scoped presentation seats, even though
       // execution admission failed. This only binds the presentation identity.
-      context.clientModules.session.setSession(id)
-      context.clientModules.session.setReadiness('history-only', id)
+      context.clientModules.session.setSession(id, 'history-only')
       context.projection = view.timeline
       context.windowAtStart = !view.history.hasEarlier
       return true
@@ -86,6 +89,8 @@ export function createReadOnlyController(
       // An obsolete failure must not replace the current selection with recovery UI either.
       if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
       throw error
+    } finally {
+      if (reading === request) reading = undefined
     }
   }
 
@@ -141,6 +146,8 @@ export function createReadOnlyController(
 
   function clear(): void {
     latest++
+    reading?.abort()
+    reading = undefined
     context.readOnly = undefined
     openingProgress = undefined
     appReadOnly.clear()
@@ -177,6 +184,11 @@ export function createReadOnlyController(
 
   async function preview(id: string, epoch: SessionBinding): Promise<void> {
     if (!(await load(id, PAGE, epoch))) return
+    const ticket = latest
+    // A cold page still needs its profile-level conversation/composer presenters to display the
+    // preview. This roster has no admitted session generation; history-only readiness stays intact.
+    await context.clientModules.reconciler.reconcileNow()
+    if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return
     previewNotice(id)
     context.render()
     context.renderControls()

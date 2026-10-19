@@ -49,6 +49,7 @@ export function createTurnController(
     | 'run'
     | 'sessionControls'
     | 'sessionRows'
+    | 'sessionPending'
     | 'sessionTitles'
     | 'sessionYoloEnabled'
     | 'showError'
@@ -91,6 +92,8 @@ export function createTurnController(
     if (!viewId || context.projection.sessionId !== viewId) return
     if (
       typeof context.projection.yolo === 'boolean' &&
+      !context.readOnly &&
+      !context.sessionPending &&
       !context.permissionChangePending &&
       !context.permissionRefreshPending &&
       context.projection.upto >= context.permissionSelectionSeq
@@ -194,6 +197,10 @@ export function createTurnController(
   }
 
   function renderApproval(): void {
+    if (context.readOnly || context.sessionPending) {
+      context.approvalRuntime.render(undefined)
+      return
+    }
     const known =
       (context.projection ? webView(context.projection, undefined, context.t).approval : undefined) ??
       (cachedApproval?.session === context.live && cachedApproval?.ticket === parkedTicket()
@@ -300,7 +307,14 @@ export function createTurnController(
         label,
         onSelect: () =>
           context.run(async () => {
-            if (context.live !== decisionSession || context.approvalBusy || context.stopping) return
+            if (
+              context.live !== decisionSession ||
+              context.approvalBusy ||
+              context.stopping ||
+              context.sessionPending ||
+              context.readOnly
+            )
+              return
             context.approvalBusy = true
             renderApproval()
             try {

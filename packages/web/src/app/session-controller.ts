@@ -44,6 +44,7 @@ export function createSessionController(
     | 'renderControls'
     | 'renderer'
     | 'selectedWorkspace'
+    | 'selectComposerDraft'
     | 'sessionBinding'
     | 'sessionControls'
     | 'sessionIsolation'
@@ -75,7 +76,8 @@ export function createSessionController(
     } = {},
   ): Promise<void> {
     const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
-    const { binding: epoch, previous } = bindingOwner.begin()
+    context.selectComposerDraft(id, options.preserveSending)
+    const { binding: epoch, previous } = bindingOwner.begin(id)
     // The old projection may stay visible, but its preview/refusal no longer describes this selection.
     context.readOnlyController.clear()
     preserved?.adopt(epoch)
@@ -90,6 +92,7 @@ export function createSessionController(
     // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
     context.moduleSessionId = undefined
     context.clientModules.session.setSession(undefined)
+    if (!options.created) context.permissionMode = 'workspace'
     context.sessionYoloEnabled = options.created ? false : undefined
     context.permissionRefreshPending = false
     context.initialPermissionPending = options.created ? context.permissionMode : undefined
@@ -139,13 +142,14 @@ export function createSessionController(
         })
       context.clientModules.session.setReadiness('connecting', id)
       if (!options.created) void context.readOnlyController.preview(id, epoch).catch(() => undefined)
+      const workspaceHint = context.sessionRows.find((row) => row.sessionId === id)?.cwd
       const binding = options.created
         ? bindWebSession(options.created, permission)
         : await loadWebSession(
             (sessionId, options) =>
               context.client.session.open(sessionId, {
                 ...options,
-                cwd: context.sessionRows.find((row) => row.sessionId === sessionId)?.cwd,
+                ...(workspaceHint ? { cwd: workspaceHint } : {}),
                 onProgress: (progress) => {
                   if (context.sessionBinding.isCurrent(epoch) && !context.current)
                     context.readOnlyController.progress(
@@ -158,6 +162,10 @@ export function createSessionController(
               }),
             id,
             permission,
+            {
+              signal: bindingOwner.loadingSignal(epoch),
+              onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
+            },
           )
       if (!bindingOwner.attach(epoch, binding)) return
       context.readOnlyController.clear()
@@ -185,7 +193,7 @@ export function createSessionController(
         binding.offPermission?.()
         return
       }
-      context.clientModules.session.setSession(loaded.id)
+      context.clientModules.session.setSession(loaded.id, 'connecting')
       if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
         const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
         if (!context.sessionBinding.isCurrent(epoch)) return
@@ -286,6 +294,7 @@ export function createSessionController(
       if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false
+      context.clientModules.session.setReadiness('ready', loaded.id)
       context.clearSessionRecovery()
       context.render()
       void context

@@ -297,7 +297,7 @@ const SidebarBuiltin = forwardRef<
           runningIds: running,
           ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
           ...(current.currentId ? { currentId: current.currentId } : {}),
-          disabled: current.sessionPending,
+          disabled: false,
           newDisabled: current.newDisabled,
           ...(current.next ? { next: current.next } : {}),
           loadMore: actions.loadMore,
