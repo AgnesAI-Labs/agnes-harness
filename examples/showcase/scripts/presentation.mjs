@@ -15,6 +15,9 @@ const pharma = app === 'pharma-gmp',
 execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
   stdio: 'inherit',
 })
+const brandModes = JSON.parse(
+  await readFile(join('examples/showcase', app, 'client/agnes.client.json'), 'utf8'),
+).skins[0].tokens['--agnes-brand-primary']
 const rt = await runtime(real, app)
 const output = process.env.AGH_SHOWCASE_SHOTS ?? join(rt.root, 'screenshots')
 await mkdir(output, { recursive: true })
@@ -82,6 +85,15 @@ async function capture(label, path, selector) {
     }
     if (selector) await item.page.locator(selector).first().waitFor({ timeout: 45000 })
     await item.page.getByTestId(`home-entry-${home}`).waitFor({ timeout: 45000 })
+    await item.page.waitForFunction(
+      (expected) =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--agnes-brand-primary')
+          .trim()
+          .toLowerCase() === expected,
+      brandModes[item.theme].toLowerCase(),
+      { timeout: 45000 },
+    )
     if (label === '06-investigation-evidence') {
       await item.page.getByTestId('turn-process-toggle').first().click()
       for (const toggle of await item.page.getByTestId('turn-activity-toggle').all()) {
@@ -282,6 +294,7 @@ try {
     '/',
     pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page] .aero-kpis',
   )
+  if (pharma) evidence.initialRft = await primary.locator('.ph-kpi').nth(3).locator('strong').innerText()
   const adopted = await rt.client.request('_agnes/v1/applications.get', { profile: 'local-dev' })
   assert.equal(adopted.status, 'active')
   evidence.adoption = { id: adopted.effective.id, consent: adopted.selection.consentDigest }
@@ -437,14 +450,16 @@ try {
     )
     const learnedTools = evidence.steps.at(-1).tools
     assert.ok(
-      learnedTools.some(
-        (tool) =>
+      learnedTools.some((tool) => {
+        const output = tool.result?.structured
+        return (
           !tool.name.startsWith('plugin_helper') &&
-          (tool.result?.structured?.nearExpiry === true ||
-            tool.result?.structured?.dueSoon === true ||
-            tool.result?.structured?.warning === true ||
-            tool.result?.structured?.alert === true),
-      ),
+          !tool.result?.isError &&
+          output &&
+          Object.entries(output).some(([key, value]) => /warn|alert|soon/i.test(key) && value === true) &&
+          Object.entries(output).some(([key, value]) => /day/i.test(key) && value === 3)
+        )
+      }),
       'Published calibration tool must actually flag the three-day window',
     )
   } else {
@@ -590,6 +605,14 @@ try {
     pagePath(home),
     pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page] .aero-kpis',
   )
+  if (pharma) {
+    evidence.finalRft = await primary.locator('.ph-kpi').nth(3).locator('strong').innerText()
+    assert.equal(
+      evidence.finalRft,
+      evidence.initialRft,
+      'Retrospective correction must not improve historical first-pass yield',
+    )
+  }
   for (const item of pages) {
     await item.page.goto(`${rt.url}/?settings=application`)
     await item.page

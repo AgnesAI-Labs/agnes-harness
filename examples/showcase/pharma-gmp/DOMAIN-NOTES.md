@@ -45,3 +45,7 @@ The Oct 17 72 CFU/m³ alert belongs to B-2410-017; Oct 19's 121 CFU/m³ action e
 `asOf=2024-10-20` 是合成业务时钟，CAPA 到期与报表均按其计算；审计时间与签名时间为实际记录时间，不能倒填。工具的 `signature` 是当前质量记录的人签回执，`recordApprovals` 是既往签署索引，`certificate` 只代表最终 QA 放行。空放行证书不等于记录未签名。完整待签对象与证据绑定在原生业务决策中，系统或模型答案均不能替代真人签署。
 
 `asOf=2024-10-20` is synthetic business time for due dates and reporting; audit/signature timestamps are actual recording time and are never backdated. Tool `signature` is the current human record-signing receipt, `recordApprovals` indexes earlier signoffs, and `certificate` means final QA release only. A null release certificate does not mean the records were unsigned. The native business decision binds the reviewed object and evidence; system/agent answers cannot sign.
+
+RFT 保留首次合格口径：有偏差、记录发现或设备追溯影响评估的批次不计入分子。补校、返工、复验或最终放行不能把历史首次不合格重新算成首次合格。该演示分母仍为全部 36 批，包含未完成批次。
+
+RFT excludes batches with deviations, findings or retrospective equipment impact assessment. Subsequent calibration, reprocessing, retesting or release cannot restore first-pass status. This demo denominator remains all 36 batches, including unfinished batches.

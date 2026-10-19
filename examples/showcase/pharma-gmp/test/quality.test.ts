@@ -7,7 +7,7 @@ import { expect, it } from 'vitest'
 import { main } from '../src/index.js'
 import { type Plant, SIGNATURE_MEANING } from '../src/model.js'
 import { qualityPolicy } from '../src/policy.js'
-import { dossier, emStatus, findings, investigation } from '../src/quality.js'
+import { dashboard, dossier, emStatus, findings, investigation } from '../src/quality.js'
 import { report } from '../src/reports.js'
 import { seed } from '../src/seed.js'
 
@@ -85,6 +85,13 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
   ).toBe(true)
   expect(emStatus(p, { ...evidence.em[0]!, viable: 50 })).toBe('control')
   expect(dossier(p, 'B-2410-021').rows.find((r) => r.key === 'em')?.pass).toBe(false)
+  const initialRft = dashboard(p).rft
+  const dryer = p.equipment.find((item) => item.id === 'DR-02')!
+  dryer.qualification = 'qualified'
+  dryer.calibrated = '2024-10-20'
+  dryer.due = '2025-04-20'
+  dryer.evidence.push(...['B-2410-016', batch, 'B-2410-018'].map((id) => `RETROSPECTIVE:${id}:SIM-IMPACT`))
+  expect(dashboard(p).rft).toBe(initialRft)
   const b = p.batches.find((b) => b.id === batch)!
   expect(b.steps[0]!.cpp[0]!.value).toBe(0.12)
   b.steps[0]!.verifier = { ...b.steps[0]!.operator }

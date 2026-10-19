@@ -161,8 +161,14 @@ export function dashboard(p: Plant) {
     released: p.batches.filter((b) => b.status === 'released').length,
     rft: Math.round(
       (100 *
-        p.batches.filter((b) => !p.deviations.some((d) => d.batch === b.id) && !findings(p, b.id).length)
-          .length) /
+        p.batches.filter(
+          (b) =>
+            !p.deviations.some((d) => d.batch === b.id) &&
+            !findings(p, b.id).length &&
+            !p.equipment.some((equipment) =>
+              equipment.evidence.some((evidence) => evidence.startsWith(`RETROSPECTIVE:${b.id}:`)),
+            ),
+        ).length) /
         p.batches.length,
     ),
     deviations: Object.fromEntries(

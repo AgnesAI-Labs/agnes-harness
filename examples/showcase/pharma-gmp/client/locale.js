@@ -42,7 +42,8 @@ export const words = {
     attention:
       '原始历史发现 · B-2410-017：LOD 3.4% 超出 1.0–2.5%；C-201 同期 EM 警戒；DR-02 使用时校准逾期。后续处置见当前档案。',
     currentRecord: '当前批次状态',
-    dashboardNote: 'RFT：全部 36 批中无偏差且无记录发现的比例（含未完成批次，非最终年度指标）。',
+    dashboardNote:
+      'RFT：全部 36 批中无偏差、记录发现或追溯影响评估的比例；后续补校不回算首次合格（含未完成批次，非年度指标）。',
     step: '工序',
     equipment: '设备',
     limits: '结果 / 规格限度',
@@ -160,7 +161,7 @@ export const words = {
       'Historical originals · B-2410-017: LOD 3.4% vs 1.0–2.5%; same-room EM alert; DR-02 calibration overdue at use. See the current dossier for subsequent disposition.',
     currentRecord: 'Current batch status',
     dashboardNote:
-      'RFT: share of all 36 batches without deviations or record findings (includes unfinished batches; not a final annual metric).',
+      'RFT: share of all 36 batches without deviations, findings or retrospective impact assessment. Later calibration cannot restore first-pass status (includes unfinished batches; not an annual metric).',
     step: 'Step',
     equipment: 'Equipment',
     limits: 'Result / specification',
