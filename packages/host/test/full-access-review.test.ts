@@ -23,6 +23,21 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
   })
   try {
     const parent = await h.host.createSession({ key: 'review-parent', cwd: dataDir, preset: 'full-access' })
+    const parentPermissions = parent.decisions.port({
+      permission: true,
+      owner: 'core/review',
+      sourcePackage: '@agnes/core',
+      packageVersion: '1',
+      operationId: 'parent',
+      alive() {},
+    })
+    const inherited = await parentPermissions.request({
+      key: 'inherited',
+      purpose: 'tool.permission',
+      subject: { call: 'parent' },
+      prompt: 'Allow?',
+      options: ['allowed-once', 'rejected'],
+    })
     await parent.enqueue('next-turn', {
       content: [{ type: 'text', text: 'establish boundary' }],
       actor: parent.d.actor,
@@ -36,6 +51,12 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
       parent: { key: parent.key, boundarySeq: end.seq },
     })
     await child.setPreset(h.host.validatePresetSwitch('read-only').view)
+    expect((await parentPermissions.get(inherited)).invalidation).toBeNull()
+    const inheritedRows = (await child.scan({ type: 'decision/state', limit: 20 })).filter(
+      (row) => (row.data as { handle: { id: string } }).handle.id === inherited.id,
+    )
+    expect(inheritedRows.length).toBeGreaterThan(0)
+    expect(inheritedRows.every((row) => !(row.data as { invalidation: unknown }).invalidation)).toBe(true)
     const port = child.decisions.port({
       owner: 'fixture/review',
       sourcePackage: '@fixture/review',

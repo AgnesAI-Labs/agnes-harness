@@ -219,6 +219,8 @@ export class DecisionCommands {
   revokedAutomaticEvents(): EventInput[] {
     return [...this.s.readDecisions().values()].flatMap(({ value }) => {
       if (
+        !this.owns(value.handle) ||
+        value.request.lane !== this.s.lane ||
         value.result?.reason !== 'answered' ||
         value.result.code !== 'full-access' ||
         value.consumption ||
