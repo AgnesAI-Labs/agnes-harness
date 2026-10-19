@@ -1,0 +1,405 @@
+{
+  "name": "@agnes-showcase/aerospace-quality",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client",
+    "assets",
+    "skills",
+    "README.md",
+    "README.zh-CN.md",
+    "DEMO.md",
+    "DOMAIN-NOTES.md",
+    "LICENSE",
+    "adopt.mjs",
+    "automation.mjs"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --packages=external --outfile=dist/index.js",
+    "typecheck": "tsc -b tsconfig.json",
+    "test": "vitest run test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "@agnes/host": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "react": "18.3.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "@agnes/package-manager": "workspace:*"
+  },
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui",
+      "bundle",
+      "skills"
+    ],
+    "plugins": [
+      {
+        "id": "ext:@agnes-showcase/aerospace-quality/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "services",
+          "skills"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true,
+          "tools": {
+            "names": [
+              "aero_playbook",
+              "aero_trace",
+              "aero_investigate",
+              "aero_change_review",
+              "aero_quality",
+              "aero_mrb_draft",
+              "aero_rule_propose",
+              "aero_decide",
+              "aero_report",
+              "aero_skill_candidate",
+              "aero_briefing"
+            ],
+            "prefix": "aero_"
+          },
+          "filesystem": {
+            "read": [
+              "aero-output/**"
+            ],
+            "write": [
+              "aero-output/**"
+            ]
+          },
+          "tools.invoke": true
+        }
+      },
+      {
+        "id": "ext:@agnes-showcase/aerospace-quality/cards",
+        "export": "cards",
+        "apiRange": "^4.0.0",
+        "capabilities": {
+          "ui": true
+        }
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "^4.0.0",
+      "@sinclair/typebox": "0.34.33"
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@agnes-showcase/aerospace-quality/main",
+        "path": "./client/agnes.client.json"
+      },
+      {
+        "rowId": "ext:@agnes-showcase/aerospace-quality/cards",
+        "path": "./client/cards/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "quality": {
+        "presets": {
+          "aero-standard": {
+            "name": "aero-standard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "aero_playbook",
+            "aero_trace",
+            "aero_investigate",
+            "aero_change_review",
+            "aero_quality",
+            "aero_mrb_draft",
+            "aero_rule_propose",
+            "aero_decide",
+            "aero_report",
+            "present",
+            "aero_skill_candidate",
+            "skill_read",
+            "aero_briefing",
+            "ui_render"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "Programme Quality Assistant",
+            "zh-CN": "研制质量助手"
+          },
+          "description": {
+            "en": "Start with programme health; coordinate AN-027 investigation, traceability, MRB, configuration and zeroing.",
+            "zh-CN": "从总览出发，调查 AN-027，协同追溯、MRB、技术状态与归零。"
+          },
+          "preset": "aero-standard",
+          "pages": [
+            "aero-home",
+            "aero-requirements",
+            "aero-tests",
+            "aero-mrb",
+            "aero-configuration",
+            "aero-zeroing"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=aerospace-quality-playbook). Call aero_playbook first and follow the skill. Start with programme health; coordinate AN-027 investigation, traceability, MRB, configuration and zeroing. Cite evidence IDs, separate hypotheses from confirmed causes, and never invent reproduction, passing tests, closure or flight release.",
+              "zh-CN": "先调用 skill_read(name=aerospace-quality-playbook)。先调用 aero_playbook，按技能工作。从总览出发，调查 AN-027，协同追溯、MRB、技术状态与归零。 引用证据 ID，分清假设与已证实原因；报告不能虚构复现、通过、归零或飞行放行。"
+            },
+            "mode": "draft"
+          }
+        }
+      },
+      "trace": {
+        "presets": {
+          "aero-standard": {
+            "name": "aero-standard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "aero_playbook",
+            "aero_trace",
+            "aero_change_review",
+            "aero_quality",
+            "skill_read"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "Requirements Traceability Analyst",
+            "zh-CN": "需求追溯分析师"
+          },
+          "description": {
+            "en": "Analyze coverage/gaps and ECR-016 impacts on requirements, interfaces and tests.",
+            "zh-CN": "分析需求覆盖与缺口，以及 ECR-016 对需求、接口与复验的影响。"
+          },
+          "preset": "aero-standard",
+          "pages": [
+            "aero-home",
+            "aero-requirements",
+            "aero-tests",
+            "aero-mrb",
+            "aero-configuration",
+            "aero-zeroing"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=aerospace-quality-playbook). Call aero_playbook first and follow the skill. Analyze coverage/gaps and ECR-016 impacts on requirements, interfaces and tests. Cite evidence IDs, separate hypotheses from confirmed causes, and never invent reproduction, passing tests, closure or flight release.",
+              "zh-CN": "先调用 skill_read(name=aerospace-quality-playbook)。先调用 aero_playbook，按技能工作。分析需求覆盖与缺口，以及 ECR-016 对需求、接口与复验的影响。 引用证据 ID，分清假设与已证实原因；报告不能虚构复现、通过、归零或飞行放行。"
+            },
+            "mode": "draft"
+          }
+        }
+      },
+      "investigator": {
+        "presets": {
+          "aero-standard": {
+            "name": "aero-standard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "aero_playbook",
+            "aero_investigate",
+            "aero_change_review",
+            "aero_trace",
+            "aero_quality",
+            "skill_read",
+            "aero_briefing",
+            "ui_render"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "Test Anomaly Investigator",
+            "zh-CN": "试验异常诊断员"
+          },
+          "description": {
+            "en": "Investigate AN-027 cold-plateau overcurrent; correlate lot changes and similar NCRs; propose a mechanism and reproduction tests.",
+            "zh-CN": "调查 AN-027 冷平台电流越限，关联批次更改与相似 NCR，提出候选机理和复现试验。"
+          },
+          "preset": "aero-standard",
+          "pages": [
+            "aero-home",
+            "aero-requirements",
+            "aero-tests",
+            "aero-mrb",
+            "aero-configuration",
+            "aero-zeroing"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=aerospace-quality-playbook). Call aero_playbook first and follow the skill. Investigate AN-027 cold-plateau overcurrent; correlate lot changes and similar NCRs; propose a mechanism and reproduction tests. Cite evidence IDs, separate hypotheses from confirmed causes, and never invent reproduction, passing tests, closure or flight release.",
+              "zh-CN": "先调用 skill_read(name=aerospace-quality-playbook)。先调用 aero_playbook，按技能工作。调查 AN-027 冷平台电流越限，关联批次更改与相似 NCR，提出候选机理和复现试验。 引用证据 ID，分清假设与已证实原因；报告不能虚构复现、通过、归零或飞行放行。"
+            },
+            "mode": "draft"
+          }
+        }
+      },
+      "mrb": {
+        "presets": {
+          "aero-standard": {
+            "name": "aero-standard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "aero_playbook",
+            "aero_investigate",
+            "aero_mrb_draft",
+            "aero_decide",
+            "aero_quality",
+            "aero_report",
+            "present",
+            "skill_read",
+            "aero_briefing",
+            "ui_render"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "Nonconformance (MRB) Assistant",
+            "zh-CN": "不合格品审理助理"
+          },
+          "description": {
+            "en": "Compare NCR-018 dispositions and draft rework. Request human MRB approval for every formal disposition.",
+            "zh-CN": "对 NCR-018 比较处置方案并起草返工意见。任何正式处置均请求人工 MRB 批准。"
+          },
+          "preset": "aero-standard",
+          "pages": [
+            "aero-home",
+            "aero-requirements",
+            "aero-tests",
+            "aero-mrb",
+            "aero-configuration",
+            "aero-zeroing"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=aerospace-quality-playbook). Call aero_playbook first and follow the skill. Compare NCR-018 dispositions and draft rework. Request human MRB approval for every formal disposition. Cite evidence IDs, separate hypotheses from confirmed causes, and never invent reproduction, passing tests, closure or flight release.",
+              "zh-CN": "先调用 skill_read(name=aerospace-quality-playbook)。先调用 aero_playbook，按技能工作。对 NCR-018 比较处置方案并起草返工意见。任何正式处置均请求人工 MRB 批准。 引用证据 ID，分清假设与已证实原因；报告不能虚构复现、通过、归零或飞行放行。"
+            },
+            "mode": "draft"
+          }
+        }
+      },
+      "configuration": {
+        "presets": {
+          "aero-standard": {
+            "name": "aero-standard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "aero_playbook",
+            "aero_change_review",
+            "aero_decide",
+            "aero_rule_propose",
+            "aero_quality",
+            "aero_skill_candidate",
+            "skill_read"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "Configuration Change Reviewer",
+            "zh-CN": "技术状态更改评审员"
+          },
+          "description": {
+            "en": "Review ECR-016 requirement/interface/re-verification impacts. Configuration changes and rule activation require human approval.",
+            "zh-CN": "评审 ECR-016 的需求、接口与复验影响。技术状态更改和规则启用必须人工批准。"
+          },
+          "preset": "aero-standard",
+          "pages": [
+            "aero-home",
+            "aero-requirements",
+            "aero-tests",
+            "aero-mrb",
+            "aero-configuration",
+            "aero-zeroing"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=aerospace-quality-playbook). Call aero_playbook first and follow the skill. Review ECR-016 requirement/interface/re-verification impacts. Configuration changes and rule activation require human approval. Cite evidence IDs, separate hypotheses from confirmed causes, and never invent reproduction, passing tests, closure or flight release.",
+              "zh-CN": "先调用 skill_read(name=aerospace-quality-playbook)。先调用 aero_playbook，按技能工作。评审 ECR-016 的需求、接口与复验影响。技术状态更改和规则启用必须人工批准。 引用证据 ID，分清假设与已证实原因；报告不能虚构复现、通过、归零或飞行放行。"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "application": {
+      "id": "qiongxu-aerospace-quality",
+      "brand": {
+        "name": {
+          "en": "Qiongxu · Programme Quality",
+          "zh-CN": "穹序 · 研制质量"
+        },
+        "title": {
+          "en": "Qiongxu Aerospace Quality",
+          "zh-CN": "穹序航天研制质量台"
+        },
+        "assistantName": {
+          "en": "Qiongxu Quality Assistant",
+          "zh-CN": "穹序质量助手"
+        },
+        "mark": "assets/mark.png",
+        "favicon": "assets/favicon.png"
+      },
+      "presentation": {
+        "skin": "aero-quality",
+        "home": "@agnes-showcase/aerospace-quality#aero-home",
+        "navigation": {
+          "entries": [
+            "@agnes-showcase/aerospace-quality#aero-home",
+            "@agnes-showcase/aerospace-quality#aero-requirements",
+            "@agnes-showcase/aerospace-quality#aero-tests",
+            "@agnes-showcase/aerospace-quality#aero-mrb",
+            "@agnes-showcase/aerospace-quality#aero-configuration",
+            "@agnes-showcase/aerospace-quality#aero-zeroing"
+          ],
+          "hideBuiltin": []
+        }
+      },
+      "defaultAgent": "@agnes-showcase/aerospace-quality#quality",
+      "agents": [
+        "@agnes-showcase/aerospace-quality#quality",
+        "@agnes-showcase/aerospace-quality#trace",
+        "@agnes-showcase/aerospace-quality#investigator",
+        "@agnes-showcase/aerospace-quality#mrb",
+        "@agnes-showcase/aerospace-quality#configuration"
+      ]
+    },
+    "metadata": {
+      "displayName": "Aerospace programme quality",
+      "summary": "A fictional spacecraft valve-driver programme: traceability, telemetry, MRB, configuration and double-five closure.",
+      "description": "Synthetic aerospace quality workbench with human approvals and evidence-based reports.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "航天研制质量应用",
+          "summary": "虚构航天阀驱动项目：需求追溯、试验、MRB、技术状态与双五条归零。",
+          "description": "含人工审批与证据报告的合成航天质量工作台。"
+        }
+      }
+    }
+  }
+}

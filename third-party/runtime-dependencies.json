@@ -9,6 +9,7 @@
       "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
       "consumers": [
+        "examples/showcase/aerospace-quality",
         "packages/base",
         "packages/cli",
         "packages/daemon-admin",
@@ -54,13 +55,14 @@
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
         "examples/community/deliverables-gallery",
+        "examples/showcase/aerospace-quality",
         "examples/ui/interaction-renderer",
         "examples/ui/tool-result-card",
+        "packages/package-manager/bundled-plugins/conversation-ui",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/package-manager/bundled-plugins/navigation-ui",
-        "packages/package-manager/bundled-plugins/conversation-ui",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-admin",
@@ -115,6 +117,7 @@
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
       "consumers": [
+        "examples/showcase/aerospace-quality",
         "examples/ui/component-library",
         "packages/ai",
         "packages/base",

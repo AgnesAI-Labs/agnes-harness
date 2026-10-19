@@ -152,7 +152,7 @@
       "source": "https://github.com/microsoft/TypeScript",
       "purpose": "Workspace compiler and project-reference type checker.",
       "rationale": "Defines the language and type-checking implementation used by all packages.",
-      "consumers": ["."]
+      "consumers": [".", "examples/showcase/aerospace-quality"]
     },
     {
       "name": "vitest",

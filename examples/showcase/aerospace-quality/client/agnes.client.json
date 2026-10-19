@@ -1,0 +1,143 @@
+{
+  "client": {
+    "id": "aero-pages",
+    "lifetime": "profile",
+    "entry": "./index.js",
+    "styles": [
+      "./style.css"
+    ],
+    "slots": [],
+    "services": [
+      "aero.snapshot",
+      "aero.impact",
+      "aero.draft",
+      "aero.propose",
+      "aero.decide"
+    ],
+    "projections": [],
+    "publicConfig": {},
+    "homeEntries": [
+      {
+        "id": "aero-home",
+        "placement": "primary",
+        "navigation": {
+          "title": "Programme overview",
+          "titles": {
+            "zh-CN": "项目总览"
+          },
+          "icon": "plugin",
+          "order": 10
+        }
+      },
+      {
+        "id": "aero-requirements",
+        "placement": "primary",
+        "navigation": {
+          "title": "Requirements",
+          "titles": {
+            "zh-CN": "需求追溯"
+          },
+          "icon": "plugin",
+          "order": 11
+        }
+      },
+      {
+        "id": "aero-tests",
+        "placement": "primary",
+        "navigation": {
+          "title": "Tests & anomalies",
+          "titles": {
+            "zh-CN": "试验与异常"
+          },
+          "icon": "plugin",
+          "order": 12
+        }
+      },
+      {
+        "id": "aero-mrb",
+        "placement": "primary",
+        "navigation": {
+          "title": "NCR / MRB",
+          "titles": {
+            "zh-CN": "NCR / MRB"
+          },
+          "icon": "plugin",
+          "order": 13
+        }
+      },
+      {
+        "id": "aero-configuration",
+        "placement": "primary",
+        "navigation": {
+          "title": "Configuration",
+          "titles": {
+            "zh-CN": "技术状态"
+          },
+          "icon": "plugin",
+          "order": 14
+        }
+      },
+      {
+        "id": "aero-zeroing",
+        "placement": "primary",
+        "navigation": {
+          "title": "Quality zeroing",
+          "titles": {
+            "zh-CN": "质量归零"
+          },
+          "icon": "plugin",
+          "order": 15
+        }
+      }
+    ]
+  },
+  "skins": [
+    {
+      "id": "aero-quality",
+      "name": "Aerospace quality / 航天研制质量",
+      "css": "./skin.css",
+      "tokens": {
+        "--agnes-bg-page": {
+          "light": "#f4f7fa",
+          "dark": "#0c1420"
+        },
+        "--agnes-bg-app-content": {
+          "light": "#f4f7fa",
+          "dark": "#0c1420"
+        },
+        "--agnes-bg-app-sidebar": {
+          "light": "#eaf0f5",
+          "dark": "#101d2c"
+        },
+        "--agnes-brand-primary": {
+          "light": "#146477",
+          "dark": "#72c7dc"
+        },
+        "--agnes-bg-surface": {
+          "light": "#ffffff",
+          "dark": "#142333"
+        },
+        "--agnes-bg-popover": {
+          "light": "#ffffff",
+          "dark": "#182a3c"
+        },
+        "--agnes-button-primary-bg": {
+          "light": "#146477",
+          "dark": "#72c7dc"
+        },
+        "--agnes-button-primary-bg-hover": {
+          "light": "#0c5262",
+          "dark": "#96d7e5"
+        },
+        "--agnes-button-primary-content": {
+          "light": "#ffffff",
+          "dark": "#0c1420"
+        },
+        "--agnes-brand-focus-ring": {
+          "light": "#146477",
+          "dark": "#72c7dc"
+        }
+      }
+    }
+  ]
+}

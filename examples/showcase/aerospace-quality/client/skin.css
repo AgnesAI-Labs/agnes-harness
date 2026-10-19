@@ -1,0 +1,8 @@
+@layer skin {
+  [data-agnes-region="app"] {
+    --radius-lg: 10px;
+  }
+  [data-agnes-region="sidebar"] {
+    border-right: 1px solid var(--agnes-line-primary);
+  }
+}

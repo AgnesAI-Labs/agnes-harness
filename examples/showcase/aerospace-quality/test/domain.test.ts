@@ -1,0 +1,153 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createPluginTestHost } from '@agnes/host/author-testkit'
+import { afterEach, expect, it } from 'vitest'
+import { main } from '../src/index.js'
+import { coverage, decide, impact, investigate, persist, read } from '../src/domain.js'
+import { report } from '../src/reports.js'
+import { seed } from '../src/seed.js'
+const packageDir = fileURLToPath(new URL('../', import.meta.url))
+const roots: string[] = []
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
+const skills = { register: () => () => {} }
+it('Host tools and profile services share durable state; restart preserves drafts; stale, malformed and unauthorized decisions refuse', async () => {
+  const storeDir = await mkdtemp(join(tmpdir(), 'agh-aero-store-'))
+  roots.push(storeDir)
+  let host = await createPluginTestHost(main, { packageDir, storeDir, services: { skills } })
+  try {
+    const initial = (await host.invokeProfileService('aero.snapshot', {})) as any
+    expect(initial.requirements).toHaveLength(39)
+    expect(initial.campaigns.flatMap((c: any) => c.samples).length).toBe(484)
+    expect(initial.campaigns[4].samples).toEqual([])
+    const diagnosis = await host.invoke('aero_investigate', { anomalyId: 'AN-027' })
+    expect(diagnosis.isError).not.toBe(true)
+    expect((diagnosis.structured as any).data.exceedances).toHaveLength(5)
+    expect((diagnosis.structured as any).data.change.id).toBe('ECR-014')
+    const proposed = await host.invoke('aero_mrb_draft', {
+      ncrId: 'NCR-018',
+      disposition: 'rework',
+      rationale:
+        'Reject L2609-B pending failure analysis; rework PVD-011/012/013 to the controlled drawing and re-verify.',
+      expectedRevision: 1,
+    })
+    expect(proposed.isError, JSON.stringify(proposed)).not.toBe(true)
+    const snapshot = (await host.invokeProfileService('aero.snapshot', {})) as any
+    expect(snapshot.revision).toBe(2)
+    expect(snapshot.ncrs[17]).toMatchObject({ status: 'review', disposition: 'rework', approvals: [] })
+    expect(
+      (
+        await host.invoke('aero_mrb_draft', {
+          ncrId: 'NCR-018',
+          disposition: 'scrap',
+          rationale: 'A stale draft must not replace the already reviewed evidence.',
+          expectedRevision: 1,
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (await host.invoke('aero_decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 2 })).isError,
+    ).toBe(true)
+    await expect(
+      host.invokeProfileService('aero.decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 2 }),
+    ).rejects.toThrow('Host human approval')
+    await expect(
+      host.invoke('aero_mrb_draft', {
+        ncrId: 'NCR-018',
+        disposition: 'launch',
+        rationale: 'Invalid disposition should fail schema validation.',
+        expectedRevision: 2,
+      }),
+    ).rejects.toThrow('Invalid arguments')
+    await expect(host.invoke('aero_trace', { owner: 'another-profile' })).rejects.toThrow('Invalid arguments')
+    const cancelled = new AbortController()
+    cancelled.abort(new Error('cancelled'))
+    await expect(host.invoke('aero_trace', {}, cancelled.signal)).rejects.toThrow('cancelled')
+    await host.dispose()
+    host = await createPluginTestHost(main, { packageDir, storeDir, services: { skills } })
+    expect(((await host.invokeProfileService('aero.snapshot', {})) as any).ncrs[17]).toEqual(
+      snapshot.ncrs[17],
+    )
+    expect(((await host.invokeProfileService('aero.snapshot', {})) as any).audit).toHaveLength(1)
+  } finally {
+    await host.dispose()
+  }
+  expect(host.tools.size).toBe(0)
+})
+it('approved domain decisions hold hardware, invalidate verification, enforce double-five closure and use the reviewed rule on the next analysis', () => {
+  const memory = new Map<string, any>()
+  const store = {
+    get: (k: string) => structuredClone(memory.get(k)),
+    set: (k: string, v: any) => {
+      memory.set(k, structuredClone(v))
+    },
+    delete: (k: string) => {
+      memory.delete(k)
+    },
+    scan: () => ({ rows: [] }),
+    transaction: <T>(work: () => T) => {
+      const before = new Map(memory)
+      try {
+        return work()
+      } catch (e) {
+        memory.clear()
+        for (const [k, v] of before) memory.set(k, v)
+        throw e
+      }
+    },
+  }
+  const s = seed()
+  s.ncrs[17]!.status = 'review'
+  s.ncrs[17]!.disposition = 'rework'
+  s.ncrs[17]!.rationale = 'Quarantine lot and restore original drawing; verify before release.'
+  persist(store, s)
+  const approved = { requestId: 'host-approval-synthetic' }
+  expect(() => decide(store, { kind: 'zeroing', id: 'ZR-001', expectedRevision: 1 }, approved)).toThrow(
+    'Double-five evidence incomplete',
+  )
+  expect(read(store).revision).toBe(1)
+  decide(store, { kind: 'mrb', id: 'NCR-018', expectedRevision: 1 }, approved)
+  expect(read(store).parts[0]!.status).toBe('rework-hold')
+  expect(read(store).ncrs[17]!.status).toBe('dispositioned')
+  expect(read(store).requirements.find((r) => r.id === 'CMP-003')!.verified).toBe(false)
+  expect(read(store).requirements.find((r) => r.id === 'SYS-001')!.verified).toBe(false)
+  expect(impact(read(store), 'ECR-016').requirements).not.toContain('SUB-006')
+  const candidate = read(store)
+  candidate.rule.status = 'review'
+  persist(store, candidate)
+  expect(impact(read(store), 'ECR-016').screeningRequired).toBe(false)
+  decide(store, { kind: 'rule', id: 'TVAC-LOT-001', expectedRevision: 2 }, approved)
+  expect(impact(read(store), 'ECR-016')).toMatchObject({ screeningRequired: true, ruleVersion: 1 })
+  decide(store, { kind: 'configuration', id: 'ECR-016', expectedRevision: 3 }, approved)
+  expect(read(store).tests.find((r) => r.id === 'VT-033')!.status).toBe('pending')
+  expect(read(store).baselines[3]!.status).toBe('verification-hold')
+  expect(read(store).audit.map((e) => e.approval)).toEqual([
+    approved.requestId,
+    approved.requestId,
+    approved.requestId,
+  ])
+  expect(() =>
+    decide(store, { kind: 'configuration', id: 'ECR-016', expectedRevision: 4 }, approved),
+  ).toThrow('not under review')
+})
+it('traceability exposes orphan/design/untested gaps and reports preserve uncertainty, evidence and safe HTML', () => {
+  const s = seed(),
+    rows = coverage(s)
+  expect(rows.find((r) => r.id === 'CMP-032')!.orphan).toBe(true)
+  expect(rows.find((r) => r.id === 'CMP-030')!.gap).toBe('untested')
+  expect(rows.find((r) => r.id === 'CMP-031')!.gap).toBe('missing-design')
+  expect(investigate(s).hypothesis.en).toContain('Hypothesis only')
+  s.ncrs[17]!.rationale = '<script>alert(1)</script>'
+  for (const locale of ['zh-CN', 'en'] as const) {
+    const r = report(s, 'zeroing', locale)
+    expect(r.markdown).toContain('NCR-017')
+    expect(r.html).not.toContain('<script>')
+    expect(r.html).toContain('&lt;script&gt;')
+    expect(r.markdown).toMatch(/草案|DRAFT/)
+    expect(r.markdown).toContain('T5')
+    expect(r.markdown).toContain('M5')
+  }
+})

@@ -119,6 +119,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
       name,
     })),
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
+    { family: 'showcase', name: 'aerospace-quality' },
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )
 

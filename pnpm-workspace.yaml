@@ -13,6 +13,7 @@ packages:
   - examples/loops/react-loop
   - examples/loops/plan-execute-loop
   - examples/ui/*
+  - examples/showcase/*
   - examples/demos
   - examples/persistence
   - examples/sandbox/docker
