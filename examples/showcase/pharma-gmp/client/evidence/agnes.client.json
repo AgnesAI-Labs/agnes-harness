@@ -1,0 +1,11 @@
+{
+  "client": {
+    "id": "pharma-evidence",
+    "entry": "./index.js",
+    "styles": ["./style.css"],
+    "slots": ["tool.call.toolview"],
+    "services": [],
+    "projections": [],
+    "lifetime": "session"
+  }
+}

@@ -1,0 +1,35 @@
+# 沙叶 GMP 质量中枢
+
+[English](README.md) · [演示 / Demo](DEMO.md) · [领域说明 / Domain notes](DOMAIN-NOTES.md)
+
+一个可安装、可显式采纳的药厂质量应用，包名 `@agnes-showcase/pharma-gmp`。沙叶 / Sableleaf OSD、人员、产品、签名和证据均为虚构合成；名称经公开检索未发现明显同名药厂，并不构成商标审查。本应用是非无菌片剂/胶囊质量系统的教学示例，未经计算机化系统验证，不可用于真实放行或申报。
+
+36 个批次、240 条环境记录、9 台设备、12 个偏差，场景时点为 **2024-10-20**。六个页面覆盖质量总览、批次与批记录、偏差与 CAPA、环境监测、QA 放行、审计追踪。五个中文/英文角色智能体：质量中枢、批记录审核员、偏差调查员、环境监测分析员、QA 放行助理。
+
+从源码仓根运行（先按仓库安装指南构建本地 CLI）：
+
+```sh
+mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp build
+export AGH_HOME="$(mktemp -d /tmp/agh-pharma.XXXXXX)"
+export AGNES_PROFILE=local-dev
+node agnes.mjs plugins inspect "file:$PWD/examples/showcase/pharma-gmp"
+node agnes.mjs plugins install "file:$PWD/examples/showcase/pharma-gmp"
+node agnes.mjs serve --port 4319
+```
+
+在插件页审阅准确的能力和完整性后信任、启用；在 **设置 → 应用** 预览并采纳沙叶应用。安装本身不采纳应用。选择 Demo 模型可通过 `call pharma_inspect {"batch":"B-2410-017"}` 等精确工具提示复现。推理步骤使用真实模型并参考 DEMO。`/?admin` 与 `agh app clear` 保留恢复能力。请勿将 home 指向真实 AGH 数据。
+
+所有页面通过声明的 `pharma.snapshot`、`pharma.change`、`pharma.release` 档案服务访问数据，无需活动会话。后端状态在宿主绑定的 owner/profile 存储中持久化；无浏览器数据库和私有文件路径。变更采用事务、单调版本和审计记录；原始 OOS 不覆盖。页面保留 operationId，待审批/未知回执先查询；不得盲目重新提交。QA 放行同时检查清单、精确版本、固定签名含义及宿主批准凭证，签名人来自批准凭证。
+
+`pharma_report` 生成 Markdown 与可打印 HTML，并调用 `present`。夜间任务通过环境监测智能体的标准 `schedule_create` 创建。智能体成长通过宿主插件候选工具创建、测试、提交审阅，并由人工发布精确哈希。会话继续使用宿主的代码 pin；升级不改写旧记录。
+
+本地验证（仓根，遵循宿主工具链及 heavy-lock 规则）：
+
+```sh
+mise exec -- node tools/toolchain/run.mjs exec vitest run examples/showcase/pharma-gmp/test --project fast --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp typecheck
+```
+
+完整演示和浏览器证据脚本位于 `scripts/`；使用独立 home、独立端口和显式费用上限。包不内置账号或密钥。使用 EU GMP Annex 1、Annex 11、21 CFR Part 11、ICH Q9/Q10 与 ALCOA+ 的术语参考，不代表合规认证。
+
+角色 preset 通过公开 tool-policy SPI 选择包内策略：保留默认策略的拒绝结果，对质量写入与放行显式要求“人工、单次、绑定精确参数及版本”，包括 full-access 会话；缺少该凭证的直接调用仍拒绝。

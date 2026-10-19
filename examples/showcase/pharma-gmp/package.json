@@ -1,0 +1,498 @@
+{
+  "name": "@agnes-showcase/pharma-gmp",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client",
+    "assets",
+    "skills",
+    "README.md",
+    "README.zh-CN.md",
+    "DEMO.md",
+    "DOMAIN-NOTES.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json tsconfig.test.json",
+    "test": "vitest run examples/showcase/pharma-gmp/test --project fast --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/resource-control-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@agnes/host": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  },
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui",
+      "bundle",
+      "skills",
+      "service"
+    ],
+    "plugins": [
+      {
+        "id": "ext:@agnes-showcase/pharma-gmp/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "services",
+          "skills",
+          "providers"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true,
+          "filesystem": {
+            "read": [
+              "pharma-output/**"
+            ],
+            "write": [
+              "pharma-output/**"
+            ]
+          },
+          "tools": {
+            "names": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_record",
+              "pharma_release",
+              "pharma_report"
+            ],
+            "prefix": "pharma_"
+          },
+          "tools.invoke": true
+        }
+      },
+      {
+        "id": "ext:@agnes-showcase/pharma-gmp/cards",
+        "export": "cards",
+        "apiRange": "^4.0.0",
+        "capabilities": {
+          "ui": true
+        }
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "^4.0.0",
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "~0.34.0",
+      "@agnes/resource-control-runtime": "0.0.0"
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@agnes-showcase/pharma-gmp/main",
+        "path": "./client/agnes.client.json"
+      },
+      {
+        "rowId": "ext:@agnes-showcase/pharma-gmp/cards",
+        "path": "./client/evidence/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "hub": {
+        "profile": {
+          "tools": [
+            "pharma_inspect",
+            "pharma_dossier",
+            "pharma_report",
+            "present",
+            "ask_user_question",
+            "read",
+            "ui_render",
+            "pharma_record",
+            "pharma_release",
+            "schedule_create",
+            "schedule_list",
+            "schedule_update",
+            "schedule_remove",
+            "plugin_helper_create",
+            "plugin_helper_install",
+            "plugin_helper_guide"
+          ],
+          "skills": [
+            "gmp-review"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_report",
+              "present",
+              "ask_user_question",
+              "read",
+              "ui_render",
+              "pharma_record",
+              "pharma_release",
+              "schedule_create",
+              "schedule_list",
+              "schedule_update",
+              "schedule_remove",
+              "plugin_helper_create",
+              "plugin_helper_install",
+              "plugin_helper_guide"
+            ]
+          }
+        },
+        "presets": {
+          "gmp": {
+            "name": "gmp",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "sableleaf-quality"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Quality Hub Assistant",
+            "zh-CN": "质量中枢助手"
+          },
+          "description": {
+            "en": "Inspect B-2410-017 and route review, investigation, EM and release work with tool evidence.",
+            "zh-CN": "先读取批次 B-2410-017 并说明该由哪个角色协作，所有结论引用工具证据。"
+          },
+          "preset": "gmp",
+          "pages": [
+            "pharma-home"
+          ],
+          "prompt": {
+            "mode": "draft",
+            "text": {
+              "en": "Inspect B-2410-017 and route review, investigation, EM and release work with tool evidence.",
+              "zh-CN": "先读取批次 B-2410-017 并说明该由哪个角色协作，所有结论引用工具证据。"
+            }
+          }
+        }
+      },
+      "reviewer": {
+        "profile": {
+          "tools": [
+            "pharma_inspect",
+            "pharma_dossier",
+            "pharma_report",
+            "present",
+            "ask_user_question",
+            "read",
+            "ui_render",
+            "pharma_record"
+          ],
+          "skills": [
+            "gmp-review"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_report",
+              "present",
+              "ask_user_question",
+              "read",
+              "ui_render",
+              "pharma_record"
+            ]
+          }
+        },
+        "presets": {
+          "gmp": {
+            "name": "gmp",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "sableleaf-quality"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Batch Record Reviewer",
+            "zh-CN": "批记录审核员"
+          },
+          "description": {
+            "en": "Review B-2410-017 CPP/IPC and ALCOA+; rank findings and draft review comments using tool evidence.",
+            "zh-CN": "审核 B-2410-017 的 CPP、IPC 与 ALCOA+，按严重度列出发现并草拟审核意见；先读取工具证据。"
+          },
+          "preset": "gmp",
+          "pages": [
+            "pharma-home"
+          ],
+          "prompt": {
+            "mode": "draft",
+            "text": {
+              "en": "Review B-2410-017 CPP/IPC and ALCOA+; rank findings and draft review comments using tool evidence.",
+              "zh-CN": "审核 B-2410-017 的 CPP、IPC 与 ALCOA+，按严重度列出发现并草拟审核意见；先读取工具证据。"
+            }
+          }
+        }
+      },
+      "investigator": {
+        "profile": {
+          "tools": [
+            "pharma_inspect",
+            "pharma_dossier",
+            "pharma_report",
+            "present",
+            "ask_user_question",
+            "read",
+            "ui_render",
+            "pharma_record"
+          ],
+          "skills": [
+            "gmp-review"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_report",
+              "present",
+              "ask_user_question",
+              "read",
+              "ui_render",
+              "pharma_record"
+            ]
+          }
+        },
+        "presets": {
+          "gmp": {
+            "name": "gmp",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "sableleaf-quality"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Deviation Investigator",
+            "zh-CN": "偏差调查员"
+          },
+          "description": {
+            "en": "Investigate B-2410-017 drying LOD, EM and equipment; propose 5-Why, CAPA and cross-batch impact; distinguish hypotheses from facts.",
+            "zh-CN": "调查 B-2410-017 的干燥 LOD、EM 和设备，提出 5-Why、CAPA 及跨批影响；区分假设与已确认事实。"
+          },
+          "preset": "gmp",
+          "pages": [
+            "pharma-home"
+          ],
+          "prompt": {
+            "mode": "draft",
+            "text": {
+              "en": "Investigate B-2410-017 drying LOD, EM and equipment; propose 5-Why, CAPA and cross-batch impact; distinguish hypotheses from facts.",
+              "zh-CN": "调查 B-2410-017 的干燥 LOD、EM 和设备，提出 5-Why、CAPA 及跨批影响；区分假设与已确认事实。"
+            }
+          }
+        }
+      },
+      "em": {
+        "profile": {
+          "tools": [
+            "pharma_inspect",
+            "pharma_dossier",
+            "pharma_report",
+            "present",
+            "ask_user_question",
+            "read",
+            "ui_render",
+            "schedule_create",
+            "schedule_list",
+            "schedule_update",
+            "schedule_remove"
+          ],
+          "skills": [
+            "gmp-review"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_report",
+              "present",
+              "ask_user_question",
+              "read",
+              "ui_render",
+              "schedule_create",
+              "schedule_list",
+              "schedule_update",
+              "schedule_remove"
+            ]
+          }
+        },
+        "presets": {
+          "gmp": {
+            "name": "gmp",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "sableleaf-quality"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "EM Analyst",
+            "zh-CN": "环境监测分析员"
+          },
+          "description": {
+            "en": "Analyze C-201 EM trends, distinguish alert/action limits and generate an English nightly EM report.",
+            "zh-CN": "分析 C-201 环境趋势，区别警戒与行动限；生成中文夜间 EM 趋势报告。"
+          },
+          "preset": "gmp",
+          "pages": [
+            "pharma-home"
+          ],
+          "prompt": {
+            "mode": "draft",
+            "text": {
+              "en": "Analyze C-201 EM trends, distinguish alert/action limits and generate an English nightly EM report.",
+              "zh-CN": "分析 C-201 环境趋势，区别警戒与行动限；生成中文夜间 EM 趋势报告。"
+            }
+          }
+        }
+      },
+      "release": {
+        "profile": {
+          "tools": [
+            "pharma_inspect",
+            "pharma_dossier",
+            "pharma_report",
+            "present",
+            "ask_user_question",
+            "read",
+            "ui_render",
+            "pharma_release"
+          ],
+          "skills": [
+            "gmp-review"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "pharma_inspect",
+              "pharma_dossier",
+              "pharma_report",
+              "present",
+              "ask_user_question",
+              "read",
+              "ui_render",
+              "pharma_release"
+            ]
+          }
+        },
+        "presets": {
+          "gmp": {
+            "name": "gmp",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "sableleaf-quality"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "QA Release Assistant",
+            "zh-CN": "QA 放行助理"
+          },
+          "description": {
+            "en": "Build B-2410-017 release dossier and explain blockers. Only when all prerequisites pass request human approval with signature meaning, then generate the dossier.",
+            "zh-CN": "构建 B-2410-017 放行清单，说明阻断项。满足所有条件后才请求人工批准并记录签名含义，最后生成档案。"
+          },
+          "preset": "gmp",
+          "pages": [
+            "pharma-home"
+          ],
+          "prompt": {
+            "mode": "draft",
+            "text": {
+              "en": "Build B-2410-017 release dossier and explain blockers. Only when all prerequisites pass request human approval with signature meaning, then generate the dossier.",
+              "zh-CN": "构建 B-2410-017 放行清单，说明阻断项。满足所有条件后才请求人工批准并记录签名含义，最后生成档案。"
+            }
+          }
+        }
+      }
+    },
+    "application": {
+      "id": "sableleaf-quality",
+      "brand": {
+        "name": {
+          "en": "Sableleaf OSD",
+          "zh-CN": "沙叶制剂"
+        },
+        "title": {
+          "en": "Sableleaf · GMP Quality Hub",
+          "zh-CN": "沙叶 · GMP 质量中枢"
+        },
+        "assistantName": {
+          "en": "Quality Assistant",
+          "zh-CN": "质量助手"
+        },
+        "mark": "assets/mark.png",
+        "favicon": "assets/favicon.png"
+      },
+      "presentation": {
+        "skin": "sableleaf",
+        "home": "@agnes-showcase/pharma-gmp#pharma-home",
+        "navigation": {
+          "entries": [
+            "@agnes-showcase/pharma-gmp#pharma-home",
+            "@agnes-showcase/pharma-gmp#pharma-batches",
+            "@agnes-showcase/pharma-gmp#pharma-deviations",
+            "@agnes-showcase/pharma-gmp#pharma-em",
+            "@agnes-showcase/pharma-gmp#pharma-release",
+            "@agnes-showcase/pharma-gmp#pharma-audit"
+          ],
+          "hideBuiltin": []
+        }
+      },
+      "defaultAgent": "@agnes-showcase/pharma-gmp#hub",
+      "agents": [
+        "@agnes-showcase/pharma-gmp#hub",
+        "@agnes-showcase/pharma-gmp#reviewer",
+        "@agnes-showcase/pharma-gmp#investigator",
+        "@agnes-showcase/pharma-gmp#em",
+        "@agnes-showcase/pharma-gmp#release"
+      ]
+    },
+    "metadata": {
+      "displayName": "Sableleaf GMP Quality Hub",
+      "summary": "Fictional OSD quality application: batch evidence, deviation/CAPA, EM and human-approved QA release.",
+      "description": "Synthetic pharmaceutical quality application with five role agents and six operational pages.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "沙叶 GMP 质量中枢",
+          "summary": "虚构固体制剂质量应用：批记录、偏差/CAPA、EM 和人工批准的 QA 放行。",
+          "description": "五个角色智能体、六个业务页面的合成药厂质量应用。"
+        }
+      }
+    }
+  }
+}
