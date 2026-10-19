@@ -21,6 +21,8 @@ export async function realRuntime(label, existingRoot) {
   const home = join(root, 'h'),
     workspace = join(root, 'w')
   await mkdir(workspace, { recursive: true, mode: 0o700 })
+  const temp = join(root, 'tmp')
+  await mkdir(temp, { recursive: true, mode: 0o700 })
   const listener = createServer()
   await new Promise((done) => listener.listen(0, '127.0.0.1', done))
   const port = listener.address().port
@@ -29,8 +31,15 @@ export async function realRuntime(label, existingRoot) {
   const url = `http://127.0.0.1:${port}`
   const env = {
     PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    SystemDrive: process.env.SystemDrive,
+    ComSpec: process.env.ComSpec,
+    PATHEXT: process.env.PATHEXT,
     HOME: root,
-    TMPDIR: process.env.TMPDIR,
+    USERPROFILE: root,
+    TMPDIR: temp,
+    TEMP: temp,
+    TMP: temp,
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,
@@ -45,7 +54,7 @@ export async function realRuntime(label, existingRoot) {
       const child = execFile(
         process.execPath,
         [entry, ...args, '--workspace', workspace],
-        { env, cwd: workspace, timeout: 60000, maxBuffer: 2 ** 22 },
+        { env, cwd: workspace, timeout: 60000, maxBuffer: 2 ** 22, windowsHide: true },
         (error, stdout, stderr) =>
           error ? reject(new Error(redact(stderr || stdout))) : done(redact(stdout)),
       )
@@ -78,7 +87,13 @@ export async function realRuntime(label, existingRoot) {
       const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
       client = createClient({
         timeouts: { request: 120000 },
-        transport: { kind: 'unix', path: owner.socketPath },
+        transport: {
+          kind: 'unix',
+          path: owner.socketPath,
+          ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+            ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+            : {}),
+        },
         auth: { kind: 'local' },
         journal: memoryJournal(),
       })
@@ -119,6 +134,7 @@ export async function realRuntime(label, existingRoot) {
       web = spawn(process.execPath, [entry, 'serve', '--port', String(port), '--workspace', workspace], {
         env,
         cwd: workspace,
+        windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       for (const stream of [web.stdout, web.stderr])

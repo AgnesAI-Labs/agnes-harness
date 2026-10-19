@@ -11,6 +11,8 @@ node --import tsx tools/authoring/real-eval.mjs behavior
 
 Each command creates a fresh directory below `~/agh-real-eval/` with an isolated home/workspace and a free loopback port (never 4177/4178). Accounts are saved through the public SDK configuration API. Only the initial process receives the injected key; children receive an explicit isolated environment. Homes and redacted receipts are retained locally, outside Git. Do not upload complete homes or raw provider traces.
 
+The child home and temporary directories are isolated on both Windows and macOS. Windows connections pass the daemon owner's process identity through the existing SDK verification; Unix socket connections retain the normal local transport.
+
 There are no scenario retries. Track attempts externally and run a scenario at most three times. Each model turn has a 25-minute abort deadline; repetitive failed work can be cancelled earlier with the public SDK. `ask_user_question` forms receive the first declared enum choice or a fixed answer selecting a simple Chinese interface, profile-owned persistence and human review. Permission requests receive one-time approval for this synthetic evaluation; the real scenarios use the demo's full-access preset in the isolated workspace.
 
 The three creation scenarios record the durable timeline, tool details, candidate trees, exact-hash tests and AGH usage projection. `review` means submitted for human review, not installed or published. Inspect receipts when a command fails. active-run.json records the session ID for read-only monitoring or cancellation through the public SDK. Billing is AGH's estimated USD, not a provider invoice; interrupted usage can be incomplete. Summing per-turn and session totals would double count.

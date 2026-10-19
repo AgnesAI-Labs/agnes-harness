@@ -1,4 +1,6 @@
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { safeAuthoringOutput } from '../src/authoring.js'
 import { DEFAULT_RULES, type RedactRules, redact, redactText } from '../src/redact.js'
 
 // Keep synthetic credentials and user paths out of the repository's literal scanner while still
@@ -13,6 +15,34 @@ const rules: RedactRules = {
   ...DEFAULT_RULES,
   paths: { home: posixHome, workspaceRoot, username: 'alice' },
 }
+
+it.each([
+  ['/tmp/authoring 中文 #% project', false],
+  ['C:\\synthetic\\authoring 中文 #% project', true],
+  ['\\\\server\\share\\authoring 中文 #% project', true],
+])('retains candidate-relative authoring locations for %s', (directory, windows) => {
+  const separator = windows ? '\\' : '/'
+  for (const staging of ['', `node_modules${separator}.authoring-tests${separator}`]) {
+    const file = `${directory}${separator}${staging}test${separator}fail.test.mjs`
+    for (const location of [
+      file,
+      pathToFileURL(file, { windows }).href,
+      ...(windows ? [file.replace(/\\/g, '\\\\')] : []),
+    ]) {
+      expect(safeAuthoringOutput(`location: ${location}:4:1`, 16384, directory)).toBe(
+        'location: ./test/fail.test.mjs:4:1',
+      )
+    }
+  }
+  const privateFile = `${windows ? 'D:\\private' : '/private'}/hidden.test.mjs`
+  expect(safeAuthoringOutput(`location: ${privateFile}:4:1`, 16384, directory)).toBe(
+    'location: [REDACTED:path]',
+  )
+  const lookalike = pathToFileURL(`${directory}-other/test.mjs`, { windows }).href
+  expect(safeAuthoringOutput(`location: ${lookalike}:4:1`, 16384, directory)).toBe(
+    'location: [REDACTED:path]',
+  )
+})
 
 describe('redactText', () => {
   it('masks every built-in secret family and counts repeated hits', () => {

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import type { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { runAuthoringTests } from '../src/packages/authoring-tests.js'
 
@@ -26,7 +27,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 it('retains redacted assertion details, package-relative locations and bounded compile failures without starting processes', async () => {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agh-author-output-')))
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agh-author-output-中文 #%-')))
   roots.push(directory)
   mkdirSync(join(directory, 'test'))
   const files = [
@@ -34,9 +35,10 @@ it('retains redacted assertion details, package-relative locations and bounded c
     { path: 'test/fail.test.mjs', content: '' },
   ]
   const privateHome = ['', 'Users', 'synthetic'].join('/')
+  const testFile = join(directory, 'test', 'fail.test.mjs')
   build.mockResolvedValue({})
   exec.mockResolvedValue({
-    stdout: `not ok 1 - persists data\n  name: AssertionError\n  error: expected 2 entries, got 0\n  location: file://${directory}/test/fail.test.mjs:4:1\n  private: ${privateHome}/private/data.json\n  stack: |-\n    TestContext.privateFrame (file://${privateHome}/private/test.mjs:1:1)\n# tests 1\n# fail 1\n# pass 0\n# authoring-exit 1\n${'x'.repeat(20000)}`,
+    stdout: `not ok 1 - persists data\n  name: AssertionError\n  error: expected 2 entries, got 0\n  location: ${pathToFileURL(testFile).href}:4:1\n  private: ${privateHome}/private/data.json\n  stack: |-\n    TestContext.privateFrame (file://${privateHome}/private/test.mjs:1:1)\n# tests 1\n# fail 1\n# pass 0\n# authoring-exit 1\n${'x'.repeat(20000)}`,
   })
   const result = await runAuthoringTests(directory, files, new AbortController().signal)
   expect(result).toMatchObject({ state: 'failed', count: 1 })
@@ -52,7 +54,7 @@ it('retains redacted assertion details, package-relative locations and bounded c
   expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(16384)
   build.mockRejectedValue({
     errors: [
-      { text: 'Unexpected token', location: { file: `${directory}/test/fail.test.mjs`, line: 3, column: 2 } },
+      { text: 'Unexpected token', location: { file: testFile, line: 3, column: 2 } },
       {
         text: `Cannot import ${privateHome}/private/module.js`,
         location: { file: `${privateHome}/private/module.js`, line: 1, column: 1 },
@@ -66,7 +68,7 @@ it('retains redacted assertion details, package-relative locations and bounded c
   build.mockResolvedValue({})
   exec.mockRejectedValue(
     Object.assign(new Error('command timed out'), {
-      stdout: `not ok 1 - profile panel\n  error: query never completed\n  location: file://${directory}/test/fail.test.mjs:4:1\n  private: ${privateHome}/private/data.json\n# tests 1\n# pass 1\n# fail 0\n# authoring-exit 0`,
+      stdout: `not ok 1 - profile panel\n  error: query never completed\n  location: ${pathToFileURL(testFile).href}:4:1\n  private: ${privateHome}/private/data.json\n# tests 1\n# pass 1\n# fail 0\n# authoring-exit 0`,
     }),
   )
   const timedOut = await runAuthoringTests(directory, files, new AbortController().signal)

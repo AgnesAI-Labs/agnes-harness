@@ -52,7 +52,7 @@ describe.skipIf(process.platform !== 'win32')('bounded Windows package commands'
       runIsolatedCommand(
         process.execPath,
         ['-e', 'process.stdout.write("failed assertion");process.exit(7)'],
-        options,
+        { ...options, maxOutputBytes: 1024 },
       ),
     ).rejects.toMatchObject({
       message: 'command exited with status 7',

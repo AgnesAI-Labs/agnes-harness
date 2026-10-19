@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { ProviderError } from '@agnes/extension-api'
@@ -458,7 +458,10 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
       await writeFile(path, file.content)
     }
     const manager = createPackageManager({ dataDir: join(root, 'data'), agnesVersion: '0.1.0', cwd: root })
-    const preview = await manager.inspect(join(root, 'profile'), parseSource(`file:${directory}`))
+    const preview = await manager.inspect(
+      join(root, 'profile'),
+      parseSource(`file:${directory.split(sep).join('/')}`),
+    )
     expect(preview.blockers).toEqual([])
     expect(preview.provides).toEqual(['skills'])
   } finally {
