@@ -1,5 +1,10 @@
 import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
-import { contextBudgetPresets, modelThinkingOptions, parseContextBudget } from '@agnes/web-ui'
+import {
+  contextBudgetPresets,
+  modelThinkingOptions,
+  parseContextBudget,
+  type SessionAuxiliarySnapshot,
+} from '@agnes/web-ui'
 import type { ModelPickerOption, ModelPickerSettings } from './types.js'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
@@ -54,6 +59,22 @@ export function thinkingChoices(
     value: option.value,
     label: option.value ? option.label.replace(/ · .*$/, '') : t('modelSettings.presetAuto'),
   }))
+}
+
+/** 模型没有声明任何档位时只剩「自动」，主菜单直接写明不支持，不再进入二级页。 */
+export function thinkingSupported(settings: ModelPickerSettings | undefined, t: Translate): boolean {
+  return thinkingChoices(settings, t).length > 1
+}
+
+/** 会话里与默认值不同的后台模型槽位数；0 表示两项都跟随默认。 */
+export function changedSlots(snapshot: SessionAuxiliarySnapshot): number {
+  // An unset default resolves to the preset's route, which the client cannot see, so it never counts.
+  return (['fast', 'verifier'] as const).filter((slot) => {
+    const fallback = snapshot.defaults?.[slot]
+    return (
+      !!fallback && (snapshot[slot]?.route !== fallback.route || snapshot[slot]?.model !== fallback.model)
+    )
+  }).length
 }
 
 /** 已保存的档位若不在模型声明的范围内，返回它以便就地告知用户。 */

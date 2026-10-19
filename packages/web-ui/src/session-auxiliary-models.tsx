@@ -1,6 +1,6 @@
 import type { AuxiliaryModelSlots } from '@agnes/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { type AuxiliaryModelOption, auxiliaryModelLabel } from './auxiliary-model-fields.js'
+import type { AuxiliaryModelOption } from './auxiliary-model-fields.js'
 import { reportSuccess } from './feedback.js'
 import { fallbackT, type Translate } from './locales/index.js'
 import { SettingsState } from './settings-layout.js'
@@ -71,10 +71,12 @@ export function SessionAuxiliaryModels({
         const id = `session-model-slot-${slot}`
         return (
           <div className="model-picker-aux-row" key={slot}>
-            <label id={`${id}-label`} htmlFor={id}>
-              {t(`modelSettings.slots.${slot}`)}
+            <div className="model-picker-aux-head">
+              <label id={`${id}-label`} htmlFor={id}>
+                {t(`modelSettings.slots.${slot}Session`)}
+              </label>
               <small>{t(`modelSettings.slots.${slot}SessionHelp`)}</small>
-            </label>
+            </div>
             <Select<string>
               id={id}
               data-testid={id}
@@ -101,7 +103,8 @@ export function SessionAuxiliaryModels({
                   : []),
                 ...models.map((model) => ({
                   value: JSON.stringify([model.route, model.id]),
-                  label: auxiliaryModelLabel(model),
+                  // The model leads; its account follows to tell same-named models apart.
+                  label: `${model.name ?? model.id} · ${model.label ?? model.route}`,
                 })),
               ]}
               onChange={(value) => void apply(slot, value)}

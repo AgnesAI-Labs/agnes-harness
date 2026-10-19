@@ -132,9 +132,9 @@ test('reviewer defaults and session overrides are configurable from Web in both 
   await auxiliary.getByTestId('session-model-slot-verifier').getByRole('combobox').click()
   await page
     .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
-    .filter({ hasText: /^demo · demo-model$/ })
+    .filter({ hasText: /^demo-model · demo$/ })
     .click()
-  await expect(page.getByRole('status').filter({ hasText: 'Auxiliary models updated.' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Background models updated.' })).toBeVisible()
   const sessionId = new URL(page.url()).searchParams.get('session')!
   const client = await runtime.connect()
   const session = await client.session.load(sessionId, { cwd: runtime.workspace })

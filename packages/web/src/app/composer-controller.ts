@@ -317,6 +317,8 @@ export function createComposerController(
           context.sessionPending ||
           initialSubmissionPending ||
           !context.runtimeModels.length,
+        // A running reply is the one temporary lock worth explaining on the trigger.
+        ...(available && busy ? { disabledReason: context.t('settings.modelPicker.busy') } : {}),
         label: modelSelectLabel(context.knownSessionModel, context.t),
         options: context.runtimeModels,
         pending: context.modelChangePending,

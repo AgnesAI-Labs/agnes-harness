@@ -35,6 +35,8 @@ export type ModelPickerState = {
   auxiliaryAvailable?: boolean
   accessibleName: string
   disabled: boolean
+  /** Why the trigger is disabled, shown as its tooltip when the reason is temporary. */
+  disabledReason?: string
   label: string
   options: readonly ModelPickerOption[]
   pending: boolean

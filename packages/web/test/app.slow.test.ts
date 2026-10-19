@@ -1196,7 +1196,7 @@ describe('web session selection', () => {
       // 选完一个参数面板收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       await openPanel('context')
-      choose('session-model-budget', '32K')
+      choose('session-model-budget', '较小')
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
       await configurationCallback.saved?.({
@@ -1210,7 +1210,7 @@ describe('web session selection', () => {
       expect(choice('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
       await closePanel()
       await openPanel('context')
-      expect(choice('session-model-budget', '32K').getAttribute('aria-checked')).toBe('true')
+      expect(choice('session-model-budget', '较小').getAttribute('aria-checked')).toBe('true')
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'

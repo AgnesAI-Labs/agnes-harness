@@ -237,7 +237,10 @@ it.each(['en', 'zh-CN'] as const)(
             onModelSelect: async () => true,
             onPermissionSelect: async () => true,
             onModelSettingsChange: async () => true,
-            onAuxiliaryRead: async () => ({ fast: { route: 'deepseek', model: longModel } }),
+            onAuxiliaryRead: async () => ({
+              fast: { route: 'deepseek', model: longModel },
+              defaults: { fast: { route: 'deepseek', model: 'deepseek-v4-pro' }, verifier: null },
+            }),
             onAuxiliarySelect: async () => true,
           },
         })
@@ -301,13 +304,13 @@ it.each(['en', 'zh-CN'] as const)(
         ))
           expect(runtime.locale.t(key)).toBe(text)
         const row = panel.querySelector<HTMLButtonElement>('#model-picker-auxiliary')!
-        await vi.waitFor(() => expect(row.textContent).toContain(longModel))
-        await act(async () => row.focus())
+        // The row summarises the slots; the long model name is read in the sub-panel.
         await vi.waitFor(() =>
-          expect(document.getElementById(row.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
-            `${longModel} · ${runtime.locale.t('modelSettings.slots.unset')}`,
+          expect(row.querySelector('.model-picker-value')?.textContent).toBe(
+            runtime.locale.t('modelSettings.slots.changed', { count: 1 }),
           ),
         )
+        expect(row.textContent).not.toContain(longModel)
         for (const kind of ['thinking', 'context', 'auxiliary']) {
           await act(async () => panel.querySelector<HTMLButtonElement>(`#model-picker-${kind}`)!.click())
           expectLocalizedDom(panel)

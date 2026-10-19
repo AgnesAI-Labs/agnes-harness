@@ -1,6 +1,6 @@
-import type { ModelSettings } from '@agnes/protocol'
+import { type ModelSettings, minimumContextBudget } from '@agnes/protocol'
 import { Button, contextBudgetLabel, Icon, SettingsInput, type Translate } from '@agnes/web-ui'
-import { type ReactNode, useState } from 'react'
+import { Fragment, type ReactNode, useState } from 'react'
 import { budgetChoices, checkBudget, draftSettings, thinkingChoices, unavailableThinking } from './state.js'
 import type { ModelPickerSettings } from './types.js'
 
@@ -14,7 +14,8 @@ function Choices({
 }: {
   id: string
   label: string
-  options: ReadonlyArray<{ label: string; value: string; description?: ReactNode }>
+  /** `amount` is the right-hand numeric column; the first option is set apart as the automatic one. */
+  options: ReadonlyArray<{ label: string; value: string; description?: ReactNode; amount?: string }>
   selected: string | undefined
   disabled: boolean
   onChoose(value: string): void
@@ -38,22 +39,27 @@ function Choices({
         buttons[index]?.focus()
       }}
     >
-      {options.map((option) => (
-        <Button
-          key={option.value}
-          appearance="ghost"
-          className="model-picker-choice"
-          role="radio"
-          aria-checked={selected === option.value}
-          disabled={disabled}
-          onClick={() => onChoose(option.value)}
-        >
-          <span>
-            {option.label}
-            {option.description ? <small>{option.description}</small> : null}
-          </span>
-          {selected === option.value ? <Icon name="check" /> : null}
-        </Button>
+      {options.map((option, index) => (
+        <Fragment key={option.value}>
+          <Button
+            appearance="ghost"
+            className="model-picker-choice"
+            role="radio"
+            aria-checked={selected === option.value}
+            disabled={disabled}
+            onClick={() => onChoose(option.value)}
+          >
+            <span>
+              {option.label}
+              {option.description ? <small>{option.description}</small> : null}
+            </span>
+            <span className="model-picker-amount">{option.amount}</span>
+            <span className="model-picker-check">
+              {selected === option.value ? <Icon name="check" /> : null}
+            </span>
+          </Button>
+          {index === 0 && options.length > 1 ? <hr className="model-picker-separator" /> : null}
+        </Fragment>
       ))}
     </div>
   )
@@ -87,6 +93,7 @@ export function SessionModelSettings({
   const thinking = stale ? undefined : (settings.thinking ?? '')
   const check = checkBudget(budget, settings.capacity)
   const capacity = contextBudgetLabel(settings.capacity)
+  const sizes = [t('modelSettings.presetSmaller'), t('modelSettings.presetMedium')]
   function apply(level: string, raw: string, dismissUnchanged: boolean) {
     if (level === thinking && raw.trim() === saved) {
       if (dismissUnchanged) close(true)
@@ -105,7 +112,10 @@ export function SessionModelSettings({
         <Choices
           id="session-model-thinking"
           label={t('modelSettings.thinkingLabel')}
-          options={levels.length ? levels : [{ value: '', label: t('modelSettings.presetAuto') }]}
+          options={(levels.length ? levels : [{ value: '', label: t('modelSettings.presetAuto') }]).map(
+            (level) =>
+              level.value ? level : { ...level, description: t('modelSettings.thinking.autoDescription') },
+          )}
           selected={thinking}
           disabled={disabled}
           onChoose={(value) => apply(value, budget, true)}
@@ -124,10 +134,19 @@ export function SessionModelSettings({
             {
               label: t('modelSettings.presetAuto'),
               value: '',
-              description: t('modelSettings.usingCapacity', { capacity }),
+              description: t('modelSettings.usingCapacity'),
+              amount: capacity,
             },
-            ...presets.map((tokens) => ({ label: contextBudgetLabel(tokens), value: String(tokens) })),
-            { label: t('modelSettings.custom'), value: 'custom' },
+            ...presets.map((tokens, index) => ({
+              label: sizes[index] ?? contextBudgetLabel(tokens),
+              value: String(tokens),
+              amount: contextBudgetLabel(tokens),
+            })),
+            {
+              label: t('modelSettings.custom'),
+              value: 'custom',
+              amount: custom && check.valid && check.tokens ? contextBudgetLabel(check.tokens) : '',
+            },
           ]}
           selected={
             custom
@@ -151,38 +170,54 @@ export function SessionModelSettings({
         />
         {custom ? (
           <div className="model-picker-custom">
-            <SettingsInput
-              id="session-model-window"
-              className="model-picker-budget"
-              type="text"
-              inputMode="decimal"
-              maxLength={32}
-              autoComplete="off"
-              value={budget.endsWith('K') ? budget.slice(0, -1) : budget ? String(Number(budget) / 1000) : ''}
-              disabled={disabled}
-              aria-label={t('modelSettings.customKAria')}
-              aria-invalid={!check.valid}
-              aria-describedby="session-model-window-hint session-model-settings-error"
-              onChange={(event) =>
-                setBudget(event.currentTarget.value.trim() ? `${event.currentTarget.value}K` : '')
-              }
-              onBlur={(event) => {
-                if (event.currentTarget.closest('#model-picker-popover')?.contains(event.relatedTarget))
-                  return
-                apply(thinking ?? '', budget, false)
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-                event.preventDefault()
-                apply(thinking ?? '', budget, true)
-              }}
-            />
-            <span aria-hidden="true">{t('modelSettings.kUnit')}</span>
+            <div className="model-picker-budget-field">
+              <SettingsInput
+                id="session-model-window"
+                className="model-picker-budget"
+                type="text"
+                inputMode="decimal"
+                maxLength={32}
+                autoComplete="off"
+                value={
+                  budget.endsWith('K') ? budget.slice(0, -1) : budget ? String(Number(budget) / 1000) : ''
+                }
+                disabled={disabled}
+                aria-label={t('modelSettings.customKAria')}
+                aria-invalid={!check.valid}
+                aria-describedby="session-model-window-hint session-model-settings-error"
+                onChange={(event) =>
+                  setBudget(event.currentTarget.value.trim() ? `${event.currentTarget.value}K` : '')
+                }
+                onBlur={(event) => {
+                  if (event.currentTarget.closest('#model-picker-popover')?.contains(event.relatedTarget))
+                    return
+                  apply(thinking ?? '', budget, false)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  apply(thinking ?? '', budget, true)
+                }}
+              />
+              <span aria-hidden="true">{t('modelSettings.kUnit')}</span>
+            </div>
+            <Button
+              appearance="primary"
+              disabled={disabled || !check.valid}
+              onClick={() => apply(thinking ?? '', budget, true)}
+            >
+              {t('modelSettings.apply')}
+            </Button>
           </div>
         ) : null}
-        <p id="session-model-window-hint" className="model-picker-hint">
-          {t('modelSettings.compactHint', { capacity })}
-        </p>
+        {custom ? (
+          <p id="session-model-window-hint" className="model-picker-hint">
+            {t('modelSettings.compactHint', {
+              min: contextBudgetLabel(minimumContextBudget(settings.capacity)),
+              max: capacity,
+            })}
+          </p>
+        ) : null}
         <p id="session-model-settings-error" className="model-picker-error" role="alert">
           {check.valid
             ? ''

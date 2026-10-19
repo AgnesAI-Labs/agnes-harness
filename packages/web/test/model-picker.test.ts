@@ -127,7 +127,7 @@ async function enter(panel: 'thinking' | 'context' | 'auxiliary') {
   document.querySelector<HTMLButtonElement>(`#model-picker-${panel}`)?.click()
   await vi.waitFor(() =>
     expect(document.querySelector('.model-picker-back')?.textContent).toBe(
-      panel === 'thinking' ? '思考强度' : panel === 'context' ? '上下文窗口' : '辅助模型',
+      panel === 'thinking' ? '思考强度' : panel === 'context' ? '上下文窗口' : '后台模型',
     ),
   )
 }
@@ -202,7 +202,7 @@ describe('model picker', () => {
     expect(trigger.querySelector('[data-model-label]')?.textContent).toBe('gpt-5.6')
     expect(trigger.querySelector('[data-model-level]')?.textContent).toBe('低')
     expect(trigger.getAttribute('aria-label')).toBe('选择当前会话模型')
-    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox')
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     // 自动档不占位。
     render({
@@ -219,7 +219,8 @@ describe('model picker', () => {
     const { trigger } = mountPicker()
     const list = await open(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(trigger.getAttribute('aria-controls')).toBe('model-listbox')
+    expect(trigger.getAttribute('aria-controls')).toBe('model-picker-popover')
+    expect(document.querySelector('#model-picker-popover')?.getAttribute('role')).toBe('dialog')
     expect(
       [...list.querySelectorAll('[role="group"]')].map((group) => group.getAttribute('aria-label')),
     ).toEqual(['OpenAI', '本机', '已配置账户'])
@@ -377,7 +378,8 @@ describe('model picker', () => {
     await open(trigger)
     await enter('thinking')
     const levels = [...document.querySelectorAll('#session-model-thinking [role=radio]')]
-    expect(levels.map((level) => level.textContent)).toEqual(['自动', '低', '高'])
+    expect(levels.map((level) => level.textContent)).toEqual(['自动由模型自己决定想多久', '低', '高'])
+    expect(document.querySelector('.model-picker-head-note')?.textContent).toBe('gpt-5.6')
     expect(option('session-model-thinking', '低').getAttribute('aria-checked')).toBe('true')
     choose('session-model-thinking', '高')
     // 档位与预算一起提交，免得只改一项把另一项重置。
@@ -420,13 +422,15 @@ describe('model picker', () => {
     await open(trigger)
     await enter('context')
     const presets = [...document.querySelectorAll('#session-model-budget [role=radio]')]
+    // 左边是名称，右边一列是数值；「自动」的数值就是模型容量。
     expect(presets.map((preset) => preset.textContent)).toEqual([
-      '自动使用模型容量 128K',
-      '32K',
-      '64K',
+      '自动用满模型容量128K',
+      '较小32K',
+      '中等64K',
       '自定义',
     ])
-    expect(option('session-model-budget', '64K').getAttribute('aria-checked')).toBe('true')
+    expect(document.querySelector('.model-picker-head-note')?.textContent).toBe('模型容量 128K')
+    expect(option('session-model-budget', '中等').getAttribute('aria-checked')).toBe('true')
     choose('session-model-budget', '自动')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low' }))
     await closed()
@@ -487,7 +491,7 @@ describe('model picker', () => {
     await enter('context')
     expect(document.querySelector('.model-picker-notice')?.textContent).toContain('max')
     expect(document.querySelector('#session-model-thinking [aria-checked=true]')).toBeNull()
-    choose('session-model-budget', '32K')
+    choose('session-model-budget', '较小')
     await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ contextWindow: 32000 }))
   })
 
@@ -502,6 +506,54 @@ describe('model picker', () => {
     expect(second.trigger.querySelector('[data-model-level]')).toBeNull()
     await open(second.trigger)
     expect(document.querySelector('#model-settings-popover')).toBeNull()
+  })
+
+  it('hides the account heading when every model comes from one account', async () => {
+    const { trigger } = mountPicker({ options: models.slice(0, 2) })
+    const list = await open(trigger)
+    expect(list.querySelectorAll('[role="group"]')).toHaveLength(1)
+    expect(list.querySelector('.model-picker-group-title')).toBeNull()
+    // 「本会话」标题右侧说明改动范围。
+    expect(document.querySelector('.model-picker-session')?.textContent).toContain('只改当前会话')
+  })
+
+  it('disables reasoning for a model that declares no levels instead of opening an empty panel', async () => {
+    const { thinkingLevelMap: _levels, thinking: _thinking, ...plain } = settings
+    const { trigger } = mountPicker({ settings: plain })
+    await open(trigger)
+    const row = document.querySelector<HTMLButtonElement>('#model-picker-thinking')
+    expect(row?.disabled).toBe(true)
+    expect(row?.querySelector('.model-picker-value')?.textContent).toBe('此模型不支持')
+    expect(document.querySelector<HTMLButtonElement>('#model-picker-context')?.disabled).toBe(false)
+  })
+
+  it('shows a saved custom budget in the value column and applies a new one with the Apply button', async () => {
+    const { trigger, onSettingsChange } = mountPicker({ settings: { ...settings, contextWindow: 100000 } })
+    await open(trigger)
+    expect(document.querySelector('#model-picker-context .model-picker-value')?.textContent).toBe('100K')
+    await enter('context')
+    expect(option('session-model-budget', '自定义').textContent).toBe('自定义100K')
+    expect(budget().value).toBe('100')
+    expect(document.querySelector('#session-model-window-hint')?.textContent).toMatch(
+      /^\S+ 到 128K 之间。越小越省钱，但更早触发上下文压缩。$/,
+    )
+    type(budget(), '120')
+    await vi.waitFor(() => expect(budget().value).toBe('120'))
+    const apply = [...document.querySelectorAll<HTMLButtonElement>('.model-picker-custom button')].find(
+      (button) => button.textContent === '应用',
+    )
+    apply?.click()
+    await vi.waitFor(() =>
+      expect(onSettingsChange).toHaveBeenCalledWith({ thinking: 'low', contextWindow: 120000 }),
+    )
+    await closed()
+  })
+
+  it('explains why the trigger is locked while a reply is running', () => {
+    const { trigger } = mountPicker({ disabled: true, disabledReason: '回复结束后可以切换模型' })
+    expect(trigger.disabled).toBe(true)
+    expect(trigger.title).toBe('回复结束后可以切换模型')
+    expect(trigger.closest('.agh-tooltip-anchor')?.getAttribute('aria-label')).toBe('回复结束后可以切换模型')
   })
 
   it('cannot open without models and closes when the picker becomes unavailable', async () => {
@@ -547,16 +599,26 @@ describe('model picker', () => {
         )
         await enter('auxiliary')
         expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
-          '跟随默认（gpt-5.6）',
+          '跟随默认 · gpt-5.6',
         )
         expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
-          '跟随默认（未设置）',
+          '跟随默认 · 未设置',
         )
+        // 两项各写清用途，底部说明只改当前会话。
+        const panelText = document.querySelector('#model-picker-popover')?.textContent ?? ''
+        for (const text of [
+          '这个会话在后台用到的模型',
+          '快速任务',
+          '摘要、回复建议',
+          '自动审阅',
+          '只改当前会话',
+        ])
+          expect(panelText).toContain(text)
         expect(document.querySelector('[data-testid$="-save"]')).toBeNull()
         expect(document.querySelector('.model-picker-defaults-link')?.getAttribute('href')).toBe(
           '?settings=auxiliary-models',
         )
-        await chooseAuxiliary(slot, '本机 · local-model')
+        await chooseAuxiliary(slot, 'local-model · 本机')
         await vi.waitFor(() =>
           expect(onAuxiliarySelect).toHaveBeenCalledWith(
             slot,
@@ -565,17 +627,20 @@ describe('model picker', () => {
         )
         await vi.waitFor(() =>
           expect(publish).toHaveBeenCalledWith(
-            expect.objectContaining({ outcome: 'success', message: '辅助模型已更新。仅用于当前会话。' }),
+            expect.objectContaining({ outcome: 'success', message: '后台模型已更新。仅用于当前会话。' }),
           ),
         )
         expect(onSelect).not.toHaveBeenCalled()
         press(document.querySelector('.model-picker-back')!, 'Escape')
+        // 默认未设置的一项按预设路由走，客户端看不到，不计入「已改」。
         await vi.waitFor(() =>
-          expect(document.querySelector('#model-picker-auxiliary')?.textContent).toContain('local-model'),
+          expect(document.querySelector('#model-picker-auxiliary .model-picker-value')?.textContent).toBe(
+            slot === 'fast' ? '已改 1 项' : '跟随默认',
+          ),
         )
         if (slot === 'fast') {
           await enter('auxiliary')
-          await chooseAuxiliary('fast', '跟随默认（gpt-5.6）')
+          await chooseAuxiliary('fast', '跟随默认 · gpt-5.6')
           await vi.waitFor(() =>
             expect(onAuxiliarySelect).toHaveBeenCalledWith('fast', { route: 'openai', id: 'gpt-5.6' }),
           )
@@ -607,7 +672,7 @@ describe('model picker', () => {
         await open(trigger)
         await enter('auxiliary')
         await vi.waitFor(() => expect(document.querySelector('#session-model-slot-fast')).not.toBeNull())
-        await chooseAuxiliary('fast', '本机 · local-model')
+        await chooseAuxiliary('fast', 'local-model · 本机')
         await vi.waitFor(() =>
           expect(document.querySelector('[data-testid=session-model-slot-status]')?.textContent).toBe(
             '未能为当前会话保存',
@@ -615,7 +680,7 @@ describe('model picker', () => {
         )
         expect(publish).not.toHaveBeenCalled()
         expect(document.querySelector('[data-testid=session-auxiliary-models]')?.textContent).toContain(
-          '跟随默认（未设置）',
+          '跟随默认 · 未设置',
         )
       } finally {
         restore()
@@ -634,7 +699,7 @@ describe('model picker', () => {
     await vi.waitFor(() =>
       expect(
         [...document.querySelectorAll('#session-model-thinking [role=radio]')].map((el) => el.textContent),
-      ).toEqual(['自动', '关闭', '中']),
+      ).toEqual(['自动由模型自己决定想多久', '关闭', '中']),
     )
   })
 
@@ -667,7 +732,8 @@ describe('model picker', () => {
       await open(trigger)
       expect(document.querySelectorAll('.model-picker-nav')).toHaveLength(3)
       expect(document.querySelector('#model-picker-thinking')?.textContent).toContain('低')
-      expect(document.querySelector('#model-picker-context')?.textContent).toContain('自动 · 128K')
+      // 容量已在模型行右侧，主菜单的「自动」不再重复它。
+      expect(document.querySelector('#model-picker-context .model-picker-value')?.textContent).toBe('自动')
       expect(document.querySelectorAll('.model-picker-group-title')[0]?.textContent).toBe('OpenAI')
       expect(document.querySelector('.model-picker-capacity')?.textContent).toBe('128K')
       expect(document.querySelector('.model-picker-settings-title')).toBeNull()
@@ -693,14 +759,17 @@ describe('model picker', () => {
   )
 })
 
-it('keeps model settings labels and long values in separate shrinkable columns', () => {
+it('lets the popover hug its content and aligns model and session rows in fixed columns', () => {
   const css = readFileSync(resolve(__dirname, '../public/styles/09-model-picker.css'), 'utf8')
   const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split('}')[0] ?? ''
-  expect(rule('  .model-picker-nav')).toMatch(
-    /display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1.5fr\) auto/,
+  expect(rule('  .model-picker')).not.toContain('min-height')
+  expect(rule('  .model-picker-option')).toMatch(
+    /display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) 2.75rem 1.25rem/,
   )
-  expect(rule('  .model-picker-nav > span:first-child')).toContain('overflow-wrap: anywhere')
+  expect(rule('  .model-picker-nav')).toMatch(
+    /display: grid;[\s\S]*grid-template-columns: 5.25rem minmax\(0, 1fr\) 1rem/,
+  )
   expect(rule('  .model-picker-value')).toMatch(
-    /overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;[\s\S]*min-width: 0/,
+    /text-align: start;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap/,
   )
 })

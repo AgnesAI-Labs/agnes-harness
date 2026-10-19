@@ -7,12 +7,19 @@ import {
   SessionAuxiliaryModels,
   type SessionAuxiliarySnapshot,
   SettingsInput,
-  Tooltip,
   type Translate,
 } from '@agnes/web-ui'
 import { type KeyboardEvent, type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SessionModelSettings } from './model-picker/session-settings.js'
-import { flatModels, groupModels, sameOption, thinkingBadge, thinkingChoices } from './model-picker/state.js'
+import {
+  changedSlots,
+  flatModels,
+  groupModels,
+  sameOption,
+  thinkingBadge,
+  thinkingChoices,
+  thinkingSupported,
+} from './model-picker/state.js'
 import type { ModelPickerOption, ModelPickerProps } from './model-picker/types.js'
 
 export type {
@@ -82,13 +89,14 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
         id="model"
         appearance="ghost"
         htmlType="button"
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
-        aria-controls={open ? 'model-listbox' : undefined}
+        aria-controls={open ? 'model-picker-popover' : undefined}
         aria-label={state.accessibleName}
         aria-busy={state.pending || busy}
         title={state.accessibleName}
         disabled={disabled}
+        {...(state.disabledReason ? { disabledReason: state.disabledReason } : {})}
         onKeyDown={(event) => {
           if (disabled || open) return
           if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
@@ -131,6 +139,8 @@ function ModelPanel({
   const [failure, setFailure] = useState<'select' | 'settings'>()
   const groups = groupModels(state.options, query, t('settings.modelPicker.configuredAccount'))
   const visible = flatModels(groups)
+  // Decided on the whole catalog so typing a search never toggles the headings.
+  const oneAccount = new Set(state.options.map((option) => `${option.route}\u0000${option.label}`)).size < 2
   const [active, setActive] = useState(() =>
     Math.max(
       0,
@@ -174,27 +184,31 @@ function ModelPanel({
   const titles = {
     thinking: t('modelSettings.thinkingLabel'),
     context: t('modelSettings.windowLabel'),
-    auxiliary: t('modelSettings.slots.title'),
+    auxiliary: t('modelSettings.slots.sessionTitle'),
   }
   const capacity = state.settings ? contextBudgetLabel(state.settings.capacity) : ''
-  const followsDefaults =
-    auxiliary &&
-    (['fast', 'verifier'] as const).every(
-      (slot) =>
-        auxiliary[slot]?.route === auxiliary.defaults?.[slot]?.route &&
-        auxiliary[slot]?.model === auxiliary.defaults?.[slot]?.model,
-    )
+  const notes = {
+    thinking: state.selected?.id,
+    context: t('modelSettings.capacityValue', { capacity }),
+    auxiliary: undefined,
+  }
+  // Only a model with settings can say it has no levels; without them the row is just unavailable.
+  const noLevels = !!state.settings && !thinkingSupported(state.settings, t)
+  const changed = auxiliary ? changedSlots(auxiliary) : 0
   const settingsAddress = new URLSearchParams(window.location.search)
   settingsAddress.set('settings', 'auxiliary-models')
   const values = {
-    thinking:
-      thinkingChoices(state.settings, t).find((choice) => choice.value === (state.settings?.thinking ?? ''))
-        ?.label ??
-      state.settings?.thinking ??
-      t('modelSettings.presetAuto'),
+    thinking: noLevels
+      ? t('modelSettings.thinkingUnsupported')
+      : (thinkingChoices(state.settings, t).find(
+          (choice) => choice.value === (state.settings?.thinking ?? ''),
+        )?.label ??
+        state.settings?.thinking ??
+        t('modelSettings.presetAuto')),
+    // The capacity already sits beside the model row, so automatic is not followed by it here.
     context:
       state.settings?.contextWindow === undefined || state.settings.contextWindow === state.settings.capacity
-        ? `${t('modelSettings.presetAuto')} · ${capacity}`
+        ? t('modelSettings.presetAuto')
         : contextBudgetLabel(state.settings.contextWindow),
     auxiliary: !auxiliaryAvailable
       ? t('modelSettings.slots.follow')
@@ -202,11 +216,9 @@ function ModelPanel({
         ? t('modelSettings.slots.unavailable')
         : !auxiliary
           ? t('modelSettings.slots.loading')
-          : followsDefaults
-            ? t('modelSettings.slots.follow')
-            : (['fast', 'verifier'] as const)
-                .map((slot) => auxiliary[slot]?.model ?? t('modelSettings.slots.unset'))
-                .join(' · '),
+          : changed
+            ? t('modelSettings.slots.changed', { count: changed })
+            : t('modelSettings.slots.follow'),
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus moves once, when the panel mounts.
@@ -280,6 +292,7 @@ function ModelPanel({
     <section
       id="model-picker-popover"
       className="model-picker"
+      role="dialog"
       aria-label={panel ? titles[panel] : t('settings.modelPicker.aria')}
       onKeyDown={(event) => {
         if (event.defaultPrevented || event.nativeEvent.isComposing || !panel) return
@@ -337,9 +350,11 @@ function ModelPanel({
           {groups.map((group) => (
             // biome-ignore lint/a11y/useSemanticElements: a listbox group is not a form fieldset.
             <div key={group.key} role="group" aria-label={group.label} className="model-picker-group">
-              <p className="model-picker-group-title" aria-hidden="true">
-                {group.label}
-              </p>
+              {oneAccount ? null : (
+                <p className="model-picker-group-title" aria-hidden="true">
+                  {group.label}
+                </p>
+              )}
               {group.entries.map(({ option, index }) => {
                 const selected = sameOption(option, state.selected)
                 return (
@@ -359,12 +374,10 @@ function ModelPanel({
                     <span className="model-picker-model" translate="no">
                       {option.id}
                     </span>
-                    {option.contextWindow ? (
-                      <span className="model-picker-capacity">
-                        {contextBudgetLabel(option.contextWindow)}
-                      </span>
-                    ) : null}
-                    {selected ? <Icon name="check" className="model-picker-check" /> : null}
+                    <span className="model-picker-capacity">
+                      {option.contextWindow ? contextBudgetLabel(option.contextWindow) : ''}
+                    </span>
+                    <span className="model-picker-check">{selected ? <Icon name="check" /> : null}</span>
                   </div>
                 )
               })}
@@ -378,16 +391,22 @@ function ModelPanel({
         )}
         {(state.settings && onSettingsChange) || auxiliaryAvailable ? (
           <div className="model-picker-session">
-            <p className="model-picker-group-title">{t('modelSettings.session')}</p>
-            {(['thinking', 'context', 'auxiliary'] as const).map((kind) => (
-              <Tooltip key={kind} title={values[kind]}>
+            <div className="model-picker-section-head">
+              <p className="model-picker-group-title">{t('modelSettings.session')}</p>
+              <span>{t('modelSettings.slots.sessionHelp')}</span>
+            </div>
+            {(['thinking', 'context', 'auxiliary'] as const).map((kind) => {
+              const unsupported = kind === 'thinking' && noLevels
+              return (
                 <Button
+                  key={kind}
                   id={`model-picker-${kind}`}
                   appearance="ghost"
                   className="model-picker-nav"
                   disabled={
                     state.disabled ||
                     busy ||
+                    unsupported ||
                     (kind === 'auxiliary' ? !auxiliaryAvailable : !state.settings || !onSettingsChange)
                   }
                   onClick={() => enter(kind)}
@@ -400,23 +419,30 @@ function ModelPanel({
                 >
                   <span>{titles[kind]}</span>
                   <span className="model-picker-value">{values[kind]}</span>
-                  <Icon name="chevron-right" />
+                  {unsupported ? null : <Icon name="chevron-right" />}
                 </Button>
-              </Tooltip>
-            ))}
+              )
+            })}
           </div>
         ) : null}
       </div>
       {panel ? (
-        <Button
-          ref={back}
-          appearance="ghost"
-          className="model-picker-back"
-          onClick={() => setPanel(undefined)}
-        >
-          <Icon name="chevron-left" />
-          {titles[panel]}
-        </Button>
+        <div className="model-picker-head">
+          <Button
+            ref={back}
+            appearance="ghost"
+            className="model-picker-back"
+            onClick={() => setPanel(undefined)}
+          >
+            <Icon name="chevron-left" />
+            {titles[panel]}
+          </Button>
+          {notes[panel] ? (
+            <span className="model-picker-head-note" translate="no">
+              {notes[panel]}
+            </span>
+          ) : null}
+        </div>
       ) : null}
       {state.settings && onSettingsChange ? (
         <SessionModelSettings
@@ -436,6 +462,7 @@ function ModelPanel({
       </p>
       {auxiliaryAvailable ? (
         <div hidden={panel !== 'auxiliary'}>
+          <p className="model-picker-intro">{t('modelSettings.slots.sessionIntro')}</p>
           {auxiliary && onAuxiliarySelect ? (
             <SessionAuxiliaryModels
               models={state.options}
@@ -450,10 +477,12 @@ function ModelPanel({
               {values.auxiliary}
             </p>
           )}
-          <p className="model-picker-hint">{t('modelSettings.slots.sessionHelp')}</p>
-          <a className="model-picker-defaults-link" href={`?${settingsAddress}`}>
-            {t('modelSettings.slots.editDefaults')}
-          </a>
+          <div className="model-picker-aux-footer">
+            <span>{t('modelSettings.slots.sessionHelp')}</span>
+            <a className="model-picker-defaults-link" href={`?${settingsAddress}`}>
+              {t('modelSettings.slots.editDefaults')}
+            </a>
+          </div>
         </div>
       ) : null}
     </section>
