@@ -11,6 +11,7 @@ import {
   OPTIONAL_BUNDLED_PACKAGES,
 } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
+import { buildPresentations, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
@@ -58,6 +59,7 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
 
 /** Copy only runtime payload, never repository tests or personal working files. */
 export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
+  const presentations = await buildPresentations()
   for (const { name: helper } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
@@ -79,6 +81,10 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     if (existsSync(join(source, 'README.zh-CN.md')))
       await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
     if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
+    if (presentations.some((record) => record.name === helper)) {
+      await cp(join(source, 'client-build.json'), join(destination, 'client-build.json'))
+      await verifyPresentation(destination)
+    }
     if (helper === 'document-reader') await prepareDocumentReader(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)

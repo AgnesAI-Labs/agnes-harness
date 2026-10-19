@@ -9,7 +9,8 @@
     "src",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "client-build.json"
   ],
   "agnes": {
     "plugins": [
@@ -27,9 +28,9 @@
           "description": "Default conversation frame, transcript and independently selected composer.",
           "locales": {
             "zh-CN": {
-              "displayName": "对话呈现",
-              "summary": "默认对话框架、转录与可独立选择的输入框。",
-              "description": "默认对话框架、转录与可独立选择的输入框。"
+              "displayName": "\u5bf9\u8bdd\u5448\u73b0",
+              "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002",
+              "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002"
             }
           }
         }
@@ -47,9 +48,9 @@
       "description": "Default conversation frame, transcript and independently selected composer.",
       "locales": {
         "zh-CN": {
-          "displayName": "对话呈现",
-          "summary": "默认对话框架、转录与可独立选择的输入框。",
-          "description": "默认对话框架、转录与可独立选择的输入框。"
+          "displayName": "\u5bf9\u8bdd\u5448\u73b0",
+          "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002",
+          "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002"
         }
       }
     },

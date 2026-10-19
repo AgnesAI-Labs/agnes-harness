@@ -36,6 +36,7 @@ const heavy = ['**/*.e2e.test.{ts,tsx,jsx}', '**/*.slow.test.{ts,tsx,jsx}']
 
 export default defineConfig({
   test: {
+    globalSetup: [new URL('./tools/presentation-test-setup.mjs', import.meta.url).pathname],
     exclude,
     globalSetup: [ensureJevPayload],
     reporters: ['default', zeroTestReporter],

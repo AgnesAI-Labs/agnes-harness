@@ -9,7 +9,8 @@
     "src",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "client-build.json"
   ],
   "agnes": {
     "plugins": [
@@ -27,9 +28,9 @@
           "description": "Default history, workspace and navigation presentation.",
           "locales": {
             "zh-CN": {
-              "displayName": "导航呈现",
-              "summary": "默认对话历史、工作区与导航呈现。",
-              "description": "默认对话历史、工作区与导航呈现。"
+              "displayName": "\u5bfc\u822a\u5448\u73b0",
+              "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002",
+              "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002"
             }
           }
         }
@@ -47,9 +48,9 @@
       "description": "Default history, workspace and navigation presentation.",
       "locales": {
         "zh-CN": {
-          "displayName": "导航呈现",
-          "summary": "默认对话历史、工作区与导航呈现。",
-          "description": "默认对话历史、工作区与导航呈现。"
+          "displayName": "\u5bfc\u822a\u5448\u73b0",
+          "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002",
+          "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002"
         }
       }
     },

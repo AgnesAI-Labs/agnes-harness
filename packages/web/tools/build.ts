@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
+import { buildPresentations } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
@@ -34,6 +35,7 @@ const out = join(root, 'dist', 'web')
 export async function buildWeb(
   options: { clean?: boolean; development?: boolean } = {},
 ): Promise<BuildResult[]> {
+  await buildPresentations()
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
   // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的

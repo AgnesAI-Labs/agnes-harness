@@ -2,12 +2,14 @@ import { type FSWatcher, realpathSync, watch as watchDirectory } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BuildResult } from 'esbuild'
+import { presentationEntries } from '../../../tools/presentation-build.mjs'
 import { webStyleInputs } from '../../../tools/web-style-source.mjs'
 import { buildWeb } from './build.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packagesRoot = resolve(root, '..')
 const copiedInputs = [
+  ...Object.values(presentationEntries).map((entry) => resolve(packagesRoot, '..', entry)),
   join(root, 'public', 'index.html'),
   join(root, 'public', 'admin.html'),
   join(root, 'public', 'resources.html'),

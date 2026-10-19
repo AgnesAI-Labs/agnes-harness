@@ -9,7 +9,8 @@
     "src",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "client-build.json"
   ],
   "agnes": {
     "plugins": [
