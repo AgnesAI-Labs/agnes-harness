@@ -47,7 +47,10 @@ it.each(['pipe', 'unix'])(
         : {}),
     })
     await rt.cli(['daemon', 'status'])
+    // Command grammars differ: cwd scopes all commands without appending an unsupported flag.
+    expect(fixture.execFile.mock.calls[0]?.[1].slice(1)).toEqual(['daemon', 'status'])
     const options = fixture.execFile.mock.calls[0]?.[2]
+    expect(options.cwd).toBe(rt.workspace)
     expect(options.env).toMatchObject({ HOME: rt.root, USERPROFILE: rt.root, SystemRoot: 'C:\\Windows' })
     expect(options.env.TMP).toBe(options.env.TEMP)
     expect(options.env.TMPDIR).toBe(options.env.TEMP)

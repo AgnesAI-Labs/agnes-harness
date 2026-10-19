@@ -53,7 +53,7 @@ export async function realRuntime(label, existingRoot) {
     new Promise((done, reject) => {
       const child = execFile(
         process.execPath,
-        [entry, ...args, '--workspace', workspace],
+        [entry, ...args],
         { env, cwd: workspace, timeout: 60000, maxBuffer: 2 ** 22, windowsHide: true },
         (error, stdout, stderr) =>
           error ? reject(new Error(redact(stderr || stdout))) : done(redact(stdout)),
@@ -131,7 +131,7 @@ export async function realRuntime(label, existingRoot) {
       return s
     },
     async startWeb() {
-      web = spawn(process.execPath, [entry, 'serve', '--port', String(port), '--workspace', workspace], {
+      web = spawn(process.execPath, [entry, 'serve', '--port', String(port)], {
         env,
         cwd: workspace,
         windowsHide: true,
