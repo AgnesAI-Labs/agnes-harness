@@ -178,7 +178,8 @@ describe('the read-heavy suite', () => {
     expect(answers(docs[3])).toEqual([`COUNT=${r.kestrel.length}`, ...r.kestrel])
     expect(answers(docs[6])).toEqual([...r.onLedgerd, `DIRECT_COUNT=${r.onLedgerd.length}`])
   })
-  it.skipIf(!python)(
+  // The probe runs through a `#!/bin/sh` python shim, which Windows cannot execute.
+  it.skipIf(!python || process.platform === 'win32')(
     'passes its probes on a run that answers right, and fails them on a wrong note or a changed workspace',
     () => {
       const r = recomputed()
