@@ -144,6 +144,14 @@ export function createPluginManageRequests(options: {
       if (!auth) throw rpcError('CAPABILITY_DENIED')
       const service = options.service()
       if (!service) throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_MANAGEMENT_UNAVAILABLE' })
+      const automaticPublication =
+        suffix === 'submit' && automaticPermissionDecision(currentPermissionContext())
+      const authoringAdmission = automaticPublication
+        ? await acquirePermissionLease(
+            { sessionKey, scope: 'plugin.publish', bindingHash: String(params.expectedHash) },
+            signal,
+          )
+        : undefined
       return service.call(
         `_agnes/v1/plugins.candidates.${suffix}` as PackageAdminMethodName,
         { profile: options.profile, ...params },
@@ -151,12 +159,9 @@ export function createPluginManageRequests(options: {
           ...auth,
           installer: 'agent',
           permissionContext: currentPermissionContext(),
-          ...(suffix === 'submit' && automaticPermissionDecision(currentPermissionContext())
+          ...(automaticPublication
             ? {
-                authoringAdmission: await acquirePermissionLease(
-                  { sessionKey, scope: 'plugin.publish', bindingHash: String(params.expectedHash) },
-                  signal,
-                ),
+                ...(authoringAdmission ? { authoringAdmission } : {}),
                 authoringPermission: async (binding: { sessionKey: string; bindingHash: string }) => {
                   signal.throwIfAborted()
                   await assertPermissionBinding({ ...binding, scope: 'plugin.publish' })
