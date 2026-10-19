@@ -13,15 +13,26 @@ const rt = await runtime(real),
 console.log(JSON.stringify({ root: rt.root, mode: real ? 'DeepSeek' : 'Demo' }))
 let browserRun
 let turns = 0
+const activeSessions = new Map()
+const priorUsd = Number(process.env.AGH_PHARMA_PRIOR_USD ?? 0)
+assert.ok(Number.isFinite(priorUsd) && priorUsd >= 0 && priorUsd < 3)
+const spentUsd = () =>
+  priorUsd + Object.values(evidence.sessions).reduce((sum, s) => sum + (s.budget?.state?.creditsUsed ?? 0), 0)
 async function run(session, prompt, label, expectedTool) {
   assert.ok(++turns <= 40, 'Maximum 40 budgeted turns')
+  if (real) for (const [id, handle] of activeSessions) evidence.sessions[id].budget = await handle.budget()
+  // The catalogue reserves up to 384k output tokens (~$0.46), even for a short tool call.
+  // Keep at least $1.50 for the nightly job and background accounting; never spend the whole cap.
+  const creditLimit = real ? Math.min(0.75, 1.5 - spentUsd()) : undefined
+  if (real) assert.ok(creditLimit > 0, 'Application reasoning budget exhausted')
   const result = await session.prompt(prompt, {
     signal: AbortSignal.timeout(150000),
-    creditLimit: real ? 0.05 : undefined,
+    creditLimit,
   })
   const timeline = await session.projectUI(undefined, { surface: 'web' }),
     budget = await session.budget()
   evidence.sessions[session.id] = { timeline, budget, pin: await session.capabilities() }
+  activeSessions.set(session.id, session)
   await rt.save('acceptance.json', evidence)
   assert.equal(result.reason, 'completed', `${label}: ${JSON.stringify(result)}`)
   if (expectedTool) return toolResult(session, expectedTool)
@@ -79,20 +90,19 @@ try {
   if (real) {
     await run(
       investigator,
-      '先按可用技能目录的路径读取 gmp-review 技能，再根据刚才工具证据，用中文提出 5-Why、根因假设、CAPA 责任人及期限、其他批次影响。必须明确 72 CFU/m³ 仅超过警戒而非行动值，EM 相关性不是因果，探头漂移尚需证据确认；不要写入。',
+      '使用 gmp-review 技能（宿主若已注入，不要重复读取），根据刚才工具证据，用中文提出 5-Why、根因假设、CAPA 责任人及期限、其他批次影响。按清单逐项核对阻断数量。必须明确 72 CFU/m³ 仅超过警戒而非行动值，EM 相关性不是因果，探头漂移尚需证据确认；不要写入。',
       'investigation reasoning',
     )
-    const skillRead = evidence.sessions[investigator.id].timeline.nodes.find(
+    const skillLoaded = evidence.sessions[investigator.id].timeline.nodes.find(
       (node) =>
-        node.kind === 'tool' &&
-        node.name === 'read' &&
-        node.argsPreview?.includes('gmp-review') &&
-        node.resultSeq !== undefined,
+        node.kind === 'context' &&
+        typeof node.text === 'string' &&
+        node.text.startsWith('[skill loaded]') &&
+        node.text.includes('name: gmp-review') &&
+        node.text.includes('GMP 质量工作规程'),
     )
-    assert.ok(skillRead, 'Investigator must load the registered domain playbook')
-    const skillDetail = await investigator.readToolDetail(skillRead.seq, skillRead.resultSeq)
-    assert.ok(!skillDetail.result?.isError, 'Domain playbook read must succeed')
-    assert.ok(JSON.stringify(skillDetail.result.content).includes('GMP'))
+    assert.ok(skillLoaded, 'Host must inject the registered trusted domain playbook')
+    evidence.playbook = { loaded: true, seq: skillLoaded.seq }
     evidence.checks.push('real-agent-loads-domain-playbook')
   }
   const blocked = await call(qa, 'pharma_dossier', { batch: 'B-2410-017' })
@@ -100,7 +110,7 @@ try {
   if (real)
     await run(
       qa,
-      '用中文解释清单为何阻止 B-2410-017 放行，指出还需要哪些独立证据、人工签名和版本绑定。不要尝试放行。',
+      '使用 gmp-review，用中文解释清单为何阻止 B-2410-017 放行，指出还需要哪些独立证据、人工签名和版本绑定。不要尝试放行。',
       'release blocker reasoning',
     )
   evidence.checks.push('evidence-correlated-release-blocked')
@@ -112,7 +122,12 @@ try {
       expectedRevision: revision,
       ...(action === 'advance'
         ? {
-            evidence: `SIM-EV-${revision}: test administrator reviewed synthetic as-found/as-left calibration, reprocessing, LOD 1.9, cleaning/resampling and three-batch effectiveness`,
+            evidence: [
+              '',
+              'SIM-CAL-017: synthetic as-found T02 +4.1 C and as-left calibration reviewed; retrospective 016/017/018 impact assessment',
+              'SIM-REPROCESS-017: approved synthetic reprocessing protocol, independent LOD 1.9%, QC, cleaning and EM identification/resampling reviewed',
+              'SIM-EFFECT-017: three synthetic verification batches and overdue escalation effectiveness confirmed',
+            ][revision],
           }
         : {}),
     }
@@ -153,12 +168,14 @@ try {
   }
   evidence.checks.push('markdown-html-present-deliverables')
   const retainedGeneration = (await qa.capabilities()).codePin.generationId
-  if (real)
+  if (real) {
+    await call(hub, 'pharma_dossier', { batch: 'B-2410-017' })
     await run(
       hub,
-      '根据本案，提出一个“设备使用日期距校准到期 0–7 天预警，逾期单独报告”的可复用只读检查规则，说明边界、测试和人工审阅。仅提议，不创建、不发布。',
+      '根据刚读取的 B-2410-017/DR-02 证据，提出一个“设备使用日期距校准到期 0–7 天预警，逾期单独报告”的可复用只读检查规则，说明边界、测试和人工审阅。本轮仅提议；之后我会另行给出创建、测试、提交审阅的明确指令。不要猜测批次编号。',
       'reviewed skill proposal',
     )
+  }
   const draft = await call(hub, 'plugin_helper_create', { files: ruleFiles() })
   const candidate = await rt.client.request('_agnes/v1/plugins.candidates.show', {
     profile: 'local-dev',
@@ -253,6 +270,7 @@ try {
     timeline: await scheduled.projectUI(undefined, { surface: 'web' }),
     budget: await scheduled.budget(),
   }
+  activeSessions.set(scheduled.id, scheduled)
   await rt.save('acceptance.json', evidence)
   await toolResult(scheduled, 'pharma_report')
   await rt.client.request('_agnes/v1/schedules.control', { id: schedule.id, action: 'pause' })
@@ -264,10 +282,20 @@ try {
     await browserRun.close()
     browserRun = undefined
   }
+  for (const [id, handle] of activeSessions) evidence.sessions[id].budget = await handle.budget()
+  activeSessions.clear()
   await rt.restart()
   const after = await rt.session('release')
   const persisted = await call(after, 'pharma_dossier', { batch: 'B-2410-017' })
   assert.deepEqual(persisted.certificate, evidence.certificate)
+  assert.deepEqual(persisted.blockers, [])
+  assert.equal(persisted.evidence.retests.at(-1).value, 1.9)
+  if (real)
+    await run(
+      after,
+      '使用 gmp-review，根据刚返回的完整档案，解释历史原始发现与当前阻断的区别、返工复验和偏差结案证据，以及证书 dossierRevision 与当前状态 revision 的关系。只读，不重复放行。',
+      'released dossier interpretation',
+    )
   evidence.checks.push('host-restart-retains-certificate')
   evidence.passed = true
 } catch (error) {
@@ -280,10 +308,8 @@ try {
   process.exitCode = 1
 } finally {
   await browserRun?.close().catch(() => {})
-  evidence.aghEstimatedUsd = Object.values(evidence.sessions).reduce(
-    (sum, s) => sum + (s.budget.state?.creditsUsed ?? 0),
-    0,
-  )
+  evidence.priorAttemptsUsd = priorUsd
+  evidence.aghEstimatedUsd = spentUsd()
   if (evidence.aghEstimatedUsd >= 3) {
     evidence.passed = false
     evidence.error = 'Application cost cap exceeded'

@@ -51,9 +51,13 @@ export async function runtime(real) {
       )
       p.stdin.end()
     })
-  // Hard execution ceilings apply before any model session is opened.
+  // Use dollar-denominated credits for isolated real-model accounting.
+  // The acceptance runner supplies hard ceilings on its interactive turns.
   // An explicit profile intentionally disables the platform's fresh-home Demo fallback.
   if (real) {
+    // Let the normal CLI initialize the versioned empty home before adding configuration.
+    await cli(['daemon', 'start'])
+    await cli(['daemon', 'stop'])
     await mkdir(join(home, 'profiles/local-dev'), { recursive: true, mode: 0o700 })
     await writeFile(
       join(home, 'profiles/local-dev/profile.yaml'),
