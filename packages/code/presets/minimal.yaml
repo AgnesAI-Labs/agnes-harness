@@ -1,5 +1,7 @@
-# A small read-only recipe. It keeps the product model slots and discloses only read, grep, find,
-# and ls. Shell and edit stay on the frozen training baseline, not on this preset.
+# A small read-only recipe. It keeps the product model slots and shows the model only read, grep,
+# find and ls: `tools.allow` is a literal allowlist over every tool name, extension and MCP tools
+# included. It is visibility, not authorization; the session's permission still decides what a
+# visible tool may do. Shell and edit stay on the frozen training baseline, not on this preset.
 name: minimal
 extends: base
 surfaces: [cli, sdk, acp, daemon]
@@ -13,7 +15,7 @@ model:
     verifier: { route: default, model: default }
   prompt_sections: [persona, environment]
 disclosure: standard
-tools: { core: [read, grep, find, ls] }
+tools: { core: [read, grep, find, ls], allow: [read, grep, find, ls] }
 sandbox: { level: L0, required: false, on_unavailable: allow }
 mcp: { defer: true }
 budget: { per_request_cap: 4000, max_steps: null }

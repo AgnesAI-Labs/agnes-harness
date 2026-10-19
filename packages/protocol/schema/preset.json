@@ -140,6 +140,14 @@
                 "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
               }
             },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+              }
+            },
             "timeout_ms": {
               "type": "integer",
               "minimum": 1000
