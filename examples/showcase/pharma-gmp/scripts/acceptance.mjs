@@ -114,7 +114,7 @@ try {
   if (real)
     await run(
       qa,
-      '使用 gmp-review，用中文解释清单为何阻止 B-2410-017 放行，指出还需要哪些独立证据、人工签名和版本绑定。不要尝试放行。',
+      '使用 gmp-review 技能，用中文解释清单为何阻止 B-2410-017 放行，指出还需要哪些独立证据、人工签名和版本绑定。不要尝试放行。',
       'release blocker reasoning',
     )
   evidence.checks.push('evidence-correlated-release-blocked')
@@ -305,12 +305,21 @@ try {
   assert.deepEqual(persisted.certificate, evidence.certificate)
   assert.deepEqual(persisted.blockers, [])
   assert.equal(persisted.evidence.retests.at(-1).value, 1.9)
-  if (real)
+  if (real) {
     await run(
       after,
-      '使用 gmp-review，根据刚返回的完整档案，解释历史原始发现与当前阻断的区别、返工复验和偏差结案证据，以及证书 dossierRevision 与当前状态 revision 的关系。只读，不重复放行。',
+      '使用 gmp-review 技能，根据刚返回的完整档案，解释历史原始发现与当前阻断的区别、返工复验和偏差结案证据，以及证书 dossierRevision 与当前状态 revision 的关系。只读，不重复放行。',
       'released dossier interpretation',
     )
+    assert.ok(
+      evidence.sessions[after.id].timeline.nodes.some(
+        (n) =>
+          n.kind === 'context' && n.text?.startsWith('[skill loaded]') && n.text.includes('name: gmp-review'),
+      ),
+      'Registered domain playbook must remain invocable after restart',
+    )
+    evidence.playbook.afterRestartLoaded = true
+  }
   evidence.checks.push('host-restart-retains-certificate')
   evidence.passed = true
 } catch (error) {
