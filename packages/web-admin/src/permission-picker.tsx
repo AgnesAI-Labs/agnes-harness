@@ -221,21 +221,6 @@ function PermissionPanel({
       className="permission-picker"
       aria-label={tr('settings.picker.aria')}
     >
-      <div className="permission-picker-heading">
-        <span>{tr('composer.permission.heading')}</span>
-        <Button
-          className="permission-picker-help"
-          appearance="ghost"
-          size="small"
-          htmlType="button"
-          onClick={() => {
-            close(false)
-            document.dispatchEvent(new CustomEvent('agnes:permission-settings'))
-          }}
-        >
-          {tr('composer.permission.help')}
-        </Button>
-      </div>
       <div
         ref={listbox}
         id="permission-listbox"
@@ -275,13 +260,6 @@ function PermissionPanel({
           </div>
         ))}
       </div>
-      <a
-        href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/security.md#full-access-exceptions"
-        target="_blank"
-        rel="noreferrer"
-      >
-        {tr('composer.permission.exceptions')}
-      </a>
     </section>
   )
 }

@@ -180,42 +180,30 @@ it('reports a failed change and closes when the session can no longer change per
   expect(trigger.disabled).toBe(true)
 })
 
-it('links to the permission settings from the list', async () => {
+it('lists only the three modes', async () => {
   const { trigger } = mountPicker({ disabled: false, pending: false, selected: 'workspace' })
-  const opens = vi.fn()
-  document.addEventListener('agnes:permission-settings', opens)
-  try {
-    trigger.click()
-    await opened()
-    const help = [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        '.permission-picker-heading button.permission-picker-help',
-      ),
-    ].find((button) => button.textContent === '了解更多')
-    if (!help) throw new Error('permission help is missing')
-    // Each mode: its own glyph, a name and one short line; the long explanation is the tooltip.
-    const rows = [...document.querySelectorAll<HTMLElement>('.permission-picker-option')]
-    expect(rows.map((row) => row.dataset.permission)).toEqual(['view', 'workspace', 'full'])
-    expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
-      '只能查看，不改文件',
-      '可改工作区内文件',
-      '普通操作免逐次审批；仍有例外',
-    ])
-    for (const row of rows) {
-      expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
-      expect(row.getAttribute('title')?.length ?? 0).toBeGreaterThan(16)
-    }
-    expect(rows.map((row) => row.querySelector('.permission-picker-check svg') !== null)).toEqual([
-      false,
-      true,
-      false,
-    ])
-    help.click()
-    expect(opens).toHaveBeenCalledTimes(1)
-    await closed()
-  } finally {
-    document.removeEventListener('agnes:permission-settings', opens)
+  trigger.click()
+  await opened()
+  const panel = document.querySelector('#permission-picker-popover')
+  // No heading or links around the list: the panel is the mode rows.
+  expect(panel?.querySelectorAll('button, a')).toHaveLength(0)
+  // Each mode: its own glyph, a name and one short line; the long explanation is the tooltip.
+  const rows = [...document.querySelectorAll<HTMLElement>('.permission-picker-option')]
+  expect(rows.map((row) => row.dataset.permission)).toEqual(['view', 'workspace', 'full'])
+  expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
+    '只能查看，不改文件',
+    '可改工作区内文件',
+    '普通操作免逐次审批；仍有例外',
+  ])
+  for (const row of rows) {
+    expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
+    expect(row.getAttribute('title')?.length ?? 0).toBeGreaterThan(16)
   }
+  expect(rows.map((row) => row.querySelector('.permission-picker-check svg') !== null)).toEqual([
+    false,
+    true,
+    false,
+  ])
 })
 
 it('shows measured isolation information without changing the permission choice', () => {
@@ -271,6 +259,5 @@ it.each([
     expect(option(view).title).toContain(denied)
     expect(option(workspace).title).toContain(approval)
     expect(option(full).title).toContain(exceptions)
-    expect(document.querySelector('a[href$="#full-access-exceptions"]')).not.toBeNull()
   },
 )

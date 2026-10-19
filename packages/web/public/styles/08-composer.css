@@ -916,32 +916,6 @@
     max-width: min(20rem, calc(100vw - 32px));
     max-height: min(24rem, calc(100vh - 96px));
   }
-  .permission-picker > a {
-    display: flex;
-    align-items: center;
-    min-height: var(--control-height-touch);
-  }
-  /* The question the list answers, with the way to the full explanation beside it. */
-  .permission-picker-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s12);
-    padding: var(--s4) var(--s4) var(--s4) var(--s8);
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-  }
-  .permission-picker-heading .permission-picker-help {
-    flex: none;
-    height: 1.5rem;
-    min-height: 1.5rem;
-    padding: 0 var(--s4);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-regular);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
   .permission-picker-list {
     display: flex;
     flex-direction: column;
