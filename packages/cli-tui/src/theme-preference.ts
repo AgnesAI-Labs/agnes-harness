@@ -6,9 +6,9 @@ import type { TuiThemeName } from './theme.js'
 export function readTheme(path?: string): TuiThemeName {
   try {
     const name: unknown = JSON.parse(readFileSync(path ?? '', 'utf8')).theme
-    return name === 'dark' || name === 'mono' ? name : 'light'
+    return name === 'light' || name === 'mono' ? name : 'dark'
   } catch {
-    return 'light'
+    return 'dark'
   }
 }
 

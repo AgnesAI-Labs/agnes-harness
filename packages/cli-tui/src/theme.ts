@@ -29,7 +29,7 @@ export type ThemedAnsi = Omit<Ansi, 'fg' | 'bg'> & {
 export class TuiTheme {
   private current: TuiThemeName
 
-  constructor(name: TuiThemeName = 'light') {
+  constructor(name: TuiThemeName = 'dark') {
     this.current = name
   }
 

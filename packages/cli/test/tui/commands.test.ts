@@ -186,18 +186,19 @@ describe('runSlash', () => {
       await first.app.start()
       await first.app.runInput('/theme')
       expect((await screenOf(first.term, 90, 24)).join('\n')).toContain('当前')
-      first.term.feed('\x1b[B')
+      // Dark is the default, so one step up the list is light.
+      first.term.feed('\x1b[A')
       first.term.feed('\r')
-      await vi.waitFor(() => expect(first.app.themeName).toBe('dark'))
-      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'dark' })
+      await vi.waitFor(() => expect(first.app.themeName).toBe('light'))
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'light' })
       expect(first.term.writes.join('')).toContain(
         createAnsi('256')
-          .bg(new TuiTheme('dark').colour('bg') as Colour, '')
+          .bg(new TuiTheme('light').colour('bg') as Colour, '')
           .slice(0, -'\x1b[49m'.length),
       )
       const second = await unstartedApp(undefined, undefined, path)
       try {
-        expect(second.app.themeName).toBe('dark')
+        expect(second.app.themeName).toBe('light')
         await expect(runSlash(second.app, '/theme mono')).resolves.toEqual({ text: 'theme mono · 已保存' })
         expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'mono' })
       } finally {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -1049,11 +1049,20 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     .on('_agnes/v1/session.detach', () => ({}))
     .on('_agnes/v1/session.projectUI', () => timeline)
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const prefs = mkdtempSync(join(tmpdir(), 'agnes-tui-light-'))
   let app: TuiApp | undefined
   try {
     const session = await client.session.new({ cwd: '/tmp' })
     const term = new FakeTerminal({ columns: 60, rows: 20 }, { TERM: 'xterm-256color' })
-    app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+    // Dark is the default; this surface is the light theme's.
+    writeFileSync(join(prefs, 'tui-theme.json'), '{"theme":"light"}')
+    app = new TuiApp({
+      session,
+      term,
+      profile: 'local-dev',
+      preset: 'standard',
+      themePreferencePath: join(prefs, 'tui-theme.json'),
+    })
     await app.start()
     await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('▍ hello agnes'))
     const out = term.writes.join('')
@@ -1078,6 +1087,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     await app?.stop()
     await client.close()
     await endpoint.close()
+    rmSync(prefs, { recursive: true, force: true })
   }
 })
 
