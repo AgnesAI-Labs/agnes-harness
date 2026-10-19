@@ -45,10 +45,10 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('diagnostics-query').fill(diagnosticId)
       await page.getByTestId('diagnostics-query').press('Enter')
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
+      // A found error is the only row, open on its ID; the export then holds only that error.
       await expect(page.getByTestId('diagnostics-error')).toHaveCount(1)
-      await expect(page.getByTestId('diagnostics-error-code')).toBeHidden()
+      await expect(page.getByTestId('diagnostics-found')).toBeVisible()
       const row = page.getByTestId('diagnostics-error')
-      await row.getByTestId('diagnostics-error-toggle').click()
       await expect(row.getByTestId('diagnostics-error-id')).toHaveText(diagnosticId)
       await expect(row.getByTestId('diagnostics-error-code')).toHaveText('-32601')
       await row.getByTestId('diagnostics-error-toggle').click()
@@ -93,6 +93,7 @@ for (const locale of ['en', 'zh-CN'])
       await screen(page, info, `diagnostics-${locale}-${theme}`, [
         page.getByTestId('diagnostics-error-id'),
         page.getByTestId('diagnostics-error-time'),
+        page.getByTestId('diagnostics-day'),
       ])
       await expect(doctor).toContainText(
         locale === 'zh-CN' ? '当前无运行中的 Worker' : 'No Worker is currently running',

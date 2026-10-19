@@ -215,4 +215,142 @@
     font-weight: 400;
     line-height: 1.25rem;
   }
+
+  /* 设置 › 运行时与诊断 › 近期错误: summary, kind filters, day groups and one row per kind. */
+  .agnes-diagnostics-errors {
+    gap: var(--s12);
+  }
+  .agnes-diagnostics-errors > .agnes-settings-block-label {
+    flex-wrap: wrap;
+  }
+  .agnes-diagnostics-lookup {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .agnes-diagnostics-lookup > :first-child {
+    flex: 0 1 18.75rem;
+    min-width: 0;
+  }
+  .agnes-diagnostics-lookup .agnes-settings-search {
+    width: 100%;
+    font-family: var(--font-mono);
+  }
+  .agnes-diagnostics-filter-count {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-day {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    margin: 0;
+    padding: var(--s8) var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-day strong {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-diagnostics-kind {
+    justify-content: center;
+    min-width: 4.5rem;
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-diagnostics-kind[data-kind="plugin"] {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  /* The count never yields to the message; the message wraps instead. */
+  .agnes-diagnostics-error > .agnes-settings-drill > .agnes-settings-value {
+    flex: none;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-when {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-when code,
+  .agnes-diagnostics-details code {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-diagnostics-id,
+  .agnes-diagnostics-occurrences li {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-diagnostics-id code {
+    overflow-wrap: anywhere;
+  }
+  .agnes-diagnostics-occurrences {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8) var(--s12);
+    padding: var(--s12) var(--s16);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  /* The read states are one card: mark, what happened and why, then the one action. */
+  .agh-empty-state.agnes-diagnostics-state {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    justify-items: start;
+    align-items: start;
+    column-gap: var(--s12);
+    padding: var(--s20);
+    text-align: start;
+  }
+  .agnes-diagnostics-state > .agh-empty-state-icon {
+    grid-row: span 2;
+    margin-bottom: 0;
+  }
+  .agnes-diagnostics-state > :is(h3, p) {
+    grid-column: 2;
+  }
+  .agnes-diagnostics-state > .agh-empty-state-actions {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    margin-top: 0;
+  }
+  .agnes-diagnostics-state[data-tone="ok"] > .agh-empty-state-icon {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-diagnostics-state[data-tone="error"] > .agh-empty-state-icon {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  @media (max-width: 560px) {
+    .agnes-diagnostics-state > .agh-empty-state-actions {
+      grid-column: 2;
+      grid-row: auto;
+    }
+  }
 }

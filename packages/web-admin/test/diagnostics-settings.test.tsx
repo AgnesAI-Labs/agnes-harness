@@ -6,9 +6,11 @@ import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DiagnosticsPanel, errorKind, groupErrors } from '../src/settings/diagnostics.js'
+import { DiagnosticsPanel } from '../src/settings/diagnostics.js'
 
 import { DiagnosticsRequestError, diagnosticsApi } from '../src/settings/diagnostics-api.js'
+import { groupErrors } from '../src/settings/diagnostics-errors.js'
+import { errorKind } from '../src/settings/diagnostics-kinds.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const roots: Root[] = []
@@ -44,7 +46,7 @@ const bundle: DiagnosticsExportResult = {
   doctor: [{ name: 'worker', status: 'ok' }],
   errors: [{ diagnosticId, at: '2026-10-08T00:00:00Z', code: -32602, name: 'INVALID_PARAMS' }],
   audit: [],
-  limits: { audit: 100, errors: 4096 },
+  limits: { audit: 100, errors: 1000 },
   telemetry: { enabled: true, includeContent: true, endpointHosts: ['collector.example:4318'] },
 }
 async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn()) {
@@ -81,10 +83,11 @@ it.each([false, true])(
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
     expect(host.querySelector('form')).toBeNull()
-    // One line per error: time, message and code; its details open in place.
+    // One line per kind: its tag, message, time and count; the code and ID open in place.
     const row = host.querySelector('[data-testid="diagnostics-error"]')!
     expect(row.querySelector('[data-testid="diagnostics-error-time"]')).not.toBeNull()
-    expect(row.querySelector('.agnes-settings-code-chip')?.textContent).toBe('-32602')
+    expect(row.getAttribute('data-kind')).toBe('other')
+    expect(row.textContent).toContain('Once')
     expect(host.querySelector('[data-testid="diagnostics-error-code"]')).toBeNull()
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-error-toggle"]')?.click(),
@@ -129,6 +132,9 @@ it.each([false, true])(
     })
     await act(async () =>
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })),
+    )
+    expect(host.querySelector('[data-testid="diagnostics-found"]')?.textContent).toContain(
+      'will contain only this one',
     )
     // Export says what the bundle contains first, then exports the selected error.
     await act(async () =>
@@ -191,29 +197,137 @@ it.each([false, true])(
   },
 )
 
-it('groups repeats into one row with a count, and sorts errors into the filter kinds', () => {
+it('groups repeats of a kind newest first, and sorts known names and causes into kinds', () => {
   const at = '2026-10-08T00:00:00Z'
-  const record = (id: string, name: string, cause?: string) => ({
+  const record = (id: string, name: string) => ({
     diagnosticId: `${id.repeat(8)}-1111-4111-8111-111111111111`,
     at,
     code: -32000,
     name,
-    ...(cause ? { cause } : {}),
   })
   const groups = groupErrors([
-    record('a', 'E_POLICY'),
-    record('b', 'E_CAPABILITY'),
-    record('c', 'E_CAPABILITY'),
+    record('a', 'CLAIM_DENIED'),
+    record('b', 'CAPABILITY_DENIED'),
+    record('c', 'CAPABILITY_DENIED'),
   ])
   expect(groups.map((group) => [group.latest.name, group.count])).toEqual([
-    ['E_CAPABILITY', 2],
-    ['E_POLICY', 1],
+    ['CAPABILITY_DENIED', 2],
+    ['CLAIM_DENIED', 1],
   ])
   expect(groups[0]?.latest.diagnosticId.startsWith('cccccccc')).toBe(true)
-  expect(errorKind(record('a', 'E_POLICY'))).toBe('permission')
-  expect(errorKind(record('a', 'PROVIDER_UNAVAILABLE'))).toBe('provider')
-  expect(errorKind(record('a', 'PLUGIN_LOAD'))).toBe('plugin')
-  expect(errorKind(record('a', 'INVALID_PARAMS'))).toBe('all')
+  expect(groups[0]?.first.diagnosticId.startsWith('bbbbbbbb')).toBe(true)
+  expect(errorKind({ name: 'CAPABILITY_DENIED' })).toBe('permission')
+  expect(errorKind({ name: 'INVALID_PARAMS', cause: 'CONFIG_CREDENTIAL_REJECTED' })).toBe('provider')
+  expect(errorKind({ name: 'INTERNAL_ERROR', cause: 'E_GENERATION_SKILLS' })).toBe('plugin')
+  expect(errorKind({ name: 'INVALID_PARAMS' })).toBe('other')
+})
+it('lists kinds by day with filters and the real limit, and says what a lookup found or missed', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 9, 19, 12))
+  try {
+    const at = (day: number, hour: number) => new Date(2026, 9, day, hour).toISOString()
+    const id = (n: number) => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`
+    const errors: DiagnosticsExportResult['errors'] = [
+      {
+        diagnosticId: id(1),
+        at: at(18, 22),
+        code: -32602,
+        name: 'INVALID_PARAMS',
+        cause: 'CONFIG_CREDENTIAL_REJECTED',
+      },
+      { diagnosticId: id(2), at: at(19, 9), code: -32006, name: 'CAPABILITY_DENIED' },
+      { diagnosticId: id(3), at: at(19, 11), code: -32006, name: 'CAPABILITY_DENIED' },
+    ]
+    let found: DiagnosticsExportResult['errors'] = []
+    let fail = false
+    const host = await mount(
+      diagnosticsApi(async (_url, init) => {
+        if (fail)
+          return Response.json(
+            { error: { data: { messageKey: 'appServer.errors.forbidden' } } },
+            { status: 403 },
+          )
+        return Response.json(
+          init?.method
+            ? { ...bundle, errors: found }
+            : { bundle: { ...bundle, errors }, doctorAvailable: false },
+        )
+      }),
+    )
+    const text = (testId: string) => host.querySelector(`[data-testid="${testId}"]`)?.textContent ?? ''
+    const kinds = () =>
+      [...host.querySelectorAll('[data-testid="diagnostics-error"]')].map((row) =>
+        row.getAttribute('data-kind'),
+      )
+    expect(text('diagnostics-summary')).toContain('3 recent records retained, in 2 kinds.')
+    expect(
+      [...host.querySelectorAll('[data-testid="diagnostics-day"]')].map((day) => day.textContent),
+    ).toEqual(['TodayOctober 19 · 1 kinds · 2 times', 'YesterdayOctober 18 · 1 kinds · 1 times'])
+    expect(kinds()).toEqual(['permission', 'provider'])
+    expect(text('diagnostics-error')).toContain('First')
+    expect(text('diagnostics-retained')).toBe(
+      'Only the latest 1,000 records are kept; older ones can no longer be found.',
+    )
+    const filters = host.querySelector('[data-testid="diagnostics-filter-kind"]')!
+    expect(filters.textContent).toBe('All2Permissions1Providers1Plugins0Other0')
+    await act(async () => filters.querySelector<HTMLInputElement>('input[value="provider"]')?.click())
+    expect(kinds()).toEqual(['provider'])
+    await act(async () => filters.querySelector<HTMLInputElement>('input[value="all"]')?.click())
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-error-toggle"]')?.click(),
+    )
+    expect(host.querySelectorAll('[data-testid="diagnostics-copy-occurrence"]')).toHaveLength(2)
+    const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
+    const lookup = async (value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () =>
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
+      )
+    }
+    // Not found explains the scope; clearing returns to the list.
+    await lookup(id(9))
+    expect(text('diagnostics-not-found')).toContain('latest 1,000 records')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-not-found"] button')?.click(),
+    )
+    expect(text('diagnostics-summary')).toContain('3 recent records')
+    // Found shows only that kind, counted as the list counts it, open on the found ID.
+    found = [errors[1]!]
+    await lookup(id(2))
+    expect(kinds()).toEqual(['permission'])
+    expect(text('diagnostics-error-id')).toBe(id(2))
+    expect(text('diagnostics-error')).toContain('2 times')
+    // The row still describes the kind: its latest time, not the looked-up record's.
+    expect(host.querySelector('[data-testid="diagnostics-error-time"]')?.getAttribute('datetime')).toBe(
+      errors[2]!.at,
+    )
+    expect(host.querySelector('[data-testid="diagnostics-summary"]')).toBeNull()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-found"] button')?.click(),
+    )
+    expect(kinds()).toEqual(['permission', 'provider'])
+    // A failed read offers a retry that reads again.
+    fail = true
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-refresh"]')?.click(),
+    )
+    expect(text('diagnostics-failure')).toContain('You do not have permission for this operation.')
+    fail = false
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-failure"] button')?.click(),
+    )
+    expect(kinds()).toEqual(['permission', 'provider'])
+    errors.length = 0
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-refresh"]')?.click(),
+    )
+    expect(text('diagnostics-empty')).toContain('No recent errors')
+  } finally {
+    vi.useRealTimers()
+  }
 })
 it('renders safe translated failures, rejects invalid DTOs, and cancels an unmounted read', async () => {
   const api = diagnosticsApi(async () =>
