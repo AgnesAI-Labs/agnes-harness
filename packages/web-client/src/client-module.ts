@@ -152,7 +152,7 @@ export function clientModule(mod: ClientModule): {
         }),
       })
       const moduleAgnes = Object.freeze(
-        Object.assign(Object.create(agnes.client) as import('./services.js').AgnesClient, {
+        Object.assign(bindClient(agnes.client), {
           services: serviceApi,
         }),
       )
@@ -293,6 +293,26 @@ export function clientModule(mod: ClientModule): {
       return mod.apply(ctx as ClientContext, config)
     },
   }
+}
+
+/** A frozen module facade must keep SDK mutations on the actual connection, including reconnect. */
+function bindClient(client: import('./services.js').HostAgnesClient): import('./services.js').AgnesClient {
+  const facade = Object.create(client) as import('./services.js').AgnesClient
+  const bound = new Set<string>()
+  for (
+    let owner: object | null = client;
+    owner && owner !== Object.prototype;
+    owner = Object.getPrototypeOf(owner)
+  ) {
+    for (const name of Object.getOwnPropertyNames(owner)) {
+      if (name === 'constructor' || bound.has(name)) continue
+      const value = Object.getOwnPropertyDescriptor(owner, name)?.value
+      if (typeof value !== 'function') continue
+      Object.defineProperty(facade, name, { value: value.bind(client) })
+      bound.add(name)
+    }
+  }
+  return facade
 }
 
 function createFiberBoundRegistry(
