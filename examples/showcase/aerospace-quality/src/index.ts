@@ -2,9 +2,14 @@ import { readFileSync } from 'node:fs'
 import type { OwnedStore, ServiceContext, ToolContext } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
 import { type Static, type TSchema, Type } from '@sinclair/typebox'
+import { briefing } from './briefing.js'
+import { decisionRevision } from './policy.js'
+
+export { reviewPolicyPlugin } from './policy.js'
+
 import { coverage, decide, draft, health, impact, investigate, propose, read } from './domain.js'
 import { report } from './reports.js'
-import { briefing } from './briefing.js'
+
 const strict = { additionalProperties: false } as const
 const id = Type.String({ minLength: 1, maxLength: 64 })
 const revision = Type.Integer({ minimum: 1 })
@@ -196,7 +201,11 @@ export const tools = [
     'aero_decide',
     'Consequential human decision: MRB disposition, configuration change, reviewed rule activation or evidence-complete zeroing closure. Always requires Host approval and current revision / MRB、技术状态、规则启用与归零均要求宿主人工审批和当前修订。',
     decisionSchema,
-    (i, c) => decide(c.store, i, c.approval),
+    (i, c) => {
+      if (c.approval?.subjectRevision !== decisionRevision(i))
+        throw new Error('必须通过宿主人工审批 / Host human approval required')
+      return decide(c.store, i, c.approval)
+    },
     'decision',
   ),
   tool(

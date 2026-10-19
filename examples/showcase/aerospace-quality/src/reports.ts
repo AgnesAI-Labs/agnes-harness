@@ -1,5 +1,5 @@
-import type { State } from './model.js'
 import { health, investigate } from './domain.js'
+import type { State } from './model.js'
 export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | 'en') {
   const zh = locale === 'zh-CN',
     h = health(s),
@@ -57,7 +57,7 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
     'ECSS-Q-ST-10/20 series; ECSS-Q-ST-10-09C; AS9100D §8.3.6 / §8.5.2 / §8.7 / §10.2; NASA-STD-8739 workmanship concepts; NPR 7120.5 lifecycle reviews; GJB 9001C; 双五条归零. Conceptual demonstration, no certification claim.',
   ]
   const markdown = lines.join('\n')
-  const escape = (v: string) =>
+  const escapeHtml = (v: string) =>
     v.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
   const blocks: string[] = []
   let list = false,
@@ -82,7 +82,7 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
       const cells = line
         .split('|')
         .slice(1, -1)
-        .map((cell) => escape(cell.trim()))
+        .map((cell) => escapeHtml(cell.trim()))
       if (!table) {
         close()
         blocks.push(
@@ -96,13 +96,15 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
         blocks.push('<ul>')
         list = true
       }
-      blocks.push(`<li>${escape(line.slice(2))}</li>`)
+      blocks.push(`<li>${escapeHtml(line.slice(2))}</li>`)
     } else {
       close()
-      blocks.push(line.startsWith('## ') ? `<h2>${escape(line.slice(3))}</h2>` : `<p>${escape(line)}</p>`)
+      blocks.push(
+        line.startsWith('## ') ? `<h2>${escapeHtml(line.slice(3))}</h2>` : `<p>${escapeHtml(line)}</p>`,
+      )
     }
   }
   close()
-  const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escape(title)}</title><style>body{font:15px/1.7 system-ui;max-width:960px;margin:48px auto;padding:24px;color:#15283c;overflow-wrap:anywhere}h1{font-size:28px;border-bottom:3px solid #247b90;padding-bottom:16px}h2{font-size:19px;margin-top:28px}table{border-collapse:collapse;width:100%;font-size:13px}caption{text-align:left;font-weight:600;margin:8px 0}th,td{border:1px solid #cad6df;padding:9px;text-align:left}th{background:#eef5f8}tr{break-inside:avoid}@media print{body{margin:0;padding:0;font-size:11px}h1{font-size:24px}h2{break-after:avoid}table{font-size:10px}}</style></head><body><h1>${escape(title)}</h1>${blocks.join('')}</body></html>`
+  const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:15px/1.7 system-ui;max-width:960px;margin:48px auto;padding:24px;color:#15283c;overflow-wrap:anywhere}h1{font-size:28px;border-bottom:3px solid #247b90;padding-bottom:16px}h2{font-size:19px;margin-top:28px}table{border-collapse:collapse;width:100%;font-size:13px}caption{text-align:left;font-weight:600;margin:8px 0}th,td{border:1px solid #cad6df;padding:9px;text-align:left}th{background:#eef5f8}tr{break-inside:avoid}@media print{body{margin:0;padding:0;font-size:11px}h1{font-size:24px}h2{break-after:avoid}table{font-size:10px}}</style></head><body><h1>${escapeHtml(title)}</h1>${blocks.join('')}</body></html>`
   return { title, markdown, html, revision: s.revision }
 }

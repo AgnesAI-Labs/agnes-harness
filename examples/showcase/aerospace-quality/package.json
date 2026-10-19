@@ -94,6 +94,14 @@
         "capabilities": {
           "ui": true
         }
+      },
+      {
+        "id": "policy:aero-human-review",
+        "export": "reviewPolicyPlugin",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "providers"
+        ]
       }
     ],
     "hostProvidedExternals": {
@@ -116,7 +124,12 @@
         "presets": {
           "aero-standard": {
             "name": "aero-standard",
-            "extends": "standard"
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "aero-human-review"
+              }
+            }
           }
         },
         "profile": {
@@ -168,7 +181,12 @@
         "presets": {
           "aero-standard": {
             "name": "aero-standard",
-            "extends": "standard"
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "aero-human-review"
+              }
+            }
           }
         },
         "profile": {
@@ -211,7 +229,12 @@
         "presets": {
           "aero-standard": {
             "name": "aero-standard",
-            "extends": "standard"
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "aero-human-review"
+              }
+            }
           }
         },
         "profile": {
@@ -257,7 +280,12 @@
         "presets": {
           "aero-standard": {
             "name": "aero-standard",
-            "extends": "standard"
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "aero-human-review"
+              }
+            }
           }
         },
         "profile": {
@@ -305,7 +333,12 @@
         "presets": {
           "aero-standard": {
             "name": "aero-standard",
-            "extends": "standard"
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "aero-human-review"
+              }
+            }
           }
         },
         "profile": {

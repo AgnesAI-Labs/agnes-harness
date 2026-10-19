@@ -1,6 +1,7 @@
 import type { OwnedStore } from '@agnes/extension-api'
 import type { Audit, Disposition, State } from './model.js'
 import { seed } from './seed.js'
+
 const collections = [
   'requirements',
   'tests',

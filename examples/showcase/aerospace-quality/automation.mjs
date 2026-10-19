@@ -1,6 +1,8 @@
 // Explicit deployment action. No schedule is installed as a package-load side effect.
-import { createClient, memoryJournal } from '@agnes/sdk'
+
 import { resolve } from 'node:path'
+import { createClient, memoryJournal } from '@agnes/sdk'
+
 const source = process.env.AGH_SOURCE,
   cwd = process.env.AERO_WORKSPACE
 if (!source || !cwd) throw new Error('Set AGH_SOURCE and AERO_WORKSPACE / 请设置源码目录与独立工作区')

@@ -8,9 +8,10 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { chromium } from '@playwright/test'
-import { realRuntime, snapshot, pause } from '../../../../tools/authoring/real-runtime.mjs'
+import { pause, realRuntime, snapshot } from '../../../../tools/authoring/real-runtime.mjs'
+
 const real = process.argv.includes('--real')
 const root =
   process.env.AERO_EVAL_ROOT ??
@@ -21,6 +22,9 @@ execFileSync(
   ['tools/toolchain/run.mjs', '--filter', '@agnes-showcase/aerospace-quality', 'build'],
   { stdio: 'inherit' },
 )
+execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
+  stdio: 'inherit',
+})
 const packageId = '@agnes-showcase/aerospace-quality',
   profile = 'local-dev'
 const evidence = {
@@ -91,6 +95,11 @@ async function run(s, prompt, label) {
   try {
     const result = await s.prompt(prompt, { signal: AbortSignal.timeout(180000) })
     const data = await snapshot(s)
+    if (real)
+      assert.ok(
+        data.timeline.usage?.billingComplete && data.timeline.usage?.cost,
+        'Real acceptance requires AGH-recorded complete billing',
+      )
     costs.set(s.id, (data.timeline.usage?.cost?.usdMicros ?? 0) / 1e6)
     evidence.usd = [...costs.values()].reduce((a, b) => a + b, 0)
     await rt.save(`${label}.json`, { result, ...data })
@@ -122,13 +131,37 @@ async function shot(name) {
 try {
   evidence.stage = 'connect'
   await rt.connect()
+  evidence.stage = 'fresh-gallery'
+  await rt.startWeb()
+  browser = await chromium.launch({ headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } })
+  await context.addInitScript(() => {
+    const params = new URL(location.href).searchParams
+    if (params.has('lang')) localStorage.setItem('agnes-locale', params.get('lang'))
+    if (params.has('theme')) localStorage.setItem('agnes-theme', params.get('theme'))
+  })
+  page = await context.newPage()
+  const catalog = await rt.client.packages.catalog.list({ profile, query: 'aerospace-quality' })
+  const featured = catalog.items.find((p) => p.id === packageId)
+  assert.ok(featured?.source.ref.includes('/showcase/'), 'Fresh catalog must feature the showcase source')
+  await rt.save('fresh-featured-catalog.json', featured)
+  await page.goto(`${rt.url}/?page=agents&lang=zh-CN&theme=light`)
+  await page.locator(`[data-agent-ref="${packageId}#quality"]`).waitFor({ timeout: 30000 })
+  assert.equal(await page.locator(`[data-agent-ref^="${packageId}#"]`).count(), 5)
+  await shot('fresh-home-featured-gallery')
+  evidence.checks.push('fresh-home-featured-showcase-gallery-five-role-agents')
   evidence.stage = 'install'
-  await rt.cli(['plugins', 'add', resolve('examples/showcase/aerospace-quality'), '--yes'])
+  await rt.cli(['plugins', 'add', 'file:./bundled-examples/showcase/aerospace-quality', '--yes'])
   // Package activation may restart the worker; reconnect only this isolated runtime.
   evidence.stage = 'restart-after-install'
   await rt.restart()
   evidence.stage = 'resolve-quality'
-  await rt.client.agents.resolve(`${packageId}#quality`)
+  try {
+    await rt.client.agents.resolve(`${packageId}#quality`)
+  } catch (error) {
+    await rt.save('resolve-package-status.json', await rt.client.packages.list({ profile }))
+    throw error
+  }
   let installed
   for (let i = 0; i < 150; i++) {
     installed = (await rt.client.packages.list({ profile })).packages.find((p) => p.id === packageId)
@@ -136,7 +169,16 @@ try {
     await pause(200)
   }
   await rt.save('installed-package.json', installed)
-  assert.equal(installed?.actual, 'running', JSON.stringify({ actual: installed?.actual, blockers: installed?.blockers, status: installed?.primaryStatus }))
+  assert.equal(
+    installed?.actual,
+    'running',
+    JSON.stringify({
+      actual: installed?.actual,
+      blockers: installed?.blockers,
+      status: installed?.primaryStatus,
+    }),
+  )
+  evidence.stage = 'adoption'
   const before = await rt.client.request('_agnes/v1/applications.get', { profile })
   assert.notEqual(before.effective?.id, 'qiongxu-aerospace-quality')
   const preview = await rt.client.request('_agnes/v1/applications.preview', { profile, packageId })
@@ -156,16 +198,9 @@ try {
     await rt.configure()
   }
   await rt.startWeb()
-  browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } })
-  await context.addInitScript(() => {
-    const params = new URL(location.href).searchParams
-    if (params.has('lang')) localStorage.setItem('agnes-locale', params.get('lang'))
-    if (params.has('theme')) localStorage.setItem('agnes-theme', params.get('theme'))
-  })
-  page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
+  evidence.stage = 'page-matrix'
   for (const locale of ['zh-CN', 'en'])
     for (const theme of ['light', 'dark']) {
       for (const id of [
@@ -201,14 +236,37 @@ try {
   await page.locator('[data-aero-page] h1').waitFor()
   await page.locator('[data-aero-page] .aero-section').first().waitFor()
   await pause(150)
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile page overflow')
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    'Mobile page overflow',
+  )
   await shot('zh-dark-mobile-home')
   await page.setViewportSize({ width: 1440, height: 1050 })
+  evidence.stage = 'profile-service-effect'
+  await page.goto(`${rt.url}/?lang=zh-CN&theme=light&page=aero-mrb`)
+  await page
+    .locator('article.aero-ncr')
+    .filter({ hasText: 'NCR-018' })
+    .getByRole('button', { name: '查看证据', exact: true })
+    .click()
+  await page
+    .getByRole('dialog')
+    .locator('textarea')
+    .fill(
+      'Quarantine L2609-B and restore affected units to the controlled drawing; re-verify VT-001/004/008 before release.',
+    )
+  await page.getByRole('button', { name: '保存审理草案', exact: true }).click()
+  await page.getByText('已保存；请核对证据与审计记录。', { exact: true }).waitFor()
+  await shot('profile-service-mrb-draft')
+  await page.keyboard.press('Escape')
+  evidence.checks.push('browser-profile-service-effect-persisted-draft')
+  evidence.stage = 'investigation'
   const investigator = await open('investigator')
+  await call(investigator, 'skill_read', { name: 'aerospace-quality-playbook' }, 'domain-skill-read')
   const diagnosis = await run(
     investigator,
     real
-      ? '先调用 aero_playbook，再调用 aero_investigate 调查 AN-027。引用峰值、限值、批次更改与相似 NCR，区分事实/假设，提出替代解释和复现试验。不批准处置。'
+      ? '先调用 skill_read(name=aerospace-quality-playbook) 和 aero_playbook，再调用 aero_investigate 调查 AN-027。引用峰值、限值、批次更改与相似 NCR，区分事实/假设，提出替代解释和复现试验。不批准处置。'
       : 'call aero_investigate {"anomalyId":"AN-027"}',
     'investigation',
   )
@@ -285,6 +343,7 @@ try {
     await call(quality, 'aero_rule_propose', { expectedRevision: h.revision }, 'rule-proposed'),
     'aero_rule_propose',
   )
+  evidence.stage = 'native-skill'
   const candidate = output(
     await call(quality, 'aero_skill_candidate', { action: 'prepare' }, 'skill-prepared'),
     'aero_skill_candidate',
@@ -337,6 +396,10 @@ try {
   )
   assert.equal(review.screeningRequired, true)
   assert.equal(review.ruleVersion, 1)
+  await page.goto(`${rt.url}/?lang=zh-CN&theme=light&page=aero-configuration`)
+  await page.getByRole('heading', { name: /ECR-016/ }).scrollIntoViewIfNeeded()
+  await page.locator('.aero-impact').waitFor()
+  await shot('ecr-impact-screening-rule-v1')
   h = await dashboard('before-configuration')
   output(
     await call(
@@ -355,6 +418,7 @@ try {
   await page.goto(`${rt.url}/?session=${quality.id}&lang=zh-CN`)
   await page.getByTestId('conversation-turn').first().waitFor({ timeout: 30000 })
   await shot('demo-deliverables-and-provenance')
+  evidence.stage = 'automation'
   const scheduled = await rt.client.request('_agnes/v1/schedules.upsert', {
     agent: `${packageId}#quality`,
     title: 'QV-X27 weekly NCR digest / 每周 NCR 摘要',
@@ -400,10 +464,12 @@ try {
   evidence.browserErrors = errors
   assert.deepEqual(errors, [])
   assert.ok(evidence.usd < 3)
+  if (real) assert.ok(evidence.usd > 0, 'Real-model acceptance must record non-zero AGH cost')
   evidence.passed = true
 } catch (error) {
   evidence.error = rt.redact(error.stack ?? error.message)
   evidence.errorData = rt.redact(JSON.stringify(error.data ?? null))
+  await rt.save('failure-roster.json', await rt.client.clientModules.list(profile).catch(() => null))
   evidence.passed = false
   if (page) {
     await shot('failure').catch(() => {})

@@ -1,5 +1,6 @@
-import React from 'react'
 import { Banner, Button, Chart, Drawer, SearchBar, Segmented, Table, Tag } from '@agnes/web-ui'
+import React from 'react'
+
 const h = React.createElement
 export const section = (title, children, className = '') =>
   h('section', { className: `aero-section ${className}` }, h('h2', null, title), children)
@@ -63,12 +64,10 @@ export function Telemetry({ data, t }) {
             min: p.minute,
             current: p.current,
             limit: p.limit,
-            anomaly: p.anomaly ? p.current : null,
           })),
           series: [
             { key: 'current', label: t.choose('驱动电流', 'Drive current') },
             { key: 'limit', label: t.choose('上限 1.80 A', 'Upper limit 1.80 A') },
-            { key: 'anomaly', label: t.choose('异常窗口', 'Anomaly window') },
           ],
           dataLabel: t.choose('查看原始测量值', 'View source measurements'),
           formatValue: (v) => (v == null ? '—' : Number(v).toFixed(3)),

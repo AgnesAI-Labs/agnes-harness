@@ -6,6 +6,7 @@ import { expect, it } from 'vitest'
 import * as module from '../client/index.js'
 import { coverage, health, impact, investigate } from '../src/domain.js'
 import { seed } from '../src/seed.js'
+
 const { client } = JSON.parse(
   await readFile(resolve('examples/showcase/aerospace-quality/client/agnes.client.json'), 'utf8'),
 )

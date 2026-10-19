@@ -41,7 +41,7 @@ export function briefing(state: State, locale: 'zh-CN' | 'en') {
     ],
     data: {
       telemetry: state.campaigns[0]!.samples.filter((p) => p.minute >= 60 && p.minute <= 76).map((p) => ({
-        minute: p.minute,
+        minute: String(p.minute),
         current: p.current,
         limit: p.limit,
       })),

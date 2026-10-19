@@ -2,16 +2,19 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readApplicationAsset, readDevelopmentPlugin } from '@agnes/package-manager'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
-import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { readApplicationAsset, readDevelopmentPlugin } from '@agnes/package-manager'
+import { type Context, defineAgnesPlugin, toolPolicyKind } from '@agnes/plugin-runtime'
+import { DSH_SLOT_CATALOG_VERSION } from '@agnes/web-client'
 import { expect, it } from 'vitest'
 import { tools } from '../src/index.js'
+import { decisionRevision, humanReviewPolicy } from '../src/policy.js'
+
 const directory = fileURLToPath(new URL('../', import.meta.url))
 it('public package inspection resolves the third-party application, six profile pages, five agents and bounded raster identity', async () => {
   const clean = await mkdtemp(join(tmpdir(), 'agh-aero-inspect-'))
   await cp(directory, clean, { recursive: true, filter: (path) => !path.split('/').includes('node_modules') })
-  let inspected
+  let inspected: Awaited<ReturnType<typeof readDevelopmentPlugin>>
   try {
     inspected = await readDevelopmentPlugin(clean, 'local-dev')
   } finally {
@@ -21,6 +24,12 @@ it('public package inspection resolves the third-party application, six profile 
   expect(inspected.snapshot.application?.id).toBe('qiongxu-aerospace-quality')
   expect(inspected.snapshot.application?.agents).toHaveLength(5)
   expect(inspected.snapshot.application?.presentation?.navigation?.entries).toHaveLength(6)
+  const card = inspected.snapshot.contributions.find(
+    (contribution) => 'client' in contribution && contribution.client?.slots?.includes('tool.call.toolview'),
+  )
+  expect(card && 'client' in card ? card.client?.slotCatalogVersion : undefined).toBe(
+    DSH_SLOT_CATALOG_VERSION,
+  )
   for (const asset of ['assets/mark.png', 'assets/favicon.png']) {
     const bytes = await readApplicationAsset(directory, asset)
     expect(bytes.length).toBeLessThan(131072)
@@ -30,16 +39,32 @@ it('public package inspection resolves the third-party application, six profile 
 it('real Core approval refusal stops the consequential decision before execution and pins the installed generation', async () => {
   const decision = tools.find((t) => t.name === 'aero_decide')!
   const plugin = defineAgnesPlugin({
-    inject: ['tools'],
+    inject: ['tools', 'providers'],
     apply(ctx: Context) {
-      ctx.tools.register(decision)
+      ctx.providers.register(toolPolicyKind, humanReviewPolicy)
+      ctx.tools.register({
+        ...decision,
+        execute: async (_input, context) => ({
+          content: [{ type: 'text', text: JSON.stringify(context.approval ?? null) }],
+          structured: { revision: 1, data: context.approval ?? null },
+        }),
+      })
     },
   })
+  let allowed = false
   const kit = await createAuthorTestkit({
     plugin,
     version: '1.0.0',
+    preset: 'quality-review',
+    presets: {
+      'quality-review': {
+        name: 'quality-review',
+        extends: 'standard',
+        providers: { 'tool-policy': { provider: 'aero-human-review' } },
+      },
+    },
     approval: async () => ({
-      verdict: 'rejected',
+      verdict: allowed ? 'allowed-once' : 'rejected',
       answeredBy: { id: 'synthetic-mrb-reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
     }),
   })
@@ -49,6 +74,14 @@ it('real Core approval refusal stops the consequential decision before execution
     await session.invoke('aero_decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 1 })
     await session.assertApproval('rejected')
     await session.assertRefused('aero_decide')
+    allowed = true
+    const input = { kind: 'mrb' as const, id: 'NCR-018', expectedRevision: 1 }
+    const result = await session.invoke('aero_decide', input)
+    expect(result.isError).not.toBe(true)
+    expect((result.structured as { data: unknown }).data).toMatchObject({
+      subjectRevision: decisionRevision(input),
+      answeredBy: { id: 'synthetic-mrb-reviewer' },
+    })
     const next = await kit.reload({ plugin, version: '1.0.1' })
     session.assertPinned(generation!)
     expect(next).not.toBe(generation)

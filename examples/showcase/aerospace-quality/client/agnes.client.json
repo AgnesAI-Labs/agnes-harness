@@ -3,17 +3,9 @@
     "id": "aero-pages",
     "lifetime": "profile",
     "entry": "./index.js",
-    "styles": [
-      "./style.css"
-    ],
+    "styles": ["./style.css"],
     "slots": [],
-    "services": [
-      "aero.snapshot",
-      "aero.impact",
-      "aero.draft",
-      "aero.propose",
-      "aero.decide"
-    ],
+    "services": ["aero.snapshot", "aero.impact", "aero.draft", "aero.propose", "aero.decide"],
     "projections": [],
     "publicConfig": {},
     "homeEntries": [
@@ -134,6 +126,10 @@
           "dark": "#0c1420"
         },
         "--agnes-brand-focus-ring": {
+          "light": "#146477",
+          "dark": "#72c7dc"
+        },
+        "--agnes-brand-mark": {
           "light": "#146477",
           "dark": "#72c7dc"
         }

@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createPluginTestHost } from '@agnes/host/author-testkit'
 import { afterEach, expect, it } from 'vitest'
-import { main } from '../src/index.js'
+import { briefing } from '../src/briefing.js'
 import { coverage, decide, impact, investigate, persist, read } from '../src/domain.js'
+import { main } from '../src/index.js'
 import { report } from '../src/reports.js'
 import { seed } from '../src/seed.js'
+
 const packageDir = fileURLToPath(new URL('../', import.meta.url))
 const roots: string[] = []
 afterEach(async () => {
@@ -142,6 +144,9 @@ it('traceability exposes orphan/design/untested gaps and reports preserve uncert
   expect(investigate(s).hypothesis.en).toContain('Hypothesis only')
   s.ncrs[17]!.rationale = '<script>alert(1)</script>'
   for (const locale of ['zh-CN', 'en'] as const) {
+    const surface = briefing(s, locale)
+    expect(surface.data.telemetry.every((point) => typeof point.minute === 'string')).toBe(true)
+    expect(surface.data.telemetry.map((point) => point.current)).toContain(2.227)
     const r = report(s, 'zeroing', locale)
     expect(r.markdown).toContain('NCR-017')
     expect(r.html).not.toContain('<script>')

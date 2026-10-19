@@ -7,6 +7,7 @@
     "slots": ["tool.call.toolview"],
     "services": [],
     "projections": [],
-    "publicConfig": {}
+    "publicConfig": {},
+    "slotCatalogVersion": "dsh-client-slots/v1"
   }
 }

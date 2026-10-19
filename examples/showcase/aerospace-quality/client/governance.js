@@ -1,6 +1,7 @@
-import React from 'react'
 import { Banner, Button, Drawer, Field, Select, Tag } from '@agnes/web-ui'
+import React from 'react'
 import { col, section, status, table } from './views.js'
+
 const h = React.createElement
 export function Mrb({ data, t, op }) {
   const [selected, setSelected] = React.useState(null),
@@ -147,7 +148,9 @@ export function Configuration({ data, t, op, ctx }) {
     let live = true
     setAnalysis(null)
     setError('')
-    ctx.profile.services.query('aero.impact', { ecrId }).then(
+    const selected = data.ecrs.find((ecr) => ecr.id === ecrId)
+    if (!selected) return
+    ctx.profile.services.query('aero.impact', { ecrId: selected.id }).then(
       (r) => {
         if (live) setAnalysis(r)
       },
@@ -158,7 +161,7 @@ export function Configuration({ data, t, op, ctx }) {
     return () => {
       live = false
     }
-  }, [ecrId, data.revision])
+  }, [ecrId, data, ctx.profile.services])
   return h(
     React.Fragment,
     null,

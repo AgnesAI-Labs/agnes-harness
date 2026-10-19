@@ -1,5 +1,6 @@
-import { createClient, memoryJournal } from '@agnes/sdk'
 import { resolve } from 'node:path'
+import { createClient, memoryJournal } from '@agnes/sdk'
+
 const profile = process.env.AGNES_PROFILE ?? 'local-dev'
 const source = process.env.AGH_SOURCE
 if (!source) throw new Error('Set AGH_SOURCE / 请设置 AGH_SOURCE')

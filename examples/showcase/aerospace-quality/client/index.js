@@ -1,10 +1,11 @@
-import React from 'react'
 import { homeNavigation } from '@agnes/web-client'
 import { Banner, Button, PageHeader } from '@agnes/web-ui'
+import React from 'react'
+import { Configuration, Mrb, Zeroing } from './governance.js'
 import { language, titles } from './i18n.js'
 import { useProgramme } from './operations.js'
 import { Home, Requirements, Tests } from './views.js'
-import { Configuration, Mrb, Zeroing } from './governance.js'
+
 const h = React.createElement
 const views = {
   'aero-home': Home,

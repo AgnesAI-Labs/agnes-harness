@@ -74,7 +74,7 @@ the [demo script](DEMO.md) gives exact deterministic calls and real-model prompt
 Pages use declared profile services and durable operation IDs, retaining uncertain receipts in
 session storage scoped to profile/activation/client revision. Reopening reads the original receipt;
 no unknown operation is retried under a new identity. Revision drift refuses stale decisions.
-Neither UI labels nor caller-supplied approval/owner selectors grant authority. Browser storage
+Each role preset selects the package’s public `aero-human-review` tool policy. It requires a human, one-time decision bound to the target and programme revision; session/permanent grants and full-access mode cannot waive that decision. The tool verifies the Host proof and the transaction checks the current revision. Neither UI labels nor caller-supplied approval/owner selectors grant authority. Browser storage
 failure prevents mutation dispatch. Trusted JS is not a sandbox.
 
 `aero_report` creates unique Markdown and print-styled HTML files under the authorised workspace
