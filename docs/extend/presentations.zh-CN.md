@@ -70,8 +70,10 @@ mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 ```
 
-Web 开发和 Vitest 也会按需构建缺失或陈旧的客户端。缓存核对输入内容、lockfile、构建工具、包 manifest
-和 import map，再验证输出哈希。输入不变时复用生成字节。开发监听插件自有 entry 以及共享 Web 源码。
+Web 开发和 Vitest 也会按需构建缺失或陈旧的客户端。每个构建入口都先独立编译源码，再接受缓存字节；
+local、SEA 和 release 打包也在复制前完成此检查。输入内容、lockfile、构建工具、包 manifest 和 import map
+用于识别源码变化。输入不变的缓存必须与独立编译的记录和输出哈希匹配；同时修改客户端及记录中的哈希也会
+被拒绝。匹配的输出文件保持不动。开发监听插件自有 entry 以及共享 Web 源码。
 
 `client-build.json` 记录格式版本 1、输入 SHA-256、esbuild 版本、源码输入路径、字节数及客户端/NOTICE 的
 SHA-256。local、release 和 SEA payload 将记录与实际字节一起交付。打包验证输出哈希；`gen:check`

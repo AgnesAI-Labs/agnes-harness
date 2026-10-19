@@ -64,6 +64,7 @@ async function atomicWrite(path, bytes) {
     await rm(temp, { force: true })
   }
 }
+/** Checks payload consistency, not whether editable build outputs correspond to source. */
 export async function verifyPresentation(root) {
   const record = JSON.parse(await readFile(join(root, 'client-build.json'), 'utf8'))
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -96,7 +97,7 @@ export async function verifyPresentation(root) {
   return record
 }
 
-/** Missing/stale source outputs rebuild on demand; check always performs an independent rebuild. */
+/** Independently compile before accepting cached bytes. Only source changes or missing outputs rebuild. */
 export async function buildPresentations({ check = false, force = false } = {}) {
   const results = []
   let createdForCheck = false
@@ -114,14 +115,6 @@ export async function buildPresentations({ check = false, force = false } = {}) 
         },
       )
       if (check && (recorded || error.code !== 'ENOENT')) throw error
-    }
-    if (!check && !force && previous) {
-      try {
-        if (previous.entry === entry && previous.inputHash === (await inputHash(previous.inputs))) {
-          results.push(previous)
-          continue
-        }
-      } catch {}
     }
     const result = await build({
       absWorkingDir: presentationRoot,
@@ -156,14 +149,19 @@ export async function buildPresentations({ check = false, force = false } = {}) 
       bytes: Buffer.byteLength(output),
       files: { 'src/client.js': digest(output), NOTICE: digest(notice) },
     }
-    if (check && previous) {
+    // Neither inputHash nor output hashes in an editable record prove source correspondence.
+    // A current-input cache must match this independent compilation, even for dev/test and force.
+    if (previous && (check || previous.inputHash === record.inputHash)) {
       if (json(record) !== json(previous)) throw new Error(`Stale presentation build: ${name}`)
-    } else {
-      await atomicWrite(join(root, 'src/client.js'), output)
-      await atomicWrite(join(root, 'NOTICE'), notice)
-      await atomicWrite(join(root, 'client-build.json'), json(record))
-      if (check) createdForCheck = true
+      if (check || !force) {
+        results.push(record)
+        continue
+      }
     }
+    await atomicWrite(join(root, 'src/client.js'), output)
+    await atomicWrite(join(root, 'NOTICE'), notice)
+    await atomicWrite(join(root, 'client-build.json'), json(record))
+    if (check) createdForCheck = true
     results.push(record)
   }
   return createdForCheck ? buildPresentations({ check: true }) : results
