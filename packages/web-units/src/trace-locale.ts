@@ -541,7 +541,7 @@ const zh: Record<keyof typeof en, string> = {
   'trace.controls.child-stop': '停止子代理',
   'trace.controls.child-continue': '继续子代理',
 
-  'trace.sessionLoop': 'Running mode：{id} · {version}',
+  'trace.sessionLoop': '运行模式：{id} · {version}',
   'trace.review.model': '审查模型：{model}',
   'trace.review.decision': '审查决定：{decision} · {risk}',
   'trace.badge.user': '用户',

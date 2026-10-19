@@ -11,6 +11,7 @@ import {
   type BusinessAgentsData,
   useBusinessAgents,
 } from '@agnes/web-admin/agents'
+import { choiceName } from '@agnes/web-admin/settings/choices'
 import { sessionStartUrl } from '@agnes/web-admin/settings/runtime-panels'
 import {
   applicationAgents,
@@ -172,7 +173,7 @@ function AgentList({
                   onChange={setLoop}
                   options={(loops.data?.loops ?? []).map((item) => ({
                     value: `${item.id}@${item.version}`,
-                    label: item.label ?? item.id,
+                    label: choiceName(item, t),
                   }))}
                 />
               </Field>

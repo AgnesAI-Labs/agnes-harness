@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import type { AgentPlan, ApplicationState } from '@agnes/protocol'
 import { applicationIdentity } from '@agnes/web-client'
-import { clearResources } from '@agnes/web-ui'
+import { clearResources, createDocumentLocaleSource, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -406,6 +406,50 @@ it.each([false, true])(
       expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(0)
     } finally {
       await act(async () => root.unmount())
+    }
+  },
+)
+
+it.each(['en', 'zh-CN'])(
+  'names the default running mode in %s without exposing the raw ID',
+  async (locale) => {
+    document.documentElement.lang = locale
+    mock.connect.mockResolvedValue({
+      context: { permissions: [], readOnly: false },
+      api: {
+        catalog: async () => ({ items: [] }),
+        list: async () => ({ packages: [] }),
+        agents: async () => ({ agents: [] }),
+        loops: async () => ({
+          revision: 1,
+          loops: [{ id: 'agnes.default', version: '1.0.0' }],
+          defaults: {},
+        }),
+      },
+    })
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const localized = createDocumentLocaleSource({})
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            UiLocaleProvider,
+            { source: localized.source },
+            createElement(AgentsPage, { context: { t: (key: string) => key } as never }),
+          ),
+        ),
+      )
+      await vi.waitFor(() =>
+        expect(host.querySelector('[data-testid="general-agent"] .ant-select')?.textContent).toContain(
+          locale === 'en' ? 'Official default Agent' : '官方默认智能体',
+        ),
+      )
+      expect(host.querySelector('[data-testid="general-agent"]')?.textContent).not.toContain('agnes.default')
+    } finally {
+      await act(async () => root.unmount())
+      localized.dispose()
+      document.documentElement.lang = ''
     }
   },
 )

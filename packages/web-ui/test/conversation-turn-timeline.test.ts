@@ -364,7 +364,16 @@ describe('turn timeline', () => {
       approval('ok', { decision: { verdict: 'allowed-session', via: 'web' } }),
       approval('no', { decision: { verdict: 'rejected', via: 'web' } }),
       approval('late', { decision: { verdict: 'unavailable', via: 'sync', reason: 'deadline' } }),
-      approval('ask', { state: 'pending' }),
+      approval('ask', {
+        state: 'pending',
+        presentation: {
+          en: {
+            title: 'Human signature',
+            fields: [{ label: 'Meaning', value: 'I approve / exact punctuation.' }],
+            responseValue: 'I approve / exact punctuation.',
+          },
+        },
+      }),
       say('final', 'done'),
     ]
     await render(nodes, turn(nodes, { status: 'completed', finalAssistantId: 'final' }))
@@ -372,6 +381,12 @@ describe('turn timeline', () => {
     expect(wrapper('ok')?.hidden).toBe(true)
     expect([wrapper('ask')?.className, wrapper('ask')?.hidden]).toEqual(['turn-attention', false])
     expect(wrapper('ask')?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('attention')
+    expect(wrapper('ask')?.querySelector('.activity-target')?.textContent).toBe('Human signature')
+    expect(wrapper('ask')?.querySelector('.activity-target')?.hasAttribute('data-mono')).toBe(false)
+    await click(wrapper('ask')?.querySelector('.activity-row'))
+    expect(wrapper('ask')?.querySelector('.agh-decision-fields dd')?.textContent).toBe(
+      'I approve / exact punctuation.',
+    )
     await click(host.querySelector('[data-testid="turn-process-toggle"]'))
     await click(host.querySelector('[data-testid="turn-activity-toggle"]'))
     const verb = (id: string) => wrapper(id)?.querySelector('.activity-verb')?.textContent

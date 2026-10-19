@@ -208,6 +208,7 @@ const TARGETS: Array<{
         defs: [
           'DecisionHandle',
           'DecisionSpec',
+          'DecisionPresentation',
           'DecisionRequest',
           'DecisionResponse',
           'DecisionResult',
@@ -327,6 +328,7 @@ const TARGETS: Array<{
           'DecisionConsumption',
           'DecisionResponse',
           'DecisionSpec',
+          'DecisionPresentation',
           'DecisionRequest',
           'DecisionResult',
           'DecisionCommandReceipt',

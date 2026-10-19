@@ -323,8 +323,7 @@
   }
   .markdown code,
   .tool-name,
-  .tool-summary,
-  #approval p {
+  .tool-summary {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   }
   .markdown :where(:not(pre)) > code {

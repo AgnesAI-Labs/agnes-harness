@@ -73,3 +73,28 @@ it('renders stopped authority distinctly from deadline expiry and offers no answ
   expect(card.render(80).join('')).toContain('stopped')
   expect(card.handleInput('1')).toBe(false)
 })
+
+it('renders the selected locale fields without rewriting their exact meaning', () => {
+  const card = new ApprovalCard(
+    {
+      ...node(['allow_once', 'reject_once']),
+      presentation: {
+        en: {
+          title: 'Human signature',
+          fields: [{ label: 'Meaning', value: 'I approve.' }],
+          responseValue: 'I approve.',
+        },
+        'zh-CN': {
+          title: '人工签署',
+          fields: [{ label: '签名含义', value: '我批准。' }],
+          responseValue: '我批准。',
+        },
+      },
+    },
+    { ansi: PLAIN, locale: 'zh-CN', onDecide: async () => undefined },
+  )
+  const text = card.render(100).join('\n')
+  expect(text).toContain('人工签署')
+  expect(text).toContain('签名含义: 我批准。')
+  expect(text).not.toContain('Human signature')
+})

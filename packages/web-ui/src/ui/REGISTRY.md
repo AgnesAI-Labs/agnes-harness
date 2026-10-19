@@ -125,3 +125,4 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 `preserveRouteParams(url)` keeps the existing `view` and `settings` level encoding when the host edits unrelated URL metadata; explicit `searchParamRoute().href()` changes its own route and preserves the other. / `preserveRouteParams(url)` 在宿主修改其他 URL 元数据时保留已有层级编码；`searchParamRoute().href()` 只改自身路由并保留另一路由。
 
 | `Notifications` | Shared | React portal | Top-right transient error stack; independent six-second expiry, labelled close buttons, pagehide and unmount cleanup. Action banners remain caller-owned. |
+| `DecisionFields` / `decisionPresentation` | Shared | Persisted decision presentation | Exact locale, language, then English; plain labelled fields and same-origin links. Submit the bound response value unchanged. |

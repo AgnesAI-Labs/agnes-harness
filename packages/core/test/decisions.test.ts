@@ -11,6 +11,9 @@ const spec: DecisionSpec = {
   purpose: 'business.confirm',
   subject: { text: 'Complete synthetic review' },
   prompt: 'Continue?',
+  presentation: {
+    en: { title: 'Review', fields: [{ label: 'Object', value: 'NCR-018' }], responseValue: 'review' },
+  },
   options: ['continue', 'reject'],
 }
 const codec = loopCheckpointCodec(1, (value) => {
@@ -56,7 +59,7 @@ describe('session decision authority', () => {
     let handle: Awaited<ReturnType<LoopContext['decisions']['request']>> | undefined
     f.session.d.registry.add(
       readTool(async (_args, ctx) => {
-        handle = await ctx.decisions.request(spec)
+        handle = await ctx.decisions.request({ ...spec, options: ['allowed-once', 'rejected'] })
         expect((await ctx.decisions.get(handle)).request).toMatchObject({
           owner: 'fixture/author',
           sourcePackage: '@fixture/plugin',
@@ -81,6 +84,11 @@ describe('session decision authority', () => {
       await f.session.run({ until: 'turn-end', signal: new AbortController().signal })
       expect(handle).toBeDefined()
       expect((await f.session.decisions.get(handle!)).result).toBeNull()
+      expect(
+        (await f.session.projectUI(undefined, { surface: 'web' })).nodes.find(
+          (node) => node.kind === 'approval',
+        ),
+      ).toMatchObject({ presentation: spec.presentation })
     } finally {
       await f.session.close()
     }
@@ -253,6 +261,13 @@ describe('session decision authority', () => {
       expect(await wait).toEqual({ status: 'pending', handle, waitEndedBy: 'detached' })
       expect((await f.ctx.decisions.get(handle)).result).toBeNull()
       await expect(f.ctx.decisions.request({ ...spec, subject: 'changed' })).rejects.toThrow('KEY_CONFLICT')
+      await expect(
+        f.ctx.decisions.request({
+          ...spec,
+          responseSchema: { type: 'integer', minimum: 1 },
+          presentation: { en: { title: 'Changed', fields: [] } },
+        }),
+      ).rejects.toThrow('KEY_CONFLICT')
       const command = {
         handle,
         revision: 1,

@@ -523,6 +523,8 @@ describe('turn navigator bookmark styling', () => {
   }
 
   it('draws a bookmarked tick in the brand colour, thicker than the others', () => {
+    expect(rule('.turn-nav-rail')).toContain('opacity: 0')
+    expect(rule('.turn-nav-rail:is(:hover, :focus-within)')).toContain('opacity: 1')
     const tick = rule('.turn-nav-tick[data-bookmarked="true"]')
     expect(tick).toContain('background: var(--agnes-brand-primary)')
     expect(tick).toContain('height: 3px')

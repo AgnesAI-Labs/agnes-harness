@@ -213,7 +213,10 @@ export class TuiApp {
               await this.o.session.client.approval.decide({
                 ...ref,
                 commandId: `${ref.id}:${ref.revision}:${verdict}`,
-                response: { option: verdict, value: null },
+                response: {
+                  option: verdict,
+                  value: (node.presentation?.[locale] ?? node.presentation?.en)?.responseValue ?? null,
+                },
               })
             },
             // The decide call's settlement (in particular a rejection, which produces no new

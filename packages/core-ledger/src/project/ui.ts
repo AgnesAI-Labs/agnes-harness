@@ -863,6 +863,7 @@ export class UIProjectionCell {
                 ? 'decided'
                 : 'pending',
           summary: clip(value.request.spec.prompt, 4096),
+          ...(value.request.spec.presentation ? { presentation: value.request.spec.presentation } : {}),
           ...approvalSubject(value.request.spec.subject),
           // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
           ...(value.request.owner === 'core/unknown-outcome'

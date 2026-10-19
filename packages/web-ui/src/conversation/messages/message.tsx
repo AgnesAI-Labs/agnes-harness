@@ -2,6 +2,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import type { ReactNode, RefObject } from 'react'
 import { memo, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
+import { DecisionFields, decisionPresentation } from '../../ui/decision-presentation.js'
 import { ConversationCost } from '../cost.js'
 import { ActivityIcon, ActivityRow } from './activity-row.js'
 import { approvalStatus } from './approval-labels.js'
@@ -33,7 +34,10 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
       ? APPROVAL_STEP_KEYS[node.decision?.verdict ?? '']
       : undefined
   const refused = decided && !reconcile && !node.decision?.verdict.startsWith('allowed')
-  const summary = reconcile ? t('activity.reconcile.summary', { tool: reconcile.tool }) : node.summary
+  const presentation = decisionPresentation(node.presentation)
+  const summary = reconcile
+    ? t('activity.reconcile.summary', { tool: reconcile.tool })
+    : (presentation?.title ?? node.summary)
   return (
     <>
       <ActivityRow
@@ -43,7 +47,7 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
         verb={<span className="tool-status">{key ? t(key) : approvalStatus(node, t)}</span>}
         target={<span className="approval-summary">{summary}</span>}
         tooltip={summary}
-        mono={!reconcile}
+        mono={!reconcile && !presentation}
         state={
           node.state === 'pending'
             ? 'attention'
@@ -55,7 +59,15 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
         onToggle={() => setExpanded((open) => !open)}
       />
       <div className="tool-detail-text approval-detail" hidden={!expanded}>
-        {reconcile ? summary : node.rewrite ? `${node.rewrite.summary}\n\n${node.summary}` : node.summary}
+        {presentation ? (
+          <DecisionFields view={presentation} />
+        ) : reconcile ? (
+          summary
+        ) : node.rewrite ? (
+          `${node.rewrite.summary}\n\n${node.summary}`
+        ) : (
+          node.summary
+        )}
       </div>
     </>
   )

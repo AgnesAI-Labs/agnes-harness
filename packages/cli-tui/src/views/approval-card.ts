@@ -93,7 +93,8 @@ export class ApprovalCard implements Component {
   private lines(width: number): string[] {
     const n = this.n
     const ansi = this.o.ansi
-    const summary = escapeControl(n.summary)
+    const presentation = n.presentation?.[this.o.locale ?? 'en'] ?? n.presentation?.en
+    const summary = escapeControl(presentation?.title ?? n.summary)
     const resolved = (tone: 'success' | 'danger', glyph: string) => [
       fitLine(
         `${ansi.fg(tone, glyph)} ${summary} ${ansi.fg('faint', '->')} ${ansi.fg(tone, escapeControl(this.note))}`,
@@ -124,6 +125,12 @@ export class ApprovalCard implements Component {
         )}`,
         width,
       ),
+      ...(presentation?.fields.flatMap((field) =>
+        wrapText(
+          escapeControl(`${field.label}: ${field.value}${field.href ? ` (${field.href})` : ''}`),
+          width - 2,
+        ).map((line) => fitLine(`${rail}${line}`, width)),
+      ) ?? []),
       ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),

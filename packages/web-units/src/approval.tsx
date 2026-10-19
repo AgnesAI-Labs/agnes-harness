@@ -1,4 +1,4 @@
-import { Button } from '@agnes/web-ui'
+import { Button, DecisionFields, type DecisionPresentation, Disclosure, fallbackT } from '@agnes/web-ui'
 import {
   type ForwardedRef,
   forwardRef,
@@ -18,6 +18,7 @@ export interface ApprovalAction {
 export interface ApprovalView {
   key: string
   summary: string
+  presentation?: DecisionPresentation
   /** Says a plugin rewrote the summary and gives the original; read right after the summary. */
   rewritten?: string
   title: string
@@ -128,7 +129,8 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           aria-label={view.title}
         >
           <h2>{view.title}</h2>
-          <p>{view.summary}</p>
+          <p className="approval-summary-text">{view.summary}</p>
+          {view.presentation && <DecisionFields view={view.presentation} />}
           {view.rewritten !== undefined && (
             <p className="approval-warning" data-testid="approval-rewritten">
               {view.rewritten}
@@ -137,12 +139,17 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           <p className="approval-impact">{view.impact}</p>
           {detail}
           {view.warning !== undefined && <p className="approval-warning">{view.warning}</p>}
-          {view.preview !== undefined && (
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the argument preview.
-            <pre tabIndex={0} data-testid="approval-preview">
-              {view.preview}
-            </pre>
-          )}
+          {view.preview !== undefined &&
+            (view.presentation ? (
+              <Disclosure summary={fallbackT('ui.technicalDetails')}>
+                <pre data-testid="approval-preview">{view.preview}</pre>
+              </Disclosure>
+            ) : (
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the argument preview.
+              <pre tabIndex={0} data-testid="approval-preview">
+                {view.preview}
+              </pre>
+            ))}
           <div className="approval-actions">
             {view.actions.map((action) => (
               <Button

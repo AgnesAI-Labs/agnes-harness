@@ -8,6 +8,7 @@ import {
   approvalOutsideWindow,
   findApproval,
 } from '@agnes/web-conversation/live-projection'
+import { decisionPresentation } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { openSessionMode, sessionPermissionLevel } from '../session-permission.js'
@@ -280,13 +281,14 @@ export function createTurnController(
       ? liveApprovalCard(context.liveApproval.request.toolCall, context.t)
       : undefined
     const liveTitle = card?.summary ?? context.liveApproval?.request.toolCall.title
+    const presentation = context.liveApproval ? undefined : decisionPresentation(durable?.presentation)
     const reconcile = context.liveApproval ? undefined : durable?.reconcile
     const summary =
       typeof liveTitle === 'string'
         ? liveTitle
         : reconcile
           ? context.t('app.reconcile.summary', { tool: reconcile.tool })
-          : (durable?.summary ?? context.t('app.approval.defaultSummary'))
+          : (presentation?.title ?? durable?.summary ?? context.t('app.approval.defaultSummary'))
     const risks = {
       destructive: context.t('app.risk.destructive'),
       always: context.t('app.risk.always'),
@@ -360,7 +362,7 @@ export function createTurnController(
             void (await context.client.approval.decide({
               ...ref,
               commandId: `${ref.id}:${ref.revision}:${verdict}`,
-              response: { option: verdict, value: null },
+              response: { option: verdict, value: presentation?.responseValue ?? null },
             })),
         )
     }
@@ -378,6 +380,7 @@ export function createTurnController(
       ...(reconcile ? { kind: 'reconcile' as const } : {}),
       title: context.t(reconcile ? 'app.reconcile.title' : 'app.approval.title'),
       summary,
+      ...(presentation ? { presentation } : {}),
       ...(rewritten === undefined ? {} : { rewritten }),
       impact: [impact, approvalExpiry(durable?.expiresAt, context.t)].filter(Boolean).join(' · '),
       ...(durable && !reconcile ? { risk: durable.risk } : {}),

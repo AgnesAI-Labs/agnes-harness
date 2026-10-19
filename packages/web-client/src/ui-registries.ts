@@ -132,7 +132,7 @@ export type HomeEntryBadge = Readonly<{
  */
 export type HomeEntry = Readonly<{
   id: string
-  /** A shared icon name; an unknown name falls back to the plugin icon. */
+  /** A shared icon name; an unknown name falls back to the generic page icon. */
   icon: string
   titleKey: string
   /** Optional quiet second label beside the title, e.g. an abbreviation. */

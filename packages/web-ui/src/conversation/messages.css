@@ -89,6 +89,8 @@
 
   /* 提问导航：对话区左缘一列细横线，每条一次提问；悬停放大并弹出预览卡。 */
   .turn-nav-rail {
+    opacity: 0;
+    transition: opacity 140ms var(--motion-ease-out);
     position: absolute;
     left: 18px;
     top: 50%;
@@ -98,6 +100,9 @@
     overflow-y: auto;
     scrollbar-width: none;
     transform: translateY(-50%);
+  }
+  .turn-nav-rail:is(:hover, :focus-within) {
+    opacity: 1;
   }
   .turn-nav-rail::-webkit-scrollbar {
     display: none;
@@ -228,6 +233,7 @@
     color: var(--agnes-brand-primary);
   }
   @media (prefers-reduced-motion: reduce) {
+    .turn-nav-rail,
     .turn-nav-tick,
     .turn-nav-card {
       transition: none;

@@ -316,6 +316,7 @@ function ajvDef(fileId: string, name: string): (x: unknown) => boolean {
 // to a schema without registering it here (or the reverse) goes red.
 
 const SESSION_DEFS: Record<string, TSchema> = {
+  DecisionPresentation: SessionGen.DecisionPresentation,
   DecisionSpec: SessionGen.DecisionSpec,
   DecisionHandle: SessionGen.DecisionHandle,
   DecisionResponse: SessionGen.DecisionResponse,
@@ -1096,6 +1097,34 @@ const decisionSnapshot = {
 }
 
 const SESSION_SAMPLES: Record<string, Sample> = {
+  DecisionPresentation: {
+    valid: {
+      en: {
+        title: 'Review',
+        fields: [{ label: 'Meaning', value: 'I approve', href: '/?session=s' }],
+        responseValue: 'I approve',
+      },
+    },
+    invalid: [
+      { en: { title: '', fields: [] } },
+      { en: { title: 'x'.repeat(1025), fields: [] } },
+      { en: { title: 'Review', fields: [{ label: 'x'.repeat(257), value: 'v' }] } },
+      { en: { title: 'Review', fields: [{ label: 'Meaning', value: 'x'.repeat(8193) }] } },
+      { en: { title: 'Review', fields: [], responseValue: 'x'.repeat(8193) } },
+      { en: { title: 'Review', fields: [], responseValue: null } },
+      { en: { title: 'Review', fields: [], unreviewed: true } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '//external.test' }] } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '/\\external.test' }] } },
+      {
+        en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: 'javascript:alert(1)' }] },
+      },
+      { en: { title: 'Review', fields: Array.from({ length: 17 }, () => ({ label: 'L', value: 'V' })) } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '/\n/external.test' }] } },
+      { invalid_locale: { title: 'Review', fields: [] } },
+      Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`en-${i}`, { title: 'Review', fields: [] }])),
+    ],
+    note: 'bounded localized plain fields, same-origin evidence and immutable answer value',
+  },
   DecisionSpec: {
     valid: decisionSpec,
     invalid: [

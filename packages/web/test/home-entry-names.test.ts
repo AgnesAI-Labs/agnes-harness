@@ -96,7 +96,7 @@ describe('home entry names', () => {
           {
             id: 'console',
             placement: 'primary',
-            navigation: { title: 'Console', titles: { 'zh-CN': '控制台' }, icon: 'cpu', order: 40 },
+            navigation: { title: 'Console', titles: { 'zh-CN': '控制台' }, icon: 'not-declared', order: 40 },
           },
         ],
       }
@@ -120,6 +120,7 @@ describe('home entry names', () => {
         expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
           language === 'zh-CN' ? '控制台' : 'Console',
         )
+        expect(host.querySelector('[data-testid="home-entry-console"] svg')?.innerHTML).toContain('M14 2v5')
         expect(importer).not.toHaveBeenCalled()
         await act(async () => {
           applicationIdentity.set({

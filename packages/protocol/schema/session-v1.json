@@ -2526,6 +2526,52 @@
         }
       }
     },
+    "DecisionPresentation": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$" },
+      "maxProperties": 16,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "fields"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "value"],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 8192
+                },
+                "href": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "pattern": "^/([^/\\\\\\u0000-\\u0020\\u007f][^\\\\\\u0000-\\u0020\\u007f]*)?$"
+                }
+              }
+            }
+          },
+          "responseValue": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        }
+      }
+    },
     "DecisionSpec": {
       "type": "object",
       "additionalProperties": false,
@@ -2546,6 +2592,7 @@
         "subject": {
           "$ref": "#/$defs/JsonValue"
         },
+        "presentation": { "$ref": "#/$defs/DecisionPresentation" },
         "prompt": {
           "type": "string",
           "maxLength": 65536,

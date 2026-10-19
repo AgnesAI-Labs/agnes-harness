@@ -24,7 +24,7 @@ function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: numb
 }
 
 const entryIcon = (entry: HomeEntry): IconName =>
-  Object.hasOwn(icons, entry.icon) ? (entry.icon as IconName) : 'puzzle'
+  Object.hasOwn(icons, entry.icon) ? (entry.icon as IconName) : 'file'
 
 const entryLabel = (entry: HomeEntry, t: Translate): string =>
   entry.subtitleKey ? `${t(entry.titleKey)} · ${t(entry.subtitleKey)}` : t(entry.titleKey)

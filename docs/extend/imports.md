@@ -81,6 +81,8 @@ TypeBox is the declared `@sinclair/typebox` dependency; its own package exports 
 
 ## Session decisions
 
+Optional `presentation` maps locale tags to `{ title, fields: [{ label, value, href? }], responseValue? }`. Fields are plain text; links must be same-origin paths beginning with a single `/`. Web selects the exact locale, language, then English and submits that entry's `responseValue` unchanged (null when absent). Keep `prompt` as the fallback for older clients. Include meaningful display values in `subject`, validate answers with `responseSchema`, and verify the authenticated human result before acting. Persist the exact selected meaning rather than translating it after signing. Presentation grants no authority and does not change the offered options.
+
 `ToolContext.decisions`, `LoopContext.decisions` and granted `ServicePorts.decisions` expose the same `DecisionPort` (`request`, `get`, `wait`). Import its types and `APPROVAL_DEFAULTS` from `@agnes/extension-api`. A spec declares a namespaced key, purpose, complete immutable JSON subject, prompt, offered options and an optional bounded JSON response schema. Host stamps the session, author and original operation; purpose grants no authority.
 
 The ledger persists the request before returning its handle. Repeating an owner's key with the same spec returns the original ID and deadline; changing the spec conflicts. `wait` returns a resolved snapshot or a pending handle when detached. Disconnect and aborting a waiter leave the durable request pending. Answers are accepted only through the authenticated backend.

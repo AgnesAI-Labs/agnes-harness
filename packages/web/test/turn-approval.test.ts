@@ -496,3 +496,50 @@ it.each([
     expect(text).not.toContain('synthetic fallback')
   })
 })
+
+it.each(['zh-CN', 'en', 'en-GB'])(
+  'renders the %s decision fields and submits exactly the displayed bound meaning',
+  async (locale) => {
+    document.documentElement.lang = locale
+    const { controller, list, decide } = await harness()
+    const meaning = locale === 'zh-CN' ? '我批准本次质量决策。' : 'I approve this quality decision.'
+    const presentation = Object.fromEntries(
+      ['zh-CN', 'en'].map((language) => [
+        language,
+        {
+          title: language === 'zh-CN' ? '人工质量签署' : 'Human quality signature',
+          fields: [
+            {
+              label: language === 'zh-CN' ? '签名含义' : 'Signature meaning',
+              value: language === 'zh-CN' ? '我批准本次质量决策。' : 'I approve this quality decision.',
+            },
+            { label: 'Evidence', value: 'NCR-018', href: '/?session=s' },
+          ],
+          responseValue: language === 'zh-CN' ? '我批准本次质量决策。' : 'I approve this quality decision.',
+        },
+      ]),
+    )
+    list.mockResolvedValue({
+      decisions: [
+        { ...snapshot, request: { ...snapshot.request, spec: { ...snapshot.request.spec, presentation } } },
+      ],
+    })
+    controller.searchApproval(3)
+    await vi.waitFor(() =>
+      expect(document.querySelector('.agh-decision-fields dd')?.textContent).toBe(meaning),
+    )
+    expect(document.querySelector('.agh-decision-fields a')?.getAttribute('href')).toBe('/?session=s')
+    expect(document.querySelector('.approval-summary-text')?.textContent).toBe(
+      locale === 'zh-CN' ? '人工质量签署' : 'Human quality signature',
+    )
+    document.querySelector<HTMLButtonElement>('[data-approval-action="durable:allowed-once"]')?.click()
+    await vi.waitFor(() =>
+      expect(decide).toHaveBeenCalledWith({
+        ...ref,
+        commandId: 'pending:1:allowed-once',
+        response: { option: 'allowed-once', value: meaning },
+      }),
+    )
+    document.documentElement.lang = ''
+  },
+)

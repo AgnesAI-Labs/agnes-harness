@@ -179,6 +179,11 @@ export { CompletionCheck, type CompletionCheckProps } from './ui/completion-chec
 export { ConfirmDialog, type ConfirmDialogProps } from './ui/confirm-dialog.js'
 export { CopyButton, type CopyButtonProps } from './ui/copy-button.js'
 export { DataList, type DataListProps } from './ui/data-list.js'
+export {
+  DecisionFields,
+  type DecisionPresentation,
+  decisionPresentation,
+} from './ui/decision-presentation.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
 export {
   Disclosure,

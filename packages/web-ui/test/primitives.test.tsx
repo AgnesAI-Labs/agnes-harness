@@ -324,10 +324,40 @@ it('sorts Table records without changing caller data and retains its labelled so
   )
   expect(rows.map((row) => row.id)).toEqual(['b', 'a'])
   expect(host.querySelector('tr[data-row-key="a"] td span')?.getAttribute('title')).toBe('2')
-  renderRegion(host, <Table caption="Amounts" testId="amounts" dataSource={[]} columns={columns} />)
+  renderRegion(
+    host,
+    <Table caption="Amounts" captionRepeatsHeading testId="amounts" dataSource={[]} columns={columns} />,
+  )
+  expect(host.querySelector('caption')?.hasAttribute('data-repeats-heading')).toBe(true)
+  const css = readUiCss(resolve(import.meta.dirname, '../src/components.css'))
+  expect(css).toMatch(/\.agh-table caption\[data-repeats-heading\]\s*\{[^}]*clip-path: inset\(50%\)/)
   expect(host.querySelector('[data-testid="amounts"] [role="status"]')?.textContent).toBe(
     'No records to display.',
   )
+})
+
+it('preserves decision field text and refuses normalized external evidence links', async () => {
+  const { decisionPresentation, DecisionFields, renderRegion } = await import('../src/index.js')
+  const meaning = 'I approve  / exact punctuation.\nEvidence reviewed.'
+  const entries = {
+    en: {
+      title: 'Review',
+      fields: [{ label: 'Meaning', value: meaning, href: '/\n/external.test' }],
+      responseValue: meaning,
+    },
+  }
+  const view = decisionPresentation(entries, 'constructor')
+  expect(view).toBe(entries.en)
+  const host = render(<DecisionFields view={entries.en} />)
+  expect(host.querySelector('dd')?.textContent).toBe(meaning)
+  expect(host.querySelector('a')).toBeNull()
+  renderRegion(
+    host,
+    <DecisionFields
+      view={{ ...entries.en, fields: [{ label: 'Evidence', value: 'Open', href: '/?session=s' }] }}
+    />,
+  )
+  expect(host.querySelector('a')?.getAttribute('href')).toBe('/?session=s')
 })
 
 it('returns focus to the anchored Popover trigger on Escape', async () => {

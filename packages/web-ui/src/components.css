@@ -1462,6 +1462,37 @@
     font-weight: var(--font-weight-semibold);
     padding: var(--s8) 0;
   }
+  .agh-table caption[data-repeats-heading] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agh-decision-fields {
+    margin: var(--s12) 0;
+    font: var(--font-size-sm) / var(--line-md) var(--font-sans);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .agh-decision-fields > div {
+    display: grid;
+    grid-template-columns: minmax(6rem, 20%) minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s4) 0;
+  }
+  .agh-decision-fields dt {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-decision-fields dd {
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .approval-summary-text {
+    font-family: var(--font-sans);
+  }
   .agh-table .agh-table-cell {
     display: block;
     max-width: 32rem;

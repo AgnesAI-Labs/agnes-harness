@@ -1,6 +1,6 @@
 import type { DecisionSnapshot } from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
-import { Button, Icon, Tooltip } from '@agnes/web-ui'
+import { Button, decisionPresentation, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 
@@ -126,7 +126,10 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
         handle: snapshot.handle,
         revision: snapshot.revision,
         commandId: crypto.randomUUID(),
-        response: { option, value: null },
+        response: {
+          option,
+          value: decisionPresentation(snapshot.request.spec.presentation)?.responseValue ?? null,
+        },
       })
       setDecisions((values) => values.filter((value) => value.handle.id !== snapshot.handle.id))
       await refresh.current()
@@ -184,30 +187,34 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
             ))}
           </ul>
         )}
-        {decisions.map((snapshot) => (
-          <ProfileApproval
-            key={snapshot.handle.id}
-            view={{
-              key: snapshot.handle.id,
-              title: snapshot.request.owner,
-              summary: snapshot.request.spec.prompt,
-              impact: zh ? '仅授权本次操作' : 'Authorize this operation once',
-              risk: 'always',
-              preview: JSON.stringify(snapshot.request.spec.subject, null, 2),
-              disabled: busy,
-              actions: snapshot.request.spec.options
-                .filter((option) => ['allowed-once', 'rejected'].includes(option))
-                .map((option) => ({
-                  id: option,
-                  label:
-                    option === 'allowed-once' ? (zh ? '允许一次' : 'Allow once') : zh ? '拒绝' : 'Reject',
-                  onSelect: () => {
-                    void answer(snapshot, option)
-                  },
-                })),
-            }}
-          />
-        ))}
+        {decisions.map((snapshot) => {
+          const presentation = decisionPresentation(snapshot.request.spec.presentation)
+          return (
+            <ProfileApproval
+              key={snapshot.handle.id}
+              view={{
+                key: snapshot.handle.id,
+                title: snapshot.request.owner,
+                summary: presentation?.title ?? snapshot.request.spec.prompt,
+                ...(presentation ? { presentation } : {}),
+                impact: zh ? '仅授权本次操作' : 'Authorize this operation once',
+                risk: 'always',
+                preview: JSON.stringify(snapshot.request.spec.subject, null, 2),
+                disabled: busy,
+                actions: snapshot.request.spec.options
+                  .filter((option) => ['allowed-once', 'rejected'].includes(option))
+                  .map((option) => ({
+                    id: option,
+                    label:
+                      option === 'allowed-once' ? (zh ? '允许一次' : 'Allow once') : zh ? '拒绝' : 'Reject',
+                    onSelect: () => {
+                      void answer(snapshot, option)
+                    },
+                  })),
+              }}
+            />
+          )
+        })}
       </section>
     </>
   )

@@ -67,6 +67,7 @@ function approvalNode(
     state,
     decisionRef: ref,
     summary: spec.prompt,
+    ...(spec.presentation ? { presentation: spec.presentation } : {}),
     risk: risk === 'destructive' || risk === 'always' || risk === 'budget' ? risk : 'unknown',
     options: spec.options.map((option) => options[option as keyof typeof options]),
     // Show the complete decision subject, including the tool arguments and original summary.
