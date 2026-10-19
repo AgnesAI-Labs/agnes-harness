@@ -671,7 +671,11 @@ test('full access candidate submission publishes without a human offer and retai
   )
   await preferences(page)
   await page.goto(`${runtime.url}/?session=${encodeURIComponent(session.id)}`)
-  await chooseWorkspace(page, runtime)
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  for (const toggle of await page.getByTestId('turn-process-toggle').all()) {
+    if (!(await toggle.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
+      await toggle.click()
+  }
   await expect(page.getByTestId('approval-card')).toHaveCount(0)
   await expect(
     page.getByTestId('approval-step').filter({ hasText: 'Auto-allowed (Full access)' }).first(),

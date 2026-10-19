@@ -401,6 +401,14 @@ export async function closeSettings(page: Page, _locale = 'en') {
 
 export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'workspace'>, locale = 'en') {
   const skip = page.getByTestId('first-run-skip')
+  // Diagnostics can finish after the workspace chip is ready and open the first-run overlay.
+  await page.addLocatorHandler(
+    skip,
+    async () => {
+      await skip.click()
+    },
+    { times: 1 },
+  )
   const workspace = page.getByRole('dialog', {
     name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
     exact: true,
@@ -409,7 +417,6 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
   await expect
     .poll(async () => (await skip.isVisible()) || (await workspace.isVisible()) || (await chip.isVisible()))
     .toBe(true)
-  if (await skip.isVisible()) await skip.click()
   // The picker opens on its own only when no workspace is available; otherwise the chip opens it.
   if (!(await workspace.isVisible())) {
     await expect(chip).toBeEnabled()
@@ -427,6 +434,7 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
   const names = page.locator('.workspace-heading .workspace-name')
   await expect(names.filter({ hasText: /^w$/ })).toHaveCount(1)
   expect((await names.allTextContents()).every((name) => name.trim().length > 0)).toBe(true)
+  await page.removeLocatorHandler(skip)
 }
 
 export async function fresh(page: Page, locale = 'en') {
