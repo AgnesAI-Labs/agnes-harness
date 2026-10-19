@@ -134,6 +134,7 @@ import type {
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
 import { ResourceRegistry } from '../registry/resources.js'
+import { onlyTools } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
@@ -758,8 +759,15 @@ export class SessionImpl {
 
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
-    return this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
+    const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
+    const allow = this.preset.tools.allow
+    if (allow === undefined) return tools
+    // One view per registry and list, so repeated lookups in a turn share it.
+    if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
+      this.allowedTools = { source: tools, allow, view: onlyTools(tools, allow) }
+    return this.allowedTools.view
   }
+  private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
   toolCatalog(): import('@agnes/protocol').SessionToolsResult {

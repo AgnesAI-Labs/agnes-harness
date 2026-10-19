@@ -49,6 +49,11 @@ export type PresetView = {
   codeRuntime?: import('@agnes/extension-api').ToolContext['codeRuntime']
   sandbox: { onUnavailable: 'deny' | 'allow' | 'allow-if-unimplemented' }
   tools: {
+    /**
+     * When present, the only tools this session shows or runs, by exact name. It is visibility, not
+     * authorization: the tool policy still decides what a visible tool may do. Absent means no limit.
+     */
+    allow?: readonly string[]
     runtime?: string
     maxParallel?: number
     timeoutMs: number
@@ -203,6 +208,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     sandbox: { onUnavailable: pick(raw, 'sandbox.on_unavailable', d.sandbox.onUnavailable) },
     tools: {
+      ...(get(raw, 'tools.allow') === undefined
+        ? {}
+        : { allow: Object.freeze([...pick<string[]>(raw, 'tools.allow', [])]) }),
       ...(get(raw, 'providers.tool-runtime.provider') === undefined
         ? {}
         : { runtime: pick<string>(raw, 'providers.tool-runtime.provider', 'default') }),
