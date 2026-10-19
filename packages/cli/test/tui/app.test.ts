@@ -834,6 +834,9 @@ it('stacks the editor above the status footer without an idle shortcut legend', 
     expect(lines.join('\n')).not.toContain('Enter send')
     const lastNonBlank = lines.reduce((last, l, i) => (l === '' ? last : i), -1)
     expect(statusRow).toBe(lastNonBlank)
+    // A short conversation still leaves the input area on the bottom edge, the gap above it.
+    expect(statusRow).toBe(19)
+    expect(lines.slice(lines.findIndex((l) => l.includes('Agnes')) + 1, editorRow - 1)).toContain('')
   } finally {
     await app?.stop()
     await client.close()
@@ -886,6 +889,8 @@ it('opens /model choices above the footer, switches primary once, and cancels wi
     expect(open.findIndex((line) => line.includes('Select Model'))).toBeLessThan(
       open.findIndex((line) => line.includes('credits 3000/4000')),
     )
+    // The open picker grows the bottom-anchored input area upward; the footer stays on the last row.
+    expect(open.findIndex((line) => line.includes('credits 3000/4000'))).toBe(23)
 
     term.feed('x') // The open picker owns unrelated keys too; this must not enter the editor.
     term.feed('\x1b[B')

@@ -345,11 +345,18 @@ export class TuiApp {
         if (child !== this.timeline) rows += child.render(width).length
       }
       this.reservedRows = Math.max(TIMELINE_RESERVED_ROWS, rows)
+      const height = o.term.size().rows
+      const at = shown.indexOf(this.modal)
+      const above = shown.slice(0, at).flatMap((child) => child.render(width))
+      const below = shown.slice(at).flatMap((child) => child.render(width))
+      // The input area, from the approval dialog down, sits on the bottom edge; a short
+      // conversation leaves its gap above it rather than below.
+      const gap = Number.isFinite(height) ? Math.max(0, height - above.length - below.length) : 0
       return this.theme.frame(
         createAnsi(o.term.caps.color),
-        shown.flatMap((child) => child.render(width)),
+        [...above, ...Array.from({ length: gap }, () => ''), ...below],
         width,
-        o.term.size().rows,
+        height,
       )
     }
     const handle = root.handleInput.bind(root)
