@@ -10,7 +10,21 @@ export type TooltipProps = Omit<AntTooltipProps, 'children' | 'title' | 'open' |
   /** The action's keyboard shortcut, shown as keycaps after the title. */
   shortcut?: readonly ShortcutKey[] | undefined
 }
-/** Hover waits 500ms; focus reveals the explanation immediately. */
+// Focus moved by Tab or an arrow key reveals a hint; focus a closing dialog hands back to its trigger does not.
+let keyNavigation = false
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      keyNavigation =
+        event.key === 'Tab' || event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End'
+    },
+    true,
+  )
+  document.addEventListener('pointerdown', () => (keyNavigation = false), true)
+}
+
+/** Hover waits 500ms; keyboard navigation reveals the explanation immediately. */
 export function Tooltip({ title, children, disabled = false, shortcut, ...props }: TooltipProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -55,7 +69,7 @@ export function Tooltip({ title, children, disabled = false, shortcut, ...props 
         role="group"
         tabIndex={disabled ? 0 : undefined}
         aria-label={disabled ? title : undefined}
-        onFocusCapture={() => setOpen(true)}
+        onFocusCapture={() => setOpen(keyNavigation)}
         onBlurCapture={() => setOpen(false)}
         onClickCapture={() => setOpen(false)}
         onKeyDownCapture={(event) => {

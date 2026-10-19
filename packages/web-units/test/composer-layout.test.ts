@@ -281,6 +281,7 @@ it('opens files directly without changing the draft on cancel and still accepts 
     const choose = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
     expect(add.getAttribute('aria-label')).toBe('上传文件')
     expect(add.title).toBe('')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
     await act(async () => add.focus())
     await vi.waitFor(() =>
       expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(

@@ -490,6 +490,7 @@ describe('composer image attachments', () => {
     expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
     const hint = host.querySelector('#composer-image-hint')?.textContent ?? ''
     expect(hint).toContain('50')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
     await act(async () => attach.focus())
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(hint)
     expect(attach.getAttribute('aria-describedby')).toContain('composer-image-hint')

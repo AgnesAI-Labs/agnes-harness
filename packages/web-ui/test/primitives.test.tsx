@@ -139,7 +139,15 @@ it('explains a disabled action immediately on keyboard focus', async () => {
       createElement('button', { type: 'button', disabled: true }, 'Install'),
     ),
   )
-  host.querySelector<HTMLElement>('[tabindex="0"]')!.focus()
+  const anchor = host.querySelector<HTMLElement>('[tabindex="0"]')!
+  // A dialog closed with Escape hands focus back to its trigger; that is not navigation.
+  key(document.body, 'Escape')
+  anchor.focus()
+  await new Promise((done) => setTimeout(done, 50))
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  anchor.blur()
+  key(document.body, 'Tab')
+  anchor.focus()
   await vi.waitFor(() =>
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Finish the review first'),
   )
@@ -162,6 +170,7 @@ it('names an icon action and its shortcut as keycaps in the tooltip', async () =
   const button = host.querySelector('button')!
   // The accessible name is the action; the shortcut is only shown.
   expect(button.getAttribute('aria-label')).toBe('Search sessions')
+  key(document.body, 'Tab')
   button.focus()
   const tooltip = await vi.waitFor(() => {
     const found = document.querySelector('[role="tooltip"] .agh-tooltip-shortcut')

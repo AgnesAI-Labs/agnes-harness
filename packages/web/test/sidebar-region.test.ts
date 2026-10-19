@@ -97,6 +97,7 @@ describe('rendered sidebar region', () => {
       expect((sidebar as HTMLElement).inert).toBe(false)
       for (const name of ['New conversation', 'Settings']) {
         const button = getByRole(sidebar as HTMLElement, 'button', { name })
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
         flushSync(() => button.focus())
         expect(document.activeElement).toBe(button)
         await vi.waitFor(() => {
@@ -511,6 +512,7 @@ describe('rendered sidebar region', () => {
           const title = runtime.locale.t(`home.entry.${id}`)
           const name = title
           const button = getByRole(sidebar as HTMLElement, 'button', { name })
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
           flushSync(() => button.focus())
           expect(document.activeElement).toBe(button)
           await vi.waitFor(() => {
