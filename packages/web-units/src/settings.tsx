@@ -204,7 +204,7 @@ function SettingsBuiltinImpl(
         const address = searchParamRoute('settings')
         const levels = address.read()
         const changeAddress = notify && (levels[0] !== id || (!preserveRoute && levels.length > 1))
-        if (changeAddress) history.pushState(history.state, '', address.href([id]))
+        if (changeAddress) history.pushState(null, '', address.href([id]))
         const target = settingsEntryPane(selected)
         const pane = target === 'sections' ? activePane.current : target
         root.dataset.settingsSection = id
@@ -306,7 +306,7 @@ function SettingsBuiltinImpl(
         const id = url.searchParams.get('settings')
         if (!id) return
         event.preventDefault()
-        history.pushState(history.state, '', url)
+        history.pushState(null, '', url)
         const page = searchParamRoute('settings').read()[0]
         if (page) navigate(page, true, true)
         window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))

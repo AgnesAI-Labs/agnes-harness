@@ -29,6 +29,13 @@ const strings = {
 const h = React.createElement
 
 export function apply(ctx, config) {
+  // One browser-tab recovery entry per profile activation.
+  const service = '__SERVICE_NAME__.change'
+  const services = ctx.profile.services
+  const pendingKey = JSON.stringify([service, config.binding, config.revision])
+  function pending() {
+    return JSON.parse(window.sessionStorage.getItem(pendingKey) ?? 'null')
+  }
   function TodoPage() {
     const locale = React.useSyncExternalStore(ctx.locale.subscribe, () => ctx.locale.locale)
     const t = strings[locale] ?? strings.en
@@ -36,11 +43,11 @@ export function apply(ctx, config) {
     const [text, setText] = React.useState('')
     const [busy, setBusy] = React.useState(true)
     const [error, setError] = React.useState('')
-    const [operation, setOperation] = React.useState(null)
+    const [operation, setOperation] = React.useState(pending)
     const live = React.useRef(false)
     const locked = React.useRef(false)
     const load = React.useCallback(async () => {
-      const result = await ctx.profile.services.query('__SERVICE_NAME__.list', {})
+      const result = await services.query('__SERVICE_NAME__.list', {})
       if (live.current) setItems(result.items)
     }, [])
     const request = React.useCallback(async (work) => {
@@ -57,38 +64,68 @@ export function apply(ctx, config) {
         if (live.current) setBusy(false)
       }
     }, [])
+    const receipt = React.useCallback(
+      async (result) => {
+        const final = ['completed', 'refused', 'cancelled'].includes(result.state)
+        // Final receipts clear storage even after unmount.
+        if (final) window.sessionStorage.removeItem(pendingKey)
+        if (!live.current) return
+        if (final) setOperation(null)
+        if (result.state === 'completed') {
+          setText('')
+          await load()
+        } else {
+          setError(result.state === 'approval-required' ? t.approval : `${t.failed}: ${result.state}`)
+        }
+      },
+      [load, t.approval, t.failed],
+    )
+    const check = React.useCallback(
+      async (resume = false) => {
+        const saved = pending()
+        if (!saved) return
+        let result = await services.readOperation(service, saved.operationId)
+        if (resume && result.state === 'approval-required')
+          result = await services.effect(service, saved.input, { operationId: saved.operationId })
+        await receipt(result)
+      },
+      [receipt],
+    )
     React.useEffect(() => {
       live.current = true
-      void request(load)
+      void request(async () => {
+        await check()
+        await load()
+      })
       return () => {
         live.current = false
       }
-    }, [load, request])
-    async function receipt(result) {
-      if (!live.current) return
-      if (result.state === 'completed') {
-        setOperation(null)
-        setText('')
-        await load()
-      } else {
-        if (result.state === 'refused' || result.state === 'cancelled') setOperation(null)
-        // Do not repeat an uncertain mutation with a new id. Retain it for read/reconciliation.
-        setError(result.state === 'approval-required' ? t.approval : `${t.failed}: ${result.state}`)
-      }
-    }
+    }, [load, request, check])
     function change(input) {
-      if (locked.current) return
+      if (locked.current || pending()) return
       const next = { operationId: crypto.randomUUID(), input }
-      setOperation(next)
-      return request(async () =>
-        receipt(
-          await ctx.profile.services.effect('__SERVICE_NAME__.change', input, {
+      return request(async () => {
+        // Storage failure must prevent dispatch.
+        window.sessionStorage.setItem(pendingKey, JSON.stringify(next))
+        setOperation(next)
+        await receipt(
+          await services.effect(service, input, {
             operationId: next.operationId,
           }),
-        ),
-      )
+        )
+      })
     }
     const blocked = busy || operation !== null
+    const button = (label, work) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          disabled: busy,
+          onClick: () => void request(work),
+        },
+        label,
+      )
     return h(
       'section',
       { 'aria-label': t.title },
@@ -140,39 +177,8 @@ export function apply(ctx, config) {
         ),
       ),
       !busy && !items.length && h('p', null, t.empty),
-      h(
-        'button',
-        {
-          type: 'button',
-          disabled: busy,
-          onClick: () => {
-            void request(load)
-          },
-        },
-        t.retry,
-      ),
-      operation &&
-        h(
-          'button',
-          {
-            type: 'button',
-            disabled: busy,
-            onClick: () => {
-              void request(async () => {
-                let result = await ctx.profile.services.readOperation(
-                  '__SERVICE_NAME__.change',
-                  operation.operationId,
-                )
-                if (result.state === 'approval-required')
-                  result = await ctx.profile.services.effect('__SERVICE_NAME__.change', operation.input, {
-                    operationId: operation.operationId,
-                  })
-                await receipt(result)
-              })
-            },
-          },
-          t.check,
-        ),
+      button(t.retry, load),
+      operation && button(t.check, () => check(true)),
     )
   }
   ctx.homeEntries.register({

@@ -1248,11 +1248,7 @@ const settings = createSettingsController({
   onOpen: () => {
     const address = searchParamRoute('settings')
     if (!address.read().length)
-      history.pushState(
-        history.state,
-        '',
-        address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']),
-      )
+      history.pushState(null, '', address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']))
   },
   onClose: () => {
     startupSettingsDismissed = true

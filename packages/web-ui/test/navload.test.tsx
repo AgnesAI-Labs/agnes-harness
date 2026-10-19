@@ -101,8 +101,37 @@ function Pages({
 describe('push pages', () => {
   beforeEach(() => history.replaceState(null, '', '/'))
 
+  it.each(['finish', 'cancel', 'browser-back', 'host-route'])(
+    'review: root breadcrumb skips intervening settings history (%s)',
+    async (exit) => {
+      history.replaceState(null, '', '/?page=agents')
+      const host = render(createElement(Pages, { route: true }))
+      click(q(host, '[data-testid="open-crm"]'))
+      const settings = render(
+        createElement(Pages, { route: true, historyKey: 'settingsTest', routeParam: 'settings' }),
+      )
+      click(q(settings, '[data-testid="open-crm"]'))
+      if (exit === 'finish') click(q(settings, '[data-testid="finish"]'))
+      else if (exit === 'cancel') click(q(settings, '[data-testid="push-back"]'))
+      else if (exit === 'browser-back') history.back()
+      else history.pushState(null, '', '/?page=agents&view=crm')
+      await vi.waitFor(() => expect(location.search).toBe('?page=agents&view=crm'))
+      click(q(host, '[data-testid="open-edit"]'))
+      click(q(host, '[data-testid="push-back"]'))
+      await vi.waitFor(() => expect(location.search).toBe('?page=agents&view=crm'))
+      history.forward()
+      await vi.waitFor(() => {
+        expect(location.search).toBe('?page=agents&view=crm/edit')
+        expect(q(host, '[data-testid="edit-body"]')).not.toBeNull()
+      })
+      click(q(host, '[data-testid="push-crumb-0"]'))
+      await vi.waitFor(() => expect(location.search).toBe('?page=agents'))
+      expect(q(host, '[data-testid="push-header"]')).toBeNull()
+    },
+  )
+
   it('opens in place with the breadcrumb as the way back, and the root keeps its state', async () => {
-    const host = render(createElement(Pages))
+    const host = render(createElement(Pages, { route: true }))
     click(q(host, '[data-testid="open-crm"]'))
     expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).not.toBeNull()
     expect(q(host, '[data-testid="crm-body"]')).not.toBeNull()
@@ -131,6 +160,17 @@ describe('push pages', () => {
     click(q(host, '[data-testid="push-crumb-0"]'))
     await vi.waitFor(() => expect(q(host, '[data-testid="root"]')?.closest('[hidden]')).toBeNull())
     expect(q(host, '[data-testid="push-header"]')).toBeNull()
+    expect(location.search).toBe('')
+    history.forward()
+    await vi.waitFor(() => {
+      expect(location.search).toBe('?view=crm')
+      expect(q(host, '[data-testid="crm-body"]')).not.toBeNull()
+    })
+    history.forward()
+    await vi.waitFor(() => {
+      expect(location.search).toBe('?view=crm/edit')
+      expect(q(host, '[data-testid="edit-body"]')).not.toBeNull()
+    })
   })
 
   it('leaves a page with the browser back button', async () => {
@@ -142,6 +182,14 @@ describe('push pages', () => {
       window.dispatchEvent(new PopStateEvent('popstate', { state: { navloadTest: 0 } }))
     })
     expect(q(host, '[data-testid="crm-body"]')).toBeNull()
+    click(q(host, '[data-testid="open-crm"]'))
+    // Another host entry breaks ownership, even without an address route.
+    history.pushState(null, '')
+    click(q(host, '[data-testid="push-back"]'))
+    expect(q(host, '[data-testid="push-header"]')).toBeNull()
+    click(q(host, '[data-testid="open-crm"]'))
+    click(q(host, '[data-testid="push-back"]'))
+    await vi.waitFor(() => expect(q(host, '[data-testid="push-header"]')).toBeNull())
   })
 
   it('opens what the address names, writes each level to it and follows a back step', () => {
