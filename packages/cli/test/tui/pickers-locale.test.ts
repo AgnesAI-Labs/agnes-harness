@@ -1,4 +1,4 @@
-import { createAnsi, ModelPicker, SessionPicker } from '@agnes/cli-tui'
+import { createAnsi, ModelPicker, SessionPicker, TuiTheme } from '@agnes/cli-tui'
 import { afterEach, expect, it, vi } from 'vitest'
 
 const opened: Array<{ close(): void }> = []
@@ -9,7 +9,7 @@ afterEach(() => {
 
 it('renders the session picker in the selected locale', () => {
   const picker = new SessionPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     locale: 'zh-CN',
     maxRows: () => 12,
     onChoose: vi.fn(),
@@ -25,7 +25,7 @@ it('renders the session picker in the selected locale', () => {
 
 it('renders the model picker in the selected locale', () => {
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     locale: 'zh-CN',
     maxRows: () => 12,
     onChoose: vi.fn(),

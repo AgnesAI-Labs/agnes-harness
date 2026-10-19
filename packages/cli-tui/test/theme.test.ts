@@ -28,9 +28,9 @@ describe('TUI themes', () => {
   })
   it('opens at the current selection, cancels without changes and accepts keyboard selection', () => {
     const choose = vi.fn()
-    const picker = new ThemePicker(createAnsi('256'), 'zh-CN', choose)
+    const picker = new ThemePicker(new TuiTheme('light').ansi(createAnsi('256')), 'zh-CN', choose)
     picker.show('dark')
-    expect(picker.render(90).join('\n')).toContain('▶ 2.')
+    expect(picker.render(90).join('\n')).toContain('❯ 2.')
     picker.handleInput('\x1b')
     expect(choose).not.toHaveBeenCalled()
     expect(picker.render(90)).toEqual([])
@@ -73,6 +73,17 @@ describe('TUI themes', () => {
       expect(narrow).toContain(`x${bg}y`)
       expect(narrow).toContain(`\x1b[0m${bg}`)
     }
+  })
+  it('keeps the four state tones distinct and the text greys apart on a 16-colour terminal', () => {
+    const basic = createAnsi('16')
+    for (const palette of [PALETTE.light, PALETTE.dark]) {
+      const states = (['success', 'warning', 'danger', 'accent'] as const).map((t) =>
+        basic.fg(palette[t], 'x'),
+      )
+      expect(new Set(states).size).toBe(4)
+      expect(basic.fg(palette.fg, 'x')).not.toBe(basic.fg(palette.muted, 'x'))
+    }
+    expect(basic.fg(PALETTE.light.success, 'x')).not.toBe(basic.fg(PALETTE.light.fg, 'x'))
   })
   it('resolves tones per theme, leaves data colours as given and paints nothing in mono', () => {
     const theme = new TuiTheme('light')

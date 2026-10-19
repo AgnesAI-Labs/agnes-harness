@@ -70,7 +70,7 @@ it('colors the compact state glyph and the expanded title status on a colour tie
   const done = mk('completed').render(40)[0] as string
   expect(done).toContain(ansi.fg('success', '◆'))
   expect(done).not.toContain('完成')
-  expect(mk('running').render(40)[0]).toContain(ansi.fg('warning', 'running'))
+  expect(mk('running').render(40)[0]).toContain(ansi.fg('accent', 'running'))
   expect(mk('failed').render(40)[0]).toContain(ansi.fg('danger', 'failed'))
   // A planned row gets typography but no semantic foreground colour; the tool name is never
   // coloured by status.
@@ -79,21 +79,34 @@ it('colors the compact state glyph and the expanded title status on a colour tie
     expect(planned).not.toContain(opener(ansi.fg(tone, '')))
   expect(planned).toContain('\x1b[1mread\x1b[22m')
   expect(done).not.toContain(ansi.fg('success', 'read'))
-  // Expanded: the frame stays quiet while the title status carries colour.
+  // Expanded: no frame, a left rail in the state tone and a quiet closing row; the header names
+  // the status even when it is terminal.
   const open = new ToolCard(
     { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 's' },
     { ansi, collapsed: false },
   ).render(40)
-  expect(open[0]).toContain(ansi.dim('╭'))
+  expect(open.join('\n')).not.toContain('╭')
   expect(open[0]).toContain(ansi.fg('success', 'done'))
-  expect(open.at(-1)).toContain(`${opener(ansi.dim(''))}╰`)
-  expect(open[1]).toContain(' s ')
+  expect(open[1]).toContain(`${ansi.fg('success', '│')} s `)
+  expect(open.at(-1)).toContain(`${ansi.fg('success', '╰─')} ${ansi.fg('faint', 'ctrl+o')}`)
+  expect(open.every((line) => displayWidth(line) === 40)).toBe(true)
   // none tier: zero escapes anywhere.
   const plain = new ToolCard(
     { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 's' },
     { ansi: A },
   )
   expect(plain.render(40).join('\n')).not.toContain('\x1b')
+  // Without colour the state glyph alone tells running and failed apart from done.
+  const glyphs = (['completed', 'running', 'failed', 'planned'] as const).map(
+    (status) =>
+      new ToolCard(
+        { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status, summary: 's' },
+        { ansi: A },
+      )
+        .render(40)[0]
+        ?.trim()[0],
+  )
+  expect(glyphs).toEqual(['◆', '◈', '✗', '◇'])
 })
 
 it('renders a tool.card.inline chart/actions block when the card is expanded', () => {

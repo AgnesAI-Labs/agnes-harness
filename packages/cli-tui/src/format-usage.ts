@@ -128,16 +128,22 @@ export function formatUsageLine(
   const width = Math.max(1, Math.trunc(requestedWidth))
   const context = styledContext(usage, ansi)
   const model = sanitizeLabel(usage.model.id)
+  // Only the left group is styled: the right group may be clipped, and clipping counts characters.
+  const count = (arrow: string, n: number) =>
+    `${ansi.fg('faint', arrow)}${ansi.fg('fg', formatTokenCount(n))}`
+  const tokens = () =>
+    `${ansi.fg('accent', 'Σ')} ${count('↑', usage.totals.input)} ${count('↓', usage.totals.output)}`
 
   if (width >= 100) {
     const left = [
-      `Σ ↑${formatTokenCount(usage.totals.input)}`,
-      `↓${formatTokenCount(usage.totals.output)}`,
+      tokens(),
       usage.cost === undefined
         ? ''
-        : `${usage.cost.source === 'estimated' ? '≈' : ''}${formatUsdMicros(usage.cost.usdMicros)}${usage.billingComplete === false ? '*' : ''}`,
+        : ansi.dim(
+            `${usage.cost.source === 'estimated' ? '≈' : ''}${formatUsdMicros(usage.cost.usdMicros)}${usage.billingComplete === false ? '*' : ''}`,
+          ),
       context,
-      usage.context.autoCompact ? '(auto)' : '',
+      usage.context.autoCompact ? ansi.fg('faint', '(auto)') : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -145,10 +151,7 @@ export function formatUsageLine(
     return alignGroups(left, right, width)
   }
 
-  if (width >= 60) {
-    const left = `Σ ↑${formatTokenCount(usage.totals.input)} ↓${formatTokenCount(usage.totals.output)} ${context}`
-    return alignGroups(left, showModel ? model : '', width)
-  }
+  if (width >= 60) return alignGroups(`${tokens()} ${context}`, showModel ? model : '', width)
 
   if (width >= 30 || !showModel) return alignGroups(context, showModel ? model : '', width)
   return alignGroups('', model, width)

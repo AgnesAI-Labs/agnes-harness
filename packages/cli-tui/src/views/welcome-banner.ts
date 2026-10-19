@@ -1,10 +1,13 @@
 import type { Branding } from '@agnes/sdk'
-import { hexColour } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import { displayWidth } from '../terminal.js'
-import type { ThemedAnsi } from '../theme.js'
+import { brandColour, type ThemedAnsi, type TuiTheme } from '../theme.js'
+
+// "agnes" in half blocks: a 4×6 pixel cell per letter, x-height on the middle four pixel rows so
+// only the g descends.
+const WORDMARK = ['▄▀▀▄ ▄▀▀▀ █▄ █ █▀▀▀ ▄▀▀▀', '█▀▀█ █ ▀█ █ ▀█ █▀▀   ▀▀▄', '▀  ▀  ▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀']
 
 /**
  * The one expressive element in the TUI: a quiet session card that scrolls with the conversation.
@@ -20,6 +23,7 @@ export class WelcomeBanner implements Component {
       model?: string
       branding: Branding
       ansi: ThemedAnsi
+      theme: TuiTheme
       locale?: string
     },
   ) {
@@ -37,31 +41,39 @@ export class WelcomeBanner implements Component {
     width = Math.max(1, Math.trunc(width))
     const { ansi, branding } = this.o
     const locale = this.o.locale ?? 'en'
-    const brand = ansi.bold(
-      ansi.fg(hexColour(branding.accent) ?? 'accent', escapeControl(branding.selfLabel)),
-    )
+    const brand = ansi.bold(ansi.fg(brandColour(branding.accent), escapeControl(branding.selfLabel)))
     if (width < 24) return [fitLine(tt('welcome.brandTagline', locale, { brand }), width)]
 
+    const face = ansi.fg('accentSoft', '·ᴗ·')
+    const ramp = this.o.theme.ramp()
+    // The glyphs spell the default brand, so a supplied brand never wears them.
+    const wordmark =
+      width >= 60 && branding.mark === 'agnes'
+        ? WORDMARK.map((line, i) => {
+            const colour = ramp[i]
+            const glyphs = ansi.bold(colour === undefined ? line : ansi.fg(colour, line))
+            return ` ${glyphs}${i === 1 ? ` ${face}` : ''}`
+          })
+        : []
     const cardWidth = Math.min(78, width - 2)
     const inner = cardWidth - 4
-    const row = (content: string): string => ` ${ansi.dim('│')} ${fitLine(content, inner)} ${ansi.dim('│')}`
-    const title = ` ${brand} ·ᴗ· `
-    const top = ` ${ansi.dim('╭─')}${title}${ansi.dim(
-      `${'─'.repeat(Math.max(0, cardWidth - 3 - displayWidth(title)))}╮`,
-    )}`
+    const edge = (s: string): string => ansi.fg('border', s)
+    const row = (content: string): string => ` ${edge('│')} ${fitLine(content, inner)} ${edge('│')}`
     const context = [this.o.profile, this.o.preset]
       .filter((field): field is string => Boolean(field))
       .map(escapeControl)
       .join(' · ')
     const model = `${ansi.fg('success', '●')} ${escapeControl(this.model ?? tt('welcome.modelResolving', locale))}`
-    const hint = ansi.dim(tt('welcome.commandHint', locale))
+    const hint = ansi.fg('faint', tt('welcome.commandHint', locale))
     const gap = inner - displayWidth(model) - displayWidth(hint)
     return [
-      top,
+      ...wordmark,
+      fitLine(` ${brand} ${face}`, width),
+      ` ${edge(`╭${'─'.repeat(cardWidth - 2)}╮`)}`,
       row(ansi.bold(tt('welcome.heading', locale))),
       row(ansi.dim(context)),
       row(gap >= 2 ? `${model}${' '.repeat(gap)}${hint}` : model),
-      ` ${ansi.dim(`╰${'─'.repeat(cardWidth - 2)}╯`)}`,
+      ` ${edge(`╰${'─'.repeat(cardWidth - 2)}╯`)}`,
     ]
   }
 }

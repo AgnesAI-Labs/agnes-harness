@@ -1,7 +1,7 @@
-import type { Ansi } from '../ansi.js'
 import { type Component, padLine } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { displayWidth } from '../terminal.js'
+import type { ThemedAnsi } from '../theme.js'
 
 /** Full-width, one-row composer with model state integrated into its lower edge. */
 export class Composer implements Component {
@@ -9,9 +9,10 @@ export class Composer implements Component {
 
   constructor(
     private readonly editor: Component,
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
   ) {}
 
+  /** `model · thinking`; the part before the first ` · ` is the model and reads a step louder. */
   setMeta(text?: string): void {
     this.meta = text ?? ''
   }
@@ -22,15 +23,18 @@ export class Composer implements Component {
     const frameWidth = width - 1
     const inner = frameWidth - 4
     const lead = ' '
-    const side = this.ansi.dim('│')
+    const edge = (s: string) => this.ansi.fg('borderStrong', s)
+    const side = edge('│')
     const availableMeta = Math.max(0, frameWidth - 4)
     const label = availableMeta >= 8 ? fitLine(this.meta, availableMeta - 2).trimEnd() : ''
-    const meta = label ? ` ${label} ` : ''
+    const split = label.indexOf(' · ')
+    const [model, rest] = split < 0 ? [label, ''] : [label.slice(0, split), label.slice(split)]
+    const meta = label ? ` ${this.ansi.fg('muted', model)}${rest && this.ansi.fg('faint', rest)} ` : ''
     const rule = Math.max(0, frameWidth - 2 - displayWidth(meta))
     return [
-      `${lead}${this.ansi.dim(`╭${'─'.repeat(frameWidth - 2)}╮`)}`,
+      `${lead}${edge(`╭${'─'.repeat(frameWidth - 2)}╮`)}`,
       ...this.editor.render(inner).map((line) => `${lead}${side} ${padLine(line, inner)} ${side}`),
-      `${lead}${this.ansi.dim(`╰${'─'.repeat(rule)}${meta}╯`)}`,
+      `${lead}${edge(`╰${'─'.repeat(rule)}`)}${meta}${edge('╯')}`,
     ]
   }
 

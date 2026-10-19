@@ -415,11 +415,11 @@ it('renders actual projected Markdown with safe styles and literal user input', 
     await vi.waitFor(async () => {
       const screen = await emulate(term, 40, 40)
       const lines = [...screen.scrollback, ...screen.lines].map((line) => line.trimEnd())
-      expect(lines.some((line) => line.trimEnd() === '   › **literal question**')).toBe(true)
+      expect(lines.some((line) => line.trimEnd() === ' ▍ **literal question**')).toBe(true)
       expect(lines).toContain('Answer')
       expect(lines).toContain('bold')
       expect(lines).toContain('• item')
-      expect(lines).toContain('  let x = 1')
+      expect(lines).toContain(`${'  let x = 1'.padEnd(36)} js`)
       expect(lines).toContain('<b>raw</b> alt')
     })
     expect(term.writes.join('')).toContain('\x1b[1mbold\x1b[22m')
@@ -741,7 +741,7 @@ it('paints the startup session card, compact header and editor surface once acro
       expect(text).toContain('Type / for commands')
       expect(text).not.toContain('Ctrl+C×2 退出')
       // The header's first segment is the brand, separated from the profile.
-      expect(text).toContain('agnes · local-dev · standard')
+      expect(text).toContain('agnes ·ᴗ·  local-dev · standard')
       expect(text).toContain('What do you want to do? Start with a sentence.')
     })
     term.feed('/new')
@@ -1055,7 +1055,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     const term = new FakeTerminal({ columns: 60, rows: 20 }, { TERM: 'xterm-256color' })
     app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
     await app.start()
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('› hello agnes'))
+    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('▍ hello agnes'))
     const out = term.writes.join('')
     const light = new TuiTheme('light')
     const sgr = (layer: 'fg' | 'bg', tone: Tone): string =>
@@ -1065,11 +1065,15 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     // The prompt keeps its editor accent; the brand word consumes the resolved branding accent.
     expect(out).toContain(`${sgr('fg', 'accent')}❯ ${sgr('fg', 'fg')}`)
     expect(out).toContain(`\x1b[38;5;63magnes${sgr('fg', 'fg')}`)
-    expect(out).toContain(`\x1b[1m\x1b[38;5;63m›${sgr('fg', 'fg')}\x1b[22m`)
+    expect(out).toContain(`\x1b[1m\x1b[38;5;63m▍${sgr('fg', 'fg')}\x1b[22m`)
     expect(out).toContain(sgr('bg', 'surface'))
     expect(out).not.toContain('\x1b[38;5;45myou:')
     term.feed('/')
     await vi.waitFor(() => expect(term.writes.join('')).toContain(sgr('bg', 'selection')))
+    // Local command output recedes to muted text.
+    term.feed('help')
+    term.feed('\r')
+    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/context`))
   } finally {
     await app?.stop()
     await client.close()

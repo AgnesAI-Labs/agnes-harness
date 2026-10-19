@@ -1,8 +1,11 @@
 import type { PermissionOutcome, PermissionRequest } from '@agnes/sdk'
+import { createAnsi } from './ansi.js'
 import { type Component, escapeControl, wrapText } from './component.js'
-import { fitLine } from './components/line.js'
+import { columns, fitLine } from './components/line.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
+import { displayWidth } from './terminal.js'
+import { paintsColour, type ThemedAnsi, TuiTheme } from './theme.js'
 
 type Question = {
   request: PermissionRequest
@@ -20,7 +23,7 @@ export class PermissionModal implements Component {
   private closed = false
   constructor(
     private readonly changed: () => void,
-    private readonly options: { maxRows?(): number; locale?: Locale } = {},
+    private readonly options: { maxRows?(): number; locale?: Locale; ansi?: ThemedAnsi } = {},
   ) {}
 
   get pending(): boolean {
@@ -102,6 +105,8 @@ export class PermissionModal implements Component {
   render(width: number): string[] {
     const question = this.questions[0]
     if (!question) return []
+    width = columns(width)
+    const ansi = this.options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
     const locale = this.options.locale ?? 'en'
     const call = question.request.toolCall
     const meta = call._meta as { 'ai.agnes.harness'?: { tool?: unknown } } | undefined
@@ -118,10 +123,22 @@ export class PermissionModal implements Component {
     const heading = `${t('permission.heading', locale)}: ${escapeControl(
       typeof title === 'string' ? title : t('permission.toolRequest', locale),
     )}`
-    const details = wrapText(heading, width)
+    // The title and footer ride in the frame's borders, so framing costs columns but no rows.
+    const framed = width >= 8
+    const inner = framed ? width - 4 : width
+    const edge = (s: string) => ansi.fg('borderStrong', s)
+    const bar = (left: string, label: string, right: string) => {
+      if (!framed) return fitLine(label, width)
+      const text = displayWidth(label) <= width - 4 ? label : fitLine(label, width - 4)
+      return `${edge(`${left} `)}${text}${edge(` ${'─'.repeat(width - 4 - displayWidth(text))}${right}`)}`
+    }
+    const row = (line: string) =>
+      framed ? `${edge('│')} ${fitLine(line, inner)} ${edge('│')}` : fitLine(line, width)
+    const details = wrapText(heading, inner)
+    const headingRows = details.length
     if (question.request.toolCall.rawInput !== undefined)
       details.push(
-        ...wrapText(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), width),
+        ...wrapText(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
       )
     const choices = question.request.options
     const requested = this.options.maxRows?.()
@@ -140,28 +157,26 @@ export class PermissionModal implements Component {
     const choiceLines = choices.slice(start, start + count).map((option, i) => {
       const index = start + i
       question.visible.add(index)
-      return fitLine(
-        `${index === question.selected ? '>' : ' '} ${index + 1}. ${escapeControl(option.name)}`,
-        width,
-      )
+      const label = `${index + 1}. ${escapeControl(option.name)}`
+      if (index !== question.selected) return row(`  ${label}`)
+      const chosen = fitLine(`${ansi.fg('accent', '❯')} ${ansi.bold(label)}`, inner)
+      return row(paintsColour(ansi) ? ansi.bg('selection', chosen) : chosen)
     })
     question.pageRows = Math.max(1, rows - choiceLines.length - 2)
     question.detailOffset = Math.min(question.detailOffset, Math.max(0, details.length - question.pageRows))
     const page = details
       .slice(question.detailOffset, question.detailOffset + question.pageRows)
-      .map((line) => fitLine(line, width))
+      .map((line, i) => row(question.detailOffset + i < headingRows ? line : ansi.dim(line)))
+    const footer = t('permission.footer', locale, {
+      start: question.detailOffset + 1,
+      end: question.detailOffset + page.length,
+      total: details.length,
+    })
     return [
-      fitLine(heading, width),
+      bar('╭', ansi.bold(heading), '╮'),
       ...page,
       ...choiceLines,
-      fitLine(
-        t('permission.footer', locale, {
-          start: question.detailOffset + 1,
-          end: question.detailOffset + page.length,
-          total: details.length,
-        }),
-        width,
-      ),
+      bar('╰', ansi.fg('faint', footer), '╯'),
     ]
   }
 }

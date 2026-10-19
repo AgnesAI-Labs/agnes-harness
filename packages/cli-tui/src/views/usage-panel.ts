@@ -1,8 +1,8 @@
-import type { Ansi } from '../ansi.js'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { Box } from '../components/box.js'
 import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
+import type { ThemedAnsi } from '../theme.js'
 
 /** Read-only command report. Consumes keys until dismissed without sending a prompt. */
 export class UsagePanel implements Component {
@@ -12,7 +12,7 @@ export class UsagePanel implements Component {
   private total = 0
   private height = 1
   constructor(
-    private readonly options: { ansi: Ansi; locale?: string; maxRows(): number; changed(): void },
+    private readonly options: { ansi: ThemedAnsi; locale?: string; maxRows(): number; changed(): void },
   ) {}
   show(text: string, title?: string): void {
     this.title = title ?? tt('usagePanel.title', this.options.locale ?? 'en')
@@ -48,10 +48,10 @@ export class UsagePanel implements Component {
     const body = {
       render: () => [
         ...lines.slice(this.offset, this.offset + this.height),
-        tt('usagePanel.scrollHint', this.options.locale ?? 'en'),
+        this.options.ansi.fg('faint', tt('usagePanel.scrollHint', this.options.locale ?? 'en')),
       ],
       invalidate() {},
     }
-    return new Box(body, { title: this.title, rounded: true, border: this.options.ansi.dim }).render(width)
+    return new Box(body, { title: this.title, ansi: this.options.ansi }).render(width)
   }
 }

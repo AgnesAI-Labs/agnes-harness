@@ -8,13 +8,14 @@ import { Loader } from '../../src/tui/components/loader.js'
 import { Select } from '../../src/tui/components/select.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { screenOf } from './harness.js'
 
 it('expands Box by default with exact borders and blocks hidden child input when collapsed', () => {
   const input = vi.fn(() => true)
   const child = Object.assign(new Text('body'), { handleInput: input })
   const box = new Box(child, { title: 'tool' })
-  expect(box.render(10)).toEqual(['┌ tool ──┐', '│ body   │', '└────────┘'])
+  expect(box.render(10)).toEqual(['╭─ tool ─╮', '│ body   │', '╰────────╯'])
   expect(box.handleInput('1')).toBe(true)
   box.toggle()
   expect(box.render(10)).toEqual(['▸ tool    '])
@@ -31,24 +32,23 @@ it('bounds long titles and preserves styled child lines at narrow display widths
   expect(fitLine(createAnsi('16').bold('中国'), 3)).toBe('\x1b[1m中…\x1b[0m')
   expect(fitLine('élong', 2)).toBe('é…')
 })
-it('rounds Box corners on request and styles frame and title through the ansi tiers', () => {
-  const plain = new Box(new Text('body'), { title: 'agnes', rounded: true })
-  expect(plain.render(12)).toEqual(['╭ agnes ───╮', '│ body     │', '╰──────────╯'])
-  plain.toggle()
-  expect(plain.render(12)).toEqual(['▸ agnes     '])
-  const ansi = createAnsi('256')
-  const box = new Box(new Text('body'), {
-    title: 'agnes',
-    rounded: true,
-    border: ansi.dim,
-    titleStyle: (s) => ansi.fg(141, s),
-  })
+it('squares Box corners on request and styles frame and title through the theme tones', () => {
+  const square = new Box(new Text('body'), { title: 'agnes', rounded: false })
+  expect(square.render(12)).toEqual(['┌─ agnes ──┐', '│ body     │', '└──────────┘'])
+  square.toggle()
+  expect(square.render(12)).toEqual(['▸ agnes     '])
+  const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+  const edge = (s: string) => ansi.fg('border', s)
+  const box = new Box(new Text('body'), { title: 'agnes', ansi })
   const lines = box.render(12)
-  expect(lines[0]).toBe(`\x1b[2m╭\x1b[22m\x1b[38;5;141m agnes \x1b[39m\x1b[2m───╮\x1b[22m`)
-  expect(lines[1]).toBe(`\x1b[2m│\x1b[22m body     \x1b[2m│\x1b[22m`)
-  expect(lines[2]).toBe(`\x1b[2m╰──────────╯\x1b[22m`)
+  expect(lines[0]).toBe(`${edge('╭')}${edge('─')}${ansi.bold(' agnes ')}${edge('──╮')}`)
+  expect(lines[1]).toBe(`${edge('│')} body     ${edge('│')}`)
+  expect(lines[2]).toBe(edge('╰──────────╯'))
   // The frame characters take the border style; the padding inside the body row does not.
-  expect(box.render(12).every((line) => displayWidth(line) === 12)).toBe(true)
+  expect(lines.every((line) => displayWidth(line) === 12)).toBe(true)
+  // Explicit frame and title styles still win over the themed defaults.
+  const custom = new Box(new Text('body'), { title: 'agnes', ansi, border: ansi.dim, titleStyle: (s) => s })
+  expect(custom.render(12)[0]).toBe(`${ansi.dim('╭')}${ansi.dim('─')} agnes ${ansi.dim('──╮')}`)
 })
 it('Select defaults to first option, clamps navigation, chooses digits and cancels', () => {
   const chosen = vi.fn()
@@ -91,8 +91,26 @@ it('Select windows a long dynamic list around the active option', () => {
   for (let i = 0; i < 5; i++) select.handleInput('\x1b[B')
   const lines = select.render(20)
   expect(lines).toHaveLength(3)
-  expect(lines[2]).toContain('▶ 6. model-6')
+  expect(lines[2]).toContain('❯ 6. model-6')
   expect(lines.join('\n')).not.toContain('model-1')
+})
+it('Select paints the chosen row across its width and leaves the others plain', () => {
+  const ansi = new TuiTheme('light').ansi(createAnsi('truecolor'))
+  const select = new Select({
+    title: 'pick',
+    options: [
+      { id: 'a', label: 'one' },
+      { id: 'b', label: 'two' },
+    ],
+    ansi,
+    onChoose: vi.fn(),
+  })
+  select.handleInput('\x1b[B')
+  expect(select.render(12)).toEqual([
+    ansi.bold('pick        '),
+    '  1. one    ',
+    ansi.bg('selection', ansi.bold(ansi.fg('accent', '❯ 2. two    '))),
+  ])
 })
 it('List snapshots its inputs and Loader uses explicit ticks with a terminal stopped frame', () => {
   const items = ['a', 'b']
@@ -128,9 +146,9 @@ it('paints a bordered component and routes actual terminal navigation into Selec
     term.feed('\r')
     expect(chosen).toHaveBeenCalledWith('b')
     await vi.waitFor(async () =>
-      expect((await screenOf(term, 20, 6)).some((line) => line.includes('▶ 2. two'))).toBe(true),
+      expect((await screenOf(term, 20, 6)).some((line) => line.includes('❯ 2. two'))).toBe(true),
     )
-    expect((await screenOf(term, 20, 6))[0]).toBe('┌ choose ──────────┐')
+    expect((await screenOf(term, 20, 6))[0]).toBe('╭─ choose ─────────╮')
   } finally {
     renderer.stop()
   }

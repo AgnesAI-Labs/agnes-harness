@@ -1,12 +1,11 @@
 import type { UINode } from '@agnes/protocol'
 import { createAnsi } from '../ansi.js'
-import { type Component, escapeControl, padLine, Text, VStack } from '../component.js'
-import { Box } from '../components/box.js'
-import { fitLine } from '../components/line.js'
+import { type Component, escapeControl, padLine, wrapText } from '../component.js'
+import { columns, fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
-import { type ThemedAnsi, TuiTheme } from '../theme.js'
+import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -46,9 +45,10 @@ export function renderBarChart(
 // State is carried by one diamond and, only while non-terminal, one word; the rest stays quiet.
 const STATUS_TONE: Record<string, Tone> = {
   completed: 'success',
-  running: 'warning',
+  running: 'accent',
   failed: 'danger',
   error: 'danger',
+  planned: 'faint',
 }
 const STATUS_GLYPH: Record<string, string> = {
   completed: '◆',
@@ -57,6 +57,9 @@ const STATUS_GLYPH: Record<string, string> = {
   error: '◆',
   planned: '◇',
 }
+// Without colour the running and failed diamonds would be indistinguishable from a finished one.
+const COLOURLESS_GLYPH: Record<string, string> = { running: '◈', failed: '✗', error: '✗' }
+const LABEL_WIDTH = 'Enforcement:'.length
 const STATUS_KEYS: Record<
   string,
   | 'tool.status.completed'
@@ -79,9 +82,23 @@ const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.nam
     shell: 'tool.name.shell',
   }
 
+/** A left part clipped to leave room for a right-aligned one, or both run together when narrow. */
+function spread(left: string, right: string, width: number): string {
+  if (!right) return fitLine(left, width)
+  const room = width - displayWidth(right) - 2
+  return room >= 4 ? `${fitLine(left, room)}  ${right}` : fitLine(`${left}  ${right}`, width)
+}
+
 export class ToolCard implements Component {
-  private readonly box: Box
-  private readonly headline: string
+  private readonly glyph: string
+  private readonly name: string
+  private readonly summary: string
+  private readonly status: string
+  private readonly showStatus: boolean
+  private readonly paint: (s: string) => string
+  private readonly closing: string
+  /** Rail contents, laid out for the width inside the rail. */
+  private readonly rail: Array<(width: number) => string[]> = []
   private collapsedState: boolean
   private readonly actions: Array<{ id: string; label: string }> = []
   private readonly onAction: (actionId: string) => void
@@ -98,47 +115,54 @@ export class ToolCard implements Component {
     const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
     this.onAction = options.onAction ?? (() => {})
     const locale = options.locale ?? 'en'
-    const summary = node.summary.replace(/\s+/g, ' ').trim()
     const toolKey = TOOL_KEYS[node.name]
-    const name = toolKey ? tt(toolKey, locale) : escapeControl(node.name)
+    this.name = ansi.bold(toolKey ? tt(toolKey, locale) : escapeControl(node.name))
     const statusKey = STATUS_KEYS[node.status]
-    const status = statusKey ? tt(statusKey, locale) : escapeControl(node.status)
     const tone = STATUS_TONE[node.status]
-    const paint = tone === undefined ? (s: string) => s : (s: string) => ansi.fg(tone, s)
-    const glyph = paint(STATUS_GLYPH[node.status] ?? '·')
-    this.headline = ` ${glyph} ${ansi.bold(name)}${summary ? `  ${ansi.dim(escapeControl(summary))}` : ''}${
-      node.status === 'completed' ? '' : `  ${paint(status)}`
-    }`
+    this.paint = tone === undefined ? (s: string) => s : (s: string) => ansi.fg(tone, s)
+    this.closing = ` ${this.paint('╰─')} ${ansi.fg('faint', 'ctrl+o')}`
+    this.glyph = this.paint(
+      (paintsColour(ansi) ? undefined : COLOURLESS_GLYPH[node.status]) ?? STATUS_GLYPH[node.status] ?? '·',
+    )
+    this.status = this.paint(statusKey ? tt(statusKey, locale) : escapeControl(node.status))
+    this.showStatus = node.status !== 'completed'
+    const summary = escapeControl(node.summary.replace(/\s+/g, ' ').trim())
+    this.summary = summary ? `  ${ansi.dim(summary)}` : ''
     this.collapsedState = options.collapsed ?? true
-    const body: Component[] = [new Text(escapeControl(node.summary))]
-    if (node.argsPreview !== undefined) body.push(new Text(escapeControl(`Arguments: ${node.argsPreview}`)))
-    if (node.resultPreview !== undefined) body.push(new Text(escapeControl(`Result: ${node.resultPreview}`)))
-    if (node.enforcement)
-      body.push(
-        new Text(
-          escapeControl(`Enforcement: ${node.enforcement.level} (${node.enforcement.scope.join(', ')})`),
+
+    if (node.summary) this.rail.push((width) => wrapText(escapeControl(node.summary), width))
+    const fields: Array<[string, string | undefined]> = [
+      ['Arguments', node.argsPreview],
+      ['Result', node.resultPreview],
+      ['Enforcement', node.enforcement && `${node.enforcement.level} (${node.enforcement.scope.join(', ')})`],
+    ]
+    for (const [label, value] of fields) {
+      if (value === undefined) continue
+      const head = ansi.dim(`${label}:`.padStart(LABEL_WIDTH))
+      const indent = ' '.repeat(LABEL_WIDTH + 1)
+      this.rail.push((width) =>
+        wrapText(escapeControl(value), width - LABEL_WIDTH - 1).map(
+          (line, i) => `${i === 0 ? `${head} ` : indent}${line}`,
         ),
       )
+    }
     // `tool.card.inline` has `multi` cardinality, so a tool result can carry several fills; every
     // one of them contributes its own title/chart/actions block, in the order they arrive.
     for (const fill of node.slots ?? []) {
       if (fill.slot !== 'tool.card.inline') continue
       const payload = fill.payload as InlinePayload
-      body.push(new Text(ansi.bold(escapeControl(payload.title))))
+      const title = ansi.bold(escapeControl(payload.title))
+      this.rail.push(() => [title])
       if (payload.chart?.kind === 'bar') {
         const series = payload.chart.series
-        body.push({ render: (width: number) => renderBarChart(series, width), invalidate() {} })
+        this.rail.push((width) => renderBarChart(series, width))
       }
       for (const action of payload.actions ?? []) this.actions.push({ id: action.id, label: action.label })
     }
-    if (this.actions.length > 0)
-      body.push(new Text(this.actions.map((a, i) => `[${i + 1}] ${escapeControl(a.label)}`).join('  ')))
-    this.box = new Box(new VStack(body), {
-      title: `${name} · ${status}`,
-      rounded: true,
-      border: ansi.dim,
-      titleStyle: (line: string) => ansi.bold(line.replace(status, paint(status))),
-    })
+    if (this.actions.length > 0) {
+      const keys = this.actions.map((a, i) => `[${i + 1}] ${escapeControl(a.label)}`).join('  ')
+      this.rail.push(() => [keys])
+    }
   }
   get collapsed(): boolean {
     return this.collapsedState
@@ -146,9 +170,7 @@ export class ToolCard implements Component {
   toggle(): void {
     this.collapsedState = !this.collapsedState
   }
-  invalidate(): void {
-    this.box.invalidate()
-  }
+  invalidate(): void {}
   // Numbered actions only fire while the card is expanded, so a collapsed card is inert to
   // digits and the same keystroke reaches whatever else wants it (the editor, most likely).
   // The digit is only ever an index into *this card's* action list -- it never becomes, and
@@ -162,6 +184,16 @@ export class ToolCard implements Component {
     return true
   }
   render(width: number): string[] {
-    return this.collapsedState ? [fitLine(this.headline, width)] : this.box.render(width)
+    width = columns(width)
+    const head = ` ${this.glyph} ${this.name}`
+    if (this.collapsedState)
+      return [spread(`${head}${this.summary}`, this.showStatus ? this.status : '', width)]
+    const inner = Math.max(1, width - 3)
+    const rail = this.paint('│')
+    return [
+      spread(head, this.status, width),
+      ...this.rail.flatMap((rows) => rows(inner)).map((line) => fitLine(` ${rail} ${line}`, width)),
+      fitLine(this.closing, width),
+    ]
   }
 }

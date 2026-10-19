@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
+import { Loader } from '../../src/tui/components/loader.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
+import { Hints } from '../../src/tui/views/hints.js'
 import { Header, StatusBar } from '../../src/tui/views/status-bar.js'
 
 const BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
@@ -55,11 +57,11 @@ describe('status bar and header (cli 稿 §9.2)', () => {
       opState: { turn: 3, step: 2, phase: 'tools' },
     })
     expect(h.render(80)[0]).toBe(
-      'agnes · local-dev · standard · 12345678 · g2 · turn 3 step 2 tools'.padEnd(80),
+      'agnes ·ᴗ·  local-dev · standard · #12345678 · g2 · turn 3 step 2 tools'.padEnd(80),
     )
   })
 
-  it('header paints the brand in the accent colour and dims the separators on a colour tier', () => {
+  it('header paints the brand in the accent colour and fades the separators on a colour tier', () => {
     const state = {
       profile: 'local-dev',
       preset: 'standard',
@@ -70,13 +72,13 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     const h = new Header(ansi, BRANDING)
     h.set(state)
     const line = h.render(60)[0] as string
-    expect(line).toContain('\x1b[1m\x1b[38;5;63magnes\x1b[39m\x1b[22m')
-    expect(line).toContain(`${ansi.dim(' · ')}${ansi.fg('muted', 'local-dev')}`)
+    expect(line).toContain(ansi.bold(ansi.fg('accent', 'agnes')))
+    expect(line).toContain(`${ansi.fg('faint', ' ·ᴗ·')}  ${ansi.fg('muted', 'local-dev')}`)
+    expect(line).toContain(ansi.fg('faint', '#12345678'))
     // Mono keeps SGR dim, so the separator must not leak dim into the field after it.
     const mono = new Header(new TuiTheme('mono').ansi(createAnsi('256')), BRANDING)
     mono.set(state)
-    expect(mono.render(60)[0]).toContain('\x1b[2m · \x1b[22m')
-    expect(mono.render(60)[0]).not.toContain('\x1b[2m · \x1b[22m\x1b[2m')
+    expect(mono.render(60)[0]).toContain('\x1b[2m · \x1b[22m\x1b[2mstandard\x1b[22m')
     // The none tier must emit zero escape sequences for the very same content.
     const plain = new Header(PLAIN, BRANDING)
     plain.set({ profile: 'p', preset: 's', sessionId: 'id:12345678', generation: 1 })
@@ -90,11 +92,11 @@ describe('status bar and header (cli 稿 §9.2)', () => {
       selfLabel: 'Acme Workbench',
     })
     h.set({ profile: 'p', preset: 's', sessionId: 'id:12345678', generation: 1 })
-    expect(h.render(60)[0]).toContain('acme · p · s')
+    expect(h.render(60)[0]).toContain('acme ·ᴗ·  p · s')
     expect(h.render(60)[0]).not.toContain('agnes')
   })
 
-  it('status bar colors the budget segment, the notice and the link spinner', () => {
+  it('status bar colors slot levels, the budget segment, the notice and the link state', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const s = new StatusBar(ansi)
     s.setBudget(92, 100)
@@ -103,11 +105,14 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     const line = s.render(100)[0] as string
     expect(line).toContain(ansi.bold(ansi.fg('danger', 'credits 92/100 · 92% ⚠')))
     expect(line).toContain(ansi.fg('danger', '执行中断，30 s 内自动恢复'))
-    expect(line).toContain(ansi.fg('warning', '⟳'))
+    expect(line).toContain(ansi.fg('warning', '⟳ reconnecting'))
+    expect(line).toContain(ansi.fg('faint', ' · '))
     s.setNotice('模型已切换', 'success')
     expect(s.render(100)[0]).toContain(ansi.fg('success', '模型已切换'))
     s.setNotice('普通提示')
-    expect(s.render(100)[0]).toContain(ansi.dim('普通提示'))
+    expect(s.render(100)[0]).toContain(ansi.fg('info', '普通提示'))
+    s.setSlots([{ text: '数据截至 9/6', level: 'warn' }])
+    expect(s.render(100)[0]).toContain(`${ansi.fg('warning', '[warn]')} ${ansi.dim('数据截至 9/6')}`)
     // The link glyph only lights up while the link is not ok.
     s.setLink('ok')
     expect(s.render(100)[0]).not.toContain('⟳')
@@ -172,5 +177,25 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     s.setBudget(0.02808099999999999, 0.04)
     expect(s.render(80)[0]).toContain('credits 0.03/0.04 · 70%')
     expect(s.render(80)[0]).not.toContain('028080')
+  })
+
+  it('colours hint keys and the spinner, and freezes on a success check', () => {
+    const ansi = new TuiTheme('light').ansi(createAnsi('truecolor'))
+    const hints = new Hints(ansi)
+    hints.set([
+      { id: 'a', label: 'Export' },
+      { id: 'b', label: 'Rerun' },
+    ])
+    const keyed = (key: string, label: string) =>
+      `${ansi.bold(ansi.fg('accent', key))} ${ansi.fg('faint', label)}`
+    expect(hints.render(60)[0]).toContain(`${keyed('F1', 'Export')}  ${keyed('F2', 'Rerun')}`)
+    const loader = new Loader('thinking', ansi)
+    expect(loader.render(30)[0]).toContain(`${ansi.fg('accent', '⠋')} ${ansi.dim('thinking')}`)
+    loader.stop('turn 1 · 0.7s')
+    expect(loader.render(30)[0]).toContain(`${ansi.fg('success', '✓')} ${ansi.fg('faint', 'turn 1 · 0.7s')}`)
+    // Mono keeps the same text and leans on weight and dim instead.
+    const mono = new Hints(new TuiTheme('mono').ansi(createAnsi('256')))
+    mono.set([{ id: 'a', label: 'Export' }])
+    expect(mono.render(30)[0]).toContain('\x1b[1mF1\x1b[22m \x1b[2mExport\x1b[22m')
   })
 })

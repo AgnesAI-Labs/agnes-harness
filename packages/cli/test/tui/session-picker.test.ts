@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { SessionPicker } from '../../src/tui/views/session-picker.js'
 
 const choices = [
@@ -22,7 +23,7 @@ it('renders session metadata, owns input, chooses by key and cancels without cho
   const chosen = vi.fn()
   const changed = vi.fn()
   const picker = new SessionPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed,
@@ -51,7 +52,7 @@ it('renders session metadata, owns input, chooses by key and cancels without cho
 it('keeps selection over a bounded viewport and sanitizes/clips remote labels', () => {
   const chosen = vi.fn()
   const picker = new SessionPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 5,
     onChoose: chosen,
     changed: () => {},
