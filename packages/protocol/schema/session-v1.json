@@ -2765,6 +2765,7 @@
             "reason": {
               "const": "answered"
             },
+            "code": { "const": "full-access" },
             "at": {
               "type": "string",
               "format": "date-time"
