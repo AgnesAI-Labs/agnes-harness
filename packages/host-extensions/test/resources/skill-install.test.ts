@@ -41,6 +41,49 @@ const discovery = { roots: skillRoots, discover: discoverSkillRoot }
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+
+it('revalidates the commit lease after the asynchronous publish receipt before writing files', async () => {
+  const s = setup()
+  const proposal = await s.prepare()
+  let revoked = false
+  let entered!: () => void
+  let release!: () => void
+  const gap = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const commitAuthority = {
+    ...s.authority,
+    verifyPermission: async () => {
+      if (revoked) throw new Error('SKILL_INSTALL_PERMISSION_CHANGED')
+    },
+  }
+  terminalWrite.block = async (from, to) => {
+    if (to !== join(s.root, 'receipts', `${proposal.proposalId}.json`)) return
+    if (JSON.parse(readFileSync(from, 'utf8')).result.phase !== 'publish') return
+    entered()
+    await held
+  }
+  try {
+    await s.installer.request(
+      { ...s.invocation, input: { action: 'commit', proposalId: proposal.proposalId } },
+      commitAuthority,
+      s.signal,
+    )
+    await gap
+    revoked = true
+    release()
+    expect(await s.done(proposal.proposalId)).toMatchObject({ state: 'failed', phase: 'publish' })
+    expect(existsSync(join(s.home, 'skills', 'demo'))).toBe(false)
+    expect(s.resources.mock.calls.some(([method]) => method === '_agnes/v1/skills.refresh')).toBe(false)
+  } finally {
+    release()
+    terminalWrite.block = undefined
+  }
+})
+
 function setup(enable = true) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-skill-install-')))
   roots.push(root)

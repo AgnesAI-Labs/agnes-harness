@@ -14,11 +14,17 @@ export type ResourceCallContext = Readonly<{
 }>
 
 /** Server-authenticated authority; request JSON never grants resource administration. */
+export type ResourceEffectAdmission = Readonly<{
+  verify(): Promise<void>
+  assertActive(): void
+}>
 export type ResourceAuthority = Readonly<{
   audience: 'admin'
   principalId: string
   clientId: string
   permissions: readonly ResourcePermission[]
+  /** Private backend lease, never accepted from resource RPC parameters. */
+  admission?: ResourceEffectAdmission
 }>
 export type ResourceAuthorityResolver = (context: ResourceCallContext) => ResourceAuthority | undefined
 

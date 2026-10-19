@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
@@ -30,6 +30,140 @@ const definition = {
   secretBinding: { kind: 'none' as const },
 }
 const revision = createHash('sha256').update(jcs(definition)).digest('hex')
+
+it('round2: an automatic MCP decision that expires after the prompt cannot register, trust or enable', async () => {
+  const s = await setup()
+  const prepared = await s.request({ action: 'prepare', definition })
+  const context = {
+    sessionKey: 'session',
+    sessionId: 'round2-backend',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  let consumed = false
+  const effects: string[] = []
+  const call = s.service.call.bind(s.service)
+  const spy = vi.spyOn(s.service, 'call').mockImplementation((method, params, authority) => {
+    if (consumed && method === '_agnes/v1/mcp.servers.list') clock.mockReturnValue(now + 110_001)
+    if (
+      consumed &&
+      [
+        '_agnes/v1/mcp.servers.create',
+        '_agnes/v1/mcp.servers.trust.set',
+        '_agnes/v1/mcp.servers.enable',
+      ].includes(method)
+    )
+      effects.push(method)
+    return call(method, params, authority)
+  })
+  try {
+    await withPermissionContext(
+      context,
+      (row) => {
+        if (row.consumption === 'consumed') consumed = true
+      },
+      () => s.request({ action: 'commit', proposalId: prepared.proposalId }).catch(() => undefined),
+      async () => context,
+    )
+    expect(consumed).toBe(true)
+    expect(
+      await s.store.mcp.workerManaged('local-dev'),
+      `Expired grant admitted ${effects.join(', ')}`,
+    ).toEqual([])
+    expect(effects).toEqual([])
+  } finally {
+    spy.mockRestore()
+    clock.mockRestore()
+  }
+})
+
+it.each(['intent', 'create', 'trust', 'local-start', 'journal-create', 'journal-local-start'])(
+  'round2: expiry after %s persistence prevents the next MCP side effect',
+  async (boundary) => {
+    const s = await setup()
+    const prepared = await s.request({ action: 'prepare', definition })
+    const context = {
+      sessionKey: 'session',
+      sessionId: 'round2-exact-mcp',
+      epoch: 0,
+      policy: 'full-access',
+      actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    const effects: string[] = []
+    const call = s.service.call.bind(s.service)
+    const expire = () => clock.mockReturnValue(now + 110_001)
+    const spy = vi.spyOn(s.service, 'call').mockImplementation(async (method, params, authority) => {
+      if (method.endsWith('.create') || method.endsWith('.trust.set') || method.endsWith('.enable'))
+        effects.push(method)
+      const result = await call(method, params, authority)
+      if (
+        (boundary === 'create' && method.endsWith('.create')) ||
+        (boundary === 'trust' && method.endsWith('.trust.set'))
+      )
+        expire()
+      return result
+    })
+    const approve = s.store.mcp.approveLocalStart.bind(s.store.mcp)
+    const start = vi.spyOn(s.store.mcp, 'approveLocalStart').mockImplementation(async (...args) => {
+      effects.push('local-start')
+      await approve(...args)
+      if (boundary === 'local-start') expire()
+    })
+    try {
+      const result = await withPermissionContext(
+        context,
+        () => undefined,
+        () => s.request({ action: 'commit', proposalId: prepared.proposalId }),
+        async () => {
+          if (boundary === 'intent') {
+            const receipt = await readFile(
+              join(s.root, 'mcp-onboarding', `${prepared.proposalId}.json`),
+              'utf8',
+            ).catch(() => '')
+            if (receipt && JSON.parse(receipt).state === 'registered') expire()
+          }
+          if (boundary.startsWith('journal-')) {
+            for (const file of await readdir(join(s.root, 'mcp')).catch(() => [])) {
+              if (!file.includes('.mcp.json.') || !file.endsWith('.tmp')) continue
+              const bytes = await readFile(join(s.root, 'mcp', file), 'utf8').catch(() => '')
+              if (!bytes) continue
+              const row = JSON.parse(bytes).servers.fixture
+              if (boundary === 'journal-create' || row?.localStartApproval) expire()
+            }
+          }
+          return context
+        },
+      )
+      expect(result).toMatchObject({ state: 'cancelled', via: 'unavailable' })
+      const all = ['_agnes/v1/mcp.servers.create', '_agnes/v1/mcp.servers.trust.set', 'local-start']
+      const admitted =
+        boundary === 'journal-create'
+          ? 1
+          : boundary === 'journal-local-start'
+            ? 3
+            : ['intent', 'create', 'trust', 'local-start'].indexOf(boundary)
+      expect(effects).toEqual(all.slice(0, admitted))
+      const rows = await s.store.mcp.workerManaged('local-dev')
+      if (boundary === 'intent' || boundary === 'journal-create') expect(rows).toEqual([])
+      else
+        expect(rows[0]).toMatchObject({
+          desired: 'disabled',
+          trust: boundary === 'create' ? 'untrusted' : 'trusted',
+        })
+      if (boundary === 'journal-local-start') expect(rows[0]).not.toHaveProperty('localStartApproval')
+    } finally {
+      spy.mockRestore()
+      start.mockRestore()
+      clock.mockRestore()
+    }
+  },
+)
+
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'agh-mcp-onboard-'))
   roots.push(root)

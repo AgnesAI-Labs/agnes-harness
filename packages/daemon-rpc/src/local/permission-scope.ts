@@ -72,6 +72,56 @@ export async function assertPermissionBinding(
   if (!grant || clock() >= Date.parse(grant.deadline))
     throw new Error('Permission grant unavailable or expired')
 }
+
+export class PermissionGrantUnavailable extends Error {}
+
+/** A backend-owned consumed grant retained across a background task's entire lifetime. */
+export async function acquirePermissionLease(
+  binding: { scope: string; bindingHash: string; sessionKey: string },
+  signal: AbortSignal,
+) {
+  const current = scope.getStore()
+  if (!current || current.context.policy !== 'full-access') return undefined
+  const grant = [...current.grants.values()].find(
+    (row) =>
+      row.consumption === 'consumed' &&
+      row.scope === binding.scope &&
+      row.bindingHash === binding.bindingHash &&
+      row.sessionKey === binding.sessionKey,
+  )
+  let revoked = false
+  const assertActive = () => {
+    if (
+      revoked ||
+      signal.aborted ||
+      !grant ||
+      current.grants.get(grant.requestId) !== grant ||
+      grant.sessionId !== current.context.sessionId ||
+      grant.epoch !== current.context.epoch ||
+      !Number.isFinite(Date.parse(grant.deadline)) ||
+      Date.now() >= Date.parse(grant.deadline)
+    ) {
+      revoked = true
+      throw new PermissionGrantUnavailable('Permission grant unavailable or expired')
+    }
+  }
+  const verify = async () => {
+    assertActive()
+    try {
+      if (!samePermissionContext(current.context, await current.verify()))
+        throw new PermissionGrantUnavailable('Permission authority revoked')
+      // The verifier can yield past cancellation or the exact grant's deadline.
+      assertActive()
+    } catch (error) {
+      revoked = true
+      throw error instanceof PermissionGrantUnavailable
+        ? error
+        : new PermissionGrantUnavailable('Permission authority unavailable')
+    }
+  }
+  await verify()
+  return Object.freeze({ verify, assertActive })
+}
 export async function automaticRequestDecision(req: ApprovalRequest) {
   const current = scope.getStore()
   if (!current || req.sessionKey !== current.context.sessionKey || !current.context.sessionId)

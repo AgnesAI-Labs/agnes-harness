@@ -164,7 +164,7 @@ describe('PrompterRouter', () => {
     await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
   })
 
-  it('a request that is not about a tool is kind other and names no tool', async () => {
+  it('a backend budget quote is a permission of kind other and names no tool', async () => {
     const { ep, r } = mk()
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
@@ -173,7 +173,7 @@ describe('PrompterRouter', () => {
     const m = (await it.next()).value as { id: string; params: { toolCall: Record<string, unknown> } }
     expect(m.params.toolCall.kind).toBe('other')
     expect(m.params.toolCall._meta).toEqual({
-      'ai.agnes.harness': { category: 'question', purpose: 'budget' },
+      'ai.agnes.harness': { category: 'permission', purpose: 'budget' },
     })
     await ep.handle({
       jsonrpc: '2.0',

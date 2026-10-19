@@ -260,7 +260,7 @@ it('review: plugin code cannot mutate the backend actor used by automatic decisi
   }
 })
 
-it.each(['tool.permission', 'business.confirm', 'unrecognized.purpose'])(
+it.each(['tool.permission', 'budget', 'business.confirm', 'unrecognized.purpose'])(
   'review: author questions cannot select their own permission category (%s)',
   async (purpose) => {
     const f = await fixture('full-access')
@@ -290,3 +290,81 @@ it('review: epoch verification rejects a consumption prepared before revocation 
     await f.session.close()
   }
 })
+
+it('round2: full-access round trips cannot resurrect an earlier automatic allowance', async () => {
+  const f = await fixture('full-access')
+  try {
+    const old = await f.ctx.decisions.request(spec)
+    await f.session.setPreset(presetDefaults())
+    const full = presetDefaults()
+    full.name = 'full-access'
+    await f.session.setPreset(full)
+    expect((await f.ctx.decisions.get(old)).invalidation?.code).toBe('authorization-revoked')
+    await expect(f.ctx.checkpoints.write(codec.encode('old'), { decisionRefs: [old] })).rejects.toThrow()
+    const fresh = await f.ctx.decisions.request({ ...spec, key: 'fresh-epoch' })
+    expect((await f.ctx.decisions.get(fresh)).result).toMatchObject({ code: 'full-access' })
+    await f.ctx.checkpoints.write(codec.encode('fresh'), { decisionRefs: [fresh] })
+  } finally {
+    await f.session.close()
+  }
+})
+
+it('round2: reopening a session cannot consume an earlier incarnation automatic allowance', async () => {
+  const first = await fixture('full-access')
+  const old = await first.ctx.decisions.request(spec)
+  const originalId = first.session.permissionContext.sessionId
+  await first.session.close()
+  const next = await fixture('full-access', { storage: first.storage, writerRunId: 'round2-reopen' })
+  try {
+    expect(next.session.permissionContext.sessionId).not.toBe(originalId)
+    expect((await next.ctx.decisions.get(old)).invalidation?.code).toBe('authorization-revoked')
+    await expect(
+      next.ctx.checkpoints.write(codec.encode('replayed'), { decisionRefs: [old] }),
+    ).rejects.toThrow()
+  } finally {
+    await next.session.close()
+  }
+})
+
+it('round2: revocation in the final checkpoint commit gap prevents consumption', async () => {
+  const f = await fixture('full-access')
+  const handle = await f.ctx.decisions.request(spec)
+  const append = f.log.append.bind(f.log)
+  const spy = vi.spyOn(f.log, 'append').mockImplementation((events, options) =>
+    append(events, {
+      ...options,
+      beforeCommit: async () => {
+        await options?.beforeCommit?.()
+        f.session.revokeAutomaticPermissions()
+      },
+    }),
+  )
+  try {
+    await expect(
+      f.ctx.checkpoints.write(codec.encode('revoked'), { decisionRefs: [handle] }),
+    ).rejects.toThrow('AUTHORITY_REVOKED')
+    spy.mockRestore()
+    expect((await f.ctx.decisions.get(handle)).consumption).toBeNull()
+  } finally {
+    spy.mockRestore()
+    await f.session.close()
+  }
+})
+
+it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
+  'round2: exposed actor and context snapshots cannot promote the %s backend preset',
+  async (name) => {
+    const f = await fixture(name)
+    try {
+      const exposed = f.session.permissionContext
+      Object.assign(exposed, { policy: 'full-access', epoch: 999 })
+      Object.assign(exposed.actor, { id: 'forged-context-actor' })
+      Object.assign(f.session.d.actor, { id: 'forged-deps-actor' })
+      expect(f.session.permissionContext).toMatchObject({ policy: name, epoch: 0, actor: { id: actor.id } })
+      const handle = await f.ctx.decisions.request(spec)
+      expect((await f.ctx.decisions.get(handle)).result).toBeNull()
+    } finally {
+      await f.session.close()
+    }
+  },
+)

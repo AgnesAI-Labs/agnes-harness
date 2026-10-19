@@ -2,9 +2,11 @@ import { automaticRequestDecision, completeAutomaticDecision } from './permissio
 
 export {
   type AutomaticPermissionEvidence,
+  acquirePermissionLease,
   assertCurrentPermission,
   assertPermissionBinding,
   currentPermissionContext,
+  PermissionGrantUnavailable,
   withPermissionContext,
 } from './permission-scope.js'
 

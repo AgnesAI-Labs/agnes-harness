@@ -18,7 +18,6 @@
   "packages/host/src/runtime/generation/host.ts": 1332,
   "packages/package-manager/src/manager.ts": 1502,
   "packages/resource-control-cli/src/resources.ts": 803,
-  "packages/resource-control-store/src/mcp.ts": 822,
   "packages/resource-control-store/src/skills.ts": 900,
   "packages/resource-control-web/src/admin.tsx": 1058,
   "packages/sdk/src/session.ts": 894,
