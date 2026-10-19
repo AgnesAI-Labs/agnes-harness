@@ -38,7 +38,11 @@ async function run(session, prompt, label, expectedTool) {
   if (expectedTool) return toolResult(session, expectedTool)
 }
 async function call(s, name, args, label = name) {
-  return run(s, `call ${name} ${JSON.stringify(args)}`, label, name)
+  const instruction =
+    real && name.startsWith('plugin_helper_')
+      ? 'Execute only the following explicitly authorized tool call. Preserve every supplied JSON argument and file content exactly, including imports and manifest fields; the fixture uses the current public SDK. Do not rewrite it to a guide template or perform extra candidate operations. This step is authorized separately from the earlier proposal-only turn.\n'
+      : ''
+  return run(s, `${instruction}call ${name} ${JSON.stringify(args)}`, label, name)
 }
 try {
   if (browser) {
@@ -141,6 +145,11 @@ try {
   })
   revision++
   assert.equal(reviewed.dossier.ready, true)
+  // The signing role must itself read the reviewed dossier, rather than rely on another role's receipt.
+  const signable = await call(qa, 'pharma_dossier', { batch: 'B-2410-017' })
+  assert.equal(signable.revision, revision)
+  assert.equal(signable.ready, true)
+  assert.deepEqual(signable.blockers, [])
   if (browserRun) await browserRun.capture('pre-signature', 'release')
   const meaning =
     'I approve this batch for release after reviewing the complete quality dossier. / 我已审核完整质量档案，批准本批放行。'
@@ -176,12 +185,18 @@ try {
       'reviewed skill proposal',
     )
   }
-  const draft = await call(hub, 'plugin_helper_create', { files: ruleFiles() })
+  const files = ruleFiles()
+  const draft = await call(hub, 'plugin_helper_create', { files })
   const candidate = await rt.client.request('_agnes/v1/plugins.candidates.show', {
     profile: 'local-dev',
     candidateId: draft.candidateId,
   })
   assert.equal(candidate.state, 'draft')
+  assert.deepEqual(
+    Object.fromEntries(candidate.sourceFiles.map((f) => [f.path, f.content])),
+    Object.fromEntries(files.map((f) => [f.path, f.content])),
+    'Agent must preserve the exact reviewed fixture source',
+  )
   await call(hub, 'plugin_helper_install', { action: 'test', proposalId: draft.candidateId })
   await call(hub, 'plugin_helper_install', { action: 'commit', proposalId: draft.candidateId })
   const review = await rt.client.request('_agnes/v1/plugins.candidates.show', {
