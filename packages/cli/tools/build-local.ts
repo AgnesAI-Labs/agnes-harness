@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,6 +24,7 @@ import {
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
 import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
+import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
@@ -401,9 +402,8 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     join(webOut, 'style.css'),
     `\n${readUiCss(join(webUi, 'src', 'intelligent-ui', 'styles.css'))}`,
   )
-  const markdownCss = join(webOut, 'vendor', 'conversation.css')
-  const [core, light, dark, overrides] = await Promise.all([
-    readFile(markdownCss, 'utf8'),
+  const core = await consumeVendorCss(join(webOut, 'vendor'))
+  const [light, dark, overrides] = await Promise.all([
     Promise.resolve(
       readMarkdownThemeCss(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] })),
     ),
@@ -414,9 +414,8 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
   ])
   await appendFile(
     join(webOut, 'style.css'),
-    `\n${inCssLayer(core + '\n' + light + '\n' + dark, 'vendor')}\n${overrides}`,
+    `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
-  await rm(markdownCss)
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
   return metafiles
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { expect, it } from 'vitest'
-import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './repo.js'
 import { newPresentationViolations, presentationCounts } from './ui-presentation.js'
 
 const root = repoRoot()
@@ -49,6 +49,7 @@ it('ratchets business sources by file and literal; shared controls and token def
     listSourceFiles(join(root, 'packages', pkg, 'src'), { extensions: ['.ts', '.tsx', '.css'] }),
   )
   files.push(
+    ...presentationSourceFiles(root),
     ...listSourceFiles(join(root, 'packages/web/public'), { extensions: ['.html', '.css'] }).filter(
       (file) => basename(file) !== '01-tokens.css',
     ),

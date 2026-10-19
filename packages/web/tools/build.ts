@@ -16,6 +16,7 @@ import {
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
 import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
+import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -192,19 +193,16 @@ export async function buildWeb(
   )
   // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
   // already load /style.css, so merge core + published themes + Agnes overrides there.
-  const generatedMarkdownCss = join(out, 'vendor', 'conversation.css')
-  const [core, light, dark, overrides] = await Promise.all([
-    readFile(generatedMarkdownCss, 'utf8'),
+  const core = await consumeVendorCss(join(out, 'vendor'))
+  const [light, dark, overrides] = await Promise.all([
     Promise.resolve(readMarkdownThemeCss(markdownLightCss)),
     Promise.resolve(readMarkdownThemeCss(markdownDarkCss)),
     Promise.resolve(readUiCss(markdownOverridesCss)),
   ])
   await appendFile(
     join(out, 'style.css'),
-    `\n${inCssLayer(core.replace(/\/\*# sourceMappingURL=.*?\*\//g, '') + '\n' + light + '\n' + dark, 'vendor')}\n${overrides}`,
+    `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
-  await rm(generatedMarkdownCss)
-  await rm(`${generatedMarkdownCss}.map`, { force: true })
   await collectThirdPartyNotices(root, out, metafiles)
   return metafiles
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
-import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './repo.js'
 import { segmentedPresentationViolations } from './segmented-controls.js'
 import { controlPresentationCounts, newControlPresentationViolations } from './ui-controls.js'
 
@@ -36,9 +36,12 @@ it('keeps existing call sites explicit and forbids new raw controls or colours o
   const baseline = JSON.parse(
     readFileSync(join(root, 'tools/guards/ui-controls-baseline.json'), 'utf8'),
   ) as Record<string, Record<string, number>>
-  const files = listSourceFiles(join(root, 'packages'), {
-    extensions: ['.ts', '.tsx', '.css', '.html', '.mjs'],
-  })
+  const files = [
+    ...new Set([
+      ...listSourceFiles(join(root, 'packages'), { extensions: ['.ts', '.tsx', '.css', '.html', '.mjs'] }),
+      ...presentationSourceFiles(root),
+    ]),
+  ]
   const errors = files
     .map((file) => file.split(sep).join('/'))
     .filter((file) => !isTestFile(file) && !file.includes('/web-ui/') && !/\/(?:test|tests)\//.test(file))

@@ -37,7 +37,7 @@
       "path": "../web-foundation/tsconfig.testkit.json"
     },
     {
-      "path": "../package-manager/bundled-plugins/goal-ui"
+      "path": "../package-manager/bundled-plugins/goal-ui/tsconfig.sources.json"
     }
   ]
 }

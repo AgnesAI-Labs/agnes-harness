@@ -74,6 +74,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
     // Check the actual local distribution, including lazy entries and all vendor/shared chunks.
     const assets = (await readdir(output, { recursive: true })).filter((file) => /\.(js|css|map)$/.test(file))
     expect(assets.some((file) => /^terminal-[A-Z0-9]{8}\.js$/.test(file))).toBe(true)
+    expect(assets.filter((file) => file.startsWith('vendor/') && file.endsWith('.css'))).toEqual([])
     const listener = createServer()
     await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
     const address = listener.address()
@@ -120,6 +121,24 @@ it('builds local web assets with the shared platform vendor modules', async () =
       )),
     ]
     const markdownVendor = await readFile(join(output, 'vendor', 'conversation.js'), 'utf8')
+    // Renderers share markdown code with the public presentation entry. Follow actual imports:
+    // an entry may now be a re-export facade rather than containing the library implementation.
+    const markdownFiles = new Set<string>()
+    const markdownPending = [join(output, 'vendor/conversation.js')]
+    const markdownSources: string[] = []
+    while (markdownPending.length) {
+      const file = markdownPending.pop()
+      if (!file || markdownFiles.has(file)) continue
+      markdownFiles.add(file)
+      markdownSources.push(await readFile(file, 'utf8'))
+      for (const dependency of emitted.get(file)?.imports ?? []) {
+        if (dependency.kind === 'dynamic-import') continue
+        const mapped = imports[dependency.path]
+        markdownPending.push(
+          dependency.external && mapped ? join(output, mapped) : resolve(base, dependency.path),
+        )
+      }
+    }
     const markdownLicense = await readFile(
       join(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'),
       'utf8',
@@ -140,7 +159,8 @@ it('builds local web assets with the shared platform vendor modules', async () =
     expect(victoryNotice).toContain('Mike Bostock')
     const reactIsNotice = 'Copyright (c) Meta Platforms, Inc. and affiliates.'
     expect(antdVendorSources.some((source) => source.includes(reactIsNotice))).toBe(true)
-    expect(markdownVendor).toContain('x-markdown')
+    expect(markdownVendor).toContain('ConversationMarkdown')
+    expect(markdownSources.some((source) => source.includes('x-markdown'))).toBe(true)
     expect(markdownVendor).not.toContain('Dynamic require of "react" is not supported')
 
     for (const entry of [

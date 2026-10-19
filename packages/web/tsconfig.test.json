@@ -65,10 +65,10 @@
       "path": "../web-units"
     },
     {
-      "path": "../package-manager/bundled-plugins/conversation-ui"
+      "path": "../package-manager/bundled-plugins/conversation-ui/tsconfig.sources.json"
     },
     {
-      "path": "../package-manager/bundled-plugins/navigation-ui"
+      "path": "../package-manager/bundled-plugins/navigation-ui/tsconfig.sources.json"
     }
   ]
 }

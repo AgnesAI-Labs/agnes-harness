@@ -22,6 +22,17 @@ it('rebuilds deterministic presentations, caches unchanged inputs and ships veri
     for (const record of records) {
       const payload = join(output, 'bundled-plugins', record.name)
       expect(await verifyPresentation(payload)).toEqual(record)
+      const recordFile = join(payload, 'client-build.json')
+      const originalRecord = await readFile(recordFile)
+      for (const changed of [
+        { ...record, name: 'impostor' },
+        { ...record, inputHash: 'invalid' },
+        { ...record, inputs: ['../outside'] },
+      ]) {
+        await writeFile(recordFile, JSON.stringify(changed))
+        await expect(verifyPresentation(payload)).rejects.toThrow('Invalid presentation build record')
+      }
+      await writeFile(recordFile, originalRecord)
       const original = await readFile(join(payload, 'src/client.js'))
       await writeFile(join(payload, 'src/client.js'), '// changed after packaging')
       await expect(verifyPresentation(payload)).rejects.toThrow('Presentation hash mismatch')

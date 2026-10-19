@@ -100,5 +100,5 @@ export function presentationSourceFiles(root: string): string[] {
     listSourceFiles(join(root, 'packages/package-manager/bundled-plugins', name), {
       extensions: [...SOURCE_EXTENSIONS, '.js', '.mjs'],
     }),
-  ).filter((file) => !file.endsWith('/src/client.js'))
+  ).filter((file) => !file.replaceAll('\\', '/').endsWith('/src/client.js'))
 }

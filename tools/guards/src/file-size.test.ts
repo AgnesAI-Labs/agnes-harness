@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { countLines } from './count-lines.js'
-import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
+import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './repo.js'
 
 const MAX_FILE_LINES = 800
 const root = repoRoot()
@@ -15,7 +15,11 @@ const allowlist = JSON.parse(
 ) as Record<string, number>
 
 const measured = new Map<string, number>()
-for (const file of [...listSourceFiles(join(root, 'packages')), ...listSourceFiles(join(root, 'tools'))]) {
+for (const file of [
+  ...listSourceFiles(join(root, 'packages')),
+  ...listSourceFiles(join(root, 'tools')),
+  ...presentationSourceFiles(root),
+]) {
   if (isTestFile(file)) continue
   const lines = countLines(readFileSync(file, 'utf8'))
   if (lines > MAX_FILE_LINES || Object.hasOwn(allowlist, file.slice(root.length + 1).replaceAll('\\', '/')))
