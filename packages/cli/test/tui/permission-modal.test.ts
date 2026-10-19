@@ -14,7 +14,13 @@ const request: PermissionRequest = {
 it('defaults Enter to rejection and only explicit option selection permits approval', async () => {
   const modal = new PermissionModal(vi.fn())
   const first = modal.ask(request, { signal: new AbortController().signal })
-  expect(modal.render(80).join('\n')).toContain('> 2. Reject')
+  expect(modal.render(80).join('\n')).toContain('❯ 2. Reject')
+  // Title and footer sit in the frame's borders, so the frame adds no rows.
+  const framed = modal.render(80)
+  expect(framed).toHaveLength(5)
+  expect(framed[0]).toMatch(/^╭ Approval: write ─+╮$/)
+  expect(framed.at(-1)).toMatch(/^╰ Esc: dismiss · PgUp\/PgDn details 1-1\/1 ─+╯$/)
+  expect(framed.every((line) => displayWidth(line) === 80 && /^[╭│╰].*[╮│╯]$/.test(line))).toBe(true)
   modal.handleInput('\r')
   expect(await first).toEqual({ optionId: 'r' })
   const second = modal.ask(request, { signal: new AbortController().signal })

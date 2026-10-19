@@ -1,7 +1,9 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
 import { parseKey } from './keys.js'
+import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
+import type { ThemedAnsi } from './theme.js'
 
 // Control bytes that must never enter the buffer. A paste can carry them; a newline is kept because
 // a multi-line paste is a legitimate multi-line prompt.
@@ -59,11 +61,8 @@ export type EditorOptions = {
   onSubmit(text: string): void
   onCancelKey?(): void
   complete?(prefix: string): string[]
-  dim?(s: string): string
-  /** Style for the prompt glyph itself; width math keeps using the unstyled prompt. */
-  promptStyle?(s: string): string
-  /** Style for the highlighted slash-menu row (the app passes a background colour). */
-  menuStyle?(s: string): string
+  /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
+  ansi?: ThemedAnsi
   /** Args shape and one-line description for a slash-menu candidate (the app passes the command table). */
   menuInfo?(name: string): { args?: string; description?: string } | undefined
 }
@@ -262,45 +261,56 @@ export class Editor implements Component {
     this.menuStart = 0
   }
 
+  private paint(tone: Tone, s: string): string {
+    return this.o.ansi ? this.o.ansi.fg(tone, s) : s
+  }
+
+  private bold(s: string): string {
+    return this.o.ansi ? this.o.ansi.bold(s) : s
+  }
+
   private renderMenu(candidates: string[], width: number): string[] {
-    const highlight = this.o.menuStyle ?? ((s: string) => s)
-    const dim = this.o.dim ?? ((s: string) => s)
     // A five-row window follows the highlight: scrolling past either edge drags the window along,
-    // and whatever lies outside it is reported as a dim ↑/↓ count instead of taking rows.
+    // and whatever lies outside it is reported as a faint ↑/↓ count instead of taking rows.
     let start = Math.max(0, Math.min(this.menuStart, Math.max(0, candidates.length - MENU_MAX_VISIBLE)))
     if (this.menuIndex < start) start = this.menuIndex
     if (this.menuIndex >= start + MENU_MAX_VISIBLE) start = this.menuIndex - MENU_MAX_VISIBLE + 1
     this.menuStart = start
     const shown = candidates.slice(start, start + MENU_MAX_VISIBLE)
+    const selected = this.menuIndex - start
     const lines = shown.map((c, i) => {
       const args = this.o.menuInfo?.(c)?.args
-      const body = args ? `${c} ${dim(args)}` : c
-      return start + i === this.menuIndex ? highlight(`› ${body}`) : `  ${body}`
+      const body = args ? `${this.bold(c)} ${this.paint('faint', args)}` : this.bold(c)
+      return i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
     })
     const above = start
     const below = candidates.length - (start + shown.length)
     const indicators = [above > 0 ? `↑ ${above} more` : '', below > 0 ? `↓ ${below} more` : ''].filter(
       Boolean,
     )
-    if (indicators.length) lines.push(`  ${dim(indicators.join('  '))}`)
+    if (indicators.length) lines.push(`  ${this.paint('faint', indicators.join('  '))}`)
     const description = this.o.menuInfo?.(candidates[this.menuIndex] as string)?.description
-    if (description) lines.push(dim(description))
+    if (description) lines.push(this.paint('muted', description))
     // A useful box needs two sides and at least one content column. At widths below that, keep the
     // menu readable and honour the component width contract by dropping only the decoration.
     if (width < 3) return lines.map((line) => fitLine(line, width))
 
-    // The menu wears a dim rounded frame hugging its widest row, the way pi draws it: a floating
-    // box above the input line rather than bare rows bleeding into the scrollback. Normal terminals
-    // get one column of breathing room on each side; a three- or four-column terminal keeps the
-    // frame but sheds that padding so no rendered row can overflow the terminal.
+    // The menu wears a rounded frame hugging its widest row: a floating box above the input line
+    // rather than bare rows bleeding into the scrollback. Normal terminals get one column of
+    // breathing room on each side; a three- or four-column terminal keeps the frame but sheds that
+    // padding so no rendered row can overflow the terminal.
     const padding = width >= 5 ? 1 : 0
     const inner = Math.min(Math.max(1, ...lines.map((line) => displayWidth(line))), width - 2 - padding * 2)
     const gap = ' '.repeat(padding)
-    const side = dim('│')
+    const side = this.paint('border', '│')
+    const ansi = this.o.ansi
     return [
-      dim(`╭${'─'.repeat(inner + padding * 2)}╮`),
-      ...lines.map((line) => `${side}${gap}${fitLine(line, inner)}${gap}${side}`),
-      dim(`╰${'─'.repeat(inner + padding * 2)}╯`),
+      this.paint('border', `╭${'─'.repeat(inner + padding * 2)}╮`),
+      ...lines.map((line, i) => {
+        const row = `${gap}${fitLine(line, inner)}${gap}`
+        return `${side}${i === selected && ansi ? ansi.bg('selection', row) : row}${side}`
+      }),
+      this.paint('border', `╰${'─'.repeat(inner + padding * 2)}╯`),
     ]
   }
 
@@ -308,12 +318,12 @@ export class Editor implements Component {
     if (!Number.isFinite(width)) throw new Error('invalid editor width')
     width = Math.max(1, Math.trunc(width))
     const prompt = width > 2 ? PROMPT : width === 2 ? '❯' : ''
-    const shown = prompt && this.o.promptStyle ? this.o.promptStyle(prompt) : prompt
+    const shown = prompt && this.bold(this.paint('accent', prompt))
     const continuation = width > 2 ? CONTINUATION : ' '.repeat(prompt.length)
     const inner = Math.max(1, width - prompt.length)
     if (!this.text) {
       const ph = wrapLine(this.o.placeholder ?? '', inner)[0] ?? ''
-      return [`${shown}${CURSOR_MARKER}${this.o.dim ? this.o.dim(ph) : ph}`]
+      return [`${shown}${CURSOR_MARKER}${this.paint('faint', ph)}`]
     }
     const marked = this.text.slice(0, this.cursor) + CURSOR_MARKER + this.text.slice(this.cursor)
     const out: string[] = []

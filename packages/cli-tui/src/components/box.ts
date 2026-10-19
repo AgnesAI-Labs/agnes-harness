@@ -1,6 +1,6 @@
-import type { Ansi } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
 import { displayWidth } from '../terminal.js'
+import type { ThemedAnsi } from '../theme.js'
 import { columns, fitLine } from './line.js'
 
 export class Box implements Component {
@@ -10,8 +10,9 @@ export class Box implements Component {
     private readonly o: {
       title?: string
       collapsed?: boolean
-      ansi?: Ansi
-      /** Rounded corners (╭╮╰╯) instead of the default square set. */
+      /** Frame in the border tone and a bold title, unless `border`/`titleStyle` override them. */
+      ansi?: ThemedAnsi
+      /** Rounded corners (╭╮╰╯) by default; false draws the square set. */
       rounded?: boolean
       /** Style for the frame characters only (borders and the collapsed ▸), never the child body. */
       border?(s: string): string
@@ -32,13 +33,22 @@ export class Box implements Component {
   }
   render(width: number): string[] {
     width = columns(width)
-    const border = this.o.border ?? ((s: string) => s)
+    const ansi = this.o.ansi
+    const border = this.o.border ?? ((s: string) => (ansi ? ansi.fg('border', s) : s))
+    const titleStyle = this.o.titleStyle ?? ((s: string) => (ansi ? ansi.bold(s) : s))
     const title = this.o.title ? ` ${escapeControl(this.o.title)} ` : ''
-    const styledTitle = this.o.titleStyle ? this.o.titleStyle(title) : title
+    const styledTitle = title ? titleStyle(title) : ''
     if (this.collapsed || width < 5) return [fitLine(`${border('▸')}${styledTitle}`, width)]
-    const heading = displayWidth(styledTitle) <= width - 2 ? styledTitle : fitLine(styledTitle, width - 2)
-    const [tl, tr, bl, br] = this.o.rounded ? ['╭', '╮', '╰', '╯'] : ['┌', '┐', '└', '┘']
-    const top = border(tl) + heading + border(`${'─'.repeat(width - 2 - displayWidth(heading))}${tr}`)
+    // `╭─ Title ─╮`: the lead rule is dropped first when a long title needs the column.
+    const lead = title && displayWidth(title) <= width - 4 ? 1 : 0
+    const room = width - 2 - lead
+    const heading = displayWidth(styledTitle) <= room ? styledTitle : fitLine(styledTitle, room)
+    const [tl, tr, bl, br] = this.o.rounded === false ? ['┌', '┐', '└', '┘'] : ['╭', '╮', '╰', '╯']
+    const top =
+      border(tl) +
+      (lead ? border('─') : '') +
+      heading +
+      border(`${'─'.repeat(room - displayWidth(heading))}${tr}`)
     return [
       top,
       ...this.child

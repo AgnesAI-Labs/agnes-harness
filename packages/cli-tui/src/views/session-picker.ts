@@ -1,9 +1,9 @@
-import type { Ansi } from '../ansi.js'
 import type { SessionChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
+import type { ThemedAnsi } from '../theme.js'
 
 function label(choice: SessionChoice, locale: string): string {
   const parsed = Date.parse(choice.createdAt)
@@ -21,7 +21,7 @@ export class SessionPicker implements Component {
 
   constructor(
     private readonly o: {
-      ansi: Ansi
+      ansi: ThemedAnsi
       locale?: string
       maxRows(): number
       onChoose(choice: SessionChoice): void
@@ -40,6 +40,7 @@ export class SessionPicker implements Component {
         id: choice.sessionId,
         label: label(choice, this.o.locale ?? 'en'),
       })),
+      ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         const choice = byId.get(id)
@@ -51,9 +52,7 @@ export class SessionPicker implements Component {
     })
     this.box = new Box(select, {
       title: tt('picker.sessionTitle', this.o.locale ?? 'en'),
-      rounded: true,
-      border: this.o.ansi.dim,
-      titleStyle: (text) => this.o.ansi.bold(text),
+      ansi: this.o.ansi,
     })
     this.o.changed()
   }

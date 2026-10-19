@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
-import { createAnsi, hexColour } from './ansi.js'
+import { createAnsi } from './ansi.js'
 import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
@@ -23,7 +23,7 @@ import type { ResourceCommandKind, TuiResourceController } from './resource-cont
 import { type ActionItem, collectSlots } from './slots.js'
 import { pendingSurface } from './surface-prompt.js'
 import type { Terminal } from './terminal.js'
-import { TuiTheme, type TuiThemeName } from './theme.js'
+import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme } from './theme-preference.js'
 import { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
@@ -71,7 +71,7 @@ export class TuiApp {
   // Rows rendered under the permission modal, measured before the modal itself renders each frame.
   private belowModal = 0
   private readonly live = new Text('')
-  private readonly loader = new Loader('')
+  private readonly loader: Loader
   private turnActive = false
   private turnStartedAt: number | undefined
   private currentTurn = 0
@@ -92,7 +92,7 @@ export class TuiApp {
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
-  private readonly localCommandView: (command: string, output: string) => Component
+  private readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
   // live line shows what the previews of every inference still streaming have said.
   private readonly previews = new PreviewMerger()
@@ -146,12 +146,20 @@ export class TuiApp {
     const ansi = this.theme.ansi(createAnsi(o.term.caps.color))
     const branding = o.branding ?? DEFAULT_BRANDING
     const locale = o.locale ?? 'en'
-    this.hints = new Hints()
-    this.localCommandView = (command, output) =>
-      new VStack([
-        new Text(`${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`),
-        new Text(escapeControl(output)),
+    this.hints = new Hints(ansi)
+    this.loader = new Loader('', ansi)
+    this.localCommandView = (command, output, quiet = true) => {
+      const echo = new Text(
+        `${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`,
+      )
+      const text = escapeControl(output)
+      const styled = new VStack([
+        echo,
+        quiet ? new Text(text, { style: (s) => ansi.dim(s) }) : new Text(text),
       ])
+      const plain = new VStack([echo, new Text(text)])
+      return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
+    }
     this.header = new Header(ansi, branding)
     // Placeholder until the first `apply()` tick lands (moments later, inside `start()`, before
     // any render happens): real profile/preset/sessionId are already known now, generation is not.
@@ -168,6 +176,7 @@ export class TuiApp {
       ...(o.model ? { model: o.model } : {}),
       branding,
       ansi,
+      theme: this.theme,
       locale,
     })
     this.timeline = new Timeline({
@@ -223,7 +232,7 @@ export class TuiApp {
             text.startsWith('you: ') ? text.slice('you: '.length) : text,
             ansi,
             this.theme,
-            hexColour(branding.accent) ?? 'accent',
+            brandColour(branding.accent),
           )
         }
         const text = nodeText(node)
@@ -236,6 +245,7 @@ export class TuiApp {
       },
       {
         locale,
+        ansi,
         // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
         // leave: an option it counts as visible has to be on screen.
         maxRows: () => {
@@ -247,9 +257,7 @@ export class TuiApp {
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
-      dim: (s) => ansi.dim(s),
-      promptStyle: (s) => ansi.bold(ansi.fg('accent', s)),
-      menuStyle: (s) => this.theme.menu(ansi, s),
+      ansi,
       onSubmit: (text) => {
         void this.runInput(text)
       },
@@ -636,6 +644,7 @@ export class TuiApp {
             record.surface.title,
             surfaceText(record.surface) +
               `\n[Open in Web](/?session=${encodeURIComponent(session.id)}&surface=${encodeURIComponent(record.surface.id)})`,
+            false,
           ),
         )
       }

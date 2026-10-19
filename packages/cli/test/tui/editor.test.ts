@@ -5,6 +5,7 @@ import { Editor } from '../../src/tui/editor.js'
 import { parseKey } from '../../src/tui/keys.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { emulate } from './harness.js'
 
 const type = (e: Editor, s: string): void => {
@@ -169,14 +170,14 @@ describe('Editor slash menu', () => {
   it('shows every command that matches the prefix, highlighting the first', async () => {
     const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
     type(e, '/re')
-    expect(await menuLines(e)).toEqual(['› /resume', '  /rewind', '  /refine'])
+    expect(await menuLines(e)).toEqual(['❯ /resume', '  /rewind', '  /refine'])
   })
 
   it('narrows as more characters are typed and closes once only an exact match remains', async () => {
     const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
     type(e, '/re')
     type(e, 'w')
-    expect(await menuLines(e)).toEqual(['› /rewind'])
+    expect(await menuLines(e)).toEqual(['❯ /rewind'])
     type(e, 'ind')
     // '/rewind' now matches its own full name exactly - nothing left to choose, so the menu closes.
     expect(await menuLines(e)).toEqual([])
@@ -278,7 +279,7 @@ describe('Editor slash menu rendering (pi style)', () => {
   it('shows at most five candidates and a dim count of what is hidden below', () => {
     const e = menuEditor()
     type(e, '/')
-    expect(unbox(menuRows(e))).toEqual(['› /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
+    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
   })
 
   it('frames the menu in a rounded border that hugs the widest row', () => {
@@ -288,7 +289,7 @@ describe('Editor slash menu rendering (pi style)', () => {
     // The widest content row is '  ↓ 2 more' at ten columns, so the frame spans fourteen.
     expect(rows[0]).toBe('╭────────────╮')
     expect(rows.at(-1)).toBe('╰────────────╯')
-    expect(rows[1]).toBe('│ › /a       │')
+    expect(rows[1]).toBe('│ ❯ /a       │')
     expect(rows[6]).toBe('│   ↓ 2 more │')
     expect(rows[7]).toBe('│ 命令 A     │')
     for (const row of rows) expect(displayWidth(row)).toBe(14)
@@ -303,7 +304,7 @@ describe('Editor slash menu rendering (pi style)', () => {
       '  /c',
       '  /d',
       '  /e',
-      '› /f [id]',
+      '❯ /f [id]',
       '  ↑ 1 more  ↓ 1 more',
       '命令 F',
     ])
@@ -313,19 +314,19 @@ describe('Editor slash menu rendering (pi style)', () => {
       '  /d',
       '  /e',
       '  /f [id]',
-      '› /g <seq>',
+      '❯ /g <seq>',
       '  ↑ 2 more',
       '命令 G',
     ])
     e.handleInput('\x1b[B') // wraps to the first candidate; the window follows back to the top
-    expect(unbox(menuRows(e))).toEqual(['› /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
+    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
     e.handleInput('\x1b[A') // up from the first wraps to the last and scrolls to the bottom
     expect(unbox(menuRows(e))).toEqual([
       '  /c',
       '  /d',
       '  /e',
       '  /f [id]',
-      '› /g <seq>',
+      '❯ /g <seq>',
       '  ↑ 2 more',
       '命令 G',
     ])
@@ -344,43 +345,43 @@ describe('Editor slash menu rendering (pi style)', () => {
   it('shows no description line when the completer has no info for the candidates', () => {
     const e = new Editor({ onSubmit: () => {}, complete: (p) => SEVEN.filter((c) => c.startsWith(p)) })
     type(e, '/')
-    expect(unbox(menuRows(e))).toEqual(['› /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
+    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
   })
 
-  it('styles the highlighted row with menuStyle, args shape and indicators with dim', () => {
-    const ansi = createAnsi('256')
+  it('styles the menu through theme tones: framed, highlighted row on the selection background', () => {
+    const ansi = new TuiTheme('light').ansi(createAnsi('256'))
+    const tone = ansi.fg
     const e = new Editor({
       onSubmit: () => {},
       complete: (p) => SEVEN.filter((c) => c.startsWith(p)),
       menuInfo: (n) => INFO[n],
-      dim: (s) => ansi.dim(s),
-      menuStyle: (s) => ansi.bg(240, s),
+      ansi,
     })
     type(e, '/')
     const rows = menuRows(e)
-    const side = '\x1b[2m│\x1b[22m'
-    // The frame itself is dimmed; the highlight and description keep their own styling inside it.
-    expect(rows[0]).toBe('\x1b[2m╭────────────╮\x1b[22m')
-    expect(rows[1]).toBe(`${side} \x1b[48;5;240m› /a\x1b[49m       ${side}`)
-    expect(rows[6]).toBe(`${side}   \x1b[2m↓ 2 more\x1b[22m ${side}`)
-    expect(rows[7]).toBe(`${side} \x1b[2m命令 A\x1b[22m     ${side}`)
-    // The args shape rides inside the highlighted row, dimmed within the highlight.
+    const side = tone('border', '│')
+    const pointer = ansi.bold(tone('accent', '❯'))
+    // The frame takes the border tone; the highlight and description keep their own styling inside it.
+    expect(rows[0]).toBe(tone('border', '╭────────────╮'))
+    expect(rows[1]).toBe(`${side}${ansi.bg('selection', ` ${pointer} ${ansi.bold('/a')}       `)}${side}`)
+    expect(rows[2]).toBe(`${side}   ${ansi.bold('/b')}       ${side}`)
+    expect(rows[6]).toBe(`${side}   ${tone('faint', '↓ 2 more')} ${side}`)
+    expect(rows[7]).toBe(`${side} ${tone('muted', '命令 A')}     ${side}`)
+    // The args shape rides inside the highlighted row, faint within the highlight.
     for (let i = 0; i < 5; i++) e.handleInput('\x1b[B')
     const highlighted = menuRows(e)[5] as string
-    expect(highlighted).toContain('\x1b[48;5;240m› /f \x1b[2m[id]\x1b[22m\x1b[49m')
+    const body = `${pointer} ${ansi.bold('/f')} ${tone('faint', '[id]')}`
+    expect(highlighted).toBe(`${side}${ansi.bg('selection', ` ${body}${' '.repeat(12)}`)}${side}`)
     // Styling never costs columns: the box measures by its text alone (widest row 20, plus frame).
     expect(displayWidth(highlighted)).toBe(24)
   })
 
   it('emits zero escape sequences on the none colour tier, menu included', () => {
-    const ansi = createAnsi('none')
     const e = new Editor({
       onSubmit: () => {},
       complete: (p) => SEVEN.filter((c) => c.startsWith(p)),
       menuInfo: (n) => INFO[n],
-      dim: (s) => ansi.dim(s),
-      promptStyle: (s) => ansi.bold(s),
-      menuStyle: (s) => ansi.bg(240, s),
+      ansi: new TuiTheme('light').ansi(createAnsi('none')),
     })
     type(e, '/')
     // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting zero escapes is the point
@@ -540,23 +541,13 @@ describe('Editor on screen', () => {
     expect(e.render(10)[0]).toContain(`a${CURSOR_MARKER}`)
   })
 
-  it('styles the prompt glyph through promptStyle and the highlighted menu row through menuStyle', () => {
-    const ansi = createAnsi('256')
-    const e = new Editor({
-      onSubmit: () => {},
-      complete: (p) => ['/resume', '/rewind'].filter((c) => c.startsWith(p)),
-      promptStyle: (s) => ansi.bold(ansi.fg(141, s)),
-      menuStyle: (s) => ansi.bg(240, s),
-    })
-    expect(e.render(20)[0]).toBe(`\x1b[1m\x1b[38;5;141m❯ \x1b[39m\x1b[22m${CURSOR_MARKER}`)
-    type(e, '/re')
-    const lines = e.render(20)
-    expect(lines[0]).toBe('╭───────────╮')
-    expect(lines[1]).toBe('│ \x1b[48;5;240m› /resume\x1b[49m │')
-    expect(lines[2]).toBe('│   /rewind │')
-    expect(lines[3]).toBe('╰───────────╯')
-    // Styling never costs columns: the highlighted row still measures by its text plus the frame.
-    expect(displayWidth(lines[1] as string)).toBe(13)
+  it('styles the prompt glyph bold accent and the placeholder faint', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const e = new Editor({ onSubmit: () => {}, placeholder: 'ask…', ansi })
+    const prompt = ansi.bold(ansi.fg('accent', '❯ '))
+    expect(e.render(20)[0]).toBe(`${prompt}${CURSOR_MARKER}${ansi.fg('faint', 'ask…')}`)
+    type(e, 'hi')
+    expect(e.render(20)[0]).toBe(`${prompt}hi${CURSOR_MARKER}`)
   })
 
   it('keeps the slash menu inside very narrow terminals', () => {

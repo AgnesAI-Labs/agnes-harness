@@ -1,14 +1,13 @@
-import type { Ansi } from '../ansi.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
-import type { TuiThemeName } from '../theme.js'
+import type { ThemedAnsi, TuiThemeName } from '../theme.js'
 
 export class ThemePicker implements Component {
   private box: Box | undefined
   constructor(
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly locale: string,
     private readonly choose: (name: TuiThemeName) => void,
   ) {}
@@ -21,6 +20,7 @@ export class ThemePicker implements Component {
         id,
         label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}`,
       })),
+      ansi: this.ansi,
       onChoose: (id) => {
         this.close()
         this.choose(id as TuiThemeName)
@@ -30,8 +30,7 @@ export class ThemePicker implements Component {
     for (let i = 0; i < names.indexOf(current); i++) select.handleInput('\x1b[B')
     this.box = new Box(select, {
       title: tt('theme.pickerTitle', locale),
-      rounded: true,
-      border: this.ansi.dim,
+      ansi: this.ansi,
     })
   }
   close(): void {

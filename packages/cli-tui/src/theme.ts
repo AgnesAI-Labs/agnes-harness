@@ -1,6 +1,17 @@
-import { type Ansi, type Colour, CURSOR_MARKER } from './ansi.js'
-import { PALETTE, type Tone } from './palette.js'
+import { DEFAULT_BRANDING } from '@agnes/sdk'
+import { type Ansi, type Colour, CURSOR_MARKER, hexColour } from './ansi.js'
+import { BRAND_RAMP, PALETTE, type Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
+
+const QUIET: ReadonlySet<Tone | Colour> = new Set<Tone>(['muted', 'faint', 'border', 'thinking'])
+
+/** The stock accent follows the theme's own accent; only a deliberate white-label hex is kept as given. */
+export function brandColour(accent: string): Tone | Colour {
+  return accent === DEFAULT_BRANDING.accent ? 'accent' : (hexColour(accent) ?? 'accent')
+}
+
+/** False in mono and on the none tier, where state has to be carried by glyph and weight instead. */
+export const paintsColour = (ansi: ThemedAnsi): boolean => ansi.fg('accent', 'x') !== 'x'
 
 export type TuiThemeName = 'light' | 'dark' | 'mono'
 
@@ -35,6 +46,11 @@ export class TuiTheme {
     return this.current === 'mono' ? undefined : PALETTE[this.current][tone]
   }
 
+  /** The brand gradient, darkest first; mono has none. */
+  ramp(): readonly Colour[] {
+    return this.current === 'mono' ? [] : BRAND_RAMP[this.current]
+  }
+
   frame(base: Ansi, rows: string[], width: number, height: number): string[] {
     const bgColour = this.colour('bg')
     const fgColour = this.colour('fg')
@@ -56,7 +72,8 @@ export class TuiTheme {
     const resolve = (c: Tone | Colour): Colour | undefined =>
       typeof c === 'number' || c.startsWith('#') ? (c as Colour) : this.colour(c as Tone)
     const paint = (layer: 'fg' | 'bg', c: Tone | Colour, text: string): string => {
-      if (this.current === 'mono') return text
+      // Mono has no hues, but quiet text still has to read as quieter than the content around it.
+      if (this.current === 'mono') return text && layer === 'fg' && QUIET.has(c) ? base.dim(text) : text
       const colour = resolve(c)
       return colour === undefined ? text : base[layer](colour, text)
     }
@@ -77,10 +94,5 @@ export class TuiTheme {
   surface(ansi: ThemedAnsi, text: string): string {
     if (this.current === 'mono') return text
     return ansi.bg('surface', ansi.fg('surfaceFg', text))
-  }
-
-  menu(ansi: ThemedAnsi, text: string): string {
-    if (this.current === 'mono') return ansi.bold(text)
-    return ansi.bg('selection', ansi.fg('fg', text))
   }
 }

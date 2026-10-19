@@ -149,9 +149,10 @@ describe('ansi tokens', () => {
     expect(createAnsi('256').fg('#5E57FE', 'x')).toBe('\x1b[38;5;63mx\x1b[39m')
     expect(createAnsi('16').fg('#5E57FE', 'x')).toBe('\x1b[94mx\x1b[39m')
     expect(createAnsi('none').fg('#5E57FE', 'x')).toBe('x')
-    // Mid gray sits exactly on ramp step 244; the nearest cube colour (102) is 147 away.
+    // Mid gray sits exactly on ramp step 244; the nearest cube colour (102) is 147 away. Among the
+    // 16 basic colours it is one step from bright black (127) and far from white (229).
     expect(createAnsi('256').bg('#808080', 'x')).toBe('\x1b[48;5;244mx\x1b[49m')
-    expect(createAnsi('16').bg('#808080', 'x')).toBe('\x1b[47mx\x1b[49m')
+    expect(createAnsi('16').bg('#808080', 'x')).toBe('\x1b[100mx\x1b[49m')
   })
 
   it('italic and underline close with their own reset and vanish without colour', () => {

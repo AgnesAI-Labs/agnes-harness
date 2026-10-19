@@ -1,14 +1,23 @@
 import { Lexer, type Token, type Tokens } from 'marked'
-import type { Ansi } from './ansi.js'
+import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
+import type { ThemedAnsi } from './theme.js'
 
-type Span = { text: string; bold: boolean }
+/** How a run of text is drawn. Spans that share one object are painted as one SGR run. */
+type Style = Readonly<{ bold?: true; italic?: true; code?: true; link?: true; tone?: Tone }>
+type Span = { text: string; style: Style }
+const PLAIN: Style = {}
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // VT sequences are removed first, including their parameters; these are remaining control bytes.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: remove untrusted terminal controls
 const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g
-const span = (text: string, bold = false): Span => ({ text, bold })
+const span = (text: string, style: Style = PLAIN): Span => ({ text, style })
 const plain = (spans: Span[]) => spans.map((part) => part.text).join('')
+const pad = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - displayWidth(text)))
+const HEADING: Record<number, Style> = { 1: { bold: true, tone: 'accent' }, 2: { bold: true } }
+// Inline-code padding and the code-block text colour only make sense where a background paints;
+// mono and colourless tiers keep the code text unpadded and fall back to dim.
+const shades = (ansi: ThemedAnsi) => ansi.bg('codeBg', ' ') !== ' '
 
 /** Consume terminal commands without allowing an OSC terminator to swallow preceding CSI text. */
 function stripVT(text: string): string {
@@ -43,28 +52,51 @@ function stripVT(text: string): string {
   return out
 }
 
-function inline(tokens: Token[], bold = false): Span[] {
+function inline(tokens: Token[], ansi: ThemedAnsi, style: Style = PLAIN): Span[] {
   return tokens.flatMap((token): Span[] => {
-    if (token.type === 'strong' || token.type === 'em') return inline((token as Tokens.Strong).tokens, true)
-    if (token.type === 'link' || token.type === 'del') return inline((token as Tokens.Link).tokens, bold)
-    if (token.type === 'br') return [span('\n', bold)]
-    if (token.type === 'text' && token.tokens) return inline(token.tokens, bold)
-    return 'text' in token ? [span(String(token.text), bold)] : []
+    if (token.type === 'strong')
+      return inline((token as Tokens.Strong).tokens, ansi, { ...style, bold: true })
+    if (token.type === 'em') return inline((token as Tokens.Em).tokens, ansi, { ...style, italic: true })
+    if (token.type === 'codespan') {
+      const text = (token as Tokens.Codespan).text
+      // No-break padding stays attached to the code when a line wraps.
+      return [span(shades(ansi) ? ` ${text} ` : text, { ...style, code: true })]
+    }
+    if (token.type === 'link') {
+      const link = token as Tokens.Link
+      const label = inline(link.tokens, ansi, { ...style, link: true })
+      return link.href === plain(label)
+        ? label
+        : [...label, span(` (${link.href})`, { ...style, tone: 'faint' })]
+    }
+    if (token.type === 'del') return inline((token as Tokens.Del).tokens, ansi, style)
+    if (token.type === 'br') return [span('\n', style)]
+    if (token.type === 'text' && token.tokens) return inline(token.tokens, ansi, style)
+    return 'text' in token ? [span(String(token.text), style)] : []
   })
 }
 
-function paint(units: Span[], ansi: Ansi): string {
+function draw(text: string, style: Style, ansi: ThemedAnsi): string {
+  let out = text
+  if (style.code) out = ansi.bg('codeBg', ansi.fg('code', out))
+  else if (style.link) out = ansi.underline(ansi.fg('link', out))
+  else if (style.tone) out = ansi.fg(style.tone, out)
+  if (style.italic) out = ansi.italic(out)
+  return style.bold ? ansi.bold(out) : out
+}
+
+function paint(units: Span[], ansi: ThemedAnsi): string {
   const out: string[] = []
   let text = ''
-  let bold = false
+  let style = PLAIN
   const flush = () => {
-    if (text) out.push(bold ? ansi.bold(text) : text)
+    if (text) out.push(draw(text, style, ansi))
     text = ''
   }
   for (const unit of units) {
-    if (unit.bold !== bold) {
+    if (unit.style !== style) {
       flush()
-      bold = unit.bold
+      style = unit.style
     }
     text += unit.text
   }
@@ -73,7 +105,7 @@ function paint(units: Span[], ansi: Ansi): string {
 }
 
 /** Wrap before styling so every line has balanced SGR and words can span emphasis boundaries. */
-function wrap(spans: Span[], width: number, ansi: Ansi): string[] {
+function wrap(spans: Span[], width: number, ansi: ThemedAnsi): string[] {
   const out: string[] = []
   let line: Span[] = []
   let gap: Span[] = []
@@ -88,7 +120,7 @@ function wrap(spans: Span[], width: number, ansi: Ansi): string[] {
     if (line.length) line.push(...gap)
     gap = []
     for (const unit of word) {
-      const part = displayWidth(unit.text) > width ? span('…', unit.bold) : unit
+      const part = displayWidth(unit.text) > width ? span('…', unit.style) : unit
       if (line.length && displayWidth(plain([...line, part])) > width) emit()
       line.push(part)
     }
@@ -102,8 +134,8 @@ function wrap(spans: Span[], width: number, ansi: Ansi): string[] {
         gap = []
       } else if (segment === ' ') {
         flush()
-        gap.push(span(segment, part.bold))
-      } else word.push(span(segment, part.bold))
+        gap.push(span(segment, part.style))
+      } else word.push(span(segment, part.style))
     }
   flush()
   if (line.length || out.length === 0) emit()
@@ -120,8 +152,11 @@ function clip(text: string, width: number): string {
   return `${out}…`
 }
 
-function table(token: Tokens.Table, width: number, ansi: Ansi): string[] {
-  const cells = [token.header, ...token.rows].map((row) => row.map((cell) => inline(cell.tokens)))
+function table(token: Tokens.Table, width: number, ansi: ThemedAnsi, base: Style): string[] {
+  const header = { ...base, bold: true } as const
+  const cells = [token.header, ...token.rows].map((row, y) =>
+    row.map((cell) => inline(cell.tokens, ansi, y === 0 ? header : base)),
+  )
   const count = token.header.length
   if (!count) return []
   const desired = Array<number>(count).fill(1)
@@ -136,7 +171,9 @@ function table(token: Tokens.Table, width: number, ansi: Ansi): string[] {
     return cells
       .slice(1)
       .flatMap((row) =>
-        row.flatMap((cell, i) => wrap([span(`${plain(cells[0]?.[i] ?? [])}: `), ...cell], width, ansi)),
+        row.flatMap((cell, i) =>
+          wrap([span(`${plain(cells[0]?.[i] ?? [])}: `, header), ...cell], width, ansi),
+        ),
       )
   }
   const widths = Array<number>(count).fill(1)
@@ -151,74 +188,94 @@ function table(token: Tokens.Table, width: number, ansi: Ansi): string[] {
       }
     if (!changed) break
   }
-  return cells.flatMap((row) => {
+  const bar = ansi.fg('border', '│')
+  const rule = ansi.fg('border', `├${widths.map((size) => '─'.repeat(size + 2)).join('┼')}┤`)
+  return cells.flatMap((row, y) => {
     const wrapped = row.map((cell, i) => wrap(cell, widths[i] ?? 1, ansi))
     const height = wrapped.reduce((max, lines) => Math.max(max, lines.length), 1)
-    return Array.from(
+    const lines = Array.from(
       { length: height },
-      (_, y) =>
-        `│ ${widths
-          .map((size, x) => {
-            const text = wrapped[x]?.[y] ?? ''
-            return text + ' '.repeat(Math.max(0, size - displayWidth(text)))
-          })
-          .join(' │ ')} │`,
+      (_, line) =>
+        `${bar} ${widths.map((size, x) => pad(wrapped[x]?.[line] ?? '', size)).join(` ${bar} `)} ${bar}`,
     )
+    return y === 0 ? [...lines, rule] : lines
   })
 }
 
-function blocks(tokens: Token[], width: number, ansi: Ansi): string[] {
+function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
+  const lang = token.lang?.trim().split(/\s/)[0] ?? ''
+  const label = lang && width - displayWidth(lang) >= 10 ? ` ${lang} ` : ''
+  const shaded = shades(ansi)
+  return token.text.split('\n').map((line, i) => {
+    const tag = i === 0 ? label : ' '.repeat(displayWidth(label))
+    const clipped = clip(`  ${line}`, width - displayWidth(tag))
+    const body = shaded || label ? pad(clipped, width - displayWidth(tag)) : clipped
+    const text = shaded ? ansi.fg('surfaceFg', body) : ansi.dim(body)
+    return ansi.bg('surface', text + ansi.fg('faint', tag))
+  })
+}
+
+function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = PLAIN): string[] {
   const out: string[] = []
   for (const token of tokens) {
     switch (token.type) {
       case 'space':
         if (out.length && out.at(-1) !== '') out.push('')
         break
-      case 'heading':
-        out.push(...wrap(inline((token as Tokens.Heading).tokens, true), width, ansi))
+      case 'heading': {
+        const heading = token as Tokens.Heading
+        const style = { ...base, ...(HEADING[heading.depth] ?? { bold: true, tone: 'muted' }) }
+        out.push(...wrap(inline(heading.tokens, ansi, style), width, ansi))
         break
+      }
       case 'paragraph':
       case 'text': {
         const text = token as Tokens.Text
-        out.push(...wrap(inline(text.tokens ?? Lexer.lexInline(text.text)), width, ansi))
+        out.push(...wrap(inline(text.tokens ?? Lexer.lexInline(text.text), ansi, base), width, ansi))
         break
       }
       case 'code':
-        out.push(...(token as Tokens.Code).text.split('\n').map((line) => ansi.dim(clip(`  ${line}`, width))))
+        out.push(...code(token as Tokens.Code, width, ansi))
         break
       case 'list': {
         const list = token as Tokens.List
         list.items.forEach((item, index) => {
           const start = typeof list.start === 'number' ? list.start : 1
-          const bullet = list.ordered ? `${start + index}. ` : '• '
-          const prefix = width > displayWidth(bullet) ? bullet : ''
-          const content = blocks(item.tokens, Math.max(1, width - displayWidth(prefix)), ansi)
-          out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(displayWidth(prefix))) + line))
+          const bullet = list.ordered ? `${start + index}.` : '•'
+          const fits = width > displayWidth(bullet) + 1
+          const indent = fits ? displayWidth(bullet) + 1 : 0
+          const prefix = fits ? `${ansi.fg(list.ordered ? 'muted' : 'accentSoft', bullet)} ` : ''
+          const content = blocks(item.tokens, Math.max(1, width - indent), ansi, base)
+          out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(indent)) + line))
         })
         break
       }
       case 'table':
-        out.push(...table(token as Tokens.Table, width, ansi))
+        out.push(...table(token as Tokens.Table, width, ansi, base))
         break
       case 'blockquote': {
-        const prefix = width > 2 ? '> ' : ''
+        const prefix = width > 2 ? `${ansi.fg('accentSoft', '▎')} ` : ''
+        const quote = { ...base, italic: true, tone: 'muted' } as const
         out.push(
-          ...blocks((token as Tokens.Blockquote).tokens, Math.max(1, width - prefix.length), ansi).map(
-            (line) => prefix + line,
-          ),
+          ...blocks(
+            (token as Tokens.Blockquote).tokens,
+            Math.max(1, width - (prefix ? 2 : 0)),
+            ansi,
+            quote,
+          ).map((line) => prefix + line),
         )
         break
       }
       case 'html':
-        out.push(...wrap(inline(Lexer.lexInline((token as Tokens.HTML).text)), width, ansi))
+        out.push(...wrap(inline(Lexer.lexInline((token as Tokens.HTML).text), ansi, base), width, ansi))
         break
       case 'hr':
-        out.push('─'.repeat(width))
+        out.push(ansi.fg('border', '─'.repeat(width)))
         break
       case 'def':
         break
       default:
-        if ('text' in token) out.push(...wrap([span(String(token.text))], width, ansi))
+        if ('text' in token) out.push(...wrap([span(String(token.text), base)], width, ansi))
     }
   }
   while (out.at(-1) === '') out.pop()
@@ -226,7 +283,7 @@ function blocks(tokens: Token[], width: number, ansi: Ansi): string[] {
 }
 
 /** Terminal-only Markdown: HTML is literal text; links/images never trigger I/O. */
-export function renderMarkdown(md: string, width: number, ansi: Ansi): string[] {
+export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
   return blocks(Lexer.lex(clean, { gfm: true }), Math.max(1, Math.trunc(width)), ansi)

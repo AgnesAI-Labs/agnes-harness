@@ -2,7 +2,7 @@ import type { UINode } from '@agnes/protocol'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
-import type { ThemedAnsi } from '../theme.js'
+import { paintsColour, type ThemedAnsi } from '../theme.js'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -85,29 +85,49 @@ export class ApprovalCard implements Component {
     return true
   }
 
+  /** Inset one column so the card lines up with the tool cards and user messages around it. */
   render(width: number): string[] {
+    return this.lines(Math.max(1, width - 1)).map((line) => ` ${line}`)
+  }
+
+  private lines(width: number): string[] {
     const n = this.n
     const ansi = this.o.ansi
     const summary = escapeControl(n.summary)
-    // Verdict glyph coloured by outcome: green once decided, red on failure/expiry, yellow while
-    // a durable request still waits on a keypress.
-    if (this.phase === 'decided')
-      return [fitLine(`${ansi.fg('success', '✓')} ${summary} -> ${escapeControl(this.note)}`, width)]
-    if (this.phase === 'failed')
-      return [fitLine(`${ansi.fg('danger', '✗')} ${summary} -> ${escapeControl(this.note)}`, width)]
-    if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '⚠')} ${summary}`, width)]
-    const locale = this.o.locale ?? 'en'
-    const keys = n.options.map((kind, i) => `[${i + 1}] ${t(OPTION_LABEL[kind], locale)}`).join('  ')
-    return [
-      fitLine(ansi.bold(`${ansi.fg('warning', '⚠')} ${t('approval.waiting', locale)}: ${summary}`), width),
+    const resolved = (tone: 'success' | 'danger', glyph: string) => [
       fitLine(
-        `decision ${escapeControl(n.decisionRef.id).slice(0, 8)}… · expires ${escapeControl(n.expiresAt ?? 'unknown')}`,
+        `${ansi.fg(tone, glyph)} ${summary} ${ansi.fg('faint', '->')} ${ansi.fg(tone, escapeControl(this.note))}`,
+        width,
+      ),
+    ]
+    if (this.phase === 'decided') return resolved('success', '✓')
+    if (this.phase === 'failed') return resolved('danger', '✗')
+    if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '▲')} ${summary}`, width)]
+    const locale = this.o.locale ?? 'en'
+    // A key chip needs a background to read as one; without colour the brackets carry it.
+    const chip = paintsColour(ansi)
+      ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
+      : (key: string) => ansi.bold(`[${key}]`)
+    const keys = n.options
+      .map((kind, i) => `${chip(String(i + 1))} ${t(OPTION_LABEL[kind], locale)}`)
+      .join('  ')
+    const rail = ansi.fg('warning', '│ ')
+    return [
+      fitLine(
+        `${ansi.bold(ansi.fg('warning', `▲ ${t('approval.waiting', locale)}:`))} ${ansi.bold(summary)}`,
+        width,
+      ),
+      fitLine(
+        `${rail}${ansi.fg(
+          'faint',
+          `decision ${escapeControl(n.decisionRef.id).slice(0, 8)}… · expires ${escapeControl(n.expiresAt ?? 'unknown')}`,
+        )}`,
         width,
       ),
       ...(n.subjectText
-        ? wrapText(escapeControl(n.subjectText), width).map((line) => fitLine(line, width))
+        ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
-      fitLine(this.phase === 'deciding' ? '…' : keys, width),
+      fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),
     ]
   }
 }

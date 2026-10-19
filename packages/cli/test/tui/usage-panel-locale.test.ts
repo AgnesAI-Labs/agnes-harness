@@ -1,9 +1,9 @@
-import { createAnsi, UsagePanel } from '@agnes/cli-tui'
+import { createAnsi, TuiTheme, UsagePanel } from '@agnes/cli-tui'
 import { expect, it, vi } from 'vitest'
 
 it('keeps the translated default title when no custom report title is supplied', () => {
   const panel = new UsagePanel({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     locale: 'zh-CN',
     maxRows: () => 8,
     changed: vi.fn(),

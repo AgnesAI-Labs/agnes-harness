@@ -55,12 +55,9 @@ it('keeps the full single-line review subject readable before the choices', () =
     },
   )
   const lines = card.render(80)
-  expect(
-    lines
-      .slice(2, -1)
-      .map((line) => line.trimEnd())
-      .join(''),
-  ).toBe(subjectText)
+  const subject = lines.slice(2, -1)
+  expect(subject.every((line) => line.startsWith(' │ '))).toBe(true)
+  expect(subject.map((line) => line.slice(3).trimEnd()).join('')).toBe(subjectText)
   expect(lines.at(-1)).toContain('[1]')
 })
 

@@ -3,8 +3,9 @@ import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { renderMarkdown } from '../../src/tui/markdown.js'
 import { displayWidth } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 
-const none = createAnsi('none')
+const none = new TuiTheme('mono').ansi(createAnsi('none'))
 it('renders headings, emphasis, lists, fences, tables and literal HTML without image fetching', () => {
   const md =
     '# Title\n\npara **bold**\n\n- a\n- b\n\n```js\nconst x = 1\n```\n\n| k | v |\n|---|---|\n| 中 | 1 |\n\n<b>raw</b> ![alt](http://x/y.png)'
@@ -16,12 +17,50 @@ it('renders headings, emphasis, lists, fences, tables and literal HTML without i
     '• a',
     '• b',
     '',
-    '  const x = 1',
+    `${'  const x = 1'.padEnd(36)} js `,
     '',
     '│ k  │ v │',
+    '├────┼───┤',
     '│ 中 │ 1 │',
     '',
     '<b>raw</b> alt',
+  ])
+})
+it('paints every Markdown role through its theme tone, and mono through weight and glyph only', () => {
+  const t = new TuiTheme('light').ansi(createAnsi('256'))
+  const md =
+    '# One\n\n## Two\n\n### Three\n\n*em* `x` [docs](https://d.example) <https://a.example>\n\n- a\n\n1. b\n\n> q\n\n```sh\nrun\n```\n\n| k |\n|---|\n| v |\n\n---'
+  expect(renderMarkdown(md, 40, t)).toEqual([
+    t.bold(t.fg('accent', 'One')),
+    '',
+    t.bold('Two'),
+    '',
+    t.bold(t.fg('muted', 'Three')),
+    '',
+    `${t.italic('em')} ${t.bg('codeBg', t.fg('code', ' x '))} ${t.underline(t.fg('link', 'docs'))}${t.fg('faint', ' (https://d.example)')}`,
+    t.underline(t.fg('link', 'https://a.example')),
+    '',
+    `${t.fg('accentSoft', '•')} a`,
+    '',
+    `${t.fg('muted', '1.')} b`,
+    '',
+    `${t.fg('accentSoft', '▎')} ${t.italic(t.fg('muted', 'q'))}`,
+    '',
+    t.bg('surface', t.fg('surfaceFg', '  run'.padEnd(36)) + t.fg('faint', ' sh ')),
+    '',
+    `${t.fg('border', '│')} ${t.bold('k')} ${t.fg('border', '│')}`,
+    t.fg('border', '├───┤'),
+    `${t.fg('border', '│')} v ${t.fg('border', '│')}`,
+    '',
+    t.fg('border', '─'.repeat(40)),
+  ])
+  const mono = new TuiTheme('mono').ansi(createAnsi('256'))
+  expect(renderMarkdown('# One\n\n`x`\n\n```\nrun\n```', 10, mono)).toEqual([
+    mono.bold('One'),
+    '',
+    'x',
+    '',
+    mono.dim('  run'),
   ])
 })
 it('removes untrusted VT sequences and control bytes before styling', () => {
@@ -31,7 +70,7 @@ it('removes untrusted VT sequences and control bytes before styling', () => {
   expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['ab'])
 })
 it('balances emphasis separately on each wrapped line and preserves graphemes', () => {
-  const lines = renderMarkdown('**ab中é👩‍💻z**', 4, createAnsi('16'))
+  const lines = renderMarkdown('**ab中é👩‍💻z**', 4, new TuiTheme('light').ansi(createAnsi('16')))
   expect(lines.map(stripVTControlCharacters)).toEqual(['ab中', 'é', '👩‍💻', 'z'])
   for (const line of lines) {
     expect(line.startsWith('\x1b[1m')).toBe(true)
@@ -58,7 +97,7 @@ it('renders nested and zero-start ordered lists and blockquotes at the available
     '0. first',
     '1. second',
     '',
-    '> quoted',
+    '▎ quoted',
     '',
     '• top',
     '  • child',

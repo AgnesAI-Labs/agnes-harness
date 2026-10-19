@@ -1,5 +1,6 @@
 import { type Component, escapeControl } from '../component.js'
 import { parseKey } from '../keys.js'
+import type { ThemedAnsi } from '../theme.js'
 import { fitLine } from './line.js'
 export class Select implements Component {
   private idx = 0
@@ -10,6 +11,8 @@ export class Select implements Component {
       onChoose(id: string): void
       onCancel?(): void
       title?: string
+      /** Marks the chosen row with the selection background and a bold accent. */
+      ansi?: ThemedAnsi
       /** Optional viewport for long dynamic lists; selection still ranges over every option. */
       maxRows?(): number
     },
@@ -49,10 +52,15 @@ export class Select implements Component {
   render(width: number): string[] {
     const count = Math.max(1, Math.floor(this.o.maxRows?.() ?? this.options.length))
     const start = Math.max(0, Math.min(this.idx - count + 1, this.options.length - count))
+    const ansi = this.o.ansi
     const lines = this.options.slice(start, start + count).map((option, offset) => {
       const i = start + offset
-      return fitLine(`${i === this.idx ? '▶' : ' '} ${i + 1}. ${escapeControl(option.label)}`, width)
+      const line = fitLine(`${i === this.idx ? '❯' : ' '} ${i + 1}. ${escapeControl(option.label)}`, width)
+      // Painted after fitting so the selection background spans the whole row.
+      return i === this.idx && ansi ? ansi.bg('selection', ansi.bold(ansi.fg('accent', line))) : line
     })
-    return this.o.title ? [fitLine(escapeControl(this.o.title), width), ...lines] : lines
+    if (!this.o.title) return lines
+    const title = fitLine(escapeControl(this.o.title), width)
+    return [ansi ? ansi.bold(title) : title, ...lines]
   }
 }

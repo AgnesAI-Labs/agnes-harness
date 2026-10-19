@@ -94,6 +94,22 @@ describe('usage footer degradation', () => {
     `)
   })
 
+  it('colours the footer without changing its text at any width', () => {
+    const ansi = new TuiTheme('light').ansi(createAnsi('truecolor'))
+    for (const width of [120, 80, 59, 40, 20])
+      expect(formatUsageLine(usage(), width, ansi).replace(ANSI_RE, '')).toBe(
+        formatUsageLine(usage(), width, PLAIN),
+      )
+    const line = formatUsageLine(usage(), 120, ansi)
+    for (const part of [
+      ansi.fg('accent', 'Σ'),
+      `${ansi.fg('faint', '↑')}${ansi.fg('fg', '1.6k')}`,
+      ansi.dim('$0.001'),
+      ansi.dim('≈0.2%/1.0M'),
+    ])
+      expect(line).toContain(part)
+  })
+
   it('omits the dollar segment entirely when billing is absent', () => {
     const { cost: _cost, ...withoutCost } = usage()
     const line = formatUsageLine(withoutCost, 120, PLAIN)

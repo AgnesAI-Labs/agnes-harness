@@ -156,7 +156,11 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
         onDecide: async () => {},
       },
     )
-    expect(pending.render(60)[0]).toContain(ansi.fg('warning', '⚠'))
+    const rows = pending.render(60)
+    expect(rows[0]).toContain(ansi.bold(ansi.fg('warning', '▲ Awaiting approval:')))
+    expect(rows[1]).toContain(ansi.fg('warning', '│ '))
+    expect(rows.at(-1)).toContain(`${ansi.bg('accent', ansi.fg('onAccent', ' 1 '))} Allow once`)
+    expect(rows.at(-1)).not.toContain('[1]')
     // none tier: the very same cards emit zero escape sequences.
     const plain = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'rejected', via: 'local' } }),

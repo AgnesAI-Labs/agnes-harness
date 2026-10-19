@@ -85,7 +85,7 @@ describe('components', () => {
   })
 
   it('Composer spans the terminal and integrates model state without disturbing cursor geometry', () => {
-    const ansi = createAnsi('256')
+    const ansi = new TuiTheme('light').ansi(createAnsi('256'))
     const input: Component = {
       render: () => [`❯ ${CURSOR_MARKER}hello`],
       invalidate() {},
@@ -94,8 +94,11 @@ describe('components', () => {
     composer.setMeta('deepseek-v4-pro · high')
     const rows = composer.render(120)
     expect(rows).toHaveLength(3)
+    expect(rows[0]).toContain(ansi.fg('borderStrong', `╭${'─'.repeat(117)}╮`))
     expect(rows[1]).toContain(`❯ ${CURSOR_MARKER}hello`)
-    expect(rows[2]).toContain('deepseek-v4-pro · high')
+    expect(rows[1]).toContain(ansi.fg('borderStrong', '│'))
+    expect(rows[2]).toContain(` ${ansi.fg('muted', 'deepseek-v4-pro')}${ansi.fg('faint', ' · high')} `)
+    expect(rows[2]).toContain(ansi.fg('borderStrong', '╯'))
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
     expect(rows.join('')).not.toContain('\x1b[48;5;')
   })
@@ -106,9 +109,11 @@ describe('components', () => {
     const themed = theme.ansi(ansi)
     const message = new UserMessage('中文 hello '.repeat(20), themed, theme, 63)
     const rows = message.render(120)
-    expect(rows[0]).toContain('\x1b[38;5;63m›\x1b[39m')
+    expect(rows.length).toBeGreaterThan(1)
+    // The brand edge runs down every wrapped row, not only the first.
+    expect(rows.every((row) => row.includes('\x1b[38;5;63m▍\x1b[39m'))).toBe(true)
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
-    expect(rows.join('')).toContain(themed.bg('surface', themed.fg('surfaceFg', '    ')))
+    expect(rows.every((row) => row.endsWith(themed.bg('surface', themed.fg('surfaceFg', ' '))))).toBe(true)
     theme.set('mono')
     expect(message.render(120).join('')).not.toContain('\x1b[48;5;')
     expect(new UserMessage('中文 hello', themed, theme).transcript(16)).toEqual(['you: 中文 hello'])

@@ -1,11 +1,12 @@
 import { expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { ModelPicker } from '../../src/tui/views/model-picker.js'
 
 it('a model without reasoning finishes in one step', () => {
   const chosen = vi.fn()
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed: vi.fn(),
@@ -19,7 +20,7 @@ it('a model without reasoning finishes in one step', () => {
 it('a model with reasoning forces a second screen listing its declared thinking levels', () => {
   const chosen = vi.fn()
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed: vi.fn(),
@@ -47,7 +48,7 @@ it('a model with reasoning forces a second screen listing its declared thinking 
 it('a reasoning model with no declared thinkingLevelMap falls back to all four levels', () => {
   const chosen = vi.fn()
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed: vi.fn(),
@@ -61,7 +62,7 @@ it('a reasoning model with no declared thinkingLevelMap falls back to all four l
 it('a reasoning model with an empty declared thinkingLevelMap falls back to all four levels', () => {
   const chosen = vi.fn()
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed: vi.fn(),
@@ -75,7 +76,7 @@ it('a reasoning model with an empty declared thinkingLevelMap falls back to all 
 it('esc on the reasoning screen returns to the model list rather than closing outright', () => {
   const chosen = vi.fn()
   const picker = new ModelPicker({
-    ansi: createAnsi('none'),
+    ansi: new TuiTheme().ansi(createAnsi('none')),
     maxRows: () => 8,
     onChoose: chosen,
     changed: vi.fn(),
@@ -94,7 +95,12 @@ it('esc on the reasoning screen returns to the model list rather than closing ou
 it('esc on the model list closes the picker entirely', () => {
   const chosen = vi.fn()
   const changed = vi.fn()
-  const picker = new ModelPicker({ ansi: createAnsi('none'), maxRows: () => 8, onChoose: chosen, changed })
+  const picker = new ModelPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    onChoose: chosen,
+    changed,
+  })
   picker.show([{ route: 'deepseek', model: 'deepseek-v4-flash', reasoning: false }])
   picker.show([
     { route: 'deepseek', model: 'deepseek-v4-flash', reasoning: false },

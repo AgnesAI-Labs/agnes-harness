@@ -1,10 +1,10 @@
 import type { ThinkingLevel } from '@agnes/protocol'
-import type { Ansi } from '../ansi.js'
 import type { ModelChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
+import type { ThemedAnsi } from '../theme.js'
 
 /** What the picker finally delivers — a model, and a thinking level only when the model has one. */
 export type ModelSelection = { route: string; model: string; thinking?: ThinkingLevel }
@@ -18,7 +18,7 @@ export class ModelPicker implements Component {
 
   constructor(
     private readonly o: {
-      ansi: Ansi
+      ansi: ThemedAnsi
       locale?: string
       maxRows(): number
       onChoose(choice: ModelSelection): void
@@ -35,6 +35,7 @@ export class ModelPicker implements Component {
     const byId = new Map(choices.map((choice) => [`${choice.route}/${choice.model}`, { ...choice }]))
     const select = new Select({
       options: [...byId.keys()].map((id) => ({ id, label: id })),
+      ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         const choice = byId.get(id)
@@ -50,9 +51,7 @@ export class ModelPicker implements Component {
     })
     this.box = new Box(select, {
       title: tt('picker.modelTitle', this.o.locale ?? 'en'),
-      rounded: true,
-      border: this.o.ansi.dim,
-      titleStyle: (text) => this.o.ansi.bold(text),
+      ansi: this.o.ansi,
     })
     this.o.changed()
   }
@@ -64,6 +63,7 @@ export class ModelPicker implements Component {
         : THINKING_FALLBACK
     const select = new Select({
       options: levels.map((level) => ({ id: level, label: level })),
+      ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         this.close()
@@ -77,9 +77,7 @@ export class ModelPicker implements Component {
       title: tt('picker.reasoningTitle', this.o.locale ?? 'en', {
         model: `${choice.route}/${choice.model}`,
       }),
-      rounded: true,
-      border: this.o.ansi.dim,
-      titleStyle: (text) => this.o.ansi.bold(text),
+      ansi: this.o.ansi,
     })
     this.o.changed()
   }

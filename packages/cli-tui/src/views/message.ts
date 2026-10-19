@@ -3,7 +3,7 @@ import { type Component, escapeControl, padLine, wrapText } from '../component.j
 import type { Tone } from '../palette.js'
 import type { ThemedAnsi, TuiTheme } from '../theme.js'
 
-/** A Grok-like turn separator: quiet full-width surface, with only the role marker in brand colour. */
+/** A quiet full-width surface whose brand-colour left edge runs down every wrapped row. */
 export class UserMessage implements Component {
   private readonly text: string
 
@@ -23,10 +23,9 @@ export class UserMessage implements Component {
     if (width < 3) return wrapText(this.text, width)
     const inset = width >= 8 ? 1 : 0
     const inner = Math.max(1, width - inset * 2)
-    const marker = this.ansi.bold(this.ansi.fg(this.accent, '›'))
-    return wrapText(this.text, Math.max(1, inner - 4)).map((line, index) => {
-      const prefix = index === 0 ? `  ${marker} ` : '    '
-      const body = padLine(line, Math.max(1, inner - 4))
+    const prefix = `${this.ansi.bold(this.ansi.fg(this.accent, '▍'))} `
+    return wrapText(this.text, Math.max(1, inner - 2)).map((line) => {
+      const body = padLine(line, Math.max(1, inner - 2))
       return `${' '.repeat(inset)}${this.theme.surface(this.ansi, prefix)}${this.theme.surface(
         this.ansi,
         body,
