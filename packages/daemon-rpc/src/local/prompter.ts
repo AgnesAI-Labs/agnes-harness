@@ -1,3 +1,11 @@
+import { automaticRequestDecision } from './permission-scope.js'
+
+export {
+  type AutomaticPermissionEvidence,
+  currentPermissionContext,
+  withPermissionContext,
+} from './permission-scope.js'
+
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Prompter } from '@agnes/host'
 import {
@@ -23,7 +31,7 @@ const verdictOf = (answer: PrompterAnswer): ApprovalVerdict =>
 
 export type AskOutcome = {
   requestId: string
-  via: 'local' | 'absent' | 'answered' | 'aborted' | 'timeout' | 'transport' | 'malformed'
+  via: 'full-access' | 'local' | 'absent' | 'answered' | 'aborted' | 'timeout' | 'transport' | 'malformed'
   verdict: ApprovalVerdict
   reason?: ApprovalReason
   answeredBy?: Actor
@@ -150,6 +158,8 @@ export class PrompterRouter implements Prompter {
           : { verdict: 'cancelled', reason: 'stopped' },
       )
     if (opts.signal.aborted) return interrupted()
+    const automatic = await automaticRequestDecision(req)
+    if (automatic) return this.done(req.requestId, 'full-access', automatic)
     const deadline = Date.parse(req.deadline)
     if (!Number.isFinite(deadline))
       return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })

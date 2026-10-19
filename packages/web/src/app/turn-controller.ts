@@ -213,6 +213,19 @@ export function createTurnController(
         ? cachedApproval?.node
         : undefined)
     const durable = known?.state === 'pending' ? known : undefined
+    const modeChoice = context.liveApproval
+      ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
+      : context.projection?.nodes.some(
+          (node) =>
+            node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
+        )
+    if (
+      known?.decision?.reason === 'full-access' ||
+      (context.permissionMode === 'full' && !modeChoice && !known?.reconcile)
+    ) {
+      context.approvalRuntime.render(undefined)
+      return
+    }
     // Answered, but the turn has not taken the answer up yet: say so, never that it failed to load.
     const parkedRef = context.projection?.opState?.parked?.decisionRef
     const answered =

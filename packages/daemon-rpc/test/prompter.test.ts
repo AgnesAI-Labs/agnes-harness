@@ -5,6 +5,7 @@ import {
   approvalActor,
   notifyApprovalConnectionAttached,
   PrompterRouter,
+  withPermissionContext,
 } from '../src/local/prompter.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -465,4 +466,32 @@ describe('PrompterRouter', () => {
       ])
     },
   )
+})
+
+it.each([
+  'candidate.test',
+  'plugin.publish',
+  'memory',
+  'credential.admin',
+  'skills.install',
+  'mcp.connect',
+  'verifier',
+])('auto-allows %s without any local or remote approval offer', async (scope) => {
+  const local = { ask: vi.fn(async () => 'rejected' as const) }
+  const { r, log, ep } = mk({ local, localActor: async () => actor, connections: () => [] })
+  const evidence: unknown[] = []
+  const answer = await withPermissionContext(
+    { policy: 'full-access', actor },
+    (value) => evidence.push(value),
+    () => r.ask({ ...req, scope }, { signal: never }),
+  )
+  expect(answer).toMatchObject({
+    verdict: 'allowed-once',
+    reason: 'full-access',
+    answeredBy: { role: 'system' },
+  })
+  expect(local.ask).not.toHaveBeenCalled()
+  expect(log).toMatchObject([{ via: 'full-access', reason: 'full-access' }])
+  expect(evidence).toMatchObject([{ scope, bindingHash: 'h', reason: 'full-access' }])
+  await ep.close()
 })

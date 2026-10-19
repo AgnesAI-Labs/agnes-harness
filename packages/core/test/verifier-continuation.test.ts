@@ -1,6 +1,7 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionImpl } from '../src/step/session.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -332,6 +333,48 @@ it.each(['allowed-once', 'allowed-session'] as const)(
             JSON.stringify(row.data).includes('also check this'),
         ),
       ).toBe(true)
+    } finally {
+      await h.session.close()
+    }
+  },
+)
+
+it.each(['full-access', 'workspace-write'])(
+  'runs the interactive verifier gate with the effective %s permission preset',
+  async (policy) => {
+    const ask = vi.fn(async (req: { deadline: string }) => ({ ticket: 'review', expiresAt: req.deadline }))
+    const preset = presetDefaults()
+    preset.name = policy
+    preset.approval.policy = policy
+    const policies = new ToolPolicyRegistry()
+    policies.register('fixture', {
+      id: policy,
+      version: '1.0.0',
+      decide: () => ({ effect: 'allow', reason: 'fixture' }),
+    })
+    const h = await openSession({
+      preset,
+      toolPolicies: policies,
+      provider: fakeProvider([textTurn('answer')]),
+      seams: fakeSeams({
+        verifier: { verify: async () => ({ verdict: 'fail', reasons: ['review'] }) },
+        repair: { decide: async () => 'park' },
+        approval: { ask },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+      expect((await run(h)).reason).toBe(policy === 'full-access' ? 'completed' : 'parked')
+      expect(ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 1)
+      const decision = (await h.session.decisions.list()).find(
+        (value) => value.request.spec.purpose === 'gate',
+      )
+      if (policy === 'full-access')
+        expect(decision).toMatchObject({
+          result: { code: 'full-access', answeredBy: { role: 'system' } },
+          consumption: expect.any(Object),
+        })
+      else expect(decision?.result).toBeNull()
     } finally {
       await h.session.close()
     }

@@ -47,11 +47,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
       'View allowed files and public webpages; changes and command execution are denied.',
     'composer.permission.workspaceDescription':
       'File tools can edit the workspace; commands need approval. Command isolation depends on the platform.',
-    'composer.permission.fullDescription':
-      'Routine operations skip individual approvals; protected directories, plan/memory rules and installation trust confirmations still apply.',
+    'composer.permission.fullDescription': 'Everything is allowed automatically; no approval prompts',
     'composer.permission.viewHint': 'Looks only; changes no files',
     'composer.permission.workspaceHint': 'Can edit files in the workspace',
-    'composer.permission.fullHint': 'Skips routine approvals; exceptions apply',
+    'composer.permission.fullHint': 'Everything is allowed automatically; no approval prompts',
     'composer.agent.more': 'More',
     'composer.agent.chip': 'Running mode',
     'composer.agent.default': 'Default',
@@ -189,11 +188,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.permission.full': '完全访问',
     'composer.permission.viewDescription': '查看允许范围的文件和公开网页；修改与命令执行会被拒绝。',
     'composer.permission.workspaceDescription': '文件工具可改工作区；命令需审批。命令隔离取决于平台。',
-    'composer.permission.fullDescription':
-      '普通操作不再逐次审批；保护目录、计划/记忆规则及安装信任确认仍生效。',
+    'composer.permission.fullDescription': '全部操作自动允许，不再弹出审批',
     'composer.permission.viewHint': '只能查看，不改文件',
     'composer.permission.workspaceHint': '可改工作区内文件',
-    'composer.permission.fullHint': '普通操作免逐次审批；仍有例外',
+    'composer.permission.fullHint': '全部操作自动允许，不再弹出审批',
     'composer.agent.more': '更多',
     'composer.agent.chip': '运行方式',
     'composer.agent.default': '默认',

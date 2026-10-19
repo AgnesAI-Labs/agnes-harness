@@ -24,6 +24,8 @@ CLI 将临时 profile inputs 交给 Host composition 和常规验证，不保存
 
 退出码：completed 为 0，错误或事件未完整排空为 1，用法/启动失败为 2，parked 为 3，blocked/budget 为 4，max steps 为 5，SIGINT/SIGTERM/SIGHUP 分别为 130/143/129。batch 在单项失败后继续，返回首个非零状态。信号取消当前 prompt 并停止后续输入，关闭宽限期为五秒。
 
+定时任务与 Webhook 会话沿用有效权限预设。完全访问的权限请求自动允许并记录证据，不转交人工审批；其他预设继续遵循无人值守的交接或拒绝设置。用户问题和明确选择的计划／只读模式保持原有行为。
+
 ## SDK
 
 使用公开的 `@agnes/sdk` helper，连接到经 Host 组装的 profile/bundle。调用方负责启动 client、workspace admission 和 `client.close()`；helper 负责新会话、订阅、权限拒绝和 detach。

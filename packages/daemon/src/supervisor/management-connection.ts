@@ -1,5 +1,6 @@
 import type { ConnectionState, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { rpcError } from '@agnes/protocol'
+import { currentPermissionContext } from '@agnes/daemon-rpc/local/prompter'
+import { automaticPermissionDecision, rpcError } from '@agnes/protocol'
 
 type Connections = {
   current(key: string): ConnectionState | undefined
@@ -17,18 +18,31 @@ export function managementConnection(
   const owner = options.owner(sessionKey)
   if (!owner?.active) throw rpcError('CAPABILITY_DENIED', { code })
   const principalId = owner.principalId
+  const automatic = automaticPermissionDecision(currentPermissionContext())
+  // A session's pre-authorized tool operation needs no attached approval-capable client.
+  const unattended: ConnectionState | undefined = automatic
+    ? {
+        principalId,
+        clientId: `session:${sessionKey}`,
+        initialized: true,
+        clientModuleNotices: false,
+        capabilities: { permission: false },
+        attached: new Map(),
+        authKind: 'local',
+        credentialKind: 'local',
+      }
+    : undefined
   const eligible = (conn: ConnectionState | undefined): conn is ConnectionState =>
     !!conn &&
     conn.authKind === 'local' &&
     conn.credentialKind === 'local' &&
-    conn.capabilities.permission &&
+    (automatic !== undefined || conn.capabilities.permission) &&
     conn.principalId === principalId &&
-    conn.attached.has(sessionKey) &&
-    !!options.endpoint(conn)
+    (automatic !== undefined || (conn.attached.has(sessionKey) && !!options.endpoint(conn)))
   const candidates = () => [options.current(sessionKey), ...(options.connections?.() ?? [])].filter(eligible)
   const get = () => {
     const currentOwner = options.owner(sessionKey)
-    const conn = candidates()[0]
+    const conn = candidates()[0] ?? unattended
     const candidate = options.current(sessionKey)
     if (
       !conn &&

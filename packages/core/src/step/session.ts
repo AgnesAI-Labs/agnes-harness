@@ -704,6 +704,9 @@ export class SessionImpl {
       get actor() {
         return deps.actor
       },
+      get permissionPolicy() {
+        return session.preset.name
+      },
       get ttlMs() {
         return session.preset.approval.pendingTtlMs
       },

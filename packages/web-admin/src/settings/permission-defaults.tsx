@@ -3,9 +3,7 @@ import {
   Banner,
   Button,
   Dialog,
-  Disclosure,
   fallbackT,
-  Icon,
   IconTile,
   reportSuccess,
   SettingsBlock,
@@ -37,14 +35,6 @@ type Entry = { id: string; isDefault: boolean }
 /** One saved default: the permission level, or the preset (recipe); '' clears the preset. */
 type Choice = { field: 'permission' | 'preset'; value: string }
 const icons = { 'read-only': 'eye', 'workspace-write': 'pencil', 'full-access': 'lock-keyhole' } as const
-/** Limits full access does not relax (docs/guide/security.md#full-access-exceptions). */
-const exceptions = {
-  protected: 'shield',
-  readFirst: 'file-text',
-  plugins: 'puzzle',
-  memory: 'archive',
-  candidateTests: 'terminal',
-} as const
 const isolationTone: Record<RuntimeSecurityStatus['platform']['l1']['level'], StatusDotTone> = {
   full: 'success',
   partial: 'warning',
@@ -221,19 +211,6 @@ export function PermissionDefaults({
     const state = security.platform.l1.level
     return [isolationTone[state], `${t('commandIsolation')} · ${t(`state.${state}`)}`]
   }
-  const exceptionList = (detailed: boolean) => (
-    <ul className="agnes-settings-exceptions" data-testid={detailed ? 'security-full-exceptions' : undefined}>
-      {Object.entries(exceptions).map(([key, icon]) => (
-        <li key={key}>
-          <Icon name={detailed ? icon : 'check'} />
-          <span>
-            <span className="agnes-settings-exception-name">{t(`exception.${key}`)}</span>
-            {detailed && <span className="agnes-settings-exception-hint">{t(`exception.${key}Help`)}</span>}
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
   const locked = !canSave || !snapshot || busy
   const retry = () => pending && void save(pending)
   return (
@@ -288,16 +265,6 @@ export function PermissionDefaults({
                   <StatusDot tone={saving === level ? 'accent' : tone} running={saving === level} />
                   {saving === level ? t('saving') : status}
                 </span>
-                {level === 'full-access' && (
-                  <Disclosure
-                    variant="plain"
-                    summary={t('exceptionsToggle')}
-                    summaryProps={{ 'data-testid': 'security-full-exceptions-toggle' }}
-                  >
-                    {exceptionList(true)}
-                    <p className="agnes-settings-note">{t('exceptionsScope')}</p>
-                  </Disclosure>
-                )}
               </div>
             </div>
           )
@@ -370,10 +337,6 @@ export function PermissionDefaults({
         }
       >
         <p>{t('fullConfirmBody')}</p>
-        <div className="agnes-settings-exceptions-box">
-          <p className="agnes-settings-exception-name">{t('fullConfirmList')}</p>
-          {exceptionList(false)}
-        </div>
         {saveFailed && <SettingsState tone="error">{t('failed')}</SettingsState>}
       </Dialog>
     </SettingsBlock>

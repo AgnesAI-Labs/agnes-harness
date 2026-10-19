@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
 import { jcs } from '@agnes/protocol'
 import {
   createResourceControlService,
@@ -272,3 +273,36 @@ it('does not wait for an active-turn connection barrier before returning the sub
     { timeout: 10_000 },
   )
 })
+
+it.each(['full-access', 'workspace-write'])(
+  'registers, trusts and starts MCP with the effective %s permission context',
+  async (policy) => {
+    const s = await setup()
+    const evidence: AutomaticPermissionEvidence[] = []
+    if (policy === 'full-access') {
+      s.ep.conn.capabilities.permission = false
+      s.ep.conn.attached.clear()
+      delete s.ep.conn.authKind
+    }
+    await withPermissionContext(
+      { policy, actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} } },
+      (value) => evidence.push(value),
+      async () => {
+        const prepared = await s.request({ action: 'prepare', definition })
+        const receipt = await s.request({ action: 'commit', proposalId: prepared.proposalId })
+        expect(['submitted', 'ready']).toContain(receipt.state)
+        await vi.waitFor(async () =>
+          expect(await s.request({ action: 'status', proposalId: prepared.proposalId })).toMatchObject({
+            state: 'ready',
+          }),
+        )
+      },
+    )
+    expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 1)
+    if (policy === 'full-access')
+      expect(evidence).toMatchObject([
+        { scope: 'mcp.connect', reason: 'full-access', answeredBy: { role: 'system' } },
+      ])
+    else expect(evidence).toEqual([])
+  },
+)

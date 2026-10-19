@@ -78,7 +78,13 @@ function approvalNode(
       ? { reconcile: { tool: typeof subject?.name === 'string' && subject.name ? subject.name : 'tool' } }
       : {}),
     ...(state === 'decided' && value.result?.reason === 'answered'
-      ? { decision: { verdict: value.result.response.option, via: 'human' } }
+      ? {
+          decision: {
+            verdict: value.result.response.option,
+            via: value.result.code === 'full-access' ? 'full-access' : 'human',
+            ...(value.result.code ? { reason: value.result.code } : {}),
+          },
+        }
       : {}),
     ...(rewrite &&
     typeof rewrite === 'object' &&

@@ -1213,3 +1213,65 @@ describe('v3 approval modes and grants', () => {
     })
   })
 })
+
+it.each(['manual', 'off', 'auto-review'] as const)(
+  'full-access records a one-shot allowance for principal and exact-content policy approvals in %s mode',
+  async (approvalMode) => {
+    let executed = false
+    const ask = vi.fn(async () => {
+      throw new Error('Human request must not be raised')
+    })
+    const preset = presetDefaults()
+    preset.name = 'full-access'
+    preset.approval.policy = 'full-access'
+    const policies = new ToolPolicyRegistry()
+    policies.register('fixture', {
+      id: 'full-access',
+      version: '1.0.0',
+      decide(input) {
+        expect(input.fullAccess).toBe(true)
+        return {
+          effect: 'ask',
+          reason: 'exact-content review',
+          approval: {
+            reviewerRequirement: 'human',
+            grantConstraints: 'once',
+            subjectRevision: 'a'.repeat(64),
+          },
+        }
+      },
+    })
+    const f = await atTools({
+      scopes: ['credential.admin'],
+      preset,
+      approvalMode,
+      toolPolicies: policies,
+      seams: fakeSeams({
+        approval: { ask },
+        principals: {
+          authorize: async () => ({
+            decisionId: 'principal-review',
+            effect: 'require_approval',
+            reason: 'principal approval',
+          }),
+        },
+      }),
+      execute: async (_args, context) => {
+        executed = true
+        expect(context.approval?.answeredBy.role).toBe('system')
+        return { content: [] }
+      },
+    })
+    try {
+      await f.session.runToolsPhase()
+      expect(executed).toBe(true)
+      expect(ask).not.toHaveBeenCalled()
+      expect((await f.session.decisions.list())[0]).toMatchObject({
+        result: { code: 'full-access', response: { option: 'allowed-once' } },
+        consumption: expect.any(Object),
+      })
+    } finally {
+      await f.session.close()
+    }
+  },
+)

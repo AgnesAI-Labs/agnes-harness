@@ -13,6 +13,7 @@ import { settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionHandle, ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
+import { automaticPermissionDecision } from '@agnes/protocol'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -517,7 +518,8 @@ export async function approveAndExecute(
         policy,
         category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
         tainted: taint,
-        fullAccess: s.yolo,
+        fullAccess:
+          s.yolo || automaticPermissionDecision({ policy: s.preset.name, actor: s.d.actor }) !== undefined,
         approvalMode,
       }),
       o.signal ?? s.ac.signal,
@@ -539,7 +541,16 @@ export async function approveAndExecute(
         !/^[a-f0-9]{64}$/.test(permission.approval.subjectRevision))
     )
       throw new CoreError('E_ENVELOPE', 'invalid human approval constraints')
+    const automatic = automaticPermissionDecision(
+      { policy: s.preset.name, actor: s.d.actor },
+      call.name === 'exit_plan_mode' ? 'plan.exit' : 'tool.permission',
+    )
     const needsAsk =
+      (automatic !== undefined &&
+        (policy.requiresApproval === 'always' ||
+          (policy.requiresApproval === 'destructive' && policy.isDestructive) ||
+          (taint && !policy.isReadOnly && !policy.isPresentational) ||
+          decision.effect === 'require_approval')) ||
       permission.effect === 'ask' ||
       (decision.effect === 'require_approval' && !s.yolo && approvalMode !== 'off')
     const scopes = approvalScopesForCall(call.name, policy.approvalScopes)
@@ -576,7 +587,12 @@ export async function approveAndExecute(
               policy,
               category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
               tainted: s.laneTaint(),
-              fullAccess: s.yolo,
+              fullAccess:
+                s.yolo ||
+                automaticPermissionDecision({
+                  policy: s.preset.name,
+                  actor: s.d.actor,
+                }) !== undefined,
               approvalMode,
               ...(settings?.config === undefined ? {} : { config: settings.config }),
             },
@@ -1156,7 +1172,12 @@ export async function approveAndExecute(
           ...(approvalProof ? { approval: approvalProof } : {}),
           cwd: s.d.cwd,
           workspaceRoot: s.workspaceRoot,
-          fullAccess: s.yolo,
+          fullAccess:
+            s.yolo ||
+            automaticPermissionDecision({
+              policy: s.preset.name,
+              actor: s.d.actor,
+            }) !== undefined,
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,

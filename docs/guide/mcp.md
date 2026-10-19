@@ -22,6 +22,8 @@ Each remote tool has one local name, `mcp__<server>__<tool>`. Names changed by s
 
 ## Add a service in a session
 
+Under full access, helper requests to register, trust, enable and start MCP servers are allowed automatically without approval prompts. Evidence retains the exact configuration and reason `full-access`. Human management-page edits still require administration authority; hard deployment refusals and connection failures remain effective.
+
 `tool_search` searches all session-visible tools, including tools already provided to the model, by name, description and parameter keywords. Deferred and eager tools share ranking and appear once; ready Skills retain their discovery slots. Use `tool_describe` to load a deferred schema. Search-provider names such as Tavily refer to the configured provider behind `web_search`, not a separate tool. Discovery is not a connectivity test; invoke the tool or use the settings test to verify readiness. Provider examples in the description are static, so configuration changes do not rewrite tool schemas.
 
 In a local AGH session, ask to connect an MCP service and provide its project URL or connection details. The helper targets the current AGH instance by default. After confirming the configuration, inspect registration and connection state under **Settings → MCP**. Connections and tool lists update at turn boundaries; you can use the service in the next turn of the same session.

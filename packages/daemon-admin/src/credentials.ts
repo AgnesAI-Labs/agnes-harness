@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { createCredentialStore, createFileAudit } from '@agnes/host'
-import { rpcError, validateAgainst } from '@agnes/protocol'
+import {
+  automaticPermissionDecision,
+  type PermissionContext,
+  rpcError,
+  validateAgainst,
+} from '@agnes/protocol'
 import {
   AdminCredentialCreate,
   AdminCredentialDelete,
@@ -33,7 +38,12 @@ export function createCredentialAdmin(options: {
     if (!item) return failed('CONFIG_CREDENTIAL_NOT_FOUND')
     return { ...item, references: referencesIn(await options.configurations()).get(id) ?? [] }
   }
-  async function run(action: 'list' | 'create' | 'set' | 'rename' | 'delete', input: unknown, actor: string) {
+  async function run(
+    action: 'list' | 'create' | 'set' | 'rename' | 'delete',
+    input: unknown,
+    actor: string,
+    permission?: PermissionContext,
+  ) {
     if (action === 'list') {
       const refs = referencesIn(await options.configurations())
       return {
@@ -62,14 +72,17 @@ export function createCredentialAdmin(options: {
     }
     const before = action === 'create' ? undefined : await metadata(id)
     if (action === 'delete') {
-      if (params.force && params.confirm !== true) return failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
+      if (params.force && params.confirm !== true && !automaticPermissionDecision(permission))
+        return failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
       if (!params.force && before?.references.length) return failed('CONFIG_CREDENTIAL_REFERENCED')
     }
     // Durable action attempt, before mutation. Never pass user labels, values, hashes or request bodies.
-    createFileAudit(`${options.dataDir}/audit/credentials.jsonl`).write({
+    const audit = createFileAudit(`${options.dataDir}/audit/credentials.jsonl`)
+    audit.write({
       kind: 'credential.changed',
-      detail: { actor, id, action },
+      detail: { actor, id, action, ...(automaticPermissionDecision(permission) ?? {}) },
     })
+    await audit.close?.()
     if (action === 'delete') {
       await store.remove(id)
       return {}
@@ -87,6 +100,7 @@ export function createCredentialAdmin(options: {
       action: 'list' | 'create' | 'set' | 'rename' | 'delete',
       input: unknown,
       actor: string,
+      permission?: PermissionContext,
     ): Promise<unknown> {
       if (pending >= 64) return Promise.reject(rpcError('OVERLOADED'))
       let owned: unknown
@@ -98,7 +112,7 @@ export function createCredentialAdmin(options: {
       pending++
       const task = tail.then(async () => {
         try {
-          return await run(action, owned, actor)
+          return await run(action, owned, actor, permission)
         } catch (error) {
           if (error instanceof CredentialAdminFailure && error.reason === 'INVALID_PARAMS')
             throw rpcError('INVALID_PARAMS')

@@ -241,37 +241,50 @@ describe('W3b projected message DOM', () => {
     expect(item('status')?.dataset.nodeKind).toBe('system-input')
   })
 
-  it('opens a tool call from its step head, the only control on the step', async () => {
-    const store = createConversationProjectionStore({
-      sessionId: 'session',
-      nodes: [
-        {
-          kind: 'tool',
-          id: 'step',
-          seq: 1,
-          toolUseId: 'call',
-          name: 'read_file',
-          status: 'completed',
-          summary: '读取文档',
-          resultPreview: 'contents',
-        },
-      ],
-    })
-    await mount(store)
-    const step = item('step')
-    expect(step?.querySelectorAll('button')).toHaveLength(1)
-    const head = step?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')
-    // One line: verb · target. A finished step says nothing about its status.
-    expect(head?.classList.contains('activity-row')).toBe(true)
-    expect(head?.querySelector('.tool-name')?.textContent).toBe('读取')
-    expect(head?.querySelector('.activity-target')?.textContent).toBe('读取文档')
-    expect(head?.querySelector('.activity-note')).toBeNull()
-    expect(head?.dataset.state).toBeUndefined()
-    expect(head?.getAttribute('aria-expanded')).toBe('false')
-    await act(async () => head?.click())
-    expect(head?.getAttribute('aria-expanded')).toBe('true')
-    expect(step?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
-  })
+  it.each([false, true])(
+    'opens a tool call with automatic permission evidence=%s from its only step control',
+    async (automatic) => {
+      const store = createConversationProjectionStore({
+        sessionId: 'session',
+        nodes: [
+          {
+            kind: 'tool',
+            id: 'step',
+            seq: 1,
+            toolUseId: 'call',
+            name: 'read_file',
+            status: 'completed',
+            summary: '读取文档',
+            resultPreview: 'contents',
+            ...(automatic
+              ? {
+                  permissionDecision: {
+                    reason: 'full-access' as const,
+                    decisionId: 'decision',
+                    actor: { id: 'owner', org: 'local', role: 'system', deptPath: [], attrs: {} },
+                  },
+                }
+              : {}),
+          },
+        ],
+      })
+      await mount(store)
+      const step = item('step')
+      expect(step?.querySelectorAll('button')).toHaveLength(1)
+      const head = step?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')
+      // One line: verb · target. A finished step says nothing about its status.
+      expect(head?.classList.contains('activity-row')).toBe(true)
+      expect(head?.querySelector('.tool-name')?.textContent).toBe('读取')
+      expect(head?.querySelector('.activity-target')?.textContent).toBe('读取文档')
+      if (automatic) expect(head?.querySelector('.activity-note')?.textContent).toBe('自动允许（完全访问）')
+      else expect(head?.querySelector('.activity-note')).toBeNull()
+      expect(head?.dataset.state).toBeUndefined()
+      expect(head?.getAttribute('aria-expanded')).toBe('false')
+      await act(async () => head?.click())
+      expect(head?.getAttribute('aria-expanded')).toBe('true')
+      expect(step?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
+    },
+  )
 
   it('keeps a long fenced code line inside the assistant message width', async () => {
     const line = 'A'.repeat(400)

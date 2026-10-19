@@ -354,3 +354,62 @@ test('v3 pending review inbox opens a real Demo-authored draft and preserves its
     ),
   ).toBe(false)
 })
+
+for (const locale of ['en', 'zh-CN']) {
+  test(`full access permission picker and automatic approval evidence ${locale}`, async ({
+    page,
+    runtime,
+  }) => {
+    await preferences(page, locale)
+    await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime)
+    const owner = await runtime.connect()
+    const memory = await owner.request('_agnes/v1/admin.memory', {
+      cwd: runtime.workspace,
+      settings: { mode: 'ask' },
+    })
+    await fresh(page, locale)
+    await page.locator('#composer-permission').click()
+    const picker = page.locator('#permission-picker-popover')
+    await expect(picker).toContainText(
+      locale === 'en'
+        ? 'Everything is allowed automatically; no approval prompts'
+        : '全部操作自动允许，不再弹出审批',
+    )
+    await expect(picker).not.toContainText(locale === 'en' ? 'exceptions apply' : '仍有例外')
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => {
+      const state = window as typeof window & { approvalPrompts?: number }
+      state.approvalPrompts = 0
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="approval-card"], [data-testid="plan-approval-card"]'))
+          state.approvalPrompts!++
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+    await turn(
+      page,
+      `call write ${JSON.stringify({ path: `${memory.inspection!.root}/MEMORY.md`, content: 'Synthetic automatic preference.' })}`,
+    )
+    await expect(
+      page
+        .getByTestId('approval-step')
+        .filter({ hasText: locale === 'en' ? 'Auto-allowed (Full access)' : '自动允许（完全访问）' })
+        .first(),
+    ).toBeVisible()
+    expect(
+      await page.evaluate(() => (window as typeof window & { approvalPrompts?: number }).approvalPrompts),
+    ).toBe(0)
+    expect(
+      (await owner.request('_agnes/v1/admin.memory', { cwd: runtime.workspace, file: 'MEMORY.md' })).file
+        ?.content,
+    ).toBe('Synthetic automatic preference.')
+    await page.reload()
+    await expect(page.getByTestId('approval-card')).toHaveCount(0)
+    await expect(
+      page
+        .getByTestId('approval-step')
+        .filter({ hasText: locale === 'en' ? 'Auto-allowed (Full access)' : '自动允许（完全访问）' })
+        .first(),
+    ).toBeVisible()
+  })
+}

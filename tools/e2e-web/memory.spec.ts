@@ -175,7 +175,9 @@ for (const locale of ['en', 'zh-CN'])
       )
     })
 
-test('memory approval and private-store isolation survive full access and off', async ({ runtime }) => {
+test('full access auto-allows memory and retains private-store isolation and off mode', async ({
+  runtime,
+}) => {
   const { symlink } = await import('node:fs/promises')
   const { randomUUID } = await import('node:crypto')
   const { prompt } = await import('./sdk.js')
@@ -218,9 +220,18 @@ test('memory approval and private-store isolation survive full access and off', 
     return (await session.readToolDetail(node.seq, node.resultSeq)).result
   }
   await send('write', { path, content: 'Prefer concise synthetic summaries.' })
-  expect(await last()).toMatchObject({ isError: true })
-  expect(reviews).toBe(1)
-  expect((await owner.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })).file?.content).toBe('')
+  expect(await last()).toMatchObject({ isError: false })
+  expect(reviews).toBe(0)
+  expect((await owner.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })).file?.content).toBe(
+    'Prefer concise synthetic summaries.',
+  )
+  expect((await session.projectUI(undefined, { surface: 'web' })).nodes).toContainEqual(
+    expect.objectContaining({
+      kind: 'approval',
+      state: 'decided',
+      decision: expect.objectContaining({ reason: 'full-access' }),
+    }),
+  )
   // Human editing uses the supported SDK owner path; no candidate enters context before approval.
   const empty = await owner.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })
   await owner.request('_agnes/v1/admin.memory', {

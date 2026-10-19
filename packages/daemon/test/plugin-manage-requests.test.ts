@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { authoringSandbox } from '@agnes/daemon-admin/packages/index'
+import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
 import { resolveToolCallPolicy, type ToolDef } from '@agnes/extension-api'
 import type { HostSession, PluginManageInvocation } from '@agnes/host'
 import { createPackageManager, emptyLock, readDevelopmentPlugin, writeLock } from '@agnes/package-manager'
@@ -157,25 +158,38 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     owner: () => ({ principalId: ownerId, active: true }),
   }
   let handler = createPluginManageRequests(options)
-  const request = (input: unknown, overrides = {}, requestId: string = randomUUID()) =>
-    handler('session', requestId, 'plugin-manage', {
-      input,
-      ...(candidateTestPolicy ? { candidateTestPolicy } : {}),
-      candidateTestSandbox: {
-        policy: { workspaceRoot: root, rules: [], networkAllow: [], digest: 'a'.repeat(64) },
-        network: 'deny',
-        local: true,
-      },
-      turn: 2,
-      packageId: '@agnes/plugin-helper',
-      snapshotId: 'snap',
-      rowId: 'ext:plugin-helper/main',
-      sessionKey: 'session',
-      toolUseId: 'tool',
-      leaseId: 'lease',
-      ...overrides,
-    }) as Promise<AuthoringCandidate & { proposalId: string }>
+  const automaticEvidence: AutomaticPermissionEvidence[] = []
+  const request = (input: unknown, overrides = {}, requestId: string = randomUUID()) => {
+    const run = () =>
+      handler('session', requestId, 'plugin-manage', {
+        input,
+        candidateTestSandbox: {
+          policy: { workspaceRoot: root, rules: [], networkAllow: [], digest: 'a'.repeat(64) },
+          network: 'deny',
+          local: true,
+        },
+        turn: 2,
+        packageId: '@agnes/plugin-helper',
+        snapshotId: 'snap',
+        rowId: 'ext:plugin-helper/main',
+        sessionKey: 'session',
+        toolUseId: 'tool',
+        leaseId: 'lease',
+        ...overrides,
+      }) as Promise<AuthoringCandidate & { proposalId: string }>
+    return candidateTestPolicy === 'allow'
+      ? withPermissionContext(
+          {
+            policy: 'full-access',
+            actor: { id: ownerId, org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          },
+          (value) => automaticEvidence.push(value),
+          run,
+        )
+      : run()
+  }
   return {
+    automaticEvidence,
     root,
     setOwner: (id: string) => {
       ownerId = id
@@ -267,7 +281,8 @@ it.each(['@agnes/plugin-helper', '@agnes/skill-helper'])(
       action: 'candidate.test',
       bindingHash: p.candidateHash,
       verdict: 'allowed-once',
-      via: 'full-access-policy',
+      via: 'full-access',
+      reason: 'full-access',
     })
     await expect(
       s.request({ action: 'test', proposalId: p.candidateId, candidateTestPolicy: 'allow' }),
@@ -560,25 +575,47 @@ it.each(['workspace-write', 'standard'])(
     expect(s.testRunner).not.toHaveBeenCalled()
   },
 )
-it('requires the unisolated Windows warning and confirmation even under full-access', async () => {
+it('automatically allows unisolated Windows candidate tests under full-access and records the exact hash', async () => {
   vi.mocked(authoringSandbox).mockResolvedValue({ isolated: false } as never)
   const s = await setup('allow')
   const p = await s.request({ action: 'prepare', files })
-  s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'reject_once' } })
-  await expect(s.request({ action: 'test', proposalId: p.candidateId })).rejects.toMatchObject({
-    data: { code: 'PLUGIN_TEST_REJECTED' },
-  })
-  expect(s.ask).toHaveBeenCalledOnce()
-  expect(s.ask.mock.calls[0]?.[1]).toMatchObject({
-    toolCall: {
-      title: expect.stringContaining('此平台未隔离，将在本机直接运行候选代码'),
-      rawInput: { execution: 'unisolated', scope: 'local-user', candidateHash: p.candidateHash },
-    },
-  })
-  expect(s.testRunner).not.toHaveBeenCalled()
-  await s.request({ action: 'test', proposalId: p.candidateId })
-  expect(s.testRunner).toHaveBeenCalledOnce()
+  const tested = await s.request({ action: 'test', proposalId: p.candidateId })
+  expect(tested.tests).toMatchObject({ state: 'passed', hash: p.candidateHash })
+  expect(s.ask).not.toHaveBeenCalled()
+  expect(s.automaticEvidence).toContainEqual(
+    expect.objectContaining({
+      reason: 'full-access',
+      verdict: 'allowed-once',
+      bindingHash: p.candidateHash,
+      answeredBy: expect.objectContaining({ role: 'system' }),
+    }),
+  )
+  const audit = JSON.parse(readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8').trim())
+  expect(audit.detail).toMatchObject({ reason: 'full-access', isolation: 'unisolated' })
 })
+it.each(['allow', 'ask'] as const)(
+  'submits a tested candidate with %s policy and retains publication authority',
+  async (policy) => {
+    const s = await setup(policy)
+    const p = await s.request({ action: 'prepare', files })
+    await s.request({ action: 'test', proposalId: p.candidateId })
+    const submitted = await s.request({ action: 'commit', proposalId: p.candidateId })
+    expect(submitted.state).toBe(policy === 'allow' ? 'published' : 'review')
+    const packages = (await s.manager.inventory(s.profileDir)).packages
+    if (policy === 'allow') {
+      expect(packages).toHaveLength(1)
+      expect(packages[0]).toMatchObject({ enabled: true, trusted: true })
+      expect(s.ask).not.toHaveBeenCalled()
+      expect(s.automaticEvidence).toContainEqual(
+        expect.objectContaining({ scope: 'plugin.publish', reason: 'full-access' }),
+      )
+    } else {
+      expect(packages).toHaveLength(0)
+      expect(s.ask).toHaveBeenCalledOnce()
+      expect(s.automaticEvidence).toEqual([])
+    }
+  },
+)
 it('fails closed when the sandbox probe fails under full-access', async () => {
   vi.mocked(authoringSandbox).mockRejectedValue(new Error('SANDBOX_UNAVAILABLE'))
   const s = await setup('allow')

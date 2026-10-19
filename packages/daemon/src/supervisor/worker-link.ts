@@ -19,6 +19,7 @@ import type {
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
 import { packageManageReplyError } from './package-manage-error.js'
+import { PermissionRequestFailure } from './permission-requests.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
 export type WorkerCommandOptions = {
@@ -349,9 +350,11 @@ export class WorkerLink {
             sessionKey: frame.sessionKey,
             result,
           }),
-        (error) =>
+        (failure) => {
+          const error = failure instanceof PermissionRequestFailure ? failure.cause : failure
           this.send({
             kind: 'reply',
+            ...(failure instanceof PermissionRequestFailure ? { permissionEvidence: failure.evidence } : {}),
             requestId: frame.requestId,
             sessionKey: frame.sessionKey,
             error:
@@ -369,7 +372,8 @@ export class WorkerLink {
                   : frame.method === 'skill-install'
                     ? skillInstallReplyError(error)
                     : { code: 'E_REQUEST', message: String(error) },
-          }),
+          })
+        },
       )
     this.options.onActivity?.(frame.sessionKey)
   }

@@ -12,6 +12,7 @@ import type {
 } from '@agnes/extension-api'
 import {
   type Actor,
+  automaticPermissionDecision,
   compilePluginConfig,
   type DecisionCommandReceipt,
   type DecisionResponse,
@@ -35,6 +36,7 @@ export interface DecisionAuthority {
   readonly closed: boolean
   readonly cancelled: boolean
   readonly actor: Actor
+  readonly permissionPolicy?: string | undefined
   readonly ttlMs: number
   readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
   readonly log: Pick<SessionLogImpl, 'append' | 'observeCommitted'>
@@ -154,6 +156,41 @@ export class DecisionCommands {
       },
     })
   }
+  private async automatic(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
+    if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
+      return value
+    const answer = automaticPermissionDecision(
+      this.s.permissionPolicy ? { policy: this.s.permissionPolicy, actor: this.s.actor } : undefined,
+      value.request.spec.purpose,
+      value.request.spec.options,
+    )
+    if (!answer) return value
+    if (
+      value.request.spec.responseSchema &&
+      compilePluginConfig(value.request.spec.responseSchema)(null).length
+    )
+      fail('RESPONSE_SCHEMA')
+    const next: DecisionSnapshot = {
+      ...value,
+      revision: value.revision + 1,
+      result: {
+        reason: 'answered',
+        code: answer.reason,
+        at: new Date(this.s.clock()).toISOString(),
+        response: { option: answer.verdict, value: null },
+        answeredBy: answer.answeredBy,
+      },
+    }
+    await this.write(
+      next,
+      () => this.live(source),
+      () => {
+        this.live(source)
+        this.execution(value.handle.id)
+      },
+    )
+    return next
+  }
   private due(value: DecisionSnapshot): boolean {
     return value.request.expiresAt !== null && this.s.clock() >= Date.parse(value.request.expiresAt)
   }
@@ -216,7 +253,7 @@ export class DecisionCommands {
         )
           fail('KEY_CONFLICT')
         this.read(existing.value.handle, source)
-        await this.expire(existing.value, source)
+        await this.automatic(await this.expire(existing.value, source), source)
         return detached(existing.value.handle)
       }
       const now = this.s.clock()
@@ -243,6 +280,22 @@ export class DecisionCommands {
         answerCommand: null,
         consumption: null,
         invalidation: null,
+      }
+      const automatic = automaticPermissionDecision(
+        this.s.permissionPolicy ? { policy: this.s.permissionPolicy, actor: this.s.actor } : undefined,
+        spec.purpose,
+        spec.options,
+      )
+      if (automatic) {
+        if (spec.responseSchema && compilePluginConfig(spec.responseSchema)(null).length)
+          fail('RESPONSE_SCHEMA')
+        value.result = {
+          reason: 'answered',
+          code: automatic.reason,
+          at: new Date(now).toISOString(),
+          response: { option: automatic.verdict, value: null },
+          answeredBy: automatic.answeredBy,
+        }
       }
       await this.write(
         value,
@@ -304,7 +357,7 @@ export class DecisionCommands {
   get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {
       this.live()
-      return detached(await this.expire(this.read(handle, source), source))
+      return detached(await this.automatic(await this.expire(this.read(handle, source), source), source))
     })
   }
   async list(): Promise<DecisionSnapshot[]> {
@@ -313,7 +366,7 @@ export class DecisionCommands {
       const values: DecisionSnapshot[] = []
       for (const { value } of this.s.readDecisions().values()) {
         if (this.owns(value.handle) && value.request.lane === this.s.lane)
-          values.push(detached(await this.expire(value)))
+          values.push(detached(await this.automatic(await this.expire(value))))
       }
       return values
     })
