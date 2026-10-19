@@ -49,8 +49,6 @@ export type Candidate = {
   kind: ReferenceKind
   label: string
   args: JsonObject
-  /** `mentioned`: the user's message named the path and no result has shown it; absent for an observed path. */
-  origin?: 'mentioned'
 }
 
 export type ResolvedTool = {
@@ -230,6 +228,8 @@ export type Counters = {
   unavailableRefusals: number
   mentionedSteps: number
   weakBindings: number
+  /** Steps whose Jev answers decoded into a decision (every step event with a confidence). */
+  decidedSteps: number
 }
 export type JevState = {
   v: 1

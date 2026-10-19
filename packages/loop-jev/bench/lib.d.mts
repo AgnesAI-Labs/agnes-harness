@@ -49,10 +49,12 @@ export type TurnMetrics = {
     droppedEvents: number
     /** `jev.decide` events other than refused ones: Jev calls that reached the provider. */
     decideCalls: number
-    /** Steps that went to the model for their parameters because the binding confidence was under the threshold. */
+    /** Steps whose executable arguments were dropped because the binding confidence was under the threshold. */
     weakBindings: number
     /** Direct steps that took a path only the user's message had named. */
     mentionedSteps: number
+    /** Steps with a decision (answers included); the denominator of `weakBindings`. */
+    decidedSteps: number
     /** The binding confidence of each decided step, three decimals. */
     confidences: number[]
   }

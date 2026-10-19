@@ -196,23 +196,34 @@ describe('mentioned candidates', () => {
         kind: 'file',
         label: `config/app.toml${MENTIONED_LABEL}`,
         args: { offset: 1, limit: 200, path: 'config/app.toml' },
-        origin: 'mentioned',
       },
     ])
   })
   it('offers a named directory to ls and a named file only to read', () => {
     const ws = turn('List src/ and read a.md')
-    expect(targetCandidates(tool('ls'), BUILTIN_SCHEMAS.ls, ws).map((c) => [c.key, c.origin])).toEqual([
-      ['src', 'mentioned'],
+    expect(targetCandidates(tool('ls'), BUILTIN_SCHEMAS.ls, ws).map((c) => [c.key, c.label])).toEqual([
+      ['src', `src${MENTIONED_LABEL}`],
     ])
     expect(read(ws).map((c) => c.key)).toEqual(['a.md'])
     expect(targetCandidates(tool('write'), BUILTIN_SCHEMAS.write, ws)).toEqual([])
   })
   it('lets an observation win: a named path a result showed is an ordinary candidate', () => {
     const ws = turn('Read a.md and b.md', [['file', 'a.md']])
-    expect(read(ws).map((c) => [c.key, c.origin, c.label])).toEqual([
-      ['b.md', 'mentioned', `b.md${MENTIONED_LABEL}`],
-      ['a.md', undefined, 'a.md'],
+    expect(read(ws).map((c) => [c.key, c.label])).toEqual([
+      ['b.md', `b.md${MENTIONED_LABEL}`],
+      ['a.md', 'a.md'],
+    ])
+  })
+  it('puts a seen path the message names again before the other seen paths, as an ordinary candidate', () => {
+    const ws = turn('Look at c.md again', [
+      ['file', 'a.md'],
+      ['file', 'b.md'],
+      ['file', 'c.md'],
+    ])
+    expect(read(ws).map((c) => [c.key, c.label])).toEqual([
+      ['c.md', 'c.md'],
+      ['a.md', 'a.md'],
+      ['b.md', 'b.md'],
     ])
   })
   it('puts named paths first and keeps the total at the candidate cap', () => {
@@ -239,7 +250,7 @@ describe('mentioned candidates', () => {
     ws.answer = 'look at hidden/answer.md'
     expect(ws.mentioned).toEqual([])
     // Only the file the call itself read is known; nothing the notes or the answer say.
-    expect(read(ws).map((c) => [c.key, c.origin])).toEqual([['a.md', undefined]])
+    expect(read(ws).map((c) => [c.key, c.label])).toEqual([['a.md', `a.md${READ_LABEL}`]])
   })
   it('does not count as read: freshness ignores it', () => {
     const ws = turn('read a.md twice')
@@ -249,7 +260,6 @@ describe('mentioned candidates', () => {
     ws.views = observed([['file', 'a.md']]).views
     recordStep(ws, step({ operation: 'read', target: 'a.md', read_files: ['a.md'] }))
     expect(read(ws)).toMatchObject([{ key: 'a.md', label: `a.md${READ_LABEL}` }])
-    expect(read(ws)[0]?.origin).toBeUndefined()
   })
 })
 

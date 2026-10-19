@@ -98,6 +98,25 @@ const latest = (recoverability: 'recoverable' | 'unsafe'): HistoryEntry => ({
 })
 
 describe('routeDecision', () => {
+  it('does not call a weak confidence a weak binding when Jev already chose LLM_PARAMETERS', () => {
+    const chose = d({
+      op: 'read',
+      confidence: 0.4,
+      operationPathConfidence: 0.9,
+      bindingMode: 'llm_parameters',
+      target: 'LLM_PARAMETERS',
+      args: {},
+    })
+    expect(route(chose, tool({ name: 'read', defaults: null }))).toMatchObject({
+      kind: 'parameters',
+      reason: null,
+    })
+    // The same confidence on an executable binding does drop it.
+    expect(route(d({ confidence: 0.4, operationPathConfidence: 0.9 }), LS)).toMatchObject({
+      kind: 'parameters',
+      reason: 'weak_binding',
+    })
+  })
   it('reports the threshold it compared with: the escalate one, or the higher one of an external write', () => {
     expect(route(d({}), LS).threshold).toBe(0.5)
     expect(route(d({}), EXT).threshold).toBe(0.6)

@@ -72,10 +72,13 @@ export function newTurn(ws: Workspace, goal: string): void {
   ws.turnStart = ws.history.length
 }
 
-/** Every path of `kind` the workspace has seen, newest first: what the views reference, then the rest of the index. */
+/**
+ * Every path of `kind` the workspace has seen, newest first: the index, which every recorded view and
+ * file step feeds, then any view reference it lacks (a checkpoint written before the index existed).
+ */
 export function knownPaths(ws: Workspace, kind: ReferenceKind): string[] {
   const indexed = kind === 'file' ? ws.index.files : ws.index.directories
-  return [...new Set([...referencePaths(ws.views, kind), ...indexed])]
+  return [...new Set([...indexed, ...referencePaths(ws.views, kind)])]
 }
 
 /** Whether the user's message named `path` as a `kind` that no result has shown. */

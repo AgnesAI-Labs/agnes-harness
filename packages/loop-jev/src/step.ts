@@ -217,6 +217,7 @@ export async function decodeAndRoute(
   })
   st.cur.decision = route.decision
   st.cur.route = { kind: route.kind, reason: route.reason, threshold: route.threshold }
+  st.counters.decidedSteps++
   if (route.reason === 'weak_binding') st.counters.weakBindings++
   if (route.kind !== 'direct') return llmStep(s, route, signal)
   st.counters.directSteps++

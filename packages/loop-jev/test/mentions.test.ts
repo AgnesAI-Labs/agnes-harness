@@ -54,14 +54,33 @@ describe('mentionedPaths', () => {
       ),
     ).toEqual(['file:and/or'])
   })
-  it('splits a word at a NUL, which no path holds', () => {
-    expect(files('a\u0000b.md')).toEqual(['file:b.md'])
+  it('rejects a word holding a NUL or a character outside the path set, instead of cutting it short', () => {
+    expect(files('a\u0000b/c.txt ok.md')).toEqual(['file:ok.md'])
+    expect(files('src/café.ts src/ok.ts')).toEqual(['file:src/ok.ts'])
+    expect(files('docs/文档.md and $HOME/.ssh/id_rsa and ~/notes.md')).toEqual([])
+  })
+  it('judges a .. segment on the word as written, before trailing dots are dropped', () => {
+    expect(files('see a/b/.. and x/../.. and ../ then ok.md')).toEqual(['file:ok.md'])
   })
   it('keeps the first of a repeated path and stops at the cap', () => {
     expect(files('a.md b.md a.md ./a.md')).toEqual(['file:a.md', 'file:b.md'])
     const many = Array.from({ length: 12 }, (_, i) => `f${i}.md`).join(' ')
-    expect(MENTION_CAP).toBe(8)
     expect(files(many)).toEqual(Array.from({ length: 8 }, (_, i) => `file:f${i}.md`))
+  })
+  it('keeps the words that read most like paths when more than 8 qualify', () => {
+    const noise = Array.from({ length: 6 }, (_, i) => `and/or${i}`).join(' ')
+    // Six extensionless slash words come first; only two of them make the eight, the real paths all do.
+    expect(files(`${noise} a.md b.md src/ lib/x.ts c.md d.md`)).toEqual([
+      'file:and/or0',
+      'file:and/or1',
+      'file:a.md',
+      'file:b.md',
+      'directory:src',
+      'file:lib/x.ts',
+      'file:c.md',
+      'file:d.md',
+    ])
+    expect(files(Array.from({ length: 9 }, (_, i) => `f${i}.md`).join(' '))).toHaveLength(MENTION_CAP)
   })
   it('keeps a file and a directory of the same name apart', () => {
     expect(files('docs docs/ docs/x.md')).toEqual(['directory:docs', 'file:docs/x.md'])

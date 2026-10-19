@@ -223,10 +223,14 @@ How the runner fits the host as it is in this version:
   in failed Jev calls is that latency sum; it does not include the rest of a failed step. Anything
   finer, such as per-step timing, is in the raw `events/` files (`jev.decide`, `jev.step`).
 - Jev confidence: the Jev lane section also reports `weak bindings: n of m steps; confidence
-  min/median/max` (steps whose binding confidence was under the threshold, so the conversation model
-  wrote the arguments, out of the steps that carry a confidence, and the spread of that confidence)
-  and `mentioned-path candidates used: k` (direct steps that read or listed a path only the user's
-  message had named). Each record keeps the per-step confidences (three decimals) in
-  `metrics.jev.confidences`. Records written before 2c show 0 of 0 and n/a.
+  min/median/max` and `mentioned-path candidates used: k`. A weak binding is a decided step whose
+  executable arguments Jev had chosen but were dropped because the confidence was under the
+  threshold, so the conversation model wrote the arguments (`reason: weak_binding`); a step where
+  Jev itself chose `LLM_PARAMETERS` is not counted. `m` is every step with a decision, answers
+  included (the exact `decidedSteps` counter of the turn), so the ratio is per decided step, not
+  per tool step. The confidence spread (three decimals) comes from the kept `jev.step` events
+  (`metrics.jev.confidences`), which the per-turn event budget can cut in a very long turn. `k` is
+  the direct steps that read or listed a path only the user's message had named. Records written
+  before 2c show 0 of 0 and n/a.
 - The startup directory of the headless host is also a temp directory, and `AGH_HOME` is set to
   the bench home, so no user-wide instruction file from another home reaches the sessions.

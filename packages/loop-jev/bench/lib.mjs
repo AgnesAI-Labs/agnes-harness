@@ -245,6 +245,7 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
       decideCalls: 0,
       weakBindings: 0,
       mentionedSteps: 0,
+      decidedSteps: 0,
       confidences: [],
     },
     toolSchemaHashes: [],
@@ -294,7 +295,10 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
       m.jev.droppedCalls += num(llm.droppedCalls)
       if (llm.outcome === 'no_call') m.jev.noCall++
       // A decided step carries the binding confidence; a weak one was sent to the model for its parameters.
-      if (typeof data.confidence === 'number') m.jev.confidences.push(round3(data.confidence))
+      if (typeof data.confidence === 'number') {
+        m.jev.confidences.push(round3(data.confidence))
+        m.jev.decidedSteps++
+      }
       if (route === 'parameters' && data.reason === 'weak_binding') m.jev.weakBindings++
       if (route === 'direct' && isObject(data.binding) && num(data.binding.mentioned) > 0)
         m.jev.mentionedSteps++
@@ -316,6 +320,7 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
     if (typeof metricsEvent.noCall === 'number') m.jev.noCall = metricsEvent.noCall
     if (typeof metricsEvent.weakBindings === 'number') m.jev.weakBindings = metricsEvent.weakBindings
     if (typeof metricsEvent.mentionedSteps === 'number') m.jev.mentionedSteps = metricsEvent.mentionedSteps
+    if (typeof metricsEvent.decidedSteps === 'number') m.jev.decidedSteps = metricsEvent.decidedSteps
     if (typeof metricsEvent.droppedCalls === 'number') m.jev.droppedCalls = metricsEvent.droppedCalls
     m.jev.droppedEvents = num(metricsEvent.droppedEvents)
   }
@@ -665,10 +670,11 @@ export function spread(values) {
 }
 
 /**
- * The report lines on how sure Jev was, over the Jev-lane records: the steps that fell back to the model
- * for their parameters because the binding confidence was under the threshold, the spread of that
- * confidence, and the direct steps that took a path only the user's message had named. Records written
- * before these fields existed count as having none.
+ * The report lines on how sure Jev was, over the Jev-lane records: the decided steps (the steps with a
+ * decision, answers included) whose executable arguments were dropped for a confidence under the
+ * threshold, the spread of the confidence of the decided steps whose events were kept (the per-turn event
+ * budget can cut them; the counts are exact), and the direct steps that took a path only the user's
+ * message had named. Records written before these fields existed count as having none.
  */
 export function confidenceLines(records) {
   let steps = 0
@@ -680,11 +686,12 @@ export function confidenceLines(records) {
     weak += num(j.weakBindings)
     mentioned += num(j.mentionedSteps)
     const values = Array.isArray(j.confidences) ? j.confidences.filter((v) => typeof v === 'number') : []
-    steps += values.length
+    steps += typeof j.decidedSteps === 'number' ? j.decidedSteps : values.length
     all.push(...values)
   }
   const s = spread(all)
-  const f = (n) => n.toFixed(2)
+  // The values are kept to three decimals, so three are shown; a median of two can need a fourth.
+  const f = (n) => round3(n).toFixed(3)
   return [
     `- weak bindings: ${weak} of ${steps} steps; confidence min/median/max ${s ? `${f(s.min)}/${f(s.median)}/${f(s.max)}` : 'n/a'}`,
     `- mentioned-path candidates used: ${mentioned}`,

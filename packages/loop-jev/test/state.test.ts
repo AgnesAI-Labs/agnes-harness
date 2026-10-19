@@ -351,6 +351,9 @@ describe('checkpoints with observations', () => {
       'workspace.mentioned',
     )
     expect(bad('x')).toThrow('workspace.mentioned')
+    // Only paths as the loop writes them: relative, normalized, no .. and the right kind.
+    for (const value of ['/etc/passwd', '../x', 'a/../b', './a', 'a//b', 'a\\b', ''])
+      expect(bad([{ kind: 'file', value }])).toThrow('workspace.mentioned[0].value')
   })
   describe('the seen-path index', () => {
     const withIndex = (files: number, directories: number) => {
@@ -388,6 +391,9 @@ describe('checkpoints with observations', () => {
       expect(bad({ files: Array(65).fill('a'), directories: [] })).toThrow('workspace.index.files')
       expect(bad({ files: [], directories: Array(17).fill('a') })).toThrow('workspace.index.directories')
       expect(bad(null)).toThrow('workspace.index')
+      for (const value of ['/etc/passwd', '../x', 'a/../b', './a', 'a//b', '', '.'])
+        expect(bad({ files: [value], directories: [] })).toThrow('workspace.index.files[0]')
+      expect(bad({ files: [], directories: ['../x'] })).toThrow('workspace.index.directories[0]')
     })
     it('is kept whole while the state fits', () => {
       const s = withIndex(64, 16)
@@ -502,6 +508,45 @@ describe('checkpoints with observations', () => {
         output_excerpt: 'o'.repeat(500),
       })
     expect(utf8Bytes(JSON.stringify(encodeState(s).state))).toBeLessThanOrEqual(32768)
+  })
+  it('keeps the canary state under the limit with a full index, cutting the index first', () => {
+    const s = initialState()
+    s.workspace.goal = '目标'.repeat(2000)
+    s.workspace.index = {
+      files: Array.from({ length: 64 }, (_, i) => `packages/feature/src/module${i}/${'x'.repeat(60)}.ts`),
+      directories: Array.from({ length: 16 }, (_, i) => `packages/feature/src/module${i}`),
+    }
+    for (let i = 0; i < 4; i++)
+      s.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: `c${i}`,
+          scope: `f${i}.ts`,
+          evidence: '证'.repeat(5000),
+          references: [{ kind: 'file', value: `f${i}.ts` }],
+          truncated: false,
+        }),
+      )
+    for (let i = 0; i < 30; i++)
+      s.workspace.history.push({
+        phase: 'INSPECT',
+        operation: 'read',
+        target: `f${i}.ts`,
+        status: 'succeeded',
+        disposition: 'SUCCEEDED',
+        summary: `read(f${i}.ts) conf=0.90`,
+        intentFp: 'a'.repeat(32),
+        observationFp: 'b'.repeat(32),
+        dispatched: true,
+        read_files: [`f${i}.ts`],
+        output_excerpt: 'o'.repeat(500),
+      })
+    const out = encodeState(s).state as unknown as typeof s
+    expect(utf8Bytes(JSON.stringify(out))).toBeLessThanOrEqual(CHECKPOINT_MAX_BYTES)
+    // This realistic worst case has no room for the whole index: it is cut, and here dropped with the
+    // evidence already halved, so nothing but the index grows the checkpoint.
+    expect(out.workspace.index.files.length).toBeLessThanOrEqual(16)
+    expect(out.workspace.views[0]?.evidence.length).toBeLessThanOrEqual(2500)
   })
   it('halves view evidence once, before cutting the previous answer or the goal', () => {
     const s = initialState()

@@ -292,6 +292,42 @@ describe('recovery after resume', () => {
     expect(r.executed).toEqual([])
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
+  it('dispatch responded: the recovered step reports the saved threshold, and an older checkpoint the configured one', async () => {
+    const withRoute = (threshold?: number) =>
+      saved({
+        stage: 'dispatch',
+        cur: {
+          ...saved({}).cur,
+          calls: [call],
+          route: {
+            kind: 'parameters',
+            reason: 'weak_binding',
+            ...(threshold === undefined ? {} : { threshold }),
+          },
+        },
+      })
+    const effects = responded('jev:1:0:t0', ok('wrote a.txt'))
+    const now = await resume(withRoute(0.8), { effects })
+    expect(now.steps[0]).toMatchObject({
+      route: 'parameters',
+      reason: 'weak_binding',
+      confidence: 0.9,
+      operationPathConfidence: 0.9,
+      threshold: 0.8,
+    })
+    const before = await resume(withRoute(), { effects })
+    expect(before.steps[0]).toMatchObject({ reason: 'weak_binding', threshold: 0.5 })
+  })
+  it('keeps the paths the turn named and the seen-path index across a restart', async () => {
+    const state = saved({ stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } })
+    state.workspace.mentioned = [{ kind: 'file', value: 'config/app.toml' }]
+    state.workspace.index = { files: ['old/seen.md'], directories: ['old'] }
+    const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
+    await resume(state, { effects: responded('jev:1:0:t0', ok('wrote a.txt')), jev })
+    const sent = (jev.prepared[0]?.payload as { state: JsonObject }).state
+    expect(sent.mentioned_paths).toEqual(['config/app.toml'])
+    expect(sent.known_files).toEqual(['a.txt', 'old/seen.md'])
+  })
   it('dispatch of a read batch responded: one entry and one view, nothing run again', async () => {
     const reads = ['a.md', 'b.md', 'c.md'].map(
       (path, i): PendingCall => ({

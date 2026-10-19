@@ -10,6 +10,7 @@ import {
   SHRUNK_INDEX_DIRECTORY_CAP,
   SHRUNK_INDEX_FILE_CAP,
   VIEW_CAP,
+  viewPath,
 } from './observations.js'
 import { MAX_BATCH } from './profile.js'
 import type { Counters, JevState, JsonValue } from './types.js'
@@ -27,6 +28,7 @@ export const ADDED_COUNTERS = [
   'unavailableRefusals',
   'mentionedSteps',
   'weakBindings',
+  'decidedSteps',
 ] as const
 
 export function emptyCounters(): Counters {
@@ -51,6 +53,7 @@ export function emptyCounters(): Counters {
     unavailableRefusals: 0,
     mentionedSteps: 0,
     weakBindings: 0,
+    decidedSteps: 0,
   }
 }
 
@@ -355,8 +358,13 @@ function checkMentioned(value: unknown, path: string): void {
     const ref = obj(item, `${path}[${i}]`)
     only(ref, ['kind', 'value'], `${path}[${i}]`)
     oneOf(ref.kind, REFERENCE_KINDS, `${path}[${i}].kind`)
-    str(ref.value, `${path}[${i}].value`)
+    wholePath(ref.value, ref.kind as 'file' | 'directory', `${path}[${i}].value`)
   }
+}
+
+/** A path as the loop writes it: whole, safe, workspace-relative and normalized. */
+function wholePath(value: unknown, kind: 'file' | 'directory', path: string): void {
+  if (viewPath(value, kind) !== value) fail(path)
 }
 
 function checkIndex(value: unknown, path: string): void {
@@ -364,6 +372,10 @@ function checkIndex(value: unknown, path: string): void {
   only(index, ['files', 'directories'], path)
   strings(index.files, `${path}.files`)
   strings(index.directories, `${path}.directories`)
+  for (const [i, value] of (index.files as unknown[]).entries())
+    wholePath(value, 'file', `${path}.files[${i}]`)
+  for (const [i, value] of (index.directories as unknown[]).entries())
+    wholePath(value, 'directory', `${path}.directories[${i}]`)
   if ((index.files as unknown[]).length > INDEX_FILE_CAP) fail(`${path}.files`)
   if ((index.directories as unknown[]).length > INDEX_DIRECTORY_CAP) fail(`${path}.directories`)
 }

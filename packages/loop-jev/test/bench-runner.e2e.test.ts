@@ -300,7 +300,7 @@ describe('bench runner', () => {
     expect(md).toMatch(/- jev: \d+ requests, 1 tool schema hashes, 0 switches/)
     // The Jev lane reports how sure Jev was and how many named paths it used.
     expect(md).toMatch(
-      /- weak bindings: \d+ of \d+ steps; confidence min\/median\/max (\d\.\d\d\/\d\.\d\d\/\d\.\d\d|n\/a)/,
+      /- weak bindings: \d+ of \d+ steps; confidence min\/median\/max (\d\.\d{3}\/\d\.\d{3}\/\d\.\d{3}|n\/a)/,
     )
     expect(md).toMatch(/- mentioned-path candidates used: \d+/)
     expect(jev.metrics.jev.confidences.length).toBeGreaterThan(0)

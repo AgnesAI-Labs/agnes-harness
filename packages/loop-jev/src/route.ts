@@ -58,7 +58,8 @@ export function routeDecision(input: RouteInput): Route {
 
   let routed = decision
   let weak = false
-  if (decision.confidence < threshold) {
+  // Only a binding that carried executable arguments can be weak; a choice of LLM_PARAMETERS has nothing to drop.
+  if (decision.confidence < threshold && decision.bindingMode !== 'llm_parameters') {
     // A weak binding does not re-choose the operation; it only drops the executable arguments (and any batch).
     const { batch: _batch, ...rest } = decision
     routed = { ...rest, bindingMode: 'llm_parameters', args: {}, target: LLM_PARAMETERS }

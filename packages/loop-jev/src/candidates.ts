@@ -14,7 +14,7 @@ import { fileActivity, knownPaths } from './workspace.js'
 /*
  * Target candidates: complete calls built from the paths earlier results showed, newest first, and
  * the paths the user's message of this turn named (see mentions.ts), which come first and say so in
- * their label. The goal is otherwise never parsed or used to rank, and no argument other than the
+ * their label (a changed or read label takes the place of that one). The goal is otherwise never parsed or used to rank, and no argument other than the
  * target path varies.
  */
 
@@ -49,11 +49,17 @@ export function targetCandidates(tool: ResolvedTool, schema: unknown, ws: Worksp
     if (SYNTHETIC_KEYS.has(key)) continue
     const args = { ...structuredClone(bindingDefaults), [targetParam]: key }
     if (!completeArgs(schema, args)) continue
-    const origin = unseen.includes(key) ? ('mentioned' as const) : undefined
-    const note = changed.has(key) ? CHANGED_LABEL : read.has(key) ? READ_LABEL : origin ? MENTIONED_LABEL : ''
+    const mentioned = unseen.includes(key)
+    const note = changed.has(key)
+      ? CHANGED_LABEL
+      : read.has(key)
+        ? READ_LABEL
+        : mentioned
+          ? MENTIONED_LABEL
+          : ''
     // A long path gives way to its freshness or origin label, which stays whole.
     const label = `${clip(key, LABEL_CHARS - note.length)}${note}`
-    candidates.push({ key, kind, label, args, ...(origin ? { origin } : {}) })
+    candidates.push({ key, kind, label, args })
   }
   return candidates
 }

@@ -487,15 +487,21 @@ describe('bench suite validation', () => {
         steps: 4,
         weakBindings: 1,
         mentionedSteps: 1,
+        decidedSteps: 3,
         confidences: [0.912, 0.8, 0.3],
       })
     })
     it('lets the exact turn counters win over the capped step events', () => {
       const m = turnMetrics([
         step({ route: 'parameters', reason: 'weak_binding', confidence: 0.3 }),
-        { type: 'x/a/b/jev.metrics', data: { weakBindings: 7, mentionedSteps: 3 } },
+        { type: 'x/a/b/jev.metrics', data: { weakBindings: 7, mentionedSteps: 3, decidedSteps: 12 } },
       ])
-      expect(m.jev).toMatchObject({ weakBindings: 7, mentionedSteps: 3, confidences: [0.3] })
+      expect(m.jev).toMatchObject({
+        weakBindings: 7,
+        mentionedSteps: 3,
+        decidedSteps: 12,
+        confidences: [0.3],
+      })
     })
     it('takes the spread of some numbers, and none of none', () => {
       expect(spread([])).toBeNull()
@@ -511,9 +517,13 @@ describe('bench suite validation', () => {
           rec({ weakBindings: 1, mentionedSteps: 2, confidences: [0.95, 0.4] }),
         ]),
       ).toEqual([
-        '- weak bindings: 3 of 5 steps; confidence min/median/max 0.30/0.60/0.95',
+        '- weak bindings: 3 of 5 steps; confidence min/median/max 0.300/0.600/0.950',
         '- mentioned-path candidates used: 3',
       ])
+      // The exact decided-step counter is the denominator when the kept events are fewer.
+      expect(confidenceLines([rec({ weakBindings: 4, decidedSteps: 10, confidences: [0.9, 0.5] })])[0]).toBe(
+        '- weak bindings: 4 of 10 steps; confidence min/median/max 0.500/0.700/0.900',
+      )
       // Records from before these fields existed.
       expect(confidenceLines([rec({ steps: 4 })])).toEqual([
         '- weak bindings: 0 of 0 steps; confidence min/median/max n/a',
