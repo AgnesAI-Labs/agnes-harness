@@ -6,7 +6,7 @@ English | [简体中文](testing.zh-CN.md)
 
 Business agents can ship as plugins with offline, repeatable author tests. Import the helpers from **`@agnes/host/author-testkit`**. The preview SDK is source-only; link matching packages with [the quickstart](quickstart.md) before running tests. No model account or API key is needed for scripted or replay tests.
 
-Candidate tests retain the [Host isolation and exact-hash rules](../guide/security.md). Full access automatically allows tests on every platform, including unisolated Windows; workspace-write/standard still requires one confirmation. Testing alone never publishes a package. Submitting a passing candidate under full access automatically installs, trusts and enables it through the existing publication transaction; other presets retain human review.
+Candidate tests retain the [Host isolation and exact-hash rules](../guide/security.md). Full access automatically allows tests on every platform, including unisolated Windows; the `workspace-write` permission still requires one confirmation. Testing alone never publishes a package. Submitting a passing candidate under full access automatically installs, trusts and enables it through the existing publication transaction; other permission levels retain human review.
 
 Full-access tool requests also automatically allow Skill import/install, capability changes, MCP registration/start, ask-mode memory writes and credential administration confirmations. Each permission decision records its actor and reason `full-access`. Protected paths retain their hard refusals. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
 

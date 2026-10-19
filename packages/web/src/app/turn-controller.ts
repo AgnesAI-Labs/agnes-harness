@@ -218,7 +218,7 @@ export function createTurnController(
         : undefined)
     const durable = known?.state === 'pending' ? known : undefined
     const fullAccess =
-      context.sessionRows.find((row) => row.sessionId === context.current?.id)?.preset === 'full-access'
+      context.sessionRows.find((row) => row.sessionId === context.current?.id)?.permission === 'full-access'
     const live = context.liveApproval
     // A new live question takes precedence over an older durable permission projection.
     if (

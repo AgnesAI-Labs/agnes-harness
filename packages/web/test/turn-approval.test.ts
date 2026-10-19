@@ -126,7 +126,8 @@ it.each(['preview', 'pending', 'full-access', 'full-plan', 'legacy-yolo'])(
         createdAt: '2026-10-20T00:00:00Z',
         lastSeq: 1,
         generation: 1,
-        preset: mode === 'legacy-yolo' ? 'workspace-write' : 'full-access',
+        preset: 'standard',
+        permission: mode === 'legacy-yolo' ? 'workspace-write' : 'full-access',
       },
     ]
     if (mode === 'full-access') context.projection = timeline([{ ...approval, category: 'permission' }])
@@ -173,7 +174,11 @@ it.each(['live', 'durable'])(
       } as unknown as typeof context.liveApproval
     controller.renderApproval()
     await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull())
-    context.sessionRows = context.sessionRows.map((row) => ({ ...row, preset: 'full-access' }))
+    context.sessionRows = context.sessionRows.map((row) => ({
+      ...row,
+      preset: 'standard',
+      permission: 'full-access',
+    }))
     controller.renderApproval()
     await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).toBeNull())
     expect(decide).not.toHaveBeenCalled()
@@ -438,7 +443,14 @@ it.each(['empty', 'stale-permission', 'stale-automatic'])(
   async (projection) => {
     const { context, controller, decide } = await harness()
     context.sessionRows = [
-      { sessionId: 's', createdAt: '2026-10-20T00:00:00Z', lastSeq: 1, generation: 1, preset: 'full-access' },
+      {
+        sessionId: 's',
+        createdAt: '2026-10-20T00:00:00Z',
+        lastSeq: 1,
+        generation: 1,
+        preset: 'standard',
+        permission: 'full-access',
+      },
     ]
     context.projection = timeline(
       projection === 'empty'

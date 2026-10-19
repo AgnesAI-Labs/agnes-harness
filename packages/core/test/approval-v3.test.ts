@@ -1222,7 +1222,8 @@ it.each(['manual', 'off', 'auto-review'] as const)(
       throw new Error('Human request must not be raised')
     })
     const preset = presetDefaults()
-    preset.name = 'full-access'
+    preset.name = 'standard'
+    preset.permission = 'full-access'
     preset.approval.policy = 'full-access'
     const policies = new ToolPolicyRegistry()
     policies.register('fixture', {

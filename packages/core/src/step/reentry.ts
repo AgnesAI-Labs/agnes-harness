@@ -436,7 +436,17 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
   const seq = await s.locked(async () => {
     if (s.d.sessionOverlay) await s.d.sessionOverlay.apply(s.key, { preset: view.name })
     const r = await s.d.log.append([
-      s.ev('x/core/preset-switch', { from: s.preset.name, to: view.name }, { ignorable: true }),
+      s.ev(
+        'x/core/preset-switch',
+        {
+          from: s.preset.name,
+          to: view.name,
+          ...(s.preset.permission === 'full-access' || view.permission === 'full-access'
+            ? { fromPermission: s.preset.permission ?? null, toPermission: view.permission ?? null }
+            : {}),
+        },
+        { ignorable: true },
+      ),
     ])
     s.revokeAutomaticPermissions()
     s.preset = structuredClone(view)

@@ -8,9 +8,9 @@
 
 Agent 创作的文件走 **候选 → 测试 → 权限裁决 → 发布**。Host 将有界纯文本文件集合写入 profile 的私有 `.authoring-candidates` 区。发现流程不会加载它，即使自定义发现根目录指向候选区内部。创建候选不会安装；完全访问下提交候选可自动发布。
 
-候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；可修改工作区／standard 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
+候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 
-会话有效策略为 `full-access` 时，全部权限裁决在所有平台自动允许，不再弹出审批。包括候选测试与发布（安装、信任、启用及能力变更）、Skill 导入、MCP 注册／启动、询问模式的记忆写入、工具请求的凭据管理、主体审批和交互式验证器审批。每项决定保留执行者、精确操作绑定和 `full-access` 原因；Trace 与执行证据显示 **自动允许（完全访问）**。其他预设保持原有人工审阅流程。
+会话已解析的权限为 `full-access` 时，全部权限裁决在所有平台自动允许，不再弹出审批。包括候选测试与发布（安装、信任、启用及能力变更）、Skill 导入、MCP 注册／启动、询问模式的记忆写入、工具请求的凭据管理、主体审批和交互式验证器审批。每项决定保留执行者、精确操作绑定和 `full-access` 原因；Trace 与执行证据显示 **自动允许（完全访问）**。其他权限级别保持原有人工审阅流程。
 
 选择 API 或 token 前，先读两条指南共用的[源码生成作者参考](../reference/plugin-author-api.zh-CN.md)。`apply(ctx)` 使用 PluginContext 登记能力，`execute(args, ctx)` 才接收 ToolContext。工作区文件用 `ctx.fs.read/write`（字节或字符串），插件或应用 profile 数据用声明 `capabilities.store: true` 后的可选 `ctx.store`。不存在 `PluginContext.fs.readText/writeText`。
 
@@ -37,7 +37,7 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 1. `plugin_helper_guide`（`kind: tool|tool-with-panel|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。
 2. `plugin_helper_create`（`files: [{path, content}, …]`）仅写 Host 候选区，返回 `proposalId`（候选 ID）、`candidateHash` 和 `draft` 状态。创建沿用内置 scaffold 的文本候选合同，支持其 TypeScript 面板模板；不会执行生命周期脚本。
-3. `plugin_helper_install`（`action: test`、`proposalId`）按上述会话策略裁决后，对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 不再安装；旧 onboarding proposal ID 需重新创建候选。
+3. `plugin_helper_install`（`action: test`、`proposalId`）按上述会话策略裁决后，对该摘要的私有副本执行 Node 作者测试。`action: commit` 提交通过的结果供审阅；`action: status` 查询持久候选。Commit 在完全访问权限下自动发布；其他权限级别提交人工审阅。旧 onboarding proposal ID 需重新创建候选。
 
 新创作 Markdown 的 `skill_helper_create` 同样保存为可审阅的 Skill 包候选；`skill_helper_install` 对候选 ID 使用 test/commit/status。创作包在此 profile 发布；代码按会话固定，已批准的 Skill 资源实时刷新；create 不再接受原 workspace/user 范围与仅安装参数。已有 Skill 导入保留 workspace/user 导入审批流程。
 

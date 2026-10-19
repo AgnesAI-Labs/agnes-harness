@@ -1151,7 +1151,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         if (
           e.type === 'x/core/preset-switch' &&
           e.origin === 'system' &&
-          (e.data as { from?: string }).from === 'full-access'
+          (e.data as { fromPermission?: string }).fromPermission === 'full-access'
         ) {
           pool.revokeSessionRequests(sessionKey)
           pool.resetSessionRequests(sessionKey)

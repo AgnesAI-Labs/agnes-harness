@@ -1,6 +1,7 @@
-# Permission overlay, explicit opt-in: ordinary tool approvals are disabled; private providers can
-# still require OS isolation. Principal authorization and hard secret/integrity denials remain
-# authoritative. Merged after a recipe; it writes permission-axis fields only.
+# Permission overlay, explicit opt-in: the resolved full-access permission routes trusted permission
+# decisions through the central automatic rule and records exact, revocable authority. Questions,
+# plan/fact checks and hard secret/integrity denials remain authoritative. Private providers can still
+# require OS isolation. Merged after a recipe; it writes permission-axis fields only.
 name: permission-full-access
 approval: { command_policy: [] }
 sandbox: { level: L0, on_unavailable: allow }

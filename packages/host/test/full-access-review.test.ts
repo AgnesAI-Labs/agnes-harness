@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadPreset } from '@agnes/code'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
@@ -11,6 +12,8 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
     dataDir,
     allowed: ['standard', 'full-access', 'read-only'],
     presets: {
+      'permission-full-access': loadPreset('permission-full-access'),
+      'permission-read-only': loadPreset('permission-read-only'),
       'full-access': { name: 'full-access', extends: 'standard' },
       'read-only': { name: 'read-only', extends: 'standard' },
     },
@@ -87,7 +90,10 @@ it('review: full access retains private-home and must-read-first hard refusals',
     dataDir,
     allowed: ['standard', 'full-access'],
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
-    presets: { 'full-access': { name: 'full-access', extends: 'standard' } },
+    presets: {
+      'permission-full-access': loadPreset('permission-full-access'),
+      'full-access': { name: 'full-access', extends: 'standard' },
+    },
     approval: async () => {
       throw new Error('Unexpected human permission request')
     },

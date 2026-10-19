@@ -518,8 +518,7 @@ export async function approveAndExecute(
         policy,
         category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
         tainted: taint,
-        fullAccess:
-          s.yolo || automaticPermissionDecision({ policy: s.preset.name, actor: s.d.actor }) !== undefined,
+        fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
         approvalMode,
       }),
       o.signal ?? s.ac.signal,
@@ -542,7 +541,7 @@ export async function approveAndExecute(
     )
       throw new CoreError('E_ENVELOPE', 'invalid human approval constraints')
     const automatic = automaticPermissionDecision(
-      { policy: s.preset.name, actor: s.d.actor },
+      s.permissionContext,
       call.name === 'exit_plan_mode' ? 'plan.exit' : 'tool.permission',
     )
     const needsAsk =
@@ -587,12 +586,7 @@ export async function approveAndExecute(
               policy,
               category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
               tainted: s.laneTaint(),
-              fullAccess:
-                s.yolo ||
-                automaticPermissionDecision({
-                  policy: s.preset.name,
-                  actor: s.d.actor,
-                }) !== undefined,
+              fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
               approvalMode,
               ...(settings?.config === undefined ? {} : { config: settings.config }),
             },
@@ -1172,12 +1166,7 @@ export async function approveAndExecute(
           ...(approvalProof ? { approval: approvalProof } : {}),
           cwd: s.d.cwd,
           workspaceRoot: s.workspaceRoot,
-          fullAccess:
-            s.yolo ||
-            automaticPermissionDecision({
-              policy: s.preset.name,
-              actor: s.d.actor,
-            }) !== undefined,
+          fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,

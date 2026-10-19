@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin, memoryPlugin, sandboxImplementation, sandboxWorkspaceProbe } from '@agnes/base'
+import { loadPreset } from '@agnes/code'
 import type { ApprovalRequest } from '@agnes/core'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
@@ -94,12 +95,8 @@ it.each(
           },
         },
         'workspace-write': { name: 'workspace-write', extends: 'standard' },
-        'full-access': {
-          name: 'full-access',
-          extends: 'standard',
-          providers: { 'tool-policy': { provider: 'full-access' } },
-          sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
-        },
+        'full-access': { name: 'full-access', extends: 'base' },
+        'permission-full-access': loadPreset('permission-full-access'),
       },
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       packages: {

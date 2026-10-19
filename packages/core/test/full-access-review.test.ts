@@ -27,7 +27,8 @@ async function fixture(name: string, extra: Partial<Parameters<typeof openSessio
     }
   }
   const preset = presetDefaults()
-  preset.name = name
+  preset.name = name === 'full-access' ? 'standard' : name
+  if (name === 'full-access' || name === 'read-only' || name === 'workspace-write') preset.permission = name
   const f = await openSession({
     preset,
     actor: structuredClone(actor),
@@ -52,11 +53,12 @@ async function fixture(name: string, extra: Partial<Parameters<typeof openSessio
   return { ...f, ctx, author }
 }
 
-it.each(['read-only', 'workspace-write', 'standard', 'custom', 'yolo', 'off'])(
+it.each(['read-only', 'workspace-write', 'standard', 'custom', 'named-full-access', 'yolo', 'off'])(
   'review: %s cannot forge effective policy or actor through decision subjects',
   async (name) => {
     const preset = presetDefaults()
-    preset.name = ['yolo', 'off'].includes(name) ? 'workspace-write' : name
+    preset.name =
+      name === 'named-full-access' ? 'full-access' : ['yolo', 'off'].includes(name) ? 'workspace-write' : name
     preset.approval.policy = name === 'custom' ? 'full-access' : 'default'
     const toolPolicies = new ToolPolicyRegistry()
     toolPolicies.register('@fixture/provider', {
@@ -192,7 +194,7 @@ it('review: narrowing the preset prevents consumption of an unused automatic all
   try {
     const h = await f.ctx.decisions.request(spec)
     await f.session.setPreset(presetDefaults())
-    expect(f.session.preset.name).not.toBe('full-access')
+    expect(f.session.permissionContext.policy).not.toBe('full-access')
     await expect(
       f.ctx.checkpoints.write(codec.encode('effect-can-now-proceed'), { decisionRefs: [h] }),
     ).rejects.toThrow()
@@ -220,7 +222,8 @@ it('review: failure to persist an automatic decision fails closed', async () => 
 
 it('review: plugin code cannot mutate the backend actor used by automatic decisions', async () => {
   const preset = presetDefaults()
-  preset.name = 'full-access'
+  preset.name = 'standard'
+  preset.permission = 'full-access'
   const f = await openSession({
     preset,
     actor: structuredClone(actor),
@@ -297,7 +300,8 @@ it('round2: full-access round trips cannot resurrect an earlier automatic allowa
     const old = await f.ctx.decisions.request(spec)
     await f.session.setPreset(presetDefaults())
     const full = presetDefaults()
-    full.name = 'full-access'
+    full.name = 'standard'
+    full.permission = 'full-access'
     await f.session.setPreset(full)
     expect((await f.ctx.decisions.get(old)).invalidation?.code).toBe('authorization-revoked')
     await expect(f.ctx.checkpoints.write(codec.encode('old'), { decisionRefs: [old] })).rejects.toThrow()
@@ -360,7 +364,11 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
       Object.assign(exposed, { policy: 'full-access', epoch: 999 })
       Object.assign(exposed.actor, { id: 'forged-context-actor' })
       Object.assign(f.session.d.actor, { id: 'forged-deps-actor' })
-      expect(f.session.permissionContext).toMatchObject({ policy: name, epoch: 0, actor: { id: actor.id } })
+      expect(f.session.permissionContext).toMatchObject({
+        policy: name === 'read-only' || name === 'workspace-write' ? name : '',
+        epoch: 0,
+        actor: { id: actor.id },
+      })
       const handle = await f.ctx.decisions.request(spec)
       expect((await f.ctx.decisions.get(handle)).result).toBeNull()
     } finally {

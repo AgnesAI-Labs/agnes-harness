@@ -31,7 +31,13 @@ it.each(['full-access', 'workspace-write', 'read-only', 'custom'])(
   'round2: budget quotation preserves the effective %s permission boundary',
   async (policy) => {
     let asks = 0
-    const selected = { ...preset(4000, 'quote'), name: policy }
+    const selected = {
+      ...preset(4000, 'quote'),
+      name: 'standard',
+      ...(policy === 'custom'
+        ? {}
+        : { permission: policy as 'full-access' | 'workspace-write' | 'read-only' }),
+    }
     const f = await openSession({
       provider: withCount(9000),
       preset: selected,
@@ -120,7 +126,11 @@ describe('count calibration', () => {
       })
       const d = await openSession({
         provider: withCount(9000),
-        preset: { ...preset(4000), name: policy },
+        preset: {
+          ...preset(4000),
+          name: 'standard',
+          permission: policy as 'full-access' | 'workspace-write',
+        },
         seams,
       })
       await d.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
@@ -138,7 +148,11 @@ describe('count calibration', () => {
       const quotedProvider = withCount(9000)
       const q = await openSession({
         provider: quotedProvider,
-        preset: { ...preset(4000, 'quote'), name: policy },
+        preset: {
+          ...preset(4000, 'quote'),
+          name: 'standard',
+          permission: policy as 'full-access' | 'workspace-write',
+        },
         seams,
       })
       await q.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })

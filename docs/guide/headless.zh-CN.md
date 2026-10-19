@@ -20,11 +20,11 @@ agh run --bundle ./bundle.json --input ./prompts --batch --json > batch.jsonl
 
 CLI 将临时 profile inputs 交给 Host composition 和常规验证，不保存 admin bundle selection。未知 ID、缺失依赖在会话开始前失败，不自动安装插件。不支持 bundle composition 的 Host 会拒绝 `--bundle`。
 
-可选参数为 `--profile`、`--preset`、`--permission LEVEL`（`read-only`、`workspace-write`、`full-access` 或 `default`，见[权限与预设](security.zh-CN.md#permissions-and-presets)）、`--loop ID@VERSION`、`--model primary=ROUTE/MODEL`、`--cwd`，均放在 `run` 后。输入为 UTF-8 文本，最大 4 MiB；bundle JSON 最大 1 MiB。`--batch` 按文件名顺序处理目录第一层普通文件，每个文件一个会话，不递归、不跟随符号链接。每条记录带输入路径，可按 input 和 runId 分组。无人值守运行拒绝权限请求；运行前应配置适当的后端策略。
+可选参数为 `--profile`、`--preset`、`--permission LEVEL`（`read-only`、`workspace-write`、`full-access` 或 `default`，见[权限与预设](security.zh-CN.md#permissions-and-presets)）、`--loop ID@VERSION`、`--model primary=ROUTE/MODEL`、`--cwd`，均放在 `run` 后。输入为 UTF-8 文本，最大 4 MiB；bundle JSON 最大 1 MiB。`--batch` 按文件名顺序处理目录第一层普通文件，每个文件一个会话，不递归、不跟随符号链接。每条记录带输入路径，可按 input 和 runId 分组。完全访问权限请求会自动允许；其他权限级别在没有审批处理器时继续按无人值守策略拒绝。
 
 退出码：completed 为 0，错误或事件未完整排空为 1，用法/启动失败为 2，parked 为 3，blocked/budget 为 4，max steps 为 5，SIGINT/SIGTERM/SIGHUP 分别为 130/143/129。batch 在单项失败后继续，返回首个非零状态。信号取消当前 prompt 并停止后续输入，关闭宽限期为五秒。
 
-定时任务与 Webhook 会话沿用有效权限预设。完全访问的权限请求自动允许并记录证据，不转交人工审批；其他预设继续遵循无人值守的交接或拒绝设置。用户问题和明确选择的计划／只读模式保持原有行为。
+定时任务与 Webhook 会话沿用有效权限级别。完全访问的权限请求自动允许并记录证据，不转交人工审批；其他权限级别继续遵循无人值守的交接或拒绝设置。用户问题和明确选择的计划／只读模式保持原有行为。
 
 ## SDK
 

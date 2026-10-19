@@ -344,7 +344,8 @@ it.each(['full-access', 'workspace-write'])(
   async (policy) => {
     const ask = vi.fn(async (req: { deadline: string }) => ({ ticket: 'review', expiresAt: req.deadline }))
     const preset = presetDefaults()
-    preset.name = policy
+    preset.name = 'standard'
+    preset.permission = policy as 'full-access' | 'workspace-write'
     preset.approval.policy = policy
     const policies = new ToolPolicyRegistry()
     policies.register('fixture', {

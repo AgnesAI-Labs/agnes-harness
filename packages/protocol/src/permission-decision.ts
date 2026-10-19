@@ -2,6 +2,7 @@ import type { Actor } from '../gen/ts/session-v1.js'
 
 /** Backend snapshot, outside all author-controlled inputs. Identity changes on reopen. */
 export interface PermissionContext {
+  /** Resolved permission axis; never a recipe name or tool-policy provider id. Empty for fixed custom recipes. */
   readonly policy: string
   readonly actor: Actor
   readonly sessionKey: string

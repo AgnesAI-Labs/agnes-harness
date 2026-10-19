@@ -87,10 +87,11 @@ it('shows the current mode on the trigger, lists the three modes and reports the
     'option',
   ])
   expect(option('可修改工作区').getAttribute('aria-selected')).toBe('true')
+  // Owner decision: full-access permission auto-allows; chosen modes and hard refusals remain.
   // The row carries one short line; the full explanation is its tooltip.
-  expect(option('完全访问').textContent).toBe('完全访问普通操作免逐次审批；仍有例外')
-  expect(option('完全访问').getAttribute('title')).toContain('普通操作不再逐次审批')
-  expect(option('完全访问').getAttribute('title')).toContain('保护目录、计划/记忆规则及安装信任确认仍生效')
+  expect(option('完全访问').textContent).toBe('完全访问全部操作自动允许，不再弹出审批')
+  expect(option('完全访问').getAttribute('title')).toContain('全部操作自动允许')
+  expect(option('完全访问').getAttribute('title')).not.toContain('安装信任确认')
   expect(option('可修改工作区').getAttribute('title')).toContain('命令需审批。命令隔离取决于平台')
 
   // While the host is applying a change the list stays readable and refuses another choice.
@@ -193,11 +194,11 @@ it('lists only the three modes', async () => {
   expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
     '只能查看，不改文件',
     '可改工作区内文件',
-    '普通操作免逐次审批；仍有例外',
+    '全部操作自动允许，不再弹出审批',
   ])
   for (const row of rows) {
     expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
-    expect(row.getAttribute('title')?.length ?? 0).toBeGreaterThan(16)
+    expect(row.getAttribute('title')).toBeTruthy()
   }
   expect(rows.map((row) => row.querySelector('.permission-picker-check svg') !== null)).toEqual([
     false,
@@ -227,7 +228,7 @@ it.each([
     '可修改工作区',
     '命令需审批',
     '完全访问',
-    '安装信任确认',
+    '不再弹出审批',
   ],
   [
     'en',
@@ -238,7 +239,7 @@ it.each([
     'Edit workspace',
     'commands need approval',
     'Full access',
-    'installation trust confirmations',
+    'no approval prompts',
   ],
 ] as const)(
   'explains all permission axes in %s',

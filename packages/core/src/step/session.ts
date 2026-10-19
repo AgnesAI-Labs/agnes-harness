@@ -178,6 +178,7 @@ import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import { SessionPermissionAuthority } from './session-permission-authority.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { settleParkedCompletion } from './verifier-continuation.js'
@@ -682,37 +683,24 @@ export class SessionImpl {
     return this.closing
   }
 
-  private readonly authorizationId = crypto.randomUUID()
-  private authorizationEpoch = 0
-  private readonly authorizationChanges = new Set<() => void>()
-  private readonly authorizationActor: Actor
+  private readonly authorization: SessionPermissionAuthority
   get permissionContext(): import('@agnes/protocol').PermissionContext {
-    return {
-      sessionKey: this.key,
-      sessionId: this.authorizationId,
-      epoch: this.authorizationEpoch,
-      policy: this.preset.name,
-      actor: structuredClone(this.authorizationActor),
-    }
+    return this.authorization.context(this.key, this.preset.permission ?? '')
   }
   onPermissionChange(listener: () => void): () => void {
-    this.authorizationChanges.add(listener)
-    return () => {
-      this.authorizationChanges.delete(listener)
-    }
+    return this.authorization.subscribe(listener)
   }
   revokeAutomaticPermissions(): void {
-    this.authorizationEpoch++
-    for (const listener of this.authorizationChanges) listener()
+    this.authorization.revoke()
   }
 
   constructor(deps: SessionDeps) {
-    this.authorizationActor = structuredClone(deps.actor)
-    const actorSnapshot = structuredClone(deps.actor)
+    const authorization = new SessionPermissionAuthority(deps.actor)
+    this.authorization = authorization
     deps = {
       ...deps,
       get actor() {
-        return structuredClone(actorSnapshot)
+        return authorization.actor
       },
     }
     this.d = deps
@@ -734,7 +722,7 @@ export class SessionImpl {
         return session.op()?.control.status === 'cancel_requested'
       },
       get actor() {
-        return structuredClone(session.authorizationActor)
+        return session.authorization.actor
       },
       get permissionContext() {
         return session.permissionContext

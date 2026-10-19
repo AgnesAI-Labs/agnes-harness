@@ -24,7 +24,7 @@ Optional run flags are `--profile`, `--preset`, `--permission LEVEL` (`read-only
 
 The exit code is 0 for completed runs, 1 for errors or incomplete event drains, 2 for usage/startup failures, 3 for parked, 4 for blocked/budget, 5 for max steps, and 130/143/129 for SIGINT/SIGTERM/SIGHUP. Batch continues after an individual failure and returns the first nonzero status. A signal cancels the current prompt and stops the batch; shutdown has a five-second grace period.
 
-Schedules and webhook sessions use their effective permission preset. Full access automatically allows and records permission requests before unattended handoff/refusal policy, so no approval prompt parks the run. Other presets retain their unattended policy. User questions and explicitly chosen plan/read-only modes retain their behavior.
+Schedules and webhook sessions use their effective permission level. Full access automatically allows and records permission requests before unattended handoff/refusal policy, so no approval prompt parks the run. Other permission levels retain their unattended policy. User questions and explicitly chosen plan/read-only modes retain their behavior.
 
 ## SDK
 

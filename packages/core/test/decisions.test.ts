@@ -476,10 +476,11 @@ describe('session decision authority', () => {
 })
 
 it.each(['full-access', 'workspace-write', 'custom'])(
-  'durably resolves permission gates using the effective %s preset without inventing a human answer',
+  'durably resolves permission gates using the effective %s permission without inventing a human answer',
   async (policy) => {
     const preset = presetDefaults()
-    preset.name = policy
+    preset.name = 'standard'
+    if (policy !== 'custom') preset.permission = policy as 'full-access' | 'workspace-write'
     preset.approval.policy = policy === 'custom' ? 'full-access' : policy
     // This test exercises decision authority independently of provider registration.
     const toolPolicies = new ToolPolicyRegistry()
@@ -571,7 +572,8 @@ it('auto-resolves an outstanding permission when the effective preset switches t
     })
     expect((await port.get(handle)).result).toBeNull()
     const next = presetDefaults()
-    next.name = 'full-access'
+    next.name = 'standard'
+    next.permission = 'full-access'
     next.approval.policy = 'full-access'
     await f.session.setPreset(next)
     expect((await port.get(handle)).result).toMatchObject({

@@ -91,7 +91,8 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
 
 it('review: a queued control-plane request cannot auto-allow after the effective session is narrowed', async () => {
   const preset = presetDefaults()
-  preset.name = 'full-access'
+  preset.name = 'standard'
+  preset.permission = 'full-access'
   const f = await openSession({ key: 'k', preset, provider: fakeProvider([]) })
   const sent: RequestFrame[] = []
   const channel = new SharedSessionChannel(
@@ -104,7 +105,7 @@ it('review: a queued control-plane request cannot auto-allow after the effective
   try {
     await f.session.setPreset(presetDefaults())
     const frame = sent[0]!
-    expect(f.session.preset.name).not.toBe('full-access')
+    expect(f.session.permissionContext.policy).not.toBe('full-access')
     const r = router()
     const result = permissionRequest(
       frame.permissionContext,

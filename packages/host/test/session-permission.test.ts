@@ -69,6 +69,68 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     await second.close()
   })
 
+  it.each(
+    ['standard', 'minimal', 'ptc'].flatMap((preset) =>
+      (['read-only', 'workspace-write', 'full-access'] as const).map((permission) => ({
+        preset,
+        permission,
+      })),
+    ),
+  )(
+    'uses the resolved $permission axis for $preset automatic permission authority',
+    async ({ preset, permission }) => {
+      const { host, dataDir } = await open()
+      try {
+        const session = await host.createSession({ cwd: dataDir, preset, permission })
+        expect(session.permissionContext.policy).toBe(permission)
+        const port = session.decisions.port({
+          permission: true,
+          owner: 'core/permission-axis',
+          sourcePackage: '@agnes/core',
+          packageVersion: '1',
+          operationId: 'axis',
+          alive() {},
+        })
+        for (const purpose of [
+          'tool.permission',
+          'skills.install',
+          'budget',
+          'business.confirm',
+          'plan.exit',
+          'unknown-outcome',
+          'ask_user',
+        ]) {
+          const handle = await port.request({
+            key: purpose,
+            purpose,
+            subject: { binding: purpose },
+            prompt: 'Allow?',
+            options: ['allowed-once', 'rejected'],
+          })
+          const value = await port.get(handle)
+          if (
+            permission === 'full-access' &&
+            ['tool.permission', 'skills.install', 'budget'].includes(purpose)
+          )
+            expect(value.result).toMatchObject({ code: 'full-access', response: { option: 'allowed-once' } })
+          else expect(value.result).toBeNull()
+        }
+        const before = session.permissionContext
+        await session.setPreset(
+          host.validatePresetSwitch(preset === 'standard' ? 'minimal' : 'standard', session.key).view,
+        )
+        expect(session.permissionContext).toMatchObject({
+          policy: permission,
+          sessionId: before.sessionId,
+          epoch: before.epoch + 1,
+        })
+        await session.close()
+      } finally {
+        await host.close()
+      }
+    },
+  )
+
   it('refuses to reopen a stored session under another level instead of ignoring the request', async () => {
     const { host, dataDir, options } = await open()
     const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission: 'full-access' })
@@ -118,6 +180,7 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     for (const [preset, permission] of cases) {
       const session = await host.createSession({ key: `legacy-${preset}`, cwd: dataDir, preset })
       expect(session.preset.permission, preset).toBe(permission)
+      expect(session.permissionContext.policy, preset).toBe(permission)
       await session.close()
     }
     await host.close()
