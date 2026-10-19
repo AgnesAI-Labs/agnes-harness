@@ -141,7 +141,7 @@ export function buildBundle({ suite, lanes, reps, stepCap, basePreset }) {
   }
   return {
     profile: {
-      plugins: { 'loop:agnes.jev': { enabled: true, config: { stepCap } } },
+      plugins: { 'ext:agnes.jev/loop': { enabled: true, config: { stepCap } } },
       tools: [...BENCH_TOOLS],
     },
     presets,

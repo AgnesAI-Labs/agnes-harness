@@ -6,6 +6,7 @@ import {
   Icon,
   type IconName,
   isBuiltinPlugin,
+  isBundledPlugin,
   mountRegion,
   PluginList,
   PluginPurposeBadges,
@@ -353,6 +354,24 @@ describe('where a plugin comes from and what it includes', () => {
     const lookalike = { ...bundled, presentation: { origin: 'local-source', rows: [] } }
     expect(pluginOrigin(lookalike as PackageCatalogDescriptor)).toBe('local-source')
     expect(pluginOrigin(purposeRow)).toBe('third-party')
+  })
+
+  it('keeps an optional bundled package removable and still labels it official', () => {
+    const optional = {
+      ...bundled,
+      id: '@agnes/jev-loop',
+      source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
+      presentation: { origin: 'official', optional: true, rows: [] },
+      // An installed copy carries local file provenance; the label must not fall back to it.
+      provenance: {
+        source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
+        signatureVerified: false,
+      },
+    } as unknown as PackageCatalogDescriptor
+    expect(isBundledPlugin(optional)).toBe(true)
+    expect(isBuiltinPlugin(optional)).toBe(false)
+    expect(pluginOrigin(optional)).toBe('official')
+    expect(isBuiltinPlugin(bundled)).toBe(true)
   })
 
   it('reads what the package says it includes, with a number only where the package states one', () => {

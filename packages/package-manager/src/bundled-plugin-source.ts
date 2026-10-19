@@ -59,7 +59,20 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   license: string
   ref: string
   sourcePath: string
-}[] = Object.freeze([])
+  /** Set when the entry is generated: the command that builds it in a development checkout. */
+  build?: string
+}[] = Object.freeze([
+  {
+    name: 'jev-loop',
+    id: '@agnes/jev-loop',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/jev-loop',
+    // index.mjs is generated from packages/loop-jev and is not committed.
+    sourcePath: 'package-manager/bundled-plugins/jev-loop',
+    build: 'pnpm --filter @agnes/package-manager build:jev-payload',
+  },
+])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
 export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([

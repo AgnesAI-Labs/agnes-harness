@@ -19,6 +19,10 @@ const held = (process.env.AGNES_TEST_EXCLUDE ?? '')
   .map((glob) => glob.trim())
   .filter(Boolean)
 if (held.length > 0) process.stderr.write(`AGNES_TEST_EXCLUDE holds out: ${held.join(', ')}\n`)
+// The optional Jev payload's index.mjs is generated from packages/loop-jev and not committed.
+const ensureJevPayload = fileURLToPath(
+  new URL('./packages/package-manager/tools/ensure-jev-payload.mjs', import.meta.url),
+)
 const exclude = [...defaultExclude, '**/dist/**', ...held]
 
 // Test tiers are chosen by file name. `*.e2e.test.*` starts real daemons, workers or CLI processes
@@ -33,6 +37,7 @@ const heavy = ['**/*.e2e.test.{ts,tsx,jsx}', '**/*.slow.test.{ts,tsx,jsx}']
 export default defineConfig({
   test: {
     exclude,
+    globalSetup: [ensureJevPayload],
     reporters: ['default', zeroTestReporter],
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.

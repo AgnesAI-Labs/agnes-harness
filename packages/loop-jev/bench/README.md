@@ -47,8 +47,10 @@ Open the printed URL, then:
    endpoint `https://openrouter.ai/api/v1`, a generic credential holding the key, and the model
    `typesafe/jev-1.13-20260917` (`contextWindow` 65536, `maxTokens` 32768, cost input 0.042). The
    entry's route is named `account-<id>`; the runner finds it by itself.
-3. Do not configure the Jev loop under Settings → Plugins in this home; the runner supplies its
-   configuration.
+3. Do not configure the Jev loop under Plugins in this home; the runner supplies its
+   configuration. The Jev loop is an optional bundled package (`@agnes/jev-loop`, Plugins → Market):
+   the runner installs, trusts and enables it in the bench home on its first real run, the way the
+   Market does, so you do not need to. `--dry-run` and `--rescore` leave the home untouched.
 4. Stop `serve` (Ctrl-C). The bench and `serve` must not run on the same home at the same time.
 
 ### 2. Check the plan, then run

@@ -224,7 +224,7 @@ export async function bootJevLoop(o: JevLoopBoot): Promise<JevKit> {
     },
     packages: {
       '@agnes/code': {
-        plugins: [providerRow('loop:agnes.jev', 'jevTestLoop', loopKind, createJevLoopFactory(o.config))],
+        plugins: [providerRow('ext:agnes.jev/loop', 'jevTestLoop', loopKind, createJevLoopFactory(o.config))],
       },
     },
   })

@@ -46,7 +46,7 @@ const SCHEMA = {
 } satisfies { [key: string]: Field | Group }
 
 const invalid = (path: string): never => {
-  throw new Error(`Invalid loop:agnes.jev configuration at ${path}`)
+  throw new Error(`Invalid agnes.jev configuration at ${path}`)
 }
 
 const isRecord = (value: unknown): value is { [key: string]: unknown } =>

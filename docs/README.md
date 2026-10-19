@@ -61,7 +61,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 | [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Use TypeSafe Jev for side model calls](guide/typesafe-jev.md) | Configure the built-in payload-only adapter that loop plugins call outside the conversation |
-| [Use the Jev agent loop](guide/jev-loop.md) | Enable the optional loop that lets TypeSafe Jev choose each step |
+| [Use the Jev agent loop](guide/jev-loop.md) | Install and configure the optional loop that lets TypeSafe Jev choose each step |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
 | [Observability and diagnostics](guide/observability.md) | Enable OTLP telemetry and export a redacted issue bundle |

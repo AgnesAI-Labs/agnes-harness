@@ -14,10 +14,12 @@ following material retains its original notices and license terms:
 - Computer Use adaptation in packages/base/extensions/computer-use:
   Copyright (c) 2025 Nous Research. MIT License. See the local NOTICE for
   provenance, changes, and the full license text.
-- Jev agent loop in packages/loop-jev:
+- Jev agent loop in packages/loop-jev, shipped as the optional bundled package in
+  packages/package-manager/bundled-plugins/jev-loop (its bundle is generated from the source):
   portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, commit 61e7994).
   Copyright 2026 JevLoop contributors. Apache License 2.0. See packages/loop-jev/NOTICE for
-  provenance and changes; packaged builds include it as THIRD-PARTY-NOTICES/jevloop.txt.
+  provenance and changes; the bundled package carries an identical NOTICE, and packaged builds
+  also include it as THIRD-PARTY-NOTICES/jevloop.txt.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
 - Bundled Document Reader in packages/package-manager/bundled-plugins/document-reader:

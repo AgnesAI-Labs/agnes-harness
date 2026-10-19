@@ -77,6 +77,12 @@ it.each(['en', 'zh-CN'])(
       await page.refresh()
       expect(page.availableBundledUpdate(installed)).toEqual(candidate)
       expect(bundledUpdate({ ...installed, integrity: candidate.integrity }, [candidate])).toBeUndefined()
+      // An optional bundled package still receives its release update.
+      expect(
+        bundledUpdate({ ...installed, presentation: { origin: 'official', optional: true, rows: [] } }, [
+          candidate,
+        ]),
+      ).toEqual(candidate)
       expect(
         bundledUpdate({ ...installed, source: { type: 'file', ref: 'file:./custom-plugin-helper' } }, [
           candidate,

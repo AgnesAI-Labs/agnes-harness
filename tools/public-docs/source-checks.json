@@ -232,6 +232,19 @@
     "excludes": ["from '@agnes/core'", "WeakMap"]
   },
   {
+    "path": "packages/package-manager/src/bundled-plugin-source.ts",
+    "includes": [
+      "OPTIONAL_BUNDLED_PACKAGES",
+      "id: '@agnes/jev-loop'",
+      "ref: 'file:./bundled-plugins/jev-loop'"
+    ]
+  },
+  {
+    "path": "packages/package-manager/bundled-plugins/jev-loop/package.json",
+    "includes": ["\"name\": \"@agnes/jev-loop\"", "\"id\": \"ext:agnes.jev/loop\""],
+    "excludes": ["\"default\": false"]
+  },
+  {
     "path": "packages/loop-jev/src/factory.ts",
     "includes": ["from '@agnes/extension-api'", "checkpointMode: 'driver'"],
     "excludes": ["from '@agnes/core'"]
