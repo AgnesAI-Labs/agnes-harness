@@ -101,6 +101,22 @@ it('approved domain decisions hold hardware, invalidate verification, enforce do
       }
     },
   }
+  for (const [disposition, status] of [
+    ['use-as-is', 'concession-hold'],
+    ['repair', 'repair-hold'],
+    ['scrap', 'scrap-authorized'],
+    ['return-to-supplier', 'return-authorized'],
+  ] as const) {
+    memory.clear()
+    const fixture = seed()
+    fixture.ncrs[17]!.status = 'review'
+    fixture.ncrs[17]!.disposition = disposition
+    fixture.ncrs[17]!.rationale = 'Reviewed disposition; implementation and release remain pending.'
+    persist(store, fixture)
+    decide(store, { kind: 'mrb', id: 'NCR-018', expectedRevision: 1 }, { requestId: 'human-review' })
+    expect(read(store).parts[0]!.status).toBe(status)
+  }
+  memory.clear()
   const s = seed()
   s.ncrs[17]!.status = 'review'
   s.ncrs[17]!.disposition = 'rework'

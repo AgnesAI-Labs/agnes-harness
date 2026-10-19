@@ -261,7 +261,9 @@ export function decide(store: OwnedStore | undefined, input: DecisionInput, appr
               ? 'scrap-authorized'
               : r.disposition === 'return-to-supplier'
                 ? 'return-authorized'
-                : 'rework-hold'
+                : r.disposition === 'repair'
+                  ? 'repair-hold'
+                  : 'rework-hold'
       for (const b of s.baselines.filter((b) => b.units.includes(r.unit)))
         if (b.status !== 'superseded') b.status = 'hold'
       for (const req of s.requirements.filter((r) => impact(s, 'ECR-014').requirements.includes(r.id)))

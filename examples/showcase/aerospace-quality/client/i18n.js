@@ -46,6 +46,7 @@ export function language(locale) {
     scrap: ['报废', 'Scrap'],
     'return-to-supplier': ['退供', 'Return to supplier'],
     'rework-hold': ['返工隔离', 'Rework hold'],
+    'repair-hold': ['修理隔离', 'Repair hold'],
     'concession-hold': ['让步隔离', 'Concession hold'],
     'scrap-authorized': ['已授权报废', 'Scrap authorized'],
     'return-authorized': ['已授权退供', 'Return authorized'],
