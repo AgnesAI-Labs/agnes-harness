@@ -205,13 +205,32 @@ export function createSkillInstallRequests(options: {
               '_agnes/v1/resources.desired.set',
             ])
             if (!permitted.has(method)) throw rpcError('CAPABILITY_DENIED')
+            const permission = lease
             return options.service.call(
               method,
               {
                 ...resourceParams,
                 ...('commandId' in resourceParams ? { clientId: currentAuthority.clientId } : {}),
               },
-              currentAuthority,
+              {
+                ...currentAuthority,
+                ...(permission
+                  ? {
+                      admission: {
+                        verify: async () => {
+                          await permission.verify()
+                          assertActive()
+                          signal.throwIfAborted()
+                        },
+                        assertActive: () => {
+                          permission.assertActive()
+                          assertActive()
+                          signal.throwIfAborted()
+                        },
+                      },
+                    }
+                  : {}),
+              },
             )
           },
         },

@@ -89,9 +89,21 @@
     "includes": [
       "SKILL_DELETE_NOT_CANCELLABLE",
       "SKILL_SOURCE_MANAGED",
-      "SKILL_REMOVAL_PENDING",
       "SKILL_DELETE_PREFLIGHT_FAILED",
       "journal.priorities[target] ?? defaultPriority(source)"
+    ]
+  },
+  {
+    "path": "packages/resource-control-store/src/skill-state.ts",
+    "includes": ["SKILL_REMOVAL_PENDING"]
+  },
+  {
+    "path": "packages/resource-control-store/src/skill-journal.ts",
+    "includes": [
+      "await admission.verify()",
+      "admission.assertActive()",
+      "renameWriteThroughSync",
+      "requiresAdmission"
     ]
   },
   {

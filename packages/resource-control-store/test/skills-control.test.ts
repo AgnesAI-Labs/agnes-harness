@@ -1614,3 +1614,177 @@ it('keeps a skipped Skill and its decisions as stale and restores them when it i
   await run('_agnes/v1/skills.refresh')
   expect(await item()).toMatchObject({ stale: false, trust: 'trusted', desired: 'disabled' })
 })
+
+it.each([
+  '_agnes/v1/skills.trust.set',
+  '_agnes/v1/resources.desired.set',
+  '_agnes/v1/skills.refresh',
+] as const)('refused private admission leaves the real journal unchanged for %s', async (method) => {
+  directory = await mkdtemp(join(tmpdir(), 'agnes-skill-refused-effect-'))
+  const item = candidate('admission')
+  const store = createSkillResourceStore({
+    directory,
+    scope,
+    adapter: {
+      refresh: async () => [item],
+      reconcile: async ({ resources }) =>
+        resources.map((r) => ({ resourceId: r.resourceId, actual: 'disabled' as const })),
+    },
+  })
+  const service = testService(createResourceControlService(store))
+  const seed = await service.call(
+    '_agnes/v1/skills.refresh',
+    { profile, clientId: 'client', commandId: 'seed' },
+    authority,
+  )
+  await settled(service, seed.operationId)
+  store.setDeferredDrive(true)
+  const file = join(directory, `${profile}.skills.json`)
+  const before = await readFile(file, 'utf8')
+  const extra =
+    method === '_agnes/v1/skills.refresh'
+      ? {}
+      : {
+          resourceId: item.descriptor.resourceId,
+          expectedRevision: item.descriptor.revision,
+          ...(method === '_agnes/v1/skills.trust.set'
+            ? { trust: 'rejected' }
+            : { state: 'disabled', config: { kind: 'none' } }),
+        }
+  await expect(
+    service.call(
+      method,
+      { profile, clientId: 'client', commandId: 'refused', ...extra },
+      {
+        ...authority,
+        admission: {
+          verify: async () => {
+            throw new Error('permission revoked')
+          },
+          assertActive() {},
+        },
+      },
+    ),
+  ).rejects.toThrow('permission revoked')
+  expect(await readFile(file, 'utf8')).toBe(before)
+})
+
+it.each(['refresh', 'reconcile'])(
+  'retains the permission lease through deferred %s writes',
+  async (phase) => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-deferred-lease-'))
+    const file = join(directory, `${profile}.skills.json`)
+    const item = candidate('deferred')
+    let active = true
+    let armed = false
+    let before = ''
+    const revoke = async () => {
+      before = await readFile(file, 'utf8')
+      active = false
+    }
+    const store = createSkillResourceStore({
+      directory,
+      scope,
+      adapter: {
+        refresh: async () => {
+          if (armed && phase === 'refresh') await revoke()
+          return [item]
+        },
+        reconcile: async ({ resources }) => {
+          if (armed && phase === 'reconcile') await revoke()
+          return resources.map((r) => ({ resourceId: r.resourceId, actual: 'disabled' as const }))
+        },
+      },
+    })
+    const service = testService(createResourceControlService(store))
+    if (phase === 'reconcile') {
+      const seed = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: 'seed' },
+        authority,
+      )
+      await settled(service, seed.operationId)
+    }
+    armed = true
+    store.setDeferredDrive(true)
+    const controlled = {
+      ...authority,
+      admission: {
+        verify: async () => {
+          if (!active) throw new Error('permission revoked')
+        },
+        assertActive: () => {
+          if (!active) throw new Error('permission revoked')
+        },
+      },
+    }
+    const receipt = await service.call(
+      phase === 'refresh' ? '_agnes/v1/skills.refresh' : '_agnes/v1/resources.desired.set',
+      {
+        profile,
+        clientId: 'client',
+        commandId: 'controlled',
+        ...(phase === 'refresh'
+          ? {}
+          : {
+              resourceId: item.descriptor.resourceId,
+              expectedRevision: item.descriptor.revision,
+              state: 'disabled',
+              config: { kind: 'none' },
+            }),
+      },
+      controlled,
+    )
+    await expect(store.driveOperation(profile, receipt.operationId)).rejects.toThrow('permission revoked')
+    expect(active).toBe(false)
+    expect(await readFile(file, 'utf8')).toBe(before)
+    if (phase === 'refresh') expect(JSON.parse(before).trust).toEqual({})
+  },
+)
+
+it.each(['automatic', 'human'])(
+  'recovery preserves the %s operation authorization boundary',
+  async (source) => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-recovery-lease-'))
+    const item = candidate('recovery')
+    const adapter = {
+      refresh: async () => [item],
+      reconcile: async () => [{ resourceId: item.descriptor.resourceId, actual: 'disabled' as const }],
+    }
+    const first = createSkillResourceStore({ directory, scope, adapter })
+    first.setDeferredDrive(true)
+    const receipt = (await first.call(
+      '_agnes/v1/skills.refresh',
+      { profile, clientId: 'client', commandId: 'pending' },
+      {
+        ...authority,
+        ...(source === 'automatic' ? { admission: { verify: async () => {}, assertActive() {} } } : {}),
+      },
+    )) as { operationId: string }
+    const file = join(directory, `${profile}.skills.json`)
+    const before = await readFile(file, 'utf8')
+    const reopened = createSkillResourceStore({ directory, scope, adapter })
+    await reopened.recover()
+    if (source === 'automatic') {
+      expect(await readFile(file, 'utf8')).toBe(before)
+      expect(JSON.parse(before).trust).toEqual({})
+      await expect(reopened.driveOperation(profile, receipt.operationId)).rejects.toThrow(
+        'RESOURCE_PERMISSION_REQUIRED',
+      )
+      expect(await readFile(file, 'utf8')).toBe(before)
+    } else {
+      const journal = JSON.parse(await readFile(file, 'utf8'))
+      expect(journal.trust[item.descriptor.resourceId]).toMatchObject({ state: 'trusted' })
+      expect(
+        journal.operations.find(
+          (row: { operation: { operationId: string } }) => row.operation.operationId === receipt.operationId,
+        ).operation.state,
+      ).toBe('succeeded')
+      expect(
+        journal.operations.every(
+          (row: { requiresAdmission?: boolean }) => row.requiresAdmission === undefined,
+        ),
+      ).toBe(true)
+    }
+  },
+)
