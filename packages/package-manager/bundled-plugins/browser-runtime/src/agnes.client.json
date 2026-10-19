@@ -5,7 +5,6 @@
     "slotCatalogVersion": "dsh-client-slots/v1",
     "slots": [],
     "services": ["browser.observe"],
-    "streams": ["browser.frames"],
-    "styles": ["./browser.css"]
+    "streams": ["browser.frames"]
   }
 }

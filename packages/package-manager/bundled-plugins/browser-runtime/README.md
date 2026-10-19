@@ -4,7 +4,13 @@ Built-in, installed but disabled on first provisioning. Enable it in Settings â†
 then start a new conversation: the same switch supplies browser tools and the right-side Browser panel.
 The enabled/disabled choice survives restarts. Existing installations retain their current choice;
 older conversations retain their pinned tool versions. CLI/headless use does not require opening the UI.
+The integrated panel keeps the original transport's client declaration: an enabled, trusted older
+installation can refresh through the normal same-grant release update. Panel layout uses React CSSOM
+properties and existing theme tokens, without adding a stylesheet grant or relaxing the page CSP.
 No process or download starts until `browser_open`. No separate viewer installation is required.
+Ordinary chat does not open the panel. A live browser tool call in the current main conversation
+opens it once per turn; closing it manually stays effective for the rest of that turn. History replay,
+other conversations and child lanes do not bring it forward.
 The legacy `@agnes/browser-ui` remains compatible; this plugin wins panel selection to avoid duplicates.
 
 Uses pinned agent-browser 0.39.1 native binaries (Apache-2.0) and Chrome for Testing's official
@@ -25,6 +31,7 @@ but full Chrome features such as extension UI are outside this plugin's contract
 `browser_navigate`, `browser_tabs`, `browser_tab`, `browser_screenshot`, `browser_close` operate only
 the current Host-bound session/lane. Start a generated project using existing shell background jobs,
 then open its HTTP localhost URL and inspect it. The existing deliverables plugin still renders immutable files.
+Element actions accept both snapshot keys (`e1`) and CLI-style references (`@e1`); arbitrary selectors remain rejected.
 
 Each browser uses a private temporary profile, a private daemon endpoint and a Host-owned process tree.
 No profile import, user-selected CDP endpoint, OS mouse control, arbitrary CLI arguments or executable override
@@ -36,8 +43,11 @@ headless executable with AGH's private profile. The production path keeps Chrome
 
 The managed resource shares the current profile runtime with session tools. A profile query checks
 authenticated session read access before issuing a one-use, actor-bound, 30-second viewer ticket.
-The outbound-only stream uses AGH's same-origin authenticated stream gateway. It exposes no private ports
-or browser command channel. Only the main lane is shown. The viewer renews its read authority regularly.
+The outbound-only stream uses AGH's same-origin authenticated stream gateway.
+Pictures use the existing binary media frames; JSON is reserved for small URL updates (4 KiB limit).
+Transient failures use bounded exponential backoff rather than repeatedly exhausting stream admission.
+It exposes no private ports or browser command channel. Only the main lane is shown.
+The viewer renews its read authority regularly.
 At most four session browsers and three viewers per browser are allowed. Idle daemons stop after 15 minutes;
 session shutdown and plugin removal close owned processes. Viewing alone does not create a browser.
 

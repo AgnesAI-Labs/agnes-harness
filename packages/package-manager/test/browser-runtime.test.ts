@@ -160,6 +160,12 @@ it('preserves split UTF-8 responses and never replays a dispatched action after 
 })
 
 it('allows only owned-page commands and keeps option-looking input as data', () => {
+  expect(commandFor({ action: 'fill', ref: 'e2', text: '中文' })).toEqual({
+    action: 'fill',
+    selector: '@e2',
+    value: '中文',
+  })
+  expect(commandFor({ action: 'click', ref: 'e2' })).toEqual({ action: 'click', selector: '@e2' })
   expect(commandFor({ action: 'fill', ref: '@e2', text: '--cdp 9222 --profile personal' })).toEqual({
     action: 'fill',
     selector: '@e2',

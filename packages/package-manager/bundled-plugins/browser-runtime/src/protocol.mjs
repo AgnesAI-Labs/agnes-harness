@@ -62,8 +62,11 @@ export function request(endpoint, command, signal, timeoutMs = 30000) {
 
 export function commandFor(input) {
   const selector = () => {
-    if (!/^@e\d+$/.test(input.ref ?? '')) throw new Error('Use an @e reference from a fresh browser snapshot')
-    return input.ref
+    // Snapshots return refs as eN keys, while CLI examples show @eN. Both name the same
+    // owned-page element; never accept arbitrary selectors or command-line options.
+    if (typeof input.ref !== 'string' || !/^@?e\d+$/.test(input.ref))
+      throw new Error('Expected a browser snapshot element reference such as e1 or @e1')
+    return input.ref.startsWith('@') ? input.ref : `@${input.ref}`
   }
   switch (input.action) {
     case 'open': {

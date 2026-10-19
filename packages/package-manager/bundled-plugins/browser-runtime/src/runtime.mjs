@@ -130,9 +130,10 @@ export class BrowserRuntime {
         const frame = JSON.parse(data)
         // No raw CDP, dashboard input, command logs, private endpoints or executable configuration cross this bridge.
         if (frame.type === 'frame' && typeof frame.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(frame.data))
-          context.stream.send({ type: 'frame', data: frame.data })
+          context.stream.send(Buffer.from(frame.data, 'base64'))
         else if (frame.type === 'url' && typeof frame.url === 'string') {
-          record.url = frame.url.slice(0, 8192)
+          // JSON control messages share a 4 KiB envelope limit; pixels use binary frames.
+          record.url = frame.url.slice(0, 512)
           context.stream.send({ type: 'url', url: record.url })
         }
       } catch {

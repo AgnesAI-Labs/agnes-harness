@@ -18,7 +18,8 @@ export function BrowserPanel({ ctx }) {
       timer,
       latest,
       generation = 0,
-      drawing = false
+      drawing = false,
+      failures = 0
     setView({ state: 'idle', sessionId })
     const draw = async () => {
       if (drawing || lifetime.signal.aborted) return
@@ -27,15 +28,29 @@ export function BrowserPanel({ ctx }) {
         while (latest && !lifetime.signal.aborted) {
           const data = latest
           latest = undefined
-          const image = new Image()
-          image.src = `data:image/jpeg;base64,${data}`
-          await image.decode()
-          if (lifetime.signal.aborted) break
-          const target = canvas.current
-          if (target) {
-            if (target.width !== image.naturalWidth) target.width = image.naturalWidth
-            if (target.height !== image.naturalHeight) target.height = image.naturalHeight
-            target.getContext('2d')?.drawImage(image, 0, 0)
+          const binary = data instanceof Uint8Array
+          const image = binary
+            ? await createImageBitmap(new Blob([data], { type: 'image/jpeg' }))
+            : new Image()
+          try {
+            if (!binary) {
+              image.src = `data:image/jpeg;base64,${data}`
+              await image.decode()
+            }
+            if (lifetime.signal.aborted) break
+            const target = canvas.current
+            if (target) {
+              const width = binary ? image.width : image.naturalWidth
+              const height = binary ? image.height : image.naturalHeight
+              if (target.width !== width) target.width = width
+              if (target.height !== height) target.height = height
+              target.getContext('2d')?.drawImage(image, 0, 0)
+              setView((old) =>
+                old.state === 'ready' && !old.error ? old : { ...old, state: 'ready', error: undefined },
+              )
+            }
+          } finally {
+            if (binary) image.close()
           }
         }
       } catch {
@@ -52,13 +67,29 @@ export function BrowserPanel({ ctx }) {
       clearTimeout(timer)
       timer = setTimeout(connect, ms)
     }
+    const reconnect = (error) => {
+      if (lifetime.signal.aborted || document.hidden) return
+      failures++
+      setView((old) => ({
+        ...old,
+        state: 'error',
+        error:
+          failures > 4
+            ? zh
+              ? '自动重连已暂停，请点击重试。'
+              : 'Automatic reconnect paused. Click Retry.'
+            : error,
+      }))
+      // A broken stream must not hammer the shared admission budget (10 opens/minute).
+      if (failures <= 4) schedule(Math.min(30000, 5000 * 2 ** (failures - 1)))
+    }
     async function connect() {
       if (!source || !sessionId || lifetime.signal.aborted || document.hidden) return
       const current = ++generation
       try {
         const status = await source.observe(sessionId)
         if (lifetime.signal.aborted || current !== generation || document.hidden) return
-        setView({ ...status, sessionId })
+        setView({ ...status, sessionId, state: status.state === 'ready' ? 'connecting' : status.state })
         if (status.state !== 'ready' || !status.ticket) {
           schedule(1200)
           return
@@ -69,23 +100,31 @@ export function BrowserPanel({ ctx }) {
           return
         }
         stream = next
+        const connectedAt = Date.now()
         next.onFrame((frame) => {
           if (lifetime.signal.aborted || stream !== next || !frame || typeof frame !== 'object') return
-          if (frame.type === 'frame' && typeof frame.data === 'string') {
-            latest = frame.data
+          if (frame instanceof Uint8Array || (frame.type === 'frame' && typeof frame.data === 'string')) {
+            latest = frame instanceof Uint8Array ? frame : frame.data
             void draw()
           } else if (frame.type === 'url' && typeof frame.url === 'string')
             setView((old) => ({ ...old, url: frame.url }))
         })
-        next.onDisconnect(({ reason }) => {
+        next.onDisconnect(() => {
           if (lifetime.signal.aborted || stream !== next) return
           stream = undefined
-          if (reason !== 'lease-expired') setView((old) => ({ ...old, state: 'connecting' }))
-          schedule(reason === 'lease-expired' ? 0 : 1000)
+          if (Date.now() - connectedAt >= 20000) {
+            failures = 0
+            schedule(1000)
+          } else {
+            reconnect(
+              zh
+                ? '浏览器画面连接中断，正在延迟重试；也可手动重试。'
+                : 'Browser stream disconnected. Retrying with backoff; you can also retry manually.',
+            )
+          }
         })
       } catch (error) {
-        if (!lifetime.signal.aborted && current === generation)
-          setView({ state: 'error', sessionId, error: error.message })
+        if (!lifetime.signal.aborted && current === generation) reconnect(error.message)
       }
     }
     const visibility = () => {
@@ -115,10 +154,25 @@ export function BrowserPanel({ ctx }) {
     })
   return h(
     'div',
-    { className: 'agh-browser-panel', 'data-testid': 'browser-panel' },
+    {
+      className: 'agh-browser-panel',
+      'data-testid': 'browser-panel',
+      // React writes CSSOM properties. Keep layout local without adding a stylesheet grant
+      // to the original browser transport's client contract.
+      style: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%', minHeight: 0, padding: 12 },
+    },
     h(
       'div',
-      { className: 'agh-browser-toolbar' },
+      {
+        className: 'agh-browser-toolbar',
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          fontSize: 'var(--font-size-sm)',
+        },
+      },
       h('span', null, zh ? 'AGH 独立浏览器 · 仅观看' : 'AGH independent browser · View only'),
       h(
         Button,
@@ -131,7 +185,21 @@ export function BrowserPanel({ ctx }) {
         actualSize ? (zh ? '适应面板' : 'Fit') : zh ? '原始大小' : 'Actual size',
       ),
     ),
-    state.url && h('div', { className: 'agh-browser-address', title: state.url }, state.url),
+    state.url &&
+      h(
+        'div',
+        {
+          className: 'agh-browser-address',
+          title: state.url,
+          style: {
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+            textOverflow: 'ellipsis',
+            fontSize: 'var(--font-size-sm)',
+          },
+        },
+        state.url,
+      ),
     state.error &&
       h(
         StatusMessage,
@@ -152,13 +220,23 @@ export function BrowserPanel({ ctx }) {
       h(StatusMessage, { kind: 'pending' }, zh ? '正在连接独立浏览器…' : 'Connecting to the browser…'),
     h(
       'div',
-      { className: 'agh-browser-viewport', hidden: state.state === 'idle' },
+      {
+        className: 'agh-browser-viewport',
+        hidden: state.state === 'idle',
+        style: { flex: 1, minHeight: 0, overflow: 'auto' },
+      },
       h('canvas', {
         key: sessionId,
         ref: canvas,
         width: 1280,
         height: 800,
         className: 'agh-browser-canvas',
+        style: {
+          display: 'block',
+          width: actualSize ? 'auto' : '100%',
+          height: 'auto',
+          maxWidth: actualSize ? 'none' : undefined,
+        },
         'data-actual-size': actualSize,
         role: 'img',
         'aria-label': zh

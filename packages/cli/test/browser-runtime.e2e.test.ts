@@ -76,13 +76,13 @@ it.runIf(process.env.AGNES_BROWSER_E2E === '1')(
       const actor = { kind: 'human', id: 'test-owner' }
       let disconnect: (() => void) | undefined
       const lease = runtime.observe('one', actor)
-      const frame = new Promise<string>((resolve) => {
+      const frame = new Promise<Uint8Array>((resolve) => {
         runtime.watch(lease.ticket, {
           actor,
           signal,
           stream: {
-            send: (frame: { type: string; data?: string }) => {
-              if (frame.type === 'frame' && frame.data) resolve(frame.data)
+            send: (frame: unknown) => {
+              if (frame instanceof Uint8Array) resolve(frame)
               return 'accepted'
             },
             close: () => {},
@@ -95,7 +95,7 @@ it.runIf(process.env.AGNES_BROWSER_E2E === '1')(
       })
       stopStream = () => disconnect?.()
       expect(
-        Buffer.from(await frame, 'base64')
+        Buffer.from(await frame)
           .subarray(0, 2)
           .toString('hex'),
       ).toBe('ffd8')

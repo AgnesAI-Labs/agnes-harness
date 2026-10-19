@@ -1,5 +1,6 @@
 import { browserViews } from '@agnes/web-client'
 import { createElement as h } from 'react'
+import { autoOpenBrowser } from './auto-open.js'
 import { BrowserPanel } from './panel.js'
 
 // Enabling supplies both transport and panel; viewing never launches Chromium.
@@ -22,15 +23,21 @@ export function apply(ctx) {
       role: 'browser-viewer',
       // Older standalone viewers use 100. Prefer this owner without duplicate panels.
       priority: 50,
-      mount: (mounted) =>
-        mounted.workbenchPanels.register({
+      mount: (mounted) => {
+        const stopPanel = mounted.workbenchPanels.register({
           id: 'browser',
           order: 56,
           edge: 'right',
           titleKey: 'browser.title',
           title: () => (mounted.locale.locale === 'zh-CN' ? '浏览器' : 'Browser'),
           component: () => h(BrowserPanel, { ctx: mounted }),
-        }),
+        })
+        const stopAutoOpen = autoOpenBrowser(mounted)
+        return () => {
+          stopAutoOpen()
+          stopPanel()
+        }
+      },
     })
   } catch (error) {
     stopTransport()

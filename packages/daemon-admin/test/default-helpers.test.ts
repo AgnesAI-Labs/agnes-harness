@@ -754,6 +754,16 @@ it.each(DEFAULT_BUNDLED_PACKAGES)(
     payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
     const file = join(payload, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
+    // The original transport-only browser had no stylesheet grant. Its installed users must
+    // receive the combined tool/viewer release through the ordinary same-grant refresh.
+    const browserDescriptor = join(payload, 'src', 'agnes.client.json')
+    const nextBrowserDescriptor =
+      helper.id === '@agnes/browser-runtime' ? readFileSync(browserDescriptor, 'utf8') : undefined
+    if (nextBrowserDescriptor) {
+      const legacy = JSON.parse(nextBrowserDescriptor)
+      delete legacy.client.styles
+      writeFileSync(browserDescriptor, JSON.stringify(legacy))
+    }
     const oldVersion = helper.freshOnly ? '0.1.0-alpha.0' : '0.1.0'
     const nextVersion = helper.freshOnly ? oldVersion : '0.2.0'
     const parentRange = helper.freshOnly ? oldVersion : '>=0.1.0 <1.0.0'
@@ -849,6 +859,7 @@ it.each(DEFAULT_BUNDLED_PACKAGES)(
       operation: 'enable',
     })
     manifest.version = nextVersion
+    if (nextBrowserDescriptor) writeFileSync(browserDescriptor, nextBrowserDescriptor)
     writeFileSync(join(payload, 'distribution-revision.txt'), 'new release bytes')
     writeFileSync(file, JSON.stringify(manifest))
     const preview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))

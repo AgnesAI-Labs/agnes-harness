@@ -77,12 +77,38 @@ $failBuild = $false
 $occupied = $false
 $launcherState = @{ running = $false }
 $webStartedAt = Get-Date
-function node {
-    if ($args -contains 'stop' -and $launcherState.running) { throw 'The launcher can spawn a daemon after this stop' }
-    $launchCalls.Add(@('node') + $args); $global:LASTEXITCODE = 0
+$pin = (Get-Content -LiteralPath (Join-Path $repoDir '.node-version') -Raw).Trim()
+$nodeVersion = 'v0.0.0'
+$miseVersion = "v$pin"
+$miseCalls = @{ count = 0 }
+$failToolchain = $false
+$failSourceNative = $false
+$failNativeBuild = $false
+$buildLocked = $false
+function mise {
+    $miseCalls.count++
+    $global:LASTEXITCODE = 0
+    @{ version = $miseVersion; execPath = 'node' } | ConvertTo-Json -Compress
 }
-function pnpm { $launchCalls.Add(@('pnpm') + $args); $global:LASTEXITCODE = [int]$failBuild }
-function Test-Path { param($LiteralPath, $PathType) return $true }
+function node {
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq '-p') { @{ version = $nodeVersion; execPath = 'node' } | ConvertTo-Json -Compress; return }
+    if ($args[0] -eq '-e') { $global:LASTEXITCODE = [int]$failSourceNative; return }
+    if ($args.Count -eq 1 -and $args[0] -eq (Join-Path $repoDir 'tools\toolchain\run.mjs')) {
+        $global:LASTEXITCODE = [int]$failToolchain; return
+    }
+    if ($args -contains 'stop' -and $launcherState.running) { throw 'The launcher can spawn a daemon after this stop' }
+    $launchCalls.Add(@('node') + $args)
+    if ($args -contains 'build:local') { $global:LASTEXITCODE = [int]$failBuild }
+    if ($args[0] -eq (Join-Path $repoDir 'packages\system-node\scripts\build-native.mjs')) {
+        $global:LASTEXITCODE = [int]$failNativeBuild
+    }
+}
+function Test-Path {
+    param($LiteralPath, $PathType)
+    if ($LiteralPath -eq (Join-Path $repoDir 'packages\cli\dist\local.build-lock')) { return $buildLocked }
+    return $true
+}
 function Get-NetTCPConnection {
     param($LocalPort, $State, $ErrorAction)
     if ($occupied) { [pscustomobject]@{ OwningProcess = 12345 } }
@@ -127,3 +153,43 @@ $refused = $false
 try { & (Join-Path $repoDir 'start-local-windows.ps1') } catch { $refused = $_.Exception.Message -like 'Port 4180 belongs to another application*' }
 if (-not $refused -or $launchCalls.Count -ne 0) { throw 'Foreign port owner must prevent stop/build/start' }
 Write-Host '4 development orchestration checks passed.'
+
+$occupied = $false
+$failBuild = $false
+$launchCalls.Clear()
+$miseCalls.count = 0
+$nodeVersion = "v$pin"
+& (Join-Path $repoDir 'start-local-windows.ps1')
+if ($miseCalls.count -ne 0) { throw 'A matching Node must not require mise' }
+$nodeVersion = 'v0.0.0'
+$miseCalls.count = 0
+$launchCalls.Clear()
+& (Join-Path $repoDir 'start-local-windows.ps1')
+if ($miseCalls.count -ne 1) { throw 'A stale system Node must select the pinned runtime through mise' }
+
+$launchCalls.Clear()
+$miseVersion = 'v0.0.0'
+$refused = $false
+try { & (Join-Path $repoDir 'start-local-windows.ps1') } catch { $refused = $_.Exception.Message -like 'Could not select Node*' }
+if (-not $refused -or $launchCalls.Count -ne 0) { throw 'Runtime mismatch must prevent stop/build/start' }
+$miseVersion = "v$pin"
+$failToolchain = $true
+$refused = $false
+try { & (Join-Path $repoDir 'start-local-windows.ps1') } catch { $refused = $_.Exception.Message -like 'Toolchain check failed*' }
+if (-not $refused -or $launchCalls.Count -ne 0) { throw 'Toolchain failure must preserve the existing server' }
+$failToolchain = $false
+$failSourceNative = $true
+& (Join-Path $repoDir 'start-local-windows.ps1')
+if ($launchCalls.Count -ne 4 -or $launchCalls[1][1] -ne (Join-Path $repoDir 'packages\system-node\scripts\build-native.mjs') -or
+    $launchCalls[2] -notcontains 'build:local') { throw 'An incompatible source native module must be rebuilt before launch' }
+$launchCalls.Clear()
+$failNativeBuild = $true
+$refused = $false
+try { & (Join-Path $repoDir 'start-local-windows.ps1') } catch { $refused = $_.Exception.Message -like 'Source native build failed*' }
+if (-not $refused -or $launchCalls.Count -ne 2) { throw 'Native build failure must prevent backend build and launch' }
+$launchCalls.Clear()
+$buildLocked = $true
+$refused = $false
+try { & (Join-Path $repoDir 'start-local-windows.ps1') } catch { $refused = $_.Exception.Message -like 'Backend build output is locked*' }
+if (-not $refused -or $launchCalls.Count -ne 0) { throw 'An existing build lock must prevent stop/build/start' }
+Write-Host '7 pinned-runtime, lock and native recovery checks passed.'
