@@ -38,7 +38,7 @@ export function useComposerAttachments({
   const policy = view.imagePolicy ?? userImagePolicy(undefined)
   const currentView = useRef(view)
   currentView.current = view
-  const imageDisabled = view.input.disabled || view.sending || view.model.pending
+  const imageDisabled = view.input.disabled || view.loading || view.sending || view.model.pending
   const imageHint = dependencies.translate('composer.attachment.hint')
 
   const attachmentsRef = useRef<ComposerAttachment[]>([])

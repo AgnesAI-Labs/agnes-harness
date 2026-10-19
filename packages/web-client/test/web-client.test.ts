@@ -1240,6 +1240,8 @@ it('publishes readiness epochs for cold mount, rebinding and failure and rejects
   session.readiness.subscribe(readiness)
   session.setReadiness('connecting', 'a')
   const connecting = session.readiness.getSnapshot()
+  session.setSession('a', 'connecting')
+  expect(session.readiness.getSnapshot()).toMatchObject({ status: 'connecting', sessionId: 'a' })
   session.setSession('a')
   expect(session.readiness.getSnapshot()).toMatchObject({ status: 'ready', sessionId: 'a' })
   identities.mockClear()
@@ -1254,6 +1256,8 @@ it('publishes readiness epochs for cold mount, rebinding and failure and rejects
   expect(await read).toMatchObject({ status: 'unavailable' })
   expect(session.readiness.getSnapshot().epoch).toBeGreaterThan(connecting.epoch)
   session.setReadiness('history-only', 'b')
+  expect(session.readiness.getSnapshot().status).toBe('history-only')
+  session.setSession('b', 'history-only')
   expect(session.readiness.getSnapshot().status).toBe('history-only')
   session.setReadiness('failed', 'b')
   expect(session.readiness.getSnapshot().status).toBe('failed')
@@ -1422,4 +1426,35 @@ it('selects the public complete interaction renderer and revokes every placement
   expect(api.workbenchPanels.get('example-interactions')).toBeUndefined()
   expect(registry.entries('conversation.view')).toHaveLength(0)
   await fiber.dispose()
+})
+
+it('keeps SDK request state on the connection behind a frozen module facade across reconnect', async () => {
+  class Connection {
+    sessions = { get: () => undefined }
+    initialization = 0
+    async request() {
+      return ++this.initialization
+    }
+  }
+  const connection = new Connection()
+  const { ctx } = await makeRegistry(connection as never)
+  let scoped: ClientContext['agnes'] | undefined
+  const fiber = ctx.plugin(
+    clientModule({
+      apply(context) {
+        scoped = context.agnes
+      },
+    }),
+    { packageId: 'reader', revision: 'r1' },
+  )
+  await fiber
+  try {
+    expect(Object.isFrozen(scoped)).toBe(true)
+    expect(await scoped?.request('_agnes/v1/session.list', {})).toBe(1)
+    connection.initialization = 0
+    expect(await scoped?.request('_agnes/v1/session.list', {})).toBe(1)
+    expect(connection.initialization).toBe(1)
+  } finally {
+    await fiber.dispose()
+  }
 })

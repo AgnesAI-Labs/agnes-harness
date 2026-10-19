@@ -2,6 +2,8 @@
 
 English | [简体中文](sessions.zh-CN.md)
 
+In Web, recorded content becomes readable before execution admission finishes. You can edit a local text draft while “Preparing session…” is shown; sending, file references, attachments and approval actions wait for admission. Drafts belong to the current profile and session. Switching sessions cancels the old opening wait, preserves its text draft and leaves running agents alone. A failed admission keeps the record readable and offers a new-session recovery path; preparation never sends your draft automatically.
+
 <a id="会话与恢复让工作接续起来"></a>
 
 [Documentation](../README.md) · [Security boundaries](security.md)
@@ -17,6 +19,8 @@ A session contains task history, model selection, and execution state. A user re
 SQLite histories are verified completely before session hooks, recovery, titles, tools or models can execute. An atomic append watermark also detects a removed tail. A corrupt row, a missing chain link or a mismatched head refuses the open without truncating stored evidence. Preserve the database for investigation; use the read-only history view when execution is unavailable. Homes from the old, pre-plugin product remain unsupported. Earlier builds of this plugin architecture may lack append watermarks: their complete hash chain is still verified, and the next append atomically enables watermark protection without rewriting historical events. A tail removed before any watermark existed cannot be detected by that later protection.
 
 Web can display an **unverified, read-only preview** while verification runs. Large stored payloads and inline media may appear as placeholders. The preview grants no execution authority; the live session replaces it only after verification succeeds. Recent-window and scan-budget markers identify omitted history. SDK `session.load(id, { onProgress })` reports verification and replay progress; `timeouts.loadIdle` (30 seconds) and `timeouts.loadHard` (10 minutes) independently bound a load. A timeout cancels that connection's pending load, and disconnect cancels outstanding verification.
+
+While opening, the preview uses a neutral status line and stays readable at normal contrast. The composer remains disabled while the session is being prepared. A read-only warning with recovery actions appears only when opening is refused; it is not the ordinary loading state.
 
 The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   aggregate,
@@ -22,8 +23,8 @@ import {
   verdict,
 } from '../bench/lib.mjs'
 
-const families = new URL('../bench/suites/fastapi-families.json', import.meta.url).pathname
-const smoke = new URL('../bench/suites/smoke.json', import.meta.url).pathname
+const families = fileURLToPath(new URL('../bench/suites/fastapi-families.json', import.meta.url))
+const smoke = fileURLToPath(new URL('../bench/suites/smoke.json', import.meta.url))
 
 describe('bench suites', () => {
   it('loads the exported FastAPI families: 3 scenarios, 20 turns, Chinese goals, attribution', () => {

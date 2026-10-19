@@ -168,6 +168,20 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   pending.get('A:200')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
+  expect(appReadOnly.show).toHaveBeenLastCalledWith({
+    kind: 'preview',
+    message: {
+      en: 'History preview (not yet verified) · Preparing session…',
+      'zh-CN': '历史预览（待校验）· 正在准备会话…',
+    },
+    actions: [],
+  })
+  controller.progress('A', 'verifying', 100, 1000)
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain('正在校验历史 100/1000')
+  controller.progress('A', 'replaying', 500, 1000)
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain(
+    '正在加载已验证历史 500/1000',
+  )
   controller.clear()
   expect(context.readOnly).toBeUndefined()
   const late = controller.preview('B', context.sessionBinding.capture())
@@ -179,60 +193,68 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   expect(context.projection).toEqual({ sessionId: 'live' })
 })
 
-it('commits the current profile presentation after a refused cold opening supersedes the startup roster', async () => {
-  const { context, controller, pending } = setup()
-  const ctx = new Context()
-  let release!: () => void
-  const startup = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  let first = true
-  const reconciler = createReconciler({
-    ctx,
-    source: {
-      identity: () => String(context.sessionBinding.generation),
-      async list() {
-        if (first) {
-          first = false
-          await startup
-        }
-        return {
-          revision: 'current',
-          statuses: [],
-          modules: [
-            {
-              packageId: '@agnes/conversation-ui',
-              revision: 'current',
-              entryUrl: '/conversation.js',
-              styleUrls: [],
-              slots: [],
-              extIds: [],
-            },
-          ],
-        }
+it.each(['refused', 'preview'])(
+  'commits the current profile presentation for a cold %s opening after the startup roster',
+  async (mode) => {
+    const { context, controller, pending } = setup()
+    const ctx = new Context()
+    let release!: () => void
+    const startup = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let first = true
+    const reconciler = createReconciler({
+      ctx,
+      source: {
+        identity: () => String(context.sessionBinding.generation),
+        async list() {
+          if (first) {
+            first = false
+            await startup
+          }
+          return {
+            revision: 'current',
+            statuses: [],
+            modules: [
+              {
+                packageId: '@agnes/conversation-ui',
+                revision: 'current',
+                entryUrl: '/conversation.js',
+                styleUrls: [],
+                slots: [],
+                extIds: [],
+              },
+            ],
+          }
+        },
       },
-    },
-    importer: async () => ({ apply() {} }),
-    prepareStyles: async () => ({ activate() {}, dispose() {} }),
-  })
-  // Use an inert real fiber; this test covers roster selection, not renderer services.
-  const mount = ctx.plugin.bind(ctx)
-  ctx.plugin = () => mount({ apply() {} })
-  context.clientModules.reconciler = reconciler
-  try {
-    const initial = reconciler.reconcileNow()
-    await tick()
-    context.sessionBinding.begin()
-    release()
-    await initial
-    expect(reconciler.snapshot().get('@agnes/conversation-ui')?.phase).not.toBe('active')
-    const shown = controller.show('history', refusal, context.sessionBinding.capture())
-    await tick()
-    pending.get('history:200')?.(view('history', false))
-    expect(await shown).toBe(true)
-    expect(reconciler.snapshot().get('@agnes/conversation-ui')?.phase).toBe('active')
-    expect(context.clientModules.session.getSnapshot()).toBe('history')
-  } finally {
-    await ctx.fiber.dispose()
-  }
-})
+      importer: async () => ({ apply() {} }),
+      prepareStyles: async () => ({ activate() {}, dispose() {} }),
+    })
+    // Use an inert real fiber; this test covers roster selection, not renderer services.
+    const mount = ctx.plugin.bind(ctx)
+    ctx.plugin = () => mount({ apply() {} })
+    context.clientModules.reconciler = reconciler
+    try {
+      const initial = reconciler.reconcileNow()
+      await tick()
+      context.sessionBinding.begin()
+      release()
+      await initial
+      expect(reconciler.snapshot().get('@agnes/conversation-ui')?.phase).not.toBe('active')
+      const shown =
+        mode === 'refused'
+          ? controller.show('history', refusal, context.sessionBinding.capture())
+          : controller.preview('history', context.sessionBinding.capture())
+      await tick()
+      pending.get('history:200')?.(view('history', false))
+      const result = await shown
+      if (mode === 'refused') expect(result).toBe(true)
+      expect(reconciler.snapshot().get('@agnes/conversation-ui')?.phase).toBe('active')
+      expect(context.clientModules.session.getSnapshot()).toBe('history')
+      expect(context.clientModules.session.readiness.getSnapshot().status).toBe('history-only')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  },
+)

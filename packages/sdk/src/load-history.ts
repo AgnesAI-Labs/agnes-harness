@@ -9,11 +9,13 @@ export async function loadHistory<T>(options: {
   hardMs: number
   subscribe(fn: (method: string, params: unknown) => void): () => void
   request(signal: AbortSignal): Promise<T>
+  signal?: AbortSignal
   onProgress?: (progress: SessionLoadingParams) => void
 }): Promise<T> {
   if (![options.idleMs, options.hardMs].every((ms) => Number.isSafeInteger(ms) && ms > 0))
     throw new RangeError('load timeouts must be positive safe integers')
   const controller = new AbortController()
+  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
   let idle: ReturnType<typeof setTimeout> | undefined
   const reset = () => {
     clearTimeout(idle)
@@ -31,7 +33,7 @@ export async function loadHistory<T>(options: {
   let previous = -1
   let phase = 'verifying'
   const off = options.subscribe((method, params) => {
-    if (!active || controller.signal.aborted || method !== '_agnes/v1/session.loading') return
+    if (!active || signal.aborted || method !== '_agnes/v1/session.loading') return
     const checked = validateMethod(method, 'params', params)
     if (!checked.ok) return
     const value = params as SessionLoadingParams
@@ -49,7 +51,8 @@ export async function loadHistory<T>(options: {
     }
   })
   try {
-    return await options.request(controller.signal)
+    signal.throwIfAborted()
+    return await options.request(signal)
   } finally {
     active = false
     clearTimeout(idle)

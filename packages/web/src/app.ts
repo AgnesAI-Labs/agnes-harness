@@ -32,6 +32,7 @@ import { SubmissionOwner } from './app/submission-owner.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
+import { ComposerDrafts } from './composer-drafts.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -129,14 +130,15 @@ export interface AppSessionContext {
   clearSessionRecovery: typeof clearSessionRecovery
   client: typeof client
   clientModules: typeof clientModules
-  composerDraftKey: typeof composerDraftKey
+  composerDraftKey: string
+  selectComposerDraft: typeof selectComposerDraft
   composerRuntime: typeof composerRuntime
   configured: typeof configured
   connected: typeof connected
   controlsHistory: typeof controlsHistory
   conversationRuntime: typeof conversationRuntime
   readonly submissions: SubmissionOwner
-  readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent'>
+  readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent' | 'targetId'>
   readonly current: Session | undefined
   dockControlsHost: typeof dockControlsHost
   draftBundles: typeof draftBundles
@@ -259,7 +261,10 @@ const appSessionContext: AppSessionContext = {
     return clientModules
   },
   get composerDraftKey() {
-    return composerDraftKey
+    return composerDrafts.key
+  },
+  get selectComposerDraft() {
+    return selectComposerDraft
   },
   get composerRuntime() {
     return composerRuntime
@@ -641,14 +646,15 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginExplicitNewDraft(),
 })
 
-const composerDraftKey: string = 'agnes-web-composer-draft'
+const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
-const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
+const savedComposerDraft = composerDrafts.read()
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
 const wsUrl = shellConfig.wsUrl
 const client = createClient({
+  sessionRestoreHistory: 'none',
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
@@ -819,7 +825,6 @@ const clientModules = await startClientModules({
       },
       openSession: (id) =>
         run(async () => {
-          if (sessionPending) return
           homeNavigation.close()
           // The session already showing behind a page needs no second open.
           if (id !== sessionBinding.session?.id || draftingNew) await open(id)
@@ -1248,11 +1253,7 @@ const settings = createSettingsController({
   onOpen: () => {
     const address = searchParamRoute('settings')
     if (!address.read().length)
-      history.pushState(
-        history.state,
-        '',
-        address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']),
-      )
+      history.pushState(null, '', address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']))
   },
   onClose: () => {
     startupSettingsDismissed = true
@@ -1369,7 +1370,6 @@ const sessionSearch = mountSessionSearch({
   titleOf: (id) => sessionRows.find((row) => row.sessionId === id)?.title || sessionLabels.get(id),
   open: (id) =>
     run(async () => {
-      if (sessionPending) return
       homeNavigation.close()
       if (id !== sessionBinding.session?.id || draftingNew) await open(id)
     }),
@@ -1508,7 +1508,13 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   const currentSessionId = clientModules.session.sessionId
   if (currentSessionId && clientModules.session.readiness.getSnapshot().status !== 'history-only')
     clientModules.session.setReadiness(
-      connected ? 'ready' : value === 'closed' ? 'failed' : 'connecting',
+      connected
+        ? sessionPending || !sessionBinding.session?.attached
+          ? 'connecting'
+          : 'ready'
+        : value === 'closed'
+          ? 'failed'
+          : 'connecting',
       currentSessionId,
     )
   if (!connected) {
@@ -1688,6 +1694,7 @@ function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: Workspace
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || submissions.sending) return
+  selectComposerDraft()
   sessionPending = true
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
@@ -1767,6 +1774,10 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
     }
   }
   if (cleanupError) throw cleanupError
+}
+function selectComposerDraft(id?: string, preserve = false): void {
+  composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), preserve))
+  if (!preserve) composerRuntime.clearImageBlocks()
 }
 function applyWorkspaces(page: { items: WorkspaceEntry[] }): void {
   workspaceRows = page.items

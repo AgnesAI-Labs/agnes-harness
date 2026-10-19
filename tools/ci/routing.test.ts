@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -59,6 +59,16 @@ function fixture() {
 }
 
 describe('CI scope', () => {
+  it('uses the repository Node pin in every setup-node step', () => {
+    const workflows = fileURLToPath(new URL('../../.github/workflows/', import.meta.url))
+    for (const name of readdirSync(workflows).filter((name) => /\.ya?ml$/.test(name))) {
+      const workflow = readFileSync(join(workflows, name), 'utf8')
+      const setups = workflow.match(/uses: actions\/setup-node@/g) ?? []
+      expect(workflow, name).not.toMatch(/\bnode-version:/)
+      expect(workflow.match(/node-version-file: \.node-version\b/g) ?? [], name).toHaveLength(setups.length)
+    }
+  })
+
   it('allows only root documentation and Markdown under docs', () => {
     expect(isDocsOnly(['README.zh-CN.md', 'docs/guide/使用 说明.md', 'SECURITY.md'])).toBe(true)
   })
@@ -68,7 +78,10 @@ describe('CI scope', () => {
     'packages/protocol/docs/api.md',
     'examples/demo/README.md',
     'pnpm-lock.yaml',
+    '.node-version',
+    'mise.toml',
     '.github/workflows/ci.yml',
+    'tools/toolchain/check.mjs',
     'tools/ci/scope.mjs',
     'tools/public-docs/verify.mjs',
     'docs/example.mjs',

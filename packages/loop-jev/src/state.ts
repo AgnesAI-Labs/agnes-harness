@@ -1,9 +1,20 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
+import { DIRECTORY_REF_CAP, FILE_REF_CAP, halveEvidence, VIEW_CAP } from './observations.js'
+import { MAX_BATCH } from './profile.js'
 import type { Counters, JevState, JsonValue } from './types.js'
 import { clip, tail, utf8Bytes } from './util.js'
 
 /** The encoded state stays within this many UTF-8 bytes; every invocation receipt copies it. */
 export const CHECKPOINT_MAX_BYTES = 32768
+
+/** Counters a checkpoint written before they existed may lack; they read as 0. */
+export const ADDED_COUNTERS = [
+  'observedSteps',
+  'batchSteps',
+  'textReferences',
+  'duplicateRefusals',
+  'unavailableRefusals',
+] as const
 
 export function emptyCounters(): Counters {
   return {
@@ -20,6 +31,11 @@ export function emptyCounters(): Counters {
     noCall: 0,
     emitted: 0,
     droppedEvents: 0,
+    observedSteps: 0,
+    batchSteps: 0,
+    textReferences: 0,
+    duplicateRefusals: 0,
+    unavailableRefusals: 0,
   }
 }
 
@@ -34,7 +50,15 @@ export function initialState(): JevState {
     toolNamesChanges: 0,
     cur: { jevAttempts: [], level: 0 },
     pendingNotes: [],
-    workspace: { goal: '', previousAnswer: '', answer: '', notes: [], history: [], turnStart: 0 },
+    workspace: {
+      goal: '',
+      previousAnswer: '',
+      answer: '',
+      notes: [],
+      history: [],
+      turnStart: 0,
+      views: [],
+    },
     counters: emptyCounters(),
     internalErrors: 0,
   }
@@ -80,6 +104,7 @@ const only = (parent: Obj, allowed: readonly string[], path: string): void => {
   for (const key of Object.keys(parent))
     if (!allowed.includes(key)) fail(path === '' ? key : `${path}.${key}`)
 }
+const jsonObject = (value: unknown, path: string): void => json(obj(value, path), path)
 const json = (value: unknown, path: string): void => {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return
   if (typeof value === 'number') {
@@ -98,6 +123,20 @@ const PHASES = ['INSPECT', 'ACT', 'VERIFY', 'RESPOND']
 const ROUTE_KINDS = ['direct', 'parameters', 'arbitration', 'answer']
 const ROUTE_REASONS = ['low_confidence', 'recoverable_observation', 'premature_answer', 'weak_binding']
 const LLM_KINDS = ['parameters', 'arbitration', 'answer']
+const CONSUMED_ROLES = ['phase', 'action', 'target', 'target_mode', 'target_member', 'target_fallback']
+const REFERENCE_KINDS = ['file', 'directory']
+const VIEW_KEYS = [
+  'id',
+  'kind',
+  'scope',
+  'source',
+  'trust',
+  'historical',
+  'evidence',
+  'references',
+  'truncated',
+  'invocation',
+]
 const END_REASONS = [
   'completed',
   'aborted',
@@ -158,9 +197,29 @@ function checkDecision(value: unknown, path: string): void {
   const d = obj(value, path)
   oneOf(d.phase, PHASES, `${path}.phase`)
   str(d.op, `${path}.op`)
-  str(d.target, `${path}.target`)
+  if (Array.isArray(d.target)) strings(d.target, `${path}.target`)
+  else str(d.target, `${path}.target`)
   oneOf(d.bindingMode, ['observed', 'defaults', 'llm_parameters'], `${path}.bindingMode`)
-  json(obj(d.args, `${path}.args`), `${path}.args`)
+  jsonObject(d.args, `${path}.args`)
+  optional(
+    d,
+    'batch',
+    (v, p) => {
+      for (const [i, item] of arr(v, p).entries()) jsonObject(item, `${p}[${i}]`)
+    },
+    path,
+  )
+  // A batch exists only for two or more observed targets, one call per target.
+  if (Object.hasOwn(d, 'batch') && d.batch !== undefined) {
+    const batch = d.batch as unknown[]
+    if (
+      !Array.isArray(d.target) ||
+      batch.length !== d.target.length ||
+      batch.length < 2 ||
+      batch.length > MAX_BATCH
+    )
+      fail(`${path}.batch`)
+  }
   num(d.confidence, `${path}.confidence`)
   num(d.operationPathConfidence, `${path}.operationPathConfidence`)
   orNull(d.targetConfidence, num, `${path}.targetConfidence`)
@@ -170,7 +229,7 @@ function checkDecision(value: unknown, path: string): void {
   checkTop(d.actionTop, `${path}.actionTop`)
   for (const [i, item] of arr(d.consumed, `${path}.consumed`).entries()) {
     const c = obj(item, `${path}.consumed[${i}]`)
-    oneOf(c.role, ['phase', 'action', 'target'], `${path}.consumed[${i}].role`)
+    oneOf(c.role, CONSUMED_ROLES, `${path}.consumed[${i}].role`)
     orNull(c.head, str, `${path}.consumed[${i}].head`)
     str(c.selected, `${path}.consumed[${i}].selected`)
     orNull(c.confidence, num, `${path}.consumed[${i}].confidence`)
@@ -238,6 +297,39 @@ function checkCurrent(value: unknown, path: string): void {
   )
 }
 
+function checkView(value: unknown, path: string): void {
+  const v = obj(value, path)
+  only(v, VIEW_KEYS, path)
+  str(v.id, `${path}.id`)
+  str(v.kind, `${path}.kind`)
+  str(v.scope, `${path}.scope`)
+  const source = obj(v.source, `${path}.source`)
+  only(source, ['operation', 'call_id'], `${path}.source`)
+  str(source.operation, `${path}.source.operation`)
+  str(source.call_id, `${path}.source.call_id`)
+  if (v.trust !== 'untrusted_evidence') fail(`${path}.trust`)
+  if (v.historical !== true) fail(`${path}.historical`)
+  str(v.evidence, `${path}.evidence`)
+  let files = 0
+  let directories = 0
+  for (const [i, item] of arr(v.references, `${path}.references`).entries()) {
+    const ref = obj(item, `${path}.references[${i}]`)
+    only(ref, ['kind', 'value'], `${path}.references[${i}]`)
+    if (oneOf(ref.kind, REFERENCE_KINDS, `${path}.references[${i}].kind`) === 'file') files++
+    else directories++
+    str(ref.value, `${path}.references[${i}].value`)
+  }
+  if (files > FILE_REF_CAP || directories > DIRECTORY_REF_CAP) fail(`${path}.references`)
+  bool(v.truncated, `${path}.truncated`)
+  optional(v, 'invocation', jsonObject, path)
+}
+
+function checkViews(value: unknown, path: string): void {
+  const views = arr(value, path)
+  if (views.length > VIEW_CAP) fail(path)
+  for (const [i, view] of views.entries()) checkView(view, `${path}[${i}]`)
+}
+
 function checkWorkspace(value: unknown, path: string): void {
   const w = obj(value, path)
   str(w.goal, `${path}.goal`)
@@ -247,11 +339,14 @@ function checkWorkspace(value: unknown, path: string): void {
   const history = arr(w.history, `${path}.history`)
   for (const [i, entry] of history.entries()) checkHistoryEntry(entry, `${path}.history[${i}]`)
   if (int(w.turnStart, `${path}.turnStart`) > history.length) fail(`${path}.turnStart`)
+  optional(w, 'views', checkViews, path)
 }
 
 function checkCounters(value: unknown, path: string): void {
   const c = obj(value, path)
-  for (const key of Object.keys(emptyCounters())) if (!(key in c)) fail(`${path}.${key}`)
+  const added: readonly string[] = ADDED_COUNTERS
+  for (const key of Object.keys(emptyCounters()))
+    if (!added.includes(key) && !(key in c)) fail(`${path}.${key}`)
   for (const [key, entry] of Object.entries(c)) {
     if (!isObj(entry)) {
       int(entry, `${path}.${key}`)
@@ -309,7 +404,10 @@ export function parseJevState(value: JsonValue): JevState {
     },
     '',
   )
-  return structuredClone(s) as unknown as JevState
+  const state = structuredClone(s) as unknown as JevState
+  for (const key of ADDED_COUNTERS) state.counters[key] ??= 0
+  state.workspace.views ??= []
+  return state
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,12 +417,14 @@ const sizeOf = (state: JevState): number => utf8Bytes(JSON.stringify(state))
 
 /**
  * The checkpoint for a state. When over CHECKPOINT_MAX_BYTES, shrink in this order: histories from
- * before the current turn (oldest first), the previous answer (last 1000 characters), the goal
- * (first 2000 + last 2000 characters), then the command and output excerpts of every history entry
- * but the last. It never throws and never drops current-turn entries, so the result can still be
- * larger when the unbounded fields are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`
- * and `cur.calls[].content`, which the driver is responsible for bounding. The argument is not
- * changed.
+ * before the current turn (oldest first), the evidence of every observation view (first half, once),
+ * the previous answer (last 1000 characters), the goal (first 2000 + last 2000 characters), then
+ * the command and output excerpts of every history entry but the last. It never throws and never
+ * drops current-turn entries or views, so the result can still be larger when the fields it does
+ * not shrink are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`,
+ * `cur.calls[].content` and `workspace.views`, which the driver is responsible for bounding (views
+ * through `updateViews` when they are recorded; decoding checks only the number of views and the
+ * references per view). The argument is not changed.
  */
 export function encodeState(state: JevState): LoopCheckpoint {
   const next = structuredClone(state)
@@ -333,6 +433,7 @@ export function encodeState(state: JevState): LoopCheckpoint {
     w.history.shift()
     w.turnStart--
   }
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) for (const view of w.views) halveEvidence(view)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.previousAnswer = tail(w.previousAnswer, 1000)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES && w.goal.length > 4003)
     w.goal = `${clip(w.goal, 2000)}\n…\n${tail(w.goal, 2000)}`

@@ -40,8 +40,13 @@ it('boots the source worker through the real extension loader and answers after 
     profileFile,
     clock: Date.now,
     workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
-    execPath: process.execPath,
-    execArgv: ['--import', 'tsx'],
+    // Exercise the production default executable, including when PATH selects another Node.
+    execArgv: [
+      '--import',
+      'tsx',
+      '--import',
+      'data:text/javascript,console.error("AGH_TOOLCHAIN_RUNTIME "+JSON.stringify({version:process.version,execPath:process.execPath}))',
+    ],
     // Node's spawn overloads cannot be implemented by the three-argument call the pool makes.
     spawn: ((...args: Parameters<typeof spawn>) => {
       const options = args[2]
@@ -64,6 +69,10 @@ it('boots the source worker through the real extension loader and answers after 
       throw new Error(`${String(error)}\n${stderr}`)
     })
     expect(await worker.hello).toMatchObject({ workerKey: '@shared', profileHash: profile.hash })
+    const runtime = /AGH_TOOLCHAIN_RUNTIME (\{[^\n]+\})/.exec(stderr)?.[1]
+    if (!runtime) throw new Error(`Worker did not report its runtime\n${stderr}`)
+    expect(JSON.parse(runtime)).toEqual({ version: process.version, execPath: process.execPath })
+    console.log(`Worker runtime ${runtime}`)
     await expect(worker.command('ping', {})).resolves.toBeDefined()
   } finally {
     await pool.closeAll(2000).catch(() => pool.killAll())

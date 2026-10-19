@@ -201,6 +201,7 @@ export interface AppServerMethods {
   "_agnes/v1/surfaces.mounts": { params: Static<typeof import("./agnes-v1.js").SurfacesMountsParams>; result: Static<typeof import("./agnes-v1.js").SurfacesMountsResult>; direction: "c2s"; kind: "request" }
   "authenticate": { params: Static<typeof import("./acp.js").AuthenticateRequest>; result: Static<typeof import("./acp.js").AuthenticateResponse>; direction: "c2s"; kind: "request" }
   "session/load": { params: Static<typeof import("./acp.js").LoadSessionRequest>; result: Static<typeof import("./acp.js").LoadSessionResponse>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.open": { params: Static<typeof import("./agnes-v1.js").SessionOpenParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
   "session/set_mode": { params: Static<typeof import("./acp.js").SetSessionModeRequest>; result: Static<typeof import("./acp.js").SetSessionModeResponse>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.detach": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
   "_agnes/v1/auth.claim": { params: Static<typeof import("./agnes-v1.js").AuthClaimParams>; result: Static<typeof import("./agnes-v1.js").AuthClaimResult>; direction: "c2s"; kind: "request" }
@@ -208,7 +209,7 @@ export interface AppServerMethods {
   "_agnes/v1/ui.read": { params: Static<typeof import("./intelligent-ui.js").UiReadParams>; result: Static<typeof import("./intelligent-ui.js").UiReadResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/ui.refresh": { params: Static<typeof import("./intelligent-ui.js").UiRefreshParams>; result: Static<typeof import("./intelligent-ui.js").UiSurfaceRecord>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.event": { params: Static<typeof import("./agnes-v1.js").SessionEventParams>; result: void; direction: "s2c"; kind: "notification" }
-  "_agnes/v1/session.loadingCancel": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: void; direction: "c2s"; kind: "notification" }
+  "_agnes/v1/session.loadingCancel": { params: Static<typeof import("./agnes-v1.js").SessionLoadingCancelParams>; result: void; direction: "c2s"; kind: "notification" }
   "_agnes/v1/session.loading": { params: Static<typeof import("./agnes-v1.js").SessionLoadingParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/session.preview": { params: Static<typeof import("./agnes-v1.js").SessionPreviewParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/daemon.notice": { params: Static<typeof import("./agnes-v1.js").DaemonNotice>; result: void; direction: "s2c"; kind: "notification" }

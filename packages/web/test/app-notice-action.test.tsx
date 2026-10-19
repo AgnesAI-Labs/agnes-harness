@@ -4,7 +4,45 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { onPageHide } from '../src/app/global-events.js'
-import { AppNotice, appNotice } from '../src/app-notices.js'
+import { AppNotice, appNotice, appReadOnly, ReadOnlyNotice } from '../src/app-notices.js'
+
+it('keeps an opening preview neutral and reserves the warning and recovery actions for a refusal', async () => {
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const recover = vi.fn()
+  try {
+    await act(async () => {
+      root.render(createElement(ReadOnlyNotice))
+      appReadOnly.show({
+        kind: 'preview',
+        message: { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（待校验）' },
+        actions: [],
+      })
+    })
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('History preview')
+    expect(host.querySelector('.agh-banner')).toBeNull()
+    expect(host.querySelector('button')).toBeNull()
+    await act(async () =>
+      appReadOnly.show({
+        message: { en: 'History failed verification', 'zh-CN': '历史校验失败' },
+        actions: [{ id: 'new', onSelect: recover }],
+      }),
+    )
+    expect(host.querySelector('[data-tone="warning"]')?.textContent).toContain('History failed verification')
+    await act(async () => host.querySelector('button')?.click())
+    expect(recover).toHaveBeenCalledOnce()
+    await act(async () => appReadOnly.clear())
+    expect(host.textContent).toBe('')
+  } finally {
+    await act(async () => {
+      appReadOnly.clear()
+      root.unmount()
+    })
+    host.remove()
+  }
+})
 
 it('offers the next step beside a notice and drops it when the next notice arrives', async () => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

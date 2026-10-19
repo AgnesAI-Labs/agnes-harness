@@ -22,7 +22,30 @@ Use the [source map](docs/develop/source-map.md) to locate the owning module. Pr
 
 ## Build and checks
 
-Use the Node.js requirement and pinned pnpm version in `package.json`. From the repository root:
+The development/CI Node patch is owned by the project lead in `.node-version`; `engines.node` in
+`package.json` is the supported user range, and `packageManager` owns the pnpm pin. Prepare the
+repository-local mise configuration with `mise trust` and `mise install`. Use ONE verification
+entry from the repository root, appending ordinary pnpm arguments:
+
+```sh
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs test:guards
+mise exec -- node tools/toolchain/run.mjs exec vitest run <file> --maxWorkers=1
+```
+
+The entry checks Node, pnpm and a package-manager child, then runs the selected existing command.
+It uses the selected executable and scopes runtime resolution to its own build/check subprocesses;
+no shell/global PATH edits are required. `pnpm run doctor:toolchain` checks an already configured
+shell; standard typecheck, test, guards and browser entries refuse a mismatched runtime before work.
+Use this entry for installs and builds too (`install --frozen-lockfile`, `--filter @agnes/cli build:local`).
+Verification reports must record actual `process.version` (the entry also prints `process.execPath`).
+Developer/AI windows must not change global environments or independently bump toolchain versions.
+The lead checks patch updates periodically, applies security fixes promptly in a separate maintenance
+change, and evaluates major upgrades separately. Reused daemons retain their original runtime:
+verify only in isolated homes and stop/restart only the instance you own after an upgrade.
+
+Existing commands (replace their leading `pnpm` with the entry above):
 
 ```sh
 pnpm install --frozen-lockfile

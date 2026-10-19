@@ -72,6 +72,39 @@ Include only the minimum information needed. Conversations, complete databases, 
 
 ## Everyday commands
 
+The development/CI Node patch lives in `.node-version`, read by mise and every CI workflow.
+`engines.node` in `package.json` describes the supported user range; it is not the development pin.
+The pnpm version comes only from `packageManager`. With mise installed, prepare each fresh worktree:
+
+```sh
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs test:guards
+mise exec -- node tools/toolchain/run.mjs exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
+```
+
+Use `mise exec -- node tools/toolchain/run.mjs` as the single build/verification entry; append the
+usual pnpm arguments, including `--filter @agnes/cli build:local` or `e2e:web`. It checks the exact
+Node and pnpm versions and a spawned package-manager runner, prints actual `process.version` and
+`process.execPath`, and keeps runtime selection local to build/check subprocesses. It invokes
+pnpm/Corepack JavaScript with that executable, bypassing shell shim drift. No global Node change,
+manual PATH prefix or private launch command is needed. An already configured shell can use
+`pnpm run doctor:toolchain`; standard typecheck, test, guards and browser entries also check first.
+A mismatch fails with the repair command. Missing Corepack should be provisioned alongside the
+selected Node (CI may use its existing pnpm setup).
+
+Record actual `process.version` in every verification report. The project lead owns the pin:
+check patch updates periodically and apply security fixes promptly, each in a separate maintenance
+change; evaluate major upgrades separately. Developer and AI windows must not change global
+environments or bump versions independently. Existing daemons keep the runtime that started them;
+use isolated homes and restart only your own instance to verify a new runtime. User-project commands
+and external MCP servers retain their own environment and are not subject to this development pin.
+
+In the existing commands below, replace the leading `pnpm` with the entry above.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native

@@ -105,6 +105,7 @@ export type {
   GenerationChangedEvent,
   InitializeInfo,
   ReconnectedEvent,
+  SessionLoadOptions,
 } from './client.js'
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting

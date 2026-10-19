@@ -1,5 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { defaultExclude, defineConfig } from 'vitest/config'
+import { checkToolchain } from './tools/toolchain/check.mjs'
+
+checkToolchain()
 
 const zeroTestReporter = fileURLToPath(new URL('./tools/guards/src/zero-test-reporter.mjs', import.meta.url))
 

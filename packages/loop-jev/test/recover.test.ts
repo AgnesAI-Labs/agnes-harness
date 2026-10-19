@@ -61,6 +61,7 @@ async function resume(
     jev?: ReturnType<typeof fakeJev>
     turnId?: number
     noView?: boolean
+    view?: Parameters<typeof turnView>[0]
     cancelled?: boolean
     resumeTool?: () => unknown
     /** Ports the test kit does not offer, added on top of its context. */
@@ -76,7 +77,9 @@ async function resume(
     checkpoint: encodeState(state),
     turnOpen: true,
     sideCall: jev,
-    ...(o.noView ? {} : { turnView: turnView({ turnId: o.turnId ?? 1, cancelled: o.cancelled ?? false }) }),
+    ...(o.noView
+      ? {}
+      : { turnView: turnView({ turnId: o.turnId ?? 1, cancelled: o.cancelled ?? false, ...o.view }) }),
     effects: (o.effects ?? {}) as never,
     replies: (o.replies ?? [textReply('Done.')]) as never,
     ...(o.resumeParked !== undefined ? { resumeParked: o.resumeParked } : {}),
@@ -289,6 +292,49 @@ describe('recovery after resume', () => {
     expect(r.executed).toEqual([])
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
+  it('dispatch of a read batch responded: one entry and one view, nothing run again', async () => {
+    const reads = ['a.md', 'b.md', 'c.md'].map(
+      (path, i): PendingCall => ({
+        invocationId: `jev:1:0:t${i}`,
+        name: 'read',
+        args: { path, offset: 1, limit: 200 },
+        announce: 'true',
+      }),
+    )
+    const batchDecision = {
+      ...decision,
+      phase: 'INSPECT',
+      op: 'read',
+      target: ['a.md', 'b.md', 'c.md'],
+      bindingMode: 'observed',
+      args: reads[0]?.args,
+      batch: reads.map((c) => c.args),
+    }
+    const r = await resume(
+      saved({
+        stage: 'dispatch',
+        cur: {
+          ...saved({}).cur,
+          decision: batchDecision as never,
+          route: { kind: 'direct', reason: null },
+          calls: reads,
+        },
+      }),
+      {
+        effects: Object.assign(
+          {},
+          ...reads.map((c) => responded(c.invocationId, ok(`text of ${(c.args as { path: string }).path}`))),
+        ),
+      },
+    )
+    expect(r.executed).toEqual([])
+    expect(r.steps[0]).toMatchObject({ dispatch: { batch: true, results: ['ok', 'ok', 'ok'] } })
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
+    expect((state.recent_steps as JsonObject[]).at(-1)).toMatchObject({
+      read_files: ['a.md', 'b.md', 'c.md'],
+    })
+    expect((state.observation_views as JsonObject[]).filter((v) => v.kind === 'read')).toHaveLength(1)
+  })
   it('dispatch closed with TOOL_NOT_STARTED: records it as recoverable', async () => {
     const r = await resume(saved({ stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }), {
       effects: responded('jev:1:0:t0', {
@@ -372,6 +418,50 @@ describe('recovery after resume', () => {
     expect(r.resumed).toEqual(['jev:1:0:t0'])
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
   })
+  it('approval continuation: a failed read-only tool without a profile is not applied', async () => {
+    const search: PendingCall = {
+      invocationId: 'jev:1:0:t0',
+      name: 'docs_search',
+      args: {},
+      announce: 'content',
+      content: [],
+    }
+    const s = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [search] } })
+    s.toolNames = [...s.toolNames, 'docs_search'].sort()
+    const r = await resume(s, {
+      turnId: 2,
+      resumeParked: 'opened',
+      view: {
+        tools: [...s.toolNames],
+        platform: { meta: { docs_search: { isReadOnly: true, isOpenWorld: true } } },
+      },
+      effects: { 'jev:1:0:t0': { status: 'may-have-sent', invocationId: 'jev:1:0:t0', checkpoint: null } },
+      resumeTool: () => ({ ...ok('backend down'), isError: true }),
+    })
+    const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
+    expect((state.last_result as { error: JsonObject }).error).toMatchObject({
+      code: 'EXECUTION_FAILED',
+      recoverability: 'recoverable',
+    })
+  })
+  it('approval continuation: counts the references taken from text and reports them', async () => {
+    const list: PendingCall = {
+      invocationId: 'jev:1:0:t0',
+      name: 'ls',
+      args: { path: '.' },
+      announce: 'content',
+      content: [],
+    }
+    const s = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [list] } })
+    const r = await resume(s, {
+      turnId: 2,
+      resumeParked: 'opened',
+      effects: { 'jev:1:0:t0': { status: 'may-have-sent', invocationId: 'jev:1:0:t0', checkpoint: null } },
+      resumeTool: () => ok('notes.txt'),
+    })
+    expect(r.steps[0]).toMatchObject({ dispatch: { refs: { source: 'text', count: 1 } } })
+    expect(r.metrics.at(-1)).toMatchObject({ textReferences: 1 })
+  })
   it('parked: waiting stays parked, blocked ends blocked, nothing parked goes idle', async () => {
     const parked = saved({ stage: 'parked', cur: { ...saved({}).cur, calls: [call] } })
     expect((await resume(parked, { noView: true, resumeParked: 'waiting' })).steps).toEqual([])
@@ -437,5 +527,50 @@ describe('recovery after resume', () => {
     expect(r.steps[0]).toMatchObject({ dispatch: { results: ['ok'] } })
     const state = (r.jev.prepared[0] as unknown as { payload: { state: JsonObject } }).payload.state
     expect(state.goal).toBe('write a file')
+  })
+})
+
+describe('recovery under a code or hybrid disclosure', () => {
+  const standard = ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell', 'tool_search', 'tool_describe']
+  const hybrid = { tools: [...standard, 'run_code'], platform: { disclosed: [...standard, 'run_code'] } }
+  const unsupported = ['error', expect.objectContaining({ code: 'JEV_UNSUPPORTED_DISCLOSURE' })]
+  it('a finished refusal ends again with the saved error and no request', async () => {
+    const error = { code: 'JEV_UNSUPPORTED_DISCLOSURE', message: 'refused earlier' }
+    const r = await resume(saved({ stage: 'finish', endReason: 'error', endError: error }), { view: hybrid })
+    expect(r.finished).toEqual(['error', error])
+    expect(r.requests).toHaveLength(0)
+    expect(r.jev.invoked).toHaveLength(0)
+  })
+  it.each<[string, Partial<JevState>]>([
+    ['an interrupted model call', { stage: 'llm' }],
+    ['an interrupted dispatch', { stage: 'dispatch', cur: { ...saved({}).cur, calls: [call] } }],
+    ['a step that only began', { stage: 'decide', cur: { jevAttempts: [], level: 0 } }],
+  ])('refuses %s of a session whose disclosure became unsupported', async (_name, over) => {
+    const r = await resume(saved(over), { view: hybrid })
+    expect(r.finished).toEqual(unsupported)
+    expect(r.requests).toHaveLength(0)
+    expect(r.jev.invoked).toHaveLength(0)
+    expect(r.executed).toHaveLength(0)
+  })
+  it('recovers an interrupted model call whose turn is already closed without checking the disclosure', async () => {
+    const r = await resume(saved({ stage: 'llm' }), { noView: true })
+    // The recovery itself runs (and finds nothing recorded); a disclosure check on a null view would throw a TypeError instead.
+    expect(r.finished?.[1]).toEqual({
+      code: 'JEV_LOOP_FAILED',
+      message: 'Error: The interrupted Jev loop model request has no record',
+    })
+  })
+  it.each<[string, Partial<JevState>]>([
+    ['an interrupted step', { stage: 'llm' }],
+    ['a step that only began', { stage: 'decide', cur: { jevAttempts: [], level: 0 } }],
+  ])('refuses %s of a cancelled turn as unsupported, not as aborted', async (_name, over) => {
+    const r = await resume(saved(over), { view: hybrid, cancelled: true })
+    expect(r.finished).toEqual(unsupported)
+  })
+  it('keeps recovering under the standard disclosure with run_code in the catalog', async () => {
+    const r = await resume(answerStep({ kind: 'answer', attempt: 0 }), {
+      view: { tools: hybrid.tools, platform: { disclosed: standard } },
+    })
+    expect(r.finished?.[0]).toBe('completed')
   })
 })

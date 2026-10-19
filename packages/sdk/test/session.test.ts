@@ -9,6 +9,168 @@ import { fakeEndpoint, flush, type Handler } from './helpers/fake-endpoint.js'
 const providers = { local: () => localAuth() }
 const init: Handler = fakeEndpoint({}).initialize
 
+it.each([true, false])(
+  'negotiates admission-only opening (supported=%s) and remembers it for restoration',
+  async (supported) => {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: supported } } },
+      }),
+      'session/load': () => ({}),
+      '_agnes/v1/session.open': () => ({}),
+    })
+    const client = createClient({
+      sessionRestoreHistory: 'none',
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      await client.session.open('web', { cwd: '/workspace' })
+      await client.restoreSession('web', '/workspace')
+      const loads = f.calls.filter((call) => call.method !== 'initialize')
+      expect(loads.map((call) => call.method)).toEqual(
+        Array(2).fill(supported ? '_agnes/v1/session.open' : 'session/load'),
+      )
+      if (supported) {
+        expect(loads[0]?.params).toMatchObject({
+          sessionId: 'web',
+          cwd: '/workspace',
+          requestId: expect.any(String),
+        })
+        expect(loads[0]?.params).not.toEqual(loads[1]?.params)
+      }
+      await client.session.load('web')
+      await client.restoreSession('web', '/workspace')
+      expect(f.calls.at(-1)?.method).toBe('session/load')
+    } finally {
+      await client.close()
+    }
+  },
+)
+
+it('never falls back after admission refusal and cancels just the caller-owned open', async () => {
+  let release!: () => void
+  const f = fakeEndpoint({
+    initialize: () => ({
+      protocolVersion: 1,
+      agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+    }),
+    '_agnes/v1/session.open': (params) => {
+      if ((params as { sessionId: string }).sessionId === 'refused') throw rpcError('CAPABILITY_DENIED')
+      return new Promise<void>((resolve) => {
+        release = resolve
+      })
+    },
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    await expect(client.session.open('refused')).rejects.toMatchObject({ code: -32006 })
+    const controller = new AbortController()
+    const pending = client.session.open('pending', { signal: controller.signal })
+    const rejected = expect(pending).rejects.toThrow()
+    await flush()
+    controller.abort(new Error('selection changed'))
+    await rejected
+    const opening = f.calls.find(
+      (call) =>
+        call.method === '_agnes/v1/session.open' &&
+        (call.params as { sessionId: string }).sessionId === 'pending',
+    )
+    expect(f.calls).toContainEqual({
+      method: '_agnes/v1/session.loadingCancel',
+      params: {
+        sessionId: 'pending',
+        requestId: (opening?.params as { requestId?: string } | undefined)?.requestId,
+      },
+    })
+    expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+    release()
+  } finally {
+    await client.close()
+  }
+})
+
+it.each(['open', 'new', 'fork'] as const)(
+  'reconnect restoration of a Web %s handle never asks for ACP replay',
+  async (creation) => {
+    let attaches = 0
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+      }),
+      '_agnes/v1/session.open': () => ({}),
+      'session/new': () => ({ sessionId: 'web' }),
+      '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'web' } }),
+      '_agnes/v1/submit.ack': () => ({}),
+      '_agnes/v1/session.attach': () => {
+        if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'web' })
+        return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+      },
+    })
+    const client = createClient({
+      sessionRestoreHistory: 'none',
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session =
+        creation === 'new'
+          ? await client.session.new({ cwd: '/workspace' })
+          : creation === 'fork'
+            ? await client.session.fork('parent', 1, { cwd: '/workspace' })
+            : await client.session.open('web', { cwd: '/workspace' })
+      await session.attach()
+      await session.recover()
+      expect(f.calls.filter((call) => call.method === '_agnes/v1/session.open')).toHaveLength(
+        creation === 'open' ? 2 : 1,
+      )
+      expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+    } finally {
+      await client.close()
+    }
+  },
+)
+
+it('cancels an opening during a shared handshake without cancelling initialization for the next selection', async () => {
+  let finish!: (value: unknown) => void
+  const f = fakeEndpoint({
+    initialize: () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    'session/load': () => ({}),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const controller = new AbortController()
+    const opening = client.session.open('cancelled', { signal: controller.signal })
+    const rejected = expect(opening).rejects.toThrow('switched before initialization')
+    await flush()
+    controller.abort(new Error('switched before initialization'))
+    await rejected
+    finish({ protocolVersion: 1, agentCapabilities: {} })
+    await client.initialize()
+    await client.session.open('next')
+    expect(f.calls.filter((call) => call.method === 'session/load').map((call) => call.params)).toEqual([
+      { sessionId: 'next', cwd: '', mcpServers: [] },
+    ])
+  } finally {
+    await client.close()
+  }
+})
+
 const meta = (seq: number, phase: string, extra: Record<string, unknown> = {}) => ({
   [META_KEY]: { promptTurnId: '1', eventSequence: seq, generation: 1, lane: 'main', phase, ...extra },
 })

@@ -43,6 +43,7 @@ import { toSessionUpdates } from '../project.js'
 import type { PrompterRouter } from '../prompter.js'
 import { resolvePromptReferences } from '../references.js'
 import { reserveOwnedSession, SessionAdmissionDenied } from '../session-admission.js'
+import { registerSessionLoading } from '../session-loading.js'
 import type { SessionEntry } from '../sessions.js'
 // A value import from agnes.ts, not a runtime cycle: agnes.ts's own import of `Feed`/`LocalContext`
 // from this file is `import type`, which the compiler erases entirely, so nothing here ever has to
@@ -114,6 +115,7 @@ function textOf(content: unknown): string {
  * replaying history cannot walk this stream's promptTurnId or eventSequence back.
  */
 export class Feed {
+  private historyCut = 0
   private meta: MetaState
   private waiters: Array<{ seq: number; resolve: () => void }> = []
   lastPushed = 0
@@ -268,6 +270,9 @@ export class Feed {
   }
 
   onEvent(e: EventEnvelope, o: { replay?: boolean } = {}): void {
+    // A registry tail can still be catching up when admission finishes. The opening window owns
+    // that prefix for admission-only clients, including rows delivered late by the live tail.
+    if (!o.replay && e.seq <= this.historyCut) return
     const { meta, next } = stampMeta(e, this.meta)
     this.meta = next
     this.track(e, meta, o.replay === true)
@@ -341,6 +346,11 @@ export class Feed {
    */
   replayLoad(events: EventEnvelope[]): void {
     for (const e of events) if (LOADABLE.includes(e.type)) this.onEvent(e, { replay: true })
+  }
+
+  omitHistory(cut: number): void {
+    this.historyCut = Math.max(this.historyCut, cut)
+    this.lastPushed = Math.max(this.lastPushed, cut)
   }
 }
 
@@ -467,19 +477,23 @@ export function registerAcp(
     }
     denyOwnership(method, sessionId)
   }
-  const feedFor = (entry: SessionEntry): Feed => {
+  const feedFor = (entry: SessionEntry, replay = true): Feed => {
     // Nobody is left to push to: hand back a Feed that subscribes to nothing and never makes a
     // prompt wait for rows.
     if (closedFeeds.has(feeds))
       return Object.assign(new Feed(ep, entry, () => undefined), { lastPushed: Number.POSITIVE_INFINITY })
     const known = feeds.get(entry.key)
-    if (known?.belongsTo(entry)) return known
+    if (known?.belongsTo(entry)) {
+      if (!replay) known.omitHistory(entry.session.lastSeq)
+      return known
+    }
     const f = new Feed(
       ep,
       entry,
       () => ep.conn.attached.get(entry.key),
       () => cx.registry.previewSnapshot(entry.key),
     )
+    if (!replay) f.omitHistory(entry.session.lastSeq)
     const offEvents = cx.registry.subscribe(entry.key, (e) => {
       // Two sinks, one event, written as two statements. Reaching for a nullish fallback between
       // them - an optional call on the left, a plain call on the right - runs both sides regardless,
@@ -547,7 +561,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        _meta: { 'ai.agnes.harness': { hardTurnBudget: true } },
+        _meta: { 'ai.agnes.harness': { hardTurnBudget: true, sessionOpen: true } },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
@@ -680,99 +694,7 @@ export function registerAcp(
     return { sessionId: entry.key }
   })
 
-  const loading = new Map<string, Set<AbortController>>()
-  ep.register('_agnes/v1/session.loadingCancel', async (params) => {
-    const { sessionId } = params as { sessionId: string }
-    requireOwner('session.loadingCancel', sessionId)
-    for (const controller of loading.get(sessionId) ?? [])
-      controller.abort(new Error('session loading cancelled'))
-    return {}
-  })
-
-  ep.register('session/load', async (params, call) => {
-    const p = params as { sessionId: string; cwd: string }
-    requireOwner('session/load', p.sessionId)
-    const controller = new AbortController()
-    const signal = AbortSignal.any([call.signal, controller.signal])
-    const pending = loading.get(p.sessionId) ?? new Set<AbortController>()
-    pending.add(controller)
-    loading.set(p.sessionId, pending)
-    try {
-      let entry = cx.registry.get(p.sessionId)
-      const wasOpen = entry !== undefined
-      try {
-        const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
-        // Calling open for a live entry is intentional: both registries must reject a different
-        // authority binding rather than ignoring it until the next restart.
-        entry = await cx.registry.open({
-          key: p.sessionId,
-          cwd: binding.canonicalRoot,
-          binding,
-          resume: true,
-          historySignal: signal,
-          onHistoryProgress: (progress: { verifiedSeq: number; lastSeq: number }) => {
-            if (!signal.aborted)
-              ep.push(
-                notify('_agnes/v1/session.loading', {
-                  sessionId: p.sessionId,
-                  phase: 'verifying',
-                  ...progress,
-                }),
-              )
-          },
-        } as Parameters<typeof cx.registry.open>[0])
-      } catch (error) {
-        throwSessionOpenRpcError(error, p.sessionId)
-      }
-      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-      try {
-        if (wasOpen)
-          await entry.session.verifyHistory({
-            signal,
-            onProgress: (progress) => {
-              if (!signal.aborted)
-                ep.push(
-                  notify('_agnes/v1/session.loading', {
-                    sessionId: p.sessionId,
-                    phase: 'verifying',
-                    ...progress,
-                  }),
-                )
-            },
-          })
-      } catch (error) {
-        throwSessionOpenRpcError(error, p.sessionId)
-      }
-      const feed = feedFor(entry)
-      // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
-      // silently truncate a long transcript at whatever limit was written here.
-      const lastSeq = entry.session.lastSeq
-      for (let from = 1; from <= lastSeq; from += 500) {
-        if (signal.aborted) throw new Error('session load disconnected')
-        feed.replayLoad(
-          (await entry.session.scan({
-            fromSeq: from,
-            toSeq: Math.min(lastSeq, from + 499),
-            limit: 500,
-          })) as EventEnvelope[],
-        )
-        ep.push(
-          notify('_agnes/v1/session.loading', {
-            sessionId: p.sessionId,
-            phase: 'replaying',
-            verifiedSeq: Math.min(lastSeq, from + 499),
-            lastSeq,
-          }),
-        )
-      }
-      // Whatever is streaming now is not in the transcript yet; the snapshot says it.
-      feed.previewResync()
-      return {}
-    } finally {
-      pending.delete(controller)
-      if (!pending.size) loading.delete(p.sessionId)
-    }
-  })
+  registerSessionLoading(ep, cx, feedFor, requireOwner, throwSessionOpenRpcError)
 
   ep.register('session/prompt', async (params, c) => {
     const p = params as { sessionId: string; prompt: unknown[] }

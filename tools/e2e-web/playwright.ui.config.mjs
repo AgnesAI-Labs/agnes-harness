@@ -1,6 +1,9 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineConfig } from '@playwright/test'
+import { checkToolchain } from '../toolchain/check.mjs'
+
+checkToolchain()
 
 // UI acceptance uses an explicitly supplied disposable server; the offline merge gate owns its own runtime.
 export default defineConfig({

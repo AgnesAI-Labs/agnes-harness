@@ -164,6 +164,7 @@ export function createSubmissionController(
    * turn ends. `steer` (⌘/Ctrl+Enter) sends it as guidance instead, joining when the current step ends.
    */
   function submitComposer(options: { steer?: boolean } = {}): void {
+    if (context.sessionPending || !context.connected) return
     const originalDraft = context.composerRuntime.getDraft()
     const selectedReferences = context.references.getSnapshot()
     const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))

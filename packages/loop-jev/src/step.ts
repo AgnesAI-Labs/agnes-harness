@@ -1,11 +1,21 @@
 import type { LoopStepOutcome, LoopTurnView, ToolResult } from '@agnes/extension-api'
-import { compileQuestions, decisionSurface, fitBudget } from './compile.js'
+import { candidatesFor } from './candidates.js'
+import { compileQuestions, criteriaCharsAt, decisionSurface, fitBudget } from './compile.js'
 import { decodeAnswers } from './decode.js'
 import { dispatchCalls, observeDispatch, replayCalls } from './dispatch.js'
+import { checkAvailable, checkDuplicate } from './guards.js'
 import { callJev, type JevDeps, type JevOutcome, type JevPayload } from './jev.js'
 import { type Adoption, adoptCalls, noteFor, parseReply, type Reply } from './llm.js'
 import { type LlmOutcome, requestLlm } from './model.js'
-import { decisionTools, outcomeUnknown, resultText, stageOneToolNames, targetOf } from './profile.js'
+import {
+  BUILTIN_TOOLS,
+  decisionTools,
+  intentFingerprint,
+  outcomeUnknown,
+  resultText,
+  targetOf,
+  turnToolNames,
+} from './profile.js'
 import { routeDecision } from './route.js'
 import {
   boundContent,
@@ -29,6 +39,7 @@ import {
   type JsonValue,
   type LlmKind,
   type PendingCall,
+  type ReferenceSource,
   type ResolvedTool,
   type Route,
 } from './types.js'
@@ -57,20 +68,49 @@ export function routeEvent(route: Route): StepEvent {
   }
 }
 
-/** The tools and questions of this step, and the Jev payload at a shrink level. */
+/**
+ * The tools and questions of this step, and the Jev payload at a shrink level. The observed files and
+ * directories of the workspace are offered as targets; from level 6 the questions carry clipped criteria
+ * (same heads and options, so decoding always uses `compiled`).
+ */
 export function stepTools(
   s: Scope,
   view: LoopTurnView,
 ): { tools: ResolvedTool[]; compiled: CompiledQuestions; build(level: number): JevPayload | null } {
   const tools = decisionTools(view, s.state.toolNames)
-  const compiled = compileQuestions(tools)
+  const candidates = candidatesFor(tools, view, s.state.workspace)
+  const compiled = compileQuestions(tools, candidates)
   const surface = decisionSurface(compiled)
   const budget = { stateTokens: s.cfg.stateTokenBudget, requestTokens: s.cfg.requestTokenBudget }
+  const clipped = new Map<number, CompiledQuestions>()
+  const questionsAt = (level: number): CompiledQuestions => {
+    const chars = criteriaCharsAt(level)
+    if (chars === criteriaCharsAt(0)) return compiled
+    let at = clipped.get(chars)
+    if (at === undefined) {
+      at = compileQuestions(tools, candidates, { criteriaChars: chars })
+      clipped.set(chars, at)
+    }
+    return at
+  }
   const build = (level: number): JevPayload | null => {
-    const fit = fitBudget(compiled, (l) => buildState(s.state.workspace, l, surface), budget, level)
-    return fit ? { state: fit.state, questions: compiled.questions } : null
+    const fit = fitBudget(questionsAt, (l) => buildState(s.state.workspace, l, surface), budget, level)
+    return fit ? { state: fit.state, questions: fit.questions } : null
   }
   return { tools, compiled, build }
+}
+
+/**
+ * Whether the tool a call names is read-only, from the turn's tool metadata; `undefined` when the view
+ * does not list it. Only a tool without a profile needs it, so the view is read for those alone.
+ */
+export function readOnlyOf(
+  view: LoopTurnView | null,
+  toolNames: readonly string[],
+  name: string,
+): boolean | undefined {
+  if (view === null) return undefined
+  return decisionTools(view, toolNames).find((tool) => tool.name === name)?.readOnly
 }
 
 /**
@@ -173,13 +213,18 @@ export async function decodeAndRoute(
   st.cur.route = { kind: route.kind, reason: route.reason }
   if (route.kind !== 'direct') return llmStep(s, route, signal)
   st.counters.directSteps++
-  const call: PendingCall = {
-    invocationId: `${idPrefix(s)}:t0`,
-    name: route.decision.op,
-    args: route.decision.args,
-    announce: 'true',
-  }
-  return dispatchStep(s, [call], route, signal)
+  // An observed batch is announced as one message, ids t0..tN; any other decision is one call.
+  const calls = (route.decision.batch ?? [route.decision.args]).map(
+    (args, i): PendingCall => ({
+      invocationId: `${idPrefix(s)}:t${i}`,
+      name: route.decision.op,
+      args: args as JsonObject,
+      announce: 'true',
+    }),
+  )
+  if (route.decision.bindingMode === 'observed') st.counters.observedSteps++
+  if (calls.length > 1) st.counters.batchSteps++
+  return dispatchStep(s, calls, route, signal)
 }
 
 /** Counts a step's model attempts; every attempt after the step's first is a retry, including the first one sent after a restart. */
@@ -249,7 +294,7 @@ export async function llmStep(
         async recomputeToolNames() {
           const view = await ctx.turn.view()
           if (!view) throw new Error('The Jev loop turn has no public view')
-          const names = stageOneToolNames(view)
+          const names = turnToolNames(view)
           if (names.join('\n') !== st.toolNames.join('\n')) st.toolNamesChanges++
           st.toolNames = names
           return [...names]
@@ -351,9 +396,14 @@ function argKeys(args: JsonValue): string[] {
   return args !== null && typeof args === 'object' && !Array.isArray(args) ? Object.keys(args).sort() : []
 }
 
+/**
+ * The `dispatch` part of a step event. `refs` is what the observation's references came from and how
+ * many were extracted, before the view's caps (so it can exceed what the view keeps).
+ */
 export function dispatchEvent(
   calls: readonly PendingCall[],
   results: readonly (ToolResult | null)[],
+  refs?: { source: ReferenceSource; count: number },
 ): JsonObject {
   return {
     invocationIds: calls.map((call) => call.invocationId),
@@ -369,12 +419,23 @@ export function dispatchEvent(
         ? 'not_started'
         : 'error'
     }),
+    ...(refs === undefined ? {} : { refs: { source: refs.source, count: refs.count } }),
   }
+}
+
+/** The workspace targets of the calls: one label for one call, the list for a batch. */
+function targetsOf(s: Scope, calls: readonly PendingCall[]): string[] {
+  return calls.flatMap((call) => {
+    const target = targetOf(call.name, call.args, s.cwd)
+    return target === null ? [] : [target]
+  })
 }
 
 /**
  * Announces and runs the calls (or, with `replay`, replays the recorded ones with the same ids),
- * then records one observation. `llm` is the model part of this step's event.
+ * then records one observation. `llm` is the model part of this step's event. A new dispatch first
+ * passes the guards: its tools must still be offered, and it may not be a third run of the same
+ * intent that observed the same thing twice.
  */
 export async function dispatchStep(
   s: Scope,
@@ -385,6 +446,45 @@ export async function dispatchStep(
 ): Promise<LoopStepOutcome> {
   const st = s.state
   const { decision } = route
+  // `binding` describes the calls that were dispatched: a batch Core narrowed to its first call reports one.
+  const event = (dropped: number): StepEvent => ({
+    ...routeEvent(route),
+    ...(route.kind === 'direct'
+      ? {
+          binding: {
+            mode: decision.bindingMode,
+            targets: targetsOf(s, calls.slice(0, calls.length - dropped)),
+            batch: calls.length - dropped,
+          },
+        }
+      : {}),
+    ...(options.llm
+      ? { llm: { ...options.llm, droppedCalls: Number(options.llm.droppedCalls ?? 0) + dropped } }
+      : {}),
+  })
+  const intent = intentFingerprint(calls)
+  const op = calls[0]?.name ?? decision.op
+  const refused = options.replay
+    ? null
+    : (checkAvailable(
+        calls.map((call) => call.name),
+        st.toolNames,
+      ) ?? checkDuplicate(currentTurn(st.workspace), intent, op))
+  if (refused) {
+    if (refused.code === 'UNAVAILABLE') st.counters.unavailableRefusals++
+    else st.counters.duplicateRefusals++
+    const targets = targetsOf(s, calls)
+    const obs = recordRefusal(s, {
+      phase: decision.phase,
+      op,
+      target: calls.length > 1 ? targets : (targets[0] ?? null),
+      code: refused.code,
+      stage: 'dispatch',
+      message: refused.message,
+      intentFp: intent,
+    })
+    return endStep(s, obs, { ...event(0), refusal: refusalOf(obs) })
+  }
   st.stage = 'dispatch'
   st.cur.calls = calls
   const deps = {
@@ -398,12 +498,6 @@ export async function dispatchStep(
       )
     },
   }
-  const event = (dropped: number): StepEvent => ({
-    ...routeEvent(route),
-    ...(options.llm
-      ? { llm: { ...options.llm, droppedCalls: Number(options.llm.droppedCalls ?? 0) + dropped } }
-      : {}),
-  })
   let d: Awaited<ReturnType<typeof dispatchCalls>>
   try {
     d = await (options.replay ? replayCalls : dispatchCalls)(calls, deps, signal)
@@ -424,10 +518,6 @@ export async function dispatchStep(
     escalated: route.kind === 'arbitration',
   }
   if (d.kind === 'refused') {
-    if (d.code === 'INTERNAL_RELATION') {
-      st.internalErrors++
-      if (st.internalErrors >= 2) throw new Error(d.message)
-    }
     // A refused fallback leaves the rest of the batch unrun.
     const dropped = calls.length - d.calls.length
     st.counters.droppedCalls += dropped
@@ -440,6 +530,14 @@ export async function dispatchStep(
       stage: 'dispatch',
       message: d.message,
     })
+    if (d.code === 'INTERNAL_RELATION') {
+      st.internalErrors++
+      if (st.internalErrors >= 2) {
+        // The second one ends the turn; the step is still reported, as a terminal refusal.
+        await emitStep(s, { ...event(dropped), refusal: { ...refusalOf(obs), recoverability: 'terminal' } })
+        throw new Error(d.message)
+      }
+    }
     delete st.cur.calls
     return endStep(s, obs, { ...event(dropped), refusal: refusalOf(obs) })
   }
@@ -456,8 +554,23 @@ export async function dispatchStep(
   }
   if (d.batchNote) pushPending(s, d.batchNote)
   st.counters.droppedCalls += d.dropped
-  const obs = observeDispatch({ ...common, calls: d.calls, results: d.results })
+  const readOnly =
+    d.calls.length === 1 &&
+    d.calls[0] !== undefined &&
+    !(BUILTIN_TOOLS as readonly string[]).includes(d.calls[0].name)
+      ? readOnlyOf(await s.ctx.turn.view(), st.toolNames, d.calls[0].name)
+      : undefined
+  const obs = observeDispatch({
+    ...common,
+    calls: d.calls,
+    results: d.results,
+    ...(readOnly === undefined ? {} : { readOnly }),
+  })
   if (route.kind === 'direct' && obs.entry.status === 'succeeded') st.counters.directSuccess++
+  if (obs.refs?.source === 'text') st.counters.textReferences++
   delete st.cur.calls
-  return endStep(s, obs, { ...event(d.dropped), dispatch: dispatchEvent(d.calls, d.results) })
+  return endStep(s, obs, {
+    ...event(d.dropped),
+    dispatch: dispatchEvent(d.calls, d.results, obs.refs),
+  })
 }

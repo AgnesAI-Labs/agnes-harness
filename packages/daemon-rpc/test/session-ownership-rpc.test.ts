@@ -120,6 +120,7 @@ describe('authenticated session ownership RPC guard', () => {
       })
       for (const request of [
         { method: 'session/load', params: { sessionId, cwd: h.dataDir, mcpServers: [] } },
+        { method: '_agnes/v1/session.open', params: { sessionId, cwd: h.dataDir, requestId: 'stranger' } },
         { method: 'session/prompt', params: { sessionId, prompt: [] } },
         { method: '_agnes/v1/session.setYolo', params: { sessionId, enabled: true } },
         { method: '_agnes/v1/session.attach', params: { sessionId } },

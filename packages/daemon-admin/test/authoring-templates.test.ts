@@ -182,3 +182,65 @@ it('discovers panel capability on the same shared authoring path and reuses the 
   ])
     expect(panel.authoringPath).toContain(term)
 })
+
+it('review: panel preserves unresolved operation identity across remount', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-panel-review-'))
+  const directory = join(root, 'candidate')
+  try {
+    const files = candidateTemplate('tool-with-panel', 'my-agh-plugin')
+    const panel = files.find((file) => file.path === 'test/panel.test.mjs')
+    if (!panel) throw new Error('Panel fixture missing')
+    const prefix = panel.content.slice(0, panel.content.indexOf("test('"))
+    panel.content = `${prefix}
+test('unresolved operation retains its identity on reopening', async () => {
+  const { client } = JSON.parse(await readFile(new URL('../client/agnes.client.json', import.meta.url), 'utf8'));
+  const identity = {
+    packageId: 'my-agh-plugin', rowId: 'ext:my-agh-plugin/main', revision: 'one',
+    services: client.services, homeEntries: client.homeEntries, publicConfig: client.publicConfig,
+    binding: { owner: 'ext:my-agh-plugin/main', packageId: 'my-agh-plugin', lifetime: 'profile', availability: 'active', integrity: 'one', profileId: 'test', activationId: 'current' }
+  };
+  const operations = [];
+  const caller = async (_module, name, input, options) => {
+    if (name.endsWith('.list')) return { output: { items: [] } };
+    if (!options.read) operations.push(options.operationId);
+    return { state: 'unknown', operationId: options.operationId };
+  };
+  let host;
+  let storage = [];
+  try {
+    for (let pass = 0; pass < 2; pass++) {
+      host = await createClientPanelTestHost(module, identity, caller);
+      for (const [key, value] of storage) host.window.sessionStorage.setItem(key, value);
+      await host.render(client.homeEntries[0].id);
+      const input = host.container.querySelector('input:not([type=checkbox])');
+      await host.act(async () => {
+        input.value = 'Same unresolved task';
+        input.dispatchEvent(new host.window.Event('input', { bubbles: true }));
+      });
+      await host.act(async () => host.container.querySelector('button[type=submit]').click());
+      if (pass === 0) {
+        assert.equal(input.disabled, true);
+        assert.match(host.container.textContent, /unknown/);
+        storage = Array.from({ length: host.window.sessionStorage.length }, (_, i) => {
+          const key = host.window.sessionStorage.key(i);
+          return [key, host.window.sessionStorage.getItem(key)];
+        });
+        await host.dispose();
+        host = undefined;
+      }
+    }
+    assert.equal(operations.length, 1, 'Reopening must retain the unresolved operation rather than dispatch the same intent with a fresh id');
+  } finally {
+    await host?.dispose();
+  }
+});
+`
+    for (const file of files) {
+      mkdirSync(dirname(join(directory, file.path)), { recursive: true })
+      writeFileSync(join(directory, file.path), file.content)
+    }
+    await runTemplateTests(directory, [panel])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

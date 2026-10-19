@@ -34,6 +34,7 @@ type JevKernelOptions = {
   seams?: Parameters<typeof fakeSeams>[0]
   tools?: unknown[]
   config?: object
+  disclosure?: 'standard' | 'hybrid' | 'code'
 }
 
 /** A test `write` tool that never asks for approval and writes nothing. */
@@ -94,6 +95,7 @@ function jevKernel(o: JevKernelOptions) {
   loops.register('@agnes/loop-jev', loop)
   const preset = presetDefaults()
   preset.model.retry.maxAttempts = 1
+  if (o.disclosure) preset.disclosure = o.disclosure
   const kernel = Kernel.create({
     loops,
     storage,
@@ -131,6 +133,9 @@ function jevKernel(o: JevKernelOptions) {
   }
   return { kernel, provider, storage, open, run, rows }
 }
+
+/** A test `run_code` tool: only its presence in the catalog matters to the disclosure. */
+const runCodeTool = () => ({ ...(readTool() as object), name: 'run_code' })
 
 const isFake = (jev: LoopSideCallPort): jev is FakeJev => 'records' in jev && 'invoked' in jev
 
@@ -178,6 +183,53 @@ const userTexts = (rows: Awaited<ReturnType<ReturnType<typeof jevKernel>['rows']
   rows.filter((r) => r.type === 'user/message').map((r) => JSON.stringify(r.data))
 
 describe('agnes.jev on a real Core session', () => {
+  it.each<{ name: string; disclosure: 'hybrid' | 'code'; withRuntime: boolean }>([
+    { name: 'hybrid', disclosure: 'hybrid', withRuntime: true },
+    { name: 'code', disclosure: 'code', withRuntime: true },
+    { name: 'code without a code runtime', disclosure: 'code', withRuntime: false },
+  ])(
+    'ends a turn under the $name disclosure without a Jev, model or tool call',
+    async ({ name, disclosure, withRuntime }) => {
+      const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
+      const kit = jevKernel({
+        scripts: [textTurn('never sent')],
+        jev,
+        disclosure,
+        tools: withRuntime ? [readTool(), writeTool(), runCodeTool()] : [readTool(), writeTool()],
+      })
+      const session = await kit.open(`disclosure-${name}`)
+      try {
+        expect((await kit.run(session)).reason).toBe('error')
+        const rows = await kit.rows(session)
+        expect(rows.filter((r) => r.type === 'turn/end').map((r) => r.data)).toEqual([
+          expect.objectContaining({
+            reason: 'error',
+            error: expect.objectContaining({ code: 'JEV_UNSUPPORTED_DISCLOSURE' }),
+          }),
+        ])
+        expect(kit.provider.requests).toHaveLength(0)
+        expect(jev.invoked).toHaveLength(0)
+        expect(rows.some((r) => r.type === 'tool/call')).toBe(false)
+      } finally {
+        await kit.kernel.close()
+      }
+    },
+  )
+
+  it('runs a turn under the standard disclosure with run_code in the catalog', async () => {
+    const kit = jevKernel({
+      scripts: [textTurn('done')],
+      jev: fakeJev(() => ({ pick: PICK_RESPOND })),
+      tools: [readTool(), writeTool(), runCodeTool()],
+    })
+    const session = await kit.open('disclosure-standard')
+    try {
+      expect((await kit.run(session)).reason).toBe('completed')
+    } finally {
+      await kit.kernel.close()
+    }
+  })
+
   it('takes another step when the stop gate holds the completion', async () => {
     const kit = jevKernel({
       scripts: [textTurn('first'), textTurn('second')],

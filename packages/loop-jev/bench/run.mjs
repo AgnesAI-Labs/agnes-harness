@@ -115,6 +115,13 @@ const VALUE_FLAGS = new Set([
 ])
 const BOOL_FLAGS = new Set(['--pilot', '--dry-run', '--fake', '--help'])
 
+/** An error's message, plus the `data` a JSON-RPC rejection carries (its reason is only there). */
+function describeError(error) {
+  if (!(error instanceof Error)) return String(error)
+  const data = error.data
+  return data && typeof data === 'object' ? `${error.message} ${JSON.stringify(data)}` : error.message
+}
+
 function positiveInt(value, flag) {
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) throw new SetupError(`${flag} must be a positive integer`)
@@ -414,7 +421,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       try {
         await runTurn(index, turn)
       } catch (error) {
-        result.error = `cell failed in turn ${index + 1}: ${error instanceof Error ? error.message : String(error)}`
+        result.error = `cell failed in turn ${index + 1}: ${describeError(error)}`
         result.records.push(notRun(cell, index, result.error, result.tools))
         result.turnEvents.push([])
       }
@@ -1066,7 +1073,7 @@ export async function main(argv) {
         try {
           results[i] = await runCell(ctx, cell)
         } catch (error) {
-          const message = `cell failed: ${error instanceof Error ? error.message : String(error)}`
+          const message = `cell failed: ${describeError(error)}`
           results[i] = {
             records: cell.scenario.turns.map((_, index) => notRun(cell, index, message)),
             turnEvents: cell.scenario.turns.map(() => []),

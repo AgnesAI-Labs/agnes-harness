@@ -180,7 +180,7 @@ export function bindHomeRouting(): () => void {
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
     const address = preserveRouteParams(url)
-    if (new URL(address, location.href).href !== before) history.pushState(history.state, '', address)
+    if (new URL(address, location.href).href !== before) history.pushState(null, '', address)
   })
   window.addEventListener('popstate', readLocation)
   return () => {

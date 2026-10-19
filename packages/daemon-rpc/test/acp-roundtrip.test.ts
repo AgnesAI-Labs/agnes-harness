@@ -281,72 +281,99 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
-  it('session/load replays the durable classes, the assistant text among them', async () => {
-    const h = await openTestHost({ script: [say('hi')] })
-    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
-    await ep.handle(init)
-    await addWorkspace(ep, h.dataDir)
-    const ok = (await ep.handle({
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'session/new',
-      params: { cwd: h.dataDir, mcpServers: [] },
-    })) as { result: { sessionId: string } }
-    await ep.handle({
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'session/prompt',
-      params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
-    })
-    const before = ep.pending().events
-    expect(
+  it.each([
+    { method: 'session/load', cold: false },
+    { method: '_agnes/v1/session.open', cold: false },
+    { method: '_agnes/v1/session.open', cold: true },
+  ])(
+    '$method admits and verifies history (cold=$cold), replaying only for ACP load',
+    async ({ method, cold }) => {
+      const h = await openTestHost({ script: [say('hi')] })
+      let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+      await ep.handle(init)
+      await addWorkspace(ep, h.dataDir)
+      const ok = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
       await ep.handle({
         jsonrpc: '2.0',
-        id: 4,
-        method: 'session/load',
-        params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
-      }),
-    ).toMatchObject({ result: {} })
-    const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
-    raw
-      .prepare(
-        "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
-      )
-      .run(ok.result.sessionId)
-    raw.close()
-    await expect(
-      ep.handle({
-        jsonrpc: '2.0',
-        id: 5,
-        method: 'session/load',
-        params: { sessionId: ok.result.sessionId, cwd: h.dataDir, mcpServers: [] },
-      }),
-    ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
-    const replayed = (await drain(ep)).slice(before) as N[]
-    const updates = replayed
-      .filter((n) => n.method === 'session/update')
-      .map(
-        (n) =>
-          (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } }).update,
-      )
-    const kinds = updates.map((u) => u.sessionUpdate)
-    // Only the durable classes come back; chunks and turn edges are not part of a load.
-    expect(kinds).toContain('user_message_chunk')
-    expect(
-      kinds.every((k) =>
-        ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(k),
-      ),
-    ).toBe(true)
-    // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
-    // so assistant/message is the only row that can carry the answer back.
-    expect(kinds).toContain('agent_message_chunk')
-    const said = updates
-      .filter((u) => u.sessionUpdate === 'agent_message_chunk')
-      .map((u) => u.content?.text ?? '')
-      .join('')
-    expect(said).toBe('hi')
-    await h.close()
-  })
+        id: 3,
+        method: 'session/prompt',
+        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
+      })
+      if (cold) {
+        await ep.close()
+        ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+        await ep.handle(init)
+      }
+      const before = ep.pending().events
+      expect(
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 4,
+          method,
+          params: {
+            sessionId: ok.result.sessionId,
+            cwd: h.dataDir,
+            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-1' }),
+          },
+        }),
+      ).toMatchObject({ result: {} })
+      const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+      raw
+        .prepare(
+          "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
+        )
+        .run(ok.result.sessionId)
+      raw.close()
+      await expect(
+        ep.handle({
+          jsonrpc: '2.0',
+          id: 5,
+          method,
+          params: {
+            sessionId: ok.result.sessionId,
+            cwd: h.dataDir,
+            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
+          },
+        }),
+      ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+      const replayed = (await drain(ep)).slice(before) as N[]
+      const updates = replayed
+        .filter((n) => n.method === 'session/update')
+        .map(
+          (n) =>
+            (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } })
+              .update,
+        )
+      const kinds = updates.map((u) => u.sessionUpdate)
+      if (method !== 'session/load') {
+        // A lagging live turn/end may still deliver its empty quiescence carrier.
+        expect(updates.filter((update) => update.content?.text !== '')).toEqual([])
+        await h.close()
+        return
+      }
+      // Only the durable classes come back; chunks and turn edges are not part of a load.
+      expect(kinds).toContain('user_message_chunk')
+      expect(
+        kinds.every((k) =>
+          ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(k),
+        ),
+      ).toBe(true)
+      // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
+      // so assistant/message is the only row that can carry the answer back.
+      expect(kinds).toContain('agent_message_chunk')
+      const said = updates
+        .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+        .map((u) => u.content?.text ?? '')
+        .join('')
+      expect(said).toBe('hi')
+      await h.close()
+    },
+  )
 
   it('session/set_mode switches to an allowed preset and rejects one outside presets.allowed', async () => {
     // The fixture host's local-dev-shaped profile allows only 'standard' (packages/host/testkit's

@@ -18,6 +18,8 @@ const tool = (over: Partial<ResolvedTool>): ResolvedTool => ({
   targetParam: 'path',
   defaults: { path: '.' },
   multiTargetMax: 1,
+  bindingDefaults: null,
+  referenceKind: null,
   ...over,
 })
 const LS = tool({})
@@ -242,6 +244,53 @@ describe('routeDecision', () => {
       const thresholds = { escalate: 0.7 }
       expect(route(external(0.65), EXT, { thresholds }).kind).toBe('arbitration')
       expect(route(external(0.7), EXT, { thresholds }).kind).toBe('parameters')
+    })
+  })
+})
+
+describe('observed batches', () => {
+  const READ = tool({
+    name: 'read',
+    defaults: null,
+    bindingDefaults: { offset: 1, limit: 200 },
+    referenceKind: 'file',
+    multiTargetMax: 4,
+  })
+  const member = (path: string) => ({ path, offset: 1, limit: 200 })
+  const observedBatch: Decision = {
+    phase: 'INSPECT',
+    op: 'read',
+    target: ['a.md', 'b.md'],
+    bindingMode: 'observed',
+    args: member('a.md'),
+    batch: [member('a.md'), member('b.md')],
+    confidence: 0.8,
+    operationPathConfidence: 0.9,
+    targetConfidence: 0.8,
+    ambiguity: null,
+    progress: null,
+    phaseTop: [['INSPECT', 0.9]],
+    actionTop: [['read', 0.9]],
+    consumed: [],
+  }
+  const input = { decision: observedBatch, tool: READ, latest: null, turnHasAttempts: false, thresholds: T }
+  it('drops the batch and the observed arguments on a weak binding', () => {
+    const r = routeDecision({
+      ...input,
+      decision: { ...observedBatch, confidence: 0.4, operationPathConfidence: 0.9 },
+    })
+    expect(r).toMatchObject({
+      kind: 'parameters',
+      reason: 'weak_binding',
+      decision: { bindingMode: 'llm_parameters', target: 'LLM_PARAMETERS', args: {} },
+    })
+    expect(r.decision.batch).toBeUndefined()
+    expect('batch' in r.decision).toBe(false)
+  })
+  it('sends a confident observed batch straight through', () => {
+    expect(routeDecision({ ...input, decision: observedBatch })).toMatchObject({
+      kind: 'direct',
+      decision: { target: ['a.md', 'b.md'] },
     })
   })
 })

@@ -58,6 +58,35 @@ AGH 的发展需要真实场景中的使用体验。欢迎试用、研究源码�
 
 ## 日常命令
 
+开发与 CI 的 Node 补丁版本只维护在 `.node-version`，由 mise 和所有 CI workflow 读取。
+`package.json` 的 `engines.node` 是用户支持范围，不是开发固定版本；pnpm 只从 `packageManager` 取版本。
+安装 mise 后，每个新 worktree 从仓库根目录准备：
+
+```sh
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs test:guards
+mise exec -- node tools/toolchain/run.mjs exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
+```
+
+统一使用 `mise exec -- node tools/toolchain/run.mjs` 构建和验证，后面追加原有 pnpm 参数，
+例如 `--filter @agnes/cli build:local` 或 `e2e:web`。入口先核验 Node、pnpm 的精确版本和包管理器启动的
+子进程，打印实际 `process.version` 与 `process.execPath`，并把运行时选择限定在构建/检查子进程内。
+它用所选 Node 直接运行 pnpm/Corepack 的 JavaScript，避开 shell shim 漂移；无需改全局 Node、手动前置
+PATH 或维护私有启动命令。已经配置正确的 shell 可运行 `pnpm run doctor:toolchain`；标准 typecheck、
+test、guards 和 browser 入口也会先检查，版本不符即失败并给出修复命令。缺少 Corepack 时应在所选 Node
+旁配置它，CI 可继续使用已有 pnpm setup。
+
+每份验证报告必须记录实际 `process.version`。项目 lead 负责固定版本：定期检查补丁更新，安全修复及时
+处理，每次通过独立维护变更交付；主版本升级单独评估。开发窗口和 AI 窗口不得修改全局环境或自行升级版本。
+已运行 daemon 保留启动时的运行时；使用隔离 home 验证，只重启自己拥有的实例。用户项目命令与外部 MCP
+服务器继续使用各自环境，不受开发版本固定规则约束。
+
+运行下面的已有命令时，将开头的 `pnpm` 替换为上述统一入口。
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native

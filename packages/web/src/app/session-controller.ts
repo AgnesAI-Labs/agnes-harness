@@ -44,6 +44,7 @@ export function createSessionController(
     | 'renderControls'
     | 'renderer'
     | 'selectedWorkspace'
+    | 'selectComposerDraft'
     | 'sessionBinding'
     | 'sessionControls'
     | 'sessionIsolation'
@@ -75,7 +76,10 @@ export function createSessionController(
     } = {},
   ): Promise<void> {
     const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
-    const { binding: epoch, previous } = bindingOwner.begin()
+    context.selectComposerDraft(id, options.preserveSending)
+    const { binding: epoch, previous } = bindingOwner.begin(id)
+    // The old projection may stay visible, but its preview/refusal no longer describes this selection.
+    context.readOnlyController.clear()
     preserved?.adopt(epoch)
     if (!options.created) context.references.clear()
     let selectionReady = false
@@ -88,6 +92,7 @@ export function createSessionController(
     // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
     context.moduleSessionId = undefined
     context.clientModules.session.setSession(undefined)
+    if (!options.created) context.permissionMode = 'workspace'
     context.sessionYoloEnabled = options.created ? false : undefined
     context.permissionRefreshPending = false
     context.initialPermissionPending = options.created ? context.permissionMode : undefined
@@ -137,12 +142,14 @@ export function createSessionController(
         })
       context.clientModules.session.setReadiness('connecting', id)
       if (!options.created) void context.readOnlyController.preview(id, epoch).catch(() => undefined)
+      const workspaceHint = context.sessionRows.find((row) => row.sessionId === id)?.cwd
       const binding = options.created
         ? bindWebSession(options.created, permission)
         : await loadWebSession(
             (sessionId, options) =>
-              context.client.session.load(sessionId, {
+              context.client.session.open(sessionId, {
                 ...options,
+                ...(workspaceHint ? { cwd: workspaceHint } : {}),
                 onProgress: (progress) => {
                   if (context.sessionBinding.isCurrent(epoch) && !context.current)
                     context.readOnlyController.progress(
@@ -155,6 +162,10 @@ export function createSessionController(
               }),
             id,
             permission,
+            {
+              signal: bindingOwner.loadingSignal(epoch),
+              onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
+            },
           )
       if (!bindingOwner.attach(epoch, binding)) return
       context.readOnlyController.clear()
@@ -182,7 +193,7 @@ export function createSessionController(
         binding.offPermission?.()
         return
       }
-      context.clientModules.session.setSession(loaded.id)
+      context.clientModules.session.setSession(loaded.id, 'connecting')
       if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
         const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
         if (!context.sessionBinding.isCurrent(epoch)) return
@@ -198,6 +209,7 @@ export function createSessionController(
         | (PageSessionMeta['items'][number] & { cwd?: string })
         | undefined
       const workspacePath = metadata?.cwd ?? options.workspace?.path
+      if (workspacePath) loaded.rememberWorkspace(workspacePath)
       if (workspacePath)
         context.selectedWorkspace =
           context.workspaceRows.find((entry) => entry.path === workspacePath) ??
@@ -282,6 +294,7 @@ export function createSessionController(
       if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false
+      context.clientModules.session.setReadiness('ready', loaded.id)
       context.clearSessionRecovery()
       context.render()
       void context
@@ -400,7 +413,9 @@ export function createSessionController(
     const parent = context.current
     if (!parent || !turn.forkable || turn.endSeq === undefined || context.projection?.opState !== null)
       throw new Error(context.t('app.fork.notIdle'))
-    const forked = await context.client.session.fork(parent.id, turn.endSeq)
+    const cwd =
+      context.sessionRows.find((row) => row.sessionId === parent.id)?.cwd ?? context.selectedWorkspace?.path
+    const forked = await context.client.session.fork(parent.id, turn.endSeq, cwd ? { cwd } : {})
     if (!context.sessionBinding.isCurrent(epoch, parent)) return
     const opening = open(forked.id, { created: forked })
     const forkBinding = context.sessionBinding.capture()
@@ -414,12 +429,12 @@ export function createSessionController(
   async function forkSidebar(id: string, title: string): Promise<void> {
     const epoch = context.sessionBinding.capture()
     const row = context.sessionRows.find((item) => item.sessionId === id)
-    const source = await context.client.session.load(id, row?.cwd ? { cwd: row.cwd } : {})
+    const source = await context.client.session.open(id, row?.cwd ? { cwd: row.cwd } : {})
     const timeline = await source.projectUI(undefined, { surface: 'web' })
     if (timeline.opState !== null) throw new Error(context.t('app.fork.waitIdle'))
     const turn = timeline.turns.findLast((item) => item.forkable && item.endSeq !== undefined)
     if (turn?.endSeq === undefined) throw new Error(context.t('app.fork.noForkableTurn'))
-    const child = await context.client.session.fork(id, turn.endSeq)
+    const child = await context.client.session.fork(id, turn.endSeq, row?.cwd ? { cwd: row.cwd } : {})
     let namingError: unknown
     try {
       await context.client.session.rename(child.id, forkTitle(title))

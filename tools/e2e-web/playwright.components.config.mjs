@@ -1,5 +1,8 @@
 import { resolve } from 'node:path'
 import { defineConfig } from '@playwright/test'
+import { checkToolchain } from '../toolchain/check.mjs'
+
+checkToolchain()
 
 export default defineConfig({
   testDir: '../../packages/web-ui/test',

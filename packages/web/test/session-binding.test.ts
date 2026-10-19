@@ -3,6 +3,7 @@ import { createClient, localAuth, memoryJournal } from '@agnes/sdk'
 import type { Session } from '@agnes/sdk/browser'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
+import { ComposerDrafts } from '../src/composer-drafts.js'
 import { bindWebSession, loadWebSession } from '../src/session-binding.js'
 
 type Handler = (request: JsonRpcRequest, push: (message: JsonRpcMessage) => void) => unknown
@@ -73,18 +74,18 @@ const request = {
 
 const initialize = () => ({
   protocolVersion: 1,
-  agentCapabilities: {},
+  agentCapabilities: { _meta: { 'ai.agnes.harness': { sessionOpen: true } } },
   _meta: { agnes: { agnesVersion: '0.0.0-test' } },
 })
 
 describe('Web session permission binding', () => {
-  it('keeps a pre-load pending request alive through the load handoff', async () => {
+  it.each(['load', 'open'] as const)('keeps a pending request alive through the %s handoff', async (mode) => {
     let loadReturned = false
     let resolvePermission: ((outcome: { optionId: string }) => void) | undefined
     const f = endpointFor({
       initialize,
       'session/new': () => ({ sessionId: 'created' }),
-      'session/load': (_request, push) => {
+      [mode === 'load' ? 'session/load' : '_agnes/v1/session.open']: (_request, push) => {
         push({ jsonrpc: '2.0', id: 'permission-1', method: 'session/request_permission', params: request })
         return {}
       },
@@ -99,7 +100,7 @@ describe('Web session permission binding', () => {
     try {
       await client.initialize()
       const bindingPromise = loadWebSession(
-        client.session.load,
+        client.session[mode],
         request.sessionId,
         async (_incoming, context) => {
           expect(loadReturned).toBe(false)
@@ -271,6 +272,41 @@ describe('Web session permission binding', () => {
 })
 
 describe('selected session owner', () => {
+  it('cancels stale opening waits and handlers, keeping the new selection independent', () => {
+    const owner = new SessionBindingOwner()
+    const a = owner.begin('a').binding
+    const signal = owner.loadingSignal(a)
+    const off = vi.fn()
+    owner.loadingPermission(a, off)
+    owner.begin('b')
+    expect(signal.aborted).toBe(true)
+    expect(off).toHaveBeenCalledOnce()
+    expect(owner.targetId).toBe('b')
+    expect(owner.loadingSignal(owner.capture()).aborted).toBe(false)
+    const staleOff = vi.fn()
+    owner.loadingPermission(a, staleOff)
+    expect(staleOff).toHaveBeenCalledOnce()
+  })
+
+  it('keeps A→B→A drafts independent across sessions and profiles, even without browser storage', () => {
+    const drafts = new ComposerDrafts(
+      {
+        getItem: () => {
+          throw new Error('private mode')
+        },
+        setItem: () => {
+          throw new Error('private mode')
+        },
+      },
+      'http://synthetic',
+    )
+    expect(drafts.select('profile', 'a', '')).toBe('')
+    expect(drafts.select('profile', 'b', 'draft A')).toBe('')
+    expect(drafts.select('profile', 'a', 'draft B')).toBe('draft A')
+    expect(drafts.select('other-profile', 'a', 'edited A')).toBe('')
+    expect(drafts.select('profile', 'b', 'other profile draft')).toBe('draft B')
+    expect(drafts.select('profile', 'a', 'edited B')).toBe('edited A')
+  })
   it.each(['other-session', 'same-session'])('rejects late load and result after %s switch', async (id) => {
     const owner = new SessionBindingOwner()
     const first = owner.capture()
