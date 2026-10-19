@@ -77,10 +77,6 @@ Author tests use the single `@agnes/host/author-testkit` entry with explicit off
 
 ## Scheduled inspection
 
-Install this teaching package deliberately, then start and review its agent. In **Automation**, choose this agent (or its existing session), create a daily 09:00 task, and use `[scheduled-inspection] Daily synthetic service inspection` as its prompt. From the agent session, the equivalent is:
-
-```text
-call schedule_create {"title":"Daily inspection","prompt":"[scheduled-inspection] Daily synthetic service inspection","target":"current_session","selector":{"daily":{"time":"09:00","timeZone":"UTC"}}}
-```
+Install this teaching package deliberately, then start and review its agent. In **Automation**, choose this agent (or its existing session), create a daily 09:00 task, and use `[scheduled-inspection] Daily synthetic service inspection` as its prompt.
 
 The scheduler freezes the selected target; each run still admits current trusted definitions and tool policy. Inspection runs a background diagnostic, reads its result and publishes a report through `present`, without requesting or executing a restart. Background commands still require deployment authorization; unavailable permission refuses or waits for approval normally. Without the prefix, the original interactive remediation requires a business confirmation and tool authorization before restart.
