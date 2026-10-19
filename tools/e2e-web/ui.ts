@@ -33,7 +33,7 @@ export async function selectValue(page: Page, id: string, value: string) {
 export async function preferences(page: Page, locale = 'en', theme = 'light') {
   await page.addInitScript(
     ({ locale, theme }) => {
-      if (location.protocol !== 'http:') return
+      if (location.protocol !== 'http:' || window !== window.top) return
       localStorage.setItem('agnes-locale', locale)
       localStorage.setItem('agnes-theme', theme)
     },

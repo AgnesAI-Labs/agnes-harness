@@ -1,7 +1,7 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
 import {
@@ -16,10 +16,12 @@ import {
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
 export async function isolatedRuntime(
   launcher: 'root' | 'installed' = 'root',
-  options: { localExamples?: boolean } = {},
+  options: { localExamples?: boolean; realModel?: boolean } = {},
 ) {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
-  const root = await mkdtemp(join(sep === '\\' ? tmpdir() : '/tmp', 'agh-e2e-'))
+  const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
+  await mkdir(parent, { recursive: true })
+  const root = await mkdtemp(join(parent, options.realModel ? 'sweep-' : 'agh-e2e-'))
   const home = join(root, 'h')
   const workspace = join(root, 'w')
   await mkdir(workspace)
@@ -302,7 +304,7 @@ export async function isolatedRuntime(
         log += `Cleanup failed; retained isolated AGH_HOME: ${home}\n`
         throw error
       }
-      await rm(root, { recursive: true, force: true })
+      if (!options.realModel) await rm(root, { recursive: true, force: true })
     },
   }
   return runtime

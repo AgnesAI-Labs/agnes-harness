@@ -17,6 +17,8 @@
     "candidate-review.spec.ts",
     "first-run.spec.ts",
     "business-agents.spec.ts",
+    "agent-sweep.spec.ts",
+    "agent-sweep.e2e.test.ts",
     "first-run-snapshots.ts",
     "workbench.spec.ts",
     "narrow.spec.ts",
