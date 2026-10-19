@@ -32,6 +32,7 @@ import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
 import { prepareDocumentReader } from './document-reader.js'
+import { copyExamplePayload } from './example-payload.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
@@ -127,43 +128,12 @@ export async function copyBundledExamples(outputDirectory: string, version = '0.
     const source = join(repoPackages, '..', 'examples', family, name)
     if (!existsSync(join(source, 'package.json'))) continue
     const destination = join(outputDirectory, 'bundled-examples', family, name)
-    await mkdir(destination, { recursive: true })
-    const payload = (await readdir(source)).filter(
-      (file) =>
-        [
-          'package.json',
-          'LICENSE',
-          'fixtures',
-          'skills',
-          'client',
-          'assets',
-          'dist',
-          'resources',
-          'NOTICE',
-          'mcp',
-          'dag',
-          'provider.example.json',
-        ].includes(file) ||
-        file.startsWith('README') ||
-        (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
-    )
-    for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
+    await copyExamplePayload(source, destination)
     const manifestPath = join(destination, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
     for (const [id, parentVersion] of parentVersions)
       if (manifest.dependencies?.[id]) manifest.dependencies[id] = parentVersion
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-    if (family === 'community')
-      await build({
-        entryPoints: [join(source, 'src', 'index.ts')],
-        outfile: join(destination, 'dist', 'index.js'),
-        bundle: true,
-        platform: 'node',
-        format: 'esm',
-        target: ['node24'],
-        packages: 'external',
-        legalComments: 'eof',
-      })
     await checkPackagedClientModules(destination)
   }
 }

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   BUNDLED_EXAMPLES,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
@@ -11,6 +11,7 @@ import {
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
+import { copyExamplePayload } from '../tools/example-payload.js'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -133,4 +134,21 @@ it('ships all official example payloads with runnable community entries and no c
     expect(await readdir(payload)).not.toEqual(expect.arrayContaining(['test', 'node_modules', 'src']))
     expect(await readFile(join(payload, 'LICENSE'), 'utf8')).toContain('Apache')
   }
+})
+
+it('packages a declared TypeScript entry and public Markdown without a family privilege or prebuilt dist', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-example-source-'))
+  roots.push(root)
+  const source = join(root, 'source'), output = join(root, 'payload')
+  await mkdir(join(source, 'src'), { recursive: true })
+  await writeFile(join(source, 'package.json'), JSON.stringify({ name: '@fictional/quality', version: '1.0.0', type: 'module', exports: './dist/index.js', files: ['dist', 'DEMO.md', 'DOMAIN-NOTES.md'] }))
+  await writeFile(join(source, 'src/index.ts'), 'const value: string = "fictional"; export const main = { apply() {} }; export { value };')
+  for (const name of ['DEMO.md', 'DOMAIN-NOTES.md', 'unpublished.md']) await writeFile(join(source, name), name)
+  await copyExamplePayload(source, output)
+  const loaded = await import(pathToFileURL(join(output, 'dist/index.js')).href)
+  expect(loaded.value).toBe('fictional')
+  expect(typeof loaded.main.apply).toBe('function')
+  expect(await readFile(join(output, 'DEMO.md'), 'utf8')).toBe('DEMO.md')
+  expect(await readFile(join(output, 'DOMAIN-NOTES.md'), 'utf8')).toBe('DOMAIN-NOTES.md')
+  expect(await readdir(output)).not.toEqual(expect.arrayContaining(['src', 'unpublished.md']))
 })
