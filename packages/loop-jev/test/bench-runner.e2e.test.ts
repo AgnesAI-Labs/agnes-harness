@@ -298,6 +298,12 @@ describe('bench runner', () => {
     const md = readFileSync(join(dir, 'report.md'), 'utf8')
     expect(md).toContain('# Bench report: bench-mini')
     expect(md).toMatch(/- jev: \d+ requests, 1 tool schema hashes, 0 switches/)
+    // The Jev lane reports how sure Jev was and how many named paths it used.
+    expect(md).toMatch(
+      /- weak bindings: \d+ of \d+ steps; confidence min\/median\/max (\d\.\d\d\/\d\.\d\d\/\d\.\d\d|n\/a)/,
+    )
+    expect(md).toMatch(/- mentioned-path candidates used: \d+/)
+    expect(jev.metrics.jev.confidences.length).toBeGreaterThan(0)
   }, 300_000)
 
   it('takes the routes from the accounts saved in Settings and runs both lanes', async (ctx) => {

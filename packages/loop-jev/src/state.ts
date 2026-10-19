@@ -26,6 +26,7 @@ export const ADDED_COUNTERS = [
   'duplicateRefusals',
   'unavailableRefusals',
   'mentionedSteps',
+  'weakBindings',
 ] as const
 
 export function emptyCounters(): Counters {
@@ -49,6 +50,7 @@ export function emptyCounters(): Counters {
     duplicateRefusals: 0,
     unavailableRefusals: 0,
     mentionedSteps: 0,
+    weakBindings: 0,
   }
 }
 
@@ -286,6 +288,7 @@ function checkCurrent(value: unknown, path: string): void {
       const r = obj(v, p)
       oneOf(r.kind, ROUTE_KINDS, `${p}.kind`)
       orNull(r.reason, (x, q) => oneOf(x, ROUTE_REASONS, q), `${p}.reason`)
+      optional(r, 'threshold', num, p)
     },
     path,
   )

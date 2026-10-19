@@ -29,6 +29,7 @@ const INJECT_KEYS = new Set(['name', 'content'])
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 const sha256 = (text) => createHash('sha256').update(text).digest('hex')
 const round2 = (n) => Math.round(n * 100) / 100
+const round3 = (n) => Math.round(n * 1000) / 1000
 
 // ---- suites -------------------------------------------------------------------------------
 
@@ -242,6 +243,9 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
       directSuccess: 0,
       droppedEvents: 0,
       decideCalls: 0,
+      weakBindings: 0,
+      mentionedSteps: 0,
+      confidences: [],
     },
     toolSchemaHashes: [],
     promptPrefixHashes: [],
@@ -289,6 +293,11 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
       m.jev.llmAttempts += num(llm.attempts)
       m.jev.droppedCalls += num(llm.droppedCalls)
       if (llm.outcome === 'no_call') m.jev.noCall++
+      // A decided step carries the binding confidence; a weak one was sent to the model for its parameters.
+      if (typeof data.confidence === 'number') m.jev.confidences.push(round3(data.confidence))
+      if (route === 'parameters' && data.reason === 'weak_binding') m.jev.weakBindings++
+      if (route === 'direct' && isObject(data.binding) && num(data.binding.mentioned) > 0)
+        m.jev.mentionedSteps++
       if (route === 'decision_failed')
         bump(m.jev.decisionFailed, typeof data.reason === 'string' ? data.reason : 'unknown')
       if (route === 'direct' && isObject(data.dispatch)) {
@@ -305,6 +314,8 @@ export function turnMetrics(events, price, { jevRoute } = {}) {
     if (isObject(metricsEvent.decisionFailures)) m.jev.decisionFailed = { ...metricsEvent.decisionFailures }
     if (typeof metricsEvent.directSuccess === 'number') m.jev.directSuccess = metricsEvent.directSuccess
     if (typeof metricsEvent.noCall === 'number') m.jev.noCall = metricsEvent.noCall
+    if (typeof metricsEvent.weakBindings === 'number') m.jev.weakBindings = metricsEvent.weakBindings
+    if (typeof metricsEvent.mentionedSteps === 'number') m.jev.mentionedSteps = metricsEvent.mentionedSteps
     if (typeof metricsEvent.droppedCalls === 'number') m.jev.droppedCalls = metricsEvent.droppedCalls
     m.jev.droppedEvents = num(metricsEvent.droppedEvents)
   }
@@ -642,4 +653,40 @@ export function renderReport({ suite, totals, verdict: gates, k, records }) {
     )
   }
   return `${out.join('\n')}\n`
+}
+
+/** Smallest, middle and largest of the numbers, or null for none. */
+export function spread(values) {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = sorted.length >> 1
+  const median = sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  return { min: sorted[0], median, max: sorted.at(-1) }
+}
+
+/**
+ * The report lines on how sure Jev was, over the Jev-lane records: the steps that fell back to the model
+ * for their parameters because the binding confidence was under the threshold, the spread of that
+ * confidence, and the direct steps that took a path only the user's message had named. Records written
+ * before these fields existed count as having none.
+ */
+export function confidenceLines(records) {
+  let steps = 0
+  let weak = 0
+  let mentioned = 0
+  const all = []
+  for (const r of records) {
+    const j = r.metrics?.jev ?? {}
+    weak += num(j.weakBindings)
+    mentioned += num(j.mentionedSteps)
+    const values = Array.isArray(j.confidences) ? j.confidences.filter((v) => typeof v === 'number') : []
+    steps += values.length
+    all.push(...values)
+  }
+  const s = spread(all)
+  const f = (n) => n.toFixed(2)
+  return [
+    `- weak bindings: ${weak} of ${steps} steps; confidence min/median/max ${s ? `${f(s.min)}/${f(s.median)}/${f(s.max)}` : 'n/a'}`,
+    `- mentioned-path candidates used: ${mentioned}`,
+  ]
 }

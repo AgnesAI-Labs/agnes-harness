@@ -84,7 +84,7 @@ An explicit choice wins over the admin default, which wins over the profile, whi
 - Settings → Plugins lists the row and its configuration page. The providers panel lists `typesafe-systemone` as **Payload requests only, no chat**.
 - The conversation looks like one run by the default loop, with two differences: the notes the loop adds to a conversation-model request appear as runtime context, and a tool call that Jev chose directly follows an assistant message with no text. When the conversation model writes text before a call, the transcript keeps up to 8 KiB of it.
 - The cost breakdown shows one **Side model call** row for each Jev call. A call whose usage was not reported is marked as estimated.
-- The loop's own telemetry events (`jev.decide`, `jev.step`, `jev.metrics`) are kept in the session history and exports. The conversation view does not show them.
+- The loop's own telemetry events (`jev.decide`, `jev.step`, `jev.metrics`) are kept in the session history and exports. The conversation view does not show them. Each `jev.step` event carries the binding `confidence`, the `operationPathConfidence` and the `threshold` they were compared with (rounded to three decimals), and `jev.metrics` counts the turn's `weakBindings`: steps where Jev's choice of arguments was under the threshold, so the conversation model wrote the arguments.
 
 ## When Jev is unavailable
 

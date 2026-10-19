@@ -98,6 +98,15 @@ const latest = (recoverability: 'recoverable' | 'unsafe'): HistoryEntry => ({
 })
 
 describe('routeDecision', () => {
+  it('reports the threshold it compared with: the escalate one, or the higher one of an external write', () => {
+    expect(route(d({}), LS).threshold).toBe(0.5)
+    expect(route(d({}), EXT).threshold).toBe(0.6)
+    expect(route(d({}), EXT, { thresholds: { escalate: 0.8 } }).threshold).toBe(0.8)
+    expect(route(d({ ...low }), LS)).toMatchObject({ kind: 'arbitration', threshold: 0.5 })
+    expect(
+      route(d({ op: 'ANSWER', target: 'LLM_PARAMETERS', bindingMode: 'llm_parameters' }), null).threshold,
+    ).toBe(0.5)
+  })
   it('goes direct for a confident complete binding', () => expect(route(d({}), LS).kind).toBe('direct'))
   it('asks for parameters when Jev chose LLM_PARAMETERS', () =>
     expect(

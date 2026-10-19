@@ -123,7 +123,13 @@ export type RouteReason =
   | 'premature_answer'
   | 'weak_binding'
   | null
-export type Route = { readonly kind: RouteKind; readonly reason: RouteReason; readonly decision: Decision }
+export type Route = {
+  readonly kind: RouteKind
+  readonly reason: RouteReason
+  readonly decision: Decision
+  /** The confidence the decision had to reach: the escalate threshold, raised for an external write. */
+  readonly threshold: number
+}
 export type LlmKind = Exclude<RouteKind, 'direct'>
 
 export type ErrorStage = 'decision' | 'llm' | 'dispatch' | 'finish'
@@ -198,7 +204,7 @@ export type CurrentStep = {
   jevAttempts: string[]
   level: number
   decision?: Decision
-  route?: { kind: RouteKind; reason: RouteReason }
+  route?: { kind: RouteKind; reason: RouteReason; threshold?: number }
   /** `counted`: the attempts of this step a restart has already added to the counters. */
   llm?: { kind: LlmKind; attempt: number; note?: string; counted?: number }
   calls?: PendingCall[]
@@ -223,6 +229,7 @@ export type Counters = {
   duplicateRefusals: number
   unavailableRefusals: number
   mentionedSteps: number
+  weakBindings: number
 }
 export type JevState = {
   v: 1

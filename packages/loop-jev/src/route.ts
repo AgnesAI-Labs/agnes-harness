@@ -38,11 +38,11 @@ export function routeDecision(input: RouteInput): Route {
       : null
   const relaxed = gate !== null && decision.ambiguity !== null && decision.ambiguity <= gate
   if (decision.operationPathConfidence < threshold && !relaxed) {
-    return { kind: 'arbitration', reason: 'low_confidence', decision }
+    return { kind: 'arbitration', reason: 'low_confidence', decision, threshold }
   }
 
   if (latest?.error?.recoverability === 'recoverable') {
-    return { kind: 'arbitration', reason: 'recoverable_observation', decision }
+    return { kind: 'arbitration', reason: 'recoverable_observation', decision, threshold }
   }
 
   const floor = thresholds.answerProgressFloor
@@ -53,7 +53,7 @@ export function routeDecision(input: RouteInput): Route {
     decision.progress !== null &&
     decision.progress < floor
   ) {
-    return { kind: 'arbitration', reason: 'premature_answer', decision }
+    return { kind: 'arbitration', reason: 'premature_answer', decision, threshold }
   }
 
   let routed = decision
@@ -64,8 +64,8 @@ export function routeDecision(input: RouteInput): Route {
     routed = { ...rest, bindingMode: 'llm_parameters', args: {}, target: LLM_PARAMETERS }
     weak = true
   }
-  if (routed.op === ANSWER) return { kind: 'answer', reason: null, decision: routed }
+  if (routed.op === ANSWER) return { kind: 'answer', reason: null, decision: routed, threshold }
   if (routed.bindingMode === 'llm_parameters')
-    return { kind: 'parameters', reason: weak ? 'weak_binding' : null, decision: routed }
-  return { kind: 'direct', reason: null, decision: routed }
+    return { kind: 'parameters', reason: weak ? 'weak_binding' : null, decision: routed, threshold }
+  return { kind: 'direct', reason: null, decision: routed, threshold }
 }

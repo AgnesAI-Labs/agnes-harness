@@ -9,6 +9,7 @@ import {
   cacheScope,
   callsPerInference,
   computeK,
+  confidenceLines,
   decideStats,
   finalAnswer,
   loadSuite,
@@ -17,6 +18,7 @@ import {
   renderReport,
   scoreTurn,
   sessionBalance,
+  spread,
   toolSchemaCheck,
   turnMetrics,
   turnWindow,
@@ -470,6 +472,53 @@ describe('bench suite validation', () => {
       droppedCalls: 1,
       droppedEvents: 4,
       decisionFailed: { MODEL_UNAVAILABLE: 5 },
+    })
+  })
+  describe('Jev confidence', () => {
+    const step = (data: Record<string, unknown>) => ({ type: 'x/a/b/jev.step', data })
+    it('collects the confidences and the weak and mentioned steps from the step events', () => {
+      const m = turnMetrics([
+        step({ route: 'direct', confidence: 0.91234, binding: { mode: 'observed', mentioned: 2 } }),
+        step({ route: 'direct', confidence: 0.8, binding: { mode: 'observed', targets: ['a'] } }),
+        step({ route: 'parameters', reason: 'weak_binding', confidence: 0.3 }),
+        step({ route: 'decision_failed', reason: 'MODEL_UNAVAILABLE' }),
+      ])
+      expect(m.jev).toMatchObject({
+        steps: 4,
+        weakBindings: 1,
+        mentionedSteps: 1,
+        confidences: [0.912, 0.8, 0.3],
+      })
+    })
+    it('lets the exact turn counters win over the capped step events', () => {
+      const m = turnMetrics([
+        step({ route: 'parameters', reason: 'weak_binding', confidence: 0.3 }),
+        { type: 'x/a/b/jev.metrics', data: { weakBindings: 7, mentionedSteps: 3 } },
+      ])
+      expect(m.jev).toMatchObject({ weakBindings: 7, mentionedSteps: 3, confidences: [0.3] })
+    })
+    it('takes the spread of some numbers, and none of none', () => {
+      expect(spread([])).toBeNull()
+      expect(spread([0.9])).toEqual({ min: 0.9, median: 0.9, max: 0.9 })
+      expect(spread([0.9, 0.3, 0.6])).toEqual({ min: 0.3, median: 0.6, max: 0.9 })
+      expect(spread([0.2, 0.8, 0.4, 0.6])).toEqual({ min: 0.2, median: 0.5, max: 0.8 })
+    })
+    it('reports the weak bindings of the Jev lane and the mentioned paths it used', () => {
+      const rec = (jev: object) => ({ metrics: { jev } }) as never
+      expect(
+        confidenceLines([
+          rec({ weakBindings: 2, mentionedSteps: 1, confidences: [0.9, 0.3, 0.6] }),
+          rec({ weakBindings: 1, mentionedSteps: 2, confidences: [0.95, 0.4] }),
+        ]),
+      ).toEqual([
+        '- weak bindings: 3 of 5 steps; confidence min/median/max 0.30/0.60/0.95',
+        '- mentioned-path candidates used: 3',
+      ])
+      // Records from before these fields existed.
+      expect(confidenceLines([rec({ steps: 4 })])).toEqual([
+        '- weak bindings: 0 of 0 steps; confidence min/median/max n/a',
+        '- mentioned-path candidates used: 0',
+      ])
     })
   })
   it('fails every gate when a lane has no records', () => {

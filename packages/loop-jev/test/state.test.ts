@@ -451,6 +451,18 @@ describe('checkpoints with observations', () => {
       expect(out.mentioned).toEqual([])
     })
   })
+  it('keeps the threshold of a step route, accepts a route without it and rejects a non-number', () => {
+    const withRoute = (route: unknown) => {
+      const state = structuredClone(encodeState(initialState()).state) as unknown as {
+        cur: { route?: unknown }
+      }
+      state.cur.route = route
+      return () => parseJevState(state as never)
+    }
+    expect(withRoute({ kind: 'parameters', reason: 'weak_binding', threshold: 0.6 })()).toBeDefined()
+    expect(withRoute({ kind: 'direct', reason: null })().cur.route).toEqual({ kind: 'direct', reason: null })
+    expect(withRoute({ kind: 'direct', reason: null, threshold: '0.5' })).toThrow('cur.route.threshold')
+  })
   it('drops the named paths last, only when everything else already shrank and it is still oversize', () => {
     const s = initialState()
     s.workspace.mentioned = [{ kind: 'file', value: 'config/app.toml' }]

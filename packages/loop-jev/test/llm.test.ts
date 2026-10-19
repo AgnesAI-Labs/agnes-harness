@@ -43,6 +43,7 @@ const r = (kind: Route['kind'], reason: Route['reason'] = null, d = decision()):
   kind,
   reason,
   decision: d,
+  threshold: 0.5,
 })
 const reply = (over: Partial<LlmReply>): LlmReply => ({
   content: [],

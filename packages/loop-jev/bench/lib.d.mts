@@ -49,6 +49,12 @@ export type TurnMetrics = {
     droppedEvents: number
     /** `jev.decide` events other than refused ones: Jev calls that reached the provider. */
     decideCalls: number
+    /** Steps that went to the model for their parameters because the binding confidence was under the threshold. */
+    weakBindings: number
+    /** Direct steps that took a path only the user's message had named. */
+    mentionedSteps: number
+    /** The binding confidence of each decided step, three decimals. */
+    confidences: number[]
   }
   toolSchemaHashes: string[]
   promptPrefixHashes: string[]
@@ -172,3 +178,6 @@ export function renderReport(o: {
   k?: number
   records: unknown[]
 }): string
+
+export function spread(values: number[]): { min: number; median: number; max: number } | null
+export function confidenceLines(records: ReadonlyArray<{ metrics?: Partial<TurnMetrics> }>): string[]

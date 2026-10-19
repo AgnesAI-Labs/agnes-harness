@@ -34,7 +34,13 @@ const idPrefix = (s: Scope) => `jev:${s.state.idTurn}:${s.state.step}`
 function savedRoute(s: Scope): Route {
   const { decision, route } = s.state.cur
   if (!decision || !route) throw new Error('The interrupted Jev loop step has no recorded route')
-  return { kind: route.kind, reason: route.reason, decision }
+  // A step checkpointed before the threshold was recorded reports the configured one.
+  return {
+    kind: route.kind,
+    reason: route.reason,
+    decision,
+    threshold: route.threshold ?? s.cfg.thresholds.escalate,
+  }
 }
 
 /** The ids of the step's model attempts up to `k`: an attempt is only retried after it was sent. */

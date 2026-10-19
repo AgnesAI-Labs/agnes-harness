@@ -84,7 +84,7 @@ composition:
 - 设置 → 插件 列出这一行和它的配置页。提供方面板把 `typesafe-systemone` 标为「**仅载荷请求，不用于对话**」。
 - 对话看起来与默认循环一样，有两点不同：循环附加到对话模型请求上的附注显示为运行时上下文；Jev 直接选定的工具调用前面是一条没有文字的助手消息。对话模型在调用之前写的文字，记录里最多保留 8 KiB。
 - 成本明细里每次 Jev 调用一行「**旁路模型调用**」。没有报告用量的调用标为估算。
-- 循环自己的遥测事件（`jev.decide`、`jev.step`、`jev.metrics`）保存在会话历史和导出里，对话界面不显示。
+- 循环自己的遥测事件（`jev.decide`、`jev.step`、`jev.metrics`）保存在会话历史和导出里，对话界面不显示。每个 `jev.step` 事件带有参数绑定的置信度 `confidence`、`operationPathConfidence` 以及与之比较的阈值 `threshold`（保留三位小数），`jev.metrics` 统计本回合的 `weakBindings`：Jev 选的参数低于阈值、改由对话模型写参数的步骤数。
 
 ## Jev 不可用时
 

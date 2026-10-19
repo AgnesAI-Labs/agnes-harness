@@ -25,6 +25,10 @@ export type StepEvent = {
   reason: string | null
   op: string | null
   bindingMode: string | null
+  /** The decision's binding confidence, its operation-path confidence and the threshold they met or missed. */
+  confidence?: number
+  operationPathConfidence?: number
+  threshold?: number
   llm?: JsonObject
   dispatch?: JsonObject
   binding?: JsonObject

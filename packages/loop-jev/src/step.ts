@@ -59,12 +59,18 @@ const LLM_REFUSAL: Readonly<Record<Extract<Adoption, { kind: 'refuse' }>['code']
 
 const idPrefix = (s: Scope) => `jev:${s.state.idTurn}:${s.state.step}`
 
+/** A confidence or threshold as reported: three decimals, not the raw float. */
+const rounded = (value: number): number => Math.round(value * 1000) / 1000
+
 export function routeEvent(route: Route): StepEvent {
   return {
     route: route.kind,
     reason: route.reason,
     op: route.decision.op,
     bindingMode: route.decision.bindingMode,
+    confidence: rounded(route.decision.confidence),
+    operationPathConfidence: rounded(route.decision.operationPathConfidence),
+    threshold: rounded(route.threshold),
   }
 }
 
@@ -210,7 +216,8 @@ export async function decodeAndRoute(
     thresholds: s.cfg.thresholds,
   })
   st.cur.decision = route.decision
-  st.cur.route = { kind: route.kind, reason: route.reason }
+  st.cur.route = { kind: route.kind, reason: route.reason, threshold: route.threshold }
+  if (route.reason === 'weak_binding') st.counters.weakBindings++
   if (route.kind !== 'direct') return llmStep(s, route, signal)
   st.counters.directSteps++
   // An observed batch is announced as one message, ids t0..tN; any other decision is one call.

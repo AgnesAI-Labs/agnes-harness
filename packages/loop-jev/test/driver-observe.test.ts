@@ -56,6 +56,22 @@ describe('observations in the loop', () => {
     })
     expect(r.metrics.at(-1)).toMatchObject({ observedSteps: 1, directSuccess: 2 })
   })
+  it('reports the confidences and the threshold of every step, and counts the weak bindings of the turn', async () => {
+    // A threshold over the confidence of the picks: the read keeps its operation (the ambiguity gate relaxes it) but not its binding.
+    const r = await run([readPick('notes.txt', 0.9), { pick: PICK_RESPOND, confidence: 0.834567 }], {
+      goal: 'Read notes.txt',
+      config: { thresholds: { escalate: 0.95 } },
+      tools: toolPort({ read: () => ok('hello') }),
+      replies: [callReply('read', { path: 'notes.txt' }), textReply('done')],
+    })
+    expect(
+      r.steps.map((s) => [s.route, s.reason, s.confidence, s.operationPathConfidence, s.threshold]),
+    ).toEqual([
+      ['parameters', 'weak_binding', 0.9, 0.9, 0.95],
+      ['arbitration', 'low_confidence', 0.835, 0.835, 0.95],
+    ])
+    expect(r.metrics.at(-1)).toMatchObject({ weakBindings: 1, directSteps: 0 })
+  })
   it('reads a file the goal names with no listing before it, directly and with no model request for its path', async () => {
     const r = await run([readPick('config/app.toml'), { pick: PICK_RESPOND }], {
       goal: 'Read `config/app.toml` and tell me which port it sets.',

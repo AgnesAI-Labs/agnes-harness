@@ -222,5 +222,11 @@ How the runner fits the host as it is in this version:
   the latency of calls whose status is not `ok`), summed in the report's Jev lane section. The time
   in failed Jev calls is that latency sum; it does not include the rest of a failed step. Anything
   finer, such as per-step timing, is in the raw `events/` files (`jev.decide`, `jev.step`).
+- Jev confidence: the Jev lane section also reports `weak bindings: n of m steps; confidence
+  min/median/max` (steps whose binding confidence was under the threshold, so the conversation model
+  wrote the arguments, out of the steps that carry a confidence, and the spread of that confidence)
+  and `mentioned-path candidates used: k` (direct steps that read or listed a path only the user's
+  message had named). Each record keeps the per-step confidences (three decimals) in
+  `metrics.jev.confidences`. Records written before 2c show 0 of 0 and n/a.
 - The startup directory of the headless host is also a temp directory, and `AGH_HOME` is set to
   the bench home, so no user-wide instruction file from another home reaches the sessions.
