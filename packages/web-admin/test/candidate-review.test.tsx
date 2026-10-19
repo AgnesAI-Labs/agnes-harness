@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
 import { setDisclosureOpen } from '@agnes/web-ui'
-import { act, type ReactNode } from 'react'
+import { act, type ReactNode, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -497,3 +497,50 @@ it.each([false, true])(
     }
   },
 )
+
+it('keeps an addressed candidate open while its review loads, then reports a deliberate close', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  let resolveReview!: (value: AuthoringCandidate) => void
+  const shown = new Promise<AuthoringCandidate>((resolve) => {
+    resolveReview = resolve
+  })
+  const changed = vi.fn()
+  const api = {
+    candidatesList: async () => ({ candidates: [candidate] }),
+    candidatesShow: () => shown,
+  } as unknown as PluginAdminApi
+  function Addressed() {
+    const [id, setId] = useState<string | undefined>(candidate.candidateId)
+    return (
+      <CandidateInbox
+        api={api}
+        canReview
+        canTest
+        t={t}
+        confirm={() => undefined}
+        onPublished={async () => undefined}
+        openId={id}
+        onSelectedChange={(next) => {
+          changed(next)
+          setId(next)
+        }}
+        reviewSurface={(content) => <div>{content}</div>}
+      />
+    )
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<Addressed />))
+    expect(changed).not.toHaveBeenCalled()
+    await act(async () => resolveReview(candidate))
+    expect(host.querySelector('[data-testid="candidate-review"]')).not.toBeNull()
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="candidate-back"]')?.click())
+    expect(changed).toHaveBeenLastCalledWith(undefined)
+    expect(host.querySelector('[data-testid="candidate-review"]')).toBeNull()
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-open"]')?.disabled).toBe(false)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})

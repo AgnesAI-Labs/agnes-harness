@@ -115,13 +115,19 @@ export function CandidateInbox({
   const selectedId = selected?.candidateId
   const reportSelected = useRef(onSelectedChange)
   reportSelected.current = onSelectedChange
-  useEffect(() => reportSelected.current?.(selectedId), [selectedId])
+  const reportedSelection = useRef(selectedId)
+  useEffect(() => {
+    if (reportedSelection.current === selectedId) return
+    reportedSelection.current = selectedId
+    reportSelected.current?.(selectedId)
+  }, [selectedId])
   // Follows the host's address only when it changes: opening a row here reports first, then the
   // address catches up.
   const showing = useRef(selectedId)
   showing.current = selectedId
   useEffect(() => {
     if (openId === undefined) {
+      setBusy(false)
       if (showing.current !== undefined) setSelected(undefined)
       return
     }
