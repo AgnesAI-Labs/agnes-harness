@@ -163,11 +163,29 @@ function data(message: RequestBody['messages'][number]): unknown {
   }
 }
 
+/** Fresh scheduled turns have no principal message. Preserve Core's taint and authorization;
+ * only recognize an explicit command in one complete, byte-checked envelope. Contextual
+ * references never replace a principal input, including the references after its tool results. */
+function envelopedCommand(message: RequestBody['messages'][number]): string | undefined {
+  if (message.role !== 'user' || message.content.length !== 1) return undefined
+  const part = message.content[0]
+  if (part?.type !== 'text') return undefined
+  const match = /^<untrusted id="([^"<>\s]+)" bytes="(\d+)">([\s\S]*)<\/untrusted id="\1">$/.exec(part.text)
+  const body = match?.[3]
+  if (
+    !body ||
+    new TextEncoder().encode(body).length !== Number(match?.[2]) ||
+    !/^call\s+[A-Za-z0-9_]+(?:\s|$)/.test(body)
+  )
+    return undefined
+  return body
+}
+
 /** Decisions are derived entirely from the request, so concurrent sessions and replay stay independent. */
 export function demoReply(request: RequestBody): ModelAdapterEvent[] {
   // Core appends runtime/time/Skill notes and untrusted reference envelopes after the actual input.
   // Teaching commands must follow the input, not interpret those contextual notes as a new turn.
-  const userIndex = request.messages.findLastIndex(
+  let userIndex = request.messages.findLastIndex(
     (message) =>
       message.role === 'user' &&
       !message.content.some(
@@ -176,8 +194,14 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
           /^(?:\[(?:runtime context|hook context|skill loaded)\]\n|<untrusted id=")/.test(part.text),
       ),
   )
+  const scheduled =
+    userIndex < 0 ? request.messages.findLastIndex((message) => envelopedCommand(message) !== undefined) : -1
+  if (scheduled >= 0) userIndex = scheduled
   const user = request.messages[userIndex]
-  const prompt = user?.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join(' ') ?? ''
+  const prompt =
+    (scheduled >= 0 && user ? envelopedCommand(user) : undefined) ??
+    user?.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join(' ') ??
+    ''
   const results = request.messages.slice(userIndex + 1).filter((message) => message.role === 'tool_result')
   if (/^(show remembered preferences|显示记住的偏好)$/i.test(prompt.trim()) && !results.length) {
     const memory = (request.sections ?? [])

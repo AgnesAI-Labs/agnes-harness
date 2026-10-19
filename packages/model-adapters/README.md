@@ -17,3 +17,5 @@ These are real adapters, usable in profile package rows and registry catalogs. `
 Inline scripted routes may use `compat.replies` instead of `compat.file`. Explicit `compat.repeatLast: true` repeats the last reply after exhaustion, for a keyless teaching/demo route; the default still refuses exhaustion. File and inline replies are mutually exclusive.
 
 The keyless Demo model follows the explicit user command; appended runtime notes and untrusted reference envelopes remain context and cannot replace that command.
+
+A fresh scheduled session can carry a single explicit `call <tool> {...}` command inside a complete, byte-checked external-input envelope when no principal message exists. The Demo adapter may emit that intent; Core retains the source taint and performs normal authorization and approval. References appended to an existing principal instruction still cannot replace it.

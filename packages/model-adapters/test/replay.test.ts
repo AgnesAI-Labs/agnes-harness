@@ -202,6 +202,28 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
       call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'call lesson_echo', count: 2 } }),
     }),
   )
+  const command = 'call lesson_echo {"text":"scheduled 合成","count":3}'
+  const envelope = `<untrusted id="job-1-0" bytes="${new TextEncoder().encode(command).length}">${command}</untrusted id="job-1-0">`
+  const scheduled: RequestBody = {
+    ...body,
+    messages: [{ role: 'user', content: [{ type: 'text', text: envelope }] }, body.messages[1]!],
+  }
+  expect(await collect(adapter, scheduled)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ args: { text: 'scheduled 合成', count: 3 } }),
+    }),
+  )
+  expect(
+    (
+      await collect(adapter, {
+        ...scheduled,
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: envelope.replace(/bytes="\d+"/, 'bytes="1"') }] },
+        ],
+      })
+    ).some((event) => event.type === 'toolcall_end'),
+  ).toBe(false)
   expect(
     await collect(adapter, {
       ...body,
