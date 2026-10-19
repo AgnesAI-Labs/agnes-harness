@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -16,11 +17,35 @@ import {
   createResourceControlService,
   createSkillResourceStore,
   RESOURCE_ALL_PERMISSIONS,
+  type SkillJournal,
+  SkillJournalStore,
 } from '@agnes/resource-control-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readInstallBundle } from '../../host/src/resources/skill-install-files.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createSkillInstallRequests } from '../src/supervisor/skill-install-requests.js'
+
+const journalBoundary = vi.hoisted(() => ({ afterFlush: undefined as ((path: string) => void) | undefined }))
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      const handle = await fs.open(...args)
+      return new Proxy(handle, {
+        get(target, key) {
+          if (key === 'sync')
+            return async () => {
+              await target.sync()
+              if (typeof args[0] === 'string') journalBoundary.afterFlush?.(args[0])
+            }
+          const value: unknown = Reflect.get(target, key)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+    },
+  }
+})
 
 const roots: string[] = []
 it.each(['revoked', 'narrowed', 'closed', 'cancelled', 'expired', 'actor-changed'])(
@@ -451,3 +476,126 @@ it.each(['full-access', 'workspace-write'])(
     await s.ep.close()
   },
 )
+
+it.each(['epoch', 'deadline'])(
+  'round3: Skill trust cannot commit when its lease loses %s inside the journal transaction',
+  async (boundary) => skillLeaseBoundary(boundary, 'callback'),
+)
+
+it.each([
+  ['epoch', 'queued'],
+  ['deadline', 'queued'],
+  ['epoch', 'temp-written'],
+  ['deadline', 'temp-written'],
+])('round3: Skill trust cannot commit after losing %s at the %s boundary', async (boundary, stage) =>
+  skillLeaseBoundary(boundary, stage),
+)
+
+async function skillLeaseBoundary(boundary: string, stage: string) {
+  const s = setup()
+  const context = {
+    sessionKey: 'session',
+    sessionId: 'round3-skill',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  let current = context
+  let intercepted = false
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  const revoke = () => {
+    intercepted = true
+    if (boundary === 'epoch') current = { ...context, epoch: 1, policy: 'workspace-write' }
+    else clock.mockReturnValue(now + 110_001)
+  }
+  if (stage === 'temp-written')
+    journalBoundary.afterFlush = (path) => {
+      if (intercepted || !path.includes('.skills.json.')) return
+      const next: SkillJournal = JSON.parse(readFileSync(path, 'utf8'))
+      if (Object.values(next.trust).some((decision) => decision.state === 'trusted')) revoke()
+    }
+  const transact = SkillJournalStore.prototype.transact
+  const spy = vi.spyOn(SkillJournalStore.prototype, 'transact').mockImplementation(function <T>(
+    this: SkillJournalStore,
+    profile: string,
+    fn: (
+      journal: SkillJournal,
+    ) => { next: SkillJournal; result: T } | Promise<{ next: SkillJournal; result: T }>,
+    ...extra: unknown[]
+  ): Promise<T> {
+    if (stage === 'queued' && !intercepted && extra[0]) {
+      intercepted = true
+      let enter!: () => void
+      let release!: () => void
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const first = Reflect.apply(transact, this, [
+        profile,
+        async (journal: SkillJournal) => {
+          enter()
+          await held
+          return { next: journal, result: undefined }
+        },
+      ]) as Promise<void>
+      const pending = Reflect.apply(transact, this, [profile, fn, ...extra]) as Promise<T>
+      void entered.then(() => {
+        revoke()
+        release()
+      })
+      return Promise.all([first, pending]).then(([, result]) => result)
+    }
+    return Reflect.apply(transact, this, [
+      profile,
+      async (journal: SkillJournal) => {
+        const out = await fn(journal)
+        if (
+          stage === 'callback' &&
+          !intercepted &&
+          Object.entries(out.next.trust).some(
+            ([id, decision]) => decision.state === 'trusted' && journal.trust[id]?.state !== 'trusted',
+          )
+        ) {
+          revoke()
+        }
+        return out
+      },
+      ...extra,
+    ]) as Promise<T>
+  })
+  try {
+    const prepared = await withPermissionContext(
+      context,
+      () => undefined,
+      () => s.request(),
+      async () => current,
+    )
+    await withPermissionContext(
+      context,
+      () => undefined,
+      () => s.request({ action: 'commit', proposalId: prepared.proposalId }),
+      async () => current,
+    )
+    const terminal = await vi.waitUntil(
+      async () => {
+        const status = await s.request({ action: 'status', proposalId: prepared.proposalId })
+        return ['prepared', 'running'].includes(status.state) ? false : status
+      },
+      { timeout: 3_000 },
+    )
+    expect(intercepted).toBe(true)
+    expect(['failed', 'interrupted']).toContain(terminal.state)
+    const persisted = JSON.parse(readFileSync(join(s.root, 'resources', 'local-dev.skills.json'), 'utf8'))
+    expect(Object.values(persisted.trust)).not.toContainEqual(expect.objectContaining({ state: 'trusted' }))
+    expect(readdirSync(join(s.root, 'resources'))).toEqual(['local-dev.skills.json'])
+  } finally {
+    journalBoundary.afterFlush = undefined
+    spy.mockRestore()
+    clock.mockRestore()
+    await s.ep.close()
+  }
+}
