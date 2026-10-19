@@ -891,6 +891,7 @@ export class UIProjectionCell {
         const node: ApprovalNode = {
           kind: 'approval',
           id: old?.id ?? id,
+          purpose: value.request.spec.purpose,
           seq: old?.seq ?? seq,
           state:
             value.invalidation || (result && result.reason !== 'answered')
