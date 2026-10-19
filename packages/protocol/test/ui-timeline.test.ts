@@ -19,6 +19,7 @@ const nodes = [
   },
   {
     kind: 'approval',
+    purpose: 'plan.exit',
     id: 'p',
     seq: 4,
     state: 'pending',
