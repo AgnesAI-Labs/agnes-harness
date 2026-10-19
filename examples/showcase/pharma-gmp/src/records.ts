@@ -1,5 +1,5 @@
 import type { OwnedStore, ToolContext } from '@agnes/extension-api'
-import { type Plant, SIGNATURE_MEANING, label } from './model.js'
+import { label, type Plant, SIGNATURE_MEANING } from './model.js'
 import { batchOf, dossier, investigation } from './quality.js'
 import { seed } from './seed.js'
 

@@ -1,4 +1,4 @@
-import { type Batch, type Measurement, type Plant, label } from './model.js'
+import { type Batch, label, type Measurement, type Plant } from './model.js'
 
 const at = (day: number, hour = 9) =>
   `2024-10-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00Z`

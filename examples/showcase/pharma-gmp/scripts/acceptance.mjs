@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
-import { runtime, toolResult, until } from './runtime.mjs'
-import { ruleFiles } from './rule-candidate.mjs'
+import { join } from 'node:path'
 import { captureBrowser, captureFeaturedGallery } from './browser.mjs'
+import { ruleFiles } from './rule-candidate.mjs'
+import { runtime, toolResult, until } from './runtime.mjs'
 
 const real = process.argv.includes('--real'),
   browser = process.argv.includes('--browser')
@@ -76,12 +76,25 @@ try {
   const inspected = await call(investigator, 'pharma_inspect', { batch: 'B-2410-017' })
   assert.deepEqual(inspected.relatedBatches, ['B-2410-016', 'B-2410-018'])
   assert.ok(inspected.em.every((s) => s.viable === 72))
-  if (real)
+  if (real) {
     await run(
       investigator,
-      '根据刚才工具证据，用中文提出 5-Why、根因假设、CAPA 责任人及期限、其他批次影响。必须明确 72 CFU/m³ 仅超过警戒而非行动值，EM 相关性不是因果，探头漂移尚需证据确认；不要写入。',
+      '先按可用技能目录的路径读取 gmp-review 技能，再根据刚才工具证据，用中文提出 5-Why、根因假设、CAPA 责任人及期限、其他批次影响。必须明确 72 CFU/m³ 仅超过警戒而非行动值，EM 相关性不是因果，探头漂移尚需证据确认；不要写入。',
       'investigation reasoning',
     )
+    const skillRead = evidence.sessions[investigator.id].timeline.nodes.find(
+      (node) =>
+        node.kind === 'tool' &&
+        node.name === 'read' &&
+        node.argsPreview?.includes('gmp-review') &&
+        node.resultSeq !== undefined,
+    )
+    assert.ok(skillRead, 'Investigator must load the registered domain playbook')
+    const skillDetail = await investigator.readToolDetail(skillRead.seq, skillRead.resultSeq)
+    assert.ok(!skillDetail.result?.isError, 'Domain playbook read must succeed')
+    assert.ok(JSON.stringify(skillDetail.result.content).includes('GMP'))
+    evidence.checks.push('real-agent-loads-domain-playbook')
+  }
   const blocked = await call(qa, 'pharma_dossier', { batch: 'B-2410-017' })
   assert.equal(blocked.ready, false)
   if (real)
@@ -213,6 +226,7 @@ try {
     provenance,
   }
   evidence.checks.push('reviewed-candidate-published-next-session-rule', 'existing-session-retains-code-pin')
+  await call(em, 'pharma_report', { kind: 'em', locale: 'zh-CN' })
   const schedule = await rt.client.request('_agnes/v1/schedules.upsert', {
     agent: `${preview.id}#em`,
     title: '沙叶夜间 EM / Sableleaf nightly EM',
@@ -232,13 +246,15 @@ try {
     150000,
   )
   assert.equal(ran.runs.at(-1).outcome, 'ran', JSON.stringify(ran.runs))
+  evidence.schedule = ran
   const scheduled = await rt.client.session.load(ran.runs.at(-1).sessionKey, { cwd: rt.workspace })
   await scheduled.attach()
-  await toolResult(scheduled, 'pharma_report')
   evidence.sessions[scheduled.id] = {
     timeline: await scheduled.projectUI(undefined, { surface: 'web' }),
     budget: await scheduled.budget(),
   }
+  await rt.save('acceptance.json', evidence)
+  await toolResult(scheduled, 'pharma_report')
   await rt.client.request('_agnes/v1/schedules.control', { id: schedule.id, action: 'pause' })
   evidence.schedule = ran
   evidence.checks.push('nightly-agent-target-run-deliverable')
@@ -256,6 +272,10 @@ try {
   evidence.passed = true
 } catch (error) {
   evidence.error = rt.redact(error.message)
+  if (error.data) {
+    evidence.errorDetails = JSON.parse(rt.redact(JSON.stringify(error.data)))
+    console.error(JSON.stringify(evidence.errorDetails))
+  }
   console.error(rt.redact(error.stack))
   process.exitCode = 1
 } finally {

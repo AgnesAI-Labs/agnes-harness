@@ -1,7 +1,8 @@
-import React from 'react'
 import { Field, Select, SettingsTextArea } from '@agnes/web-ui'
+import React from 'react'
 import { badge, button, card, chart, column, h, table, text } from './components.js'
 import { meaning } from './locale.js'
+
 const age = (opened) =>
   Math.max(0, Math.floor((Date.parse('2024-10-20T23:59:59Z') - Date.parse(opened)) / 86400000))
 export function Home({ data, t, locale, selectBatch }) {

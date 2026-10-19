@@ -1,4 +1,4 @@
-import { type Plant, out } from './model.js'
+import { out, type Plant } from './model.js'
 import { batchOf, emStatus } from './quality.js'
 
 export function dossierSections(p: Plant, id: string, locale: 'zh-CN' | 'en') {

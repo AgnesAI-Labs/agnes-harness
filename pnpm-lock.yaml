@@ -187,9 +187,6 @@ importers:
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../../../packages/plugin-runtime
-      '@agnes/resource-control-runtime':
-        specifier: workspace:*
-        version: link:../../../packages/resource-control-runtime
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -197,6 +194,9 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/resource-control-runtime
       '@agnes/host':
         specifier: workspace:*
         version: link:../../../packages/host

@@ -1,4 +1,4 @@
-import { type Batch, type Plant, DEMO_DATE, label, out } from './model.js'
+import { type Batch, DEMO_DATE, label, out, type Plant } from './model.js'
 
 export function batchOf(p: Plant, id: string): Batch {
   const b = p.batches.find((b) => b.id === id)
@@ -14,17 +14,15 @@ export function emStatus(p: Plant, sample: Plant['samples'][number]) {
 export function findings(p: Plant, id: string) {
   const b = batchOf(p, id)
   return b.steps.flatMap((s) => [
-    ...s.cpp
-      .filter(out)
-      .map((m) => ({
-        severity: 'major',
-        code: 'CPP',
-        text: label(
-          `${m.name['zh-CN']} ${m.value} ${m.unit}，限度 ${m.min}–${m.max}；原始结果保留`,
-          `${m.name.en} ${m.value} ${m.unit}, limit ${m.min}–${m.max}; original retained`,
-        ),
-        source: m.source,
-      })),
+    ...s.cpp.filter(out).map((m) => ({
+      severity: 'major',
+      code: 'CPP',
+      text: label(
+        `${m.name['zh-CN']} ${m.value} ${m.unit}，限度 ${m.min}–${m.max}；原始结果保留`,
+        `${m.name.en} ${m.value} ${m.unit}, limit ${m.min}–${m.max}; original retained`,
+      ),
+      source: m.source,
+    })),
     ...(!s.verifier || s.verifier.actor === s.operator.actor || s.verifier.at < s.at
       ? [
           {

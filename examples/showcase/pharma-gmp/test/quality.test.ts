@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { createAuthorTestkit, createPluginTestHost } from '@agnes/host/author-testkit'
 import { expect, it } from 'vitest'
 import { main } from '../src/index.js'
-import { SIGNATURE_MEANING, type Plant } from '../src/model.js'
+import { type Plant, SIGNATURE_MEANING } from '../src/model.js'
+import { qualityPolicy } from '../src/policy.js'
 import { dossier, emStatus, findings, investigation } from '../src/quality.js'
 import { report } from '../src/reports.js'
 import { seed } from '../src/seed.js'
-import { qualityPolicy } from '../src/policy.js'
 
 const packageDir = fileURLToPath(new URL('../', import.meta.url)),
   batch = 'B-2410-017'

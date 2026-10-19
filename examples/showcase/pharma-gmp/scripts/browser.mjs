@@ -7,6 +7,8 @@ export async function captureFeaturedGallery(rt) {
   const browser = await chromium.launch({ headless: true })
   try {
     const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
     await page.addInitScript(() => {
       localStorage.setItem('agnes-locale', 'zh-CN')
       localStorage.setItem('agnes-theme', 'light')
@@ -22,8 +24,9 @@ export async function captureFeaturedGallery(rt) {
       false,
     )
     const path = join(rt.root, 'featured-gallery-fresh-zh-light.png')
-    await page.screenshot({ path, fullPage: true })
-    await rt.save('gallery.json', { path, roles: await roles.allTextContents(), installed: false })
+    await page.screenshot({ path, fullPage: true, animations: 'disabled' })
+    await rt.save('gallery.json', { path, roles: await roles.allTextContents(), installed: false, errors })
+    assert.deepEqual(errors, [])
   } finally {
     await browser.close()
   }
@@ -63,7 +66,7 @@ export async function captureBrowser(rt) {
     if (target === 'em') await page.locator('.ph-app figure svg').first().waitFor({ timeout: 30000 })
     await page.evaluate(() => document.fonts.ready)
     const path = join(rt.root, `${label}-${target}-${locale}-${theme}.png`)
-    await page.screenshot({ path, fullPage: true })
+    await page.screenshot({ path, fullPage: true, animations: 'disabled' })
     evidence.screenshots.push(path)
     assert.equal(await page.locator('html').getAttribute('lang'), locale)
     assert.equal(await page.locator('html').evaluate((e) => e.classList.contains('dark')), theme === 'dark')
@@ -87,13 +90,13 @@ export async function captureBrowser(rt) {
     await detail.getByRole('button', { name: 'B-2410-017', exact: true }).click()
     await detail.getByRole('dialog').waitFor()
     const path = join(rt.root, 'batch-detail-zh-light.png')
-    await detail.screenshot({ path, fullPage: true })
+    await detail.screenshot({ path, fullPage: true, animations: 'disabled' })
     evidence.screenshots.push(path)
     assert.equal(evidence.errors.length, 0, JSON.stringify(evidence.errors))
   } catch (e) {
     if (page) {
       const path = join(rt.root, 'browser-failure.png')
-      await page.screenshot({ path, fullPage: true }).catch(() => {})
+      await page.screenshot({ path, fullPage: true, animations: 'disabled' }).catch(() => {})
       evidence.screenshots.push(path)
       evidence.body = await page.locator('body').innerText()
     }
@@ -108,7 +111,7 @@ export async function captureBrowser(rt) {
       await page.goto(`${rt.url}/?session=${encodeURIComponent(sessionId)}`)
       await page.locator('[data-testid="approval-card"]').waitFor({ timeout: 30000 })
       const path = join(rt.root, 'human-signature-approval-zh-light.png')
-      await page.screenshot({ path, fullPage: true })
+      await page.screenshot({ path, fullPage: true, animations: 'disabled' })
       evidence.screenshots.push(path)
     },
     async close() {

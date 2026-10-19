@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs'
-import { toolPolicyKind, type ServiceContext, type ToolContext } from '@agnes/extension-api'
+import { type ServiceContext, type ToolContext, toolPolicyKind } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
-import { Type } from '@sinclair/typebox'
 import type {} from '@agnes/resource-control-runtime'
-import { change, read, release } from './records.js'
-import { dashboard, dossier, investigation } from './quality.js'
-import { report } from './reports.js'
-import { qualityPolicy } from './policy.js'
+import { Type } from '@sinclair/typebox'
 import { SIGNATURE_MEANING } from './model.js'
+import { qualityPolicy } from './policy.js'
+import { dashboard, dossier, investigation } from './quality.js'
+import { change, read, release } from './records.js'
+import { report } from './reports.js'
 import {
   batchInput,
   changeInput,

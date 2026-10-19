@@ -26,8 +26,7 @@
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
-    "@sinclair/typebox": "0.34.33",
-    "@agnes/resource-control-runtime": "workspace:*"
+    "@sinclair/typebox": "0.34.33"
   },
   "devDependencies": {
     "@agnes/host": "workspace:*",
@@ -38,7 +37,8 @@
     "@agnes/protocol": "workspace:*",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "@agnes/resource-control-runtime": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"
@@ -98,8 +98,7 @@
     "hostProvidedExternals": {
       "@agnes/extension-api": "^4.0.0",
       "@agnes/plugin-runtime": "0.0.0",
-      "@sinclair/typebox": "~0.34.0",
-      "@agnes/resource-control-runtime": "0.0.0"
+      "@sinclair/typebox": "~0.34.0"
     },
     "clientDescriptors": [
       {
@@ -127,7 +126,7 @@
             "schedule_create",
             "schedule_list",
             "schedule_update",
-            "schedule_remove",
+            "schedule_delete",
             "plugin_helper_create",
             "plugin_helper_install",
             "plugin_helper_guide"
@@ -149,7 +148,7 @@
               "schedule_create",
               "schedule_list",
               "schedule_update",
-              "schedule_remove",
+              "schedule_delete",
               "plugin_helper_create",
               "plugin_helper_install",
               "plugin_helper_guide"
@@ -324,7 +323,7 @@
             "schedule_create",
             "schedule_list",
             "schedule_update",
-            "schedule_remove"
+            "schedule_delete"
           ],
           "skills": [
             "gmp-review"
@@ -341,7 +340,7 @@
               "schedule_create",
               "schedule_list",
               "schedule_update",
-              "schedule_remove"
+              "schedule_delete"
             ]
           }
         },

@@ -51,13 +51,15 @@ export async function runtime(real) {
       )
       p.stdin.end()
     })
-  await cli(['daemon', 'start'])
   // Hard execution ceilings apply before any model session is opened.
-  await cli(['daemon', 'stop'])
-  await writeFile(
-    join(home, 'profiles/local-dev/profile.yaml'),
-    JSON.stringify({ name: 'local-dev', limits: { 'cost.credits_per_usd': 1 } }),
-  )
+  // An explicit profile intentionally disables the platform's fresh-home Demo fallback.
+  if (real) {
+    await mkdir(join(home, 'profiles/local-dev'), { recursive: true, mode: 0o700 })
+    await writeFile(
+      join(home, 'profiles/local-dev/profile.yaml'),
+      JSON.stringify({ name: 'local-dev', limits: { 'cost.credits_per_usd': 1 } }),
+    )
+  }
   await cli(['daemon', 'start'])
   let client, web, approvalHook
   async function connect() {

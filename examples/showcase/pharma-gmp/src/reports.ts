@@ -2,7 +2,7 @@ import type { Plant } from './model.js'
 import { dashboard, dossier, emStatus } from './quality.js'
 import { dossierSections, reviewSections } from './report-sections.js'
 
-const escape = (s: string) =>
+const escapeHtml = (s: string) =>
   s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 export function report(
   p: Plant,
@@ -98,6 +98,6 @@ export function report(
     ),
   )
   const markdown = lines.join('\n')
-  const html = `<!doctype html><html lang="${locale}"><meta charset="utf-8"><title>${escape(title)}</title><style>body{font:15px/1.6 system-ui;max-width:900px;margin:40px auto;padding:24px;color:#172e34}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{border-bottom:3px solid #087d7d;padding-bottom:16px}@media print{body{margin:0;padding:0}h1{break-after:avoid}pre{font-size:11pt}}</style><h1>${escape(title)}</h1><pre>${escape(markdown)}</pre></html>`
+  const html = `<!doctype html><html lang="${locale}"><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font:15px/1.6 system-ui;max-width:900px;margin:40px auto;padding:24px;color:#172e34}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{border-bottom:3px solid #087d7d;padding-bottom:16px}@media print{body{margin:0;padding:0}h1{break-after:avoid}pre{font-size:11pt}}</style><h1>${escapeHtml(title)}</h1><pre>${escapeHtml(markdown)}</pre></html>`
   return { title, markdown, html }
 }

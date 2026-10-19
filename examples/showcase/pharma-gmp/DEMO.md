@@ -15,7 +15,7 @@ Scenario: fictional Sableleaf OSD, 2024-10-20, B-2410-017. All evidence/people a
 | 3:40–4:30 | QA 展示六项清单全部通过，读取签名含义，人工在宿主批准。证书显示真实批准凭证的签名人、时间、记录版本和含义（5→6）。再次提交或旧版本均拒绝。 | QA shows six passing checks and signature meaning. Human approves in Host. Certificate records proof-bound signer/time/revision/meaning (5→6). Duplicate or stale releases refuse. |
 | 4:30–5:10 | 生成放行档案、APQR 节选、偏差趋势 Markdown+HTML，经交付物打开/打印。打开审计页，再打开会话工具详情/执行证据，核对来源包、版本和 pin。 | Generate dossier, APQR section and deviation trend in Markdown+HTML; open/print deliverables. Inspect business audit and session tool details/execution evidence, including package/version/pin. |
 | 5:10–6:20 | 质量中枢提出“使用时距校准到期≤7 天预警”新规则；用候选工具创建只读检查工具和 SKILL.md，测试、提交 review。人工审核精确哈希后发布，新会话输入 2024-10-17 与 2024-10-20，输出 due-soon=true；不把“已提议”说成“已启用”。 | Hub proposes “flag use within seven days of calibration expiry”; create read-only checking tool and SKILL.md, test, submit review. Human publishes exact reviewed hash. Fresh session with 2024-10-17 / 2024-10-20 returns due-soon=true. Proposal is not activation. |
-| 6:20–7:00 | 环境监测分析员建立每日 02:00 Asia/Shanghai 新会话任务，拒绝无人值守审批；运行一次生成夜间趋势，并核对自动化目标与交付物。最后切英文/深色，布局和业务数据一致。 | EM Analyst creates a daily 02:00 Asia/Shanghai new-session task with unattended approvals refused. Run once, verify frozen target and nightly deliverable. Switch to English/dark and verify consistent data/layout. |
+| 6:20–7:00 | 环境监测分析员先分析趋势；在自动化页选择该智能体，建立每日 02:00 Asia/Shanghai 新会话任务，拒绝无人值守审批；运行一次生成夜间趋势，并核对冻结目标与交付物。最后切英文/深色，布局和业务数据一致。 | EM Analyst analyzes the trend; in Automation select that agent for a daily 02:00 Asia/Shanghai new-session task with unattended approvals refused. Run once, verify frozen target and nightly deliverable. Switch to English/dark and verify consistent data/layout. |
 
 ## 确定性工具步骤 / Deterministic tool steps
 
@@ -35,15 +35,11 @@ call pharma_report {"kind":"apqr","locale":"zh-CN"}
 call pharma_report {"kind":"deviations","locale":"en"}
 ```
 
-在 EM 智能体会话 / In the EM agent session:
+在 EM 智能体会话先生成趋势：`call pharma_report {"kind":"em","locale":"zh-CN"}`。然后打开自动化页，新建任务并明确选择“环境监测分析员”，每日 02:00、Asia/Shanghai、新会话、无人值守审批拒绝，提示为同一条报告命令。选择智能体会把其 Loop、Bundle、预设及模型冻结到任务目标；普通 `schedule_create` 的新会话目标不等同于选择该智能体。点击“立即运行”验证，无需修改系统时间。
 
-```text
-call schedule_create {"title":"沙叶夜间 EM 趋势 / Sableleaf nightly EM","prompt":"call pharma_report {\"kind\":\"em\",\"locale\":\"zh-CN\"}","selector":{"daily":{"time":"02:00","timeZone":"Asia/Shanghai"}},"target":"new_session","unattendedApproval":"refuse"}
-```
+In the EM session run `call pharma_report {"kind":"em","locale":"en"}`. In Automation create a daily 02:00 Asia/Shanghai task, explicitly choose EM Analyst, a fresh session and refused unattended approvals, and use that report command as its prompt. Agent selection freezes its Loop, Bundle, preset and model; an ordinary schedule_create new-session target is not an agent selection. Use Run now without changing system time.
 
-现场新建 nightly 后可在自动化界面“立即运行”验证，不需要修改系统时间。校准规则候选通过质量中枢自然语言创建，先调用 plugin_helper_guide 获取当前模板，遵循当前平台的 create→test→commit→人审发布流程。
-
-Use Run now in Automation to verify the new nightly job without changing system time. Ask the Hub to create the calibration-rule candidate, starting with plugin_helper_guide and the current create→test→commit→human publication process.
+校准规则候选通过质量中枢自然语言创建，先调用 plugin_helper_guide 获取当前模板，遵循当前平台的 create→test→commit→人审发布流程。Ask the Hub to create the calibration-rule candidate, starting with plugin_helper_guide and the current create→test→commit→human publication process.
 
 ## 可重复验收 / Repeatable acceptance
 

@@ -1,7 +1,9 @@
-[data-agnes-region="sidebar"] {
-  border-right: 1px solid var(--agnes-line-primary);
-  background: var(--agnes-bg-surface);
-}
-[data-agnes-region="home-page"] {
-  background: var(--agnes-bg-page);
+@layer skin {
+  [data-agnes-region="sidebar"] {
+    border-right: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+  }
+  [data-agnes-region="home-page"] {
+    background: var(--agnes-bg-page);
+  }
 }

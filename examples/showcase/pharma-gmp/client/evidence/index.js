@@ -1,5 +1,6 @@
-import React from 'react'
 import { Tag } from '@agnes/web-ui'
+import React from 'react'
+
 const h = React.createElement
 export function apply(ctx) {
   for (const name of ['pharma_inspect', 'pharma_dossier', 'pharma_record', 'pharma_release']) {
