@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { access, mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
+import { pnpmInvocation } from '../toolchain/check.mjs'
 import { canReuse, recordBuild, sourceHash } from './build-cache.mjs'
 import gateConfig from './playwright.config.mjs'
 
@@ -44,13 +45,20 @@ if (!args.includes('--list')) {
   if (reuse && (await canReuse(hash))) await access('packages/cli/dist/local/agnes.mjs')
   else {
     if (reuse) console.log('Build inputs changed or the build has no E2E stamp; rebuilding build:local.')
-    const status = await run('pnpm', ['--filter', '@agnes/cli', 'build:local'])
+    const status = await run(process.execPath, [...pnpmInvocation(), '--filter', '@agnes/cli', 'build:local'])
     if (status !== 0) process.exit(status)
     await recordBuild(hash)
   }
-  const types = await run('pnpm', ['exec', 'tsc', '-b', 'tools/e2e-web'])
+  const types = await run(process.execPath, [...pnpmInvocation(), 'exec', 'tsc', '-b', 'tools/e2e-web'])
   if (types !== 0) process.exit(types)
-  const quality = await run('pnpm', ['exec', 'vitest', 'run', 'tools/e2e-web/i18n.test.ts', '--maxWorkers=1'])
+  const quality = await run(process.execPath, [
+    ...pnpmInvocation(),
+    'exec',
+    'vitest',
+    'run',
+    'tools/e2e-web/i18n.test.ts',
+    '--maxWorkers=1',
+  ])
   if (quality !== 0) process.exit(quality)
   const components = await run(process.execPath, [
     require.resolve('@playwright/test/cli'),

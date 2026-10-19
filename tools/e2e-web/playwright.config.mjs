@@ -1,5 +1,8 @@
 import { resolve } from 'node:path'
 import { defineConfig } from '@playwright/test'
+import { checkToolchain } from '../toolchain/check.mjs'
+
+checkToolchain()
 
 const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({

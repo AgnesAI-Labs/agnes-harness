@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24 }
+        with: { node-version-file: .node-version }
       - id: scope
         run: node tools/ci/scope.mjs
   static:
@@ -36,8 +36,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
       - run: pnpm lint
       - run: node tools/public-docs/verify.mjs
       # Reviewed line budgets and structural checks are hard gates; excess is also summarized.
@@ -74,8 +75,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
@@ -171,8 +173,9 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
@@ -225,8 +228,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
       - run: pnpm --filter @agnes/cli build:runtime
       - run: pnpm --filter @agnes/daemon build:runtime
       - name: exercise opt-in assembly with packaged runtime
@@ -257,8 +261,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
@@ -296,7 +301,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with: { node-version: 24 }
+        with: { node-version-file: .node-version }
       - name: require every selected job to pass
         run: node tools/ci/result.mjs
         env:

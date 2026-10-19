@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { checkToolchain, pnpmInvocation } from '../toolchain/check.mjs'
 import { storyPattern, verifyStoryResult } from './story-results.mjs'
+
+checkToolchain()
 
 // Select maintained contract tests rather than duplicating them in a second story suite.
 const fixtures = JSON.parse(readFileSync(new URL('./story-fixtures.json', import.meta.url)))
@@ -13,8 +16,9 @@ for (const fixture of fixtures) {
   rmSync(report, { force: true })
   console.log(`Story: ${fixture.id}; highlights ${fixture.highlights.join(', ')}`)
   const run = spawnSync(
-    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    process.execPath,
     [
+      ...pnpmInvocation(),
       'exec',
       'vitest',
       'run',
