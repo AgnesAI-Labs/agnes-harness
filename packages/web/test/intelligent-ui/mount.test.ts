@@ -1,5 +1,10 @@
+import { Context } from '@agnes/cordis'
 import type { UiSurfaceRecord } from '@agnes/protocol'
-import { conversationCards as testCards, workbenchPanels as testPanels } from '@agnes/web-client'
+import {
+  SlotRegistry,
+  conversationCards as testCards,
+  workbenchPanels as testPanels,
+} from '@agnes/web-client'
 import { expect, it, vi } from 'vitest'
 import { mountIntelligentUi } from '../../../web-conversation/src/intelligent-ui/mount.js'
 import { financeRecord } from './fixture.js'
@@ -50,7 +55,8 @@ vi.mock('../../../web-conversation/src/intelligent-ui/placements.js', async (ori
 }))
 // Mount lifecycle coverage keeps the real placement policy without loading document renderers.
 vi.mock('@agnes/web-ui/conversation', () => ({ DocumentPreview: () => null }))
-vi.mock('@agnes/web-client', () => ({
+vi.mock('@agnes/web-client', async (original) => ({
+  ...(await original<typeof import('@agnes/web-client')>()),
   conversationCards: {
     get: () => undefined,
     register: () => () => {},
@@ -76,7 +82,9 @@ vi.mock('@agnes/web-ui', () => ({
   questionForm: () => undefined,
 }))
 
-it('seeds loaded surfaces on every session and reveals only first appearances', () => {
+it('seeds loaded surfaces on every session and reveals only first appearances', async () => {
+  const ctx = new Context()
+  const registry = new SlotRegistry(ctx)
   let switched!: () => void
   let readinessChanged!: () => void
   let status = 'history-only'
@@ -99,16 +107,15 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
   const dispose = mountIntelligentUi({
     contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
-    registry: {
-      spec: () => ({}),
-      register: () => () => {},
-      inject: (_name: string, install: () => () => void) => install(),
-    } as never,
+    registry,
     session: session as never,
     locale: { register: () => () => {} } as never,
     approval: () => {},
     revealInline: reveal,
   })
+  expect(registry.entries('conversation.view')).toHaveLength(0)
+  registry.declare('conversation.view', { kind: 'list', scope: 'session' })
+  expect(registry.entries('conversation.view').map((entry) => entry.id)).toEqual(['builtin-intelligent-ui'])
   const old = financeRecord()
   old.surface.id = 'loaded-review'
   const live = structuredClone(old)
@@ -149,10 +156,15 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
     expect(controls.open).toHaveBeenCalledTimes(1)
   } finally {
     dispose()
+    expect(registry.entries('conversation.view')).toHaveLength(0)
+    await ctx.fiber.dispose()
   }
 })
 
-it('names the tab «Views» and counts the panels it lists', () => {
+it('names the tab «Views» and counts the panels it lists', async () => {
+  const ctx = new Context()
+  const registry = new SlotRegistry(ctx)
+  registry.declare('conversation.view', { kind: 'list', scope: 'session' })
   const session = {
     sessionId: 'counted',
     subscribe: () => () => {},
@@ -161,15 +173,12 @@ it('names the tab «Views» and counts the panels it lists', () => {
   const dispose = mountIntelligentUi({
     contributions: { conversationCards: testCards, workbenchPanels: testPanels },
     client: { sessions: { get: (id: string) => ({ id }) } } as never,
-    registry: {
-      spec: () => ({}),
-      register: () => () => {},
-      inject: (_name: string, install: () => () => void) => install(),
-    } as never,
+    registry,
     session: session as never,
     locale: { register: () => () => {}, t: (key: string) => `t:${key}` } as never,
     approval: () => {},
   })
+  expect(registry.entries('conversation.view').map((entry) => entry.id)).toEqual(['builtin-intelligent-ui'])
   const context = { t: (key: string) => key, data: { session: { id: 'counted' } } }
   try {
     const client = controls.clients.at(-1)!
@@ -194,5 +203,7 @@ it('names the tab «Views» and counts the panels it lists', () => {
     expect(controls.panel?.when({ ...context, data: { session: { id: 'other' } } })).toBe(false)
   } finally {
     dispose()
+    expect(registry.entries('conversation.view')).toHaveLength(0)
+    await ctx.fiber.dispose()
   }
 })

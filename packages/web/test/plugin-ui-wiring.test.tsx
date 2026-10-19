@@ -3,6 +3,8 @@ import { defaultLoop, type PackageInstalledDescriptor } from '@agnes/protocol'
 import { pluginStates } from '@agnes/web-admin/admin/plugins/control-panel'
 import * as businessAgents from '@agnes/web-admin/agents'
 import { type ClientContext, homeNavigation } from '@agnes/web-client'
+import { LOCALE_STORAGE_KEY } from '@agnes/web-foundation/locale-preference'
+import { THEME_STORAGE_KEY } from '@agnes/web-foundation/theme'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -583,3 +585,84 @@ it('preserves host composer files and images across same-session reconnects duri
     container.remove()
   }
 })
+
+it.each(['system', 'theme-storage', 'theme-event', 'locale-storage', 'locale-event'])(
+  'retires %s preference updates with the client runtime and supports remounting',
+  async (source) => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    let dark = false
+    const matches = vi.spyOn(media, 'matches', 'get').mockImplementation(() => dark)
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue(media)
+    const runtimes: Awaited<ReturnType<typeof startClientModules>>[] = []
+    const language = document.documentElement.lang
+    const isLocale = source.startsWith('locale')
+    const reset = () => {
+      dark = false
+      localStorage.setItem(THEME_STORAGE_KEY, source === 'system' ? 'system' : 'light')
+      localStorage.setItem(LOCALE_STORAGE_KEY, 'en')
+    }
+    const change = (enabled = true) => {
+      dark = enabled
+      if (source !== 'system') localStorage.setItem(THEME_STORAGE_KEY, enabled ? 'dark' : 'light')
+      localStorage.setItem(LOCALE_STORAGE_KEY, enabled ? 'zh-CN' : 'en')
+      if (source === 'system') media.dispatchEvent(new Event('change'))
+      else if (source.endsWith('storage'))
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: isLocale ? LOCALE_STORAGE_KEY : THEME_STORAGE_KEY,
+          }),
+        )
+      else
+        window.dispatchEvent(
+          new CustomEvent(`agnes:${isLocale ? 'locale' : 'theme'}-changed`, {
+            detail: enabled ? 'zh-CN' : 'en',
+          }),
+        )
+    }
+    const start = async () => {
+      const runtime = await startClientModules({ agnes: { sessions: { get: () => undefined } } as never })
+      runtimes.push(runtime)
+      return runtime
+    }
+    const snapshot = (runtime: (typeof runtimes)[number]) => [
+      runtime.theme.getSnapshot(),
+      runtime.locale.locale,
+    ]
+    const initial = ['light', 'en']
+    const changed = isLocale ? ['light', 'zh-CN'] : ['dark', 'en']
+    try {
+      reset()
+      const old = await start()
+      expect(snapshot(old)).toEqual(initial)
+      change()
+      expect(snapshot(old)).toEqual(changed)
+      expect(document.documentElement.lang).toBe(isLocale ? 'zh-CN' : 'en')
+      change(false)
+      expect(snapshot(old)).toEqual(initial)
+      await old.dispose()
+      await old.dispose()
+      change()
+      expect(snapshot(old)).toEqual(initial)
+      expect(document.documentElement.lang).toBe('en')
+      reset()
+      const next = await start()
+      expect(snapshot(next)).toEqual(initial)
+      change()
+      expect(snapshot(old)).toEqual(initial)
+      expect(snapshot(next)).toEqual(changed)
+      change(false)
+      expect(snapshot(next)).toEqual(initial)
+      await next.dispose()
+      await next.dispose()
+      change()
+      expect(snapshot(next)).toEqual(initial)
+      expect(document.documentElement.lang).toBe('en')
+    } finally {
+      for (const runtime of runtimes) await runtime.dispose()
+      matches.mockRestore()
+      matchMedia.mockRestore()
+      localStorage.clear()
+      document.documentElement.lang = language
+    }
+  },
+)

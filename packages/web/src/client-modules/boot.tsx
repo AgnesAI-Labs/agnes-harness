@@ -205,28 +205,36 @@ export async function startClientModules(options: {
       { kind: 'single', scope: name === 'ui:sidebar' ? 'root' : 'session-maybe' },
       'web-shell',
     )
-  // 主题：监听既有外观系统的三个变化入口（不改宿主内部：storage/system + 显式事件）。
-  prefersDark.addEventListener('change', () => {
-    theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
-  })
-  window.addEventListener('storage', (event) => {
-    if (event.key === THEME_STORAGE_KEY) {
+  // Theme and locale listeners belong to this runtime, including same-page restarts.
+  ctx.effect(() => {
+    const syncTheme = () =>
       theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
+    const onThemeStorage = (event: StorageEvent) => {
+      if (event.key === THEME_STORAGE_KEY) syncTheme()
     }
-  })
-  window.addEventListener('agnes:theme-changed', () => {
-    theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
-  })
-  const applyLocale = (next: UiLocale): void => {
-    applyDocumentLocale(document.documentElement, next)
-    locale.setLocale(next)
-  }
-  window.addEventListener('storage', (event) => {
-    if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
-  })
-  window.addEventListener('agnes:locale-changed', (event) => {
-    const next = (event as CustomEvent<unknown>).detail
-    if (isUiLocale(next)) applyLocale(next)
+    const applyLocale = (next: UiLocale): void => {
+      applyDocumentLocale(document.documentElement, next)
+      locale.setLocale(next)
+    }
+    const onLocaleStorage = (event: StorageEvent) => {
+      if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
+    }
+    const onLocaleChanged = (event: Event) => {
+      const next = (event as CustomEvent<unknown>).detail
+      if (isUiLocale(next)) applyLocale(next)
+    }
+    prefersDark.addEventListener('change', syncTheme)
+    window.addEventListener('storage', onThemeStorage)
+    window.addEventListener('agnes:theme-changed', syncTheme)
+    window.addEventListener('storage', onLocaleStorage)
+    window.addEventListener('agnes:locale-changed', onLocaleChanged)
+    return () => {
+      prefersDark.removeEventListener('change', syncTheme)
+      window.removeEventListener('storage', onThemeStorage)
+      window.removeEventListener('agnes:theme-changed', syncTheme)
+      window.removeEventListener('storage', onLocaleStorage)
+      window.removeEventListener('agnes:locale-changed', onLocaleChanged)
+    }
   })
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
   const panelRoots: AntdRoot[] = []

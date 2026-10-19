@@ -191,7 +191,17 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
         'human outputabc\rx',
       ),
     )
-    flushSync(() => (host.querySelector(`#terminal-tab-${agent.id}`) as HTMLButtonElement | null)?.click())
+    flushSync(() =>
+      within(host)
+        .getByRole('button', { name: /Agent job · Read-only bash/ })
+        .click(),
+    )
+    expect(
+      within(host)
+        .getByRole('button', { name: /Agent job · Read-only bash/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(host.querySelector('input')).toBeNull()
     await vi.waitFor(() =>
       expect(host.querySelector('[data-testid=terminal-fixture-raw]')?.textContent).toBe('agent output'),
     )
@@ -203,9 +213,21 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
       ).click(),
     )
     expect(agent.status).toBe('running')
-    flushSync(() => (host.querySelector('[role=option]') as HTMLButtonElement).click())
+    flushSync(() =>
+      within(host)
+        .getByRole('button', { name: /^Terminal bash/ })
+        .click(),
+    )
+    expect(
+      within(host)
+        .getByRole('button', { name: /^Terminal bash/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
     evicted = true
-    await vi.waitFor(() => expect(host.querySelector('[role=option]')).toBeNull(), { timeout: 2500 })
+    await vi.waitFor(
+      () => expect(within(host).queryByRole('button', { name: /^Terminal bash/ })).toBeNull(),
+      { timeout: 2500 },
+    )
     expect(host.textContent).not.toContain('Job was evicted')
   } finally {
     unmountRegion(host)
@@ -221,7 +243,7 @@ it('renders kill receipts immediately, confirms close and selects the remaining 
     owner: 'human' as const,
     ownerSessionId: 's',
     kind: 'pty' as const,
-    command: 'bash',
+    command: id,
     cwd: '/workspace',
     status: 'running' as 'running' | 'killed',
     code: null as number | null,
@@ -260,9 +282,9 @@ it('renders kill receipts immediately, confirms close and selects the remaining 
     )
     await vi.waitFor(() => expect(host.textContent).toContain('first output'))
     flushSync(() =>
-      host
-        .querySelector('[role=option]')
-        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })),
+      within(host)
+        .getByRole('button', { name: /^Terminal first/ })
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })),
     )
     await vi.waitFor(() => expect(document.querySelector('[data-testid=terminal-kill]')).not.toBeNull())
     flushSync(() => (document.querySelector('[data-testid=terminal-kill]') as HTMLElement).click())
@@ -273,9 +295,16 @@ it('renders kill receipts immediately, confirms close and selects the remaining 
       expect(host.querySelector<HTMLButtonElement>('[data-testid=terminal-tab-close]')?.disabled).toBe(false),
     )
     flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
-    await vi.waitFor(() => expect(host.querySelectorAll('[role=option]')).toHaveLength(1))
+    await vi.waitFor(() =>
+      expect(within(host).getAllByRole('button', { name: /^Terminal (first|second)/ })).toHaveLength(1),
+    )
     await vi.waitFor(() => expect(host.textContent).toContain('second output'))
-    expect(host.querySelector('[role=option]')?.getAttribute('aria-selected')).toBe('true')
+    expect(within(host).queryByRole('button', { name: /^Terminal first/ })).toBeNull()
+    expect(
+      within(host)
+        .getByRole('button', { name: /^Terminal second/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
     expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: 'first' })
   } finally {
     unmountRegion(host)
