@@ -18,6 +18,8 @@ SQLite histories are verified completely before session hooks, recovery, titles,
 
 Web can display an **unverified, read-only preview** while verification runs. Large stored payloads and inline media may appear as placeholders. The preview grants no execution authority; the live session replaces it only after verification succeeds. Recent-window and scan-budget markers identify omitted history. SDK `session.load(id, { onProgress })` reports verification and replay progress; `timeouts.loadIdle` (30 seconds) and `timeouts.loadHard` (10 minutes) independently bound a load. A timeout cancels that connection's pending load, and disconnect cancels outstanding verification.
 
+While opening, the preview uses a neutral status line and stays readable at normal contrast. The composer remains disabled while the session is being prepared. A read-only warning with recovery actions appears only when opening is refused; it is not the ordinary loading state.
+
 The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 
 ## Find and resume a session

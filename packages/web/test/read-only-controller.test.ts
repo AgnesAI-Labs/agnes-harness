@@ -168,6 +168,20 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   pending.get('A:200')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
+  expect(appReadOnly.show).toHaveBeenLastCalledWith({
+    kind: 'preview',
+    message: {
+      en: 'History preview (not yet verified) · Preparing session…',
+      'zh-CN': '历史预览（待校验）· 正在准备会话…',
+    },
+    actions: [],
+  })
+  controller.progress('A', 'verifying', 100, 1000)
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain('正在校验历史 100/1000')
+  controller.progress('A', 'replaying', 500, 1000)
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain(
+    '正在加载已验证历史 500/1000',
+  )
   controller.clear()
   expect(context.readOnly).toBeUndefined()
   const late = controller.preview('B', context.sessionBinding.capture())

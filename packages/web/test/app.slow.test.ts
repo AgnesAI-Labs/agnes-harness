@@ -3761,6 +3761,72 @@ it.skipIf(!process.env.AGH_WEB_PERFORMANCE_OUTPUT).each([1, 2, 3])(
 )
 
 describe('session that cannot continue on this build', () => {
+  it('keeps a pending preview readable, clears it on admission, and dims only the previous selection', async () => {
+    installPublicFixture()
+    const opening = deferred<{ session: SessionDouble; offPermission: () => void }>()
+    const nextView = deferred<ReturnType<typeof stored>>()
+    const timeline = (id: string): UITimeline => ({
+      ...idleTimeline(id, { route: 'local', id: 'model-a' }),
+      nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: `History of ${id}` }] }],
+    })
+    function stored(id: string) {
+      return {
+        sessionId: id,
+        readOnly: true as const,
+        lastSeq: 1,
+        timeline: timeline(id),
+        history: { hasEarlier: false, startIndex: 0, totalNodes: 1 },
+      }
+    }
+    const old = session('old', async () => timeline('old'))
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      close: vi.fn(async () => undefined),
+      initialize: vi.fn(initialized),
+      on: vi.fn(),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })),
+        view: vi.fn(async (id: string) => (id === 'old' ? stored(id) : nextView.promise)),
+      },
+    })
+    binding.loadWebSession.mockReturnValue(opening.promise)
+    await bootApp()
+    await vi.waitFor(() =>
+      expect(document.getElementById('transcript')?.textContent).toContain('History of old'),
+    )
+    expect(document.body.classList.contains('session-switching')).toBe(false)
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+    expect(document.querySelector('[data-testid="session-history-preview"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('正在准备会话')
+    opening.resolve({ session: old, offPermission: vi.fn() })
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    expect(document.body.classList.contains('session-switching')).toBe(false)
+
+    const next = session('next', async () => timeline('next'))
+    const nextOpening = deferred<{ session: SessionDouble; offPermission: () => void }>()
+    binding.loadWebSession.mockReturnValue(nextOpening.promise)
+    const switched = selectionController.open?.('next')
+    expect(document.body.classList.contains('session-switching')).toBe(true)
+    nextView.resolve(stored('next'))
+    await vi.waitFor(() =>
+      expect(document.getElementById('transcript')?.textContent).toContain('History of next'),
+    )
+    expect(document.body.classList.contains('session-switching')).toBe(false)
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+    nextOpening.resolve({ session: next, offPermission: vi.fn() })
+    await switched
+    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    expect(document.body.classList.contains('session-switching')).toBe(false)
+  })
+
   const refusals = [
     {
       issue: 'newer',
@@ -3823,8 +3889,18 @@ describe('session that cannot continue on this build', () => {
         workspace: { list: vi.fn(async () => ({ items: [] })) },
         session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })), view },
       })
-      binding.loadWebSession.mockRejectedValue(error)
+      const opening = deferred<never>()
+      binding.loadWebSession.mockReturnValue(opening.promise)
       await bootApp()
+      await vi.waitFor(() => expect(document.getElementById('transcript')?.textContent).toContain('历史问题'))
+      expect(document.body.classList.contains('session-switching')).toBe(false)
+      expect(document.querySelector('[data-testid="session-history-preview"]')?.textContent).toContain(
+        '待校验',
+      )
+      expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+      expect(document.body.textContent).not.toContain('这个会话在这里只读')
+      opening.reject(error)
       const banner = await vi.waitFor(() => {
         const found = document.querySelector<HTMLElement>('[data-testid="session-read-only"]')
         expect(found).toBeTruthy()

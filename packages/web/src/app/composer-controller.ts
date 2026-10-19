@@ -142,9 +142,12 @@ export function createComposerController(
       sessionLoop ? choiceName(loopEntry ?? { id: sessionLoop.id }, context.t) : undefined,
     )
     context.topbarRuntime.setSession(workbench.session?.id)
-    // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
-    // 由 sessionPending = false 的那次 renderControls 平滑恢复。
-    document.body.classList.toggle('session-switching', context.sessionPending)
+    // Dim only the previous selection, not the new readable preview awaiting execution admission.
+    const displayedSession = context.current?.id ?? context.readOnly?.id
+    document.body.classList.toggle(
+      'session-switching',
+      context.sessionPending && (!displayedSession || context.projection?.sessionId !== displayedSession),
+    )
     // Opening a session is a page-level read: the top progress bar runs until it is ready.
     if (context.sessionPending && !endSessionRead)
       void trackPageRequest(
@@ -221,7 +224,10 @@ export function createComposerController(
       configured: context.configured,
       hasSession: context.current !== undefined || context.draftingNew || context.readOnly !== undefined,
       hint: context.readOnly
-        ? { kind: 'state', text: context.t('composer.hint.readOnly') }
+        ? {
+            kind: 'state',
+            text: context.t(context.sessionPending ? 'composer.action.preparing' : 'composer.hint.readOnly'),
+          }
         : busy && context.sessionControls?.sessionId !== context.current?.id
           ? { kind: 'state', text: context.t('composer.control.syncing') }
           : busy && !permissionUnknown

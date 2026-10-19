@@ -148,14 +148,28 @@ export function createReadOnlyController(
 
   function progress(id: string, phase: 'verifying' | 'replaying', done: number, total: number): void {
     openingProgress = { id, phase, done, total }
+    previewNotice(id)
+  }
+
+  function previewNotice(id: string): void {
     if (context.readOnly?.id !== id) return
-    const counts = total > 0 ? ` ${done}/${total}` : ''
-    const en = phase === 'verifying' ? 'Verifying before execution' : 'Loading verified history'
-    const zh = phase === 'verifying' ? '正在验证，完成后才能执行' : '正在加载已验证历史'
+    const current = openingProgress?.id === id ? openingProgress : undefined
+    const counts = current && current.total > 0 ? ` ${current.done}/${current.total}` : ''
+    const en = !current
+      ? 'Preparing session…'
+      : current.phase === 'verifying'
+        ? 'Checking history'
+        : 'Loading verified history'
+    const zh = !current
+      ? '正在准备会话…'
+      : current.phase === 'verifying'
+        ? '正在校验历史'
+        : '正在加载已验证历史'
     appReadOnly.show({
+      kind: 'preview',
       message: {
-        en: `Unverified history preview · ${en}${counts}`,
-        'zh-CN': `未经验证的历史预览 · ${zh}${counts}`,
+        en: `History preview (not yet verified) · ${en}${counts}`,
+        'zh-CN': `历史预览（待校验）· ${zh}${counts}`,
       },
       actions: [],
     })
@@ -163,8 +177,7 @@ export function createReadOnlyController(
 
   async function preview(id: string, epoch: SessionBinding): Promise<void> {
     if (!(await load(id, PAGE, epoch))) return
-    const current = openingProgress?.id === id ? openingProgress : undefined
-    progress(id, current?.phase ?? 'verifying', current?.done ?? 0, current?.total ?? 0)
+    previewNotice(id)
     context.render()
     context.renderControls()
   }

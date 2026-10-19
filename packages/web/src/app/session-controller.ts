@@ -76,6 +76,8 @@ export function createSessionController(
   ): Promise<void> {
     const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
     const { binding: epoch, previous } = bindingOwner.begin()
+    // The old projection may stay visible, but its preview/refusal no longer describes this selection.
+    context.readOnlyController.clear()
     preserved?.adopt(epoch)
     if (!options.created) context.references.clear()
     let selectionReady = false
