@@ -306,6 +306,27 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
     tools: [guideTool, createTool],
     messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'create a plugin' }] }],
   }
+  const explicitFiles = [
+    { path: 'index.mjs', content: "import { defineAgnesPlugin } from '@agnes/plugin-runtime'" },
+  ]
+  expect(
+    await collect(adapter, {
+      ...plan,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `call plugin_helper_create ${JSON.stringify({ files: explicitFiles })}` },
+          ],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_helper_create', args: { files: explicitFiles } }),
+    }),
+  )
   expect(await collect(adapter, plan)).toContainEqual(
     expect.objectContaining({
       type: 'toolcall_end',

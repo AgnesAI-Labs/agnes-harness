@@ -218,7 +218,9 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
   }
   let selected: ToolSchema | undefined
   let args: JsonValue | undefined
-  const authoring = /(?:create|write|build|make).*plugin|(?:创建|编写|写).*插件/i.test(prompt)
+  const authoring =
+    !/^\s*call\s+[A-Za-z0-9_]+/.test(prompt) &&
+    /(?:create|write|build|make).*plugin|(?:创建|编写|写).*插件/i.test(prompt)
   const find = (name: string) => request.tools.find((tool) => tool.name === name)
   const latest = results.at(-1)
   if (latest?.role === 'tool_result' && latest.isError)
