@@ -143,6 +143,7 @@ describe('pack guard', () => {
     'dist/ripgrep/rg',
     'dist/vendor/@img/sharp-libvips-darwin-arm64/lib/index.js',
     'dist/authoring/THIRD-PARTY-NOTICES/index.json',
+    'dist/bundled-plugins/document-reader/dist/runtime/THIRD-PARTY-NOTICES/index.json',
   ])('rejects missing %s in the actual tarball', (path) => {
     const files = packedFixture()
     files.delete(path)
