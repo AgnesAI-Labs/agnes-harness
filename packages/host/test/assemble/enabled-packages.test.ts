@@ -213,7 +213,7 @@ it.each(['absent', 'disabled'] as const)(
       expect(existsSync(x.extensionMarker)).toBe(false)
       expect(a.presets).not.toHaveProperty('forbidden')
       expect(a.extHost.status().some((e) => e.package === '@agnes/extra')).toBe(false)
-      expect(a.defaultPreset.view.name).toBe('workspace-write')
+      expect(a.defaultPreset.view.name).toBe('standard')
       expect(a.extHost.status().some((e) => e.package === '@agnes/extra')).toBe(false)
     } finally {
       await a.rollback.unwind()
@@ -254,7 +254,7 @@ it('missing required location refuses before any import and a corrected map reco
   expect(x.imported).toEqual([])
   x.packageDirs.set('@agnes/base', base)
   const a = await assemble(x.profile, x.deps)
-  expect(a.defaultPreset.view.name).toBe('workspace-write')
+  expect(a.defaultPreset.view.name).toBe('standard')
   await a.rollback.unwind()
 })
 

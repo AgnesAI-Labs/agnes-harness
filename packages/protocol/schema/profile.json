@@ -969,6 +969,21 @@
             }
           }
         },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "enum": ["read-only", "workspace-write", "full-access"]
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "enum": ["read-only", "workspace-write", "full-access"]
+              }
+            }
+          }
+        },
         "policy": {
           "$ref": "#/$defs/Policy"
         },
@@ -1452,6 +1467,22 @@
               "type": "array",
               "items": {
                 "type": "string"
+              }
+            }
+          }
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "allowed"],
+          "properties": {
+            "default": {
+              "enum": ["read-only", "workspace-write", "full-access"]
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "enum": ["read-only", "workspace-write", "full-access"]
               }
             }
           }
