@@ -1,4 +1,4 @@
-/** Business agents (FDE): the gallery page and the one-click start other surfaces reuse. */
+/** Agents: the gallery page and the one-click start other surfaces reuse. */
 
 export { AGENTS_NAMESPACE, agentsCatalog } from './agents/agents-locale.js'
 export {
@@ -11,6 +11,7 @@ export {
   samplePromptOf,
   suggestedBusinessAgents,
 } from './agents/catalog.js'
+export { discoverableAgent, exampleDiscovery } from './agents/discovery.js'
 export {
   BusinessAgentGallery,
   type BusinessAgentsData,

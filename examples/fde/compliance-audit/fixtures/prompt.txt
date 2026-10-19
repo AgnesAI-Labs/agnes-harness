@@ -1,1 +1,0 @@
-Audit the policy checklist against local evidence files and report findings with severity, source quotes and evidence links.

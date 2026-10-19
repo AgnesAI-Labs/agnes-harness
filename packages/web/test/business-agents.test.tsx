@@ -2,6 +2,7 @@
 
 import { Context } from '@agnes/cordis'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import { discoverableAgent, exampleDiscovery } from '@agnes/web-admin/agents'
 import { homeNavigation, SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -31,6 +32,7 @@ const agent = (name: string, metadata?: Record<string, unknown>, scope = '@agnes
           ],
         }
       : {}),
+    source: { type: 'file', ref: `file:./bundled-examples/showcase/${name}` },
     version: '1.0.0',
     ...(metadata ? { metadata: { displayName: name, summary: `${name} summary`, ...metadata } } : {}),
   }) as unknown as PackageCatalogDescriptor
@@ -45,32 +47,42 @@ it('recognises a business agent by its explicit launch declaration', () => {
   expect(isBusinessAgent(agent('crm', {}, '@acme'))).toBe(true)
   expect(isBusinessAgent(agent('crm'))).toBe(true)
   expect(isBusinessAgent(agent('dag-loop', {}, '@agnes-example'))).toBe(false)
+  for (const ref of ['file:./bundled-examples/showcase/industry', 'file:./examples/showcase/industry']) {
+    const showcase = { ...agent('arbitrary-name', {}, '@community'), source: { type: 'file' as const, ref } }
+    expect(exampleDiscovery(showcase)).toEqual({ family: 'showcase', featured: true })
+    expect(featuredBusinessAgents([showcase])).toEqual([showcase])
+  }
+  for (const ref of ['file:./bundled-examples/fde/data-report', 'file:./examples/loops/dag-loop']) {
+    const teaching = { ...agent('not-a-prefix'), source: { type: 'file' as const, ref } }
+    expect(discoverableAgent(teaching)).toBe(false)
+    expect(discoverableAgent(teaching, [{ id: teaching.id } as PackageInstalledDescriptor])).toBe(true)
+    expect(featuredBusinessAgents([teaching])).toEqual([])
+  }
+  expect(exampleDiscovery({ ...agent('industry'), source: { type: 'npm', ref: 'industry' } }).featured).toBe(
+    false,
+  )
 })
 
 it('reads every catalog page and suggests explicit agents in catalog order', async () => {
   const catalog = vi
     .fn()
     .mockResolvedValueOnce({
-      items: [
-        agent('compliance-audit'),
-        agent('dag-loop', undefined, '@agnes-example'),
-        agent('data-report'),
-      ],
+      items: [agent('support-triage'), agent('dag-loop', undefined, '@agnes-example'), agent('data-report')],
       nextCursor: 'next',
     })
-    .mockResolvedValueOnce({ items: [agent('code-review'), agent('crm-assistant')], nextCursor: null })
+    .mockResolvedValueOnce({ items: [agent('knowledge-qa'), agent('support-triage')], nextCursor: null })
   const rows = await listBusinessAgents(catalog)
   expect(catalog).toHaveBeenNthCalledWith(2, undefined, 'next')
   expect(rows.map((row) => row.id)).toEqual([
-    '@agnes-fde/compliance-audit',
+    '@agnes-fde/support-triage',
     '@agnes-fde/data-report',
-    '@agnes-fde/code-review',
-    '@agnes-fde/crm-assistant',
+    '@agnes-fde/knowledge-qa',
+    '@agnes-fde/support-triage',
   ])
   expect(featuredBusinessAgents(rows).map((row) => row.id)).toEqual([
-    '@agnes-fde/compliance-audit',
+    '@agnes-fde/support-triage',
     '@agnes-fde/data-report',
-    '@agnes-fde/code-review',
+    '@agnes-fde/knowledge-qa',
   ])
   const ready = rows[0]!
   const unavailable = {
@@ -84,7 +96,7 @@ it('reads every catalog page and suggests explicit agents in catalog order', asy
 it('keeps the hero free of cards even when the business-agent catalog is available', async () => {
   vi.spyOn(businessAgentSuggestions, 'refresh').mockResolvedValue()
   const rows = [
-    agent('code-review', { samplePrompt: { en: 'Review the sample patch.' } }),
+    agent('knowledge-qa', { samplePrompt: { en: 'Review the sample patch.' } }),
     agent('data-report', {}),
   ]
   const read = vi.fn(async () => rows)
@@ -144,6 +156,14 @@ it('projects one card per explicit declaration, including several agents in one 
     },
     { ...base, id: '@agnes-fde/legacy', agents: [] },
   ]
+
+  const teaching = {
+    ...base,
+    source: { type: 'file' as const, ref: 'file:./bundled-examples/fde/support-triage' },
+  }
+  expect(declaredAgentCards([teaching], 'en')).toEqual([])
+  expect(featuredBusinessAgents([teaching])).toEqual([])
+  expect(declaredAgentCards([], 'en')).toEqual([])
   const cards = declaredAgentCards(rows, 'zh-CN')
   expect(cards.map((card) => [card.declaration.ref, card.name, card.summary, card.samplePrompt])).toEqual([
     ['@acme/support#triage', '分诊', 'Sort incoming work', undefined],
@@ -162,6 +182,9 @@ it('projects one card per explicit declaration, including several agents in one 
     blockers: [],
     agents: cards.filter((card) => card.ref === '@acme/support#reply').map((card) => card.declaration),
   }
+  expect(declaredAgentCards([teaching], 'en', [installed]).map((card) => card.ref)).toEqual([
+    '@acme/support#reply',
+  ])
   const current = declaredAgentCards(rows, 'en', [installed])
   expect(current.map((card) => card.ref)).toEqual(['@acme/support#reply'])
   expect(current[0]?.entry).toBe(installed)

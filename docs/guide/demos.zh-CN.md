@@ -1,6 +1,8 @@
-# 三个可运行演示
+# 产品演示与开发者机制示例
 
 [English](demos.md) | 简体中文
+
+产品演示为 [制药 GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.zh-CN.md) showcase 应用，将在同一版本提供。智能体页只推广 showcase，缺包时不会显示占位卡。开发者从[五个教学示例](../../examples/fde/README.zh-CN.md)学习工具、面板、审批、交付和定时自动化。下面三个脚本用于验证平台机制。
 
 亲手验证业务 Agent 即插件、热升级保留进行中的工作，以及 Agent 构建可复用能力。每个脚本都在新的临时 `AGH_HOME` 中运行真实 daemon 和 worker，只使用合成数据，无需模型账号或浏览器。
 

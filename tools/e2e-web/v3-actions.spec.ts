@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
+import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { prompt, toolResult } from './sdk.js'
 import {
@@ -186,16 +187,23 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
   ])
 })
 
-test('v3 business Agent one-click start installs its bundle and creates a Demo session', async ({
+test('v3 deliberately installed teaching agent creates a reviewed Demo session', async ({
   page,
   runtime,
 }) => {
   test.setTimeout(120_000)
-  await open(page, runtime)
+  await preferences(page)
+  await page.goto(runtime.url)
+  await page.getByTestId('first-run-skip').click()
+  await expect(page.getByTestId('first-run-guide')).toBeHidden()
+  await chooseWorkspace(page, runtime)
   await homePage(page, 'agents')
   await fresh(page)
   await turn(page, 'Prepare the offline Demo workspace')
   await fresh(page)
+  await homePage(page, 'agents')
+  await expect(page.locator('[data-agent-ref="@agnes-fde/knowledge-qa#knowledge-qa"]')).toHaveCount(0)
+  await installDeveloperExample(page, 'examples/fde/knowledge-qa')
   await homePage(page, 'agents')
   const card = page.locator('[data-agent-ref="@agnes-fde/knowledge-qa#knowledge-qa"]')
   await expect(card).toBeVisible()
@@ -203,8 +211,8 @@ test('v3 business Agent one-click start installs its bundle and creates a Demo s
   if (!packageId) throw new Error('Business Agent card requires a package')
   await card.getByRole('button').click()
   const confirm = page.getByTestId('agent-start-confirm')
-  await expect(confirm).toBeVisible()
-  await confirm.click()
+  await expect(confirm.or(page.getByTestId('agent-launch-review'))).toBeVisible()
+  if (await confirm.isVisible()) await confirm.click()
   await expect(page.getByTestId('agent-launch-review')).toContainText('refund')
   await page.getByTestId('agent-launch-confirm').click()
   await expect(page.locator('#home-page')).toBeHidden({ timeout: 25_000 })

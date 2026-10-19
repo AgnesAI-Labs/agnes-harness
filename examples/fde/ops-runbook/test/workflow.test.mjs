@@ -32,6 +32,15 @@ test('ops-runbook completes through the public loop and tool ports', async () =>
   assert.ok(run.calls.some((call) => call.name === 'job_output' && call.args.jobId === data.diagnosticJob))
   assert.equal(data.verification.verified, true)
   assert.equal(data.action.status, 'simulated-restart')
+  const scheduled = await runWorkflow(main, { context, input: '[scheduled-inspection] Daily diagnostic' })
+  assert.equal(scheduled.finished[0], 'completed')
+  assert.equal(scheduled.checkpoint.state.data.action.status, 'inspection-only')
+  assert.ok(scheduled.calls.some((call) => call.name === 'present'))
+  assert.ok(
+    !scheduled.calls.some((call) =>
+      ['ask_user_question', 'fde_ops_restart', 'fde_ops_verify'].includes(call.name),
+    ),
+  )
 })
 test('refusal and cancellation preserve workflow boundaries', async () => {
   const stop = new AbortController()

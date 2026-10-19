@@ -46,6 +46,7 @@ export const tools = [
     readOnlyTool,
   ),
 ]
+const inspectionOnly = (state) => state.input.startsWith('[scheduled-inspection]')
 const stages = [
   {
     name: 'runbook',
@@ -98,8 +99,12 @@ const stages = [
   },
   {
     name: 'restart',
-    confirm: () => 'Execute the fixed synthetic restart step after reviewing the diagnostic?',
+    confirm: (state) =>
+      inspectionOnly(state)
+        ? undefined
+        : 'Execute the fixed synthetic restart step after reviewing the diagnostic?',
     async run(ctx, state, signal) {
+      if (inspectionOnly(state)) return { action: { status: 'inspection-only' } }
       return {
         action: value(
           await ctx.tools.execute(
@@ -113,6 +118,8 @@ const stages = [
   {
     name: 'verify',
     async run(ctx, state, signal) {
+      if (inspectionOnly(state))
+        return { verification: { verified: false, scope: 'diagnostic only; no restart requested' } }
       const verification = value(
         await ctx.tools.execute(
           { name: 'fde_ops_verify', args: { receipt: state.data.action.receipt } },

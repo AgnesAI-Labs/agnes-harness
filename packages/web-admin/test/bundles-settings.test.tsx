@@ -31,9 +31,9 @@ function api(bundles: string[], catalog: Record<string, unknown>[]) {
     list: vi.fn(async () => ({
       packages: [
         {
-          id: '@agnes-fde/crm-assistant',
+          id: '@agnes-fde/support-triage',
           version: '1.1.0',
-          metadata: { displayName: 'CRM follow-up', locales: { 'zh-CN': { displayName: 'CRM 跟进示例' } } },
+          metadata: { displayName: 'Support triage', locales: { 'zh-CN': { displayName: '客服分流示例' } } },
         },
       ],
     })),
@@ -72,7 +72,7 @@ it('names business agents from the catalog or their package, falls back to a sma
         displayName: 'Reconciliation',
         version: '1.0.0',
       },
-      { id: '@agnes-fde/crm-assistant#crm-assistant', sourcePackage: '@agnes-fde/crm-assistant' },
+      { id: '@agnes-fde/support-triage#support-triage', sourcePackage: '@agnes-fde/support-triage' },
       { id: '@acme/raw#raw', sourcePackage: '@acme/raw' },
     ],
   )
@@ -85,9 +85,9 @@ it('names business agents from the catalog or their package, falls back to a sma
   ).toBe('Reconciliation')
   expect(row('@agnes-fde/finance-reconcile#finance-reconcile').textContent).toContain('1.0.0')
   expect(
-    row('@agnes-fde/crm-assistant#crm-assistant').querySelector('[data-testid="bundle-name"]')?.textContent,
-  ).toBe('CRM follow-up')
-  expect(row('@agnes-fde/crm-assistant#crm-assistant').textContent).toContain('1.1.0')
+    row('@agnes-fde/support-triage#support-triage').querySelector('[data-testid="bundle-name"]')?.textContent,
+  ).toBe('Support triage')
+  expect(row('@agnes-fde/support-triage#support-triage').textContent).toContain('1.1.0')
   const raw = row('@acme/raw#raw').querySelector('[data-testid="bundle-name"]')
   expect(raw?.tagName).toBe('CODE')
   expect(raw?.className).toContain('agnes-settings-id')
@@ -113,8 +113,8 @@ it('names business agents from the catalog or their package, falls back to a sma
     act(async () => row(id).querySelector<HTMLElement>('.switch, [role="switch"]')?.click())
   await toggle('@agnes-fde/gone#gone')
   await toggle('@agnes-fde/finance-reconcile#finance-reconcile')
-  await toggle('@agnes-fde/crm-assistant#crm-assistant')
-  const handle = row('@agnes-fde/crm-assistant#crm-assistant').querySelector<HTMLButtonElement>(
+  await toggle('@agnes-fde/support-triage#support-triage')
+  const handle = row('@agnes-fde/support-triage#support-triage').querySelector<HTMLButtonElement>(
     '[data-testid="bundle-drag"]',
   )
   expect(handle?.disabled).toBe(false)
@@ -127,7 +127,7 @@ it('names business agents from the catalog or their package, falls back to a sma
   expect(saves).toEqual([
     {
       revision: 3,
-      bundles: ['@agnes-fde/crm-assistant#crm-assistant', '@agnes-fde/finance-reconcile#finance-reconcile'],
+      bundles: ['@agnes-fde/support-triage#support-triage', '@agnes-fde/finance-reconcile#finance-reconcile'],
     },
   ])
   // The page cannot restart the service itself, and says so.

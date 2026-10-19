@@ -37,11 +37,11 @@ const deliverablesRecord = () => {
     data: {
       'file-0': {
         name: 'report.html',
-        description: 'contract-review: final',
+        description: 'data-report: final',
         artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
       },
     },
-    summary: 'report.html — contract-review: final',
+    summary: 'report.html — data-report: final',
     actions: [],
   }
   return record

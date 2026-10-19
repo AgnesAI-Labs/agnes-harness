@@ -33,7 +33,7 @@ Drive the agent from business events too: opt-in [GitHub and generic webhook tri
 
 ![Plugin capabilities in the Web workbench](docs/assets/readme/plugin-kinds-en-light.png)
 
-[Run the business-agent demo](examples/demos/business-agent/README.md) · [Browse business agents](examples/fde/README.md)
+[Product demos](docs/guide/demos.md) · [Developer teaching examples](examples/fde/README.md) · [Plugin mechanism script](examples/demos/business-agent/README.md)
 
 ## 2. Upgrade without replacing work in progress
 
@@ -71,7 +71,7 @@ pnpm --filter @agnes/cli build:local
 node agnes.mjs serve
 ```
 
-Open the local URL printed by the terminal. The [first-run guide](docs/guide/getting-started.md) walks through account setup, model selection and your first session; every step can be skipped. Model tests and real-model conversations may incur charges. Try the [local Demo](docs/extend/quickstart.md) without a key, or run the [three demos](docs/guide/demos.md).
+Open the local URL printed by the terminal. The [first-run guide](docs/guide/getting-started.md) walks through account setup, model selection and your first session; every step can be skipped. Model tests and real-model conversations may incur charges. Try the [local Demo](docs/extend/quickstart.md) without a key, or run the [developer mechanism scripts](docs/guide/demos.md).
 
 For your first request:
 

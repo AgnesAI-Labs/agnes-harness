@@ -1,4 +1,5 @@
 import { type PackageCatalogDescriptor, resolvePluginMetadata } from '@agnes/protocol'
+import { discoverableAgent } from '@agnes/web-admin/agents'
 import { homeNavigation } from '@agnes/web-client'
 import {
   ADMIN_LIST_LOCALE_NAMESPACE,
@@ -146,7 +147,10 @@ function MarketCard({
 export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   const [source, setSource] = useState<PluginSource | ''>('')
   const rows = view.state.catalog.filter(
-    (item) => !item.metadata?.exampleOf && matchesPluginFilters(item, source, view.kind),
+    (item) =>
+      !item.metadata?.exampleOf &&
+      discoverableAgent(item, view.state.installed) &&
+      matchesPluginFilters(item, source, view.kind),
   )
   const grouped = new Map<string, PackageCatalogDescriptor[]>()
   for (const row of rows) grouped.set(row.id, [...(grouped.get(row.id) ?? []), row])

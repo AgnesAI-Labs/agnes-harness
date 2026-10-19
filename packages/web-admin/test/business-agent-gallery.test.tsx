@@ -33,7 +33,7 @@ const entry = (id: string, name: string, sample?: string) =>
   ({
     id,
     version: '1.1.0',
-    source: { type: 'file', ref: `file:./bundled-examples/${id}` },
+    source: { type: 'file', ref: `file:./bundled-examples/showcase/${id.split('/').at(-1)}` },
     integrity: 'sha512-a',
     license: 'Apache-2.0',
     contributions: [],
@@ -120,7 +120,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
     catalog: async () => ({
       items: [
         entry(ID, 'Data report', 'Summarise the sample CSV.'),
-        entry('@agnes-fde/code-review', 'Code review'),
+        entry('@agnes-fde/knowledge-qa', 'Knowledge answer'),
       ],
       nextCursor: null,
     }),
@@ -210,7 +210,7 @@ it('shows a card per business agent, with a sample line only where the package h
   )
   expect(
     host.querySelector(
-      '[data-testid="business-agent-code-review-work"] [data-testid="business-agent-sample"]',
+      '[data-testid="business-agent-knowledge-qa-work"] [data-testid="business-agent-sample"]',
     ),
   ).toBeNull()
   expect(report?.textContent).toContain(en('state.available'))

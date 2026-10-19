@@ -70,7 +70,7 @@ it('says that plugin panels and views are not pinned by the session generation',
 
 it('states loop, model, permission and version in plain words before any identifier', async () => {
   const runtime = descriptor('gen-1', {
-    loop: { id: 'fde.code-review', version: '5.0.0' },
+    loop: { id: 'fde.knowledge-qa', version: '5.0.0' },
     generation: {
       id: 'gen-1',
       current: false,
@@ -83,7 +83,7 @@ it('states loop, model, permission and version in plain words before any identif
     tools: [],
     resources: [],
     capabilities: {
-      loop: { value: { id: 'fde.code-review', version: '5.0.0' } },
+      loop: { value: { id: 'fde.knowledge-qa', version: '5.0.0' } },
       modelRoutes: { value: { primary: { route: 'demo', model: 'demo-model' } } },
       permissions: { preset: 'workspace-write', readOnly: false },
       tools: [],
@@ -100,7 +100,7 @@ it('states loop, model, permission and version in plain words before any identif
   expect(summary).not.toContain('gen-1')
   // Identifiers stay available, under technical details.
   expect(view.host.querySelector('[data-testid="session-runtime-technical"]')?.textContent).toContain(
-    'fde.code-review 5.0.0',
+    'fde.knowledge-qa 5.0.0',
   )
   await view.close()
 })
@@ -264,13 +264,13 @@ it('groups the session tools by source and explains an unopened session', async 
     tools: [
       tool('read', '@agnes/base'),
       tool('edit', '@agnes/base'),
-      tool('review_diff', '@agnes-fde/code-review'),
+      tool('review_diff', '@agnes-fde/knowledge-qa'),
       { ...tool('mcp__tracker__create', 'agnes/mcp-tracker'), deferred: true },
     ],
   } as SessionToolsResult
   expect(groupTools(tools.tools).map((group) => [group.source, group.tools.length, group.deferred])).toEqual([
     ['@agnes/base', 2, 0],
-    ['@agnes-fde/code-review', 1, 0],
+    ['@agnes-fde/knowledge-qa', 1, 0],
     ['agnes/mcp-tracker', 1, 1],
   ])
   const view = await mount(

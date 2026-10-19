@@ -74,3 +74,13 @@ npm test
 测试以固定模型回复驱动公开 loop/tool 契约，核对结果与拒绝边界。运维测试注入模拟执行端口，不证明操作系统沙箱隔离。仓库中的外部验证命令见[索引](../README.zh-CN.md#验证)。
 
 作者测试统一使用 `@agnes/host/author-testkit`，明确注入离线服务和工具 fixture。准备好预览版依赖后运行 `agh plugin test .`；真实 Host 审批、generation pin、模型录制回放和 HTTP/SSE 故障脚本见[测试你的插件](../../../docs/extend/testing.zh-CN.md)。
+
+## 定时巡检
+
+显式安装本教学包后，从智能体页启动并审阅该智能体。在自动化页选择这个智能体（或其已有会话），创建每天 09:00 的任务，提示词为 `[scheduled-inspection] 每日合成服务巡检`。也可在该会话调用：
+
+```text
+call schedule_create {"title":"每日巡检","prompt":"[scheduled-inspection] 每日合成服务巡检","target":"current_session","selector":{"daily":{"time":"09:00","timeZone":"Asia/Shanghai"}}}
+```
+
+调度器冻结所选目标，每次执行仍按当前信任与工具策略准入。巡检运行后台诊断、读取结果并通过 `present` 交付报告，不请求或执行重启。后台命令仍需部署策略授权；不能授权时正常拒绝或等待批准。去掉前缀会进入原有交互式修复流程，重启前仍需业务确认和工具授权。

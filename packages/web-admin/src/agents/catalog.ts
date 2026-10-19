@@ -1,6 +1,7 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { exampleDiscovery } from './discovery.js'
 
 type Locale = 'en' | 'zh-CN'
 
@@ -123,5 +124,8 @@ export function suggestedBusinessAgents<T extends { entry: PackageCatalogDescrip
 ): T[] {
   const ready = (agent: T) =>
     businessAgentState(installed.find((item) => item.id === agent.entry.id)) === 'ready' ? 0 : 1
-  return [...agents].sort((a, b) => ready(a) - ready(b)).slice(0, count)
+  return agents
+    .filter((agent) => exampleDiscovery(agent.entry).featured)
+    .sort((a, b) => ready(a) - ready(b))
+    .slice(0, count)
 }

@@ -1,5 +1,6 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
+import { homeNavigation } from '@agnes/web-client'
 import {
   Button,
   IconButton,
@@ -13,7 +14,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
-import { sessionStartUrl } from './runtime-panels.js'
+import { exampleDiscovery } from '../agents/discovery.js'
 
 type ExampleCardsProps = {
   api: PluginAdminApi | undefined
@@ -56,13 +57,7 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
       do {
         pages += 1
         const page = await catalogApi.catalog(undefined, cursor)
-        result.push(
-          ...page.items.filter(
-            (row) =>
-              !row.metadata?.exampleOf &&
-              (row.sourceId === 'official-examples' || row.source.ref.startsWith('file:./bundled-examples/')),
-          ),
-        )
+        result.push(...page.items.filter((row) => !row.metadata?.exampleOf && exampleDiscovery(row).featured))
         cursor = page.nextCursor ?? undefined
       } while (cursor && current && result.length < 256 && pages < 32)
       if (current) setRows(result)
@@ -84,14 +79,6 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
     const current = installed.find((pkg) => pkg.id === row.id)
     const enabled = current?.desired === 'enabled'
     const available = enabled && current?.actual === 'running'
-    const loop =
-      row.id === '@agnes-example/dag-loop'
-        ? { id: 'example.dag', version: '1.0.0' }
-        : row.id === '@agnes-example/react-loop'
-          ? { id: 'example.react', version: '1.0.0' }
-          : row.id === '@community/dag-loop-adapter'
-            ? { id: 'community.dag', version: '1.0.0' }
-            : undefined
     return (
       <SettingsCard
         key={`${row.id}@${row.version}`}
@@ -124,7 +111,12 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
           <Button
             data-testid={`example-start-${name}`}
             disabled={!available}
-            href={sessionStartUrl(undefined, undefined, row.provides?.includes('bundle') ? [name] : [], loop)}
+            onClick={() =>
+              homeNavigation.open(
+                'agents',
+                row.agents?.length === 1 ? { agent: row.agents[0]!.ref, start: true } : undefined,
+              )
+            }
           >
             {t('exampleStart')}
           </Button>

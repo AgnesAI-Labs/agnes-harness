@@ -33,7 +33,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 ![当前 Web 工作台的插件类型页面](docs/assets/readme/plugin-kinds-zh-CN-light.png)
 
-[运行业务 Agent 演示](examples/demos/business-agent/README.zh-CN.md) · [查看 FDE 组合包](examples/fde/README.md)
+[产品演示](docs/guide/demos.zh-CN.md) · [开发者教学示例](examples/fde/README.zh-CN.md) · [插件机制脚本](examples/demos/business-agent/README.zh-CN.md)
 
 ## 2. 升级时，进行中的工作保留原版本
 
@@ -71,7 +71,7 @@ pnpm --filter @agnes/cli build:local
 node agnes.mjs serve
 ```
 
-打开终端打印的本机地址。[首次运行指南](docs/guide/getting-started.zh-CN.md)带你配置账号、选择模型并创建会话，每一步都可跳过。模型测试和真实模型对话可能产生费用。没有密钥也可以体验[本地 Demo](docs/extend/quickstart.zh-CN.md)，或运行[三个产品演示](docs/guide/demos.zh-CN.md)。
+打开终端打印的本机地址。[首次运行指南](docs/guide/getting-started.zh-CN.md)带你配置账号、选择模型并创建会话，每一步都可跳过。模型测试和真实模型对话可能产生费用。没有密钥也可以体验[本地 Demo](docs/extend/quickstart.zh-CN.md)，或运行[开发者机制脚本](docs/guide/demos.zh-CN.md)。
 
 第一个请求可以是：
 

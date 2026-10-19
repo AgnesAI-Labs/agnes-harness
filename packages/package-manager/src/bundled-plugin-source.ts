@@ -114,20 +114,10 @@ export function bundledPluginSourceRoot(ref: string): string | undefined {
 export const BUNDLED_EXAMPLES = Object.freeze(
   [
     ...['dag-loop', 'react-loop'].map((name) => ({ family: 'loops', name })),
-    ...[
-      'code-review',
-      'compliance-audit',
-      'contract-review',
-      'crm-assistant',
-      'data-report',
-      'device-inspection',
-      'finance-reconcile',
-      'knowledge-qa',
-      'meeting-actions',
-      'ops-runbook',
-      'recruiting-screen',
-      'support-triage',
-    ].map((name) => ({ family: 'fde', name })),
+    ...['data-report', 'finance-reconcile', 'knowledge-qa', 'ops-runbook', 'support-triage'].map((name) => ({
+      family: 'fde',
+      name,
+    })),
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )

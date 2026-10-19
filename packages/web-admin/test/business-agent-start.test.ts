@@ -29,7 +29,7 @@ const entry = (extra: Record<string, unknown> = {}, id = ID) =>
   ({
     id,
     version: '1.1.0',
-    source: { type: 'file', ref: `file:./bundled-examples/${id}` },
+    source: { type: 'file', ref: `file:./bundled-examples/showcase/${id.split('/').at(-1)}` },
     integrity: 'sha512-a',
     license: 'Apache-2.0',
     contributions: [],

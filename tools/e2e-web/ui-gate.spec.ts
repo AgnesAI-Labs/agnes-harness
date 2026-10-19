@@ -68,6 +68,13 @@ for (const locale of ['en', 'zh-CN'])
       await page.goto(runtime.url)
       await expect(page.getByTestId('first-run-skip')).toBeVisible()
       await page.getByTestId('first-run-skip').click()
+      // CLI setup may already have selected the workspace. Open the same picker explicitly.
+      const workspace = page.getByRole('dialog', {
+        name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+        exact: true,
+      })
+      if (!(await workspace.isVisible())) await page.locator('#composer-workspace').click()
+
       await expect(
         page.getByRole('dialog', {
           name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
@@ -87,11 +94,8 @@ for (const locale of ['en', 'zh-CN'])
       // The hero now offers one composer hint; browse the same agents from the sidebar gallery.
       await page.getByTestId('home-entry-agents').click()
       await expect(page.getByTestId('home-page-agents')).toBeVisible()
-      for (const id of ['code-review', 'knowledge-qa', 'data-report']) {
-        const card = page.locator(`[data-agent-ref="@agnes-fde/${id}#${id}"]`)
-        await expect(card.locator('h3')).not.toHaveText('')
-        await expect(card.getByRole('button')).toBeEnabled()
-      }
+      await expect(page.getByTestId('general-agent')).toBeVisible()
+      await expect(page.locator('[data-agent-ref^="@agnes-fde/"]')).toHaveCount(0)
       await closeSettings(page, locale)
       await expect(page.locator('#empty-state')).toBeVisible()
       await advanced(page)

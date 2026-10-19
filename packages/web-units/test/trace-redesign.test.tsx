@@ -202,7 +202,7 @@ describe('provenance in the source tab', () => {
         kind: 'generation',
         generationId: 'g',
         packages: [
-          { packageId: 'crm-assistant', version: '1.1.0', snapshotId: '', integrity: '', treeIntegrity: '' },
+          { packageId: 'support-triage', version: '1.1.0', snapshotId: '', integrity: '', treeIntegrity: '' },
         ],
       },
     ],
@@ -236,7 +236,7 @@ describe('provenance in the source tab', () => {
     )
     expect(reads).toEqual([{ sessionId: 's', laneId: 'main', anchor: { kind: 'request', callId: 'call' } }])
     expect(host.querySelector('[data-testid="trace-provenance"]')?.textContent).toContain(
-      'crm-assistant · 1.1.0',
+      'support-triage · 1.1.0',
     )
     await act(async () => root.unmount())
   })

@@ -1,60 +1,39 @@
-# 业务智能体：为企业构建应用
+# 开发者教学示例
 
-[English](README.md) | 简体中文 · [为什么选择 AGH](../../docs/guide/why-agh.zh-CN.md)
+[English](README.md) | 简体中文
 
-FDE 工程师将流程、连接器、审核策略与手册一起交付。下面每个目录都是独立可安装的**插件**，包含可启动的智能体，只使用公开契约与作者工具包。合成数据和本地模拟器让团队无需凭据即可体验完整交付流程。
+这里保留五个独立可安装的教学插件，每个示例重点讲一种机制；它们使用合成数据，不是行业产品。产品演示改为 showcase 应用：[制药 GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.zh-CN.md)，将在同一版本提供。包尚未就绪时，智能体页不显示占位卡片。
 
-每次 `modelText` 请求都是不带工具的文字阶段，使用该阶段自己的窄指令。流程手册仍作为外围 Loop 的已注册 Skill，不拼进草稿或解读请求。客户草稿只使用已提供的事实，输出面向客户的回复。
-
-| Agent / 智能体 | 业务成果 | 控制点 |
+| 示例 | 教学重点 | 保留原因 |
 | --- | --- | --- |
-| [客服分诊](support-triage/README.zh-CN.md) | 读取工单 → 分类 → 草稿 → 人工审批 → 模拟发送回执。 | 动作前人工确认 |
-| [合同评审](contract-review/README.zh-CN.md) | 拆分条款 → 并行评审节点 → 汇总 Markdown 报告 → 模型解读。 | 只读策略 |
-| [数据报告](data-report/README.zh-CN.md) | 读取 CSV → 计算合计与利润率 → 含 SVG 图表的 Markdown/HTML → 模型解读。 | 只读策略 |
-| [运维手册](ops-runbook/README.zh-CN.md) | 读取手册 → 官方后台诊断作业 → 问题卡 → 授权模拟重启 → 核对回执。 | 业务选择与工具权限 |
-| [CRM 助手](crm-assistant/README.zh-CN.md) | 本地 MCP 查询 → Skills 续约手册 → 草拟备注 → 审批 → 幂等模拟备注。 | 动作前人工确认 |
-| [设备巡检](device-inspection/README.zh-CN.md) | 读取状态 → 检测异常 → 人工确认 → 受约束动作 → 回执与状态验证。 | 动作前人工确认 |
-| [知识问答](knowledge-qa/README.zh-CN.md) | 本地文档 → 来源摘录 → 带引用回答或拒答 → 模型解读。 | 无来源则拒答；只读检索 |
-| [会议行动项](meeting-actions/README.zh-CN.md) | 转录 → 摘要、决定、负责人和日期 → Markdown 与面板 → 模拟发送。 | 发送前人工审批 |
-| [代码评审](code-review/README.zh-CN.md) | Git diff 夹具 → 并行轻量/风险检查 → 汇总评审报告。 | 只读 DAG |
-| [财务对账](finance-reconcile/README.zh-CN.md) | 银行/账簿 CSV → 整数分差异 → 调整分录草稿。 | 人工审批；未解决依据保持开放 |
-| [招聘初筛](recruiting-screen/README.zh-CN.md) | 最小化简历 → 岗位依据与未知项 → 人工后续评审。 | 人工决定；仅使用岗位技能依据 |
-| [合规证据审计](compliance-audit/README.zh-CN.md) | 清单 → 依据检查 → 含严重程度和引用的发现。 | 只读；缺失依据保留为缺口 |
+| [知识问答](knowledge-qa/README.zh-CN.md) | 工具、证据引用与无来源拒答 | 最小只读检索合同及拒答测试 |
+| [财务对账](finance-reconcile/README.zh-CN.md) | 工具加交互面板 | 精确分币、真实 Host 策略、数据源拒绝与结构化回执测试 |
+| [客服分流](support-triage/README.zh-CN.md) | 审批动作 | 草稿、持久化问题、模拟发送；机制演示脚本复用 |
+| [数据报告](data-report/README.zh-CN.md) | 报告交付 | 计算结果、Markdown/HTML 图表和官方打开/下载卡片 |
+| [运维巡检](ops-runbook/README.zh-CN.md) | 定时自动化 | 后台诊断、巡检报告；交互式修复单独请求批准 |
 
-## 开始交付
+## 安装与运行
 
-按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`，在示例目录运行 `agh plugins add .` 并审阅权限，然后从 Web 的「智能体」页选择，或运行 `agh --new --agent PACKAGE#NAME -p "任务"`。每个 `agnes.bundles.<id>.launch` 显式选择预设，不按包名前缀推测。安装不会自动启动智能体。进阶组合见[组合与配置档](../../docs/extend/bundles-and-profiles.zh-CN.md)。FDE 指为企业构建应用这项工作；显式采纳应用参见 [Acme](../acme/README.zh-CN.md)。
+从[安装指南](../../docs/guide/install.zh-CN.md)构建 CLI。在示例目录执行 `agh plugins add .`，审阅权限并启用后，从智能体页选择已安装的智能体，或执行 `agh --new --agent PACKAGE#NAME -p "task"`。教学包不会在新用户推荐、空会话提示或引导中推广；开发者按来源路径安装；后端完整目录仍保留教学元数据供检查。安装不会自动启动会话。
 
-智能体预设继承部署当前选择的模型。全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署使用已配置的模型，模型请求可能产生费用。启动智能体时会审阅最终模型、权限、来源和可编辑草稿；确认只创建空会话并填入输入框，点击发送后才提交提示词。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
+每个 Bundle 显式声明 `launch` 和 preset，继承部署选择的主模型。启动审阅显示模型、权限、来源和可编辑草稿；确认只创建空会话并填入草稿，发送才执行。无密钥 Demo 只作确定性教学，真实模型配置见每包 `real-model.bundle.json`。这些配置只选择模型，不保存凭据。
 
-发送、CRM 备注、运维重启、设备动作与招聘后续评审先交付草稿，再调用官方 `ask_user_question`。持久保存的 Proceed/Cancel 问题暂停流程，经校验的用户答案恢复执行。工具授权仍独立控制，不可用的权限会拒绝动作；财务保留既有复核表面，通过输入阶段消费结构化动作回执。业务选择可在 Web/TUI 完成。依据流程可无交互完成，仅允许生成输出，拒绝源数据修改。Demo 成果仍为确定性结果，真实模型解读保留为审核草稿。
+## 可信执行与验证
 
-十二个 bundle 均使用官方 `write`、`present` 生成受限路径报告和标准制品打开/下载卡。会议面板只渲染行动依据，不再自建下载路径。知识问答可按显式公开查询使用 `web_search`，私有问题与文档保持本地。运维使用官方 `shell` 后台作业与 `job_output`，操作者可用 `job_list`、`job_kill` 检查或停止所属作业。部署能力与限制见[官方默认工具](../../docs/reference/default-tools.zh-CN.md)，已有配置须允许问题/交付工具的投影能力。
+五个示例共用公开 `@agnes/plugin-runtime` 的 `defineWorkflowLoop`，不导入兄弟示例。客服发送与交互式重启使用 `ask_user_question`，工具权限仍独立校验。财务使用现有结构化审阅回执；未知结果不会自动重放。`write` / `present` 交付有边界的报告。运维后台任务使用 `shell` / `job_output`，巡检方式和调度步骤见其 README。知识问答保留无来源拒答和可选公共检索；私有文档不会作为公共查询发送。
 
-Loop 5.0.0/官方工作流 checkpoint codec 1 保存待答问题和单个原生审批的续跑信息，升级后新建会话；旧 checkpoint 会被拒绝。
+所有后端插件是受信任的进程内代码，能力声明用于审阅与策略，不是任意代码沙箱。Loop 5.0.0 使用官方 checkpoint codec 1；旧 checkpoint 拒绝恢复，升级后请新建会话。`/plan on` 的官方计划审批先于业务执行，不能替代后续业务确认或工具授权。
 
-在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续业务问题或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
-
-## 从示例到客户
-
-保留可复用 loop，替换夹具连接器、业务规则与 `SKILL.md`。明确客户可暴露的数据、需要人工审核的动作和证明成功的回执。运维场景启动前选择已注册沙箱提供方。设备的单位、动作边界与物理安全留在已验证的控制器/适配器中；设备示例仅改变本地模拟状态。
-
-十二个 bundle 均使用 `@agnes/plugin-runtime` 的官方 `defineWorkflowLoop`，tarball 只保留业务阶段与连接器，没有复制调度器或相邻示例导入。见[完整工作流示例](../../docs/extend/workflow-loops.zh-CN.md)。普通后台插件运行在受信进程内；能力声明用于安装审核和策略，不隔离任意代码。checkpoint 拒绝自动重放 pending 副作用；模拟器回执不是生产设备/CRM 的持久账本。
-
-## 验证
-
-使用仓库固定的 Node/pnpm 版本。外部验证器构建作者 tarball，将指定示例复制到仓库外，安装真实依赖，检查公开导入并运行各自快速测试：
+从仓库根目录运行定向测试：
 
 ```sh
+pnpm exec vitest run --config examples/fde/vitest.config.mjs --maxWorkers=1
 pnpm release:external-examples --author-only \
   --example examples/fde/knowledge-qa \
-  --example examples/fde/meeting-actions \
-  --example examples/fde/code-review \
   --example examples/fde/finance-reconcile \
-  --example examples/fde/recruiting-screen \
-  --example examples/fde/compliance-audit
+  --example examples/fde/support-triage \
+  --example examples/fde/data-report \
+  --example examples/fde/ops-runbook
 ```
 
-重复 `--example` 可加入十二个示例中的任意一个。`--author-only` 跳过完整 CLI 打包，验证作者契约与示例流程，不代表浏览器或完整分发验收。快速测试使用官方工具端口、模型和制品回执的脚本夹具，覆盖等待、无效或取消答案，以及保留的工具权限拒绝。CRM/设备测试启动短小的真实 stdio MCP 进程，使用 `.e2e.test.mjs`。运维作业端口与重启执行器均为夹具，不证明操作系统隔离或真实后台清理。安装匹配作者 tarball 后可独立执行各目录的 `npm run build`、`npm test`。公开 conformance testkit 所需 Vitest 仅为测试依赖。
-
-夹具验证不代表真实模型质量、客户 API、物理设备或跨平台验收。
+开发验证使用仓库固定工具链入口。外部作者测试检查安装依赖、公开导入和示例自己的测试；不能证明真实模型质量、生产连接器或跨平台验收。后台任务测试使用夹具，浏览器扫测另见[演示指南](../../docs/guide/demos.zh-CN.md)。

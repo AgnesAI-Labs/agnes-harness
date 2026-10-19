@@ -1,6 +1,8 @@
-# Three runnable demos
+# Product demos and developer mechanism examples
 
 English | [简体中文](demos.zh-CN.md)
+
+The product demos are the [Pharma GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.md) and [Aerospace quality](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.md) showcase applications, coming in the same release. The gallery promotes showcase content and tolerates missing packages without placeholders. Developers can learn tools, panels, approvals, deliverables and scheduling from the [five teaching examples](../../examples/fde/README.md). The three scripts below demonstrate platform mechanisms.
 
 See business agents as plugins, upgrades that preserve work, and an agent that builds a reusable capability. Each script runs a real daemon and workers against synthetic data in a fresh temporary `AGH_HOME`. No model account or browser is required.
 
@@ -40,7 +42,7 @@ After building the local CLI and provisioning Playwright Chromium, run the heavy
 pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
 ```
 
-It enumerates all example Bundle declarations with `launch`, installs/trusts/enables through the Web UI, checks the model/permissions/package sources/draft review, confirms without sending, then explicitly submits each sample prompt. The default uses the offline Demo model. It checks durable tool results, completion and report cards, and answers synthetic business questions and tool approvals through their normal controls.
+It enumerates all example Bundle declarations with `launch`, deliberately installs/trusts/enables teaching packages through plugin source review in the Web UI, checks the model/permissions/package sources/draft review, confirms without sending, then explicitly submits each sample prompt. The default uses the offline Demo model. It checks durable tool results, completion and report cards, and answers synthetic business questions and tool approvals through their normal controls.
 
 Real inference requires explicit `AGH_REAL_AGENT_SWEEP=1` plus `AGH_DEMO_API_KEY` supplied through secure shell secret handling. It saves a DeepSeek account (`deepseek-flash`) through the public configuration API. Real homes are retained under `~/agh-real-eval/sweep-*`; ports are allocated on loopback. Each agent has a six-minute run cap; the sweep cancels/stops when AGH-recorded cost exceeds $5. `AGH_AGENT_FILTER` optionally selects comma-separated agent reference substrings for a focused rerun. Use `AGH_WEB_TEST_OUTPUT` to retain reports separately for each run. The JSON evidence and screenshots are test artifacts, not source files; protect them like other runtime evidence. A scripted pass does not establish real-model answer quality.
 

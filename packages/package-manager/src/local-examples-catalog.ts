@@ -25,20 +25,6 @@ const FAMILIES = [
   { family: 'dsh-model-picker-b', releases: ['v1', 'v2'], includeBroken: true },
   { family: 'dsh-tool-view', releases: ['v1', 'v2'], includeBroken: true },
 ] as const
-const FDE_EXAMPLES = [
-  'code-review',
-  'compliance-audit',
-  'contract-review',
-  'crm-assistant',
-  'data-report',
-  'device-inspection',
-  'finance-reconcile',
-  'knowledge-qa',
-  'meeting-actions',
-  'ops-runbook',
-  'recruiting-screen',
-  'support-triage',
-] as const
 const FLAT_PLUGIN_EXAMPLES = ['hot-tool-plugin', 'hook-context-note', 'hook-runner-takeover'] as const
 
 export type LocalExamplesCatalog = Readonly<{
@@ -154,9 +140,9 @@ export async function createLocalExamplesCatalog(
           descriptor(workspace, `examples/packages/${family.family}/${release}`, signal),
         ),
       ),
-      ...FDE_EXAMPLES.filter((name) => existsSync(join(workspace, 'examples', 'fde', name))).map((name) =>
-        descriptor(workspace, `examples/fde/${name}`, signal),
-      ),
+      ...BUNDLED_EXAMPLES.filter((example) => ['fde', 'showcase'].includes(example.family))
+        .filter((example) => existsSync(join(workspace, 'examples', example.family, example.name)))
+        .map((example) => descriptor(workspace, `examples/${example.family}/${example.name}`, signal)),
       ...FLAT_PLUGIN_EXAMPLES.map((name) => descriptor(workspace, `examples/packages/${name}`, signal)),
       ...(options.includeTestOnlyBroken
         ? FAMILIES.filter((family) => family.includeBroken).map(({ family }) =>

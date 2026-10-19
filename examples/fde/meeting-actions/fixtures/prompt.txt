@@ -1,1 +1,0 @@
-Extract the meeting summary, decisions and actions, export markdown, and ask before sending to the fixture team.

@@ -51,7 +51,7 @@ function fixture(parentVersion = '1.0.0') {
     version: '1.0.0',
     integrity: 'hash-1',
     sourceId: 'official-examples',
-    source: { type: 'file', ref: 'file:./bundled-examples/fde/code-review' },
+    source: { type: 'file', ref: 'file:./bundled-examples/fde/knowledge-qa' },
     compatibility: 'supported',
     license: 'Apache-2.0',
     contributions: [],

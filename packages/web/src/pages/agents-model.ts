@@ -4,7 +4,7 @@ import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
 } from '@agnes/protocol'
-import { type BusinessAgent, businessAgentView } from '@agnes/web-admin/agents'
+import { type BusinessAgent, businessAgentView, discoverableAgent } from '@agnes/web-admin/agents'
 
 export type AgentCard = Omit<BusinessAgent, 'entry' | 'ref'> & {
   ref: AgentRef
@@ -25,7 +25,7 @@ export function declaredAgentCards(
   const cards = new Map<AgentRef, AgentCard>()
   const installedIds = new Set(installed.map((entry) => entry.id))
   for (const entry of rows) {
-    if (installedIds.has(entry.id)) continue
+    if (installedIds.has(entry.id) || !discoverableAgent(entry)) continue
     for (const declaration of entry.agents ?? []) {
       const catalogAgent = businessAgentView({ ...entry, agents: [declaration] }, locale)
       cards.set(declaration.ref, {

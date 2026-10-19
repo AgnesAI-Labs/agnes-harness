@@ -1,4 +1,5 @@
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import { discoverableAgent, exampleDiscovery } from '@agnes/web-admin/agents'
 import { applicationAgents } from '@agnes/web-client'
 import { homeAdmin } from './admin-api.js'
 
@@ -26,7 +27,7 @@ export async function listBusinessAgents(
     rows.push(
       ...page.items
         .map((row) => ({ ...row, agents: applicationAgents(row.agents ?? []) }))
-        .filter(isBusinessAgent)
+        .filter((row) => isBusinessAgent(row) && discoverableAgent(row))
         .flatMap((entry) => (entry.agents ?? []).map((agent) => ({ ...entry, agents: [agent] }))),
     )
     cursor = page.nextCursor ?? undefined
@@ -39,7 +40,7 @@ export function featuredBusinessAgents(
   rows: readonly PackageCatalogDescriptor[],
   count = 3,
 ): PackageCatalogDescriptor[] {
-  return rows.slice(0, count)
+  return rows.filter((row) => exampleDiscovery(row).featured).slice(0, count)
 }
 
 export type BusinessAgentSuggestions = Readonly<{
@@ -66,7 +67,10 @@ export function createBusinessAgentSuggestions(read: () => Promise<PackageCatalo
     refresh(): Promise<void> {
       reading ??= read()
         .then((rows) => {
-          suggestions = { featured: featuredBusinessAgents(rows), total: rows.length }
+          suggestions = {
+            featured: featuredBusinessAgents(rows),
+            total: rows.filter((row) => exampleDiscovery(row).featured).length,
+          }
           for (const listener of listeners) listener()
         })
         // No admin access or no catalog: the composer keeps its static placeholder.

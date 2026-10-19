@@ -28,7 +28,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 <a id="选择你的起点"></a>
 
 
-[Three product demos](guide/demos.md)
+[Product demos](guide/demos.md)
 ## Choose your starting point
 
 | Role | Start here | Outcome |

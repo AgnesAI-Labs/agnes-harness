@@ -214,8 +214,11 @@ describe('local example catalog', () => {
     const result = await catalog.read({ offline: true })
 
     expect(result.sources).toEqual([{ sourceId: 'local-examples', status: 'cached' }])
-    expect(result.entries).toHaveLength(36)
-    expect(result.entries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
+    const teachingEntries = result.entries.filter(
+      (entry) => !entry.source.ref.startsWith('file:./examples/showcase/'),
+    )
+    expect(teachingEntries).toHaveLength(29)
+    expect(teachingEntries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
       '@agnes-examples/client-multi-panel@1.0.0',
       '@agnes-examples/client-multi-panel@2.0.0',
       '@agnes-examples/client-panel@1.0.0',
@@ -238,26 +241,19 @@ describe('local example catalog', () => {
       '@agnes-examples/skin-example@1.0.0',
       '@agnes-examples/skins-builtin@1.0.0',
       '@agnes-examples/skins-builtin@1.1.0',
-      '@agnes-fde/code-review@1.1.0',
-      '@agnes-fde/compliance-audit@1.1.0',
-      '@agnes-fde/contract-review@1.1.0',
-      '@agnes-fde/crm-assistant@1.1.0',
       '@agnes-fde/data-report@1.1.0',
-      '@agnes-fde/device-inspection@1.1.0',
       '@agnes-fde/finance-reconcile@1.1.0',
       '@agnes-fde/knowledge-qa@1.1.0',
-      '@agnes-fde/meeting-actions@1.1.0',
       '@agnes-fde/ops-runbook@1.1.0',
-      '@agnes-fde/recruiting-screen@1.1.0',
       '@agnes-fde/support-triage@1.1.0',
       'acme/dashboard@1.0.0',
       'acme/dashboard@2.0.0',
     ])
     const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
-    expect(fde).toHaveLength(12)
+    expect(fde).toHaveLength(5)
     expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
     // The gallery finds business agents by category and offers each one's own prompt in both languages.
-    expect(result.entries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
+    expect(teachingEntries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
     for (const entry of fde) {
       const prompt = entry.metadata?.samplePrompt
       expect(prompt?.en).toBeTruthy()
@@ -279,7 +275,7 @@ describe('local example catalog', () => {
           expect(client.slotCatalogVersion).toBe('dsh-client-slots/v1')
       }
     }
-    expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
+    expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(5)
     // Their policy lives in plugin code, which a listing never runs: the summary says so instead of
     // repeating the package's own description, and reports the declared absence of network use.
     for (const entry of fde) {

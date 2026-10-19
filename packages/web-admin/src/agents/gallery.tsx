@@ -27,6 +27,7 @@ import {
   businessAgentView,
   readBusinessAgents,
 } from './catalog.js'
+import { discoverableAgent } from './discovery.js'
 import { agentPageId, type StartedSession, useBusinessAgentStart } from './start-dialog.js'
 
 type Loaded = {
@@ -114,8 +115,11 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
       .catch(() => {})
   }, [loaded, key])
   const agents = useMemo(
-    () => (loaded?.rows ?? []).map((row) => businessAgentView(row, locale)),
-    [loaded?.rows, locale],
+    () =>
+      (loaded?.rows ?? [])
+        .filter((row) => discoverableAgent(row, loaded?.installed))
+        .map((row) => businessAgentView(row, locale)),
+    [loaded?.rows, loaded?.installed, locale],
   )
   const context = loaded?.context
   const denied = !context

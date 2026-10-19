@@ -23,6 +23,8 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 [五步工具教程](extend/quickstart.zh-CN.md) · [四步 Loop 教程](extend/first-loop.zh-CN.md) · [Acme 参考应用](../examples/acme/README.zh-CN.md)
 
+[产品演示](guide/demos.zh-CN.md)
+
 ## 选择你的起点
 
 | 角色 | 从这里开始 | 目标 |

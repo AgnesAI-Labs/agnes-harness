@@ -264,6 +264,13 @@ it('reacts to the effective application for catalog and installed agents, includ
             id: 'acme/catalog',
             version: '1.0.0',
             agents: [declaration('catalog', 'acme/catalog')],
+            source: { type: 'file', ref: 'file:./bundled-examples/showcase/arbitrary-industry' },
+          },
+          {
+            id: 'teaching/tools',
+            version: '1.0.0',
+            agents: [declaration('lookup', 'teaching/tools')],
+            source: { type: 'file', ref: 'file:./bundled-examples/fde/knowledge-qa' },
           },
         ],
       }),
@@ -327,6 +334,7 @@ it('reacts to the effective application for catalog and installed agents, includ
     })
     expect(refs()).toEqual(['acme/kit#reply', 'acme/catalog#catalog'])
     await act(async () => applicationIdentity.set({ ...state, effective: { id: 'acme' } }))
+    expect(refs()).not.toContain('teaching/tools#lookup')
     expect(refs()).toHaveLength(3)
     await act(async () => applicationIdentity.set({ ...state, effective: { id: 'acme', agents: [] } }))
     expect(refs()).toEqual([])
@@ -334,8 +342,10 @@ it('reacts to the effective application for catalog and installed agents, includ
     await act(async () =>
       applicationIdentity.set({ ...state, status: 'unresolved', effective: { id: 'acme', agents: [] } }),
     )
+    expect(refs()).not.toContain('teaching/tools#lookup')
     expect(refs()).toHaveLength(3)
     await act(async () => applicationIdentity.set(undefined))
+    expect(refs()).not.toContain('teaching/tools#lookup')
     expect(refs()).toHaveLength(3)
     expect(prepareAgent).not.toHaveBeenCalled()
   } finally {

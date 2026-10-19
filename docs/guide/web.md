@@ -25,6 +25,8 @@ registered folder. The project menu can also show the folder in the native file 
 and leaves all files on disk. Stop running sessions first. Adding the same folder again restores
 the project listing; its sessions remain archived until restored individually.
 
+The gallery promotes showcase applications. Missing flagship packages produce no placeholders or teaching-example fallback; new-session prompts use the same featured source. The [five developer teaching examples](../../examples/fde/README.md) remain in the plugin catalog and become accessible from Agents after deliberate installation.
+
 ## Start and connect
 
 ```sh

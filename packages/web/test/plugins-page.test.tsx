@@ -93,7 +93,7 @@ describe('plugins page pushed pages', () => {
     { kind: 'skill', id: 'skill:workspace:review' },
     { kind: 'mcp', id: 'github' },
     { kind: 'review', id: 'cand-1' },
-    { kind: 'run', id: 'code-review' },
+    { kind: 'run', id: 'knowledge-qa' },
     { kind: 'add-plugin' },
     { kind: 'install', id: '@agnes-examples/dag-loop' },
     { kind: 'add-mcp' },
@@ -183,7 +183,7 @@ describe('plugin grouping', () => {
         ],
       }),
     ).toBe(true)
-    expect(isBusinessAgent(item('@agnes-fde/code-review'))).toBe(false)
+    expect(isBusinessAgent(item('@agnes-fde/knowledge-qa'))).toBe(false)
     expect(isBusinessAgent(item('@agnes/attachments', { category: 'tools' }))).toBe(false)
   })
 
@@ -215,7 +215,7 @@ it('groups marketplace releases and opens or installs the selected release', asy
   const item: PackageCatalogDescriptor = {
     id: '@example/panel',
     version: '1.0.0',
-    source: { type: 'file', ref: 'file:./panel' },
+    source: { type: 'file', ref: 'file:./bundled-examples/showcase/arbitrary-industry' },
     integrity: 'sha256-' + 'a'.repeat(64),
     license: 'MIT',
     contributions: [],
@@ -227,6 +227,11 @@ it('groups marketplace releases and opens or installs the selected release', asy
   const view = {
     state: {
       catalog: [
+        {
+          ...item,
+          id: 'developer/teaching',
+          source: { type: 'file', ref: 'file:./bundled-examples/fde/knowledge-qa' },
+        },
         item,
         { ...item, version: '2.0.0' },
         { ...item, version: '2.0.0' },

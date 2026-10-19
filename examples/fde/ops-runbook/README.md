@@ -74,3 +74,13 @@ npm test
 Tests drive public loop/tool contracts with fixed model replies and check results and refusal boundaries. The runbook test supplies a fake exec port; it does not verify OS sandbox confinement. See [external verification](../README.md#verification) for the repository harness command.
 
 Author tests use the single `@agnes/host/author-testkit` entry with explicit offline service/tool fixtures. After installing preview dependencies, run `agh plugin test .`. See [Test your plugin](../../../docs/extend/testing.md) for durable Host approvals, generation pins, recorded model replay and HTTP/SSE fault scripts.
+
+## Scheduled inspection
+
+Install this teaching package deliberately, then start and review its agent. In **Automation**, choose this agent (or its existing session), create a daily 09:00 task, and use `[scheduled-inspection] Daily synthetic service inspection` as its prompt. From the agent session, the equivalent is:
+
+```text
+call schedule_create {"title":"Daily inspection","prompt":"[scheduled-inspection] Daily synthetic service inspection","target":"current_session","selector":{"daily":{"time":"09:00","timeZone":"UTC"}}}
+```
+
+The scheduler freezes the selected target; each run still admits current trusted definitions and tool policy. Inspection runs a background diagnostic, reads its result and publishes a report through `present`, without requesting or executing a restart. Background commands still require deployment authorization; unavailable permission refuses or waits for approval normally. Without the prefix, the original interactive remediation requires a business confirmation and tool authorization before restart.

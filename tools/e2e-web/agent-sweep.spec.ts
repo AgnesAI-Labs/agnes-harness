@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { Page } from '@playwright/test'
+import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
 import { chooseWorkspace, expand, expandActivityGroups, homePage, preferences, send } from './ui.js'
@@ -149,6 +150,7 @@ test.describe('shipped agent acceptance', () => {
             )
             .toBe('running')
         }
+        if (agent.directory.startsWith('examples/fde/')) await installDeveloperExample(page, agent.directory)
         await homePage(page, 'agents')
         const general = agent.ref === 'builtin:general'
         const draft = agent.launch.prompt?.text.en
@@ -228,15 +230,16 @@ test.describe('shipped agent acceptance', () => {
           await expect(
             page.getByTestId('conversation-turn').getByText('report.md', { exact: true }).first(),
           ).toBeVisible()
-        } else if (!general)
+        } else if (agent.ref.startsWith('@acme/'))
           expect(tools.some((node) => node.kind === 'tool' && node.name === 'acme_status')).toBe(true)
+        else if (!general) expect(tools.length).toBeGreaterThan(0)
         else expect(tools.some((node) => node.kind === 'tool' && node.name === 'read')).toBe(true)
-        if (agent.ref.includes('meeting-actions') || agent.ref.includes('support-triage')) {
+        if (agent.ref.includes('support-triage')) {
           for (const process of await page.getByTestId('turn-process-toggle').all())
             if (await process.isVisible()) await expand(process.locator('..'))
           for (const turn of await page.getByTestId('conversation-turn').all())
             if (await turn.getByTestId('turn-process-toggle').isVisible()) await expandActivityGroups(turn)
-          const label = agent.ref.includes('meeting-actions') ? 'Meeting actions' : 'Support triage'
+          const label = 'Support triage'
           await expect(page.getByRole('region', { name: label, exact: true }).first()).toBeVisible()
           row.panel = label
         }

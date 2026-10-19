@@ -1,60 +1,39 @@
-# Business agents: building enterprise applications with AGH
+# Developer teaching examples
 
-English | [简体中文](README.zh-CN.md) · [Why AGH](../../docs/guide/why-agh.md)
+English | [简体中文](README.zh-CN.md)
 
-A forward-deployed engineer ships a workflow, connectors, a reviewed policy and a playbook together. Each directory below is an independent installable **plugin** with a launchable agent, using only public contracts and the author kit. The examples use synthetic data and local simulators, so a team can explore the delivery workflow without credentials.
+Five independently installable teaching plugins cover one mechanism each, using synthetic data. Product demos are the showcase applications: [Pharma GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.md) and [Aerospace quality](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.md), coming in the same release. Until their packages arrive, the gallery shows no placeholder cards.
 
-Each `modelText` request is a tools-free prose stage with its own narrow instruction. The workflow playbook remains a registered Skill for the surrounding Loop; it is not injected into draft or commentary requests. Keep customer drafts focused on the supplied facts and customer-facing reply.
-
-| Agent / 智能体 | Business result | Control point |
+| Example | Mechanism | Why retained |
 | --- | --- | --- |
-| [Support triage](support-triage/README.md) | Ticket lookup → classification → draft → human approval → simulated send receipt. | Human approval before action |
-| [Contract review](contract-review/README.md) | Split clauses → parallel review nodes → aggregate markdown report → model commentary. | Read-only policy |
-| [Data report](data-report/README.md) | Read CSV → compute totals and margin → markdown/HTML with SVG charts → model commentary. | Read-only policy |
-| [Operations runbook](ops-runbook/README.md) | Read runbook → official background diagnostic job → question → authorized synthetic restart → verify receipt. | Business choice and tool permission |
-| [CRM assistant](crm-assistant/README.md) | Local MCP lookup → Skills renewal playbook → note draft → approval → idempotent simulated note. | Human approval before action |
-| [Device inspection](device-inspection/README.md) | Read status → detect anomaly → human confirmation → constrained action → receipt and state verification. | Human approval before action |
-| [Knowledge QA](knowledge-qa/README.md) | Local documents → retrieved quotes → cited answer or refusal → model commentary. | No source means refusal; read-only retrieval |
-| [Meeting actions](meeting-actions/README.md) | Transcript → summary, decisions, owners/dates → markdown and panel → simulated send. | Human approval before sending |
-| [Code review](code-review/README.md) | Git diff fixture → parallel lint-ish/risk checks → joined review report. | Read-only DAG |
-| [Finance reconciliation](finance-reconcile/README.md) | Bank/book CSV → exact-cent mismatches → adjusting-entry drafts. | Human approval; unresolved evidence stays open |
-| [Recruiting screen](recruiting-screen/README.md) | Minimized resumes → rubric evidence and unknowns → human follow-up. | Human decision; job-skill evidence only |
-| [Compliance audit](compliance-audit/README.md) | Checklist → evidence checks → findings with severity and source links. | Read-only; missing evidence stays a gap |
+| [Knowledge QA](knowledge-qa/README.md) | Tools, citations and refusal without evidence | Small read-only retrieval contract with refusal tests |
+| [Finance reconciliation](finance-reconcile/README.md) | Tools and interactive panel | Exact cents, real Host policy, denied data sources and structured action receipts |
+| [Support triage](support-triage/README.md) | Approval-gated action | Draft, durable question and simulated send; reused by mechanism demos |
+| [Data report](data-report/README.md) | Deliverable/report | Calculated totals, Markdown/HTML charts and official Open/Download cards |
+| [Operations inspection](ops-runbook/README.md) | Scheduled automation | Background diagnostic and inspection report; interactive remediation requests separate approval |
 
-## Start a delivery
+## Install and run
 
-Build `agh` from the [installation guide](../../docs/guide/install.md). From an example directory, run `agh plugins add .`, review its permissions, then select its agent on Web’s **Agents** page or run `agh --new --agent PACKAGE#NAME -p "task"`. Every example's `agnes.bundles.<id>.launch` selects an explicit preset; no package-name inference is used. Installation alone does not start an agent. The advanced [composition guide](../../docs/extend/bundles-and-profiles.md) covers per-session and admin-wide configuration. FDE means the work of building an application for an enterprise; see [Acme](../acme/README.md) for an explicitly adopted application.
+Build the CLI using the [installation guide](../../docs/guide/install.md). Run `agh plugins add .` from an example directory, review permissions and enable it. Choose its installed agent on **Agents**, or run `agh --new --agent PACKAGE#NAME -p "task"`. Teaching packages are not promoted in the gallery, empty-session suggestions or onboarding. Developers install these packages by source path; the backend catalog remains complete for inspection. Installation never starts a session.
 
-Agent presets inherit the deployment’s selected model. The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment uses its configured model; model requests may incur charges. Starting an agent reviews the effective model, permissions, sources and editable prompt. Confirming creates an empty session and fills the composer; only Send submits the prompt. Every example uses Core-prepared requests and the session primary model; `real-model.bundle.json` configures the preset primary route.
+Every Bundle declares its own `launch` and preset and inherits the deployment's primary model. Launch review shows model, permissions, sources and an editable draft. Confirmation creates an empty session and fills the composer; Send executes it. Keyless Demo is deterministic teaching; each package's `real-model.bundle.json` selects a real model without storing credentials.
 
-Sending, CRM notes, runbook restarts, device actions, recruiting follow-up present a draft and call official `ask_user_question`. A persisted Proceed/Cancel question parks the workflow; a validated user answer resumes it. Tool authorization remains separate, and unavailable permissions still refuse actions. Finance keeps its existing review surface and consumes the structured action receipt through an input stage. Use Web/TUI for the business choice. Evidence-only bundles complete headlessly, allowing generated output writes while denying source mutation. Demo outputs remain deterministic; real-model commentary is a review draft.
+## Trust and verification
 
-All twelve bundles use official `write` and `present` for bounded report files and standard artifact Open/Download cards. The meeting panel renders action evidence without a custom download path. Knowledge QA optionally uses `web_search` for an explicitly configured public query; private questions/documents remain local. Operations use official `shell` background jobs and `job_output`; operators can inspect/stop owned jobs with `job_list`/`job_kill`. See [official default tools](../../docs/reference/default-tools.md) for deployment capabilities and limits. Existing profiles must admit the question/deliverable projection capability.
+All five examples use public `defineWorkflowLoop` from `@agnes/plugin-runtime`, without sibling imports. Support sends and interactive restarts use `ask_user_question`; tool authorization remains separate. Finance consumes structured review receipts; unknown effects are never automatically replayed. Official `write` / `present` publish bounded reports. Operations uses `shell` / `job_output`; its README covers inspection mode and scheduling. Knowledge QA keeps refusal without evidence and optional public research; private documents never become public search queries.
 
-Loop version 5.0.0/official workflow checkpoint codec 1 stores pending questions and native single-call approval continuations; use a new session after upgrading. Old checkpoints fail closed.
+Backend plugins are trusted in-process code. Capability declarations support review and policy, not arbitrary-code isolation. Loop 5.0.0 uses official checkpoint codec 1; old checkpoints fail closed, so create new sessions after upgrading. Official `/plan on` approval precedes business execution and does not replace business questions or tool permissions.
 
-Enable official Plan mode with `/plan on` in Web/TUI **before submitting a fresh task**. The loop detects the public plan-mode prompt section and submits its fixed business steps with `exit_plan_mode`. The official approval card must be approved before connectors, reports or commands run. A denied plan stops the workflow; an inactive plan mode skips this gate. The example policy preserves the shipped default policy's plan-mode denials. Plan approval does not replace a later business question or tool permission. Native single-call tickets resume through public continuation ports and the original invocation receipt; an unknown receipt blocks replay.
-
-## From example to customer
-
-Keep the reusable loop and replace the fixture connectors, business rubric and `SKILL.md`. Decide which data the customer can expose, which actions need a person and which receipts establish success. For operations, select a registered sandbox provider before startup. For devices, keep units, action bounds and physical safety in the validated controller/adapter. This example changes only local simulated state.
-
-All twelve bundles use the official `defineWorkflowLoop` from `@agnes/plugin-runtime`; their tarballs contain business stages and connectors with no copied scheduler or sibling imports. See the [worked workflow example](../../docs/extend/workflow-loops.md). Ordinary backend plugins are trusted in-process code. Capability declarations support installation review and policy, not arbitrary-code isolation. Checkpoints refuse automatic replay of pending effects; simulation receipts are not a durable production device/CRM ledger.
-
-## Verification
-
-Use the pinned Node/pnpm versions in the repository. The external harness builds author tarballs once, copies selected examples outside the repository, installs real dependencies, checks declared imports, builds and runs each example’s own quick tests:
+From the repository root:
 
 ```sh
+pnpm exec vitest run --config examples/fde/vitest.config.mjs --maxWorkers=1
 pnpm release:external-examples --author-only \
   --example examples/fde/knowledge-qa \
-  --example examples/fde/meeting-actions \
-  --example examples/fde/code-review \
   --example examples/fde/finance-reconcile \
-  --example examples/fde/recruiting-screen \
-  --example examples/fde/compliance-audit
+  --example examples/fde/support-triage \
+  --example examples/fde/data-report \
+  --example examples/fde/ops-runbook
 ```
 
-Repeat `--example` to include any of the twelve bundles. `--author-only` skips packaging the full CLI; it verifies author contracts and example workflows, not a browser or complete distribution. Quick tests use scripted official tool ports, model replies and artifact receipts; they cover pending/invalid/cancelled answers and retained tool-permission denial. The CRM/device tests include short actual stdio MCP processes and use `.e2e.test.mjs`. Runbook job ports and its restart executor are fixtures, so they do not prove OS confinement or real background cleanup. Each directory’s `npm run build` and `npm test` work independently with matching author tarballs. Vitest is a test-only dependency required by the public conformance testkit.
-
-No real-model quality, customer API, physical device or cross-platform acceptance is implied by these fixtures.
+Use the pinned repository toolchain entry for development checks. External author tests verify installed dependencies, public imports and each example's own tests. They do not establish real-model quality, production connectors or cross-platform acceptance. Background job tests use fixtures; browser sweep coverage is described in the [demo guide](../../docs/guide/demos.md).
