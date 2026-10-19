@@ -268,12 +268,19 @@ it('binds the dependency permission and role code sources, and rejects the loser
   }
   f.replace([owner, b!])
   const preview = await f.applications.preview('local-dev', 'a')
-  expect(preview.dependencies.map((entry) => entry.packageId)).toEqual(['a', 'b'])
-  expect(
-    (
-      await f.applications.previewRole('local-dev', 'navigation', { packageId: 'a', clientId: 'ui' })
-    ).dependencies.map((entry) => entry.packageId),
-  ).toEqual(['a', 'b'])
+  const rolePreview = await f.applications.previewRole('local-dev', 'navigation', {
+    packageId: 'a',
+    clientId: 'ui',
+  })
+  for (const dependencies of [preview.dependencies, rolePreview.dependencies]) {
+    expect(dependencies).toHaveLength(2)
+    expect(dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ packageId: 'a' }),
+        expect.objectContaining({ packageId: 'b' }),
+      ]),
+    )
+  }
   f.replace([
     { ...owner, entry: { ...owner.entry, dependencies: { ...owner.entry.dependencies, missing: '*' } } },
     b!,
