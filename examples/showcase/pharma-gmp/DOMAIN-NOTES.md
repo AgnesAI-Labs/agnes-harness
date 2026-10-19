@@ -2,9 +2,9 @@
 
 ## 范围 / Scope
 
-虚构沙叶非无菌口服固体制剂厂，片剂 250 mg、胶囊 100 mg。固定数据时点 2024-10-20（标识 B-2410），2024 年 APQR 仅展示 10 月 1–20 日节选，不把 20 天外推全年。UI 时间为 ISO UTC；场景账龄使用固定日期，写入与人工签署使用实际 UTC 时间。
+虚构沙叶非无菌口服固体制剂厂，片剂 250 mg、胶囊 100 mg。固定数据时点 2024-10-20（标识 B-2410），2024 年 APQR 仅展示 10 月 1–20 日节选，不把 20 天外推全年。UI 时间为 ISO UTC；场景账龄和测量发生时间使用固定场景时钟（合成复验为 2024-10-20T12:00:00Z）；录入审计与人工签署使用实际 UTC 时间，区分模拟事件发生与本次演示录入。
 
-Fictional Sableleaf nonsterile oral solid doses: 250 mg tablets and 100 mg capsules. B-2410 means October 2024. APQR is an October 1–20 section, not a full-year conclusion. Seed records use UTC; aging uses the fixed scenario date; mutations/signatures record actual UTC time.
+Fictional Sableleaf nonsterile oral solid doses: 250 mg tablets and 100 mg capsules. B-2410 means October 2024. APQR is an October 1–20 section, not a full-year conclusion. Seed records use UTC; aging and measurement occurrence use the fixed scenario clock (synthetic retest: 2024-10-20T12:00:00Z); audit entries and signatures record actual UTC time, distinguishing simulated occurrence from this replay's recording time.
 
 ## 批记录与规格 / Batch records and specifications
 

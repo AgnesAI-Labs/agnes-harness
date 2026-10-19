@@ -207,7 +207,9 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
         findings: expect.arrayContaining([expect.objectContaining({ code: 'CPP' })]),
         evidence: {
           deviations: expect.arrayContaining([expect.objectContaining({ stage: 'closed' })]),
-          retests: expect.arrayContaining([expect.objectContaining({ value: 1.9 })]),
+          retests: expect.arrayContaining([
+            expect.objectContaining({ value: 1.9, at: '2024-10-20T12:00:00Z' }),
+          ]),
           equipment: expect.arrayContaining([
             expect.objectContaining({ id: 'DR-02', qualification: 'qualified' }),
           ]),

@@ -1,5 +1,5 @@
 import type { OwnedStore, ToolContext } from '@agnes/extension-api'
-import { label, type Plant, SIGNATURE_MEANING } from './model.js'
+import { DEMO_DATE, label, type Plant, SIGNATURE_MEANING } from './model.js'
 import { batchOf, dossier, investigation } from './quality.js'
 import { seed } from './seed.js'
 
@@ -164,7 +164,7 @@ export function change(store: OwnedStore | undefined, input: Change, who: Identi
             ...original,
             id: `RETEST-${original.id}`,
             value: 1.9,
-            at: new Date().toISOString(),
+            at: `${DEMO_DATE}T12:00:00Z`,
             source: `REPROCESS-PROTOCOL-017:${input.evidence}`,
           })
           p.samples
