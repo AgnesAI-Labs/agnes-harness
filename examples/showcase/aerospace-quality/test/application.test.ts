@@ -9,7 +9,7 @@ import { assertPublishableRows } from '@agnes/plugin-runtime/host'
 import { DSH_SLOT_CATALOG_VERSION } from '@agnes/web-client'
 import { expect, it } from 'vitest'
 import { tools } from '../src/index.js'
-import { decisionRevision, humanReviewPolicy } from '../src/policy.js'
+import { humanReviewPolicy } from '../src/policy.js'
 
 const directory = fileURLToPath(new URL('../', import.meta.url))
 it('public package inspection resolves the third-party application, six profile pages, five agents and bounded raster identity', async () => {
@@ -38,7 +38,7 @@ it('public package inspection resolves the third-party application, six profile 
     expect(bytes.subarray(1, 4).toString()).toBe('PNG')
   }
 })
-it('real Core approval refusal stops the consequential decision before execution and pins the installed generation', async () => {
+it('ordinary Core tool permission refuses before execution and preserves the installed generation pin', async () => {
   const decision = tools.find((t) => t.name === 'aero_decide')!
   const plugin = defineAgnesPlugin({
     inject: ['tools', 'providers'],
@@ -80,10 +80,9 @@ it('real Core approval refusal stops the consequential decision before execution
     const input = { kind: 'mrb' as const, id: 'NCR-018', expectedRevision: 1 }
     const result = await session.invoke('aero_decide', input)
     expect(result.isError).not.toBe(true)
-    expect((result.structured as { data: unknown }).data).toMatchObject({
-      subjectRevision: decisionRevision(input),
-      answeredBy: { id: 'synthetic-mrb-reviewer' },
-    })
+    await session.assertApproval('allowed-once')
+    // Ordinary permission admits invocation; it is deliberately not a business signature proof.
+    expect((result.structured as { data: unknown }).data).toBeNull()
     const next = await kit.reload({ plugin, version: '1.0.1' })
     session.assertPinned(generation!)
     expect(next).not.toBe(generation)

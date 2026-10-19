@@ -70,8 +70,12 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
       }
       await host.render('aero-requirements')
       await host.act(async () => {})
-      const gaps = host.container.querySelector('input[type=radio][value=gaps]') as HTMLInputElement
-      await host.act(async () => gaps.click())
+      const gaps = host.container.querySelector('input[type=radio][value=gaps]')
+      await host.act(async () => {
+        if (!gaps || !('click' in gaps) || typeof gaps.click !== 'function')
+          throw new Error('Gap filter missing')
+        gaps.click()
+      })
       expect(host.container.textContent).toMatch(/CMP-030/)
       expect(host.container.textContent).not.toMatch(/CMP-002/)
       await host.render('aero-zeroing')

@@ -32,8 +32,16 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 
 完整演示和浏览器证据脚本位于 `scripts/`；使用独立 home、独立端口和显式费用上限。包不内置账号或密钥。使用 EU GMP Annex 1、Annex 11、21 CFR Part 11、ICH Q9/Q10 与 ALCOA+ 的术语参考，不代表合规认证。
 
-角色 preset 通过公开 tool-policy SPI 选择包内策略：保留默认策略的拒绝结果，对质量写入与放行显式要求“人工、单次、绑定精确参数及版本”，包括 full-access 会话；缺少该凭证的直接调用仍拒绝。
+角色 preset 通过公开 tool-policy SPI 选择包内策略，保留默认工具权限行为。质量写入与放行另行请求“人工、单次、绑定精确参数及版本”的业务签名，包括 full-access 会话；缺少人工凭证的领域写入仍拒绝。
 
 仅精确的夜间 EM 导出（kind=em 加支持的语言）允许无人值守：只读取质量状态，并在 pharma-output/ 内创建新的报告文件。其他报告形状保留默认决策；质量记录与放行始终需要人工批准。
 
 放行档案工具同时返回原始历史发现、当前阻断和偏差结案、复验、EM、设备追溯证据。证书绑定签署前被审阅的档案版本；签署使状态版本加一。
+
+## 业务签名
+
+质量记录与批次放行属于业务签署。工具通过公开决策端口以 `business.confirm` 请求签名，绑定精确对象、版本、证据和签名含义，验证宿主记录的真人回答；系统或模型回答、拒绝、取消、失效均不改变业务状态。即使在 full-access 下也需人工签名。普通工具权限仍由预设控制：非 full-access 按策略询问，full-access 的权限自动批准不代表业务签署。页面 effect 继续使用宿主人工确认与修订校验。
+
+真实模型投资者演示：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs pharma-gmp --real`，外层使用 heavy-lock 和 web-gate-lock，按任务要求从 keychain 命令级注入密钥。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
+
+设置 `AGH_SHOWCASE_REQUIRE_REVIEW=1` 可显式审查测试候选：脚本在隔离运行目录写入 `candidate-review.json`，等待操作者核对源码与测试后写入包含相同 `candidateHash`、`reviewHash` 的 `review-approved.json`。该测试夹具不提供生产自动批准能力。

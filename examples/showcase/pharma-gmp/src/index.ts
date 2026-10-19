@@ -20,6 +20,7 @@ import {
   releaseInput,
   snapshotSchema,
 } from './schemas.js'
+import { sign } from './signature.js'
 
 const who = (ctx: ToolContext) => ({
   actor: ctx.actor.id,
@@ -39,6 +40,13 @@ const meta = (write = false, approve = false) => ({
   replay: write ? ('never' as const) : ('safe' as const),
   requiresApproval: approve ? ('always' as const) : ('never' as const),
   deferLoading: false as const,
+})
+const signatureReceipt = (approval: Awaited<ReturnType<typeof sign>>, reviewedRevision: number) => ({
+  decisionId: approval.requestId,
+  signer: approval.answeredBy.id,
+  signedAt: approval.signedAt,
+  reviewedRevision,
+  purpose: 'business.confirm' as const,
 })
 const result = <T>(output: T) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(output) }],
@@ -83,15 +91,26 @@ export const checklist = defineTool({
 export const record = defineTool({
   name: 'pharma_record',
   description:
-    'Human-reviewed quality record: review BPR, investigate deviation, or advance the explicitly synthetic evidence scenario (investigation → CAPA → effectiveness → closed). Read latest revision first. Never invent real evidence. / 人工审核后复核批记录、调查偏差或录入明确的合成场景证据。',
+    'On an explicit user request, invoke this tool directly: it requests a native human business signature before writing; do not substitute ask_user_question or ui_render. action=review records the independent BPR review (resolving the bpr checklist item); it is not final release and does not require bpr to pass beforehand. Investigate deviation, or advance the explicitly synthetic evidence scenario (investigation → CAPA → effectiveness → closed). Read latest revision first. Never invent real evidence. / 人工审核后复核批记录、调查偏差或录入明确的合成场景证据。',
   parameters: changeInput,
   result: receiptSchema,
   meta: { ...meta(true, true), isDestructive: false },
   async execute(input, ctx) {
     ctx.signal.throwIfAborted()
     try {
-      const p = change(ctx.store, input, who(ctx))
-      return result({ revision: p.revision, batch: input.batch, dossier: dossier(p, input.batch) })
+      const approval = await sign(
+        ctx,
+        { ...input, currentDossier: dossier(read(ctx.store), input.batch) },
+        'I attest to this synthetic quality record. / 我确认本合成质量记录。',
+        `${input.batch} · ${input.action}`,
+      )
+      const p = change(ctx.store, input, { ...who(ctx), approval })
+      return result({
+        revision: p.revision,
+        batch: input.batch,
+        dossier: dossier(p, input.batch),
+        signature: signatureReceipt(approval, input.expectedRevision),
+      })
     } catch (e) {
       return failure(e, ctx)
     }
@@ -100,15 +119,24 @@ export const record = defineTool({
 export const releaseTool = defineTool({
   name: 'pharma_release',
   description:
-    'Consequential QA batch release. Requires exact dossier revision, signature meaning and Host-issued human approval; never self-authorize. / QA 批次放行：须精确版本、签名含义和宿主人工批准凭证。',
+    'Consequential QA batch release. Use dossier.signatureMeaning exactly. Requires exact dossier revision, signature meaning and an independent human business signature requested inside this tool; invoke directly on an explicit release request, never substitute a question or self-authorize. / QA 批次放行：须精确版本、签名含义和独立的人工业务签名。',
   parameters: releaseInput,
   result: receiptSchema,
   meta: meta(true, true),
   async execute(input, ctx) {
     ctx.signal.throwIfAborted()
     try {
-      const p = release(ctx.store, input, who(ctx))
-      return result({ revision: p.revision, batch: input.batch, dossier: dossier(p, input.batch) })
+      const check = dossier(read(ctx.store), input.batch)
+      if (!check.ready || check.revision !== input.expectedRevision || input.meaning !== SIGNATURE_MEANING)
+        throw new Error('Release prerequisites or signature meaning not satisfied / 放行条件或签名含义不满足')
+      const approval = await sign(ctx, { ...input, dossier: check }, input.meaning, input.batch)
+      const p = release(ctx.store, input, { ...who(ctx), approval })
+      return result({
+        revision: p.revision,
+        batch: input.batch,
+        dossier: dossier(p, input.batch),
+        signature: signatureReceipt(approval, input.expectedRevision),
+      })
     } catch (e) {
       return failure(e, ctx)
     }
@@ -117,7 +145,7 @@ export const releaseTool = defineTool({
 export const reports = defineTool({
   name: 'pharma_report',
   description:
-    'Generate Markdown + print HTML dossier, APQR section, deviation trend or nightly EM report, then present the files. / 生成 Markdown 与可打印 HTML 档案、APQR 节选、偏差或夜间 EM 趋势并展示。',
+    'Generate Markdown + print HTML dossier, APQR section, deviation trend or nightly EM report, and internally present the generated files. Do not guess file names or call present before this tool returns. / 生成 Markdown 与可打印 HTML 档案、APQR 节选、偏差或夜间 EM 趋势并展示。',
   parameters: Type.Object(
     {
       kind: Type.Union([

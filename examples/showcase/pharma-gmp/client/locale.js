@@ -65,7 +65,7 @@ export const words = {
     actions: 'CAPA 与有效性',
     map: '区域与分级',
     emNote:
-      'Annex 1 分级作为参考。A/B 未用于本非无菌产线；C/D 为场地风险自定监测计划。均为运行态，≥0.5 µm 粒子/m³、主动空气 CFU/m³。',
+      'Annex 1 分级作为参考。A/B 未用于本非无菌产线；C/D 为场地风险自定监测计划。均为运行态，≥0.5 µm 粒子/m³、主动空气 CFU/m³。10/17 为 72（警戒 50、行动 100）；10/19 为独立的 121 行动限事件，关联 B-2410-019。',
     trend: 'C-201 · 主动空气微生物（CFU/m³）',
     particleTrend: 'C-201 · ≥0.5 µm 粒子/m³',
     value: '实测',
@@ -183,7 +183,7 @@ export const words = {
     actions: 'CAPA and effectiveness',
     map: 'Rooms and grades',
     emNote:
-      'Annex 1 grades are references. A/B are unused by this nonsterile line; C/D follow site risk-based monitoring. In operation: ≥0.5 µm particles/m³ and active-air CFU/m³.',
+      'Annex 1 grades are references. A/B are unused by this nonsterile line; C/D follow site risk-based monitoring. In operation: ≥0.5 µm particles/m³ and active-air CFU/m³. Oct 17: 72 (alert 50, action 100). Oct 19: a separate 121 action excursion linked to B-2410-019.',
     trend: 'C-201 · Active-air viable count (CFU/m³)',
     particleTrend: 'C-201 · ≥0.5 µm particles/m³',
     value: 'Measured',

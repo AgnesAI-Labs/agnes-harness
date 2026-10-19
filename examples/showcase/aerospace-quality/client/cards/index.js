@@ -2,6 +2,54 @@ import { Tag } from '@agnes/web-ui'
 import React from 'react'
 
 const h = React.createElement
+
+/** Read the full durable result; the transcript preview is deliberately truncated. */
+function useOutput(ctx, block) {
+  const readiness = React.useSyncExternalStore(
+    ctx.session.readiness.subscribe,
+    ctx.session.readiness.getSnapshot,
+  )
+  const [value, setValue] = React.useState()
+  React.useEffect(() => {
+    let live = true
+    setValue(undefined)
+    if (!['ready', 'history-only'].includes(readiness.status) || block?.resultSeq === undefined) return
+    const session = ctx.agnes.sessions.get(readiness.sessionId)
+    void session.readToolDetail(block.seq, block.resultSeq).then(
+      (detail) => {
+        if (!live || ctx.session.readiness.getSnapshot() !== readiness) return
+        const output = detail.result?.structured
+        if (output) setValue(output)
+        else {
+          try {
+            setValue(
+              JSON.parse(
+                detail.result?.content
+                  ?.filter((item) => item.type === 'text')
+                  .map((item) => item.text)
+                  .join('') ?? '',
+              ),
+            )
+          } catch {
+            /* Retain the honest preview fallback. */
+          }
+        }
+      },
+      () => {
+        /* The Host tool record remains the recovery path. */
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [ctx, readiness, block?.seq, block?.resultSeq])
+  if (value) return value
+  try {
+    return JSON.parse(block?.resultPreview ?? '')
+  } catch {
+    return undefined
+  }
+}
 export function apply(ctx) {
   for (const name of [
     'aero_investigate',
@@ -30,6 +78,8 @@ export function apply(ctx) {
             cancelled: ['已取消', 'Cancelled'],
           }
           const state = labels[block?.status]
+          const output = useOutput(ctx, block)
+          const data = output?.data
           return h(
             'section',
             {
@@ -52,13 +102,50 @@ export function apply(ctx) {
                 state ? state[zh ? 0 : 1] : zh ? '待执行' : 'Pending',
               ),
             ),
-            h(
-              'pre',
-              null,
-              block?.resultPreview ??
-                block?.summary ??
-                (zh ? '等待宿主回执。' : 'Waiting for the Host receipt.'),
-            ),
+            data?.peakA !== undefined
+              ? h(
+                  React.Fragment,
+                  null,
+                  h('p', null, `${data.anomalyId} · ${data.campaign} · ${data.configuration} · ${data.lot}`),
+                  h(
+                    'p',
+                    null,
+                    h(Tag, { tone: 'bad' }, `${zh ? '峰值' : 'Peak'} ${data.peakA.toFixed(3)} A`),
+                    ` / ${zh ? '上限' : 'Upper limit'} ${data.limitA.toFixed(2)} A · ${data.windowMinutes.join('–')} min`,
+                  ),
+                  h('p', null, data.hypothesis?.[locale] ?? data.hypothesis?.en),
+                  h('p', null, `${zh ? '受控证据' : 'Controlled evidence'}: ${data.evidence.join(' · ')}`),
+                  h('p', null, data.assessmentScope),
+                )
+              : typeof data?.screeningRequired === 'boolean'
+                ? h(
+                    React.Fragment,
+                    null,
+                    h(
+                      'p',
+                      null,
+                      `${zh ? '受影响需求' : 'Affected requirements'}: ${data.requirements.join(' · ')}`,
+                    ),
+                    h('p', null, `${zh ? '复验' : 'Re-verification'}: ${data.tests.join(' · ')}`),
+                    h(
+                      'p',
+                      null,
+                      `${zh ? '规则版本' : 'Rule version'}: ${data.ruleVersion ?? '—'} · ${zh ? '追加筛选' : 'Additional screening'}: ${data.screeningRequired ? (zh ? '需要' : 'Required') : zh ? '未触发' : 'Not triggered'}`,
+                    ),
+                  )
+                : data?.revision
+                  ? h(
+                      'p',
+                      null,
+                      `${zh ? '已记录质量决策，项目修订' : 'Quality decision recorded; programme revision'} ${data.revision}`,
+                    )
+                  : h(
+                      'pre',
+                      null,
+                      block?.resultPreview ??
+                        block?.summary ??
+                        (zh ? '等待宿主回执。' : 'Waiting for the Host receipt.'),
+                    ),
             h(
               'small',
               null,

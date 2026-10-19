@@ -17,8 +17,12 @@ export async function until(read, accept, label, timeout = 60000) {
   }
   throw new Error(`Timed out: ${label}`)
 }
-export async function runtime(real) {
-  const root = join(homedir(), 'agh-real-eval', `${Date.now().toString(36)}-pharma-${real ? 'real' : 'demo'}`)
+export async function runtime(real, application = 'pharma-gmp') {
+  const root = join(
+    homedir(),
+    'agh-real-eval',
+    `${Date.now().toString(36)}-${application}-${real ? 'real' : 'demo'}`,
+  )
   const home = join(root, 'h'),
     workspace = join(root, 'w')
   await mkdir(workspace, { recursive: true, mode: 0o700 })
@@ -62,6 +66,7 @@ export async function runtime(real) {
     await writeFile(
       join(home, 'profiles/local-dev/profile.yaml'),
       JSON.stringify({ name: 'local-dev', limits: { 'cost.credits_per_usd': 1 } }),
+      { mode: 0o600 },
     )
   }
   await cli(['daemon', 'start'])

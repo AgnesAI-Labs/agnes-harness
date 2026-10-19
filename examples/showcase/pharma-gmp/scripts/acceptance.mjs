@@ -2,9 +2,16 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { testOperatorSignatures } from '../../scripts/signatures.mjs'
 import { captureBrowser, captureFeaturedGallery } from './browser.mjs'
 import { ruleFiles } from './rule-candidate.mjs'
 import { runtime, toolResult, until } from './runtime.mjs'
+
+if (process.argv.includes('--real')) {
+  process.argv.splice(2, 0, 'pharma-gmp')
+  await import('../../scripts/presentation.mjs')
+  process.exit(process.exitCode ?? 0)
+}
 
 const real = process.argv.includes('--real'),
   browser = process.argv.includes('--browser')
@@ -25,10 +32,13 @@ async function run(session, prompt, label, expectedTool) {
   // Keep at least $1.50 for the nightly job and background accounting; never spend the whole cap.
   const creditLimit = real ? Math.min(0.75, 1.5 - spentUsd()) : undefined
   if (real) assert.ok(creditLimit > 0, 'Application reasoning budget exhausted')
-  const result = await session.prompt(prompt, {
-    signal: AbortSignal.timeout(150000),
-    creditLimit,
-  })
+  const signing = testOperatorSignatures(rt.client, session)
+  const result = await session
+    .prompt(prompt, {
+      signal: AbortSignal.timeout(150000),
+      creditLimit,
+    })
+    .finally(() => signing.stop())
   const timeline = await session.projectUI(undefined, { surface: 'web' }),
     budget = await session.budget()
   evidence.sessions[session.id] = { timeline, budget, pin: await session.capabilities() }

@@ -14,8 +14,11 @@ export async function captureFeaturedGallery(rt) {
       localStorage.setItem('agnes-theme', 'light')
     })
     await page.goto(`${rt.url}/?page=agents`)
-    const roles = page.locator('[data-agent-ref^="@agnes-showcase/pharma-gmp#"]')
-    await roles.first().waitFor({ timeout: 30000 })
+    const application = page.locator('[data-application="@agnes-showcase/pharma-gmp"]')
+    await application.waitFor({ timeout: 30000 })
+    assert.equal(await application.count(), 1)
+    assert.equal(await page.locator('[data-agent-ref^="@agnes-showcase/pharma-gmp#"]').count(), 0)
+    const roles = application.locator('.application-roles li')
     assert.equal(await roles.count(), 5)
     assert.equal(
       (await rt.client.packages.list({ profile: 'local-dev' })).packages.some(

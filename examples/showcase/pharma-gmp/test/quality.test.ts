@@ -62,7 +62,7 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
       },
       new AbortController().signal,
     ),
-  ).toMatchObject({ effect: 'ask', approval: { reviewerRequirement: 'human', grantConstraints: 'once' } })
+  ).toMatchObject({ effect: 'allow' })
   const p = seed(),
     evidence = investigation(p, batch)
   expect(p.batches).toHaveLength(36)
@@ -75,6 +75,14 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
   expect(evidence.findings.some((f) => f.code === 'CPP' && f.text.en.includes('3.4'))).toBe(true)
   expect(evidence.em.every((s) => emStatus(p, s) === 'alert')).toBe(true)
   expect(emStatus(p, { ...evidence.em[0]!, viable: 101 })).toBe('action')
+  const actionEvent = p.samples.filter(
+    (sample) => sample.room === 'C-201' && sample.at.startsWith('2024-10-19'),
+  )
+  expect(
+    actionEvent.every(
+      (sample) => sample.viable === 121 && sample.batch === 'B-2410-019' && emStatus(p, sample) === 'action',
+    ),
+  ).toBe(true)
   expect(emStatus(p, { ...evidence.em[0]!, viable: 50 })).toBe('control')
   expect(dossier(p, 'B-2410-021').rows.find((r) => r.key === 'em')?.pass).toBe(false)
   const b = p.batches.find((b) => b.id === batch)!
@@ -96,6 +104,20 @@ it('shares service/tool state, persists across Host restart, and refuses missing
     storeDir,
     services: { skills: { register: () => () => {} }, providers: { register: () => () => {} } },
     context: {
+      decisions: {
+        request: async () => ({ id: 'fixture-human-approval', sessionId: 'test' }),
+        wait: async () => ({
+          status: 'resolved' as const,
+          snapshot: {
+            result: {
+              reason: 'answered',
+              at: '2026-10-20T00:00:00Z',
+              response: { option: 'allowed-once', value: null },
+              answeredBy: { id: 'fixture-human', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+            },
+          },
+        }),
+      } as unknown as import('@agnes/extension-api').DecisionPort,
       approval: {
         requestId: 'fixture-human-approval',
         subjectRevision: 'fixture-revision',
@@ -152,104 +174,179 @@ it('shares service/tool state, persists across Host restart, and refuses missing
   }
 })
 it('requires real Core human approval; preserves original OOS through CAPA/retest and binds the certificate to the actual signer', async () => {
-  for (const verdict of ['rejected', 'allowed-once'] as const) {
-    const kit = await createAuthorTestkit({
-      plugin: main,
-      packageId: '@test/quality-application',
-      version: '1.0.0',
-      capabilities: { store: true },
-      preset: 'qa',
-      presets: {
-        qa: {
-          name: 'qa',
-          extends: 'standard',
-          providers: { 'tool-policy': { provider: 'sableleaf-quality' } },
+  for (const base of ['standard', 'full-access'])
+    for (const verdict of ['rejected', 'allowed-once'] as const) {
+      const kit = await createAuthorTestkit({
+        plugin: main,
+        packageId: '@test/quality-application',
+        version: '1.0.0',
+        capabilities: { store: true },
+        preset: base,
+        presets: {
+          'full-access': {
+            name: 'full-access',
+            extends: 'standard',
+            providers: { 'tool-policy': { provider: 'sableleaf-quality' } },
+          },
         },
-      },
-      approval: async () => ({
-        verdict,
-        answeredBy: { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
-      }),
-    })
-    try {
-      const s = await kit.openSession()
-      const blocked = await s.invoke('pharma_release', {
-        batch,
-        expectedRevision: 0,
-        meaning: SIGNATURE_MEANING,
+        approval: async () => ({
+          verdict: 'allowed-once',
+          answeredBy: { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+        }),
       })
-      expect(blocked.isError).toBe(true)
-      await s.assertApproval(verdict)
-      if (verdict === 'rejected') {
-        await s.assertRefused('pharma_release')
-        expect(await s.effects()).toEqual([])
-        continue
-      }
-      let revision = 0
-      for (const action of ['investigate', 'advance', 'advance', 'advance', 'review'] as const) {
-        const changed = await s.invoke('pharma_record', {
-          action,
-          batch,
-          expectedRevision: revision,
-          ...(action === 'advance'
-            ? {
-                evidence: `SIM-EV-${revision}: reviewed synthetic calibration, reprocessing, cleaning and three-batch evidence`,
+      try {
+        const s = await kit.openSession()
+        const invoke: typeof s.invoke = async (name, args, signal) => {
+          const controller = new AbortController()
+          const responding = (async () => {
+            while (!controller.signal.aborted) {
+              for (const snapshot of await s.decisions()) {
+                if (
+                  snapshot.request.spec.purpose !== 'business.confirm' ||
+                  snapshot.result ||
+                  snapshot.invalidation
+                )
+                  continue
+                expect(snapshot.request.spec.options).toEqual(['allowed-once', 'rejected'])
+                await s.answerDecision(
+                  {
+                    handle: snapshot.handle,
+                    revision: snapshot.revision,
+                    commandId: `human:${snapshot.handle.id}`,
+                    response: { option: verdict, value: null },
+                  },
+                  { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+                )
               }
-            : {}),
+              await new Promise((done) => setTimeout(done, 5))
+            }
+          })()
+          try {
+            return await s.invoke(name, args, signal)
+          } finally {
+            controller.abort()
+            await responding
+          }
+        }
+        const blocked = await invoke('pharma_release', {
+          batch,
+          expectedRevision: 0,
+          meaning: SIGNATURE_MEANING,
         })
-        expect(changed.isError, JSON.stringify(changed)).not.toBe(true)
-        revision++
+        expect(blocked.isError).toBe(true)
+        if (verdict === 'rejected') {
+          const refused = await invoke('pharma_record', { action: 'investigate', batch, expectedRevision: 0 })
+          expect(refused.isError).toBe(true)
+          expect((await invoke('pharma_dossier', { batch })).structured).toMatchObject({
+            revision: 0,
+            ready: false,
+          })
+          await s.assertApproval('rejected')
+          continue
+        }
+        let revision = 0
+        for (const action of ['investigate', 'advance', 'advance', 'advance', 'review'] as const) {
+          const changed = await invoke('pharma_record', {
+            action,
+            batch,
+            expectedRevision: revision,
+            ...(action === 'advance'
+              ? {
+                  evidence:
+                    revision === 1
+                      ? 'SIM-CAL: reviewed as-found calibration; EM assessment still pending at this revision'
+                      : `SIM-EV-${revision}: reviewed synthetic reprocessing, cleaning and three-batch evidence`,
+                }
+              : {}),
+          })
+          expect(changed.isError, JSON.stringify(changed)).not.toBe(true)
+          expect(changed.structured).toMatchObject({
+            signature: { signer: 'human.qa', purpose: 'business.confirm', reviewedRevision: revision },
+          })
+          revision++
+        }
+        const ready = await invoke('pharma_dossier', { batch })
+        expect(ready.structured).toMatchObject({
+          ready: true,
+          revision: 5,
+          signatureMeaning: SIGNATURE_MEANING,
+          evidence: {
+            recordApprovals: expect.arrayContaining([
+              expect.objectContaining({ action: 'review', reviewedRevision: 4 }),
+            ]),
+            deviations: expect.arrayContaining([
+              expect.objectContaining({
+                actions: expect.arrayContaining([
+                  expect.objectContaining({
+                    id: 'CAPA-017-3',
+                    evidence: expect.stringContaining('EM-ASSESSMENT:'),
+                  }),
+                ]),
+              }),
+            ]),
+          },
+        })
+        expect(ready.structured).toMatchObject({
+          blockers: [],
+          findings: expect.arrayContaining([expect.objectContaining({ code: 'CPP' })]),
+          evidence: {
+            deviations: expect.arrayContaining([expect.objectContaining({ stage: 'closed' })]),
+            retests: expect.arrayContaining([
+              expect.objectContaining({ value: 1.9, at: '2024-10-20T12:00:00Z' }),
+            ]),
+            equipment: expect.arrayContaining([
+              expect.objectContaining({
+                id: 'DR-02',
+                qualification: 'qualified',
+                evidence: expect.arrayContaining([
+                  expect.stringContaining('historical r1→r2'),
+                  expect.stringContaining('SUBSEQUENT-EM-ASSESSMENT [r3]'),
+                ]),
+              }),
+            ]),
+            em: expect.arrayContaining([expect.objectContaining({ disposition: 'assessed' })]),
+          },
+        })
+        const signedDossier = ready.structured as {
+          evidence: { recordApprovals: unknown[]; deviations: { cause: string; why: string[] }[] }
+        }
+        expect(signedDossier.evidence.recordApprovals).toHaveLength(5)
+        expect(signedDossier.evidence.deviations[0]?.cause).not.toContain('pending')
+        expect(signedDossier.evidence.deviations[0]?.why.join(' ')).not.toContain('suspected')
+        const stale = await invoke('pharma_release', {
+          batch,
+          expectedRevision: 4,
+          meaning: SIGNATURE_MEANING,
+        })
+        expect(stale.isError).toBe(true)
+        const wrong = await invoke('pharma_release', { batch, expectedRevision: 5, meaning: 'approve' })
+        expect(wrong.isError).toBe(true)
+        const released = await invoke('pharma_release', {
+          batch,
+          expectedRevision: 5,
+          meaning: SIGNATURE_MEANING,
+        })
+        expect(released.isError, JSON.stringify(released)).not.toBe(true)
+        expect(released.structured).toMatchObject({
+          revision: 6,
+          dossier: { certificate: { signer: 'human.qa', dossierRevision: 5, meaning: SIGNATURE_MEANING } },
+        })
+        expect((await invoke('pharma_inspect', { batch })).structured).toMatchObject({
+          findings: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'CPP',
+              text: expect.objectContaining({ en: expect.stringContaining('3.4') }),
+            }),
+          ]),
+        })
+        expect(
+          (await invoke('pharma_release', { batch, expectedRevision: 6, meaning: SIGNATURE_MEANING }))
+            .isError,
+        ).toBe(true)
+        await s.assertApproval('allowed-once')
+        expect((await s.facts()).some((e) => e.type === 'decision/state')).toBe(true)
+      } finally {
+        await kit.dispose()
       }
-      const ready = await s.invoke('pharma_dossier', { batch })
-      expect(ready.structured).toMatchObject({ ready: true, revision: 5 })
-      expect(ready.structured).toMatchObject({
-        blockers: [],
-        findings: expect.arrayContaining([expect.objectContaining({ code: 'CPP' })]),
-        evidence: {
-          deviations: expect.arrayContaining([expect.objectContaining({ stage: 'closed' })]),
-          retests: expect.arrayContaining([
-            expect.objectContaining({ value: 1.9, at: '2024-10-20T12:00:00Z' }),
-          ]),
-          equipment: expect.arrayContaining([
-            expect.objectContaining({ id: 'DR-02', qualification: 'qualified' }),
-          ]),
-          em: expect.arrayContaining([expect.objectContaining({ disposition: 'assessed' })]),
-        },
-      })
-      const stale = await s.invoke('pharma_release', {
-        batch,
-        expectedRevision: 4,
-        meaning: SIGNATURE_MEANING,
-      })
-      expect(stale.isError).toBe(true)
-      const wrong = await s.invoke('pharma_release', { batch, expectedRevision: 5, meaning: 'approve' })
-      expect(wrong.isError).toBe(true)
-      const released = await s.invoke('pharma_release', {
-        batch,
-        expectedRevision: 5,
-        meaning: SIGNATURE_MEANING,
-      })
-      expect(released.isError, JSON.stringify(released)).not.toBe(true)
-      expect(released.structured).toMatchObject({
-        revision: 6,
-        dossier: { certificate: { signer: 'human.qa', dossierRevision: 5, meaning: SIGNATURE_MEANING } },
-      })
-      expect((await s.invoke('pharma_inspect', { batch })).structured).toMatchObject({
-        findings: expect.arrayContaining([
-          expect.objectContaining({
-            code: 'CPP',
-            text: expect.objectContaining({ en: expect.stringContaining('3.4') }),
-          }),
-        ]),
-      })
-      expect(
-        (await s.invoke('pharma_release', { batch, expectedRevision: 6, meaning: SIGNATURE_MEANING }))
-          .isError,
-      ).toBe(true)
-      await s.assertApproval('allowed-once')
-      expect((await s.facts()).some((e) => e.type === 'decision/state')).toBe(true)
-    } finally {
-      await kit.dispose()
     }
-  }
 }, 60000)

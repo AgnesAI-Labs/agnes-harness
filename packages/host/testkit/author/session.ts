@@ -74,6 +74,12 @@ export interface AuthorSession {
   uiAction(input: Omit<UiActionParams, 'sessionId'>): Promise<UiActionReceipt>
   uiRead(input?: Omit<UiReadParams, 'sessionId'>): Promise<UiReadResult>
   uiRefresh(input: Omit<UiRefreshParams, 'sessionId'>): Promise<UiSurfaceRecord>
+  /** Test administrator ingress for business questions; identities never come from plugin input. */
+  decisions(): ReturnType<HostSession['decisions']['list']>
+  answerDecision(
+    input: Parameters<HostSession['decideApproval']>[0]['command'],
+    actor: import('@agnes/protocol').Actor,
+  ): ReturnType<HostSession['decideApproval']>
   facts(): Promise<Event[]>
   effects(): Promise<Event[]>
   assertApproval(verdict: string): Promise<void>
@@ -468,6 +474,9 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
               active = false
             }
           },
+          decisions: () => session.decisions.list(),
+          answerDecision: (command, actor) =>
+            session.decideApproval({ command, context: { actor, category: 'human', authorize() {} } }),
           facts,
           effects: async () => (await facts()).filter((event) => event.type.startsWith('effect/')),
           async assertApproval(verdict) {

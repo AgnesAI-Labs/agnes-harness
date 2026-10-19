@@ -8,7 +8,7 @@ Scenario: fictional Sableleaf OSD, 2024-10-20, B-2410-017. All evidence/people a
 
 | 时间 / Time | 中文脚本 | English script |
 |---|---|---|
-| 0:00–0:50 | 在独立 home 安装，审阅能力、完整性、来源；信任并启用。设置→应用预览并采纳沙叶，观察品牌、主题、六个入口和默认智能体。 | Install in an isolated home, review capabilities/integrity/source, trust and enable. Preview/adopt Sableleaf in Settings → Application; observe brand, skin, six pages and default agent. |
+| 0:00–0:50 | 在图库点沙叶应用卡片“安装并采用”，审阅能力、完整性、来源，确认信任启用和应用预览，观察品牌、主题、六个入口和默认智能体。 | Choose Install and adopt on the Sableleaf gallery application card; review capabilities/integrity/source, trust/enable and explicitly confirm application consent; observe brand, skin, six pages and default agent. |
 | 0:50–1:30 | 总览：36 批、待放行、RFT、偏差分级、CAPA 逾期和 EM；点击 017 查看七工序、规格带、QC 和双人签名。 | Overview: 36 batches, release queue, RFT, deviations, overdue CAPA and EM. Open 017 to inspect seven steps, limits, QC and independent signatures. |
 | 1:30–2:40 | 启动“偏差调查员”，问“调查 017 的 LOD 与同室 EM，列出证据、假设、5-Why 和跨批影响，不能把相关当因果”。工具卡显示原始 LOD 3.4%、限度 1–2.5%，72 CFU/m³ 是警戒而非行动，DR-02 校准 10-16 到期；016/018 也需评估。 | Launch Deviation Investigator: “Investigate 017 LOD and same-room EM; cite evidence, hypotheses, 5-Why and cross-batch impact; do not equate correlation with causation.” Evidence cards show original LOD 3.4% vs 1–2.5%, 72 CFU/m³ alert (not action), overdue DR-02 and impacted 016/018. |
 | 2:40–3:40 | QA 放行助理构建档案：拒绝放行，指出批记录、偏差、EM 和设备阻断。经人工批准启动调查（0→1），录入合成校准证据到 CAPA（1→2），批准返工/独立复验 1.9% 与 EM 评估到有效性（2→3），连续三批确认并关闭（3→4），审核员复核（4→5）。每次变更审阅精确版本与证据。 | QA builds dossier and blocks release on BPR/deviation/EM/equipment. Human approves investigation (0→1), synthetic calibration evidence/CAPA (1→2), approved reprocessing/retest 1.9% and EM assessment (2→3), three-batch effectiveness/closure (3→4), then BPR review (4→5). Review exact revision and evidence each time. |
@@ -17,32 +17,23 @@ Scenario: fictional Sableleaf OSD, 2024-10-20, B-2410-017. All evidence/people a
 | 5:10–6:20 | 质量中枢提出“使用时距校准到期≤7 天预警”新规则；用候选工具创建只读检查工具和 SKILL.md，测试、提交 review。人工审核精确哈希后发布，新会话输入 2024-10-17 与 2024-10-20，输出 due-soon=true；不把“已提议”说成“已启用”。 | Hub proposes “flag use within seven days of calibration expiry”; create read-only checking tool and SKILL.md, test, submit review. Human publishes exact reviewed hash. Fresh session with 2024-10-17 / 2024-10-20 returns due-soon=true. Proposal is not activation. |
 | 6:20–7:00 | 环境监测分析员先分析趋势；在自动化页选择该智能体，建立每日 02:00 Asia/Shanghai 新会话任务，拒绝无人值守审批；运行一次生成夜间趋势，并核对冻结目标与交付物。最后切英文/深色，布局和业务数据一致。 | EM Analyst analyzes the trend; in Automation select that agent for a daily 02:00 Asia/Shanghai new-session task with unattended approvals refused. Run once, verify frozen target and nightly deliverable. Switch to English/dark and verify consistent data/layout. |
 
-## 确定性工具步骤 / Deterministic tool steps
+## 自然业务对话 / Natural business conversation
 
-Demo 模型使用精确 `call` 提示，真实模型使用自然语言调查并以这些工具结果核对。Demo uses exact `call` prompts; real-model reasoning is checked against these results.
+按以下顺序提问；智能体自行选择工具、读取证据和当前版本。每次签名均由演示操作者在宿主审阅。`full-access` 只影响工具权限，`business.confirm` 业务签名在所有预设下都需要真人；拒绝、取消与系统回答不能签署。
 
-```text
-call pharma_inspect {"batch":"B-2410-017"}
-call pharma_dossier {"batch":"B-2410-017"}
-call pharma_record {"action":"investigate","batch":"B-2410-017","expectedRevision":0}
-call pharma_record {"action":"advance","batch":"B-2410-017","expectedRevision":1,"evidence":"SIM-CAL-017: synthetic as-found +4.1 C and as-left calibration reviewed; retrospective 016/017/018 assessment"}
-call pharma_record {"action":"advance","batch":"B-2410-017","expectedRevision":2,"evidence":"SIM-REPROCESS-017: approved synthetic reprocessing protocol, independent LOD 1.9%, QC and cleaning/resampling reviewed"}
-call pharma_record {"action":"advance","batch":"B-2410-017","expectedRevision":3,"evidence":"SIM-EFFECT-017: three synthetic verification batches and escalation effectiveness confirmed"}
-call pharma_record {"action":"review","batch":"B-2410-017","expectedRevision":4}
-call pharma_release {"batch":"B-2410-017","expectedRevision":5,"meaning":"I approve this batch for release after reviewing the complete quality dossier. / 我已审核完整质量档案，批准本批放行。"}
-call pharma_report {"kind":"dossier","batch":"B-2410-017","locale":"zh-CN"}
-call pharma_report {"kind":"apqr","locale":"zh-CN"}
-call pharma_report {"kind":"deviations","locale":"en"}
-```
+Ask in sequence. The agent chooses tools and reads evidence/current revisions. The operator reviews each Host signature. Full access affects tool permission only; `business.confirm` always needs a human. Rejection, cancellation and system answers cannot sign.
 
-在 EM 智能体会话先生成趋势：`call pharma_report {"kind":"em","locale":"zh-CN"}`。然后打开自动化页，新建任务并明确选择“环境监测分析员”，每日 02:00、Asia/Shanghai、新会话、无人值守审批拒绝，提示为同一条报告命令。选择智能体会把其 Loop、Bundle、预设及模型冻结到任务目标；普通 `schedule_create` 的新会话目标不等同于选择该智能体。点击“立即运行”验证，无需修改系统时间。
+1. **调查员**：“B-2410-017 的干燥 LOD 超限了，同房间还有 EM 警戒，帮我调查一下，给出 CAPA 建议并说明其他批次是否受影响。先不要改档案。” / **Investigator**: “B-2410-017 has a drying LOD excursion and a same-room EM alert. Investigate, suggest CAPA and assess other batches; keep the records unchanged.”
+2. **质量中枢**：“请登记这次调查。我们在隔离演示中使用合成证据；每次变更都让我审阅签署。” / **Quality Hub**: “Record this investigation using synthetic evidence in this isolated demo. Let me review and sign each change.”
+3. “合成证据 SIM-CAL-017 已复核：T02 as-found +4.1°C，as-left 校准合格，016/017/018 回顾评估完成。把调查推进到 CAPA。” / “Reviewed synthetic SIM-CAL-017: T02 as-found +4.1°C, acceptable as-left calibration, retrospective 016/017/018 assessment complete. Advance to CAPA.”
+4. “合成返工方案、独立 LOD 1.9% 复验、QC、清洁和 EM 鉴别/重采样证据 SIM-REPROCESS-017 已复核，请登记并进入有效性评价。” / “Record reviewed synthetic SIM-REPROCESS-017: approved reprocessing, independent 1.9% LOD retest, QC, cleaning, EM identification/resampling. Begin effectiveness evaluation.”
+5. “连续三批合成有效性确认和逾期升级机制验证 SIM-EFFECT-017 已完成，请完成偏差结案。之后由批记录审核员独立复核并发起我的复核签名。” / “Synthetic three-batch effectiveness and overdue escalation verification SIM-EFFECT-017 are complete. Close the deviation. Then have the BPR reviewer independently review it and request my review signature.”
+6. **QA 助理**：“请核对 B-2410-017 放行清单、当前版本和固定签名含义，保留原始超限。” 看完后回复：“我确认已审阅独立审核记录和全部合成证据，请对当前版本发起我的放行签名。” / **QA**: “Check B-2410-017 release readiness, revision and fixed signature meaning; preserve the original excursion.” After review: “I have reviewed the independent BPR review and all synthetic evidence. Request my release signature for the current revision.”
+7. “请生成中文放行档案和 APQR 节选，展示可打印报告，并告诉我如何追溯到证据、审批人和插件版本。” / “Generate Chinese release dossier and APQR excerpts, present printable reports and show how to trace evidence, signer and plugin version.”
+8. **质量中枢**：“把‘设备使用日期距校准到期 0–7 天预警、逾期单列’做成可复用的只读技能候选。读取当前作者指南，创建、测试并提交审阅；发布由我批准。” / **Hub**: “Create, test and submit a reusable read-only skill candidate for calibration expiry within 0–7 days; report overdue separately. Use the current author guide. I will approve publication.”
+9. 人工审阅文件、测试与精确摘要后发布；新会话问：“2024-10-17 使用、2024-10-20 校准到期，按刚审阅的技能判断是否应预警。” / Human reviews files/tests/exact digest and publishes. In a fresh session: “Use the reviewed skill: equipment used Oct 17, 2024 expires Oct 20. Is an alert due?”
+10. **EM 分析员**：“请生成今晚的环境趋势报告。把 10/17 的 72 警戒与 10/19 的 121 行动限事件分开解释；然后建议每天凌晨两点的巡检任务。” / **EM**: “Produce tonight's EM trend report. Distinguish Oct 17's 72 alert from Oct 19's 121 action excursion, then suggest a daily 02:00 check.” 在自动化页明确选择 EM 智能体、新会话、Asia/Shanghai、无人值守审批拒绝；立即运行并打开报告。 / In Automation select EM Analyst, new session, Asia/Shanghai and refused unattended approvals; Run now and open the report.
 
-In the EM session run `call pharma_report {"kind":"em","locale":"en"}`. In Automation create a daily 02:00 Asia/Shanghai task, explicitly choose EM Analyst, a fresh session and refused unattended approvals, and use that report command as its prompt. Agent selection freezes its Loop, Bundle, preset and model; an ordinary schedule_create new-session target is not an agent selection. Use Run now without changing system time.
+真实模型演示使用 `../scripts/presentation.mjs pharma-gmp --real`，从空 home 经图库安装与采用，执行上述业务阶段并保存 AGH 用量与截图。密钥仅按 README 的命令级 keychain 注入，总费用不超过 $3。原确定性验收脚本只用于机制回归。
 
-校准规则候选通过质量中枢自然语言创建，先调用 plugin_helper_guide 获取当前模板，遵循当前平台的 create→test→commit→人审发布流程。Ask the Hub to create the calibration-rule candidate, starting with plugin_helper_guide and the current create→test→commit→human publication process.
-
-## 可重复验收 / Repeatable acceptance
-
-仓根先构建本包和本地 CLI。运行 `scripts/acceptance.mjs` 用新 home 验证 inspect→install→adopt、角色调用、CAPA、人工放行、报告、候选成长、定时任务和重启。`--real` 使用每条命令注入的 DeepSeek 测试密钥；每应用总上限 $3，证据只保存脱敏业务结果与 AGH usage。浏览器脚本须使用 web-gate-lock 和 heavy-lock，保存中文/英文、浅色/深色与关键流截图；报告记录实际结果，不把静态页面或单测当真实模型通过。
-
-Build this package and the local CLI first. `scripts/acceptance.mjs` uses a fresh home for installation/adoption, roles, CAPA, human release, reports, reviewed growth, schedule and restart. `--real` uses the per-command DeepSeek test key; keep total application spend below $3. Evidence stores redacted business results and AGH usage only. Run the browser script under web-gate-lock and heavy-lock for zh/en light/dark and workflow screenshots. Report actual results, not static UI or unit tests as real-model acceptance.
+Run `../scripts/presentation.mjs pharma-gmp --real` for fresh-home gallery installation/adoption, natural business stages, AGH usage and screenshots. Inject the key per command from keychain as in README; cap total spend at $3. The deterministic runner is for mechanism regression.

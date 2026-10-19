@@ -11,6 +11,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from '@playwright/test'
 import { pause, realRuntime, snapshot } from '../../../../tools/authoring/real-runtime.mjs'
+import { testOperatorSignatures } from '../../scripts/signatures.mjs'
+
+if (process.argv.includes('--real')) {
+  process.argv.splice(2, 0, 'aerospace-quality')
+  await import('../../scripts/presentation.mjs')
+  process.exit(process.exitCode ?? 0)
+}
 
 const real = process.argv.includes('--real')
 const previousUsd = real ? Number(process.env.AERO_PREVIOUS_USD ?? 0) : 0
@@ -112,10 +119,15 @@ async function run(s, prompt, label) {
     }
   }, 1000)
   try {
-    const result = await s.prompt(prompt, {
-      signal: AbortSignal.timeout(180000),
-      ...(real ? { creditLimit: 0.8 } : {}),
+    const signing = testOperatorSignatures(rt.client, s, {
+      answer: () => (allow ? 'allowed-once' : 'rejected'),
     })
+    const result = await s
+      .prompt(prompt, {
+        signal: AbortSignal.timeout(180000),
+        ...(real ? { creditLimit: 0.8 } : {}),
+      })
+      .finally(() => signing.stop())
     const data = await snapshot(s)
     await rt.save(`${label}.json`, { result, ...data })
     assert.equal(result.reason, 'completed', `${label} did not complete: ${JSON.stringify(result)}`)
@@ -189,8 +201,9 @@ try {
   assert.ok(featured?.source.ref.includes('/showcase/'), 'Fresh catalog must feature the showcase source')
   await rt.save('fresh-featured-catalog.json', featured)
   await page.goto(`${rt.url}/?page=agents&lang=zh-CN&theme=light`)
-  await page.locator(`[data-agent-ref="${packageId}#quality"]`).waitFor({ timeout: 30000 })
-  assert.equal(await page.locator(`[data-agent-ref^="${packageId}#"]`).count(), 5)
+  await page.locator(`[data-application="${packageId}"]`).waitFor({ timeout: 30000 })
+  assert.equal(await page.locator(`[data-application="${packageId}"]`).count(), 1)
+  assert.equal(await page.locator(`[data-agent-ref^="${packageId}#"]`).count(), 0)
   await shot('fresh-home-featured-gallery')
   evidence.checks.push('fresh-home-featured-showcase-gallery-five-role-agents')
   evidence.stage = 'install'

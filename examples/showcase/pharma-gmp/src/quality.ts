@@ -1,4 +1,4 @@
-import { type Batch, DEMO_DATE, label, out, type Plant } from './model.js'
+import { type Batch, DEMO_DATE, label, out, type Plant, SIGNATURE_MEANING } from './model.js'
 
 export function batchOf(p: Plant, id: string): Batch {
   const b = p.batches.find((b) => b.id === id)
@@ -67,12 +67,12 @@ export function dossier(p: Plant, id: string) {
     },
     {
       key: 'deviations',
-      title: label('偏差及批次影响已关闭', 'Deviations and batch impact closed'),
+      title: label('偏差结案 / 关联批次影响已评估', 'Deviations closed / linked-batch impact assessed'),
       pass: deviations.every((d) => d.stage === 'closed'),
     },
     {
       key: 'em',
-      title: label('环境警戒已评估 / 行动已关闭', 'EM alerts assessed / actions closed'),
+      title: label('环境事件风险评估与处置证据', 'EM risk assessment and disposition evidence'),
       pass:
         b.steps.every((step) => p.samples.some((s) => s.batch === id && s.room === step.room)) &&
         p.samples
@@ -104,18 +104,28 @@ export function dossier(p: Plant, id: string) {
     batch: id,
     revision: p.revision,
     asOf: DEMO_DATE,
+    signatureMeaning: SIGNATURE_MEANING,
     ready: rows.every((r) => r.pass),
     rows,
     blockers: rows.filter((r) => !r.pass).map((r) => r.key),
     findings: findings(p, id),
     evidence: {
+      recordApprovals: p.audit
+        .filter((entry) => entry.record === id && entry.approval)
+        .map((entry) => ({
+          action: entry.action,
+          approvalId: entry.approval!,
+          recordedBy: entry.actor,
+          recordedAt: entry.at,
+          reviewedRevision: entry.fromRevision,
+        })),
       deviations,
       retests: b.retests,
       equipment: p.equipment.filter((e) => b.steps.some((s) => s.equipment === e.id)),
       em: p.samples.filter((s) => s.batch === id && emStatus(p, s) !== 'control'),
       interpretation: label(
-        'findings 保留原始历史发现；当前阻断以 blockers 和 rows.pass 为准，须结合偏差结案及批准返工复验依据审阅。revision 是当前状态版本；证书 dossierRevision 是签署前被审阅的版本，签署本身使状态版本加一。',
-        'findings retain original historical observations. Current blockers are the failed checklist rows; review deviation closure and approved reprocessing/retest evidence. revision is current state; certificate.dossierRevision identifies the pre-signature dossier reviewed. Signing itself increments state revision by one.',
+        'findings 保留原始历史发现；当前阻断以 blockers 和 rows.pass 为准，须结合偏差结案及批准返工复验依据审阅。revision 是当前状态版本；证书 dossierRevision 是签署前被审阅的版本，签署本身使状态版本加一。asOf 是合成业务场景日期，CAPA 到期按该日期评估；审计 recordedAt 是当前真实记录时间。certificate 仅用于最终 QA 放行；null 不代表前面的质量记录未签名，recordApprovals 引用各次人工签署决策。assessed 是警戒风险评估，不等同于行动限事件自动关闭。017 放行不代表关联批次 016/018 放行，它们仍由各自档案决定处置。',
+        'findings retain original historical observations. Current blockers are the failed checklist rows; review deviation closure and approved reprocessing/retest evidence. revision is current state; certificate.dossierRevision identifies the pre-signature dossier reviewed. Signing itself increments state revision by one. asOf is synthetic business time and the basis for CAPA due-date assessment; audit recordedAt is actual recording time. certificate is only the final QA release certificate: null does not mean earlier records were unsigned; recordApprovals reference their human signature decisions. assessed means an alert risk assessment, not automatic closure of an action excursion. Release of 017 does not release linked batches 016/018; each retains its own dossier and disposition requirements.',
       ),
     },
     certificate: b.certificate,
@@ -128,8 +138,10 @@ export function investigation(p: Plant, id: string) {
   const suspect = equipment.filter((e) => e.due < DEMO_DATE || e.qualification !== 'qualified')
   return {
     batch: id,
+    revision: p.revision,
     findings: findings(p, id),
     em,
+    rooms: p.rooms.filter((room) => b.steps.some((step) => step.room === room.id)),
     equipment,
     relatedBatches: p.batches
       .filter((x) => x.id !== id && x.steps.some((s) => suspect.some((e) => e.id === s.equipment)))

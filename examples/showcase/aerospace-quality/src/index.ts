@@ -3,7 +3,7 @@ import type { OwnedStore, ServiceContext, ToolContext } from '@agnes/extension-a
 import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
 import { type Static, type TSchema, Type } from '@sinclair/typebox'
 import { briefing } from './briefing.js'
-import { decisionRevision } from './policy.js'
+import { sign } from './signature.js'
 
 export { reviewPolicyPlugin } from './policy.js'
 
@@ -199,18 +199,45 @@ export const tools = [
   ),
   tool(
     'aero_decide',
-    'Consequential human decision: MRB disposition, configuration change, reviewed rule activation or evidence-complete zeroing closure. Always requires Host approval and current revision / MRB、技术状态、规则启用与归零均要求宿主人工审批和当前修订。',
+    'Consequential human decision: MRB disposition, configuration change, reviewed rule activation or evidence-complete zeroing closure. Requires a separate human business signature and current revision / MRB、技术状态、规则启用与归零均要求独立人工业务签名和当前修订。',
     decisionSchema,
-    (i, c) => {
-      if (c.approval?.subjectRevision !== decisionRevision(i))
-        throw new Error('必须通过宿主人工审批 / Host human approval required')
-      return decide(c.store, i, c.approval)
+    async (i, c) => {
+      const state = read(c.store)
+      if (state.revision !== i.expectedRevision)
+        throw new Error('Revision changed; review again / 数据已变化，请重新审阅')
+      const record =
+        i.kind === 'mrb'
+          ? state.ncrs.find((row) => row.id === i.id)
+          : i.kind === 'configuration'
+            ? state.ecrs.find((row) => row.id === i.id)
+            : i.kind === 'zeroing'
+              ? state.zeroing.find((row) => row.id === i.id)
+              : state.rule
+      const meaning = {
+        mrb: 'I approve this MRB disposition for implementation; hardware remains on hold pending verification. / 我批准实施本 MRB 处置；硬件保持隔离，等待复验。',
+        configuration:
+          'I approve this configuration change and its required verification, without claiming tests have passed. / 我批准本技术状态更改及所需验证，不宣称试验通过。',
+        rule: 'I approve activation of this reviewed screening rule. / 我批准启用本次已审阅的筛选规则。',
+        zeroing:
+          'I confirm the complete reviewed evidence and approve quality closure. / 我确认完整的已审阅证据并批准质量归零关闭。',
+      }[i.kind]
+      const approval = await sign(c, { ...i, record }, meaning, i.id)
+      return {
+        ...decide(c.store, i, approval),
+        signature: {
+          decisionId: approval.requestId,
+          signer: approval.answeredBy.id,
+          signedAt: approval.signedAt,
+          reviewedRevision: i.expectedRevision,
+          purpose: 'business.confirm',
+        },
+      }
     },
     'decision',
   ),
   tool(
     'aero_report',
-    'Generate Markdown and printable HTML evidence reports and present them as deliverables / 生成并展示 Markdown 与可打印 HTML 证据报告。',
+    'Generate Markdown and printable HTML evidence reports and internally present them as deliverables; do not guess paths or present before this tool returns / 生成并展示 Markdown 与可打印 HTML 证据报告。',
     Type.Object(
       {
         kind: Type.Union([Type.Literal('zeroing'), Type.Literal('digest')]),

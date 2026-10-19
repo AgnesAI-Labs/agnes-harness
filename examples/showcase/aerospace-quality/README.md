@@ -74,7 +74,7 @@ the [demo script](DEMO.md) gives exact deterministic calls and real-model prompt
 Pages use declared profile services and durable operation IDs, retaining uncertain receipts in
 session storage scoped to profile/activation/client revision. Reopening reads the original receipt;
 no unknown operation is retried under a new identity. Revision drift refuses stale decisions.
-Each role preset selects the package’s public `aero-human-review` tool policy. It requires a human, one-time decision bound to the target and programme revision; session/permanent grants and full-access mode cannot waive that decision. The tool verifies the Host proof and the transaction checks the current revision. Neither UI labels nor caller-supplied approval/owner selectors grant authority. Browser storage
+Each role preset selects the package’s public `aero-human-review` tool policy. It preserves ordinary tool permission. Business operations separately request a human, one-time signature bound to the target and programme revision; session/permanent tool grants and full access cannot waive the business signature. The tool verifies the Host proof and the transaction checks the current revision. Neither UI labels nor caller-supplied approval/owner selectors grant authority. Browser storage
 failure prevents mutation dispatch. Trusted JS is not a sandbox.
 
 `aero_report` creates unique Markdown and print-styled HTML files under the authorised workspace
@@ -117,3 +117,9 @@ references and modelling limits. Open `/?admin` or use `agh app clear` to recove
 only stop this trial's daemon. No customer data, private traces or credentials belong in the package.
 
 The selected domain policy permits `aero_report` as a bounded evidence export: only allowlisted report kinds/locales and new files under `aero-output/`, followed by `present`. This allows scheduled, source-tainted prompts to produce deliverables without unattended hardware/configuration approval. MRB, configuration, rule activation and closure still require an exact human decision.
+
+## Business signatures
+
+MRB disposition, configuration changes, rule enablement and zeroing closure are business acts. Tools use the public decision port with `business.confirm`, bind the exact target, revision, evidence and meaning, and verify the Host-recorded human answer. System/agent answers, rejection, cancellation and invalidation cannot mutate quality state. Full access still asks for a human signature. Ordinary tool permissions follow the selected preset; automatic full-access permission is no business signature. Page effects retain Host human confirmation and revision checks.
+
+For the real-model investor demo, run `exec node --import tsx examples/showcase/scripts/presentation.mjs aerospace-quality --real` through the repository toolchain entry under heavy-lock and web-gate-lock, injecting the key per command from the designated keychain item. The runner saves screenshots/costs under the isolated run directory; `AGH_SHOWCASE_SHOTS` selects an external report directory and `AGH_SHOWCASE_PRIOR_USD` includes prior attempts in the $3 application cap. The older acceptance script's `--real` also delegates to this natural conversation flow.

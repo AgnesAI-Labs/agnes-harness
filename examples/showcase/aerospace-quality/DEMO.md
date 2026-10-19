@@ -6,7 +6,7 @@
 
 | 时间 / Time | 中文操作与讲解 | English action and narration |
 | --- | --- | --- |
-| 0:00–0:50 | 安装包，设置→应用预览来源、完整性、能力、品牌、主页、皮肤与五个智能体，再显式采纳。展示产品从 AGH 变成穹序质量台。安装本身不切换产品。 | Install; preview source/integrity/capabilities/brand/home/skin/five agents in Settings → Application; explicitly adopt. AGH becomes Qiongxu quality. Installation alone never changes identity. |
+| 0:00–0:50 | 在图库应用卡片点“安装并采用”，审阅安装来源与能力，再预览品牌、主页、皮肤与五个智能体，显式确认采用。展示产品从 AGH 变成穹序质量台。安装本身不切换产品。 | Choose Install and adopt on the gallery application card; review source/capabilities, then explicitly confirm brand/home/skin/five-agent consent. AGH becomes Qiongxu quality. Installation alone never changes identity. |
 | 0:50–1:30 | 总览：需求覆盖、重大 NCR、待审 ECR、未闭归零、里程碑与试验活动。点“调查异常”，展开 AN-027 证据抽屉；切换浅深与中英文。 | Inspect coverage, major NCRs, pending ECRs, open zeroing, milestones and campaigns. Investigate AN-027 and open the evidence drawer; switch theme/locale. |
 | 1:30–2:30 | 智能体→试验异常诊断员，先读技能，调查 AN-027。模型引用 TC-026、BL-C、L2609-B、ECR-014 和 NCR-016/017，区分观察、关联与焊点疲劳假设，并提出新旧批次对照、连续性、校准探头和切片复现计划。 | Launch Test Anomaly Investigator. Read the skill, investigate AN-027; cite TC-026, BL-C, L2609-B, ECR-014 and NCR-016/017. Separate observation/correlation from solder-fatigue hypothesis; propose A/B lots, continuity, calibrated probe and cross-section testing. |
 | 2:30–3:30 | MRB 助理比较五种处置，保存 NCR-018 返工草案：隔离/拒收批次，按原图样返工受影响试件并复验。请求正式处置时出现宿主审批，先拒绝一次证明无状态变化，再明确批准。展示批准实施状态和仍在隔离的器件。 | MRB Assistant compares five dispositions and drafts NCR-018 rework: reject/quarantine the lot, restore the drawing and re-verify affected units. Reject one native approval to prove no mutation, then explicitly approve a fresh reviewed request. Show disposition approved for execution and hardware still on hold. |
@@ -15,36 +15,22 @@
 | 5:10–6:20 | 提议热循环组件更换批次追加 TVAC 的受审技能候选；通过原生 Skill proposal 展示文件和 digest，由人批准安装，下一轮技能生效。再批准项目内 TVAC-LOT-001 策略；下一次 ECR-016 分析显示 v1 与追加筛选。批准更改后增加 pending 的 VT-033，不能宣称试验通过。 | Propose a reviewed TVAC lot-screening skill. Inspect native Skill proposal files/digest; human approves installation, effective next turn. Approve the bounded TVAC-LOT-001 programme policy. The next ECR-016 review shows v1 and additional screening; approved change adds pending VT-033, never a fabricated passing result. |
 | 6:20–7:00 | 运行 automation.mjs 创建每周一摘要，在自动化页“立即运行”，打开新会话中的摘要交付物。指出任务冻结启动目标，每次执行重新准入，拒绝无人值守审批。 | Create the Monday digest with automation.mjs; Run now in Automation and open the new session's deliverables. Target selection is frozen at creation; each run is readmitted and unattended approvals refuse. |
 
-## 模型提示词 / Reasoning prompts
+## 自然业务对话 / Natural business conversation
 
-1. `先调用 aero_playbook，再用 aero_investigate 调查 AN-027。请引用峰值、限值、冷平台窗口、批次更改和相似 NCR。分清事实/假设，提出替代解释与复现方法，不批准处置。`
-   / `Read aero_playbook, investigate AN-027, cite peak/limit/cold plateau/lot change/similar NCRs, separate facts from hypothesis and propose alternatives and reproduction. Do not approve disposition.`
-2. `按当前证据起草 NCR-018 的返工方案，先列 use-as-is/rework/repair/scrap/return-to-supplier 的权衡。用 aero_mrb_draft 保存，不自行声称批准。`
-   / `Compare all five dispositions; save an evidence-based NCR-018 rework draft with aero_mrb_draft. Do not claim approval.`
-3. `用 aero_trace 和 aero_change_review(ecrId=ECR-016) 给出需求、接口和复验影响。生成 aero_report(kind=zeroing,locale=zh-CN)，强调双五条缺证。`
-   / `Use aero_trace and aero_change_review for ECR-016 impacts; generate the zeroing report, explicitly retaining missing double-five evidence.`
-4. `提议 TVAC-LOT-001。调用 aero_rule_propose 后，用 aero_skill_candidate(action=prepare) 提交原生候选。展示 proposalId、digest、文件，等人工审阅，再 commit。`
-   / `Propose TVAC-LOT-001, then prepare a native candidate with aero_skill_candidate. Show proposalId/digest/files for human review before commit.`
+智能体自行选择工具；操作者在宿主审阅精确对象与版本后签署。业务签名通过 `business.confirm`，在 full-access 下仍问真人，工具权限自动批准不等于质量决策。
 
-## 确定性 Demo 调用 / Deterministic Demo calls
+The agent chooses tools. The operator signs the exact target/revision in Host. `business.confirm` remains human-only under full access; automatic tool permission is no quality disposition.
 
-每步使用当前 revision；拒绝之后查询当前状态，不重放不确定操作。Demo 模型没有真实推理，需演示者讲解；真实模型验收会实际执行对应智能体步骤。 / Use current revision. After refusal read state; never replay an uncertain operation. The Demo model does not reason; the presenter narrates. Real acceptance executes the corresponding agent steps.
+1. **试验异常诊断员**：“TVAC 冷平台那次电流越限是怎么回事？影响哪些需求和器件？给我证据与替代解释，先别批准任何处置。” / **Investigator**: “What happened with the TVAC cold-plateau current excursion? Which requirements and parts are affected? Show evidence and alternative explanations before any disposition.”
+2. **MRB 助理**：“比较 NCR-018 的五种处置方案。请起草返工：隔离 L2609-B，按受控图样恢复 PVD-011/012/013 并复验。保存草案，先不要批准。” / **MRB**: “Compare the five NCR-018 dispositions. Draft rework: quarantine L2609-B, restore PVD-011/012/013 to the controlled drawing and re-verify. Save the draft; do not approve.”
+3. “我已审阅这个返工草案，请请求我的正式签署；实施、复验与放行仍是后续独立步骤。” / “I have reviewed this rework draft. Request my formal signature; implementation, re-verification and release remain separate.” 先拒绝一次，再重新审阅并签署；状态不应在拒绝时改变。 / Reject once, then review and sign a new request; refusal must preserve state.
+4. **追溯分析师**：“ECR-016 会影响哪些需求、接口与复验？请把没有覆盖和尚未通过的项目列清楚。” / **Traceability Analyst**: “Which requirements, interfaces and re-tests does ECR-016 affect? Identify missing coverage and tests that have not passed.”
+5. **质量助手**：“生成中文双五条归零报告和可打印交付物。明确哪些证据仍缺失，并让我追溯到试验、处置签名和插件版本，不能宣称已归零。” / **Quality**: “Generate a Chinese double-five report and printable deliverables. Identify missing evidence and trace tests, disposition signatures and plugin version. Do not claim closure.”
+6. “把热循环组件更换批次应追加 TVAC 筛选的经验提议为项目规则，并准备原生可复用技能候选，展示文件与摘要，等我审阅。” / “Propose the lesson that thermally cycled lot substitutions need TVAC screening as a programme rule; prepare a reusable native skill candidate, show files/digest and wait for review.”
+7. “我已审阅候选，请提交安装请求，让我在宿主确认。” / “I reviewed the candidate. Submit its installation request for my Host confirmation.” 再说：“请请求我签署 TVAC-LOT-001 项目规则的启用。” / Then: “Request my signature to activate programme rule TVAC-LOT-001.”
+8. “重新分析 ECR-016，告诉我新规则是否生效及新增验证。先别改变基线。” / “Re-analyse ECR-016. Does the reviewed rule apply, and what verification is added? Keep the baseline unchanged.” 审阅后：“请请求我签署 ECR-016 技术状态更改；新增试验保持待执行。” / After review: “Request my signature for ECR-016 configuration change. Keep added tests pending.”
+9. **质量助手**：“生成本周 NCR 摘要，并建议每周一上午九点的质量巡检任务，不能无人值守批准硬件处置。” / **Quality**: “Generate this week's NCR digest and suggest a Monday 09:00 quality check. Never approve hardware disposition unattended.” 在自动化页选择质量助手、Asia/Shanghai、新会话、无人值守审批拒绝；立即运行并打开报告。 / In Automation select Quality Assistant, Asia/Shanghai, a new session and refused unattended approvals; Run now and open the report.
 
-```text
-call aero_playbook {}
-call aero_investigate {"anomalyId":"AN-027"}
-call aero_briefing {"locale":"zh-CN"}
-call aero_trace {}
-call aero_mrb_draft {"ncrId":"NCR-018","disposition":"rework","rationale":"Quarantine lot L2609-B, restore affected PVD-011/012/013 to the drawing and re-verify VT-001/004/008 before release.","expectedRevision":1}
-call aero_decide {"kind":"mrb","id":"NCR-018","expectedRevision":2}
-call aero_report {"kind":"zeroing","locale":"zh-CN"}
-call aero_rule_propose {"expectedRevision":3}
-call aero_skill_candidate {"action":"prepare"}
-call aero_skill_candidate {"action":"commit","proposalId":"<Host returned proposalId>"}
-call aero_skill_candidate {"action":"status","proposalId":"<same Host proposalId; wait for ready>"}
-call aero_decide {"kind":"rule","id":"TVAC-LOT-001","expectedRevision":4}
-call aero_change_review {"ecrId":"ECR-016"}
-call aero_decide {"kind":"configuration","id":"ECR-016","expectedRevision":5}
-```
+真实模型演示使用 `../scripts/presentation.mjs aerospace-quality --real`，在隔离 home 通过图库安装采用，再执行自然业务阶段，保存截图与 AGH 用量；总费用上限 $3。原确定性验收脚本仅用于机制回归。`/?admin` 与设置→应用保留宿主恢复。
 
-升级演示为可选：在测试副本中安装下一版，经完整性/能力复核后，旧会话保留原 pin、新会话采用新版本；不要修改正在运行的不可变包。`/?admin` 保留宿主恢复。 / Optional upgrade: install a reviewed new version from a test copy. Old sessions retain pins; new sessions use the new version. Never edit installed immutable bytes. `/?admin` remains available.
+Use `../scripts/presentation.mjs aerospace-quality --real` for isolated gallery installation/adoption and natural business stages, screenshots and AGH usage; cap total spend at $3. The deterministic runner covers mechanism regression. Settings → Application and `/?admin` retain host recovery.

@@ -5,6 +5,10 @@ description: Evidence-first aerospace programme quality, traceability, MRB, conf
 
 只执行用户明确要求的当前步骤。读取技能或保存草案不授权后续处置、安装、规则启用或技术状态变更；完成所请求步骤后停止。thermallyCycled 是设计环境属性，不证明试验已执行；未给定验收限值的通道不能判通过。归零已审项与缺证项须分别按受控记录报告。
 
+业务签署：用户明确请求正式质量决策时，调用 aero_decide。工具先停在宿主 `business.confirm`，人工签名后才改变业务状态。不要用问答工具、ui_render 或文字“批准”代替或重复请求签名；full-access 只自动回答普通权限。拒绝、取消或系统回答后不能继续处置。
+
+Business signatures: on an explicit quality-decision request invoke aero_decide. It waits at Host `business.confirm` and mutates only after a human signs. Never substitute or duplicate the signature with a question tool, ui_render or a text “approve”. Full access only auto-answers ordinary permissions. Refusal, cancellation and system answers cannot disposition records.
+
 先读取 aero_quality 和 aero_investigate 的受控证据。把观察、关联、假设、已证实机理分开。引用试验、需求、批次、基线和审计 ID；不能把相似 NCR 当作因果证明。调用 aero_trace 定位孤立需求、设计缺口、未覆盖与未通过验证。用 aero_change_review 列出接口、需求与复验影响。
 
 MRB 草案应比较 use-as-is / rework / repair / scrap / return-to-supplier。use-as-is 也需要有依据的让步与本示例的人工审批。返工恢复原图样；修理偏离原设计，需设计权威评审。处置后保持隔离，物理实施、复验和放行是独立步骤。调用 aero_mrb_draft 后用最新 revision 请求 aero_decide；审批被拒绝时停止，不能改用其它服务绕过。

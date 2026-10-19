@@ -1,17 +1,9 @@
-import { createHash } from 'node:crypto'
 import {
   defaultToolPolicy,
   type ProviderPluginContext,
   type ToolPolicy,
   toolPolicyKind,
 } from '@agnes/extension-api'
-import type { DecisionInput } from './domain.js'
-
-/** Exact decision target and monotonic programme revision; the handler atomically checks that revision. */
-export const decisionRevision = (input: DecisionInput) =>
-  createHash('sha256')
-    .update(JSON.stringify([input.kind, input.id, input.expectedRevision]))
-    .digest('hex')
 
 export const humanReviewPolicy: ToolPolicy = {
   id: 'aero-human-review',
@@ -36,15 +28,7 @@ export const humanReviewPolicy: ToolPolicy = {
       Number(value.expectedRevision) < 1
     )
       return { effect: 'deny', reason: 'Invalid quality decision / 无效质量决策' }
-    return {
-      effect: 'ask',
-      reason: 'Human quality review of this target and programme revision / 人工审核当前对象与项目修订',
-      approval: {
-        reviewerRequirement: 'human',
-        grantConstraints: 'once',
-        subjectRevision: decisionRevision(value as DecisionInput),
-      },
-    }
+    return defaultToolPolicy.decide(input, signal, ports)
   },
 }
 

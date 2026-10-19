@@ -68,7 +68,7 @@ function write(
     p.audit.push({
       id: `AUD-${String(p.revision).padStart(4, '0')}`,
       at: new Date().toISOString(),
-      actor: identity.actor,
+      actor: identity.approval?.answeredBy.id ?? identity.actor,
       action,
       record,
       fromRevision: revision,
@@ -82,7 +82,8 @@ function write(
   })
 }
 export function change(store: OwnedStore | undefined, input: Change, who: Identity) {
-  if (!who.approval) throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
+  if (!who.approval || ['agent', 'system'].includes(who.approval.answeredBy.role))
+    throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
   return write(
     store,
     input.expectedRevision,
@@ -145,20 +146,31 @@ export function change(store: OwnedStore | undefined, input: Change, who: Identi
           throw new Error('Evidence reference and rationale required / 请输入证据编号及依据')
         if (dev.stage === 'investigation') {
           dev.stage = 'capa'
-          dev.cause = `Confirmed in synthetic evidence: T02 as-found +4.1 °C drift; EM cleaning lapse assessed separately / 合成证据确认 T02 漂移 +4.1 °C；EM 清洁缺口单独评估。 ${input.evidence}`
-          dev.actions.forEach((a) => {
-            a.evidence = input.evidence!
-          })
+          dev.cause = `Confirmed in synthetic evidence: T02 as-found +4.1 °C drift; independent EM assessment remains pending / 合成证据确认 T02 漂移 +4.1 °C；EM 独立评估仍待完成。 Calibration evidence / 校准证据: CAPA-017-1`
+          dev.why = dev.why.map((step) =>
+            step.includes('drift suspected')
+              ? `Probe T02 drift confirmed by synthetic as-found evidence / 合成 as-found 证据确认 T02 漂移: ${input.evidence}`
+              : step,
+          )
+          const calibration = dev.actions.find((action) => action.id === 'CAPA-017-1')
+          if (calibration)
+            calibration.evidence = `CALIBRATION-ASFOUND [historical r${input.expectedRevision}→r${input.expectedRevision + 1}; EM status then only / 当时 EM 状态]:${input.evidence}`
         } else if (dev.stage === 'capa') {
           dev.stage = 'effectiveness'
+          dev.cause = dev.cause
+            .replace('independent EM assessment remains pending /', 'independent EM assessment completed /')
+            .replace('EM 独立评估仍待完成。', 'EM 鉴别、清洁与复采样风险评估已完成。')
           const e = p.equipment.find((e) => e.id === 'DR-02')!
           e.calibrated = '2024-10-20'
           e.due = '2025-04-20'
           e.qualification = 'qualified'
           e.evidence.push(
-            `CAL-ASLEFT-PASS:${input.evidence}`,
-            ...dev.impact.map((id) => `RETROSPECTIVE:${id}:${input.evidence}`),
+            `CAL-ASLEFT-PASS:${dev.actions[0]?.evidence ?? input.evidence}`,
+            `SUBSEQUENT-EM-ASSESSMENT [r${input.expectedRevision + 1}]:${input.evidence}`,
+            ...dev.impact.map((id) => `RETROSPECTIVE:${id}:${dev.actions[0]?.evidence ?? input.evidence}`),
           )
+          for (const action of dev.actions.filter((item) => ['CAPA-017-2', 'CAPA-017-3'].includes(item.id)))
+            action.evidence = `${action.id === 'CAPA-017-2' ? 'REPROCESS-RETEST' : 'EM-ASSESSMENT'}:${input.evidence}`
           const original = b.steps.find((s) => s.id === 'drying')!.cpp[0]!
           b.retests.push({
             ...original,
@@ -190,7 +202,8 @@ export function change(store: OwnedStore | undefined, input: Change, who: Identi
   )
 }
 export function release(store: OwnedStore | undefined, input: Release, who: Identity) {
-  if (!who.approval) throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
+  if (!who.approval || ['agent', 'system'].includes(who.approval.answeredBy.role))
+    throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
   if (input.meaning !== SIGNATURE_MEANING)
     throw new Error('Exact signature meaning required / 签名含义不匹配')
   return write(store, input.expectedRevision, who, 'release', input.batch, input.meaning, (p) => {

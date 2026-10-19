@@ -32,8 +32,16 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 
 Isolated acceptance scripts live in `scripts/`; use a dedicated home/port and explicit real-model budget. No account or key ships in the package. EU GMP Annex 1/11, 21 CFR Part 11, ICH Q9/Q10 and ALCOA+ are reference frameworks, not compliance certification.
 
-Role presets select an application-owned policy through the public tool-policy SPI. It preserves the default policy’s refusals and requires a human, once, bound to the exact arguments/revision for quality writes and release, including full-access sessions. A direct call without that proof refuses.
+Role presets select an application-owned policy through the public tool-policy SPI, preserving default tool-permission behavior. Quality writes and release separately request a human business signature bound to the exact arguments/revision, including full-access sessions. A direct domain write without human proof refuses.
 
 Only the exact nightly EM export (`kind=em` plus a supported locale) may run unattended: it reads quality state and writes new report files inside `pharma-output/`. Other report shapes retain the default decision; quality records and release always require a human.
 
 Release dossier tools return the original findings together with current blockers and the deviation, retest, EM and equipment evidence. A certificate binds the reviewed pre-signature dossier revision; signing advances the state revision by one.
+
+## Business signatures
+
+Quality records and batch release are business acts. Tools use the public decision port with `business.confirm`, bind the exact target, revision, evidence and meaning, and verify the Host-recorded human answer. System/agent answers, rejection, cancellation and invalidation cannot mutate quality state. Full access still asks for a human signature. Ordinary tool permissions follow the selected preset; automatic full-access permission is no business signature. Page effects retain Host human confirmation and revision checks.
+
+For the real-model investor demo, run `exec node --import tsx examples/showcase/scripts/presentation.mjs pharma-gmp --real` through the repository toolchain entry under heavy-lock and web-gate-lock, injecting the key per command from the designated keychain item. The runner saves screenshots and costs under its isolated run directory; set `AGH_SHOWCASE_SHOTS` to choose an external report directory and `AGH_SHOWCASE_PRIOR_USD` to include previous paid attempts in the $3 application cap. The older acceptance script's `--real` also delegates to this natural conversation flow.
+
+For an explicit test-operator source review, set `AGH_SHOWCASE_REQUIRE_REVIEW=1`: the runner writes `candidate-review.json` and waits for `review-approved.json` in the isolated run directory, containing the same `candidateHash` and `reviewHash`. This test fixture never grants production consent.

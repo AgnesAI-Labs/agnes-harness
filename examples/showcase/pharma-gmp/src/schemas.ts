@@ -134,11 +134,15 @@ export const dossierSchema = obj({
   batch: id,
   revision,
   asOf: text,
+  signatureMeaning: text,
   ready: Type.Boolean(),
   rows: list(obj({ key: text, title: localized, pass: Type.Boolean() })),
   blockers: list(text),
   findings: list(findingSchema),
   evidence: obj({
+    recordApprovals: list(
+      obj({ action: text, approvalId: text, recordedBy: text, recordedAt: text, reviewedRevision: revision }),
+    ),
     deviations: list(deviation),
     retests: list(measurement),
     equipment: list(equipment),
@@ -149,6 +153,8 @@ export const dossierSchema = obj({
 })
 export const investigationSchema = obj({
   batch: id,
+  revision,
+  rooms: list(room),
   findings: list(findingSchema),
   em: list(sample),
   equipment: list(equipment),
@@ -169,5 +175,18 @@ export const snapshotSchema = obj({
     excursions: revision,
   }),
 })
-export const receiptSchema = obj({ revision, batch: id, dossier: dossierSchema })
+export const receiptSchema = obj({
+  revision,
+  batch: id,
+  dossier: dossierSchema,
+  signature: Type.Optional(
+    obj({
+      decisionId: text,
+      signer: text,
+      signedAt: text,
+      reviewedRevision: revision,
+      purpose: Type.Literal('business.confirm'),
+    }),
+  ),
+})
 export const plain = (schema: object) => JSON.parse(JSON.stringify(schema))

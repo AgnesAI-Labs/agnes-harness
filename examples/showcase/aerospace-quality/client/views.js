@@ -79,6 +79,9 @@ export function Telemetry({ data, t }) {
 }
 export function Home({ data, t, navigate }) {
   const k = data.health
+  const criteria = data.zeroing.flatMap((item) => item.criteria)
+  const progress = (prefix) =>
+    `${criteria.filter((row) => row.id.startsWith(prefix) && row.accepted).length}/${criteria.filter((row) => row.id.startsWith(prefix)).length}`
   return h(
     React.Fragment,
     null,
@@ -107,7 +110,10 @@ export function Home({ data, t, navigate }) {
         [
           k.zeroing,
           t.choose('质量归零进行中', 'Open zeroing items'),
-          t.choose('技术 1/5 · 管理 2/5', 'Technical 1/5 · Management 2/5'),
+          t.choose(
+            `技术 ${progress('T')} · 管理 ${progress('M')}`,
+            `Technical ${progress('T')} · Management ${progress('M')}`,
+          ),
         ],
       ].map(([value, label, note]) =>
         h(

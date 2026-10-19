@@ -121,6 +121,7 @@
             "ask_user_question",
             "read",
             "ui_render",
+            "skill_read",
             "pharma_record",
             "pharma_release",
             "schedule_create",
@@ -129,7 +130,9 @@
             "schedule_delete",
             "plugin_helper_create",
             "plugin_helper_install",
-            "plugin_helper_guide"
+            "plugin_helper_guide",
+            "plugin_candidate_read",
+            "plugin_candidate_write"
           ],
           "skills": [
             "gmp-review"
@@ -143,6 +146,7 @@
               "ask_user_question",
               "read",
               "ui_render",
+              "skill_read",
               "pharma_record",
               "pharma_release",
               "schedule_create",
@@ -151,7 +155,9 @@
               "schedule_delete",
               "plugin_helper_create",
               "plugin_helper_install",
-              "plugin_helper_guide"
+              "plugin_helper_guide",
+              "plugin_candidate_read",
+              "plugin_candidate_write"
             ]
           }
         },
@@ -198,6 +204,7 @@
             "ask_user_question",
             "read",
             "ui_render",
+            "skill_read",
             "pharma_record"
           ],
           "skills": [
@@ -212,6 +219,7 @@
               "ask_user_question",
               "read",
               "ui_render",
+              "skill_read",
               "pharma_record"
             ]
           }
@@ -259,6 +267,7 @@
             "ask_user_question",
             "read",
             "ui_render",
+            "skill_read",
             "pharma_record"
           ],
           "skills": [
@@ -273,6 +282,7 @@
               "ask_user_question",
               "read",
               "ui_render",
+              "skill_read",
               "pharma_record"
             ]
           }
@@ -320,6 +330,7 @@
             "ask_user_question",
             "read",
             "ui_render",
+            "skill_read",
             "schedule_create",
             "schedule_list",
             "schedule_update",
@@ -337,6 +348,7 @@
               "ask_user_question",
               "read",
               "ui_render",
+              "skill_read",
               "schedule_create",
               "schedule_list",
               "schedule_update",
@@ -387,6 +399,7 @@
             "ask_user_question",
             "read",
             "ui_render",
+            "skill_read",
             "pharma_release"
           ],
           "skills": [
@@ -401,6 +414,7 @@
               "ask_user_question",
               "read",
               "ui_render",
+              "skill_read",
               "pharma_release"
             ]
           }

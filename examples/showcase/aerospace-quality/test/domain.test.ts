@@ -113,7 +113,15 @@ it('approved domain decisions hold hardware, invalidate verification, enforce do
     fixture.ncrs[17]!.disposition = disposition
     fixture.ncrs[17]!.rationale = 'Reviewed disposition; implementation and release remain pending.'
     persist(store, fixture)
-    decide(store, { kind: 'mrb', id: 'NCR-018', expectedRevision: 1 }, { requestId: 'human-review' })
+    decide(
+      store,
+      { kind: 'mrb', id: 'NCR-018', expectedRevision: 1 },
+      {
+        requestId: 'human-review',
+        subjectRevision: 'synthetic',
+        answeredBy: { id: 'human', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+      },
+    )
     expect(read(store).parts[0]!.status).toBe(status)
   }
   memory.clear()
@@ -122,7 +130,11 @@ it('approved domain decisions hold hardware, invalidate verification, enforce do
   s.ncrs[17]!.disposition = 'rework'
   s.ncrs[17]!.rationale = 'Quarantine lot and restore original drawing; verify before release.'
   persist(store, s)
-  const approved = { requestId: 'host-approval-synthetic' }
+  const approved = {
+    requestId: 'host-approval-synthetic',
+    subjectRevision: 'synthetic',
+    answeredBy: { id: 'human', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+  }
   expect(() => decide(store, { kind: 'zeroing', id: 'ZR-001', expectedRevision: 1 }, approved)).toThrow(
     'Double-five evidence incomplete',
   )
@@ -173,5 +185,69 @@ it('traceability exposes orphan/design/untested gaps and reports preserve uncert
     expect(r.markdown).toMatch(/草案|DRAFT/)
     expect(r.markdown).toContain('T5')
     expect(r.markdown).toContain('M5')
+  }
+})
+
+it('asks for a separate human business signature under standard and full-access before MRB disposition', async () => {
+  const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
+  for (const base of ['standard', 'full-access']) {
+    const kit = await createAuthorTestkit({
+      plugin: main,
+      packageId: '@test/aerospace-signature',
+      version: '1.0.0',
+      capabilities: { store: true },
+      preset: base,
+      presets: { 'full-access': { name: 'full-access', extends: 'standard' } },
+      approval: async () => ({
+        verdict: 'allowed-once',
+        answeredBy: { id: 'human.permission', role: 'reviewer', org: 'test', deptPath: [], attrs: {} },
+      }),
+    })
+    try {
+      const s = await kit.openSession()
+      const draft = await s.invoke('aero_mrb_draft', {
+        ncrId: 'NCR-018',
+        disposition: 'rework',
+        rationale: 'Quarantine L2609-B; restore drawing and re-verify.',
+        expectedRevision: 1,
+      })
+      expect(draft.isError).not.toBe(true)
+      for (const [role, option, success] of [
+        ['system', 'allowed-once', false],
+        ['reviewer', 'rejected', false],
+        ['reviewer', 'allowed-once', true],
+      ] as const) {
+        const pending = s.invoke('aero_decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 2 })
+        let question: Awaited<ReturnType<typeof s.decisions>>[number] | undefined
+        await expect
+          .poll(async () => {
+            question = (await s.decisions()).find(
+              (value) =>
+                value.request.spec.purpose === 'business.confirm' && !value.result && !value.invalidation,
+            )
+            return !!question
+          })
+          .toBe(true)
+        const snapshot = question!
+        expect(snapshot.request.spec.subject).toMatchObject({ input: expect.stringContaining('NCR-018') })
+        await s.answerDecision(
+          {
+            handle: snapshot.handle,
+            revision: snapshot.revision,
+            commandId: `review:${snapshot.handle.id}`,
+            response: { option, value: null },
+          },
+          { id: `signer.${role}`, role, org: 'test', deptPath: [], attrs: {} },
+        )
+        const result = await pending
+        expect(!result.isError, JSON.stringify(result)).toBe(success)
+        const state = (await s.invoke('aero_quality', { view: 'dashboard' })).structured as {
+          revision: number
+        }
+        expect(state.revision).toBe(success ? 3 : 2)
+      }
+    } finally {
+      await kit.dispose()
+    }
   }
 })

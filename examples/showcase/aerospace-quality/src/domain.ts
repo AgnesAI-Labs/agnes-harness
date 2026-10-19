@@ -175,7 +175,8 @@ export function health(s: State) {
     ncrs: s.ncrs.filter((r) => r.status !== 'closed').length,
     ecrs: s.ecrs.filter((r) => r.status === 'review').length,
     zeroing: s.zeroing.filter((r) => r.status !== 'closed').length,
-    openAnomalies: 1,
+    openAnomalies: new Set(s.zeroing.filter((item) => item.status !== 'closed').map((item) => item.anomaly))
+      .size,
     bySeverity: Object.fromEntries(
       ['critical', 'major', 'minor'].map((v) => [
         v,
@@ -195,7 +196,7 @@ export type DecisionInput = {
   id: string
   expectedRevision: number
 }
-type Approval = { requestId: string } | undefined
+type Approval = import('@agnes/extension-api').ToolContext['approval']
 function update(
   store: OwnedStore | undefined,
   expected: number,
@@ -244,7 +245,8 @@ export function propose(store: OwnedStore | undefined, expected: number) {
   })
 }
 export function decide(store: OwnedStore | undefined, input: DecisionInput, approval: Approval) {
-  if (!approval?.requestId) throw new Error('必须通过宿主人工审批 / Host human approval required')
+  if (!approval?.requestId || ['agent', 'system'].includes(approval.answeredBy.role))
+    throw new Error('必须通过宿主人工审批 / Host human approval required')
   return update(store, input.expectedRevision, `${input.kind}-approve`, input.id, approval, (s) => {
     if (input.kind === 'mrb') {
       const r = s.ncrs.find((r) => r.id === input.id)
