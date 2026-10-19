@@ -137,6 +137,26 @@ it('generates an executable tool plugin using the current owned registration por
     new URL('../bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
   )
   pluginHelper.apply({ tools })
+  const install = registered.get('plugin_helper_install')!
+  for (const state of ['failed', 'passed']) {
+    const failure = await install.execute({ action: 'test', proposalId: 'synthetic-candidate' }, {
+      signal: new AbortController().signal,
+      session: { depth: 0 },
+      pluginManage: {
+        request: async () => ({
+          candidateId: 'synthetic-candidate',
+          candidateHash: 'sha256-reviewed',
+          state,
+          tests: { state, count: 1, output: 'not ok 1 - three-day warning\n' + 'x'.repeat(20000) },
+        }),
+      },
+    } as never)
+    const modelText = JSON.stringify(failure.content)
+    if (state === 'failed') {
+      expect(modelText).toContain('three-day warning')
+      expect(modelText.length).toBeLessThan(10000)
+    } else expect(modelText).not.toContain('three-day warning')
+  }
   const guide = registered.get('plugin_helper_guide')!
   // The guide is readable even when the invocation has no authoring capability.
   for (const context of [undefined, null, {}])

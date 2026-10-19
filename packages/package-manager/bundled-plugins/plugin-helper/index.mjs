@@ -28,7 +28,15 @@ const result = (value, action) => {
       {
         type: 'text',
         text: JSON.stringify(
-          value.candidateId ? { ...data, tests: data.tests && { ...data.tests, output: undefined } } : data,
+          value.candidateId
+            ? {
+                ...data,
+                tests: data.tests && {
+                  ...data.tests,
+                  output: data.tests.state === 'failed' ? data.tests.output?.slice(0, 8192) : undefined,
+                },
+              }
+            : data,
         ),
       },
     ],
