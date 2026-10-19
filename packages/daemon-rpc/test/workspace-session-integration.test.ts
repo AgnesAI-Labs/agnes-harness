@@ -55,6 +55,16 @@ describe('workspace session integration', () => {
       ).resolves.toMatchObject({
         error: { code: -32011, data: { code: 'ID_CONFLICT' } },
       })
+      for (const method of ['session/load', '_agnes/v1/session.open'])
+        await expect(
+          endpoint.handle(
+            request(51, method, {
+              sessionId: 'agnes:workspace:request-1',
+              cwd: other,
+              ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'wrong-binding' }),
+            }),
+          ),
+        ).resolves.toMatchObject({ error: { code: -32011, data: { code: 'ID_CONFLICT' } } })
 
       const listed = (await endpoint.handle(request(6, '_agnes/v1/workspace.list', {}))) as {
         result: { items: unknown[] }

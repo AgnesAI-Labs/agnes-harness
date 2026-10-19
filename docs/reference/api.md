@@ -58,6 +58,10 @@ The in-process Core/Host session also exposes read-only `isRunning`, which refle
 
 ## Protocol method groups
 
+`client.session.open(id, { cwd?, signal?, onPermissionRequest?, onProgress? })` admits a session without replaying ACP history. It uses `_agnes/v1/session.open` (`sessionId`, optional workspace hint `cwd`, unique `requestId`) when `initialize.agentCapabilities._meta["ai.agnes.harness"].sessionOpen` is `true`; older daemons use `session/load`. A refusal never triggers fallback. Workspace, ownership, plugin recovery and complete history verification are the same as `session/load`. Ordinary ACP load still replays its full transcript. SDK recovery remembers the handle's opening mode.
+
+Read the bounded `projectUIOpening` after admission and subscribe from that opening's generation and exclusive `upto` cut; the open response is not a projection cursor. Register the permission handler before opening. Aborting the SDK call sends `session.loadingCancel` with the same request ID, releasing only that wait on that connection, without stopping a running turn. Omitting the ID retains the older connection/session-wide loading cancellation behavior. History previews and local drafts never authorize sending or answering approvals.
+
 | Method family | Purpose |
 | --- | --- |
 | `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel` | Handshake and basic sessions |

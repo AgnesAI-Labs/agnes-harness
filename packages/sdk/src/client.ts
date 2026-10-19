@@ -146,6 +146,17 @@ export type CallOptions = {
   signal?: AbortSignal
 }
 
+export type SessionLoadOptions = {
+  cwd?: string
+  /** Admission only, with a negotiated fallback to ACP load on older daemons. */
+  history?: 'full' | 'none'
+  signal?: AbortSignal
+  onPermissionRequest?: PermissionHandler
+  onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void
+  /** Receives the disposer before the RPC is sent. */
+  onPermissionRequestRegistered?: (off: () => void) => void
+}
+
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
@@ -164,6 +175,7 @@ type Schema = Parameters<typeof validateAgainst>[0]
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
 
 export class Client {
+  private readonly admissionOnly = new Set<string>()
   // Connection/options stay private so consumers cannot bypass client bookkeeping or expose auth.
   private readonly conn: RpcConnection
   readonly journal: JournalStore
@@ -513,16 +525,7 @@ export class Client {
     // daemon must recover an existing session's immutable durable workspace or reject an unknown
     // id. A supplied cwd is only a lookup hint. The daemon must match it to an already registered
     // workspace and must never treat session.load as workspace.add.
-    load: async (
-      id: string,
-      o: {
-        cwd?: string
-        onPermissionRequest?: PermissionHandler
-        onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void
-        /** Receives the disposer for the load-time handler before the RPC is sent. */
-        onPermissionRequestRegistered?: (off: () => void) => void
-      } = {},
-    ): Promise<Session> => {
+    load: async (id: string, o: SessionLoadOptions = {}): Promise<Session> => {
       // Install before the request goes on the wire. A daemon may answer a permission request
       // while session/load is still replaying history; creating the handle only after load used to
       // make that request take the automatic reject path in the client-level server handler.
@@ -539,7 +542,9 @@ export class Client {
         }
       }
       try {
-        await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress)
+        await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress, o.history === 'none', o.signal)
+        if (o.history === 'none') this.admissionOnly.add(id)
+        else this.admissionOnly.delete(id)
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
       } catch (error) {
@@ -549,6 +554,9 @@ export class Client {
         throw error
       }
     },
+    /** Verifies and restores execution without an ACP transcript replay. */
+    open: (id: string, o: Omit<SessionLoadOptions, 'history'> = {}): Promise<Session> =>
+      this.session.load(id, { ...o, history: 'none' }),
     attach: async (id: string, o: { cursor?: Cursor; filter?: AttachFilter } = {}): Promise<Session> => {
       const s = this.sessionHandle(id)
       await s.attach(o)
@@ -618,16 +626,23 @@ export class Client {
    * wire call in the same place as an explicit session.load.
    */
   restoreSession(id: string, cwd: string): Promise<unknown> {
-    return this.loadSessionHistory(id, cwd)
+    return this.loadSessionHistory(id, cwd, undefined, this.admissionOnly.has(id))
   }
 
   private async loadSessionHistory(
     id: string,
     cwd: string,
     onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void,
+    admissionOnly = false,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    await this.initialize()
+    const info = await this.initialize()
+    signal?.throwIfAborted()
+    const meta = info.capabilities._meta as Record<string, { sessionOpen?: boolean }> | undefined
+    const open = admissionOnly && meta?.[META_KEY]?.sessionOpen === true
+    const requestId = open ? crypto.randomUUID() : undefined
     return loadHistory({
+      ...(signal ? { signal } : {}),
       sessionId: id,
       idleMs: this.timeouts.loadIdle,
       hardMs: this.timeouts.loadHard,
@@ -635,13 +650,16 @@ export class Client {
       request: async (signal) => {
         try {
           return await this.call(
-            'session/load',
-            { sessionId: id, cwd, mcpServers: [] },
+            open ? '_agnes/v1/session.open' : 'session/load',
+            open ? { sessionId: id, cwd, requestId } : { sessionId: id, cwd, mcpServers: [] },
             { timeoutMs: null, signal },
           )
         } catch (error) {
-          if (signal.aborted)
-            await this.notify('_agnes/v1/session.loadingCancel', { sessionId: id }).catch(() => undefined)
+          if (signal.aborted && (!admissionOnly || requestId))
+            await this.notify('_agnes/v1/session.loadingCancel', {
+              sessionId: id,
+              ...(requestId ? { requestId } : {}),
+            }).catch(() => undefined)
           throw error
         }
       },

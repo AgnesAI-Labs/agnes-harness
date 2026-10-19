@@ -143,8 +143,9 @@ export function createSessionController(
         ? bindWebSession(options.created, permission)
         : await loadWebSession(
             (sessionId, options) =>
-              context.client.session.load(sessionId, {
+              context.client.session.open(sessionId, {
                 ...options,
+                cwd: context.sessionRows.find((row) => row.sessionId === sessionId)?.cwd,
                 onProgress: (progress) => {
                   if (context.sessionBinding.isCurrent(epoch) && !context.current)
                     context.readOnlyController.progress(
@@ -200,6 +201,7 @@ export function createSessionController(
         | (PageSessionMeta['items'][number] & { cwd?: string })
         | undefined
       const workspacePath = metadata?.cwd ?? options.workspace?.path
+      if (workspacePath) loaded.rememberWorkspace(workspacePath)
       if (workspacePath)
         context.selectedWorkspace =
           context.workspaceRows.find((entry) => entry.path === workspacePath) ??
@@ -416,7 +418,7 @@ export function createSessionController(
   async function forkSidebar(id: string, title: string): Promise<void> {
     const epoch = context.sessionBinding.capture()
     const row = context.sessionRows.find((item) => item.sessionId === id)
-    const source = await context.client.session.load(id, row?.cwd ? { cwd: row.cwd } : {})
+    const source = await context.client.session.open(id, row?.cwd ? { cwd: row.cwd } : {})
     const timeline = await source.projectUI(undefined, { surface: 'web' })
     if (timeline.opState !== null) throw new Error(context.t('app.fork.waitIdle'))
     const turn = timeline.turns.findLast((item) => item.forkable && item.endSeq !== undefined)

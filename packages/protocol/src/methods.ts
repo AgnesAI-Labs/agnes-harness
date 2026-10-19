@@ -189,6 +189,7 @@ export type MethodName =
   | '_agnes/v1/surfaces.mounts'
   | 'authenticate'
   | 'session/load'
+  | '_agnes/v1/session.open'
   | 'session/set_mode'
   | '_agnes/v1/session.detach'
   | '_agnes/v1/auth.claim'
@@ -480,6 +481,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: Acp.LoadSessionRequest,
     result: Acp.LoadSessionResponse,
   },
+  '_agnes/v1/session.open': clientRequest(A.SessionOpenParams, A.Empty),
   'session/set_mode': {
     kind: 'request',
     direction: 'c2s',
@@ -505,7 +507,11 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
-  '_agnes/v1/session.loadingCancel': { kind: 'notification', direction: 'c2s', params: A.SessionIdParams },
+  '_agnes/v1/session.loadingCancel': {
+    kind: 'notification',
+    direction: 'c2s',
+    params: A.SessionLoadingCancelParams,
+  },
   '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
   '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },

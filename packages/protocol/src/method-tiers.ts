@@ -209,6 +209,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/surfaces.mounts': 'admin',
   authenticate: 'client',
   'session/load': 'client',
+  '_agnes/v1/session.open': 'client',
   'session/set_mode': 'client',
   '_agnes/v1/session.detach': 'client',
   '_agnes/v1/auth.claim': 'client',

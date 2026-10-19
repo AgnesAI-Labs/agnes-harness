@@ -588,6 +588,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   CompactOutcome: AgnesGen.CompactOutcome,
   ErrorData: AgnesGen.ErrorData,
   SessionIdParams: AgnesGen.SessionIdParams,
+  SessionOpenParams: AgnesGen.SessionOpenParams,
+  SessionLoadingCancelParams: AgnesGen.SessionLoadingCancelParams,
   SessionRevealWorkspaceParams: AgnesGen.SessionRevealWorkspaceParams,
   SessionRevealWorkspaceResult: AgnesGen.SessionRevealWorkspaceResult,
   SessionJob: AgnesGen.SessionJob,
@@ -2020,6 +2022,20 @@ const REVIEW_RESULT = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionOpenParams: {
+    valid: { sessionId: 's', cwd: '/synthetic', requestId: 'open-1' },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', requestId: '' },
+      { sessionId: 's', requestId: 'r', history: 'none' },
+    ],
+    note: 'Admission requires a request-scoped cancellation identity',
+  },
+  SessionLoadingCancelParams: {
+    valid: { sessionId: 's', requestId: 'open-1' },
+    invalid: [{}, { sessionId: 's', requestId: '' }, { sessionId: 's', requestId: 1 }],
+    note: 'Request-specific cancellation and legacy session-only cancellation are supported',
+  },
   SessionRevealWorkspaceParams: {
     valid: { sessionId: 's' },
     invalid: [{}, { sessionId: '' }, { sessionId: 's', path: '/untrusted' }],
@@ -8634,12 +8650,13 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/submit.ack': { fileId: AGNES_ID, params: 'CommandAckParams', result: 'Empty' },
   authenticate: { fileId: ACP_ID, params: 'AuthenticateRequest', result: 'AuthenticateResponse' },
   'session/load': { fileId: ACP_ID, params: 'LoadSessionRequest', result: 'LoadSessionResponse' },
+  '_agnes/v1/session.open': { fileId: AGNES_ID, params: 'SessionOpenParams', result: 'Empty' },
   'session/set_mode': { fileId: ACP_ID, params: 'SetSessionModeRequest', result: 'SetSessionModeResponse' },
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
   '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
-  '_agnes/v1/session.loadingCancel': { fileId: AGNES_ID, params: 'SessionIdParams' },
+  '_agnes/v1/session.loadingCancel': { fileId: AGNES_ID, params: 'SessionLoadingCancelParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
@@ -9477,6 +9494,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/submit.ack': AGNES_SAMPLES.CommandAckParams as Sample,
   authenticate: ACP_SAMPLES.AuthenticateRequest as Sample,
   'session/load': ACP_SAMPLES.LoadSessionRequest as Sample,
+  '_agnes/v1/session.open': AGNES_SAMPLES.SessionOpenParams as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeRequest as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.SessionIdParams as Sample,
   // The windowed branch of the oneOf, so that between this entry and AGNES_SAMPLES.AuthClaimParams
@@ -9492,7 +9510,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
   '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
-  '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionLoadingCancelParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
@@ -10169,6 +10187,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/submit.ack': AGNES_SAMPLES.Empty as Sample,
   authenticate: ACP_SAMPLES.AuthenticateResponse as Sample,
   'session/load': ACP_SAMPLES.LoadSessionResponse as Sample,
+  '_agnes/v1/session.open': AGNES_SAMPLES.Empty as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeResponse as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/auth.claim': AGNES_SAMPLES.AuthClaimResult as Sample,

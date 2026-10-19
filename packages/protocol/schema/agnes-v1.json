@@ -1139,6 +1139,27 @@
         }
       }
     },
+    "SessionOpenParams": {
+      "description": "Runs the same execution admission as ACP session/load without replaying ACP history. Read UI history through projectUIOpening and subscribe from its cut. requestId scopes loadingCancel to this caller's wait.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "requestId"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "cwd": { "type": "string", "maxLength": 32768 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "SessionLoadingCancelParams": {
+      "description": "Cancels loading waits on this connection, optionally restricted to one session.open requestId; never cancels the session's running turn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
     "SessionIdParams": {
       "type": "object",
       "additionalProperties": false,
