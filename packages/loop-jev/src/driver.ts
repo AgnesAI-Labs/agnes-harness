@@ -4,8 +4,9 @@ import type {
   LoopEndReason,
   LoopInput,
   LoopStepOutcome,
+  LoopTurnView,
 } from '@agnes/extension-api'
-import { stageOneToolNames } from './profile.js'
+import { codeDisclosure, turnToolNames } from './profile.js'
 import { recoverStep, resumeParkedStage } from './recover.js'
 import { emitMetrics, finishTurn, type Scope, save, snapshot } from './scope.js'
 import { emptyCounters, initialState } from './state.js'
@@ -16,8 +17,14 @@ import { addNote, goalText, newTurn } from './workspace.js'
 
 const FAILURE_MESSAGE_CHARS = 500
 
-/** A new user turn: a fresh goal, step 0 and counters, and the tool names for the whole turn. */
-async function beginTurn(s: Scope, input: LoopInput): Promise<void> {
+const UNSUPPORTED_DISCLOSURE = {
+  code: 'JEV_UNSUPPORTED_DISCLOSURE',
+  message:
+    "The Jev loop does not support the code or hybrid tool disclosure of this session's preset: it chooses among the standard tools and never offers run_code. Start the session with the default loop (agnes.default), or with a preset whose disclosure is standard.",
+}
+
+/** A new user turn: a fresh goal, step 0 and counters, and the tool names for the whole turn. Returns the view it read. */
+async function beginTurn(s: Scope, input: LoopInput): Promise<LoopTurnView> {
   const st = s.state
   newTurn(st.workspace, goalText(input.content))
   st.idTurn = input.turnId
@@ -28,11 +35,13 @@ async function beginTurn(s: Scope, input: LoopInput): Promise<void> {
   st.pendingNotes = []
   st.counters = emptyCounters()
   st.internalErrors = 0
+  st.toolNamesChanges = 0
   delete st.endReason
   delete st.endError
   const view = await s.ctx.turn.view()
   if (!view) throw new Error('The claimed Jev loop turn has no public view')
-  st.toolNames = stageOneToolNames(view)
+  st.toolNames = turnToolNames(view)
+  return view
 }
 
 const ended = (st: JevState) => st.stage === 'finish' || st.stage === 'done'
@@ -56,14 +65,30 @@ async function step(s: Scope, signal: AbortSignal): Promise<LoopStepOutcome> {
   const same = st.coreTurn === input.turnId
   // The answer was committed before a restart: end the turn without asking the model again.
   if (same && ended(st)) return finishTurn(s, st.endReason ?? 'completed', st.endError)
-  if (same && interrupted(st)) return recoverStep(s, signal)
-  if (!same) await beginTurn(s, input)
+  if (same && interrupted(st)) {
+    // A restart may find the session on a preset that no longer fits; a closed turn has no view to check.
+    const open = await ctx.turn.view()
+    if (open && codeDisclosure(open)) return finishTurn(s, 'error', UNSUPPORTED_DISCLOSURE)
+    return recoverStep(s, signal)
+  }
+  if (!same) {
+    const began = await beginTurn(s, input)
+    // The preset fixes the disclosure for the whole session: refuse before any Jev, model or tool call.
+    if (codeDisclosure(began)) return finishTurn(s, 'error', UNSUPPORTED_DISCLOSURE)
+  }
   const steer = await ctx.input.claim('next-step')
   if (steer) addNote(st.workspace, { kind: 'steer', text: goalText(steer.content) })
   const view = await ctx.turn.view()
   if (!view) throw new Error('The claimed Jev loop turn has no public view')
+  if (codeDisclosure(view)) return finishTurn(s, 'error', UNSUPPORTED_DISCLOSURE)
   if (signal.aborted || view.cancelled || ctx.turn.cancelled()) return finishTurn(s, 'aborted')
   if (st.step >= s.cfg.stepCap) return finishTurn(s, 'max_steps')
+  // A tool the model loaded earlier in the turn joins the names once; none is ever taken away.
+  const merged = [...new Set([...st.toolNames, ...turnToolNames(view)])].sort()
+  if (merged.join('\n') !== st.toolNames.join('\n')) {
+    st.toolNamesChanges++
+    st.toolNames = merged
+  }
   return decideStep(s, view, signal)
 }
 

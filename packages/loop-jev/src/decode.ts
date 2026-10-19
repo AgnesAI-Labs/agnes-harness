@@ -1,5 +1,5 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
-import type { CompiledQuestions, ConsumedHead, Decision, JsonObject, Phase } from './types.js'
+import type { Candidate, CompiledQuestions, ConsumedHead, Decision, JsonObject, Phase } from './types.js'
 import { DEFAULT_ARGUMENTS, LLM_PARAMETERS } from './types.js'
 
 export type ChoiceAnswer = { choice: string; confidence: number; probabilities: Record<string, number> }
@@ -17,6 +17,24 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function own(record: UnknownRecord, key: string): unknown {
   return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
+function ownEntry<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
+// `path` is the targetParam of `read`, the only multi-target tool (profile.ts).
+/** Every argument of a batch must be shared except the target path. */
+const TARGET_PATH = 'path'
+
+function sameExceptPath(a: JsonObject, b: JsonObject): boolean {
+  const rest = (args: JsonObject) => Object.entries(args).filter(([key]) => key !== TARGET_PATH)
+  const left = rest(a)
+  const right = rest(b)
+  return (
+    left.length === right.length &&
+    left.every(([key, value]) => Object.hasOwn(b, key) && JSON.stringify(b[key]) === JSON.stringify(value))
+  )
 }
 
 function inUnit(value: unknown): value is number {
@@ -107,34 +125,88 @@ export function decodeAnswers(answers: unknown, c: CompiledQuestions): DecodeRes
   }
 
   const branch = `${phase}/${op}`
-  let target: string
+  const candidates = ownEntry(c.targetCandidates, branch) ?? []
   let targetConfidence: number | null = null
-  const targetHead = c.targetHeads[branch]
-  if (targetHead !== undefined) {
-    const targetAnswer = answerFor(answers, c, targetHead)
-    if (targetAnswer === null) return { ok: false, reason: `Invalid answer for the ${targetHead} head.` }
-    target = targetAnswer.choice
-    targetConfidence = targetAnswer.confidence
-    consumed.push(consumedChoice('target', targetHead, targetAnswer))
-  } else {
-    const fixed = c.targetConstants[branch]
-    if (fixed === undefined) return { ok: false, reason: `No target is available for ${branch}.` }
-    target = fixed
-    consumed.push(consumedFixed('target', target))
+  let targetRole: ConsumedHead['role'] = 'target'
+  const selected: Candidate[] = []
+
+  // With a mode head, "many" is settled by the member heads; no inclusion falls back to the target head.
+  const modeHead = ownEntry(c.modeHeads, branch)
+  if (modeHead !== undefined) {
+    const modeAnswer = answerFor(answers, c, modeHead)
+    if (modeAnswer === null) return { ok: false, reason: `Invalid answer for the ${modeHead} head.` }
+    consumed.push(consumedChoice('target_mode', modeHead, modeAnswer))
+    if (modeAnswer.choice === 'many') {
+      const heads = ownEntry(c.memberHeads, branch)
+      const max = ownEntry(c.multiTargetMax, branch)
+      if (heads === undefined || max === undefined)
+        return { ok: false, reason: `No members are available for ${branch}.` }
+      const confidences: number[] = []
+      for (const candidate of candidates) {
+        const head = ownEntry(heads, candidate.key)
+        if (head === undefined)
+          return { ok: false, reason: `No member head is available for ${candidate.key}.` }
+        const memberAnswer = answerFor(answers, c, head)
+        if (memberAnswer === null) return { ok: false, reason: `Invalid answer for the ${head} head.` }
+        consumed.push(consumedChoice('target_member', head, memberAnswer))
+        confidences.push(memberAnswer.confidence)
+        if (memberAnswer.choice === 'include') selected.push(candidate)
+      }
+      if (selected.length > max)
+        return {
+          ok: false,
+          reason: `Jev selected ${selected.length} targets for ${op}; multi-target mode allows at most ${max}.`,
+        }
+      if (selected.length === 0) targetRole = 'target_fallback'
+      else targetConfidence = Math.min(...confidences)
+    }
   }
 
+  let target: string | string[]
   let bindingMode: Decision['bindingMode']
   let args: JsonObject
-  if (target === LLM_PARAMETERS) {
-    bindingMode = 'llm_parameters'
-    args = {}
-  } else if (target === DEFAULT_ARGUMENTS) {
-    const defaults = c.defaults[op]
-    if (defaults === undefined) return { ok: false, reason: `${op} has no default arguments.` }
-    bindingMode = 'defaults'
-    args = structuredClone(defaults)
+  let batch: JsonObject[] | undefined
+  const [first] = selected
+  if (first !== undefined && selected.length >= 2) {
+    if (!selected.every((item) => sameExceptPath(first.args, item.args)))
+      return { ok: false, reason: 'Batch invocation candidates have incompatible arguments.' }
+    target = selected.map((item) => item.key)
+    bindingMode = 'observed'
+    args = structuredClone(first.args)
+    batch = selected.map((item) => structuredClone(item.args))
   } else {
-    return { ok: false, reason: `Unsupported target ${target} for ${op}.` }
+    let key: string
+    if (first !== undefined) key = first.key
+    else {
+      const targetHead = ownEntry(c.targetHeads, branch)
+      if (targetHead !== undefined) {
+        const targetAnswer = answerFor(answers, c, targetHead)
+        if (targetAnswer === null) return { ok: false, reason: `Invalid answer for the ${targetHead} head.` }
+        key = targetAnswer.choice
+        targetConfidence = targetAnswer.confidence
+        consumed.push(consumedChoice(targetRole, targetHead, targetAnswer))
+      } else {
+        const fixed = ownEntry(c.targetConstants, branch)
+        if (fixed === undefined) return { ok: false, reason: `No target is available for ${branch}.` }
+        key = fixed
+        consumed.push(consumedFixed('target', key))
+      }
+    }
+    target = key
+    if (key === LLM_PARAMETERS) {
+      bindingMode = 'llm_parameters'
+      args = {}
+    } else if (key === DEFAULT_ARGUMENTS) {
+      const defaults = ownEntry(c.defaults, op)
+      if (defaults === undefined) return { ok: false, reason: `${op} has no default arguments.` }
+      bindingMode = 'defaults'
+      args = structuredClone(defaults)
+    } else {
+      const observed = candidates.find((candidate) => candidate.key === key)
+      if (observed === undefined) return { ok: false, reason: `Unsupported target ${key} for ${op}.` }
+      bindingMode = 'observed'
+      args = structuredClone(observed.args)
+    }
   }
 
   const stochastic = consumed.flatMap((item) => (item.confidence === null ? [] : [item.confidence]))
@@ -150,6 +222,7 @@ export function decodeAnswers(answers: unknown, c: CompiledQuestions): DecodeRes
       target,
       bindingMode,
       args,
+      ...(batch === undefined ? {} : { batch }),
       confidence: Math.min(...stochastic),
       operationPathConfidence: Math.min(...pathConfidences),
       targetConfidence,

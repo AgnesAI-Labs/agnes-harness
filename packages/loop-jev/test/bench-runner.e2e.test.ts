@@ -14,6 +14,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
 import { createConfigurationService, createCredentialStore, initializeHomeLocked } from '@agnes/host'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -24,8 +25,17 @@ afterAll(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()))
   rmSync(out, { recursive: true, force: true })
 })
-const runner = new URL('../bench/run.mjs', import.meta.url).pathname
-const suite = new URL('./fixtures/bench-mini.json', import.meta.url).pathname
+/** A machine that cannot sandbox a workspace (some CI runners) refuses every session; those runs cannot say anything about the runner. */
+const lacksSandbox = (r: { stderr?: string; stdout?: string }) =>
+  /E_SANDBOX_WORKSPACE/.test(`${r.stderr ?? ''}${r.stdout ?? ''}`)
+const NO_SANDBOX = 'no workspace sandbox on this machine'
+
+/** The message of a failed exit-status check: the runner's stderr, plus the tail of its stdout where the report verdict is printed. */
+const why = (r: { stderr?: string; stdout?: string }) =>
+  `${r.stderr ?? ''}\n--- stdout tail ---\n${(r.stdout ?? '').slice(-2000)}`
+
+const runner = fileURLToPath(new URL('../bench/run.mjs', import.meta.url))
+const suite = fileURLToPath(new URL('./fixtures/bench-mini.json', import.meta.url))
 
 /** The runner talks to loopback endpoints only, so no proxy set on the machine may sit in between. */
 const PROXY_VARIABLES = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
@@ -205,7 +215,7 @@ describe('bench runner', () => {
       '--fake',
       '--dry-run',
     ])
-    expect(r.status, r.stderr).toBe(0)
+    expect(r.status, why(r)).toBe(0)
     const bundle = readJson(join(out, 'dry', 'bundle.json'))
     expect(Object.keys(bundle.presets)).toHaveLength(2)
     expect(bundle.profile.plugins['loop:agnes.jev']).toMatchObject({
@@ -243,11 +253,11 @@ describe('bench runner', () => {
     expect(kFrom.stderr).toContain('is not a pilot report')
     expect(plan(['--k', '2', '--k-from', notPilot]).stderr).toContain('at most one of --k and --k-from')
     const noK = plan(['--reps', '2'])
-    expect(noK.status, noK.stderr).toBe(0)
+    expect(noK.status, why(noK)).toBe(0)
     expect(noK.stderr).toContain('warning: no --k or --k-from given')
   })
 
-  it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', () => {
+  it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', (ctx) => {
     // The output directory sits inside a git work tree; the sessions' workspaces must not.
     const repo = join(out, 'repo')
     mkdirSync(join(repo, '.git'), { recursive: true })
@@ -267,7 +277,8 @@ describe('bench runner', () => {
       '--k-from',
       pilotReport,
     ])
-    expect(r.status, r.stderr).toBe(0)
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
+    expect(r.status, why(r)).toBe(0)
     const report = readJson(join(dir, 'report.json'))
     expect(report).toMatchObject({ k: 1.5, kSource: `pilot report ${pilotReport}`, verdict: { valid: true } })
     const records = readRecords(dir)
@@ -289,7 +300,7 @@ describe('bench runner', () => {
     expect(md).toMatch(/- jev: \d+ requests, 1 tool schema hashes, 0 switches/)
   }, 300_000)
 
-  it('takes the routes from the accounts saved in Settings and runs both lanes', async () => {
+  it('takes the routes from the accounts saved in Settings and runs both lanes', async (ctx) => {
     const chat = await startChat('deepseek-flash')
     const jevFake = await startJev()
     const home = await settingsHome({
@@ -316,7 +327,8 @@ describe('bench runner', () => {
         BENCH_PYTHON: stub,
       },
     )
-    expect(r.status, r.stderr).toBe(0)
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
+    expect(r.status, why(r)).toBe(0)
     expect(r.stdout).toContain('jev route account-jev-side')
     const report = readJson(join(dir, 'report.json'))
     expect(report.routes).toEqual({
@@ -399,7 +411,7 @@ describe('bench runner', () => {
     expect(readdirSync(join(home, 'profiles', 'local-dev'))).not.toContain('profile.yaml')
   }, 300_000)
 
-  it('reports each turn of a multi-turn session with its own requests, steps, cost and wall time', async () => {
+  it('reports each turn of a multi-turn session with its own requests, steps, cost and wall time', async (ctx) => {
     // Turn n makes n model requests on the default lane: n - 1 `ls` calls, then the answer.
     const chat = await startChat('deepseek-flash', (turn) => turn - 1)
     const jevFake = await startJev()
@@ -429,7 +441,8 @@ describe('bench runner', () => {
     )
     const dir = join(out, 'window', 'run')
     const r = await runAsync(['--suite', multi, '--lanes', 'default,jev', '--out', dir, '--home', home])
-    expect(r.status, r.stderr).toBe(0)
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
+    expect(r.status, why(r)).toBe(0)
     const records = readRecords(dir)
     const events = (lane: string) =>
       readFileSync(join(dir, 'events', `three.${lane}.r1.jsonl`), 'utf8')
@@ -465,7 +478,7 @@ describe('bench runner', () => {
     // The pilot's k counts each tool-using request once: 1 in turn 2 and 2 in turn 3, all read-only.
     const pilotDir = join(out, 'window', 'pilot')
     const pilot = await runAsync(['--suite', multi, '--out', pilotDir, '--home', home, '--pilot'])
-    expect(pilot.status, pilot.stderr).toBe(0)
+    expect(pilot.status, why(pilot)).toBe(0)
     expect(readJson(join(pilotDir, 'report.json')).pilot).toEqual({
       k: 1,
       mutableCalls: 0,
@@ -476,7 +489,7 @@ describe('bench runner', () => {
     // A rescore from the saved files, with no home and no network, gives the live numbers back.
     const again = join(out, 'window', 'rescored')
     const rescored = runSync(['--rescore', dir, '--out', again], { AGH_HOME: join(out, 'window', 'no-home') })
-    expect(rescored.status, rescored.stderr).toBe(0)
+    expect(rescored.status, why(rescored)).toBe(0)
     const live = readJson(join(dir, 'report.json'))
     const redo = readJson(join(again, 'report.json'))
     expect(redo.rescoredFrom).toBe(dir)
@@ -550,21 +563,22 @@ describe('bench runner', () => {
     expect(ambiguous.stderr).toContain('--jev-route')
     expect(ambiguous.stderr).toContain('account-jev-a, account-jev-b')
     const chosen = plan(twoJev, '--jev-route', 'account-jev-b')
-    expect(chosen.status, chosen.stderr).toBe(0)
+    expect(chosen.status, why(chosen)).toBe(0)
     expect(chosen.stdout).toContain('jev route account-jev-b')
     const wrong = plan(twoJev, '--jev-route', 'account-jev-b', '--chat-route', 'account-jev-a')
     expect(wrong.status).toBe(2)
     expect(wrong.stderr).toContain('account-jev-a is not a chat model route')
   }, 120_000)
 
-  it('runs the baseline pilot on a home with only a chat account and reports k', async () => {
+  it('runs the baseline pilot on a home with only a chat account and reports k', async (ctx) => {
     const home = await settingsHome({
       name: 'pilot',
       chat: [{ baseUrl: (await startChat('deepseek-flash')).baseUrl }],
     })
     const dir = join(out, 'pilot', 'run')
     const r = await runAsync(['--suite', suite, '--out', dir, '--home', home, '--pilot'])
-    expect(r.status, r.stderr).toBe(0)
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
+    expect(r.status, why(r)).toBe(0)
     const report = readJson(join(dir, 'report.json'))
     expect(report.lanes).toEqual(['default'])
     expect(report.routes.jev).toBeNull()
@@ -574,7 +588,7 @@ describe('bench runner', () => {
     expect(readFileSync(join(dir, 'report.md'), 'utf8')).toContain('## Pilot')
   }, 300_000)
 
-  it('cancels a turn that outlives its watchdog, keeps it as a failure and exits 1', async () => {
+  it('cancels a turn that outlives its watchdog, keeps it as a failure and exits 1', async (ctx) => {
     const chat = await startChat('deepseek-flash')
     const jevFake = await startJev({ hang: true })
     const home = await settingsHome({
@@ -595,6 +609,7 @@ describe('bench runner', () => {
       '--turn-timeout-ms',
       '3000',
     ])
+    if (lacksSandbox(r)) ctx.skip(NO_SANDBOX)
     expect(r.status, r.stderr).toBe(1)
     const [record] = readRecords(dir)
     expect(record).toMatchObject({
