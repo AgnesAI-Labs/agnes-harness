@@ -34,6 +34,7 @@ export function fromAcpOptionKind(k: AcpPermissionKind): ApprovalVerdict {
 
 /** Human choices and machine delivery/lifecycle outcomes must remain distinguishable. */
 export type ApprovalReason =
+  | 'full-access'
   | 'user-rejected'
   | 'deadline'
   | 'transport'
@@ -46,6 +47,7 @@ export type ApprovalReason =
   | 'subagent_scope'
 
 export const APPROVAL_REASONS: readonly ApprovalReason[] = Object.freeze([
+  'full-access',
   'user-rejected',
   'deadline',
   'transport',
