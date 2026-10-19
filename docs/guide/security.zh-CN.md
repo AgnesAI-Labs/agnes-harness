@@ -87,7 +87,7 @@ presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 ```
 
-本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。没有 `permissions` 的 profile 由 `presets.allowed` 推导允许的权限级别。`--permission default` 或 `permission: 'default'` 表示跟随部署默认值。
+本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。没有 `permissions` 的 profile 由 `presets.allowed` 推导允许的权限级别；用户或工作区层只写了 `presets` 而没写 `permissions` 时，内置模板的 `permissions` 不再保留，因此收窄 `presets` 也会收窄权限。`--permission default` 或 `permission: 'default'` 表示跟随部署默认值。
 
 旧的预设名 `read-only`、`workspace-write`、`full-access` 仍可用作 `--preset` 值和 `presets.allowed` 条目，各自表示该权限下的 `standard` 预设，因此 `agh --preset read-only` 等同于 `agh --preset standard --permission read-only`。把它们与不同的 `--permission` 组合会报错。只指定预设的请求（如 `--preset ptc`）继续以 `workspace-write` 运行，即使管理员之后修改了默认权限，已有脚本和计划任务的行为也不变。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
 

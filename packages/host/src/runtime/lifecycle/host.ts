@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
-import { isPermission, legacyPermission } from '@agnes/host-common/presets/permission'
+import { legacyPermission } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
@@ -65,6 +65,7 @@ import { adminSecurityStatus } from './admin-security-status.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
 import { closeHost } from './lifecycle.js'
+import { reopenSelection } from './reopen-selection.js'
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
@@ -632,12 +633,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
                 limit: 1,
               })
               const recorded = (start?.data as { permission?: unknown } | null | undefined)?.permission
-              const { permission: _requested, ...unrecorded } = o
-              o = {
-                ...unrecorded,
-                preset: persisted,
-                ...(isPermission(recorded) ? { permission: recorded } : {}),
-              }
+              o = reopenSelection(o, persisted, recorded)
             }
           }
           const runtimeSelection = sessionSelection(profile, {

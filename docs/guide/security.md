@@ -93,7 +93,7 @@ presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 ```
 
-The local and enterprise templates ship these blocks (the enterprise template allows `standard` and `ptc`). A profile without a `permissions` block derives the allowed levels from `presets.allowed`. `--permission default` or `permission: 'default'` follows the deployment default.
+The local and enterprise templates ship these blocks (the enterprise template allows `standard` and `ptc`). A profile without a `permissions` block derives the allowed levels from `presets.allowed`; a user or workspace layer that sets `presets` without `permissions` drops the template's block, so narrowing `presets` also narrows the permissions. `--permission default` or `permission: 'default'` follows the deployment default.
 
 The earlier preset names `read-only`, `workspace-write` and `full-access` still work as `--preset` values and in `presets.allowed`: each means the `standard` preset under that permission, so `agh --preset read-only` is `agh --preset standard --permission read-only`. Combining one with a different `--permission` is an error. A request that names only a preset, such as `--preset ptc`, keeps running under `workspace-write` even if an administrator later changes the default permission, so existing scripts and schedules do not change behaviour. `--agent` cannot be combined with `--permission`; the agent's own launch decides.
 

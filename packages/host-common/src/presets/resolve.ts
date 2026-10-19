@@ -62,6 +62,18 @@ function applyPermission(
         capability: 'permission',
         requested,
       })
+    // A permission-level name is `standard` under that level. If `standard` was replaced by a recipe
+    // that fixes its own table, `read-only` and `full-access` can no longer mean their level, and
+    // running them as that recipe would silently grant a different one. `workspace-write` is the
+    // level every recipe runs under as written, so it keeps meaning exactly that.
+    const bare = (doc: PresetDoc | undefined): boolean =>
+      doc !== undefined && Object.keys(doc).every((key) => key === 'name' || key === 'extends')
+    if (alias && alias !== DEFAULT_PERMISSION && bare(docs[name]))
+      refuse(`preset ${name} is the ${alias} permission, which its base recipe does not allow`, {
+        source: name,
+        capability: 'permission',
+        alias,
+      })
     return { doc: merged }
   }
   // `carry` is the level a running session already has: it applies to a recipe that takes one and is

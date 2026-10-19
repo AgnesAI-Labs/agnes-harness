@@ -69,6 +69,43 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     await second.close()
   })
 
+  it('refuses to reopen a stored session under another level instead of ignoring the request', async () => {
+    const { host, dataDir, options } = await open()
+    const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission: 'full-access' })
+    const key = session.key
+    await session.close()
+    await host.close()
+    const second = (await createTestHost(options)).host
+    await expect(second.createSession({ key, cwd: dataDir, permission: 'read-only' })).rejects.toMatchObject({
+      code: 'E_PRESET_UNSUPPORTED',
+    })
+    // The same level, or following the default, is not a conflict.
+    for (const permission of ['full-access', 'default'] as const) {
+      const again = await second.createSession({ key, cwd: dataDir, permission })
+      expect(again.preset.permission).toBe('full-access')
+      await again.close()
+    }
+    await second.close()
+  })
+
+  it('reopens a session that switched to a recipe fixing its own permission', async () => {
+    const { host, dataDir, options } = await open()
+    const session = await host.createSession({
+      cwd: dataDir,
+      preset: 'standard',
+      permission: 'workspace-write',
+    })
+    const key = session.key
+    await session.setPreset(host.validatePresetSwitch('standard-windows', key).view)
+    await session.close()
+    await host.close()
+    const second = (await createTestHost(options)).host
+    const reopened = await second.createSession({ key, cwd: dataDir })
+    expect(reopened.preset.name).toBe('standard-windows')
+    await reopened.close()
+    await second.close()
+  })
+
   it('keeps pre-split requests where they were', async () => {
     const { host, dataDir } = await open()
     const cases = [
