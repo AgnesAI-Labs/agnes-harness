@@ -2,6 +2,7 @@ import type { Actor } from '../gen/ts/session-v1.js'
 
 /** Trusted runtime context; never accept it from tool arguments or public RPC bodies. */
 export interface PermissionContext {
+  /** Effective session preset identity, not the selected advisory tool-policy provider. */
   readonly policy: string
   readonly actor: Actor
 }
