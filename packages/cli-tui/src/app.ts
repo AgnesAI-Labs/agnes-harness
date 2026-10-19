@@ -3,12 +3,13 @@ import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
-import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
+import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
+import { attachmentsFrom, FileMentionSource, listWorkspaceFiles } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
@@ -86,6 +87,7 @@ export class TuiApp {
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   private readonly editor: Editor
+  private readonly mentions: FileMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
   private readonly themePicker: ThemePicker
@@ -258,6 +260,12 @@ export class TuiApp {
         },
       },
     )
+    this.mentions = new FileMentionSource(
+      () => listWorkspaceFiles(this.cwd),
+      () => {
+        if (!this.stopped) this.renderer.requestRender()
+      },
+    )
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
@@ -268,7 +276,13 @@ export class TuiApp {
       onCancelKey: () => {
         void this.cancel().catch((error) => this.showError(error))
       },
-      complete: (prefix) => completeToken(prefix, this.cwd),
+      complete: completeToken,
+      mentions: this.mentions,
+      mentionNotes: {
+        loading: tt('composer.mentionLoading', locale),
+        empty: tt('composer.mentionEmpty', locale),
+        failed: tt('composer.mentionFailed', locale),
+      },
       menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en'),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
@@ -405,7 +419,9 @@ export class TuiApp {
         const text = this.editor.text
         if (text.trim()) {
           this.editor.clear()
-          void this.o.session.followUp(attachmentsFrom(text)).catch((error) => this.showError(error))
+          void this.o.session
+            .followUp(attachmentsFrom(text, this.cwd))
+            .catch((error) => this.showError(error))
         }
         return true
       }
@@ -998,7 +1014,7 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    await this.submitBlocks(attachmentsFrom(text))
+    await this.submitBlocks(attachmentsFrom(text, this.cwd))
   }
 
   private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {
@@ -1085,6 +1101,7 @@ export class TuiApp {
   async stop(): Promise<void> {
     if (this.stopped) return
     this.stopped = true
+    this.mentions.dispose()
     this.attachmentController.abort()
     if (this.queuedWake) clearTimeout(this.queuedWake)
     this.queuedWake = undefined

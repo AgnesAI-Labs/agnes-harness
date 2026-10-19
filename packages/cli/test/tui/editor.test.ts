@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { CURSOR_MARKER, VStack } from '../../src/tui/component.js'
-import { Editor } from '../../src/tui/editor.js'
+import { Editor, type MentionState } from '../../src/tui/editor.js'
 import { parseKey } from '../../src/tui/keys.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
@@ -251,6 +251,103 @@ describe('Editor slash menu', () => {
     type(e, '/h')
     e.handleInput('\t')
     expect(e.text).toBe('/help ')
+  })
+})
+
+describe('Editor @ menu', () => {
+  const FILES: MentionState = {
+    status: 'ready',
+    items: [
+      { id: 'src', directory: true },
+      { id: 'src/app.ts', directory: false },
+      { id: 'my notes.md', directory: false },
+    ],
+  }
+  const mentionEditor = (state: (query: string) => MentionState = () => FILES) => {
+    const queries: string[] = []
+    const submitted: string[] = []
+    const e = new Editor({
+      onSubmit: (t) => submitted.push(t),
+      mentions: {
+        get: (query) => {
+          queries.push(query)
+          return state(query)
+        },
+      },
+    })
+    return { e, queries, submitted }
+  }
+  // The draft is one input line, so the menu is everything above the last row.
+  const menuRows = (e: Editor) => unbox(e.render(40).slice(0, -1))
+
+  it('opens on @ at the start of a word, without Tab, and asks for what follows it', () => {
+    const { e, queries } = mentionEditor()
+    type(e, 'see @sr')
+    expect(menuRows(e)).toEqual(['❯ src/', '  src/app.ts', '  my notes.md'])
+    expect(queries.at(-1)).toBe('sr')
+  })
+
+  it('stays closed for an @ inside a word and once a space ends the mention', () => {
+    const { e } = mentionEditor()
+    type(e, 'a@b')
+    expect(menuRows(e)).toEqual([])
+    e.setText('')
+    type(e, '@src ')
+    expect(menuRows(e)).toEqual([])
+  })
+
+  it('up/down move the highlight; Enter takes a file in place of the mention only', () => {
+    const { e, submitted } = mentionEditor()
+    type(e, 'see @sr now')
+    for (let i = 0; i < 4; i++) e.handleInput('\x1b[D')
+    e.handleInput('\x1b[B')
+    expect(menuRows(e)[1]).toBe('❯ src/app.ts')
+    e.handleInput('\r')
+    expect(e.text).toBe('see @src/app.ts now')
+    expect(submitted).toEqual([])
+  })
+
+  it('Tab takes a folder and keeps the menu open inside it', () => {
+    const { e, queries } = mentionEditor()
+    type(e, '@sr')
+    e.handleInput('\t')
+    expect(e.text).toBe('@src/')
+    expect(menuRows(e)).not.toEqual([])
+    expect(queries.at(-1)).toBe('src/')
+  })
+
+  it('quotes a path with spaces', () => {
+    const { e } = mentionEditor()
+    type(e, '@no')
+    e.handleInput('\x1b[A')
+    e.handleInput('\r')
+    expect(e.text).toBe('@"my notes.md" ')
+  })
+
+  it('Esc closes only the menu, keeps the draft, and typing opens it again', () => {
+    const { e } = mentionEditor()
+    type(e, 'see @sr')
+    e.handleInput('\x1b')
+    expect(e.text).toBe('see @sr')
+    expect(menuRows(e)).toEqual([])
+    type(e, 'c')
+    expect(menuRows(e)[0]).toBe('❯ src/')
+  })
+
+  it('shows a status row with nothing to choose, and Enter then submits', () => {
+    for (const [state, note] of [
+      [{ status: 'loading', items: [] }, 'Searching…'],
+      [{ status: 'ready', items: [] }, 'No matching files'],
+      [{ status: 'failed', items: [] }, 'Cannot search files'],
+    ] as const) {
+      const { e, submitted } = mentionEditor(() => state)
+      type(e, '@zz')
+      expect(menuRows(e)).toEqual([`  ${note}`])
+      e.handleInput('\t')
+      expect(e.text).toBe('@zz')
+      e.handleInput('\r')
+      expect(submitted).toEqual(['@zz'])
+    }
   })
 })
 

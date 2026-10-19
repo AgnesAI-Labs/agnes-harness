@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createClient } from '@agnes/sdk'
 import type { IBufferCell } from '@xterm/headless'
 import xterm from '@xterm/headless'
@@ -146,13 +146,19 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   const session = await client.session.new({ cwd: CWD })
   const term = new FakeTerminal({ columns: cols, rows }, TIER_ENV[variant.tier])
+  // A scene that lists files gets them on disk; the rail still names the fixed gallery cwd.
+  const files = scene.files && mkdtempSync(join(tmpdir(), 'tui-gallery-files-'))
+  for (const file of scene.files ?? []) {
+    mkdirSync(dirname(join(files as string, file)), { recursive: true })
+    writeFileSync(join(files as string, file), '')
+  }
   const app = new TuiApp({
     session,
     term,
     profile: 'local-dev',
     preset: 'standard',
     model: 'deepseek-v4-pro',
-    cwd: CWD,
+    cwd: files || CWD,
     probeWorkspace: async () => scene.workspace ?? { root: CWD, subpath: '' },
     themePreferencePath: join(prefs, `${variant.theme}.json`),
     ...(scene.locale ? { locale: scene.locale } : {}),
@@ -169,6 +175,7 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     await app.stop()
     await client.close()
     await endpoint.close()
+    if (files) rmSync(files, { recursive: true, force: true })
   }
 }
 

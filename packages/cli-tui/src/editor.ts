@@ -1,5 +1,6 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
+import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { parseKey } from './keys.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
@@ -65,7 +66,14 @@ export type EditorOptions = {
   ansi?: ThemedAnsi
   /** Args shape and one-line description for a slash-menu candidate (the app passes the command table). */
   menuInfo?(name: string): { args?: string; description?: string } | undefined
+  /** Workspace paths for the `@` menu; without it `@` is plain text. */
+  mentions?: { get(query: string): MentionState }
+  /** The `@` menu's status rows, shown when it has nothing to choose. */
+  mentionNotes?: { loading: string; empty: string; failed: string }
 }
+
+// What the open menu offers: the rows to choose from, how to take one, and a status row when empty.
+type Menu = { labels: string[]; accept(index: number): void; note?: string; slash: boolean }
 
 // How many candidates the slash menu shows at once; the rest collapse into ↑/↓ count indicators.
 const MENU_MAX_VISIBLE = 5
@@ -79,6 +87,9 @@ export class Editor implements Component {
   private viewportStart = 0
   private menuIndex = 0
   private menuStart = 0
+  // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
+  private dismissed: string | undefined
+  private mentionQuery: string | undefined
 
   constructor(private readonly o: EditorOptions) {}
 
@@ -100,7 +111,8 @@ export class Editor implements Component {
 
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
-    const menu = this.menuCandidates()
+    const menu = this.openMenu()
+    const choices = menu?.labels.length ?? 0
     switch (k.name) {
       case 'enter': {
         // A trailing backslash is the way to enter a newline on terminals that cannot report
@@ -115,8 +127,8 @@ export class Editor implements Component {
         // names a real command exactly (menu.length === 1 with that command as its only member,
         // which menuCandidates() itself never reports as "open") submits immediately, unchanged -
         // a fast typist who spells the whole command out is not forced through the menu.
-        if (menu.length) {
-          this.acceptCandidate(menu[this.menuIndex] as string)
+        if (menu && choices) {
+          menu.accept(this.menuIndex)
           return true
         }
         if (!this.text.trim()) return true
@@ -153,16 +165,16 @@ export class Editor implements Component {
         this.cursor = this.lineEnd()
         return true
       case 'up':
-        if (menu.length) {
-          this.menuIndex = (this.menuIndex - 1 + menu.length) % menu.length
+        if (choices) {
+          this.menuIndex = (this.menuIndex - 1 + choices) % choices
         } else if (this.histIdx + 1 < this.history.length) {
           this.histIdx++
           this.setText(this.history[this.histIdx] as string)
         }
         return true
       case 'down':
-        if (menu.length) {
-          this.menuIndex = (this.menuIndex + 1) % menu.length
+        if (choices) {
+          this.menuIndex = (this.menuIndex + 1) % choices
         } else if (this.histIdx > 0) {
           this.histIdx--
           this.setText(this.history[this.histIdx] as string)
@@ -172,12 +184,16 @@ export class Editor implements Component {
         }
         return true
       case 'esc':
+        if (menu && !menu.slash) {
+          this.dismissed = this.text.slice(0, this.cursor)
+          return true
+        }
         this.clear()
         this.o.onCancelKey?.()
         return true
       case 'tab': {
-        if (menu.length) {
-          this.acceptCandidate(menu[this.menuIndex] as string)
+        if (menu) {
+          if (choices) menu.accept(this.menuIndex)
           return true
         }
         const m = /(\S+)$/.exec(this.text.slice(0, this.cursor))
@@ -239,17 +255,9 @@ export class Editor implements Component {
    * an extra keystroke through the menu.
    */
   private menuCandidates(): string[] {
-    if (this.cursor !== this.text.length || !/^\/\S*$/.test(this.text)) {
-      this.menuIndex = 0
-      this.menuStart = 0
-      return []
-    }
+    if (this.cursor !== this.text.length || !/^\/\S*$/.test(this.text)) return []
     const candidates = this.o.complete?.(this.text) ?? []
-    if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === this.text)) {
-      this.menuIndex = 0
-      this.menuStart = 0
-      return []
-    }
+    if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === this.text)) return []
     this.menuIndex = Math.min(this.menuIndex, candidates.length - 1)
     return candidates
   }
@@ -257,6 +265,51 @@ export class Editor implements Component {
   private acceptCandidate(candidate: string): void {
     this.text = `${candidate} `
     this.cursor = this.text.length
+    this.menuIndex = 0
+    this.menuStart = 0
+  }
+
+  /** The slash menu when the draft is a command being typed, else the `@` menu for a mention at the cursor. */
+  private openMenu(): Menu | undefined {
+    const slash = this.menuCandidates()
+    if (slash.length) {
+      this.mentionQuery = undefined
+      return { labels: slash, slash: true, accept: (i) => this.acceptCandidate(slash[i] as string) }
+    }
+    const before = this.text.slice(0, this.cursor)
+    if (before !== this.dismissed) this.dismissed = undefined
+    const token = this.o.mentions && this.dismissed === undefined ? mentionToken(before) : undefined
+    const state = token && this.o.mentions?.get(token.query)
+    if (!token || !state) {
+      // Nothing open: the next menu to open starts at its top.
+      this.menuIndex = 0
+      this.menuStart = 0
+      this.mentionQuery = undefined
+      return undefined
+    }
+    if (token.query !== this.mentionQuery) this.menuIndex = 0
+    this.mentionQuery = token.query
+    const items = state.items
+    this.menuIndex = Math.min(this.menuIndex, Math.max(0, items.length - 1))
+    const notes = this.o.mentionNotes ?? {
+      loading: 'Searching…',
+      empty: 'No matching files',
+      failed: 'Cannot search files',
+    }
+    return {
+      labels: items.map((item) => (item.directory ? `${item.id}/` : item.id)),
+      slash: false,
+      accept: (i) => this.acceptMention(token.start, items[i] as MentionItem),
+      ...(items.length ? {} : { note: state.status === 'ready' ? notes.empty : notes[state.status] }),
+    }
+  }
+
+  private acceptMention(start: number, item: MentionItem): void {
+    const rest = this.text.slice(this.cursor)
+    // A file mention ends in a space; one already following the cursor serves.
+    const head = this.text.slice(0, start) + mentionText(item).replace(/ $/u, /^\s/u.test(rest) ? '' : ' ')
+    this.text = head + rest
+    this.cursor = head.length
     this.menuIndex = 0
     this.menuStart = 0
   }
@@ -269,7 +322,7 @@ export class Editor implements Component {
     return this.o.ansi ? this.o.ansi.bold(s) : s
   }
 
-  private renderMenu(candidates: string[], width: number): string[] {
+  private renderMenu({ labels: candidates, note, slash }: Menu, width: number): string[] {
     // A five-row window follows the highlight: scrolling past either edge drags the window along,
     // and whatever lies outside it is reported as a faint ↑/↓ count instead of taking rows.
     let start = Math.max(0, Math.min(this.menuStart, Math.max(0, candidates.length - MENU_MAX_VISIBLE)))
@@ -277,19 +330,22 @@ export class Editor implements Component {
     if (this.menuIndex >= start + MENU_MAX_VISIBLE) start = this.menuIndex - MENU_MAX_VISIBLE + 1
     this.menuStart = start
     const shown = candidates.slice(start, start + MENU_MAX_VISIBLE)
-    const selected = this.menuIndex - start
+    const selected = candidates.length ? this.menuIndex - start : -1
+    const info = (name: string | undefined) =>
+      slash && name !== undefined ? this.o.menuInfo?.(name) : undefined
     const lines = shown.map((c, i) => {
-      const args = this.o.menuInfo?.(c)?.args
+      const args = info(c)?.args
       const body = args ? `${this.bold(c)} ${this.paint('faint', args)}` : this.bold(c)
       return i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
     })
+    if (note) lines.push(`  ${this.paint('faint', note)}`)
     const above = start
     const below = candidates.length - (start + shown.length)
     const indicators = [above > 0 ? `↑ ${above} more` : '', below > 0 ? `↓ ${below} more` : ''].filter(
       Boolean,
     )
     if (indicators.length) lines.push(`  ${this.paint('faint', indicators.join('  '))}`)
-    const description = this.o.menuInfo?.(candidates[this.menuIndex] as string)?.description
+    const description = info(candidates[this.menuIndex])?.description
     if (description) lines.push(this.paint('muted', description))
     // A useful box needs two sides and at least one content column. At widths below that, keep the
     // menu readable and honour the component width contract by dropping only the decoration.
@@ -348,7 +404,7 @@ export class Editor implements Component {
     // transient overlay reacting to what is being typed right now, not part of the draft itself.
     // The footer (status bar + hints) sits below the editor and is unaffected: the menu grows
     // upward out of the editor's own render output.
-    const candidates = this.menuCandidates()
-    return candidates.length ? [...this.renderMenu(candidates, width), ...clamped] : clamped
+    const menu = this.openMenu()
+    return menu ? [...this.renderMenu(menu, width), ...clamped] : clamped
   }
 }

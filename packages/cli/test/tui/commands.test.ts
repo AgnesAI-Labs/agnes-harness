@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { attachmentLink } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -710,49 +711,69 @@ describe('runSlash', () => {
 })
 
 describe('completeToken', () => {
-  it('matches commands and @paths; an unmatched prefix returns empty, not everything', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-cwd-'))
-    writeFileSync(join(dir, 'README.md'), 'x')
-    writeFileSync(join(dir, 'ROADMAP.md'), 'x')
+  it('matches commands; an unmatched prefix returns empty, not everything', () => {
     // Exact single match.
-    expect(completeToken('/he', dir)).toEqual(['/help'])
-    expect(completeToken('@REA', dir)).toEqual(['@README.md'])
+    expect(completeToken('/he')).toEqual(['/help'])
     // Reverse-verification (required): a prefix matching nothing returns an empty list, never the
-    // full table/directory listing.
-    expect(completeToken('/zzzz', dir)).toEqual([])
-    expect(completeToken('@zzzz', dir)).toEqual([])
+    // full table.
+    expect(completeToken('/zzzz')).toEqual([])
     // A prefix shared by several commands returns all of them, not one arbitrarily.
-    expect(completeToken('/re', dir)).toEqual(['/resume', '/rewind', '/refine'])
-    expect(completeToken('@RO', dir)).toEqual(['@ROADMAP.md'])
-    // Neither '/' nor '@': nothing to complete against.
-    expect(completeToken('plain', dir)).toEqual([])
-  })
-
-  it('caps @path completion at 20 entries', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-cwd-many-'))
-    for (let i = 0; i < 30; i++) writeFileSync(join(dir, `file-${String(i).padStart(2, '0')}.txt`), 'x')
-    expect(completeToken('@file', dir)).toHaveLength(20)
+    expect(completeToken('/re')).toEqual(['/resume', '/rewind', '/refine'])
+    // '@' mentions have their own menu; a plain word has nothing to complete against.
+    expect(completeToken('@REA')).toEqual([])
+    expect(completeToken('plain')).toEqual([])
   })
 })
 
 describe('attachmentsFrom', () => {
-  it('turns an @mention into a resource_link block and strips the @ from the text', () => {
-    expect(attachmentsFrom('look at @README.md please')).toEqual([
-      { type: 'text', text: 'look at README.md please' },
-      { type: 'resource_link', uri: 'file://README.md', name: 'README.md' },
-    ])
+  const workspace = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-mentions-'))
+    writeFileSync(join(dir, 'a.txt'), 'x')
+    writeFileSync(join(dir, 'with space.md'), 'x')
+    mkdirSync(join(dir, 'b'))
+    writeFileSync(join(dir, 'b', 'c.txt'), 'x')
+    return dir
+  }
+
+  it('links each @path that exists, in order, by absolute file URI, and strips the @ from the text', () => {
+    const dir = workspace()
+    try {
+      expect(attachmentsFrom('look at @a.txt and @b/c.txt please', dir)).toEqual([
+        { type: 'text', text: 'look at a.txt and b/c.txt please' },
+        { type: 'resource_link', uri: pathToFileURL(join(dir, 'a.txt')).href, name: 'a.txt' },
+        { type: 'resource_link', uri: pathToFileURL(join(dir, 'b', 'c.txt')).href, name: 'b/c.txt' },
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
-  it('passes plain text through unchanged when there is no @mention', () => {
-    expect(attachmentsFrom('no attachments here')).toEqual([{ type: 'text', text: 'no attachments here' }])
+  it('marks a folder and reads a quoted path with spaces', () => {
+    const dir = workspace()
+    try {
+      expect(attachmentsFrom('@b/ and @"with space.md"', dir)).toEqual([
+        { type: 'text', text: 'b/ and with space.md' },
+        {
+          type: 'resource_link',
+          uri: pathToFileURL(join(dir, 'b')).href,
+          name: 'b/',
+          mimeType: 'inode/directory',
+        },
+        { type: 'resource_link', uri: pathToFileURL(join(dir, 'with space.md')).href, name: 'with space.md' },
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
-  it('collects every @mention, in order, as its own block', () => {
-    expect(attachmentsFrom('@a.txt and @b/c.txt')).toEqual([
-      { type: 'text', text: 'a.txt and b/c.txt' },
-      { type: 'resource_link', uri: 'file://a.txt', name: 'a.txt' },
-      { type: 'resource_link', uri: 'file://b/c.txt', name: 'b/c.txt' },
-    ])
+  it('leaves text alone when the @ starts no word or names nothing', () => {
+    const dir = workspace()
+    try {
+      const text = 'mail a@a.txt, ask @alice, no attachments here'
+      expect(attachmentsFrom(text, dir)).toEqual([{ type: 'text', text }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -802,6 +823,47 @@ describe('app.ts wiring: key routing through the editor reaches the real command
     } finally {
       await app.stop()
       await client.close()
+    }
+  })
+
+  it('typing @ opens the menu over the working directory files; Enter takes a path and the prompt links it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-at-'))
+    mkdirSync(join(dir, 'src'))
+    writeFileSync(join(dir, 'src', 'app.ts'), 'x')
+    const ep = scriptedEndpoint().on('_agnes/v1/session.projectUI', () => ({
+      sessionId: 'agnes:local:default:cli:dm:main',
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+    const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: 60, rows: 16 })
+    const app = new TuiApp({ session, term, header: 'Agnes', cwd: dir })
+    try {
+      await app.start()
+      term.feed('see @ap')
+      await vi.waitFor(async () => expect((await screenOf(term, 60, 16)).join('\n')).toContain('src/app.ts'))
+      term.feed('\r')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 60, 16)).join('\n')).toContain('see @src/app.ts'),
+      )
+      term.feed('\r')
+      await vi.waitFor(() => expect(ep.calls.some((call) => call.method === 'session/prompt')).toBe(true))
+      const prompt = ep.calls.find((call) => call.method === 'session/prompt')?.params as {
+        prompt: unknown[]
+      }
+      expect(prompt.prompt).toContainEqual({
+        type: 'resource_link',
+        uri: pathToFileURL(join(dir, 'src', 'app.ts')).href,
+        name: 'src/app.ts',
+      })
+    } finally {
+      await app.stop()
+      await client.close()
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
