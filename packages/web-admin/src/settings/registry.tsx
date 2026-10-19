@@ -185,10 +185,11 @@ const definitions: readonly [
       <>
         {c.snapshot && (
           <>
-            {/* What a new session may do comes first; review and isolation qualify it. The preset
-             is chosen here only. */}
+            {/* What a new session may do comes first; review and isolation qualify it. The default
+             permission and preset are chosen here only. */}
             <PermissionDefaults
-              available={c.snapshot.presets.map((preset) => preset.id)}
+              presets={c.snapshot.presets}
+              permissions={c.snapshot.permissions}
               security={c.snapshot.security}
             />
             <AutoReviewPanel canSave={c.canSave} />

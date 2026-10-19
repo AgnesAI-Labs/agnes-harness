@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
 import { type ContentBlock, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol'
 import { attachmentErrorMessage } from '@agnes/web-units'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { createSubmissionController } from '../src/app/submission-controller.js'
 import { Submission, SubmissionOwner } from '../src/app/submission-owner.js'
+import { type DraftPermissionInput, newSessionRequest } from '../src/session-permission.js'
 import { enT, zhT } from './helpers/locale.js'
 
 describe('composer submission validation', () => {
@@ -60,6 +61,91 @@ describe('composer submission validation', () => {
       expect(refusal).toBe(message)
     },
   )
+})
+
+describe('new session request', () => {
+  const runtime: DraftPermissionInput['runtime'] = {
+    providers: [],
+    presets: ['standard', 'minimal', 'ptc'].map((id) => ({ id, isDefault: id === 'standard' })),
+    permissions: [
+      { id: 'read-only', isDefault: false },
+      { id: 'workspace-write', isDefault: true },
+    ],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+  }
+  it.each([
+    ['a chosen level', { explicit: 'view' }, { permission: 'read-only' }],
+    ['a recipe alone', { preset: 'ptc' }, { preset: 'ptc', permission: 'default' }],
+    [
+      'both',
+      { preset: 'minimal', explicit: 'workspace' },
+      { preset: 'minimal', permission: 'workspace-write' },
+    ],
+    ['nothing chosen', {}, {}],
+  ] as const)('sends %s from every creation path', async (_case, choice, expected) => {
+    const binding = new SessionBindingOwner()
+    const created = vi.fn(async () => {
+      throw new Error('stop after the request')
+    })
+    const context = {
+      current: undefined,
+      draftingNew: true,
+      selectedWorkspace: { path: '/synthetic/work', available: true },
+      sessionPending: false,
+      sessionBinding: binding,
+      renderControls() {},
+      draftLoopAvailable: () => true,
+      loopCatalogPending: false,
+      draftBundles: [],
+      runtimeCatalog: runtime,
+      draftSessionRequest: () =>
+        newSessionRequest({
+          remembered: undefined,
+          defaults: undefined,
+          runtime,
+          explicit: undefined,
+          preset: undefined,
+          ...(choice as Partial<DraftPermissionInput>),
+        }),
+      client: { session: { new: created } },
+      t: (key: string) => key,
+      settingsText: (key: string) => key,
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    const controller = createSubmissionController(context)
+    await expect(controller.prepareComposerSession()).rejects.toThrow('stop after the request')
+    await expect(controller.prepareAttachmentSession()).rejects.toThrow('stop after the request')
+    for (const [request] of created.mock.calls as unknown as [Record<string, unknown>][])
+      expect(request).toEqual({ cwd: '/synthetic/work', sessionKey: expect.any(String), ...expected })
+    expect(created).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates nothing when the deployment refuses the chosen level', async () => {
+    const created = vi.fn()
+    const context = {
+      current: undefined,
+      draftingNew: true,
+      selectedWorkspace: { path: '/synthetic/work', available: true },
+      sessionPending: false,
+      sessionBinding: new SessionBindingOwner(),
+      renderControls() {},
+      draftLoopAvailable: () => true,
+      loopCatalogPending: false,
+      draftBundles: [],
+      draftSessionRequest: () =>
+        newSessionRequest({
+          explicit: 'full',
+          remembered: undefined,
+          preset: undefined,
+          defaults: undefined,
+          runtime,
+        }),
+      client: { session: { new: created } },
+      t: (key: string) => key,
+      settingsText: (key: string) => key,
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    await expect(createSubmissionController(context).prepareComposerSession()).rejects.toThrow('notAllowed')
+    expect(created).not.toHaveBeenCalled()
+  })
 })
 
 describe('submission owners', () => {

@@ -3,8 +3,12 @@ import { SettingsSubpageFrame } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
+import { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { SessionDefaultsPanel } from '../src/admin/plugins/session-defaults-panel.js'
 import { AutoReviewPanel } from '../src/settings/auto-review.js'
+import { settingsCatalog } from '../src/settings/locales.js'
 import { PermissionDefaults } from '../src/settings/permission-defaults.js'
+import { SecurityStatusPanel } from '../src/settings/security-status.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root | undefined
@@ -85,14 +89,22 @@ it('saves the auto review rules as chips, toggles, a segment and second presets,
   expect(host.textContent).not.toMatch(/saved/i)
 })
 
+const presets = [
+  { id: 'standard', isDefault: true },
+  { id: 'ptc', isDefault: false },
+]
+const permissions = ['read-only', 'workspace-write', 'full-access'].map((id) => ({
+  id,
+  isDefault: id === 'workspace-write',
+}))
 it('picks the default permission from three cards, confirms full access, and offers plugin presets in one row', async () => {
   const saves: unknown[] = []
-  let defaults: Record<string, unknown> = { preset: 'workspace-write' }
+  let defaults: Record<string, unknown> = { permission: 'workspace-write' }
   let revision = 3
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/admin/api/defaults' && init?.method !== 'PUT')
       return Response.json({ revision, defaults, loops: [] })
-    if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
+    if (url === '/admin/api/composition') return Response.json({ preset: 'standard' })
     if (url === '/admin/api/defaults') {
       const body = JSON.parse(String(init?.body))
       saves.push(body)
@@ -110,7 +122,8 @@ it('picks the default permission from three cards, confirms full access, and off
   vi.stubGlobal('fetch', fetcher)
   const host = await mount(
     createElement(PermissionDefaults, {
-      available: ['read-only', 'workspace-write', 'full-access', 'ptc'],
+      presets,
+      permissions,
       fetcher: fetcher as unknown as typeof fetch,
     }),
   )
@@ -122,19 +135,19 @@ it('picks the default permission from three cards, confirms full access, and off
     host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')?.checked,
   ).toBe(true)
   await click(host, '[data-testid="security-read-only"] input')
-  expect(saves.at(-1)).toEqual({ revision: 3, defaults: { preset: 'read-only' } })
+  expect(saves.at(-1)).toEqual({ revision: 3, defaults: { permission: 'read-only' } })
   // Full access asks first.
   await click(host, '[data-testid="security-full-access"] input')
   expect(saves).toHaveLength(1)
   await click(document, '[data-testid="security-full-confirm"]')
-  expect(saves.at(-1)).toEqual({ revision: 4, defaults: { preset: 'full-access' } })
-  // A plugin's own preset is chosen from 「更多预设」.
+  expect(saves.at(-1)).toEqual({ revision: 4, defaults: { permission: 'full-access' } })
+  // Another preset is chosen from 「更多预设」 and keeps the permission.
   await act(async () => {
     const more = host.querySelector<HTMLSelectElement>('[data-testid="security-more-presets"]')!
     more.value = 'ptc'
     more.dispatchEvent(new Event('change', { bubbles: true }))
   })
-  expect(saves.at(-1)).toEqual({ revision: 4, defaults: { preset: 'ptc' } })
+  expect(saves.at(-1)).toEqual({ revision: 4, defaults: { permission: 'full-access', preset: 'ptc' } })
 })
 
 it('names an automatic fast reviewer instead of calling it unset, and still warns for an empty verifier', async () => {
@@ -180,8 +193,8 @@ it('rereads the defaults on a revision conflict, shows the stored preset, and re
   let conflictOnce = true
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/admin/api/defaults' && init?.method !== 'PUT')
-      return Response.json({ revision, defaults: { preset: 'workspace-write' }, loops: [] })
-    if (url === '/admin/api/composition') return Response.json({ preset: 'workspace-write' })
+      return Response.json({ revision, defaults: { permission: 'workspace-write' }, loops: [] })
+    if (url === '/admin/api/composition') return Response.json({ preset: 'standard' })
     if (url === '/admin/api/defaults') {
       const body = JSON.parse(String(init?.body))
       saves.push(body)
@@ -203,7 +216,8 @@ it('rereads the defaults on a revision conflict, shows the stored preset, and re
   vi.stubGlobal('fetch', fetcher)
   const host = await mount(
     createElement(PermissionDefaults, {
-      available: ['read-only', 'workspace-write', 'full-access'],
+      presets,
+      permissions,
       fetcher: fetcher as unknown as typeof fetch,
     }),
   )
@@ -221,7 +235,7 @@ it('rereads the defaults on a revision conflict, shows the stored preset, and re
     false,
   )
   await click(host, '[data-testid="security-default-retry"]')
-  expect(saves.at(-1)).toEqual({ revision: 7, defaults: { preset: 'read-only' } })
+  expect(saves.at(-1)).toEqual({ revision: 7, defaults: { permission: 'read-only' } })
   expect(host.querySelector('[data-testid="security-default-conflict"]')).toBeNull()
   // Defaults saved elsewhere are read again.
   const reads = fetcher.mock.calls.filter(([url]) => url === '/admin/api/defaults').length
@@ -263,4 +277,111 @@ it('keeps the last auto review switch when an earlier save is slower (B01, one w
   expect(
     host.querySelector<HTMLElement>('[data-testid="auto-review-enabled"]')?.getAttribute('aria-checked'),
   ).toBe('false')
+})
+
+const text = (key: string, params?: Record<string, string | number>) =>
+  Object.entries(params ?? {}).reduce(
+    (value, [name, replacement]) => value.replace(`{${name}}`, String(replacement)),
+    settingsCatalog.en?.[key] ?? key,
+  )
+const policy = (id: string, approvalPolicy: string, networkMode: 'deny' | 'unrestricted') => ({
+  id,
+  level: 'L1' as const,
+  required: true,
+  onUnavailable: 'deny' as const,
+  approvalPolicy,
+  networkMode,
+})
+it('lists permission levels apart from presets and shows each session’s permission beside its preset', async () => {
+  const workspace = {
+    sessionId: 'session-a',
+    path: '/synthetic',
+    preset: 'minimal',
+    permission: 'full-access',
+    provider: 'local',
+    state: 'ready' as const,
+  }
+  const status = {
+    platform: { os: 'linux' as const, l1: { level: 'full' as const, scope: ['file' as const] } },
+    presetPolicies: [policy('standard', 'default', 'deny'), policy('workspace-write', 'default', 'deny')],
+    permissionPolicies: [
+      policy('read-only', 'read-only', 'deny'),
+      policy('full-access', 'full-access', 'unrestricted'),
+    ],
+    workspaces: [workspace],
+  }
+  const details = await mount(createElement(SecurityStatusPanel, { status, t: text, view: 'details' }))
+  const rows = (id: string) =>
+    [...details.querySelectorAll(`[data-testid="${id}"] tbody tr`)].map((row) => row.firstChild?.textContent)
+  expect(rows('permission-level-status')).toEqual(['Read only', 'Full access'])
+  expect(details.querySelector('[data-testid="permission-level-status"]')?.textContent).toContain(
+    text('network.unrestricted'),
+  )
+  // A legacy alias the Host still reports is not listed as a preset again.
+  expect(rows('permission-preset-status')).toEqual(['Standard'])
+  expect(details.querySelector('[data-testid="workspace-permission"]')?.textContent).toBe('Full access')
+  await act(async () => root?.unmount())
+  const summary = await mount(createElement(SecurityStatusPanel, { status, t: text }))
+  await click(summary, '[data-testid="sandbox-isolation"]')
+  expect(
+    summary.querySelector('[data-testid="workspace-sandbox-status"] .agnes-settings-item-description')
+      ?.textContent,
+  ).toBe('Minimal tools · Full access · Local sandbox')
+  // An older Host reports no permission levels or session permission: the one table stays as it was.
+  await act(async () => root?.unmount())
+  const { permissionPolicies: _levels, ...older } = status
+  const { permission: _level, ...olderWorkspace } = workspace
+  const legacy = await mount(
+    createElement(SecurityStatusPanel, {
+      status: { ...older, workspaces: [olderWorkspace] },
+      t: text,
+      view: 'details',
+    }),
+  )
+  expect(legacy.querySelector('[data-testid="permission-level-status"]')).toBeNull()
+  expect(
+    [...legacy.querySelectorAll('[data-testid="permission-preset-status"] tbody tr')].map(
+      (row) => row.firstChild?.textContent,
+    ),
+  ).toEqual(['Standard', 'Edit workspace'])
+  expect(legacy.querySelector('[data-testid="workspace-permission"]')).toBeNull()
+})
+
+it('keeps the saved permission and preset when new-session defaults are saved', async () => {
+  const loop = { id: 'workflow', version: '1.0.0', sourcePackage: '@acme/workflow', capabilities: [] }
+  const adapter = {
+    ...loop,
+    id: 'adapter',
+    wireApi: 'openai-chat',
+    capabilities: { imageInput: false, tools: true, streaming: true },
+    models: [{ id: 'model' }],
+  }
+  const defaults = {
+    preset: 'minimal',
+    permission: 'full-access',
+    providers: {
+      loop: { provider: loop.id, version: loop.version },
+      'model-adapter': { provider: adapter.id, version: adapter.version },
+    },
+    model: 'model',
+  }
+  const saves: unknown[] = []
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/loops')) return Response.json({ loops: [loop], revision: 4, defaults })
+    if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [adapter] })
+    if (String(url).endsWith('/composition')) return Response.json({})
+    const body = JSON.parse(String(init?.body))
+    saves.push(body)
+    return Response.json({ revision: 5, defaults: body.defaults })
+  })
+  const api = new PluginAdminApi(
+    { profile: 'local-dev', clientId: 'admin', permissions: ['packages.activate'], readOnly: false },
+    fetcher,
+  )
+  const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: true, t: text }))
+  await click(host, '[data-testid="session-default-loop"]')
+  await click(host, '[data-testid="session-loop-follow"]')
+  await act(async () => {})
+  const { loop: _loop, ...providers } = defaults.providers
+  expect(saves).toEqual([{ revision: 4, defaults: { ...defaults, providers } }])
 })

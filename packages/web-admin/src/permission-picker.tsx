@@ -74,6 +74,8 @@ export type PermissionPickerState = {
   disabled: boolean
   pending: boolean
   selected: PermissionMode | null
+  /** The level new sessions start under, marked in the list; absent when the Host does not say. */
+  defaultMode?: PermissionMode
 }
 
 export type PermissionPickerProps = {
@@ -251,7 +253,10 @@ function PermissionPanel({
           >
             <Icon name={PERMISSION_ICONS[option.id]} className="permission-picker-icon" />
             <span className="permission-picker-copy">
-              <span className="permission-picker-label">{tr(option.label)}</span>
+              <span className="permission-picker-label">
+                {tr(option.label)}
+                {option.id === state.defaultMode ? ` ${tr('settings.picker.defaultMark')}` : ''}
+              </span>
               <span className="permission-picker-hint">{tr(PERMISSION_OPTION_HINT_KEYS[option.id])}</span>
             </span>
             <span className="permission-picker-check">

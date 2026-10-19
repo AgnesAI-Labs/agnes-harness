@@ -74,7 +74,7 @@ A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. Th
 
 ## Manage skills in Web
 
-Candidate tests use the [Host isolation and exact-hash confirmation rules](security.md): workspace-write/standard shows one confirmation; full-access skips it only with enforced OS isolation. Windows always requires confirmation because candidate code runs unisolated on the local machine. Test approval never publishes or enables a package.
+Candidate tests use the [Host isolation and exact-hash confirmation rules](security.md): the `workspace-write` permission shows one confirmation; `full-access` skips it only with enforced OS isolation. Windows always requires confirmation because candidate code runs unisolated on the local machine. Test approval never publishes or enables a package.
 
 Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
 

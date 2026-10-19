@@ -10,7 +10,6 @@ import {
 } from '@agnes/protocol'
 import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
-import { permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { composerCommands } from '@agnes/web-client'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
@@ -31,7 +30,7 @@ export function createSubmissionController(
     | 'draftBundles'
     | 'draftLoop'
     | 'draftLoopAvailable'
-    | 'draftPreset'
+    | 'draftSessionRequest'
     | 'draftingNew'
     | 'initialModelPending'
     | 'initialPermissionPending'
@@ -56,7 +55,6 @@ export function createSubmissionController(
     | 'renderer'
     | 'runtimeCatalog'
     | 'runtimeModels'
-    | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
     | 'sessionBinding'
@@ -106,6 +104,13 @@ export function createSubmissionController(
     return /^\/plan(?:\s|$)/.test(input)
   }
 
+  /** The draft's preset and permission level, as `session.new` takes them. */
+  function draftRequest() {
+    const request = context.draftSessionRequest()
+    if (!request) throw new Error(context.settingsText('notAllowed'))
+    return request
+  }
+
   async function prepareComposerSession(): Promise<Session> {
     if (context.current) return context.current
     if (referenceSessionPending) return referenceSessionPending
@@ -131,7 +136,7 @@ export function createSubmissionController(
         cwd: workspace?.path ?? '',
         sessionKey: key,
         ...(context.draftLoop ? { loop: context.draftLoop } : {}),
-        ...(context.draftPreset ? { preset: context.draftPreset } : {}),
+        ...draftRequest(),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
       if (!context.sessionBinding.isCurrent(epoch)) throw new Error(context.t('app.session.selectionChanged'))
@@ -216,9 +221,7 @@ export function createSubmissionController(
       context.permissionRefreshPending ||
       (session && context.sessionYoloEnabled === undefined) ||
       (!session && (!context.draftingNew || !context.selectedWorkspace?.available)) ||
-      (!session &&
-        context.permissionMode === 'view' &&
-        permissionForSessionPreset(context.selectedDraftPreset(), context.runtimeCatalog) !== 'view') ||
+      (!session && !context.draftSessionRequest()) ||
       !canSubmitComposer({
         connected: context.connected,
         hasSession: true,
@@ -412,7 +415,7 @@ export function createSubmissionController(
         cwd: workspace.path,
         sessionKey: key,
         ...(context.draftLoop ? { loop: context.draftLoop } : {}),
-        ...(context.draftPreset ? { preset: context.draftPreset } : {}),
+        ...draftRequest(),
         ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
       })
       if (!context.sessionBinding.isCurrent(epoch) || !context.draftingNew)

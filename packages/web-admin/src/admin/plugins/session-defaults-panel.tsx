@@ -41,8 +41,8 @@ export const defaultAdapterChoices = (adapters: readonly AdminModelAdapter[]): A
 
 /**
  * 新会话默认: what a new session starts with, one row per choice, each saved as soon as it is picked.
- * The host stores the loop, the model adapter and its model; the permission preset is chosen under
- * 权限与安全 and kept as it is. Memory, child-agent and the other slots follow the profile, so their
+ * The host stores the loop, the model adapter and its model; the permission and the preset are
+ * chosen under 权限与安全 and kept as they are. Memory, child-agent and the other slots follow the profile, so their
  * rows state what is in effect. A saved choice the catalog no longer has is marked on its row.
  */
 export function SessionDefaultsPanel({
@@ -110,13 +110,14 @@ export function SessionDefaultsPanel({
       if (!api || !catalog) throw new Error('not ready')
       const loop = catalog.loops.find((entry) => identity(entry) === next.loop)
       const adapter = catalog.adapters.find((entry) => identity(entry) === next.adapter)
-      const preset = catalog.snapshot.defaults.preset
+      const { preset, permission } = catalog.snapshot.defaults
       const snapshot = await api
         .saveDefaults({
           revision: catalog.snapshot.revision,
           defaults: {
-            // The permission preset is chosen under 权限与安全; a save here keeps it.
+            // The permission and preset are chosen under 权限与安全; a save here keeps both.
             ...(preset ? { preset } : {}),
+            ...(permission ? { permission } : {}),
             ...(loop || adapter
               ? {
                   providers: {

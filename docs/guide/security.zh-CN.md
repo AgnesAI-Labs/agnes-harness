@@ -30,9 +30,9 @@ Web 审批卡先显示路径、命令等定位字段，超长的内容会注明�
 
 未获批准的调用会说明原因，会话记录和模型都能看到：用户拒绝、无人在期限内答复、没有客户端可询问、等待期间任务被停止、被命令策略拦截，或委派的子代理请求了其固定范围之外的操作。没有人可询问的调用记为“无法审批”而不是“已拒绝”，且不会执行。
 
-`approvals.mode` 接受 `manual`、`auto-review`、`off`。`off` 跳过普通工具审批，不等于 `full-access`，不会扩大文件范围或取消命令隔离。TUI `/yolo` 只跳过当前会话的普通审批，保留预设、命令表、隔离及[领域确认](#full-access-exceptions)；它不会把会话变成完全访问，也不会改写新会话的权限选择。`manual` 是“策略要求时问人”，不是每次调用都问。
+`approvals.mode` 接受 `manual`、`auto-review`、`off`。`off` 跳过普通工具审批，不等于 `full-access` 权限，不会扩大文件范围或取消命令隔离。TUI `/yolo` 只跳过当前会话的普通审批，保留权限、预设、命令表、隔离及[领域确认](#full-access-exceptions)；它不会把会话变成完全访问，也不会改写新会话的权限选择。`manual` 是“策略要求时问人”，不是每次调用都问。
 
-完全权限下，Agnes 主目录的私有状态——包括 `secrets/`、`auth/`、`profiles/` 以及显式指定的 secrets 目录——普通文件工具仍不可读取或写入。即使这些路径位于所选工作区内，硬拒绝也继续生效。授权管理应通过对应的设置与凭据服务；会话不能读取密钥，也不能改写 `profile.yaml` 将更弱的审批带到之后的会话。命令访问范围独立遵循所选预设：macOS/Linux 的 `workspace-write` 下，shell 写入受 OS 沙箱允许目录约束，Windows 命令没有系统隔离；显式选择 `full-access` 后，shell 可写工作区外，但 macOS/Linux 已安装的记忆 provider 仍保留 Host 私有文件隔离底线；没有可用 OS 边界就拒绝执行，见[记忆](memory.zh-CN.md)。应用权限不能代替系统隔离：获准的 Windows 命令以当前系统账户执行，可以访问该账户有权访问的文件和网络。
+完全权限下，Agnes 主目录的私有状态——包括 `secrets/`、`auth/`、`profiles/` 以及显式指定的 secrets 目录——普通文件工具仍不可读取或写入。即使这些路径位于所选工作区内，硬拒绝也继续生效。授权管理应通过对应的设置与凭据服务；会话不能读取密钥，也不能改写 `profile.yaml` 将更弱的审批带到之后的会话。命令访问范围独立遵循所选权限：macOS/Linux 的 `workspace-write` 下，shell 写入受 OS 沙箱允许目录约束，Windows 命令没有系统隔离；显式选择 `full-access` 后，shell 可写工作区外，但 macOS/Linux 已安装的记忆 provider 仍保留 Host 私有文件隔离底线；没有可用 OS 边界就拒绝执行，见[记忆](memory.zh-CN.md)。应用权限不能代替系统隔离：获准的 Windows 命令以当前系统账户执行，可以访问该账户有权访问的文件和网络。
 
 Web「工作区内修改」将文件访问限制在所选工作区内，执行命令仍遵循审批策略。访问工作区外路径时会拒绝操作，并提示切换「完全权限」或将目标目录选为工作区，不额外弹出审批。
 
@@ -56,17 +56,42 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-`standard`、`workspace-write`、`read-only` 请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
+在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
 
 Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。获准命令使用当前系统账户执行，应用检查不能隔离任意 shell 的文件或网络操作。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
 
-可在管理页的会话默认预设、创建会话时用 CLI `--preset <name>` 选择。存量会话变更沙箱权限须新建会话，`/preset` 会明确拒绝该类切换。可选项由 profile 的 `presets.allowed` 决定；本地与企业模板默认使用 `workspace-write`，`standard` 保留兼容名称。
+<a id="permissions-and-presets"></a>
 
-| 文件范围（权限预设） | 普通审批 | 持久能力 | OS 隔离 |
-| --- | --- | --- | --- |
-| **只读**（`read-only`）：查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 此平台命令未隔离 |
-| **可修改工作区**（`workspace-write`，兼容 `standard`）：文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 此平台命令未隔离 |
-| **完全访问**（`full-access`）：工作区内外普通文件；保护目录仍拒绝 | 普通操作不再逐次审批 | 计划/记忆规则及安装信任确认仍生效，见[例外](#full-access-exceptions) | 配置 L0；macOS/Linux 注册记忆提供方时仍保留私有文件隔离；Windows 无 OS 隔离 |
+### 权限与预设
+
+会话有两项相互独立的选择。**权限**决定会话能做什么：文件范围、普通审批和命令隔离。**预设**（preset）是会话怎样工作的配方：模型能看到的工具、提示词、模型槽位和预算。任何允许的预设都可以搭配任何允许的权限，例如 `agh --preset ptc --permission full-access`，例外见下文。权限不改变预设的工具。
+
+| 权限 | 文件范围 | 普通审批 | 持久能力 | OS 隔离 |
+| --- | --- | --- | --- | --- |
+| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 此平台命令未隔离 |
+| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 此平台命令未隔离 |
+| **完全访问**（`full-access`） | 工作区内外普通文件；保护目录仍拒绝 | 普通操作不再逐次审批 | 计划/记忆规则及安装信任确认仍生效，见[例外](#full-access-exceptions) | 配置 L0；macOS/Linux 注册记忆提供方时仍保留私有文件隔离；Windows 无 OS 隔离 |
+
+| 预设 | 设定内容 |
+| --- | --- |
+| `standard`（默认） | 标准工具集，模型直接调用工具 |
+| `minimal` | 只向模型展示 `read`、`grep`、`find`、`ls`，其他工具（包括扩展和 MCP 工具）都不可见。这只限制模型能看到什么，这些工具能做什么仍由权限决定 |
+| `ptc` | 程序化工具调用：模型编写代码，通过 `run_code` 调用工具，见[程序化工具调用与工作流](code-workflows.zh-CN.md) |
+| `channel` | 聊天频道的部署配方：回复适合聊天场景，审批以卡片形式在会话中等待 |
+| `claw` | 无人值守的部署配方：无人能回答的审批会停等。它要求 L1 隔离，因此 `claw` 搭配 `full-access` 会被拒绝 |
+
+创建会话时分别选择：CLI 与无头运行使用 `--preset NAME` 和 `--permission LEVEL`，SDK 使用 `createSession({ cwd, preset, permission })`，Web 输入区提供预设菜单（「默认」项跟随管理员设置的默认预设，以及「最小工具集」「编程工具集」）和独立的权限选择。管理员在 **设置 → 权限与安全** 设置新会话的默认权限和默认预设。profile 的 `presets` 与 `permissions` 列出可选项：
+
+```yaml
+presets: { default: standard, allowed: [standard, minimal, ptc] }
+permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
+```
+
+本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。没有 `permissions` 的 profile 由 `presets.allowed` 推导允许的权限级别。`--permission default` 或 `permission: 'default'` 表示跟随部署默认值。
+
+旧的预设名 `read-only`、`workspace-write`、`full-access` 仍可用作 `--preset` 值和 `presets.allowed` 条目，各自表示该权限下的 `standard` 预设，因此 `agh --preset read-only` 等同于 `agh --preset standard --permission read-only`。把它们与不同的 `--permission` 组合会报错。只指定预设的请求（如 `--preset ptc`）继续以 `workspace-write` 运行，即使管理员之后修改了默认权限，已有脚本和计划任务的行为也不变。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
+
+已打开的会话保持原有权限。`/preset NAME` 切换预设并保留权限；会改变沙箱约束的切换（包括任何权限变化）会被拒绝，须新建会话。自定义预设若自行写入沙箱或命令审批设置，就固定了自己的权限，会拒绝 `--permission` 选择。
 
 ### 无人值守审批
 
@@ -82,21 +107,21 @@ Windows 保留工具审批、只读限制、文件工具的工作区与保护路
 
 ### 完全访问的例外
 
-macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可写独立的候选副本；保护路径和 AGH 私有 home 拒绝访问，网络权限沿用会话隔离规则。POSIX 沙箱不可用时拒绝运行。**可修改工作区 / standard** 只显示一张确认卡，展示包名、短摘要、执行方式、风险与范围；批准仅授权这个精确摘要运行一次，摘要变化后拒绝旧授权。**完全访问（full-access）** 仅在有效会话策略允许且 OS 隔离实际生效时免除此确认。**Windows** 无 OS 隔离，即使完全访问也必须确认，并提示「此平台未隔离，将在本机直接运行候选代码」。运行前请到 **设置 → 插件 → 候选** 审阅源码。精确摘要决定写入私有 resource-control 目录的 `candidate-test-audit.jsonl`。测试不发布、不信任、不启用代码；只读和计划限制仍生效。
+macOS 和 Linux 上的候选作者测试通过 Host 的 OS 沙箱执行，仅可写独立的候选副本；保护路径和 AGH 私有 home 拒绝访问，网络权限沿用会话隔离规则。POSIX 沙箱不可用时拒绝运行。**可修改工作区** 只显示一张确认卡，展示包名、短摘要、执行方式、风险与范围；批准仅授权这个精确摘要运行一次，摘要变化后拒绝旧授权。**完全访问（full-access）** 仅在有效会话策略允许且 OS 隔离实际生效时免除此确认。**Windows** 无 OS 隔离，即使完全访问也必须确认，并提示「此平台未隔离，将在本机直接运行候选代码」。运行前请到 **设置 → 插件 → 候选** 审阅源码。精确摘要决定写入私有 resource-control 目录的 `candidate-test-audit.jsonl`。测试不发布、不信任、不启用代码；只读和计划限制仍生效。
 
 完全访问仍要求明确确认候选、插件及 Skill 的安装、信任、启用，以及能力范围变更；不会跳过「写入前询问」模式的记忆写入审批或凭据管理确认。保护路径保留原有硬拒绝，完全访问不能批准普通文件工具访问凭据或应用私有状态。Skill 导入安装和 MCP 注册／启动的审批保持不变；人工维护的本地插件和可信磁盘 Skill 仍遵循各自文档中的信任路径。
 
 即使使用 `full-access`，`edit` 和使用 `write` 覆盖已有文件也要求同一会话中已有该文件的观察记录，可来自读取或成功创建。其他写入者修改文件后，`write` 会拒绝过期的读取记录；必须重新读取再覆盖。创建新文件无需预先读取。
 
-需要允许工作区外文件时，显式使用 `agh --preset full-access`。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可保存：
+需要允许工作区外文件时，显式使用 `agh --permission full-access`（旧写法 `agh --preset full-access` 仍可用）。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
 
 ```yaml
-presets:
+permissions:
   default: full-access
-  allowed: [standard, read-only, workspace-write, full-access]
+  allowed: [read-only, workspace-write, full-access]
 ```
 
-若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
+若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 

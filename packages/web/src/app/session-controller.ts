@@ -6,6 +6,7 @@ import { preserveRouteParams, reportSuccess } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
+import { sessionPermissionLevel } from '../session-permission.js'
 import { receiptFromTurns, recordRunEvent, webView } from '../view.js'
 import type { SessionBindingOwner } from './session-owner.js'
 
@@ -43,6 +44,7 @@ export function createSessionController(
     | 'render'
     | 'renderControls'
     | 'renderer'
+    | 'runtimeCatalog'
     | 'selectedWorkspace'
     | 'selectComposerDraft'
     | 'sessionBinding'
@@ -200,11 +202,15 @@ export function createSessionController(
         const row = page.items.find((item) => item.sessionId === id)
         if (row) context.sessionRows = [...context.sessionRows.filter((item) => item.sessionId !== id), row]
       }
-      if (!options.created)
+      if (!options.created) {
+        // The session's own level, before the yolo switch is known.
+        const level = sessionPermissionLevel(
+          context.sessionRows.find((row) => row.sessionId === id),
+          context.runtimeCatalog,
+        )
         context.permissionMode =
-          context.sessionRows.find((row) => row.sessionId === id)?.preset === 'read-only'
-            ? 'view'
-            : 'workspace'
+          level === 'read-only' ? 'view' : level === 'full-access' ? 'full' : 'workspace'
+      }
       const metadata = context.sessionRows.find((row) => row.sessionId === id) as
         | (PageSessionMeta['items'][number] & { cwd?: string })
         | undefined

@@ -152,8 +152,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.permission.notice.full':
       'This session now has full permission and can read and write files inside and outside the workspace.',
     'app.permission.notice.mode': 'Session permission is set to “{mode}”.',
-    'app.permission.fixed':
-      'What the Agent can reach was fixed when this session started, so it cannot change to “{mode}” here.',
+    'app.permission.newSessionsOnly':
+      'A permission level applies to new sessions only. This session stays “{current}”; start a new session to use “{mode}”.',
     'app.permission.useInNew': 'Use “{mode}” in a new session',
     'app.notice.newSessionModel': 'The new session will use the selected model and configuration.',
     'app.notice.modelSaved': 'Model settings saved. Subsequent requests use these settings.',
@@ -315,7 +315,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.rightbarTabs': '扩展面板',
     'app.permission.notice.full': '本会话已开启完全权限，可读写工作区内外文件。',
     'app.permission.notice.mode': '本会话权限已设为「{mode}」。',
-    'app.permission.fixed': '这个会话的访问范围在创建时就已固定，不能在这里改成「{mode}」。',
+    'app.permission.newSessionsOnly':
+      '权限档只对新会话生效。本会话仍为「{current}」，要用「{mode}」请新建会话。',
     'app.permission.useInNew': '在新会话中使用「{mode}」',
     'app.notice.newSessionModel': '新会话将使用所选模型与配置。',
     'app.notice.modelSaved': '模型设置已保存。后续请求会使用这些设置。',

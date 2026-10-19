@@ -539,6 +539,7 @@ it('names permission presets the way settings does, keeping unknown ones by id (
   expect(presetName('workspace-write', zh)).toBe('可修改工作区')
   expect(presetName('read-only', t)).toBe('Read only')
   expect(presetName('acme-strict', zh)).toBe('acme-strict')
+  expect(presetName('standard', zh)).toBe('标准')
   await mount(
     createElement(SchedulesPage, {
       api: api([], { choices: async () => scheduleChoices({ presets: ['workspace-write', 'acme-strict'] }) }),

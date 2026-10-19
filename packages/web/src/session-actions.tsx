@@ -40,6 +40,8 @@ export function createSessionActions(options: {
   translate: Translate
   /** Names a loop for the runtime info dialog; ids are shown when it knows none. */
   loopLabel?: ((id: string) => string | undefined) | undefined
+  /** The permission level a session runs under, when the session list reports it. */
+  permissionOf?: ((id: string) => string | undefined) | undefined
 }) {
   const t = options.translate
   let runtimeDialog: ReturnType<typeof createRuntimeDialog> | undefined
@@ -235,6 +237,7 @@ export function createSessionActions(options: {
           translate: t,
           error: options.error,
           loopLabel: options.loopLabel,
+          permissionOf: options.permissionOf,
         })
         return runtimeDialog.open(id, trigger)
       }

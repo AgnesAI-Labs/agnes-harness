@@ -44,11 +44,11 @@ const CAPABILITY_KINDS = [
   'plugins',
 ] as const
 
-const PRESET_KEYS: Record<string, string> = {
+/** Permission levels; a session from an older Host names its level as its preset. */
+const PERMISSION_KEYS: Record<string, string> = {
   'read-only': 'session.runtime.permission.view',
   'workspace-write': 'session.runtime.permission.workspace',
   'full-access': 'session.runtime.permission.full',
-  standard: 'session.runtime.permission.standard',
 }
 
 /**
@@ -60,12 +60,15 @@ export function RuntimeInfo({
   runtime,
   tools,
   loopLabel,
+  permission: level,
   children,
   t,
 }: {
   runtime: SessionRuntimeDescriptor
   tools?: SessionToolsResult | undefined
   loopLabel?: string | undefined
+  /** The permission level the session list reports for this session. */
+  permission?: string | undefined
   children?: ReactNode
   t: Translate
 }) {
@@ -82,16 +85,20 @@ export function RuntimeInfo({
   const loop = runtime.loop ?? capabilities?.loop.value
   const model = capabilities?.modelRoutes.value?.primary.model
   const preset = capabilities?.permissions.preset ?? runtime.preset?.name
-  const presetKey = preset ? PRESET_KEYS[preset] : undefined
+  const levelId =
+    level && PERMISSION_KEYS[level] ? level : preset && PERMISSION_KEYS[preset] ? preset : undefined
   const readOnly = capabilities?.permissions.readOnly ?? policy?.readOnly
-  const permission = preset
-    ? [
-        presetKey ? t(presetKey) : t('session.runtime.permission.preset', { name: preset }),
-        readOnly && preset !== 'read-only' ? t('session.runtime.permission.view') : undefined,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : unknown
+  const permission =
+    levelId || preset
+      ? [
+          levelId
+            ? t(PERMISSION_KEYS[levelId] as string)
+            : t('session.runtime.permission.preset', { name: preset ?? '' }),
+          readOnly && levelId !== 'read-only' ? t('session.runtime.permission.view') : undefined,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : unknown
   return (
     <div className="session-runtime" data-session-runtime={runtime.sessionKey}>
       <SettingsGroup data-testid="session-runtime-summary">
@@ -239,6 +246,8 @@ export function createRuntimeDialog(options: {
   error(error: unknown): void
   /** The display name of a loop, when the host knows one. */
   loopLabel?: ((id: string) => string | undefined) | undefined
+  /** The permission level the session list reports for a session. */
+  permissionOf?: ((id: string) => string | undefined) | undefined
 }) {
   const t = options.translate
   const host = createRegionHost(document.body, 'div')
@@ -284,7 +293,13 @@ export function createRuntimeDialog(options: {
           title={<h2 id="session-runtime-heading">{t('session.menu.runtime')}</h2>}
         >
           {runtime ? (
-            <RuntimeInfo runtime={runtime} tools={tools} loopLabel={loopLabel} t={t}>
+            <RuntimeInfo
+              runtime={runtime}
+              tools={tools}
+              loopLabel={loopLabel}
+              permission={sessionId ? options.permissionOf?.(sessionId) : undefined}
+              t={t}
+            >
               <SessionGrantList
                 grants={grants}
                 revoking={revoking}

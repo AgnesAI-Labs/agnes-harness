@@ -142,7 +142,7 @@ Closing the browser, disconnecting the page, or stopping `serve` affects the cli
 
 The **Automation** page lists scheduled tasks. Each task has a target:
 
-- **New session** (the default): every run opens a fresh session in the chosen workspace, named after the task and the start time, then runs the task there. You can also pick an execution mode or business agent, a permission preset and a model; unset fields use the defaults of a new chat.
+- **New session** (the default): every run opens a fresh session in the chosen workspace, named after the task and the start time, then runs the task there. You can also pick an execution mode or business agent, a preset and a model; unset fields use the defaults of a new chat.
 - **Existing session**: the task is sent into one session when due. It starts a turn if the session is idle, or joins the running turn.
 
 Frequency is once, every N minutes or hours, daily, weekly, or a Cron expression, in this computer's time zone unless you name another. The form shows the next run before you save. Each row shows where the task runs, its rule, the next run, an on/off switch and the last outcome; the menu offers Run now, Edit and Archive. Run history lists each run as Running, Waiting for approval, Ran, Delivered or Failed, with its duration, a plain reason for a failure, and a link to the session. A run follows the normal approval policy: when it needs approval it waits like any session, and its history row links to it. A repeating task missed while this computer was off is made up once, for the latest run. The session's runtime dialog lists the tasks that session receives or created.

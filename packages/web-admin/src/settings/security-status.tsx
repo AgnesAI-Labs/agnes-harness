@@ -16,8 +16,10 @@ import {
 import { useEffect } from 'react'
 
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
+import { isPermissionLevel } from './session-choice.js'
 
 type Text = (key: string) => string
+type Policy = RuntimeSecurityStatus['presetPolicies'][number]
 export function SecurityStatusPanel({
   status,
   t,
@@ -56,6 +58,7 @@ export function SecurityStatusPanel({
       workspace.sessionId,
       workspace.path,
       workspace.preset,
+      workspace.permission,
       workspace.provider,
       workspace.policyDigest,
     ])
@@ -63,6 +66,45 @@ export function SecurityStatusPanel({
     occurrences.set(identity, occurrence + 1)
     return { workspace, key: `${identity}:${occurrence}` }
   })
+  // A Host that reports permission levels apart lists them in their own table; an older one keeps
+  // them among the presets, shown as before.
+  const levels = status.permissionPolicies
+  const policyTable = (testId: string, heading: string, column: string, rows: readonly Policy[]) => (
+    <>
+      <h4>{heading}</h4>
+      <section
+        className="runtime-table-scroll"
+        aria-label={heading}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll the wide permission table.
+        tabIndex={0}
+      >
+        <table data-testid={testId}>
+          <thead>
+            <tr>
+              <th>{column}</th>
+              <th>{t('sandboxLevel')}</th>
+              <th>{t('required')}</th>
+              <th>{t('onUnavailable')}</th>
+              <th>{t('approvalPolicy')}</th>
+              <th>{t('commandNetwork')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((policy) => (
+              <tr key={policy.id}>
+                <td>{choice(policy.id)}</td>
+                <td>{policy.level}</td>
+                <td>{t(policy.required ? 'yes' : 'no')}</td>
+                <td>{t(policy.onUnavailable)}</td>
+                <td>{provider(policy.approvalPolicy)}</td>
+                <td>{t(`network.${policy.networkMode}`)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  )
   if (view === 'details')
     return (
       <div data-testid="security-details">
@@ -77,38 +119,16 @@ export function SecurityStatusPanel({
             <code>{status.platform.l1.reason}</code>
           </p>
         )}
-        <h4>{t('permissionRequirements')}</h4>
-        <section
-          className="runtime-table-scroll"
-          aria-label={t('permissionRequirements')}
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll the wide permission table.
-          tabIndex={0}
-        >
-          <table data-testid="permission-preset-status">
-            <thead>
-              <tr>
-                <th>{t('presets')}</th>
-                <th>{t('sandboxLevel')}</th>
-                <th>{t('required')}</th>
-                <th>{t('onUnavailable')}</th>
-                <th>{t('approvalPolicy')}</th>
-                <th>{t('commandNetwork')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.presetPolicies.map((preset) => (
-                <tr key={preset.id}>
-                  <td>{choice(preset.id)}</td>
-                  <td>{preset.level}</td>
-                  <td>{t(preset.required ? 'yes' : 'no')}</td>
-                  <td>{t(preset.onUnavailable)}</td>
-                  <td>{provider(preset.approvalPolicy)}</td>
-                  <td>{t(`network.${preset.networkMode}`)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        {levels &&
+          policyTable('permission-level-status', t('permissionRequirements'), t('permissionLevel'), levels)}
+        {policyTable(
+          'permission-preset-status',
+          t(levels ? 'presetIsolationRequirements' : 'permissionRequirements'),
+          t('presets'),
+          levels
+            ? status.presetPolicies.filter((policy) => !isPermissionLevel(policy.id))
+            : status.presetPolicies,
+        )}
         <h4>{t('workspacePosture')}</h4>
         {!status.workspaces.length ? (
           <p>{t('noWorkspacePosture')}</p>
@@ -121,6 +141,12 @@ export function SecurityStatusPanel({
                   <dd>{workspace.path}</dd>
                   <dt>{t('presets')}</dt>
                   <dd>{choice(workspace.preset)}</dd>
+                  {workspace.permission && (
+                    <>
+                      <dt>{t('permissionLevel')}</dt>
+                      <dd data-testid="workspace-permission">{choice(workspace.permission)}</dd>
+                    </>
+                  )}
                   <dt>{t('sandboxProvider')}</dt>
                   <dd>{provider(workspace.provider)}</dd>
                   <dt>{t('readiness')}</dt>
@@ -248,7 +274,13 @@ export function SecurityStatusPanel({
                 key={key}
                 data-testid="workspace-sandbox-status"
                 label={<span translate="no">{workspace.path}</span>}
-                description={`${choice(workspace.preset)} · ${provider(workspace.provider)}`}
+                description={[
+                  choice(workspace.preset),
+                  workspace.permission && choice(workspace.permission),
+                  provider(workspace.provider),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               >
                 <span className="agnes-settings-value" data-testid="workspace-enforcement">
                   <SettingsTag tone={workspaceTone}>{ux(`state.${enforcement}`)}</SettingsTag>

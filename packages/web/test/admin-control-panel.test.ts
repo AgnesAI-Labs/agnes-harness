@@ -31,6 +31,13 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
+import {
+  defaultRecipe,
+  draftPermissionMode,
+  newSessionRequest,
+  openSessionMode,
+  sessionPermissionLevel,
+} from '../src/session-permission.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string, params?: Record<string, string | number>) =>
@@ -894,9 +901,13 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
       label: 'Loop',
       inherited: 'Inherit',
       unavailable: 'Unavailable',
-      presets: [{ id: 'read-only', isDefault: true }],
+      // A legacy permission-level name is never offered as a recipe.
+      presets: [
+        { id: 'standard', isDefault: true },
+        { id: 'read-only', isDefault: false },
+      ],
       presetLabel: 'Preset',
-      inheritedPreset: 'read-only',
+      inheritedPreset: 'standard',
       bundles,
       selectedBundles: ['acme#report', 'acme#support'],
       bundlesLabel: 'Bundles',
@@ -910,7 +921,7 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
   expect(document.querySelectorAll('[role="combobox"]')).toHaveLength(2)
   expect(document.querySelector('[data-testid="new-session-preset-readonly"]')?.textContent).toContain(
-    'Read only',
+    'Standard',
   )
   expect(document.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
   await act(async () =>
@@ -940,9 +951,11 @@ it('offers only the loop from the chip until advanced settings show or a bundle 
     inherited: 'Inherit',
     unavailable: 'Unavailable',
     presets: [
-      { id: 'read-only', isDefault: true },
+      { id: 'standard', isDefault: true },
+      { id: 'read-only', isDefault: false },
       { id: 'review', isDefault: false },
     ],
+    inheritedPreset: 'standard',
     bundles: [
       { id: 'acme#support', sourcePackage: 'acme' },
       { id: 'acme#report', sourcePackage: 'acme' },
@@ -972,6 +985,61 @@ it('offers only the loop from the chip until advanced settings show or a bundle 
     expect(document.querySelector('[data-testid="new-session-preset"]')).not.toBeNull()
   } finally {
     localStorage.removeItem('agnes.settings.advanced')
+    await act(async () => updateLoopPicker({ ...view, visible: false }))
+  }
+})
+
+it.each([
+  [
+    'with minimal',
+    ['standard', 'minimal', 'ptc'],
+    ['Default (Standard)', 'Minimal tools', 'Programmatic tools'],
+  ],
+  ['without minimal', ['standard', 'ptc'], ['Default (Standard)', 'Programmatic tools']],
+])('lists only recipes, the default one once as 「Default」 (%s)', async (_case, ids, expected) => {
+  const onPreset = vi.fn()
+  const view = {
+    visible: true,
+    disabled: false,
+    loops: [],
+    label: 'Loop',
+    inherited: 'Inherit',
+    unavailable: 'Unavailable',
+    // Legacy permission-level aliases still sit in the Host's preset catalog.
+    presets: [...ids, 'read-only', 'workspace-write', 'full-access'].map((id) => ({
+      id,
+      isDefault: id === 'standard',
+    })),
+    inheritedPreset: 'standard',
+    onSelect() {},
+    onPreset,
+  }
+  await act(async () => updateLoopPicker(view))
+  const host = await mount(createElement(LoopPicker))
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
+    const open = async () =>
+      act(async () =>
+        document
+          .querySelector('[data-testid="new-session-preset"] input')
+          ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+      )
+    await open()
+    const options = () => [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')]
+    const names = options().map(
+      (option) => option.querySelector('.agent-choice > span')?.textContent ?? option.textContent,
+    )
+    expect(names).toEqual(expected)
+    const minimal = options().find((option) => option.textContent?.startsWith('Minimal tools'))
+    expect(minimal?.getAttribute('title') ?? null).toBe(ids.includes('minimal') ? 'Read tools only' : null)
+    await act(async () => options().at(-1)?.click())
+    expect(onPreset).toHaveBeenLastCalledWith('ptc')
+    // 「Default」 sends no preset, so the session follows the administrator default.
+    await act(async () => updateLoopPicker({ ...view, preset: 'ptc' }))
+    await open()
+    await act(async () => options()[0]?.click())
+    expect(onPreset).toHaveBeenLastCalledWith(undefined)
+  } finally {
     await act(async () => updateLoopPicker({ ...view, visible: false }))
   }
 })
@@ -1007,6 +1075,108 @@ it('inherits the admin preset before the profile default and renders its permiss
   expect(permissionForSessionPreset('workspace-write', runtime)).toBe('workspace')
   expect(permissionForSessionPreset('full-access', runtime)).toBe('full')
   expect(permissionForSessionPreset('unknown', runtime)).toBeUndefined()
+})
+
+it('keeps the draft preset and permission level independent and requests them as chosen', () => {
+  const runtime = (permissions?: RuntimeAdminSnapshot['permissions']): RuntimeAdminSnapshot => ({
+    providers: [],
+    presets: ['standard', 'minimal', 'ptc', 'read-only', 'workspace-write', 'full-access'].map((id) => ({
+      id,
+      isDefault: id === 'standard',
+    })),
+    ...(permissions ? { permissions } : {}),
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+  })
+  const levels = runtime([
+    { id: 'read-only', isDefault: false },
+    { id: 'workspace-write', isDefault: true },
+    { id: 'full-access', isDefault: false },
+  ])
+  const draft = (input: Partial<Parameters<typeof newSessionRequest>[0]>) => ({
+    explicit: undefined,
+    remembered: undefined,
+    preset: undefined,
+    defaults: undefined,
+    runtime: levels,
+    ...input,
+  })
+  // A draft that changed nothing names neither; a recipe alone follows the default level.
+  expect(newSessionRequest(draft({}))).toEqual({})
+  expect(newSessionRequest(draft({ preset: 'ptc' }))).toEqual({ preset: 'ptc', permission: 'default' })
+  // A chosen or remembered level is sent with any recipe, and the recipe never moves the level.
+  expect(newSessionRequest(draft({ preset: 'ptc', explicit: 'full' }))).toEqual({
+    preset: 'ptc',
+    permission: 'full-access',
+  })
+  expect(newSessionRequest(draft({ remembered: 'view' }))).toEqual({ permission: 'read-only' })
+  expect(draftPermissionMode(draft({ explicit: 'view', preset: 'ptc' }))).toBe('view')
+  expect(draftPermissionMode(draft({ explicit: 'view', preset: 'minimal' }))).toBe('view')
+  expect(draftPermissionMode(draft({}))).toBe('workspace')
+  expect(draftPermissionMode(draft({ defaults: { permission: 'full-access' } }))).toBe('full')
+  // The default recipe skips the legacy level aliases an older admin default may still name.
+  expect(defaultRecipe({ preset: 'read-only' }, levels)).toBe('standard')
+  expect(defaultRecipe({ preset: 'ptc' }, levels)).toBe('ptc')
+  // A level the deployment refuses is never requested; a remembered one falls back to the default.
+  const narrow = runtime([{ id: 'workspace-write', isDefault: true }])
+  expect(newSessionRequest(draft({ runtime: narrow, explicit: 'view' }))).toBeUndefined()
+  expect(newSessionRequest(draft({ runtime: narrow, remembered: 'view' }))).toEqual({})
+  expect(draftPermissionMode(draft({ runtime: narrow, remembered: 'view' }))).toBe('workspace')
+  // An older Host lists no levels and takes a level only as its legacy preset name.
+  const legacy = runtime()
+  expect(newSessionRequest(draft({ runtime: legacy, explicit: 'full' }))).toEqual({ preset: 'full-access' })
+  expect(newSessionRequest(draft({ runtime: legacy, preset: 'ptc' }))).toEqual({ preset: 'ptc' })
+  // Read-only must come from the preset itself there: a remembered level the recipe cannot honour is not sent.
+  expect(newSessionRequest(draft({ runtime: legacy, remembered: 'view' }))).toEqual({})
+  expect(
+    newSessionRequest(draft({ runtime: legacy, remembered: 'view', defaults: { preset: 'ptc' } })),
+  ).toBeUndefined()
+  expect(newSessionRequest(draft({ runtime: legacy, explicit: 'view', preset: 'ptc' }))).toBeUndefined()
+})
+
+it('reads an open session level from its row before guessing from its recipe', () => {
+  const runtime: RuntimeAdminSnapshot = {
+    providers: [],
+    presets: [],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+    security: {
+      platform: { os: 'linux', l1: { level: 'full', scope: ['file'] } },
+      presetPolicies: [
+        {
+          id: 'review',
+          level: 'L1',
+          required: true,
+          onUnavailable: 'deny',
+          approvalPolicy: 'read-only',
+          networkMode: 'deny',
+        },
+      ],
+      workspaces: [
+        {
+          sessionId: 'live',
+          path: '/synthetic/work',
+          preset: 'ptc',
+          permission: 'full-access',
+          provider: 'local',
+          state: 'ready',
+        },
+      ],
+    },
+  }
+  expect(sessionPermissionLevel({ sessionId: 's', permission: 'read-only', preset: 'ptc' }, runtime)).toBe(
+    'read-only',
+  )
+  expect(sessionPermissionLevel({ sessionId: 'live', preset: 'ptc' }, runtime)).toBe('full-access')
+  expect(sessionPermissionLevel({ sessionId: 's', preset: 'workspace-write' }, runtime)).toBe(
+    'workspace-write',
+  )
+  expect(sessionPermissionLevel({ sessionId: 's', preset: 'review' }, runtime)).toBe('read-only')
+  expect(sessionPermissionLevel({ sessionId: 's', preset: 'ptc' }, runtime)).toBeUndefined()
+  // The yolo switch widens the display to full access, but never a read-only session.
+  expect(openSessionMode('read-only', true, 'full')).toBe('view')
+  expect(openSessionMode('workspace-write', true, 'workspace')).toBe('full')
+  expect(openSessionMode('full-access', false, 'workspace')).toBe('full')
+  expect(openSessionMode('workspace-write', false, 'view')).toBe('workspace')
+  expect(openSessionMode(undefined, false, 'view')).toBe('view')
 })
 
 it('shows an unchecked platform as not checked, never as incomplete, and a measured failure as a warning', async () => {

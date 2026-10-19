@@ -21,7 +21,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh -p [prompt]` | One-shot task with piped input support |
 | `agh --mode text\|json` | Selects print automatically; ACP is separate |
 | `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
-| `agh --profile NAME --preset NAME --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them |
+| `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
 | `agh resume ID [-p prompt]` | Resume entry point |
 | `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | List/details |
@@ -30,6 +30,8 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --connect TARGET` | Connect only to that target; no fallback on failure |
 | `agh --standalone` / `agh --ephemeral` | Embedded / temporary execution |
 | `agh acp` / `agh --mode acp` | ACP protocol entry point |
+
+`--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. The older `agh --preset read-only` (also `workspace-write`, `full-access`) still means `standard` under that permission and cannot be combined with a different `--permission`. See [permissions and presets](../guide/security.md#permissions-and-presets).
 
 Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
@@ -93,6 +95,6 @@ See [candidate review](../extend/agent-built-plugins.md), [hot reload](../extend
 
 ## Create a session from an agent
 
-`node agnes.mjs --agent '@acme/kit#review' -p 'Inspect this workspace'` asks the backend to resolve that Bundle's own `launch`, selecting an exact Loop, session Bundle and explicit preset. `--agent` cannot be combined with `--loop`, `--preset` or resume options. Loop-only plugins can still use `--loop id@version`.
+`node agnes.mjs --agent '@acme/kit#review' -p 'Inspect this workspace'` asks the backend to resolve that Bundle's own `launch`, selecting an exact Loop, session Bundle and explicit preset. `--agent` cannot be combined with `--loop`, `--preset`, `--permission` or resume options. Loop-only plugins can still use `--loop id@version`.
 
 The target must be trusted, enabled and launch-ready. Invalid references, missing dependencies and unsatisfiable strict model/permission requirements refuse creation. Draft launch prompts are never sent automatically.

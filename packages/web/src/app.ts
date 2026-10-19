@@ -54,7 +54,6 @@ import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-ad
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
-import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
@@ -72,7 +71,7 @@ import { type ClaimResolver, startClientModules } from './client-modules/boot.js
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
-import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
+import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
@@ -89,6 +88,16 @@ import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
+import {
+  allowedPermissionLevels,
+  draftPermissionMode,
+  isPermissionLevel,
+  newSessionRequest,
+  openSessionMode,
+  permissionLevel,
+  permissionModeOf,
+  sessionPermissionLevel,
+} from './session-permission.js'
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
 import {
@@ -180,7 +189,7 @@ export interface AppSessionContext {
   sessionIsolation: typeof sessionIsolation
   runtimeCatalog: typeof runtimeCatalog
   runtimeModels: typeof runtimeModels
-  selectedDraftPreset: typeof selectedDraftPreset
+  draftSessionRequest: typeof draftSessionRequest
   selectedModelAvailable: typeof selectedModelAvailable
   selectedWorkspace: typeof selectedWorkspace
   sessionControls: typeof sessionControls
@@ -498,8 +507,8 @@ const appSessionContext: AppSessionContext = {
   set runtimeModels(value: typeof runtimeModels) {
     runtimeModels = value
   },
-  get selectedDraftPreset() {
-    return selectedDraftPreset
+  get draftSessionRequest() {
+    return draftSessionRequest
   },
   get selectedModelAvailable() {
     return selectedModelAvailable
@@ -1058,6 +1067,8 @@ let draftModelExplicit = false
 let draftLoop: LoopSelection | undefined
 let draftLoopEdited = false
 let draftPreset: string | undefined
+// The level chosen in this draft's permission control; the recipe in `draftPreset` is independent.
+let draftPermission: PermissionMode | undefined
 let draftBundles: string[] = []
 let sessionIsolation: { sessionId: string; disabled: boolean } | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
@@ -1084,11 +1095,20 @@ let newSessionCatalog: NewSessionCatalog | undefined
 let loopCatalogError = false
 let loopCatalogPending = false
 let sessionCatalogGeneration = 0
-function selectedDraftPreset(): string | undefined {
-  return effectiveSessionPreset(draftPreset, newSessionCatalog?.defaults, runtimeCatalog)
+function draftPermissionInput() {
+  return {
+    explicit: draftPermission,
+    remembered: readWebComposerMemory()?.permission,
+    preset: draftPreset,
+    defaults: newSessionCatalog?.defaults,
+    runtime: runtimeCatalog,
+  }
+}
+function draftSessionRequest() {
+  return newSessionRequest(draftPermissionInput())
 }
 function syncDraftPermission(): void {
-  permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? permissionMode
+  permissionMode = draftPermissionMode(draftPermissionInput())
 }
 async function refreshSessionCatalog(): Promise<void> {
   // Only the new-session composer consumes these admin catalogs.
@@ -1292,6 +1312,7 @@ clientModules.locale.subscribe(() => firstRun.refreshLocale())
 const sessionActions = createSessionActions({
   client,
   loopLabel: (id) => newSessionCatalog?.loops.find((loop) => loop.id === id)?.label,
+  permissionOf: (id) => sessionRows.find((row) => row.sessionId === id)?.permission,
   changed: () => list(),
   renamed: (id, title) => {
     const row = sessionRows.find((item) => item.sessionId === id)
@@ -1608,10 +1629,10 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   draftLoopEdited = false
   draftLoop = newSessionCatalog && defaultLoop(newSessionCatalog.defaults)
   draftPreset = undefined
+  draftPermission = undefined
   draftBundles = []
   pendingSessionKey = crypto.randomUUID()
   knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
-  permissionMode = inherited.permission
   syncDraftPermission()
   permissionRefreshPending = false
   initialPermissionPending = undefined
@@ -1720,9 +1741,7 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
         : next.model
           ? modelDefaults(next.model)
           : undefined
-      if (!draftPreset) {
-        permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? next.permission
-      }
+      syncDraftPermission()
     }
     renderControls()
   }
@@ -1730,12 +1749,11 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
 }
 async function selectPermission(mode: PermissionMode): Promise<boolean> {
   if (!connected || sessionPending || permissionChangePending || permissionRefreshPending) return false
-  const preset = ({ view: 'read-only', workspace: 'workspace-write', full: 'full-access' } as const)[mode]
-  const usePreset = runtimeCatalog?.presets.some((entry) => entry.id === preset) === true
-  if (mode === 'view' && !usePreset) throw new Error(settingsText('notAllowed'))
   if (!sessionBinding.session && draftingNew) {
-    draftPreset = usePreset ? preset : undefined
-    permissionMode = mode
+    if (!allowedPermissionLevels(runtimeCatalog).includes(permissionLevel(mode)))
+      throw new Error(settingsText('notAllowed'))
+    draftPermission = mode
+    syncDraftPermission()
     rememberWebComposer({ permission: mode })
     notice.setText(t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
     notice.setKind('')
@@ -1746,15 +1764,17 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   const session = sessionBinding.session
   const epoch = sessionBinding.capture()
   const connectionEpoch = permissionConnectionEpoch
-  const requestedYolo = yoloEnabled(mode)
+  // An open session keeps the level it was created with; only the approval (yolo) switch changes.
+  const level =
+    sessionPermissionLevel(
+      sessionRows.find((row) => row.sessionId === session.id),
+      runtimeCatalog,
+    ) ?? (permissionMode === 'view' ? 'read-only' : 'workspace-write')
+  // Skipping approvals never widens a read-only session.
+  const requestedYolo = yoloEnabled(mode) && level !== 'read-only'
   permissionChangePending = true
   renderControls()
   try {
-    if (usePreset) {
-      await session.setPreset(preset)
-      if (!sessionBinding.isCurrent(epoch, session) || connectionEpoch !== permissionConnectionEpoch)
-        return false
-    }
     const applied = await session.setYolo(requestedYolo)
     if (
       !sessionBinding.isCurrent(epoch, session) ||
@@ -1765,7 +1785,24 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     permissionSelectionSeq = applied.effectiveFromSeq
     initialPermissionPending = undefined
     sessionYoloEnabled = requestedYolo
-    permissionMode = mode
+    permissionMode = openSessionMode(level, requestedYolo, permissionMode)
+    if (permissionMode !== mode) {
+      // A different level needs a new session. Say so, and offer the path that works.
+      const label = permissionLabel(mode)
+      notice.setText(
+        t('app.permission.newSessionsOnly', { mode: label, current: permissionLabel(permissionMode) }),
+      )
+      notice.setKind('')
+      notice.offer({
+        label: t('app.permission.useInNew', { mode: label }),
+        run: () =>
+          run(async () => {
+            await beginExplicitNewDraft(false)
+            await selectPermission(mode)
+          }),
+      })
+      return false
+    }
     rememberWebComposer({ permission: mode })
     reportSuccess(
       'session-permission',
@@ -1776,26 +1813,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     notice.setKind('')
     return true
   } catch (error) {
-    if (!sessionBinding.isCurrent(epoch, session) || sessionPending) return false
-    const refused =
-      error instanceof Error &&
-      'data' in error &&
-      (error.data as { code?: unknown } | undefined)?.code === 'PRESET_SWITCH_REJECTED'
-    if (!refused) showError(error)
-    else {
-      // A live session keeps the sandbox it started with. Say so, and offer the path that works.
-      const label = permissionLabel(mode)
-      notice.setText(t('app.permission.fixed', { mode: label }))
-      notice.setKind('')
-      notice.offer({
-        label: t('app.permission.useInNew', { mode: label }),
-        run: () =>
-          run(async () => {
-            await beginExplicitNewDraft(false)
-            await selectPermission(mode)
-          }),
-      })
-    }
+    if (sessionBinding.isCurrent(epoch, session) && !sessionPending) showError(error)
     return false
   } finally {
     if (sessionBinding.isCurrent(epoch, session) && !sessionPending) {
@@ -2213,9 +2231,17 @@ run(async () => {
       draftLoopEdited = true
     }
     if (requestedPreset) {
-      if (!runtimeCatalog?.presets.some((entry) => entry.id === requestedPreset))
+      // A legacy link names a permission level as its preset; a Host that lists levels takes it as one.
+      const level =
+        runtimeCatalog?.permissions && isPermissionLevel(requestedPreset) ? requestedPreset : undefined
+      if (
+        level
+          ? !allowedPermissionLevels(runtimeCatalog).includes(level)
+          : !runtimeCatalog?.presets.some((entry) => entry.id === requestedPreset)
+      )
         throw new Error(settingsText('notAllowed'))
-      draftPreset = requestedPreset
+      if (level) draftPermission = permissionModeOf(level)
+      else draftPreset = requestedPreset
       syncDraftPermission()
     }
     if (requestedBundles.length) {
