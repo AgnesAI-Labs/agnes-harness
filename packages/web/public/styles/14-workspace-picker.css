@@ -8,9 +8,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  #new-session-form > .dialog-intro {
-    margin-top: calc(-1 * var(--s8));
-  }
   .workspace-options {
     min-inline-size: 0;
     padding: 0;
