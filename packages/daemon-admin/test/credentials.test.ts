@@ -21,7 +21,11 @@ it.each(['full-access', 'workspace-write'])(
         { label: 'Fixture', value: 'synthetic-test-value' },
         actor.id,
       )) as { id: string }
-      const change = admin.call('delete', { id: created.id, force: true }, actor.id, { policy, actor })
+      const context = { sessionKey: 's', sessionId: 'backend', epoch: 0, policy, actor }
+      const change = admin.call('delete', { id: created.id, force: true }, actor.id, {
+        context,
+        current: async () => context,
+      })
       if (policy === 'full-access') {
         await expect(change).resolves.toEqual({})
         expect(await admin.call('list', {}, actor.id)).toEqual({ items: [] })

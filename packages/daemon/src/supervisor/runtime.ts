@@ -1102,6 +1102,15 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
       ...managementClients,
     })
+    const verifyPermission = async (
+      sessionKey: string,
+    ): Promise<import('@agnes/protocol').PermissionContext | undefined> => {
+      if (!sessionOwnership.resolve(sessionKey)?.active) return undefined
+      const link = pool.businessWorker()?.link
+      return (await link?.commandForSession(sessionKey, 'permissionContext', {})) as
+        | import('@agnes/protocol').PermissionContext
+        | undefined
+    }
     const permissionRequests = new Map<string, AbortController>()
     startupCleanup.push(() => {
       for (const controller of permissionRequests.values()) controller.abort('stopped')
@@ -1125,6 +1134,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onEvent: (sessionKey, e) => {
         automationEvents.observe(sessionKey, e)
         if (e.type === 'turn/start') pool.resetSessionRequests(sessionKey)
+        if (
+          e.type === 'x/core/preset-switch' &&
+          e.origin === 'system' &&
+          (e.data as { from?: string }).from === 'full-access'
+        ) {
+          pool.revokeSessionRequests(sessionKey)
+          pool.resetSessionRequests(sessionKey)
+        }
         const control = e.data as { action?: unknown; outcome?: unknown }
         if (
           e.type === 'x/core/control' &&
@@ -1150,13 +1167,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
         if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
         if (['plugin-manage', 'mcp-manage', 'skill-install'].includes(f.method))
-          return permissionRequest(f.permissionContext, resourceControlDirectory, () => {
-            if (f.method === 'plugin-manage')
-              return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
-            if (f.method === 'mcp-manage')
-              return mcpManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
-            return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
-          })
+          return permissionRequest(
+            f.permissionContext,
+            resourceControlDirectory,
+            () => {
+              if (f.method === 'plugin-manage')
+                return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+              if (f.method === 'mcp-manage')
+                return mcpManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+              return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+            },
+            () => verifyPermission(sessionKey),
+          )
         if (f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         if (f.method === 'mcp-manage-abort')
@@ -1179,8 +1201,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           const controller = new AbortController()
           permissionRequests.set(permissionKey, controller)
           try {
-            return await permissionRequest(f.permissionContext, resourceControlDirectory, () =>
-              prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) }),
+            return await permissionRequest(
+              f.permissionContext,
+              resourceControlDirectory,
+              () => prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) }),
+              () => verifyPermission(sessionKey),
             )
           } finally {
             permissionRequests.delete(permissionKey)

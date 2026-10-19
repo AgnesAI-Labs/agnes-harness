@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
-import { createFileAudit } from '@agnes/host'
 import type { PermissionContext } from '@agnes/protocol'
+import { journalAuthorization } from './authorization-journal.js'
 
 export class PermissionRequestFailure extends Error {
   constructor(
@@ -17,20 +17,23 @@ export async function permissionRequest<T>(
   context: PermissionContext | undefined,
   directory: string,
   work: () => Promise<T>,
+  verify?: () => Promise<PermissionContext | undefined>,
 ) {
-  if (!context) return work()
+  if (!context || !verify) {
+    const value = await work()
+    return context ? { value, __aghPermissionEvidence: [] } : value
+  }
   const evidence: AutomaticPermissionEvidence[] = []
   try {
     const value = await withPermissionContext(
       context,
       async (decision) => {
         // The control-plane journal precedes the effect, even if the worker is lost before its reply.
-        const audit = createFileAudit(join(directory, 'permission-decisions.jsonl'))
-        audit.write({ kind: 'extension.service-call', detail: decision })
-        await audit.close?.()
+        await journalAuthorization(join(directory, 'permission-decisions.jsonl'), decision)
         evidence.push(decision)
       },
       work,
+      verify,
     )
     return { value, __aghPermissionEvidence: evidence }
   } catch (error) {

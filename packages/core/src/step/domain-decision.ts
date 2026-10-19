@@ -7,6 +7,7 @@ import type { SessionImpl } from './session.js'
 
 export function domainDecisionSource(s: SessionImpl, purpose: string, operationId: string): DecisionSource {
   return s.decisions.bindSource({
+    permission: true,
     owner: `core/${purpose}`,
     operationId,
     sourcePackage: '@agnes/core',

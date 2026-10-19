@@ -164,6 +164,9 @@ it('stamps session policy outside tool params and persists automatic decision ev
   const sent: unknown[] = []
   const evidence: unknown[] = []
   const context = {
+    sessionKey: 's',
+    sessionId: 'fixture-backend',
+    epoch: 0,
     policy: 'full-access',
     actor: { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} },
   }

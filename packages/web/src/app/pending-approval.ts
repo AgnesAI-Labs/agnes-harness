@@ -64,6 +64,7 @@ function approvalNode(
     kind: 'approval',
     id: ref.id,
     purpose: spec.purpose,
+    category: value.request.category ?? 'question',
     seq: 0,
     state,
     decisionRef: ref,

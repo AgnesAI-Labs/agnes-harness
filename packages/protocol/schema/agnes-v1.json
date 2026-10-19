@@ -3584,6 +3584,7 @@
             "kind": {
               "const": "approval"
             },
+            "category": { "enum": ["permission", "question"] },
             "purpose": {
               "type": "string",
               "maxLength": 256,

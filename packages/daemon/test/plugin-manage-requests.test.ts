@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { authoringSandbox } from '@agnes/daemon-admin/packages/index'
-import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
+import {
+  type AutomaticPermissionEvidence,
+  PrompterRouter,
+  withPermissionContext,
+} from '@agnes/daemon-rpc/local/prompter'
 import { resolveToolCallPolicy, type ToolDef } from '@agnes/extension-api'
 import type { HostSession, PluginManageInvocation } from '@agnes/host'
 import { createPackageManager, emptyLock, readDevelopmentPlugin, writeLock } from '@agnes/package-manager'
@@ -58,6 +62,82 @@ const files = [
   },
   { path: 'index.mjs', content: source },
 ] as const
+
+it('review: full-access publication cannot publish a different session candidate', async () => {
+  const s = await setup('allow')
+  const candidate = await s.request({ action: 'prepare', files })
+  await s.request({ action: 'test', proposalId: candidate.candidateId })
+  const invocation = {
+    sessionKey: 'different-session',
+    turn: 1,
+    toolUseId: 'other-call',
+    leaseId: 'lease',
+    packageId: '@agnes/plugin-helper',
+    snapshotId: 'snap',
+    rowId: 'ext:plugin-helper/main',
+    input: {
+      action: 'candidate.submit',
+      candidateId: candidate.candidateId,
+      expectedHash: candidate.candidateHash,
+    },
+  }
+  await expect(
+    withPermissionContext(
+      {
+        sessionKey: 'different-session',
+        sessionId: 'other-backend',
+        epoch: 0,
+        policy: 'full-access',
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      },
+      () => undefined,
+      () => s.dispatch(invocation as PluginManageInvocation, new AbortController().signal, undefined),
+
+      async () => ({
+        sessionKey: 'different-session',
+        sessionId: 'other-backend',
+        epoch: 0,
+        policy: 'full-access',
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
+    ),
+  ).rejects.toBeDefined()
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+})
+
+it('review: failed automatic publication is never reported as published', async () => {
+  const s = await setup('allow')
+  const candidate = await s.request({ action: 'prepare', files })
+  await s.request({ action: 'test', proposalId: candidate.candidateId })
+  vi.spyOn(s.manager, 'trust').mockRejectedValueOnce(new Error('synthetic trust failure'))
+  await expect(s.request({ action: 'commit', proposalId: candidate.candidateId })).rejects.toBeDefined()
+  expect((await s.request({ action: 'status', proposalId: candidate.candidateId })).state).toBe('failed')
+  expect((await s.manager.inventory(s.profileDir)).packages[0]).toMatchObject({
+    trusted: false,
+    enabled: false,
+  })
+})
+
+it('review: an expired automatic publication decision cannot produce a published receipt', async () => {
+  const s = await setup('allow')
+  const candidate = await s.request({ action: 'prepare', files })
+  await s.request({ action: 'test', proposalId: candidate.candidateId })
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  const push = s.automaticEvidence.push.bind(s.automaticEvidence)
+  const record = vi.spyOn(s.automaticEvidence, 'push').mockImplementation((...rows) => {
+    if (rows.some((row) => row.scope === 'plugin.publish')) clock.mockReturnValue(now + 110_001)
+    return push(...rows)
+  })
+  try {
+    await expect(s.request({ action: 'commit', proposalId: candidate.candidateId })).rejects.toBeDefined()
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+  } finally {
+    record.mockRestore()
+    clock.mockRestore()
+  }
+})
+
 async function setup(candidateTestPolicy?: 'allow' | 'ask') {
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-plugin-helper-'))
   roots.push(fixtureRoot)
@@ -180,11 +260,22 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
     return candidateTestPolicy === 'allow'
       ? withPermissionContext(
           {
+            sessionKey: 'session',
+            sessionId: 'fixture-backend',
+            epoch: 0,
             policy: 'full-access',
             actor: { id: ownerId, org: 'local', role: 'owner', deptPath: [], attrs: {} },
           },
-          (value) => automaticEvidence.push(value),
+          (value) => (value.consumption === 'authorized' ? automaticEvidence.push(value) : undefined),
           run,
+
+          async () => ({
+            sessionKey: 'session',
+            sessionId: 'fixture-backend',
+            epoch: 0,
+            policy: 'full-access',
+            actor: { id: ownerId, org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          }),
         )
       : run()
   }
@@ -898,3 +989,19 @@ it('carries safe diagnostics from real candidate inspection through RPC and supe
   expect(missingManifest.isError).not.toBe(true)
   expect(JSON.stringify(missingManifest.content)).toContain('complete file tree is missing package.json')
 })
+
+it.each(['cancelled', 'unavailable', 'rejected'] as const)(
+  'review: %s publication permission never admits a package effect',
+  async (verdict) => {
+    const s = await setup('allow')
+    const candidate = await s.request({ action: 'prepare', files })
+    await s.request({ action: 'test', proposalId: candidate.candidateId })
+    const ask = vi.spyOn(PrompterRouter.prototype, 'ask').mockResolvedValueOnce({ verdict })
+    try {
+      await expect(s.request({ action: 'commit', proposalId: candidate.candidateId })).rejects.toBeDefined()
+      expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+    } finally {
+      ask.mockRestore()
+    }
+  },
+)

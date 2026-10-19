@@ -3,7 +3,11 @@ import { constants } from 'node:fs'
 import { access, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { type PrompterAnswer, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import {
+  assertCurrentPermission,
+  type PrompterAnswer,
+  PrompterRouter,
+} from '@agnes/daemon-rpc/local/prompter'
 import {
   type Actor,
   type ApprovalReason,
@@ -116,6 +120,7 @@ export function createMcpManageRequests(options: {
     const assertActive = () => {
       live.get()
     }
+    await assertCurrentPermission()
     assertActive()
     if (!conn || !options.store) throw rpcError('CAPABILITY_DENIED')
     if (
@@ -155,8 +160,10 @@ export function createMcpManageRequests(options: {
       if (!value) throw rpcError('CAPABILITY_DENIED')
       return value
     }
-    const call = (name: ResourceControlMethodName, params: Record<string, unknown>) =>
-      options.service.call(name, { ...params, profile: options.profile }, authority())
+    const call = async (name: ResourceControlMethodName, params: Record<string, unknown>) => {
+      await assertCurrentPermission()
+      return options.service.call(name, { ...params, profile: options.profile }, authority())
+    }
     const effect = async (name: ResourceControlMethodName, params: Record<string, unknown>, id: string) => {
       const auth = authority()
       return (await call(name, {

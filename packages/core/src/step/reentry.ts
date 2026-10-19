@@ -438,8 +438,11 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
     const r = await s.d.log.append([
       s.ev('x/core/preset-switch', { from: s.preset.name, to: view.name }, { ignorable: true }),
     ])
-    s.preset = view
-    s.d.runtime.preset = view
+    s.revokeAutomaticPermissions()
+    s.preset = structuredClone(view)
+    s.d.runtime.preset = structuredClone(view)
+    const invalidations = s.decisions.revokedAutomaticEvents()
+    if (invalidations.length) await s.d.log.append(invalidations)
     return r.firstSeq
   })
   // Reconcile already-pending permission decisions and wake their existing delivery waiters.

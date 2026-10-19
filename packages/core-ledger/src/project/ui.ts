@@ -892,6 +892,7 @@ export class UIProjectionCell {
           kind: 'approval',
           id: old?.id ?? id,
           purpose: value.request.spec.purpose,
+          category: value.request.category ?? 'question',
           seq: old?.seq ?? seq,
           state:
             value.invalidation || (result && result.reason !== 'answered')

@@ -237,7 +237,7 @@ export function buildToolContext(
     },
     projections: unavailableProjections,
     ...(d.preset.codeRuntime ? { codeRuntime: d.preset.codeRuntime } : {}),
-    actor: d.actor,
+    actor: structuredClone(d.actor),
     cwd: d.cwd,
     exec: (cmd, opts): Promise<ExecResult> => {
       if (!d.workspace)

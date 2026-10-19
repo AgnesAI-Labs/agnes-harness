@@ -476,6 +476,7 @@ it.each(['full-access', 'workspace-write', 'custom'])(
     const f = await fixture({ preset, toolPolicies })
     try {
       const port = f.session.decisions.port({
+        permission: true,
         owner: 'fixture/permission',
         operationId: 'operation',
         sourcePackage: '@fixture/permission',
@@ -540,6 +541,7 @@ it('auto-resolves an outstanding permission when the effective preset switches t
   const f = await fixture()
   try {
     const port = f.session.decisions.port({
+      permission: true,
       owner: 'fixture/permission',
       operationId: 'switch',
       sourcePackage: '@fixture/permission',

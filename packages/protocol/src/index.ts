@@ -682,7 +682,12 @@ export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersi
 export * from './model.js'
 export * from './model-slots.js'
 export * from './package-admin.js'
-export { automaticPermissionDecision, type PermissionContext } from './permission-decision.js'
+export {
+  automaticPermissionDecision,
+  isPermissionPurpose,
+  type PermissionContext,
+  samePermissionContext,
+} from './permission-decision.js'
 export {
   compilePluginConfig,
   PLUGIN_SECRET_REF_PATTERN,

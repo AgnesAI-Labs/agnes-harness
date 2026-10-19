@@ -802,7 +802,8 @@ class Service implements PackageAdminService {
     const owner = authority.principalId,
       id = params.candidateId as string
     const action = method.slice('_agnes/v1/plugins.candidates.'.length)
-    const automatic = automaticPermissionDecision(authority.permissionContext)
+    const automatic =
+      authority.authoringPermission && automaticPermissionDecision(authority.permissionContext)
     if (action === 'list') return { candidates: this.candidates.list(directory, owner) }
     if (action === 'show') return this.candidates.show(directory, id, owner)
     this.requireBoundClient(method, params as EffectParams, authority)
@@ -818,6 +819,20 @@ class Service implements PackageAdminService {
       ])
     return this.candidates.serialized(directory, async () => {
       const expected = params.expectedHash as string
+      const verifyPublication = async () => {
+        if (!automatic) return
+        const candidate = this.candidates.show(directory, id, owner)
+        const context = authority.permissionContext
+        if (
+          !context ||
+          candidate.origin.sessionKey !== context.sessionKey ||
+          authority.authoringOrigin?.sessionKey !== context.sessionKey
+        )
+          throw rpcError('CAPABILITY_DENIED', { reason: 'Candidate belongs to a different session' })
+        await authority.authoringPermission!({ sessionKey: context.sessionKey, bindingHash: expected })
+        authority.authoringSignal?.throwIfAborted()
+      }
+      if (action === 'submit' && automatic) await verifyPublication()
       if (action === 'create')
         return this.candidates.create(
           directory,
@@ -855,7 +870,8 @@ class Service implements PackageAdminService {
         action === 'approve' || (action === 'submit' && automatic !== undefined),
         async (source, value: AuthoringCandidate) => {
           if (!value.preview?.capabilityHash) throw new Error('Candidate capability snapshot is missing')
-          const signal = AbortSignal.timeout(120_000)
+          await verifyPublication()
+          const signal = authority.authoringSignal ?? AbortSignal.timeout(120_000)
           const authoring = {
             candidateId: value.candidateId,
             candidateHash: value.candidateHash,
@@ -879,14 +895,17 @@ class Service implements PackageAdminService {
               authoring,
               signal,
             })
+          await verifyPublication()
           await this.options.manager.trust(directory, value.packageId, {
             integrity: value.candidateHash,
             capabilityHash: value.preview.capabilityHash,
           })
+          await verifyPublication()
           await this.options.manager.enable(directory, value.packageId, true, {
             expectedInstalledIntegrity: value.candidateHash,
           })
           if (!this.options.activation) throw new Error('Runtime activation is unavailable')
+          await verifyPublication()
           const observed = await this.options.activation.reconcile({
             profile,
             packageId: value.packageId,

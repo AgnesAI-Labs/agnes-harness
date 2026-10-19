@@ -344,6 +344,8 @@ export async function handleCommand(
     case 'workspaceFiles':
       if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
       return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))
+    case 'permissionContext':
+      return session.permissionContext
     case 'ping':
       return {
         ok: true,

@@ -681,7 +681,39 @@ export class SessionImpl {
     return this.closing
   }
 
+  private readonly authorizationId = crypto.randomUUID()
+  private authorizationEpoch = 0
+  private readonly authorizationChanges = new Set<() => void>()
+  private readonly authorizationActor: Actor
+  get permissionContext(): import('@agnes/protocol').PermissionContext {
+    return {
+      sessionKey: this.key,
+      sessionId: this.authorizationId,
+      epoch: this.authorizationEpoch,
+      policy: this.preset.name,
+      actor: structuredClone(this.authorizationActor),
+    }
+  }
+  onPermissionChange(listener: () => void): () => void {
+    this.authorizationChanges.add(listener)
+    return () => {
+      this.authorizationChanges.delete(listener)
+    }
+  }
+  revokeAutomaticPermissions(): void {
+    this.authorizationEpoch++
+    for (const listener of this.authorizationChanges) listener()
+  }
+
   constructor(deps: SessionDeps) {
+    this.authorizationActor = structuredClone(deps.actor)
+    const actorSnapshot = structuredClone(deps.actor)
+    deps = {
+      ...deps,
+      get actor() {
+        return structuredClone(actorSnapshot)
+      },
+    }
     this.d = deps
     const session = this
     this.decisions = new DecisionCommands({
@@ -701,10 +733,10 @@ export class SessionImpl {
         return session.op()?.control.status === 'cancel_requested'
       },
       get actor() {
-        return deps.actor
+        return structuredClone(session.authorizationActor)
       },
-      get permissionPolicy() {
-        return session.preset.name
+      get permissionContext() {
+        return session.permissionContext
       },
       get ttlMs() {
         return session.preset.approval.pendingTtlMs
@@ -728,7 +760,7 @@ export class SessionImpl {
     this.fallbackHooks = deps.hooks ?? noopHooks
     this.fallbackResources = deps.resources ?? new ResourceRegistry()
     this.compaction = deps.compaction ?? noCompaction
-    this.preset = deps.preset
+    this.preset = structuredClone(deps.preset)
     this.effects = new EffectRuntime({
       ev: (type, data) => this.ev(type, data),
       clock: deps.clock,
