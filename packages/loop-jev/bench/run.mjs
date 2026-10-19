@@ -16,6 +16,7 @@ import {
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ensureJevLoopInstalled } from './install.mjs'
 import {
   aggregate,
   callsPerInference,
@@ -1039,6 +1040,9 @@ export async function main(argv) {
     const { bootHeadless } = await import(join(CLI, 'src', 'boot', 'headless.ts'))
     const { parseArgs } = await import(join(CLI, 'src', 'args.ts'))
     await initializeHomeLocked(home, o.profile)
+    // The Jev loop is an optional bundled package: install it into the home the way the Market does.
+    if (await ensureJevLoopInstalled({ home, profile: o.profile, agnesVersion, cwd: root }))
+      log(`installed and enabled @agnes/jev-loop in ${home}`)
     // The host reads user-wide instruction files from AGH_HOME; the bench home holds none.
     process.env.AGH_HOME = home
     const bootAbort = new AbortController()

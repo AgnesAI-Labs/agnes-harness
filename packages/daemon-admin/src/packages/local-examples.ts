@@ -35,6 +35,7 @@ function helperEntry(
     license: pkg.license,
     contributions: [],
     ...(pkg.agnes?.metadata ? { metadata: pkg.agnes.metadata } : {}),
+    ...(Array.isArray(pkg.agnes?.provides) ? { provides: pkg.agnes.provides } : {}),
     compatibility: 'supported' as const,
   }
 }

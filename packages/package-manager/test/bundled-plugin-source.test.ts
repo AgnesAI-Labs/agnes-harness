@@ -27,8 +27,8 @@ const fixture = () => {
   return root
 }
 
-it('keeps an empty optional catalogue without reserving ordinary workspace sources', () => {
-  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+it('keeps the optional catalogue limited to shipped payloads without reserving ordinary workspace sources', () => {
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((item) => item.name)).toEqual(['jev-loop'])
   expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
   expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
 })

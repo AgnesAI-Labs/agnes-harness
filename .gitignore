@@ -35,3 +35,7 @@ learn/
 outputs/
 spikes/
 docs/task-records/
+
+# Generated from packages/loop-jev by `pnpm --filter @agnes/package-manager build:jev-payload`.
+packages/package-manager/bundled-plugins/jev-loop/index.mjs
+packages/package-manager/bundled-plugins/jev-loop/index.mjs.*.tmp

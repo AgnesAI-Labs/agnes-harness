@@ -4105,6 +4105,10 @@
         "origin": {
           "enum": ["official", "example", "local", "local-source", "third-party"]
         },
+        "optional": {
+          "description": "True for a shipped package the user chose to install: it is not part of the product and can be uninstalled.",
+          "type": "boolean"
+        },
         "includes": {
           "description": "Static package facts without executing plugin code. provides combines author labels with explicit contribution evidence, independently of runtime registrations. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
           "type": "object",

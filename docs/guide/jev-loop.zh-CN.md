@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [TypeSafe Jev 旁路模型调用](typesafe-jev.zh-CN.md) · [通用凭据](credentials.zh-CN.md) · [组合包与配置](../extend/bundles-and-profiles.zh-CN.md) · [编写插件](../develop/plugins.zh-CN.md)
 
-Jev Agent Loop（`agnes.jev@0.1.0`）是随 AGH 提供的可选 Agent Loop。它默认关闭；默认循环仍是 `agnes.default`。
+Jev Agent Loop（`agnes.jev@0.1.0`）是可选的 Agent Loop。它作为随发行版附带的可选包 `@agnes/jev-loop` 提供，默认没有安装；默认循环仍是 `agnes.default`。需要时从市场安装。
 
 ## 它做什么
 
@@ -32,21 +32,40 @@ Jev 在默认循环于同一会话中会提供的工具之间选择，但不包�
 - 组合包的 `profile` 补丁不能带 `provider` 块。
 - 不要把 Jev 模型写进 preset 槽位：槽位是对话模型。
 
-## 启用插件
+## 安装并配置插件
 
-这个循环是「AGH 基础能力」包里的 **Jev Agent Loop** 一行。在 **设置 → 插件** 里启用，它的「配置」页显示下表的各项。也可以在 profile 或组合包里启用并配置：
+Jev 是发行版附带的可选包，安装之前并不存在。设置里没有单独的开关。
+
+1. 打开 **插件 → 市场**，搜索 **Jev Agent Loop**（卡片上标有「**运行方式**」），点击 **安装**。
+2. AGH 检查这个包并打开审阅页。选择 **安装并启用**：安装、信任并启用你审阅过的这个确切版本。**只安装**只安装、不启用。审阅页若只提供 **安装**，说明当前账户没有信任或启用插件的权限。
+3. 之后这个包出现在 **插件** 页。打开 **Jev Agent Loop**，在它的 **设置** 页填写 `jev.route` 和 `jev.model`（见下表），再点击 **保存配置**。改动对新会话生效。
+
+安装并启用之后，这个循环才会出现在[选用循环](#选用循环)所述的各个循环列表里。
+
+**不用网页界面。** 可以用 CLI 安装同一个包，来源是市场卡片安装时使用的保留来源，在任何目录下都可以执行：
+
+```sh
+agh plugins add file:./bundled-plugins/jev-loop
+```
+
+命令会显示来源、能力范围和阻断项，确认后安装、信任并启用审阅过的版本；已明确授权的脚本可加 `--yes`。命令说明见[安装、启用、更新与移除插件](packages.zh-CN.md)。`jev.route` 等键在 profile 里设置，见下文；不用界面时，改 profile 就相当于在「设置」页配置。
+
+**在 profile 或组合包里。** 装好 `@agnes/jev-loop` 之后，它的插件行是 `ext:agnes.jev/loop`，默认启用。可以在 profile 里配置，代替「设置」页：
 
 ```yaml
 # AGH_HOME/profiles/<profile>/profile.yaml
 composition:
   plugins:
-    "loop:agnes.jev":
-      enabled: true
+    "ext:agnes.jev/loop":
       config:
         jev: { route: account-<id> }   # 路由声明在本 profile 里时写 jev
 ```
 
-在组合包里，同样的 `plugins` 映射写在组合包的 `profile` 补丁里。一行的 `config` 整体替换已保存的配置。改动对新会话生效。
+在组合包里，同样的 `plugins` 映射写在组合包的 `profile` 补丁里。一行的 `config` 整体替换已保存的配置。在这一行上写 `enabled: false` 可以关掉这个循环而不卸载包。改动对新会话生效。
+
+没有安装 `@agnes/jev-loop` 的 home 里没有 `ext:agnes.jev/loop` 这一行：profile 或组合包写了它就会被拒绝，报 `composition selects unknown ordinary plugin row: ext:agnes.jev/loop`。请先安装这个包。
+
+插件的配置项：
 
 | 键 | 范围 | 默认 | 含义 |
 | --- | --- | --- | --- |
@@ -69,7 +88,7 @@ composition:
 
 ## 选用循环
 
-启用这一行之后，用以下任一方式为新会话选择循环：
+安装并启用这个包之后，用以下任一方式为新会话选择循环：
 
 - profile：`providers.loop: { provider: agnes.jev, version: 0.1.0 }`；
 - 管理端「**新会话默认**」面板；
@@ -81,7 +100,7 @@ composition:
 ## 能看到什么
 
 - 管理端的循环列表和新会话的循环选择器里，`agnes.jev@0.1.0` 出现在默认循环旁边。有两个及以上循环可用时才显示选择器。
-- 设置 → 插件 列出这一行和它的配置页。提供方面板把 `typesafe-systemone` 标为「**仅载荷请求，不用于对话**」。
+- **插件** 页列出已安装的包，它的 **设置** 页就是配置页。提供方面板把 `typesafe-systemone` 标为「**仅载荷请求，不用于对话**」。
 - 对话看起来与默认循环一样，有两点不同：循环附加到对话模型请求上的附注显示为运行时上下文；Jev 直接选定的工具调用前面是一条没有文字的助手消息。对话模型在调用之前写的文字，记录里最多保留 8 KiB。
 - 成本明细里每次 Jev 调用一行「**旁路模型调用**」。没有报告用量的调用标为估算。
 - 循环自己的遥测事件（`jev.decide`、`jev.step`、`jev.metrics`）保存在会话历史和导出里，对话界面不显示。

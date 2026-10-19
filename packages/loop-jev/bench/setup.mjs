@@ -279,7 +279,7 @@ export function writePythonShim(dir, interpreter) {
 /** The headless bundle: the plugin row with the discovered Jev route, the tool set, one preset per cell. */
 export function benchBundle({ suite, lanes, reps, stepCap, basePreset, jev }) {
   const bundle = buildBundle({ suite, lanes, reps, stepCap, basePreset })
-  const row = bundle.profile.plugins['loop:agnes.jev']
+  const row = bundle.profile.plugins['ext:agnes.jev/loop']
   if (jev) row.config = { ...row.config, jev: { route: jev.route, model: jev.model } }
   return bundle
 }

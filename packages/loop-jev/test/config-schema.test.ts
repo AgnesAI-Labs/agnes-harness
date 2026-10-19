@@ -8,11 +8,12 @@ const row = (path: string) =>
     JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as {
       agnes: { plugins: Array<{ id: string }> }
     }
-  ).agnes.plugins.find((p) => p.id === 'loop:agnes.jev') as Record<string, unknown>
+  ).agnes.plugins.find((p) => p.id === 'ext:agnes.jev/loop') as Record<string, unknown>
 
-describe('loop:agnes.jev plugin row', () => {
-  it('is declared identically by the package and by the Base distribution', () => {
-    expect(row('../../base/package.json')).toEqual(row('../package.json'))
+describe('ext:agnes.jev/loop plugin row', () => {
+  it('is declared identically by the package and by the optional bundled payload, which enables on install', () => {
+    const { default: _default, ...mirrored } = row('../package.json')
+    expect(row('../../package-manager/bundled-plugins/jev-loop/package.json')).toEqual(mirrored)
     expect(row('../package.json')).toMatchObject({
       export: 'jevLoopPlugin',
       default: false,

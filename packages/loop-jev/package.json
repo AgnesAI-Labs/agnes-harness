@@ -10,7 +10,7 @@
     "plugins": [
       {
         "export": "jevLoopPlugin",
-        "id": "loop:agnes.jev",
+        "id": "ext:agnes.jev/loop",
         "inject": [
           "providers"
         ],
@@ -139,6 +139,7 @@
     "@agnes/ai": "workspace:*",
     "@agnes/core": "workspace:*",
     "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/sdk": "workspace:*"
   },

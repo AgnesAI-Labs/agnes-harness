@@ -16,8 +16,6 @@ import type {
 import {
   AuthoringCandidates,
   activeRuntimePinId,
-  bundledExampleSource,
-  bundledPluginSource,
   collectSkinRoster,
   currentStoredShape,
   parseSource,
@@ -85,6 +83,7 @@ import {
   type StoredPackageOperation,
   withOperationState,
 } from './operations.js'
+import { optionalBundled, packageOrigin } from './package-origin.js'
 import {
   type PackageAdminAuthority,
   type PackageAdminAuthorityResolver,
@@ -332,18 +331,6 @@ function normalizeObservation(
   }
 }
 
-function packageOrigin(
-  source: PackageSource,
-  provenance?: PackageInstalledDescriptor['provenance'],
-  builtin = false,
-): NonNullable<NonNullable<PackageInstalledDescriptor['presentation']>['origin']> {
-  if (builtin || bundledPluginSource(source.ref) || provenance?.verification === 'official-ed25519')
-    return 'official'
-  if (bundledExampleSource(source.ref)) return 'example'
-  if (provenance?.authoring) return 'local'
-  return ['file', 'local', 'workspace', 'path'].includes(source.type) ? 'local-source' : 'third-party'
-}
-
 function projectPackage(
   row: InstalledPackage,
   observation: PackageActivationObservation,
@@ -382,6 +369,7 @@ function projectPackage(
     presentation: {
       ...structuredClone({ rows: [], ...row.presentation }),
       origin: packageOrigin(row.entry.source, row.entry.provenance, row.entry.trust === 'builtin'),
+      ...optionalBundled(row.entry.source),
     },
     ...(row.entry.metadata ? { metadata: metadataView(row.entry.metadata) } : {}),
     blockers: safeBlockers(row.blockers),
@@ -442,6 +430,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
           : entry.sourceId === 'builtin-plugins'
             ? 'official'
             : packageOrigin(entry.source),
+      ...optionalBundled(entry.source),
     },
     ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
   }

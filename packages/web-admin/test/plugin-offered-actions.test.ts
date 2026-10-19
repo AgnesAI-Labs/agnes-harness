@@ -27,6 +27,24 @@ it('never offers to uninstall what ships with the product, and keeps its other a
   }
 })
 
+it('offers uninstall for an optional bundled package but not for a default helper', () => {
+  const optional = {
+    ...plugin('file:./bundled-plugins/jev-loop', 'official'),
+    id: '@agnes/jev-loop',
+    presentation: { origin: 'official', optional: true, rows: [] },
+  } as unknown as PackageInstalledDescriptor
+  expect(offeredActions(page)(optional).map((action) => action.label)).toEqual([
+    'Check for updates',
+    'Revoke trust',
+    'Uninstall',
+  ])
+  expect(
+    offeredActions(page)(plugin('file:./bundled-plugins/skill-helper', 'official')).map(
+      (action) => action.label,
+    ),
+  ).not.toContain('Uninstall')
+})
+
 it('offers every action for a plugin the user installed', () => {
   expect(offeredActions(page)(plugin('file:./my-plugins/skill-helper', 'local-source'))).toHaveLength(3)
   expect(offeredActions(page)(plugin('npm:@agnes/skill-helper@1.0.0', 'official'))).toHaveLength(3)

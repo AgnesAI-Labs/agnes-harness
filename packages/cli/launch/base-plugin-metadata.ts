@@ -54,21 +54,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       },
     },
   },
-  'loop:agnes.jev': {
-    displayName: 'Jev Agent Loop',
-    summary:
-      'Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.',
-    description:
-      'Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.',
-    locales: {
-      'zh-CN': {
-        displayName: 'Jev Agent Loop',
-        summary: '由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。',
-        description:
-          '由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。需要配置 Jev 旁路模型路由。',
-      },
-    },
-  },
   'child-agent:codex': {
     displayName: 'Codex child agents',
     summary: 'Uses a configured Codex process to handle delegated coding tasks.',

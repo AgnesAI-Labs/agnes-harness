@@ -4,7 +4,7 @@ English | [简体中文](jev-loop.zh-CN.md)
 
 [Documentation](../README.md) · [TypeSafe Jev side model calls](typesafe-jev.md) · [Generic credentials](credentials.md) · [Bundles and profiles](../extend/bundles-and-profiles.md) · [Write a plugin](../develop/plugins.md)
 
-The Jev agent loop (`agnes.jev@0.1.0`) is an optional agent loop that ships with AGH. It is off by default; the default loop stays `agnes.default`.
+The Jev agent loop (`agnes.jev@0.1.0`) is an optional agent loop. It ships with the AGH distribution as an optional bundled package, `@agnes/jev-loop`, and is not installed by default; the default loop stays `agnes.default`. You install it from the Marketplace.
 
 ## What it does
 
@@ -32,21 +32,40 @@ Other places do not work:
 - A bundle's `profile` patch cannot carry a `provider` block.
 - Do not name a Jev model in a preset slot: a slot is a conversation model.
 
-## Enable the plugin
+## Install and configure the plugin
 
-The loop is the **Jev Agent Loop** row of the AGH essentials package. Enable it in **Settings → Plugins**, where its **Configuration** page shows the fields below. You can also enable and configure it in a profile or a bundle:
+Jev is an optional package of the distribution, so it is not installed until you install it. Settings has no separate switch for it.
+
+1. Open **Plugins → Marketplace**, search for **Jev Agent Loop** (its card is tagged **Running modes**) and choose **Install**.
+2. AGH checks the package and opens a review page. Choose **Install and enable**: this installs, trusts and enables exactly the version you reviewed. **Install only** installs it without enabling. If the page offers only **Install**, your account cannot trust or enable plugins.
+3. The package now appears on the **Plugins** page. Open **Jev Agent Loop** and use its **Settings** tab to fill in `jev.route` and `jev.model` (table below), then choose **Save configuration**. Changes apply to new sessions.
+
+The loop appears in the loop lists described in [Choose the loop](#choose-the-loop) only after it is installed and enabled.
+
+**Without the web interface.** The same package can be installed with the CLI, using the reserved source that the Marketplace card installs from. It works from any directory:
+
+```sh
+agh plugins add file:./bundled-plugins/jev-loop
+```
+
+The command shows the source, capabilities and any blockers, and after you confirm it installs, trusts and enables the reviewed version; add `--yes` for a script you have authorized. See [Install, enable, update, and remove plugins](packages.md) for the command. Set `jev.route` and the other keys in the profile, as shown next; a profile edit is the headless way to do what the Settings tab does.
+
+**In a profile or a bundle.** Once `@agnes/jev-loop` is installed, its plugin row is `ext:agnes.jev/loop` and is enabled by default. You can configure it in the profile instead of the Settings tab:
 
 ```yaml
 # AGH_HOME/profiles/<profile>/profile.yaml
 composition:
   plugins:
-    "loop:agnes.jev":
-      enabled: true
+    "ext:agnes.jev/loop":
       config:
         jev: { route: account-<id> }   # or jev, for a route declared in this profile
 ```
 
-In a bundle the same `plugins` map goes in the bundle's `profile` patch. A row's `config` replaces the saved configuration as a whole. Changes apply to new sessions.
+In a bundle the same `plugins` map goes in the bundle's `profile` patch. A row's `config` replaces the saved configuration as a whole. Setting `enabled: false` on the row turns the loop off without uninstalling the package. Changes apply to new sessions.
+
+A home where `@agnes/jev-loop` is not installed has no `ext:agnes.jev/loop` row: a profile or bundle that names it is refused with `composition selects unknown ordinary plugin row: ext:agnes.jev/loop`. Install the package first.
+
+The plugin's settings:
 
 | Key | Range | Default | Meaning |
 | --- | --- | --- | --- |
@@ -69,7 +88,7 @@ The loop needs a compaction engine. The default engine is selected unless you tu
 
 ## Choose the loop
 
-After the row is enabled, pick the loop for a new session in any of these ways:
+After the package is installed and enabled, pick the loop for a new session in any of these ways:
 
 - the profile: `providers.loop: { provider: agnes.jev, version: 0.1.0 }`;
 - the admin **New session defaults** panel;
@@ -81,7 +100,7 @@ An explicit choice wins over the admin default, which wins over the profile, whi
 ## What you see
 
 - The admin loop list and the new-session loop picker show `agnes.jev@0.1.0` next to the default loop. The picker appears once two or more loops are available.
-- Settings → Plugins lists the row and its configuration page. The providers panel lists `typesafe-systemone` as **Payload requests only, no chat**.
+- **Plugins** lists the installed package, and its **Settings** tab holds the configuration page. The providers panel lists `typesafe-systemone` as **Payload requests only, no chat**.
 - The conversation looks like one run by the default loop, with two differences: the notes the loop adds to a conversation-model request appear as runtime context, and a tool call that Jev chose directly follows an assistant message with no text. When the conversation model writes text before a call, the transcript keeps up to 8 KiB of it.
 - The cost breakdown shows one **Side model call** row for each Jev call. A call whose usage was not reported is marked as estimated.
 - The loop's own telemetry events (`jev.decide`, `jev.step`, `jev.metrics`) are kept in the session history and exports. The conversation view does not show them.

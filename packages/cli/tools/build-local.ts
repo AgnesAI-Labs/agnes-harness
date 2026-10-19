@@ -25,6 +25,7 @@ import {
 import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
+import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
@@ -61,7 +62,15 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     const destination = join(outputDirectory, 'bundled-plugins', helper)
     const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
     await mkdir(destination, { recursive: true })
-    for (const name of ['package.json', 'index.mjs', 'src', 'README.md', 'LICENSE'])
+    // The Jev payload entry is generated from packages/loop-jev and is not committed.
+    if (helper === 'jev-loop') await buildJevPayload(source)
+    for (const name of [
+      'package.json',
+      'index.mjs',
+      ...(existsSync(join(source, 'src')) ? ['src'] : []),
+      'README.md',
+      'LICENSE',
+    ])
       await cp(join(source, name), join(destination, name), {
         recursive: true,
         force: false,

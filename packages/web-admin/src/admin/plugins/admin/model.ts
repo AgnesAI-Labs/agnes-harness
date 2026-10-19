@@ -5,7 +5,7 @@ import type {
   RuntimePinDescriptor,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { type DetailActionSpec, isBuiltinPlugin, type RuntimeStateView } from '@agnes/web-ui'
+import { type DetailActionSpec, isBundledPlugin, type RuntimeStateView } from '@agnes/web-ui'
 import { AdminApiError, type PluginAdminApi } from '../api.js'
 import type { AdminError } from '../types.js'
 import type { PluginAdminPage } from './page.js'
@@ -65,7 +65,7 @@ export function bundledUpdate(
   installed: PackageInstalledDescriptor,
   catalog: readonly PackageCatalogDescriptor[],
 ): PackageCatalogDescriptor | undefined {
-  if (!isBuiltinPlugin(installed)) return undefined
+  if (!isBundledPlugin(installed)) return undefined
   return catalog.find(
     (entry) =>
       entry.id === installed.id &&

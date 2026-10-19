@@ -22,9 +22,9 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop'])
   expect((await readdir(join(output, 'bundled-plugins'))).sort()).toEqual(
-    DEFAULT_ENABLED_BUNDLED_PACKAGES.map((pkg) => pkg.name).sort(),
+    [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.name).sort(),
   )
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
     [
@@ -90,6 +90,24 @@ it.each([
     expect.arrayContaining(['dist/local/bundled-plugins', 'dist/sea/bundled-plugins']),
   )
   expect(await readFile(new URL('../sea/build.mjs', import.meta.url), 'utf8')).toContain("'bundled-plugins'")
+})
+
+it('ships the optional Jev loop payload with a bundle generated from loop-jev', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-jev-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  const payload = join(root, 'bundled-plugins', 'jev-loop')
+  expect((await readdir(payload)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'index.mjs',
+    'package.json',
+  ])
+  // @agnes/extension-api is host-provided, so the bundle cannot load here; check its text instead.
+  const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
+  expect(bundle).toMatch(/^export \{[^}]*\bjevLoopPlugin\b[^}]*\}/m)
+  expect(bundle).toContain('from "@agnes/extension-api"')
 })
 
 it('ships all official example payloads with runnable community entries and no checkout-only files', async () => {

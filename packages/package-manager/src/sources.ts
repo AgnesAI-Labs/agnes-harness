@@ -18,7 +18,11 @@ import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
-import { bundledExampleSource, bundledPluginSource } from './bundled-plugin-source.js'
+import {
+  bundledExampleSource,
+  bundledPluginSource,
+  OPTIONAL_BUNDLED_PACKAGES,
+} from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { extractPluginArchive } from './plugin-archives.js'
@@ -515,7 +519,31 @@ function localSource(src: PackageSource, cwd: string): string {
   }
   if (src.type === 'workspace' && !contained(cwdRoot, from))
     throw sourceError('local package source is outside cwd', 'source-escape', { workspaceRoot: cwdRoot })
+  requireGeneratedEntry(src.ref, from)
   return from
+}
+
+/** A bundled package whose entry is generated says how to build it when a checkout has not yet. */
+export function requireGeneratedEntry(ref: string, directory: string): void {
+  const build = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.ref === ref)?.build
+  if (!build) return
+  let entry: unknown
+  try {
+    entry = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).exports
+  } catch {
+    return
+  }
+  if (typeof entry !== 'string') return
+  try {
+    statSync(resolve(directory, entry))
+    return
+  } catch {
+    // Missing: fall through to the hint.
+  }
+  throw sourceError(
+    `the bundled package at ${ref} has no generated ${entry}; in a development checkout build it with \`${build}\``,
+    'bundled-entry-missing',
+  )
 }
 
 function copyLocal(from: string, into: string, signal?: AbortSignal): string {

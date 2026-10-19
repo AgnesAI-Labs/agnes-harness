@@ -63,7 +63,7 @@ describe('bench configuration', () => {
       presets: Record<string, { budget: object; model: { system_prompt: { personaPrefix: string } } }>
     }
     expect(b.profile).toEqual({
-      plugins: { 'loop:agnes.jev': { enabled: true, config: { stepCap: 20 } } },
+      plugins: { 'ext:agnes.jev/loop': { enabled: true, config: { stepCap: 20 } } },
       tools: ['ls', 'read', 'grep', 'find', 'write', 'edit', 'shell'],
     })
     expect(Object.keys(b.presets)).toHaveLength(18)

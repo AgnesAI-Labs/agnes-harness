@@ -16,12 +16,15 @@ export type PluginPresentation = Readonly<{
   available: boolean
 }>
 export type PluginPurposeItem = PackageInstalledDescriptor | PackageCatalogDescriptor
-/** Ships with the product: installed from the bundled set, and never offered for removal. */
-export const isBuiltinPlugin = (item: PluginPurposeItem): boolean =>
+/** Comes from the release's bundled set, whether it is a default helper or an optional package. */
+export const isBundledPlugin = (item: PluginPurposeItem): boolean =>
   item.presentation?.origin === 'official' && item.source.ref.startsWith('file:./bundled-plugins/')
+/** Ships with the product: a default bundled helper, never offered for removal. */
+export const isBuiltinPlugin = (item: PluginPurposeItem): boolean =>
+  isBundledPlugin(item) && item.presentation?.optional !== true
 /** Where a plugin comes from, as the row's source badge names it. */
 export function pluginOrigin(item: PluginPurposeItem): string {
-  if (isBuiltinPlugin(item)) return 'builtin'
+  if (isBundledPlugin(item)) return isBuiltinPlugin(item) ? 'builtin' : 'official'
   const provenance = 'provenance' in item ? item.provenance : undefined
   if (provenance) {
     if (provenance.signatureVerified && provenance.verification === 'official-ed25519') return 'official'

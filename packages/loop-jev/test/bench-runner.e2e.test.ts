@@ -218,7 +218,7 @@ describe('bench runner', () => {
     expect(r.status, why(r)).toBe(0)
     const bundle = readJson(join(out, 'dry', 'bundle.json'))
     expect(Object.keys(bundle.presets)).toHaveLength(2)
-    expect(bundle.profile.plugins['loop:agnes.jev']).toMatchObject({
+    expect(bundle.profile.plugins['ext:agnes.jev/loop']).toMatchObject({
       enabled: true,
       config: { stepCap: 20, jev: { route: 'jev', model: JEV_MODEL.id } },
     })
@@ -230,6 +230,8 @@ describe('bench runner', () => {
     expect(profile.adapters.secrets).toEqual({ kind: 'file', path: join(out, 'dry', 'home', 'credentials') })
     expect(r.stdout).toContain('mini')
     expect(readdirSync(join(out, 'dry'))).not.toContain('records.jsonl')
+    // A plan installs nothing: the Jev package goes into the home only when a host is about to boot.
+    expect(existsSync(join(out, 'dry', 'home', 'profiles', 'local-dev', 'agnes-lock.json'))).toBe(false)
     expect(r.stderr).not.toContain('warning')
   })
 
@@ -283,6 +285,10 @@ describe('bench runner', () => {
     expect(report).toMatchObject({ k: 1.5, kSource: `pilot report ${pilotReport}`, verdict: { valid: true } })
     const records = readRecords(dir)
     expect(records.map((x) => x.lane).sort()).toEqual(['default', 'jev'])
+    // The runner put the Jev loop's bundled package into the home, installed, trusted and enabled.
+    expect(r.stdout).toContain('installed and enabled @agnes/jev-loop')
+    const lock = readJson(join(dir, 'home', 'profiles', 'local-dev', 'agnes-lock.json'))
+    expect(lock.packages['@agnes/jev-loop']).toMatchObject({ state: { enabled: true } })
     for (const record of records) {
       expect(record.workspace.startsWith(realpathSync(repo))).toBe(false)
       expect(existsSync(record.workspace)).toBe(false)

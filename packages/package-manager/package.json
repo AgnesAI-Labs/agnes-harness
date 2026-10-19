@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "build:jev-payload": "node tools/build-jev-payload.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {
