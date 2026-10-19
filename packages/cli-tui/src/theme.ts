@@ -1,20 +1,18 @@
-import { type Ansi, CURSOR_MARKER } from './ansi.js'
+import { type Ansi, type Colour, CURSOR_MARKER } from './ansi.js'
+import { PALETTE, type Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 
 export type TuiThemeName = 'light' | 'dark' | 'mono'
 
-/** One restrained terminal palette: violet identifies Agnes; the other colours carry state. */
-export const tuiColor = {
-  muted: 245,
-  success: 78,
-  warning: 178,
-  danger: 203,
-} as const
-
-const SURFACE = {
-  light: { background: 254, foreground: 238 },
-  dark: { background: 236, foreground: 255 },
-} as const
+/**
+ * The styling components receive: colours are named by `Tone` and resolved against the current
+ * theme, or given as a `Colour` that arrives as data (a brand accent). Function-typed members keep a
+ * raw `Ansi`, which cannot resolve a tone, from being passed where this is expected.
+ */
+export type ThemedAnsi = Omit<Ansi, 'fg' | 'bg'> & {
+  fg: (c: Tone | Colour, s: string) => string
+  bg: (c: Tone | Colour, s: string) => string
+}
 
 /** Mutable session theme. Components keep one façade, so switching takes effect on the next frame. */
 export class TuiTheme {
@@ -32,10 +30,17 @@ export class TuiTheme {
     this.current = name
   }
 
+  /** What `tone` looks like in the current theme; mono has no colours. */
+  colour(tone: Tone): Colour | undefined {
+    return this.current === 'mono' ? undefined : PALETTE[this.current][tone]
+  }
+
   frame(base: Ansi, rows: string[], width: number, height: number): string[] {
-    if (this.current === 'mono' || !base.reset) return rows
-    const bg = base.bg(this.current === 'light' ? 255 : 234, '').replace('\x1b[49m', '')
-    const fg = base.fg(this.current === 'light' ? 238 : 252, '').replace('\x1b[39m', '')
+    const bgColour = this.colour('bg')
+    const fgColour = this.colour('fg')
+    if (bgColour === undefined || fgColour === undefined || !base.reset) return rows
+    const bg = base.bg(bgColour, '').replace('\x1b[49m', '')
+    const fg = base.fg(fgColour, '').replace('\x1b[39m', '')
     return Array.from({ length: Math.max(height, rows.length) }, (_, i) => {
       const raw = rows[i] ?? ''
       const padded = raw + ' '.repeat(Math.max(0, width - displayWidth(raw.replaceAll(CURSOR_MARKER, ''))))
@@ -47,21 +52,21 @@ export class TuiTheme {
     })
   }
 
-  ansi(base: Ansi): Ansi {
+  ansi(base: Ansi): ThemedAnsi {
+    const resolve = (c: Tone | Colour): Colour | undefined =>
+      typeof c === 'number' || c.startsWith('#') ? (c as Colour) : this.colour(c as Tone)
+    const paint = (layer: 'fg' | 'bg', c: Tone | Colour, text: string): string => {
+      if (this.current === 'mono') return text
+      const colour = resolve(c)
+      return colour === undefined ? text : base[layer](colour, text)
+    }
     return {
       bold: (text) => base.bold(text),
-      dim: (text) =>
-        this.current === 'mono' ? base.dim(text) : base.fg(this.current === 'light' ? 242 : 248, text),
-      fg: (colour, text) =>
-        this.current === 'mono'
-          ? text
-          : base.fg(
-              this.current === 'light'
-                ? (({ 78: 28, 178: 130, 203: 160, 141: 98 } as Record<number, number>)[colour] ?? colour)
-                : colour,
-              text,
-            ),
-      bg: (colour, text) => (this.current === 'mono' ? text : base.bg(colour, text)),
+      dim: (text) => (this.current === 'mono' ? base.dim(text) : paint('fg', 'muted', text)),
+      italic: (text) => base.italic(text),
+      underline: (text) => base.underline(text),
+      fg: (c, text) => paint('fg', c, text),
+      bg: (c, text) => paint('bg', c, text),
       get reset() {
         return base.reset
       },
@@ -69,14 +74,13 @@ export class TuiTheme {
   }
 
   /** Paint one independent segment; composing segments avoids nested colour-reset bleed. */
-  surface(ansi: Ansi, text: string): string {
+  surface(ansi: ThemedAnsi, text: string): string {
     if (this.current === 'mono') return text
-    const colours = SURFACE[this.current]
-    return ansi.bg(colours.background, ansi.fg(colours.foreground, text))
+    return ansi.bg('surface', ansi.fg('surfaceFg', text))
   }
 
-  menu(ansi: Ansi, text: string): string {
+  menu(ansi: ThemedAnsi, text: string): string {
     if (this.current === 'mono') return ansi.bold(text)
-    return this.current === 'light' ? ansi.bg(254, ansi.fg(238, text)) : ansi.bg(240, ansi.fg(255, text))
+    return ansi.bg('selection', ansi.fg('fg', text))
   }
 }

@@ -1,6 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
-import type { Ansi } from './ansi.js'
 import { displayWidth } from './terminal.js'
+import type { ThemedAnsi } from './theme.js'
 
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // Labels have already passed protocol validation, but the renderer remains a trust boundary. This
@@ -106,11 +106,11 @@ function alignGroups(left: string, right: string, width: number): string {
   return `${left}${' '.repeat(gap)}${clippedRight}`
 }
 
-function styledContext(usage: UsageView, ansi: Ansi): string {
+function styledContext(usage: UsageView, ansi: ThemedAnsi): string {
   const context = `≈${formatContextUsage(usage.context)}`
   const pressure = contextPressure(usage.context)
-  if (pressure === 'error') return ansi.fg(196, context)
-  if (pressure === 'warning') return ansi.fg(214, context)
+  if (pressure === 'error') return ansi.fg('danger', context)
+  if (pressure === 'warning') return ansi.fg('warning', context)
   return ansi.dim(context)
 }
 
@@ -121,7 +121,7 @@ function styledContext(usage: UsageView, ansi: Ansi): string {
 export function formatUsageLine(
   usage: UsageView,
   requestedWidth: number,
-  ansi: Ansi,
+  ansi: ThemedAnsi,
   showModel = true,
 ): string {
   if (!Number.isFinite(requestedWidth)) throw new Error('usage footer width must be finite')

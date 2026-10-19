@@ -4,11 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { ApprovalCard } from '../../src/tui/views/approval-card.js'
 import { FakeEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
 
-const A = createAnsi('none')
+const A = new TuiTheme('mono').ansi(createAnsi('none'))
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
@@ -134,12 +135,12 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('colors the verdict glyph by outcome on a colour tier', () => {
-    const ansi = createAnsi('256')
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const decided = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'allowed-once', via: 'local' } }),
       { ansi, onDecide: async () => {} },
     )
-    expect(decided.render(60)[0]).toContain('\x1b[38;5;78m✓\x1b[39m')
+    expect(decided.render(60)[0]).toContain(ansi.fg('success', '✓'))
     const expired = new ApprovalCard(
       node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-9', revision: 1 }, expiresAt: 'x' }),
       {
@@ -147,7 +148,7 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
         onDecide: async () => {},
       },
     )
-    expect(expired.render(60)[0]).toContain('\x1b[38;5;203m✗\x1b[39m')
+    expect(expired.render(60)[0]).toContain(ansi.fg('danger', '✗'))
     const pending = new ApprovalCard(
       node({ decisionRef: { sessionId: 's', id: 'tk-8', revision: 1 }, expiresAt: 'x' }),
       {
@@ -155,7 +156,7 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
         onDecide: async () => {},
       },
     )
-    expect(pending.render(60)[0]).toContain('\x1b[38;5;178m⚠\x1b[39m')
+    expect(pending.render(60)[0]).toContain(ansi.fg('warning', '⚠'))
     // none tier: the very same cards emit zero escape sequences.
     const plain = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'rejected', via: 'local' } }),

@@ -3,6 +3,7 @@ import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { collectSlots } from '../../src/tui/slots.js'
 import { displayWidth } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { renderBarChart, ToolCard } from '../../src/tui/views/tool-card.js'
 
 const node: Extract<UINode, { kind: 'tool' }> = {
@@ -55,10 +56,11 @@ it('keeps the default collapsed headline to one bounded and escaped summary row'
   expect(output[0]).not.toContain('\x1b')
 })
 
-const A = createAnsi('none')
+const A = new TuiTheme('mono').ansi(createAnsi('none'))
+const opener = (styled: string): string => styled.slice(0, styled.indexOf('\x1b[', 1))
 
 it('colors the compact state glyph and the expanded title status on a colour tier', () => {
-  const ansi = createAnsi('256')
+  const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
   const mk = (status: Extract<UINode, { kind: 'tool' }>['status']) =>
     new ToolCard(
       { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status, summary: 's' },
@@ -66,29 +68,30 @@ it('colors the compact state glyph and the expanded title status on a colour tie
     )
   // Collapsed single line: one semantic glyph carries completed state without repeating a word.
   const done = mk('completed').render(40)[0] as string
-  expect(done).toContain('\x1b[38;5;78m◆\x1b[39m')
+  expect(done).toContain(ansi.fg('success', '◆'))
   expect(done).not.toContain('完成')
-  expect(mk('running').render(40)[0]).toContain('\x1b[38;5;178mrunning\x1b[39m')
-  expect(mk('failed').render(40)[0]).toContain('\x1b[38;5;203mfailed\x1b[39m')
+  expect(mk('running').render(40)[0]).toContain(ansi.fg('warning', 'running'))
+  expect(mk('failed').render(40)[0]).toContain(ansi.fg('danger', 'failed'))
   // A planned row gets typography but no semantic foreground colour; the tool name is never
   // coloured by status.
   const planned = mk('planned').render(40)[0] as string
-  expect(planned).not.toContain('\x1b[38;5;')
+  for (const tone of ['success', 'warning', 'danger'] as const)
+    expect(planned).not.toContain(opener(ansi.fg(tone, '')))
   expect(planned).toContain('\x1b[1mread\x1b[22m')
-  expect(done).not.toContain('\x1b[38;5;78mread\x1b[39m')
+  expect(done).not.toContain(ansi.fg('success', 'read'))
   // Expanded: the frame stays quiet while the title status carries colour.
   const open = new ToolCard(
     { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 's' },
     { ansi, collapsed: false },
   ).render(40)
-  expect(open[0]).toContain('\x1b[2m╭\x1b[22m')
-  expect(open[0]).toContain('\x1b[38;5;78mdone\x1b[39m')
-  expect(open.at(-1)).toContain('\x1b[2m╰')
+  expect(open[0]).toContain(ansi.dim('╭'))
+  expect(open[0]).toContain(ansi.fg('success', 'done'))
+  expect(open.at(-1)).toContain(`${opener(ansi.dim(''))}╰`)
   expect(open[1]).toContain(' s ')
   // none tier: zero escapes anywhere.
   const plain = new ToolCard(
     { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 's' },
-    { ansi: createAnsi('none') },
+    { ansi: A },
   )
   expect(plain.render(40).join('\n')).not.toContain('\x1b')
 })

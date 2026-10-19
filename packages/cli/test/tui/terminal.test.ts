@@ -143,6 +143,23 @@ describe('ansi tokens', () => {
     expect(createAnsi('truecolor').bg(244, 'x')).toBe('\x1b[48;5;244mx\x1b[49m')
   })
 
+  it('renders #rrggbb exactly in truecolor and as the nearest index on the narrower tiers', () => {
+    expect(createAnsi('truecolor').fg('#5E57FE', 'x')).toBe('\x1b[38;2;94;87;254mx\x1b[39m')
+    expect(createAnsi('truecolor').bg('#5E57FE', 'x')).toBe('\x1b[48;2;94;87;254mx\x1b[49m')
+    expect(createAnsi('256').fg('#5E57FE', 'x')).toBe('\x1b[38;5;63mx\x1b[39m')
+    expect(createAnsi('16').fg('#5E57FE', 'x')).toBe('\x1b[94mx\x1b[39m')
+    expect(createAnsi('none').fg('#5E57FE', 'x')).toBe('x')
+    // Mid gray sits exactly on ramp step 244; the nearest cube colour (102) is 147 away.
+    expect(createAnsi('256').bg('#808080', 'x')).toBe('\x1b[48;5;244mx\x1b[49m')
+    expect(createAnsi('16').bg('#808080', 'x')).toBe('\x1b[47mx\x1b[49m')
+  })
+
+  it('italic and underline close with their own reset and vanish without colour', () => {
+    expect(createAnsi('256').italic('x')).toBe('\x1b[3mx\x1b[23m')
+    expect(createAnsi('256').underline('x')).toBe('\x1b[4mx\x1b[24m')
+    expect(createAnsi('none').italic(createAnsi('none').underline('x'))).toBe('x')
+  })
+
   it('the none tier emits no escape byte at all', () => {
     const a = createAnsi('none')
     const out = [a.bold('a'), a.dim('b'), a.fg(200, 'c'), a.bg(200, 'd'), a.reset].join('')

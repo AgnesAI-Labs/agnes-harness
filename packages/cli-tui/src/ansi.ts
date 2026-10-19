@@ -31,27 +31,42 @@ export function defang(line: string): string {
   return line.replace(DEFANG, (_m, sgr: string | undefined) => sgr ?? '')
 }
 
+/** An xterm-256 index, or `#rrggbb` that each tier renders as closely as it can. */
+export type Colour = number | `#${string}`
+
 export type Ansi = {
   bold(s: string): string
   dim(s: string): string
-  fg(n: number, s: string): string
-  bg(n: number, s: string): string
+  italic(s: string): string
+  underline(s: string): string
+  fg(c: Colour, s: string): string
+  bg(c: Colour, s: string): string
   reset: string
 }
 
-/** Maps a CSS-style RGB brand accent to its nearest xterm-256 cube colour. */
-export function xterm256(hex: string): number {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!match?.[1]) return 7
-  const rgb = [0, 2, 4].map((offset) => Number.parseInt(match[1]?.slice(offset, offset + 2) ?? '0', 16))
-  const levels = [0, 95, 135, 175, 215, 255]
-  const nearest = (value: number): number => {
-    let best = 0
-    for (let i = 1; i < levels.length; i++)
-      if (Math.abs(value - (levels[i] ?? 0)) < Math.abs(value - (levels[best] ?? 0))) best = i
-    return best
+/** Admits configuration text as a colour only when it really is `#rrggbb`. */
+export function hexColour(s: string): `#${string}` | undefined {
+  return /^#[0-9a-f]{6}$/i.test(s) ? (s as `#${string}`) : undefined
+}
+
+const channels = (hex: `#${string}`): number[] =>
+  [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
+const CUBE = [0, 95, 135, 175, 215, 255]
+const rgb256 = (n: number): number[] =>
+  n >= 232
+    ? Array(3).fill(8 + 10 * (n - 232))
+    : [CUBE[Math.floor((n - 16) / 36)] ?? 0, CUBE[Math.floor((n - 16) / 6) % 6] ?? 0, CUBE[(n - 16) % 6] ?? 0]
+
+/** The colour-cube or gray-ramp index (16-255) nearest to `hex` by squared RGB distance. */
+function nearest256(hex: `#${string}`): number {
+  const want = channels(hex)
+  let best = 16
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (let n = 16; n < 256; n++) {
+    const distance = rgb256(n).reduce((sum, v, i) => sum + (v - (want[i] ?? 0)) ** 2, 0)
+    if (distance < bestDistance) [best, bestDistance] = [n, distance]
   }
-  return 16 + 36 * nearest(rgb[0] ?? 0) + 6 * nearest(rgb[1] ?? 0) + nearest(rgb[2] ?? 0)
+  return best
 }
 
 // Reduce a 256-colour index to one of the 16 basic colours. A terminal that only understands the
@@ -69,8 +84,22 @@ export function basic16(n: number): number {
 }
 
 export function createAnsi(tier: ColorTier): Ansi {
-  if (tier === 'none') return { bold: (s) => s, dim: (s) => s, fg: (_n, s) => s, bg: (_n, s) => s, reset: '' }
-  const colour = (n: number, base: number, bright: number, s: string, off: number): string => {
+  if (tier === 'none') {
+    const same = (s: string) => s
+    return {
+      bold: same,
+      dim: same,
+      italic: same,
+      underline: same,
+      fg: (_c, s) => s,
+      bg: (_c, s) => s,
+      reset: '',
+    }
+  }
+  const colour = (c: Colour, base: number, bright: number, s: string, off: number): string => {
+    if (tier === 'truecolor' && typeof c === 'string')
+      return `\x1b[${off - 1};2;${channels(c).join(';')}m${s}\x1b[${off}m`
+    const n = typeof c === 'number' ? c : nearest256(c)
     if (tier === '16') {
       const i = basic16(n)
       return `\x1b[${i < 8 ? base + i : bright + i - 8}m${s}\x1b[${off}m`
@@ -80,8 +109,10 @@ export function createAnsi(tier: ColorTier): Ansi {
   return {
     bold: (s) => `\x1b[1m${s}\x1b[22m`,
     dim: (s) => `\x1b[2m${s}\x1b[22m`,
-    fg: (n, s) => colour(n, 30, 90, s, 39),
-    bg: (n, s) => colour(n, 40, 100, s, 49),
+    italic: (s) => `\x1b[3m${s}\x1b[23m`,
+    underline: (s) => `\x1b[4m${s}\x1b[24m`,
+    fg: (c, s) => colour(c, 30, 90, s, 39),
+    bg: (c, s) => colour(c, 40, 100, s, 49),
     reset: '\x1b[0m',
   }
 }

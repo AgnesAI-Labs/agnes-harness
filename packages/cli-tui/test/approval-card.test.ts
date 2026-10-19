@@ -1,7 +1,10 @@
 import type { UINode } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createAnsi } from '../src/ansi.js'
+import { TuiTheme } from '../src/theme.js'
 import { ApprovalCard } from '../src/views/approval-card.js'
+
+const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
@@ -20,7 +23,7 @@ const node = (options: ApprovalNode['options']): ApprovalNode => ({
 describe('ApprovalCard permanent grants', () => {
   it('renders and selects permanent only when that exact option was offered', async () => {
     const absent = new ApprovalCard(node(['allow_once', 'reject_once']), {
-      ansi: createAnsi('none'),
+      ansi: PLAIN,
       onDecide: vi.fn(async () => undefined),
     })
     expect(absent.render(100).join('\n')).not.toContain('Always allow for this profile')
@@ -28,7 +31,7 @@ describe('ApprovalCard permanent grants', () => {
 
     const decide = vi.fn(async () => undefined)
     const offered = new ApprovalCard(node(['allow_once', 'allow_permanent', 'reject_once']), {
-      ansi: createAnsi('none'),
+      ansi: PLAIN,
       onDecide: decide,
     })
     expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile')
@@ -47,7 +50,7 @@ it('keeps the full single-line review subject readable before the choices', () =
   const card = new ApprovalCard(
     { ...node(['allow_once', 'reject_once']), subjectText },
     {
-      ansi: createAnsi('none'),
+      ansi: PLAIN,
       onDecide: async () => undefined,
     },
   )
@@ -68,7 +71,7 @@ it('renders stopped authority distinctly from deadline expiry and offers no answ
       state: 'expired',
       decision: { verdict: 'allowed-once', via: 'human', reason: 'stopped' },
     },
-    { ansi: createAnsi('none'), onDecide: async () => undefined },
+    { ansi: PLAIN, onDecide: async () => undefined },
   )
   expect(card.render(80).join('')).toContain('stopped')
   expect(card.handleInput('1')).toBe(false)

@@ -15,9 +15,10 @@ import {
   type TransportFactory,
 } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
-import { createAnsi } from '../../src/tui/ansi.js'
+import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
+import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
 import { ToolCard } from '../../src/tui/views/tool-card.js'
 import { say, slowProvider } from '../boot-host.js'
@@ -1056,14 +1057,19 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     await app.start()
     await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('› hello agnes'))
     const out = term.writes.join('')
+    const light = new TuiTheme('light')
+    const sgr = (layer: 'fg' | 'bg', tone: Tone): string =>
+      createAnsi('256')
+        [layer](light.colour(tone) as Colour, '')
+        .slice(0, -'\x1b[39m'.length)
     // The prompt keeps its editor accent; the brand word consumes the resolved branding accent.
-    expect(out).toContain('\x1b[38;5;98m❯ \x1b[38;5;238m')
-    expect(out).toContain('\x1b[38;5;63magnes\x1b[38;5;238m')
-    expect(out).toContain('\x1b[1m\x1b[38;5;63m›\x1b[38;5;238m\x1b[22m')
-    expect(out).toContain('\x1b[48;5;254m')
+    expect(out).toContain(`${sgr('fg', 'accent')}❯ ${sgr('fg', 'fg')}`)
+    expect(out).toContain(`\x1b[38;5;63magnes${sgr('fg', 'fg')}`)
+    expect(out).toContain(`\x1b[1m\x1b[38;5;63m›${sgr('fg', 'fg')}\x1b[22m`)
+    expect(out).toContain(sgr('bg', 'surface'))
     expect(out).not.toContain('\x1b[38;5;45myou:')
     term.feed('/')
-    await vi.waitFor(() => expect(term.writes.join('')).toContain('\x1b[48;5;254m'))
+    await vi.waitFor(() => expect(term.writes.join('')).toContain(sgr('bg', 'selection')))
   } finally {
     await app?.stop()
     await client.close()
@@ -1153,7 +1159,7 @@ it('the loader spins while a turn is in flight and shows the elapsed time once i
 })
 
 it('renders a 1000-tool-card timeline well within one ticker interval (RP1.1 regression guard)', () => {
-  const ansi = createAnsi('none')
+  const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
   const nodes: UINode[] = Array.from({ length: 1_000 }, (_, i) => ({
     kind: 'tool' as const,
     id: `t${i}`,

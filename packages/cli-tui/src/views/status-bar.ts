@@ -1,7 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import type { Branding } from '@agnes/sdk'
-import type { Ansi } from '../ansi.js'
-import { xterm256 } from '../ansi.js'
+import { hexColour } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
 import {
@@ -12,11 +11,11 @@ import {
 } from '../format-usage.js'
 import { type Locale, t } from '../locale.js'
 import type { StatusItem } from '../slots.js'
-import { tuiColor } from '../theme.js'
+import type { ThemedAnsi } from '../theme.js'
 
 export type LinkState = 'ok' | 'reconnecting' | 'catching-up'
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
-const NOTICE_COLOR = { success: tuiColor.success, warning: tuiColor.warning, error: tuiColor.danger } as const
+const NOTICE_TONE = { success: 'success', warning: 'warning', error: 'danger' } as const
 
 /**
  * One composed status line: `status.line` slot fills, the current budget, a parked approval
@@ -35,7 +34,7 @@ export class StatusBar implements Component {
   private usage: UsageView | undefined
 
   constructor(
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly locale: Locale = 'en',
   ) {}
 
@@ -96,15 +95,17 @@ export class StatusBar implements Component {
     const paintedNotice =
       this.noticeTone === 'info'
         ? this.ansi.dim(escapeControl(this.notice))
-        : this.ansi.fg(NOTICE_COLOR[this.noticeTone], escapeControl(this.notice))
+        : this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice))
     const parts = [
       ...this.slots.map((s) => this.ansi.dim(`[${s.level}] ${escapeControl(s.text)}`)),
-      this.budget ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 196 : 214, this.budget)) : '',
+      this.budget
+        ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 'danger' : 'warning', this.budget))
+        : '',
       this.parked ? this.ansi.dim(this.parked) : '',
       this.notice ? paintedNotice : '',
       this.link === 'ok'
         ? ''
-        : `${this.ansi.fg(178, '⟳')}${this.ansi.dim(
+        : `${this.ansi.fg('warning', '⟳')}${this.ansi.dim(
             ` ${t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)}`,
           )}`,
     ].filter(Boolean)
@@ -129,7 +130,7 @@ export class Header implements Component {
   private state: HeaderState | undefined
 
   constructor(
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly branding: Branding,
   ) {}
 
@@ -144,15 +145,17 @@ export class Header implements Component {
     if (!h) return ['']
     const op = h.opState ? `turn ${h.opState.turn} step ${h.opState.step} ${h.opState.phase}` : ''
     const fields = [
-      this.ansi.fg(tuiColor.muted, h.profile),
-      this.ansi.fg(tuiColor.muted, h.preset),
+      this.ansi.fg('muted', h.profile),
+      this.ansi.fg('muted', h.preset),
       ...(h.model ? [this.ansi.bold(h.model)] : []),
-      this.ansi.fg(tuiColor.muted, h.sessionId.slice(-8)),
-      this.ansi.fg(tuiColor.muted, `g${h.generation}`),
-      op ? this.ansi.fg(tuiColor.warning, op) : '',
+      this.ansi.fg('muted', h.sessionId.slice(-8)),
+      this.ansi.fg('muted', `g${h.generation}`),
+      op ? this.ansi.fg('warning', op) : '',
     ].filter(Boolean)
     const label = this.branding.mark || this.branding.selfLabel
-    const brand = this.ansi.bold(this.ansi.fg(xterm256(this.branding.accent), escapeControl(label)))
+    const brand = this.ansi.bold(
+      this.ansi.fg(hexColour(this.branding.accent) ?? 'accent', escapeControl(label)),
+    )
     const line = [brand, ...fields].join(this.ansi.dim(' · '))
     return [fitLine(line, width)]
   }
