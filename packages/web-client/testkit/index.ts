@@ -42,6 +42,15 @@ export async function createClientPanelTestHost(
     document: window.document,
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
+    Element: window.Element,
+    Node: window.Node,
+    SVGElement: window.SVGElement,
+    ShadowRoot: window.ShadowRoot,
+    getComputedStyle: window.getComputedStyle.bind(window),
+    ResizeObserver: window.ResizeObserver,
+    MutationObserver: window.MutationObserver,
+    requestAnimationFrame: window.requestAnimationFrame.bind(window),
+    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
     IS_REACT_ACT_ENVIRONMENT: true,
     MessageChannel: ScopedMessageChannel,
   })) {
@@ -96,9 +105,15 @@ export async function createClientPanelTestHost(
     },
     async dispose() {
       try {
-        await act(async () => root.unmount())
-        await ctx.fiber.dispose()
-        await window.happyDOM.close()
+        try {
+          await act(async () => root.unmount())
+        } finally {
+          try {
+            await ctx.fiber.dispose()
+          } finally {
+            await window.happyDOM.close()
+          }
+        }
       } finally {
         restore()
       }

@@ -6,6 +6,8 @@ it.each([false, true])(
   'closes fixture message channels and restores globals on apply failure=%s',
   async (fail) => {
     const previous = Object.getOwnPropertyDescriptor(globalThis, 'MessageChannel')
+    const previousStyle = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle')
+    const previousSvg = Object.getOwnPropertyDescriptor(globalThis, 'SVGElement')
     let closed: Promise<unknown> | undefined
     let delivered: Promise<unknown> | undefined
     const identity: ModuleIdentity = {
@@ -28,6 +30,10 @@ it.each([false, true])(
     const creating = createClientPanelTestHost(
       {
         apply() {
+          const shape = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+          expect(shape instanceof SVGElement).toBe(true)
+          expect(getComputedStyle(document.body).display).toBe('block')
+          expect(new ResizeObserver(() => {}).observe).toBeTypeOf('function')
           const channel = new globalThis.MessageChannel()
           closed = new Promise((resolve) => channel.port1.addEventListener('close', resolve, { once: true }))
           delivered = new Promise((resolve) => {
@@ -52,5 +58,7 @@ it.each([false, true])(
     expect(closed).toBeDefined()
     await closed
     expect(Object.getOwnPropertyDescriptor(globalThis, 'MessageChannel')).toEqual(previous)
+    expect(Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle')).toEqual(previousStyle)
+    expect(Object.getOwnPropertyDescriptor(globalThis, 'SVGElement')).toEqual(previousSvg)
   },
 )

@@ -80,7 +80,7 @@ export function Table<T extends object>({
         <AntTable<T>
           size="small"
           pagination={false}
-          sticky
+          sticky={{ getContainer: () => root.current?.ownerDocument.defaultView ?? window }}
           showSorterTooltip={{ rootClassName: 'agh-tooltip' }}
           scroll={{ x: 'max-content' }}
           {...props}
