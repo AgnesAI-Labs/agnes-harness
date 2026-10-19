@@ -349,7 +349,13 @@ it.each(['full-access', 'workspace-write'])(
     const s = setup()
     const evidence: AutomaticPermissionEvidence[] = []
     await withPermissionContext(
-      { policy, actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} } },
+      {
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      },
       (value) => evidence.push(value),
       async () => {
         const prepared = await s.request()
@@ -357,10 +363,18 @@ it.each(['full-access', 'workspace-write'])(
         await s.request({ action: 'commit', proposalId: prepared.proposalId })
         await expectReady(s.request, prepared.proposalId)
       },
+
+      async () => ({
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     )
     expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 2)
     if (policy === 'full-access') {
-      expect(evidence).toHaveLength(2)
+      expect(evidence).toHaveLength(4)
       for (const decision of evidence)
         expect(decision).toMatchObject({
           reason: 'full-access',

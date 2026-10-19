@@ -36,7 +36,7 @@ export function operationDecisionPort(s: SessionImpl, owner: string): DecisionRe
       )
       const subject = spec.subject
       // A restored question is asked again exactly as it was recorded.
-      const handle = await port.request({
+      const handle = await s.decisions.port({ ...source, permission: true }).request({
         ...spec,
         ...(existing
           ? { subject: existing.request.spec.subject }

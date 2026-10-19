@@ -285,7 +285,13 @@ it.each(['full-access', 'workspace-write'])(
       delete s.ep.conn.authKind
     }
     await withPermissionContext(
-      { policy, actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} } },
+      {
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      },
       (value) => evidence.push(value),
       async () => {
         const prepared = await s.request({ action: 'prepare', definition })
@@ -297,11 +303,30 @@ it.each(['full-access', 'workspace-write'])(
           }),
         )
       },
+
+      async () => ({
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     )
     expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 1)
     if (policy === 'full-access')
       expect(evidence).toMatchObject([
-        { scope: 'mcp.connect', reason: 'full-access', answeredBy: { role: 'system' } },
+        {
+          scope: 'mcp.connect',
+          reason: 'full-access',
+          answeredBy: { role: 'system' },
+          consumption: 'authorized',
+        },
+        {
+          scope: 'mcp.connect',
+          reason: 'full-access',
+          answeredBy: { role: 'system' },
+          consumption: 'consumed',
+        },
       ])
     else expect(evidence).toEqual([])
   },

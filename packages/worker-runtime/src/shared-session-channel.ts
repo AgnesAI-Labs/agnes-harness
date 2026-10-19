@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { HostSession, Prompter } from '@agnes/host'
+import { samePermissionContext } from '@agnes/protocol'
 import type { RequestFrame, SessionReplyFrame, WorkerReplyFrame } from './frames.js'
 
 type SessionContext = Readonly<{ sessionKey: string }>
@@ -8,7 +9,10 @@ export function sessionPermissions(lookup: (key: string) => HostSession | undefi
   return {
     context(key: string) {
       const session = lookup(key)
-      return session ? { policy: session.preset.name, actor: session.d.actor } : undefined
+      return session?.permissionContext
+    },
+    subscribe(key: string, changed: () => void) {
+      return lookup(key)?.onPermissionChange(changed) ?? (() => {})
     },
     async record(key: string, evidence: readonly import('@agnes/protocol').JsonValue[]) {
       const session = lookup(key)
@@ -37,6 +41,7 @@ export class SharedSessionChannel {
     private readonly send: (frame: unknown) => void,
     private readonly permissions?: {
       context(sessionKey: string): import('@agnes/protocol').PermissionContext | undefined
+      subscribe?(sessionKey: string, changed: () => void): () => void
       record(sessionKey: string, evidence: readonly import('@agnes/protocol').JsonValue[]): Promise<void>
     },
   ) {}
@@ -100,7 +105,10 @@ export class SharedSessionChannel {
           }
         }
       }
+      let offPermission: (() => void) | undefined
       const onAbort = (): void => {
+        offPermission?.()
+        signal.removeEventListener('abort', onAbort)
         this.pending.delete(requestId)
         cancel()
         if (method === 'permission')
@@ -111,10 +119,27 @@ export class SharedSessionChannel {
           )
         else reject(signal.reason ?? new Error('session request cancelled'))
       }
+      offPermission =
+        permissionContext?.policy === 'full-access'
+          ? this.permissions?.subscribe?.(sessionKey, () => {
+              if (this.permissions?.context(sessionKey)?.epoch === permissionContext.epoch) return
+              const pending = this.pending.get(requestId)
+              if (!pending) return
+              this.pending.delete(requestId)
+              cancel()
+              if (method === 'permission') pending.resolve({ verdict: 'cancelled', reason: 'stopped' })
+              else pending.reject(new Error('Permission authority revoked'))
+            })
+          : undefined
       this.pending.set(requestId, {
         sessionKey,
-        cancel,
+        cancel: () => {
+          offPermission?.()
+          signal.removeEventListener('abort', onAbort)
+          cancel()
+        },
         resolve: (value) => {
+          offPermission?.()
           signal.removeEventListener('abort', onAbort)
           if (permissionContext && value && typeof value === 'object' && '__aghPermissionEvidence' in value) {
             const envelope = value as {
@@ -122,13 +147,20 @@ export class SharedSessionChannel {
               __aghPermissionEvidence: import('@agnes/protocol').JsonValue[]
             }
             resolve(
-              this.permissions!.record(sessionKey, envelope.__aghPermissionEvidence).then(
-                () => envelope.value,
-              ),
+              this.permissions!.record(sessionKey, envelope.__aghPermissionEvidence).then(() => {
+                const current = this.permissions?.context(sessionKey)
+                if (
+                  envelope.__aghPermissionEvidence.length &&
+                  !samePermissionContext(permissionContext, current)
+                )
+                  throw new Error('Permission authority revoked')
+                return envelope.value
+              }),
             )
           } else resolve(value)
         },
         reject: (error) => {
+          offPermission?.()
           signal.removeEventListener('abort', onAbort)
           reject(error)
         },
@@ -149,6 +181,7 @@ export class SharedSessionChannel {
         } satisfies RequestFrame)
       } catch (error) {
         this.pending.delete(requestId)
+        offPermission?.()
         signal.removeEventListener('abort', onAbort)
         reject(error)
       }

@@ -129,6 +129,7 @@ it.each(['preview', 'pending', 'full-access', 'full-plan', 'legacy-yolo'])(
         preset: mode === 'legacy-yolo' ? 'workspace-write' : 'full-access',
       },
     ]
+    if (mode === 'full-access') context.projection = timeline([{ ...approval, category: 'permission' }])
     if (mode === 'full-plan') context.projection = timeline([{ ...approval, purpose: 'plan.exit' }])
     controller.renderApproval()
     if (mode === 'full-plan' || mode === 'legacy-yolo')
@@ -390,6 +391,52 @@ const reconcileSnapshot = {
     },
   },
 } as unknown as DecisionSnapshot
+
+it.each(['empty', 'stale-permission', 'stale-automatic'])(
+  'review: full-access retains a live factual reconciliation with %s projection',
+  async (projection) => {
+    const { context, controller, decide } = await harness()
+    context.sessionRows = [
+      { sessionId: 's', createdAt: '2026-10-20T00:00:00Z', lastSeq: 1, generation: 1, preset: 'full-access' },
+    ]
+    context.projection = timeline(
+      projection === 'empty'
+        ? []
+        : [
+            {
+              ...approval,
+              category: 'permission',
+              ...(projection === 'stale-automatic'
+                ? {
+                    state: 'decided' as const,
+                    decision: { verdict: 'allowed-once', via: 'policy', reason: 'full-access' },
+                  }
+                : {}),
+            },
+          ],
+    )
+    context.liveApproval = {
+      request: {
+        sessionId: 's',
+        toolCall: {
+          toolCallId: 'unknown-effect',
+          title: 'Did the operation happen?',
+          kind: 'other',
+          status: 'pending',
+        },
+        options: [
+          { optionId: 'allow_once', kind: 'allow_once', name: 'Executed' },
+          { optionId: 'reject_once', kind: 'reject_once', name: 'Not executed' },
+        ],
+      },
+      finish: vi.fn(),
+      afterSeq: 1,
+    } as unknown as typeof context.liveApproval
+    controller.renderApproval()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull())
+    expect(decide).not.toHaveBeenCalled()
+  },
+)
 
 it('asks whether a call that lost its result ran, in plain words, with «执行了 / 没执行»', async () => {
   const { controller, list, decide } = await harness()

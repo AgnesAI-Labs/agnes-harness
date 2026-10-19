@@ -4,6 +4,7 @@ import {
   automaticPermissionDecision,
   type PermissionContext,
   rpcError,
+  samePermissionContext,
   validateAgainst,
 } from '@agnes/protocol'
 import {
@@ -42,8 +43,13 @@ export function createCredentialAdmin(options: {
     action: 'list' | 'create' | 'set' | 'rename' | 'delete',
     input: unknown,
     actor: string,
-    permission?: PermissionContext,
+    permission?: { context: PermissionContext; current(): Promise<PermissionContext | undefined> },
   ) {
+    const automatic = automaticPermissionDecision(permission?.context, 'credential.admin')
+    const checkPermission = async () => {
+      if (automatic && permission && !samePermissionContext(permission.context, await permission.current()))
+        return failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
+    }
     if (action === 'list') {
       const refs = referencesIn(await options.configurations())
       return {
@@ -72,17 +78,19 @@ export function createCredentialAdmin(options: {
     }
     const before = action === 'create' ? undefined : await metadata(id)
     if (action === 'delete') {
-      if (params.force && params.confirm !== true && !automaticPermissionDecision(permission))
+      if (params.force && params.confirm !== true && !automatic)
         return failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
       if (!params.force && before?.references.length) return failed('CONFIG_CREDENTIAL_REFERENCED')
     }
+    await checkPermission()
     // Durable action attempt, before mutation. Never pass user labels, values, hashes or request bodies.
     const audit = createFileAudit(`${options.dataDir}/audit/credentials.jsonl`)
     audit.write({
       kind: 'credential.changed',
-      detail: { actor, id, action, ...(automaticPermissionDecision(permission) ?? {}) },
+      detail: { actor, id, action, ...(automatic ?? {}) },
     })
     await audit.close?.()
+    await checkPermission()
     if (action === 'delete') {
       await store.remove(id)
       return {}
@@ -100,7 +108,7 @@ export function createCredentialAdmin(options: {
       action: 'list' | 'create' | 'set' | 'rename' | 'delete',
       input: unknown,
       actor: string,
-      permission?: PermissionContext,
+      permission?: { context: PermissionContext; current(): Promise<PermissionContext | undefined> },
     ): Promise<unknown> {
       if (pending >= 64) return Promise.reject(rpcError('OVERLOADED'))
       let owned: unknown

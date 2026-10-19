@@ -30,6 +30,13 @@ export function approvalToolName(toolCall: Record<string, unknown>): string | un
   return typeof tool === 'string' && tool !== '' ? tool : undefined
 }
 
+/** Unknown/older transport requests remain visible until the backend classifies them. */
+export function approvalIsPermission(toolCall: Record<string, unknown>): boolean {
+  const meta = toolCall._meta
+  const harness = isRecord(meta) ? meta['ai.agnes.harness'] : undefined
+  return isRecord(harness) && harness.category === 'permission'
+}
+
 function leadingFirst(input: unknown): unknown {
   if (!isRecord(input)) return input
   const keys = Object.keys(input)

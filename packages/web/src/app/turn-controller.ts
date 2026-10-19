@@ -2,7 +2,11 @@ import type { UITurn } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import type { ApprovalAction } from '@agnes/web-conversation/approval'
-import { approvalToolName, liveApprovalCard } from '@agnes/web-conversation/approval-card'
+import {
+  approvalIsPermission,
+  approvalToolName,
+  liveApprovalCard,
+} from '@agnes/web-conversation/approval-card'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
@@ -215,15 +219,15 @@ export function createTurnController(
     const durable = known?.state === 'pending' ? known : undefined
     const fullAccess =
       context.sessionRows.find((row) => row.sessionId === context.current?.id)?.preset === 'full-access'
-    const modeChoice =
-      known?.purpose === 'plan.exit' ||
-      (context.liveApproval
-        ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
-        : context.projection?.nodes.some(
-            (node) =>
-              node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
-          ))
-    if (known?.decision?.reason === 'full-access' || (fullAccess && !modeChoice && !known?.reconcile)) {
+    const live = context.liveApproval
+    // A new live question takes precedence over an older durable permission projection.
+    if (
+      (!live && known?.decision?.reason === 'full-access') ||
+      (fullAccess &&
+        (live
+          ? approvalIsPermission(live.request.toolCall)
+          : !known?.reconcile && known?.purpose !== 'plan.exit' && known?.category === 'permission'))
+    ) {
       context.approvalRuntime.render(undefined)
       return
     }

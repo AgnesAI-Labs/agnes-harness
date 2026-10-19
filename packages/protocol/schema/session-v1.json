@@ -2701,6 +2701,7 @@
         "spec": {
           "$ref": "#/$defs/DecisionSpec"
         },
+        "category": { "const": "permission" },
         "subjectDigest": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
@@ -2766,6 +2767,14 @@
               "const": "answered"
             },
             "code": { "const": "full-access" },
+            "authorization": {
+              "type": "object", "additionalProperties": false,
+              "required": ["sessionId", "epoch"],
+              "properties": {
+                "sessionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "epoch": { "type": "integer", "minimum": 0 }
+              }
+            },
             "at": {
               "type": "string",
               "format": "date-time"

@@ -24,6 +24,13 @@ const req = {
   deadline: new Date(60_000).toISOString(),
   scope: 'workspace',
 }
+const permissionContext = {
+  sessionKey: 'k',
+  sessionId: 'fixture-backend',
+  epoch: 0,
+  policy: 'full-access',
+  actor,
+}
 const never = new AbortController().signal
 const mk = (o: Partial<ConstructorParameters<typeof PrompterRouter>[0]> = {}) => {
   const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
@@ -146,7 +153,9 @@ describe('PrompterRouter', () => {
       }),
     ])) as { id: string; params: { toolCall: { kind: string; _meta: unknown } } }
     expect(m.params.toolCall.kind).toBe(kind)
-    expect(m.params.toolCall._meta).toEqual({ 'ai.agnes.harness': { tool } })
+    expect(m.params.toolCall._meta).toEqual({
+      'ai.agnes.harness': { tool, category: 'permission', purpose: 'tool' },
+    })
     await ep.handle({
       jsonrpc: '2.0',
       id: m.id,
@@ -163,7 +172,9 @@ describe('PrompterRouter', () => {
     const p = r.ask({ ...rest, kind: 'budget' } as never, { signal: never })
     const m = (await it.next()).value as { id: string; params: { toolCall: Record<string, unknown> } }
     expect(m.params.toolCall.kind).toBe('other')
-    expect(m.params.toolCall._meta).toBeUndefined()
+    expect(m.params.toolCall._meta).toEqual({
+      'ai.agnes.harness': { category: 'question', purpose: 'budget' },
+    })
     await ep.handle({
       jsonrpc: '2.0',
       id: m.id,
@@ -481,9 +492,10 @@ it.each([
   const { r, log, ep } = mk({ local, localActor: async () => actor, connections: () => [] })
   const evidence: unknown[] = []
   const answer = await withPermissionContext(
-    { policy: 'full-access', actor },
+    permissionContext,
     (value) => evidence.push(value),
     () => r.ask({ ...req, scope }, { signal: never }),
+    async () => permissionContext,
   )
   expect(answer).toMatchObject({
     verdict: 'allowed-once',
@@ -492,7 +504,10 @@ it.each([
   })
   expect(local.ask).not.toHaveBeenCalled()
   expect(log).toMatchObject([{ via: 'full-access', reason: 'full-access' }])
-  expect(evidence).toMatchObject([{ scope, bindingHash: 'h', reason: 'full-access' }])
+  expect(evidence).toMatchObject([
+    { scope, bindingHash: 'h', reason: 'full-access', consumption: 'authorized' },
+    { scope, bindingHash: 'h', reason: 'full-access', consumption: 'consumed' },
+  ])
   await ep.close()
 })
 
@@ -504,12 +519,13 @@ it('keeps expiry and cancellation authoritative for automatic permission decisio
     const evidence: unknown[] = []
     try {
       const answer = await withPermissionContext(
-        { policy: 'full-access', actor },
+        permissionContext,
         async (value) => {
           evidence.push(value)
           controller.abort('stopped')
         },
         () => r.ask(req, { signal: controller.signal }),
+        async () => permissionContext,
       )
       expect(answer).toEqual(
         state === 'expired'

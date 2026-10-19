@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { type AskOutcome, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import { type AskOutcome, assertCurrentPermission, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import {
   agnesHome,
   createSkillInstaller,
@@ -87,6 +87,7 @@ export function createSkillInstallRequests(options: {
       live.get()
       if (options.workspace(sessionKey) !== workspace) throw new Error('SKILL_INSTALL_PERMISSION_CHANGED')
     }
+    await assertCurrentPermission()
     assertActive()
     if (
       pending.size >= 32 ||
@@ -124,6 +125,7 @@ export function createSkillInstallRequests(options: {
           agnesHome: agnesHome(process.env),
           assertActive,
           ask: async (summary, bindingHash, requestSignal) => {
+            await assertCurrentPermission()
             assertActive()
             approvalOutcome = undefined
             const verdict = await prompt.askVerdict(
@@ -144,6 +146,7 @@ export function createSkillInstallRequests(options: {
               },
               { signal: requestSignal },
             )
+            await assertCurrentPermission()
             assertActive()
             const via = (approvalOutcome as AskOutcome | undefined)?.via
             if (via === 'transport' || via === 'absent')
@@ -157,7 +160,8 @@ export function createSkillInstallRequests(options: {
               verdict === 'allowed-once' || verdict === 'allowed-session' || verdict === 'allowed-permanent'
             )
           },
-          resources: (method, resourceParams) => {
+          resources: async (method, resourceParams) => {
+            await assertCurrentPermission()
             assertActive()
             const currentAuthority = (options.authority ?? localResourceAuthority())({ conn: live.get() })
             if (!currentAuthority || currentAuthority.principalId !== authority.principalId)

@@ -10,7 +10,12 @@ import {
   type PackageAdminService,
 } from '@agnes/daemon-admin/packages/index'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { currentPermissionContext, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import {
+  assertCurrentPermission,
+  assertPermissionBinding,
+  currentPermissionContext,
+  PrompterRouter,
+} from '@agnes/daemon-rpc/local/prompter'
 import { createFileAudit } from '@agnes/host'
 import {
   type AuthoringCandidate,
@@ -120,7 +125,8 @@ export function createPluginManageRequests(options: {
       ...(workerSignal ? [workerSignal] : []),
     ])
     let testContext: AuthoringSandboxContext | undefined
-    const call = (suffix: string, params: Record<string, unknown>) => {
+    const call = async (suffix: string, params: Record<string, unknown>) => {
+      await assertCurrentPermission()
       assertActive()
       signal.throwIfAborted()
       const auth = localPackageAdminAuthority([
@@ -144,6 +150,15 @@ export function createPluginManageRequests(options: {
           ...auth,
           installer: 'agent',
           permissionContext: currentPermissionContext(),
+          ...(suffix === 'submit' && automaticPermissionDecision(currentPermissionContext())
+            ? {
+                authoringPermission: async (binding: { sessionKey: string; bindingHash: string }) => {
+                  signal.throwIfAborted()
+                  await assertPermissionBinding({ ...binding, scope: 'plugin.publish' })
+                  signal.throwIfAborted()
+                },
+              }
+            : {}),
           authoringSignal: signal,
           ...(testContext ? { authoringTestRunner: createAuthoringTestRunner(testContext) } : {}),
           authoringOrigin: {
@@ -274,7 +289,7 @@ export function createPluginManageRequests(options: {
             return endpoint
           },
         })
-        await prompt.ask(
+        const answer = await prompt.ask(
           {
             requestId: `publish-${randomUUID()}`,
             kind: 'tool',
@@ -292,6 +307,19 @@ export function createPluginManageRequests(options: {
           },
           { signal },
         )
+        if (
+          typeof answer === 'string' ||
+          !('verdict' in answer) ||
+          answer.verdict !== 'allowed-once' ||
+          answer.reason !== 'full-access'
+        )
+          throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_PUBLICATION_UNANSWERED' })
+        await assertPermissionBinding({
+          scope: 'plugin.publish',
+          bindingHash: value.candidateHash,
+          sessionKey,
+        })
+        signal.throwIfAborted()
       }
       const result = (await call(action === 'commit' ? 'submit' : action, {
         ...command(),

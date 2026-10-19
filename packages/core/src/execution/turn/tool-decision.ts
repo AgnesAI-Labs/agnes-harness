@@ -18,6 +18,7 @@ export function toolDecisionSource(
     throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
   const signal = s.ac.signal
   return s.decisions.bindSource({
+    permission: true,
     owner: TOOL_DECISION_OWNER,
     operationId: call.toolUseId,
     sourcePackage: '@agnes/core',

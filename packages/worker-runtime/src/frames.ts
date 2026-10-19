@@ -11,6 +11,7 @@ import type {
 import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
+  | 'permissionContext'
   | 'deliverSystemInput'
   | 'enqueue'
   | 'control'

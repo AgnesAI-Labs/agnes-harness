@@ -96,7 +96,7 @@ it.each([
   })
   for (const policy of ['workspace-write', 'read-only', 'standard', 'custom'])
     expect(automaticPermissionDecision({ policy, actor }, purpose)).toBeUndefined()
-  for (const question of ['plan.exit', 'unknown-outcome'])
+  for (const question of ['plan.exit', 'unknown-outcome', 'business.confirm', 'unrecognized.purpose'])
     expect(automaticPermissionDecision({ policy: 'full-access', actor }, question)).toBeUndefined()
   expect(
     automaticPermissionDecision({ policy: 'full-access', actor }, 'business.confirm', ['Proceed', 'Cancel']),

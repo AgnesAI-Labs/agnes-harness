@@ -1,7 +1,9 @@
-import { automaticRequestDecision } from './permission-scope.js'
+import { automaticRequestDecision, completeAutomaticDecision } from './permission-scope.js'
 
 export {
   type AutomaticPermissionEvidence,
+  assertCurrentPermission,
+  assertPermissionBinding,
   currentPermissionContext,
   withPermissionContext,
 } from './permission-scope.js'
@@ -14,6 +16,7 @@ import {
   type ApprovalReason,
   type ApprovalVerdict,
   fromAcpOptionKind,
+  isPermissionPurpose,
   toAcpOptionKind,
   validateAgainst,
 } from '@agnes/protocol'
@@ -169,6 +172,10 @@ export class PrompterRouter implements Prompter {
       if (opts.signal.aborted) return interrupted()
       if (deadline <= this.o.clock())
         return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+      await completeAutomaticDecision(req, this.o.clock)
+      if (opts.signal.aborted) return interrupted()
+      if (deadline <= this.o.clock())
+        return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
       return this.done(req.requestId, 'full-access', automatic)
     }
     if (this.o.local) {
@@ -213,7 +220,17 @@ export class PrompterRouter implements Prompter {
         kind: req.kind === 'tool' ? toolKind(req.tool?.name) : 'other',
         status: 'pending',
         // The tool's name, so a client can say what "allow for the session" covers.
-        ...(req.tool ? { _meta: { 'ai.agnes.harness': { tool: req.tool.name } } } : {}),
+        _meta: {
+          'ai.agnes.harness': {
+            ...(req.tool ? { tool: req.tool.name } : {}),
+            category:
+              isPermissionPurpose(req.kind === 'tool' ? 'permission' : req.kind) &&
+              req.tool?.name !== 'exit_plan_mode'
+                ? 'permission'
+                : 'question',
+            purpose: req.tool?.name === 'exit_plan_mode' ? 'plan.exit' : req.kind,
+          },
+        },
       },
       // This request is ACP. Its allow_always is session-scoped and must never be upgraded into
       // Agnes' distinct profile-scoped permanent verdict.

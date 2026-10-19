@@ -17,6 +17,7 @@ import {
   type DecisionCommandReceipt,
   type DecisionResponse,
   inspectJsonData,
+  isPermissionPurpose,
   validateActor,
   validateAgainst,
 } from '@agnes/protocol'
@@ -36,7 +37,7 @@ export interface DecisionAuthority {
   readonly closed: boolean
   readonly cancelled: boolean
   readonly actor: Actor
-  readonly permissionPolicy?: string | undefined
+  readonly permissionContext?: import('@agnes/protocol').PermissionContext | undefined
   readonly ttlMs: number
   readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
   readonly log: Pick<SessionLogImpl, 'append' | 'observeCommitted'>
@@ -48,6 +49,7 @@ export interface DecisionAuthority {
 }
 
 export interface DecisionSource {
+  readonly permission?: true
   readonly owner: string
   readonly operationId: string
   readonly sourcePackage: string
@@ -146,6 +148,8 @@ export class DecisionCommands {
       beforeCommit: recheck,
       commitCheck: () => {
         executionCheck()
+        if (!value.invalidation && value.result?.reason === 'answered' && value.result.code === 'full-access')
+          this.checkAuthorization(value)
         if (
           !value.invalidation &&
           (value.result?.reason === 'answered' || value.consumption) &&
@@ -160,9 +164,10 @@ export class DecisionCommands {
     if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
       return value
     const answer = automaticPermissionDecision(
-      this.s.permissionPolicy ? { policy: this.s.permissionPolicy, actor: this.s.actor } : undefined,
+      this.s.permissionContext,
       value.request.spec.purpose,
       value.request.spec.options,
+      value.request.category === 'permission' ? 'permission' : 'question',
     )
     if (!answer) return value
     if (
@@ -176,6 +181,7 @@ export class DecisionCommands {
       result: {
         reason: 'answered',
         code: answer.reason,
+        authorization: this.authorizationBinding(),
         at: new Date(this.s.clock()).toISOString(),
         response: { option: answer.verdict, value: null },
         answeredBy: answer.answeredBy,
@@ -191,10 +197,70 @@ export class DecisionCommands {
     )
     return next
   }
+  private authorizationBinding() {
+    const context = this.s.permissionContext
+    if (!context) fail('AUTHORITY_REVOKED')
+    return { sessionId: context.sessionId, epoch: context.epoch }
+  }
+  private checkAuthorization(value: DecisionSnapshot): void {
+    if (value.result?.reason !== 'answered' || value.result.code !== 'full-access') return
+    const current = this.s.permissionContext,
+      binding = value.result.authorization
+    if (
+      !current ||
+      current.policy !== 'full-access' ||
+      !binding ||
+      binding.sessionId !== current.sessionId ||
+      binding.epoch !== current.epoch
+    )
+      fail('AUTHORITY_REVOKED')
+  }
+  /** Called under the preset writer gate. History of consumed effects remains immutable. */
+  revokedAutomaticEvents(): EventInput[] {
+    return [...this.s.readDecisions().values()].flatMap(({ value }) => {
+      if (
+        value.result?.reason !== 'answered' ||
+        value.result.code !== 'full-access' ||
+        value.consumption ||
+        value.invalidation
+      )
+        return []
+      try {
+        this.checkAuthorization(value)
+        return []
+      } catch {
+        return [
+          this.event({
+            ...value,
+            revision: value.revision + 1,
+            invalidation: { at: new Date(this.s.clock()).toISOString(), code: 'authorization-revoked' },
+          }),
+        ]
+      }
+    })
+  }
   private due(value: DecisionSnapshot): boolean {
     return value.request.expiresAt !== null && this.s.clock() >= Date.parse(value.request.expiresAt)
   }
   private async expire(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
+    if (
+      !value.consumption &&
+      !value.invalidation &&
+      value.result?.reason === 'answered' &&
+      value.result.code === 'full-access'
+    ) {
+      try {
+        this.checkAuthorization(value)
+      } catch {
+        const next = {
+          ...value,
+          revision: value.revision + 1,
+          invalidation: { at: new Date(this.s.clock()).toISOString(), code: 'authorization-revoked' },
+        }
+        await this.write(next, () => this.live(source))
+        return next
+      }
+    }
     if (
       !this.due(value) ||
       value.consumption ||
@@ -266,6 +332,9 @@ export class DecisionCommands {
         revision: 1,
         request: {
           spec,
+          ...(source.permission && isPermissionPurpose(spec.purpose)
+            ? { category: 'permission' as const }
+            : {}),
           subjectDigest: decisionSubjectDigest(spec.subject),
           owner: source.owner,
           operationId: source.operationId,
@@ -282,9 +351,10 @@ export class DecisionCommands {
         invalidation: null,
       }
       const automatic = automaticPermissionDecision(
-        this.s.permissionPolicy ? { policy: this.s.permissionPolicy, actor: this.s.actor } : undefined,
+        this.s.permissionContext,
         spec.purpose,
         spec.options,
+        source.permission ? 'permission' : 'question',
       )
       if (automatic) {
         if (spec.responseSchema && compilePluginConfig(spec.responseSchema)(null).length)
@@ -292,6 +362,7 @@ export class DecisionCommands {
         value.result = {
           reason: 'answered',
           code: automatic.reason,
+          authorization: this.authorizationBinding(),
           at: new Date(now).toISOString(),
           response: { option: automatic.verdict, value: null },
           answeredBy: automatic.answeredBy,
@@ -482,6 +553,7 @@ export class DecisionCommands {
     if (new Set(handles.map((h) => h.id)).size !== handles.length) fail('DUPLICATE_REF')
     return handles.map((handle) => {
       const value = this.read(handle, source)
+      this.checkAuthorization(value)
       if (value.consumption || value.invalidation || this.due(value) || value.result?.reason !== 'answered')
         fail('NOT_CONSUMABLE')
       if (value.request.operationId !== source.operationId) fail('OPERATION_CHANGED')
