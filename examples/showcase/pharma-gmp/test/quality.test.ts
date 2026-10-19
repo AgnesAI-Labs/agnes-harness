@@ -202,6 +202,18 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
       }
       const ready = await s.invoke('pharma_dossier', { batch })
       expect(ready.structured).toMatchObject({ ready: true, revision: 5 })
+      expect(ready.structured).toMatchObject({
+        blockers: [],
+        findings: expect.arrayContaining([expect.objectContaining({ code: 'CPP' })]),
+        evidence: {
+          deviations: expect.arrayContaining([expect.objectContaining({ stage: 'closed' })]),
+          retests: expect.arrayContaining([expect.objectContaining({ value: 1.9 })]),
+          equipment: expect.arrayContaining([
+            expect.objectContaining({ id: 'DR-02', qualification: 'qualified' }),
+          ]),
+          em: expect.arrayContaining([expect.objectContaining({ disposition: 'assessed' })]),
+        },
+      })
       const stale = await s.invoke('pharma_release', {
         batch,
         expectedRevision: 4,

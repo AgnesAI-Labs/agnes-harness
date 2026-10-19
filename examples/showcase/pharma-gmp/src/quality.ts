@@ -106,7 +106,18 @@ export function dossier(p: Plant, id: string) {
     asOf: DEMO_DATE,
     ready: rows.every((r) => r.pass),
     rows,
+    blockers: rows.filter((r) => !r.pass).map((r) => r.key),
     findings: findings(p, id),
+    evidence: {
+      deviations,
+      retests: b.retests,
+      equipment: p.equipment.filter((e) => b.steps.some((s) => s.equipment === e.id)),
+      em: p.samples.filter((s) => s.batch === id && emStatus(p, s) !== 'control'),
+      interpretation: label(
+        'findings 保留原始历史发现；当前阻断以 blockers 和 rows.pass 为准，须结合偏差结案及批准返工复验依据审阅。revision 是当前状态版本；证书 dossierRevision 是签署前被审阅的版本，签署本身使状态版本加一。',
+        'findings retain original historical observations. Current blockers are the failed checklist rows; review deviation closure and approved reprocessing/retest evidence. revision is current state; certificate.dossierRevision identifies the pre-signature dossier reviewed. Signing itself increments state revision by one.',
+      ),
+    },
     certificate: b.certificate,
   }
 }

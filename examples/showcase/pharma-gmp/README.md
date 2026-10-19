@@ -35,3 +35,5 @@ Isolated acceptance scripts live in `scripts/`; use a dedicated home/port and ex
 Role presets select an application-owned policy through the public tool-policy SPI. It preserves the default policy’s refusals and requires a human, once, bound to the exact arguments/revision for quality writes and release, including full-access sessions. A direct call without that proof refuses.
 
 Only the exact nightly EM export (`kind=em` plus a supported locale) may run unattended: it reads quality state and writes new report files inside `pharma-output/`. Other report shapes retain the default decision; quality records and release always require a human.
+
+Release dossier tools return the original findings together with current blockers and the deviation, retest, EM and equipment evidence. A certificate binds the reviewed pre-signature dossier revision; signing advances the state revision by one.

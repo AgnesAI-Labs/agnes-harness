@@ -35,3 +35,5 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 角色 preset 通过公开 tool-policy SPI 选择包内策略：保留默认策略的拒绝结果，对质量写入与放行显式要求“人工、单次、绑定精确参数及版本”，包括 full-access 会话；缺少该凭证的直接调用仍拒绝。
 
 仅精确的夜间 EM 导出（kind=em 加支持的语言）允许无人值守：只读取质量状态，并在 pharma-output/ 内创建新的报告文件。其他报告形状保留默认决策；质量记录与放行始终需要人工批准。
+
+放行档案工具同时返回原始历史发现、当前阻断和偏差结案、复验、EM、设备追溯证据。证书绑定签署前被审阅的档案版本；签署使状态版本加一。

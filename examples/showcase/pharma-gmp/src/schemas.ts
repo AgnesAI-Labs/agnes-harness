@@ -136,7 +136,15 @@ export const dossierSchema = obj({
   asOf: text,
   ready: Type.Boolean(),
   rows: list(obj({ key: text, title: localized, pass: Type.Boolean() })),
+  blockers: list(text),
   findings: list(findingSchema),
+  evidence: obj({
+    deviations: list(deviation),
+    retests: list(measurement),
+    equipment: list(equipment),
+    em: list(sample),
+    interpretation: localized,
+  }),
   certificate: Type.Union([certificate, Type.Null()]),
 })
 export const investigationSchema = obj({
