@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startWebDevBuild } from '@agnes/web/dev'
 import { expect, it } from 'vitest'
 import {
   buildPresentations,
@@ -9,7 +10,6 @@ import {
   verifyPresentation,
 } from '../../../tools/presentation-build.mjs'
 import setupPresentations from '../../../tools/presentation-test-setup.mjs'
-import { startWebDevBuild } from '../../web/tools/dev.js'
 import { copyBundledPlugins } from '../tools/build-local.js'
 
 it('rebuilds deterministic presentations, caches unchanged inputs and ships verifiable hashes', async () => {
