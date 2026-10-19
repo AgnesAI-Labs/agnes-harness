@@ -9,6 +9,7 @@ import {
   type HostSession,
   manageMemory,
   type ResolvedProfile,
+  sessionPermissionCatalog,
 } from '@agnes/host'
 import { exporterHealth } from '@agnes/observability'
 import { withPackageVerification } from '@agnes/package-manager'
@@ -349,6 +350,7 @@ export async function handleCommand(
         ok: true,
         lastSeq: session.lastSeq,
         preset: session.preset.name,
+        ...(session.preset.permission ? { permission: session.preset.permission } : {}),
         parent: session.d.log.parent ?? null,
       }
     case 'resource.stale':
@@ -842,6 +844,7 @@ export async function handleServiceCommand(
           id,
           isDefault: id === host.profile.presets.default,
         })),
+        permissions: sessionPermissionCatalog(host.profile),
         loops: host.kernel.loops.catalog(),
         modelAdapters: conversationModelAdapters(
           host.modelAdapterCatalog(),

@@ -4,6 +4,7 @@ import {
   createAdminSessionSelection,
   payloadOnlyRoutes,
 } from '../src/admin-session-selection.js'
+import { permissionLevelDefaults } from '../src/session-defaults-permission.js'
 
 it('validates exact catalog versions and model ids before persisting defaults', async () => {
   const save = vi.fn(async (input) => ({ ...input, revision: input.revision + 1 }))
@@ -52,6 +53,43 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   ])
     await expect(provider.saveDefaults({ revision: 0, defaults })).rejects.toThrow()
   expect(save).toHaveBeenCalledOnce()
+})
+
+it('saves a default permission beside the default recipe, checked against the levels offered', async () => {
+  const save = vi.fn(async (input) => ({ ...input, revision: input.revision + 1 }))
+  const provider = createAdminSessionSelection(
+    {
+      presets: async () => ['standard', 'minimal'],
+      permissions: async () => ['read-only', 'workspace-write'],
+      loops: async () => [],
+      modelAdapters: async () => [],
+      models: async () => [],
+    },
+    { sessionDefaults: async () => ({ revision: 0, defaults: {} }), saveSessionDefaults: save },
+  )
+  expect(await provider.permissions?.()).toEqual(['read-only', 'workspace-write'])
+  const defaults = { preset: 'minimal', permission: 'read-only' } as const
+  expect(await provider.saveDefaults({ revision: 0, defaults })).toEqual({ revision: 1, defaults })
+  // A level the deployment does not offer, and a name that is not a level, are not saved.
+  await expect(
+    provider.saveDefaults({ revision: 1, defaults: { permission: 'full-access' } }),
+  ).rejects.toThrow()
+  await expect(
+    provider.saveDefaults({ revision: 1, defaults: { permission: 'root' as never } }),
+  ).rejects.toThrow()
+  expect(save).toHaveBeenCalledOnce()
+})
+
+it('reads a default recipe that names a permission level as that permission', () => {
+  expect(permissionLevelDefaults({ preset: 'read-only' })).toEqual({ permission: 'read-only' })
+  expect(
+    permissionLevelDefaults({ preset: 'full-access', permission: 'read-only', model: 'm' } as never),
+  ).toEqual({
+    permission: 'read-only',
+    model: 'm',
+  })
+  expect(permissionLevelDefaults({ preset: 'minimal' })).toEqual({ preset: 'minimal' })
+  expect(permissionLevelDefaults(undefined)).toEqual({})
 })
 
 const entry = (

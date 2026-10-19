@@ -38,6 +38,7 @@ export class WorkerSessionChannel {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
       agent?: string
       agentDigest?: string
       bundles?: readonly string[]
@@ -429,6 +430,7 @@ export class WorkerLink {
     params: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
       agent?: string
       agentDigest?: string
       bundles?: readonly string[]
@@ -517,6 +519,7 @@ export class WorkerLink {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
       agent?: string
       agentDigest?: string
       bundles?: readonly string[]

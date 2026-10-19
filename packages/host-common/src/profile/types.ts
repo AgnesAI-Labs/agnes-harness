@@ -10,6 +10,7 @@ import type {
   ReconcilePolicy,
   RouteDecl,
 } from '@agnes/protocol'
+import type { Permission } from '../presets/permission.js'
 import type { PresetDoc } from '../presets/types.js'
 import type {
   BundleCatalog,
@@ -156,6 +157,7 @@ export type RuntimeProfileManifest = {
   cacheDir?: string
   limits?: Record<string, number>
   presets?: { default?: string; allowed?: string[] }
+  permissions?: { default?: Permission; allowed?: Permission[] }
   policy?: Policy
   reconcile?: ReconcilePolicy
   approvals?: ApprovalProfile
@@ -278,6 +280,8 @@ export type ResolvedProfile = Readonly<{
   cacheDir: string
   limits: Record<string, number>
   presets: { default: string; allowed: string[] }
+  /** Absent on a profile that predates the split; see `allowedPermissions`. */
+  permissions?: { default: Permission; allowed: Permission[] }
   policy: { capabilityCeiling: Capability[]; workspacePackages: 'deny' | 'require-project-trust' }
   reconcile: ReconcilePolicy
   approvals: ApprovalProfile

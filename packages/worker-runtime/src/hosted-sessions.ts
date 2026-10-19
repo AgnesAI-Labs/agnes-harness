@@ -31,6 +31,8 @@ type HibernatedStub = {
   binding: WorkspaceBinding
   parent?: { key: string; boundarySeq: number }
   preset: string
+  /** Kept so a woken session reopens under the level it slept with, not the legacy default. */
+  permission?: string
   lastSeq: number
   /** The ledger head read from storage: another writer may append while the session sleeps. */
   head(): Promise<number>
@@ -170,6 +172,7 @@ export class HostedSessions {
             ...history,
             binding,
             ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+            ...(frame.params.permission ? { permission: frame.params.permission } : {}),
             ...(!frame.params.resume && frame.params.agent !== undefined
               ? { agent: frame.params.agent }
               : {}),
@@ -279,7 +282,13 @@ export class HostedSessions {
     const stub = this.stubs.get(frame.sessionKey)
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
-      return { ok: true, lastSeq: await stub.head(), preset: stub.preset, parent: stub.parent ?? null }
+      return {
+        ok: true,
+        lastSeq: await stub.head(),
+        preset: stub.preset,
+        ...(stub.permission ? { permission: stub.permission } : {}),
+        parent: stub.parent ?? null,
+      }
     if (stub && frame.method === 'abort') return {}
     if (stub && frame.method === 'previewSnapshot') return []
     return this.enter(frame.sessionKey, frame.method, (hosted) =>
@@ -375,6 +384,7 @@ export class HostedSessions {
       binding: session.d.workspaceIdentity as WorkspaceBinding,
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
+      ...(session.preset.permission ? { permission: session.preset.permission } : {}),
       lastSeq,
       head: this.headReader(key, lastSeq),
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
@@ -447,6 +457,7 @@ export class HostedSessions {
         key,
         binding: stub.binding,
         preset: stub.preset,
+        ...(stub.permission ? { permission: stub.permission } : {}),
         ...history,
       })
       if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {

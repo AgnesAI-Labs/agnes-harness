@@ -20,6 +20,7 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  permission?: string
   agent?: string
   agentDigest?: string
   bundles?: readonly string[]
@@ -283,6 +284,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    permission?: string
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
@@ -350,6 +352,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.permission ? { permission: o.permission } : {}),
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
@@ -568,6 +571,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         cwd: parent.session.cwd,
         binding: o.binding,
         ...(parentStatus.preset ? { preset: parentStatus.preset } : {}),
+        ...(parentStatus.permission ? { permission: parentStatus.permission } : {}),
         parent: o.parent,
         forkAt: o.at,
         resume: true,

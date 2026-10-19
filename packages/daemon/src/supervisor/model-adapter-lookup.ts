@@ -16,6 +16,7 @@ import type { WorkerLink } from './worker-link.js'
 /** What the shared worker's assembled Host reports about sessions, as the supervisor reads it. */
 export type SharedSessionCatalog = {
   presets?: readonly { id: string; isDefault: boolean }[]
+  permissions?: readonly { id: string; isDefault: boolean }[]
   loops: AdminLoop[]
   modelAdapters: AdminModelAdapter[]
 }

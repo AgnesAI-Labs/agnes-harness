@@ -157,4 +157,51 @@ describe('SessionRegistry', () => {
     await reg.closeAll()
     await h.close()
   })
+
+  it('forwards permission to the Host and never merges opens that differ only in permission', async () => {
+    let stop!: (error: Error) => void
+    const create = vi.fn<Host['createSession']>(
+      () =>
+        new Promise((_resolve, reject) => {
+          stop = reject
+        }),
+    )
+    const reg = new SessionRegistry({ createSession: create } as unknown as Host, { clock: () => Date.now() })
+    const request = { key: 'agnes:retry:permission', cwd: '/workspace', preset: 'standard' }
+
+    const first = reg.open({ ...request, permission: 'full-access' })
+    const retry = reg.open({ ...request, permission: 'full-access' })
+    await expect(reg.open(request)).rejects.toMatchObject({ data: { code: 'ID_CONFLICT' } })
+    await expect(reg.open({ ...request, permission: 'read-only' })).rejects.toMatchObject({
+      data: { code: 'ID_CONFLICT' },
+    })
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      key: request.key,
+      preset: 'standard',
+      permission: 'full-access',
+    })
+    stop(new Error('stop after capture'))
+    await expect(first).rejects.toThrow('stop after capture')
+    await expect(retry).rejects.toThrow('stop after capture')
+
+    // A request that names no permission reaches the Host exactly as before the split.
+    const legacy = reg.open(request)
+    stop(new Error('stop after capture'))
+    await expect(legacy).rejects.toThrow('stop after capture')
+    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('permission')
+
+    // A live session conflicts only with a named level it does not run under.
+    ;(reg as unknown as { entries: Map<string, SessionEntry> }).entries.set(request.key, {
+      session: { d: { cwd: '/workspace' }, preset: { name: 'standard', permission: 'workspace-write' } },
+    } as unknown as SessionEntry)
+    await expect(reg.open({ ...request, permission: 'full-access' })).rejects.toMatchObject({
+      data: { code: 'ID_CONFLICT' },
+    })
+    const live = reg.get(request.key)
+    expect(await reg.open({ ...request, permission: 'workspace-write' })).toBe(live)
+    expect(await reg.open({ ...request, permission: 'default' })).toBe(live)
+    expect(await reg.open(request)).toBe(live)
+    expect(create).toHaveBeenCalledTimes(2)
+  })
 })

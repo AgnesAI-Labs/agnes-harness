@@ -10,6 +10,7 @@ export async function toolsCommand(boot: Booted, args: ParsedArgs, cwd: string):
         cwd,
         sessionKey: `agnes:local:${boot.profileName}:cli:tools:${randomUUID()}`,
         ...(args.preset ? { preset: args.preset } : {}),
+        ...(args.permission ? { permission: args.permission } : {}),
         ...(args.loop ? { loop: args.loop } : {}),
         ...(args.agent ? { agent: args.agent } : {}),
       })

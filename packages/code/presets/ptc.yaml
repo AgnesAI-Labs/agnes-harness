@@ -1,6 +1,6 @@
-# Programmatic tool calling with the workspace-write permission policy.
+# Programmatic tool calling. The permission is chosen separately and defaults to workspace-write.
 name: ptc
-extends: workspace-write
+extends: standard
 disclosure: code
 model:
   prompt_sections: [persona, environment, code-doctrine]

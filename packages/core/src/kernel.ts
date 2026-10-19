@@ -483,6 +483,7 @@ export class Kernel {
         actor: so.actor,
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
+        ...(preset.permission ? { permission: preset.permission } : {}),
         resolvedProfileHash: so.resolvedProfileHash,
         ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         writerRunId: so.writerRunId,

@@ -8,6 +8,7 @@ export { payloadOnlyRoutes } from './payload-only-routes.js'
 
 export interface HostAdminSessionCatalog {
   presets?(): Promise<readonly string[]>
+  permissions?(): Promise<readonly string[]>
   loops(): Promise<readonly LoopCatalogEntry[]>
   modelAdapters(): Promise<readonly ModelAdapterCatalogEntry[]>
   /** Models from configured runtime routes, never invented from adapter registration metadata. */
@@ -51,15 +52,18 @@ export function createAdminSessionSelection(
     )
   return {
     ...(catalog.presets ? { presets: () => catalog.presets?.() ?? Promise.resolve([]) } : {}),
+    ...(catalog.permissions ? { permissions: () => catalog.permissions?.() ?? Promise.resolve([]) } : {}),
     loops: () => catalog.loops(),
     modelAdapters,
     getDefaults: () => configuration.sessionDefaults(),
     async saveDefaults(input) {
       if (!isSessionDefaultsSnapshot(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
-      const { preset, providers, model } = input.defaults
+      const { preset, permission, providers, model } = input.defaults
       const loop = providers?.loop
       const modelAdapter = providers?.['model-adapter']
       if (preset && !(await catalog.presets?.())?.includes(preset))
+        throw new ConfigurationError('CONFIG_INVALID_INPUT')
+      if (permission && catalog.permissions && !(await catalog.permissions()).includes(permission))
         throw new ConfigurationError('CONFIG_INVALID_INPUT')
       const [loops, adapters] = await Promise.all([catalog.loops(), modelAdapters()])
       if (loop && !loops.some((entry) => entry.id === loop.provider && entry.version === loop.version))

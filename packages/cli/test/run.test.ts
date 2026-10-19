@@ -30,6 +30,9 @@ it('owns the run grammar including stdin and refuses incomplete, duplicate and i
   expect(() => parseRunArgs(['--bundle', 'pkg#demo', '--input', '-'])).toThrow('--json')
   expect(() => parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json', '--batch'])).toThrow('folder')
   expect(() => parseRunArgs(['--bundle', 'a', '--bundle', 'b'])).toThrow('duplicate')
+  expect(
+    parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json', '--permission', 'read-only']).args,
+  ).toMatchObject({ permission: 'read-only' })
 })
 it('runs folder inputs in stable order, streams each result and returns the first failure status', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'agh-batch-'))
@@ -61,15 +64,22 @@ it('runs folder inputs in stable order, streams each result and returns the firs
     return { sessionId: 's', reason, lastSeq: 1, eventsComplete: true }
   })
   expect(
-    await runCommand(['--bundle', 'pkg#demo', '--input', dir, '--batch', '--json'], {
-      cwd: dir,
-      stdin: Readable.from([]),
-      stdout,
-      boot,
-      signals: new PassThrough(),
-    }),
+    await runCommand(
+      ['--bundle', 'pkg#demo', '--input', dir, '--batch', '--json', '--permission', 'read-only'],
+      {
+        cwd: dir,
+        stdin: Readable.from([]),
+        stdout,
+        boot,
+        signals: new PassThrough(),
+      },
+    ),
   ).toBe(4)
   expect(vi.mocked(runHeadless).mock.calls.map((call) => call[1].input)).toEqual(['first', 'second'])
+  expect(vi.mocked(runHeadless).mock.calls.map((call) => call[1].permission)).toEqual([
+    'read-only',
+    'read-only',
+  ])
   expect(output.map((line) => JSON.parse(line).input)).toEqual([join(dir, 'a.txt'), join(dir, 'b.txt')])
   expect(close).toHaveBeenCalled()
 })

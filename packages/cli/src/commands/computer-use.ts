@@ -32,6 +32,7 @@ export function validateComputerUseRescueArgs(parsed: ParsedArgs): ComputerUseRe
     parsed.help ||
     parsed.version ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
     parsed.connect !== undefined ||
@@ -106,6 +107,7 @@ function validateReadOnlyComputerUseFlags(parsed: ParsedArgs, label: string): vo
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
@@ -138,6 +140,7 @@ function validateCommonComputerUseFlags(parsed: ParsedArgs, label: string): void
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
@@ -219,6 +222,7 @@ export function validateComputerUseOperationArgs(parsed: ParsedArgs): ComputerUs
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||

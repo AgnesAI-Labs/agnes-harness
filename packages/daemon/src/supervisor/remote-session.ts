@@ -252,11 +252,13 @@ export class RemoteSession {
   async status(): Promise<{
     lastSeq: number
     preset: string | null
+    permission?: string
     parent?: { key: string; boundarySeq: number }
   }> {
     const state = (await this.link.command('ping', {})) as {
       lastSeq?: number
       preset?: string | null
+      permission?: unknown
       parent?: { key?: unknown; boundarySeq?: unknown }
     }
     if (typeof state.lastSeq === 'number' && state.lastSeq > this.lastSeq) this.lastSeq = state.lastSeq
@@ -267,6 +269,7 @@ export class RemoteSession {
     return {
       lastSeq: this.lastSeq,
       preset: typeof state.preset === 'string' ? state.preset : null,
+      ...(typeof state.permission === 'string' ? { permission: state.permission } : {}),
       ...(parent ? { parent } : {}),
     }
   }

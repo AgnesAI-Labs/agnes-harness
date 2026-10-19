@@ -10,6 +10,8 @@ import { type PolicyRule, readCommandRules } from '../command-table/rules.js'
 export type PresetView = {
   loop?: import('@agnes/extension-api').LoopSelection
   name: string
+  /** The permission level this session runs under; absent for a recipe that fixes its own. */
+  permission?: 'read-only' | 'workspace-write' | 'full-access'
   disclosure: 'standard' | 'hybrid' | 'code'
   model: {
     /** Omitted retains package defaults; an explicit empty list disables package prompt sections. */

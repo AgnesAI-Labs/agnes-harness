@@ -91,6 +91,13 @@ export type LocalContext = {
 const HARNESS = 'ai.agnes.harness'
 const pocket = (o: unknown): Record<string, unknown> =>
   (o as { _meta?: Record<string, Record<string, unknown>> } | undefined)?._meta?.[HARNESS] ?? {}
+/** The three permission levels Host ships, plus `default` for the deployment default. */
+const SESSION_PERMISSIONS: ReadonlySet<string> = new Set([
+  'read-only',
+  'workspace-write',
+  'full-access',
+  'default',
+])
 
 /**
  * The event classes a `session/load` replays: what a reopened transcript is made of. `tool/call` is
@@ -618,7 +625,11 @@ export function registerAcp(
     }
     let agentDigest = typeof h.agentDigest === 'string' ? h.agentDigest : undefined
     if (
-      (agent && (h.loop !== undefined || h.bundles !== undefined || h.preset !== undefined)) ||
+      (agent &&
+        (h.loop !== undefined ||
+          h.bundles !== undefined ||
+          h.preset !== undefined ||
+          h.permission !== undefined)) ||
       (h.agentDigest !== undefined && (!agent || !agentDigest || !/^sha256-[a-f0-9]{64}$/.test(agentDigest)))
     )
       throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent selection' })
@@ -647,6 +658,10 @@ export function registerAcp(
     // refuses a name outside the session's allowed list there.
     if (preset && !bundles?.length && !cx.host.profile.presets.allowed.includes(preset))
       throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
+    // Whether the level is allowed for this preset is the Host's admission; only the name is checked.
+    const permission = h.permission
+    if (permission !== undefined && (typeof permission !== 'string' || !SESSION_PERMISSIONS.has(permission)))
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid permission' })
     let entry: SessionEntry
     let workspace: Awaited<ReturnType<WorkspaceCatalog['validate']>>
     try {
@@ -696,6 +711,7 @@ export function registerAcp(
         ...(agent ? { agent } : {}),
         ...(agentDigest ? { agentDigest } : {}),
         ...(preset ? { preset } : {}),
+        ...(permission ? { permission } : {}),
         ...(bundles !== undefined ? { bundles } : {}),
         ...(loop ? { loop } : {}),
         key: requestedKey,

@@ -1,10 +1,3 @@
-# Read tools only; the policy also rejects changes through deferred or third-party tools.
+# Compatibility alias: the standard recipe under the read-only permission (permission-read-only.yaml).
 name: read-only
 extends: standard
-tools: { core: [read, grep, find, ls, web_fetch] }
-approval: { command_policy: [] }
-sandbox: { level: L1, required: false, on_unavailable: allow-if-unimplemented }
-subagent: { isolation: shared }
-
-providers:
-  tool-policy: { provider: read-only }

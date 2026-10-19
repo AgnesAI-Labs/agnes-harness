@@ -141,6 +141,7 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
       ok: true,
       lastSeq,
       preset: session.preset.name,
+      permission: session.preset.permission,
       parent: null,
     })
     await expect(t.hosted.dispatch(t.command('stub', 'abort', { runId: 'none' }))).resolves.toEqual({})
@@ -358,6 +359,27 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(woken).not.toBe(session)
     expect(woken.preset.name).toBe(preset)
     expect(woken.yolo).toBe(true)
+  })
+
+  it('opens under a requested permission and wakes under the one it slept with', async () => {
+    const t = await setup()
+    let created: Parameters<Host['createSession']>[0] | undefined
+    // This test Host ships no permission overlays, so the level is recorded and then withheld from
+    // it; what is under test is that the worker hands the level on, not how the Host resolves it.
+    t.onCreate((options) => {
+      created = { ...options }
+      delete options.permission
+    })
+    await t.hosted.open(t.openFrame('level', { permission: 'read-only' }))
+    expect(created).toMatchObject({ permission: 'read-only' })
+    const session = t.live('level')
+    Object.assign(session, { preset: { ...session.preset, permission: 'read-only' } })
+    await t.idle()
+    expect(t.hibernated('level')).toBe(true)
+    await expect(t.ping('level')).resolves.toMatchObject({ permission: 'read-only' })
+    created = undefined
+    await t.hosted.dispatch(t.command('level', 'latest', { register: 'op.state' }))
+    expect(created).toMatchObject({ preset: session.preset.name, permission: 'read-only' })
   })
 
   it('hibernates a fork child before its parent, and wakes the child on its own', async () => {

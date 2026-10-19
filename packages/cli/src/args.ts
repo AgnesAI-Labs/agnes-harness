@@ -69,6 +69,7 @@ const FORWARDED = new Set<string>([
 const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
   '--profile': 'profile',
   '--preset': 'preset',
+  '--permission': 'permission',
   '--cwd': 'cwd',
   '--data-dir': 'dataDir',
   '--candidate-hash': 'candidateHash',
@@ -111,6 +112,7 @@ const ENUMS: Record<string, string[]> = Object.assign(Object.create(null), {
   mode: ['text', 'json', 'acp'],
   format: ['agnes', 'sharegpt', 'claude-code'],
   from: ['claude-code', 'codex', 'pi', 'auto'],
+  permission: ['read-only', 'workspace-write', 'full-access', 'default'],
 })
 
 function defaults(): ParsedArgs {
@@ -226,8 +228,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // Both printing modes select the one-shot form. Only acp does not, because it is a third form
   // rather than a way of printing, and resolveMode reads it as such.
   if (p.mode === 'json' || p.mode === 'text') p.print = true
-  if (p.agent && (p.loop || p.preset))
-    throw new UsageError('--agent cannot be combined with --loop or --preset')
+  if (p.agent && (p.loop || p.preset || p.permission))
+    throw new UsageError('--agent cannot be combined with --loop, --preset or --permission')
   if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume' || p.key !== undefined))
     throw new UsageError('--agent selects a new session')
   if (p.loop && (p.continue || p.resume !== undefined || p.command === 'resume'))

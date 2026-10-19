@@ -5,6 +5,8 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
+import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
+import { isPermission, legacyPermission } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
@@ -19,7 +21,6 @@ import {
   type WorkspaceBinding,
   WorkspaceBindingAuthority,
 } from '@agnes/host-common/workspace-authority'
-import { normalizeSandboxStaticConfig, sandboxStaticConfigHash } from '@agnes/host-common/workspace-policy'
 import type { PackageLoader } from '@agnes/host-extensions/assemble/packages'
 import type { ExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { ExtensionStatus } from '@agnes/host-extensions/ext-host/index'
@@ -51,8 +52,13 @@ import {
   createSession as openSession,
   sessionKey,
   sessionPresetForOpen,
+  sessionSelection,
 } from '../sessions/session.js'
-import { validateModelSwitch, validatePresetSwitch } from '../sessions/session-switch.js'
+import {
+  assertSandboxUnchanged,
+  validateModelSwitch,
+  validatePresetSwitch,
+} from '../sessions/session-switch.js'
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
 import { readSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
@@ -496,8 +502,15 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             : []
           if (!existing.length) {
             const preset = await a.sessionPresetDefault?.()
-            if (preset !== undefined) o = { ...o, preset }
+            // A recipe taken from the administrator's defaults is not a pre-split request for that
+            // recipe by name, so the administrator's permission default applies with it.
+            if (preset !== undefined)
+              o = { ...o, preset, ...(o.permission === undefined ? { permission: 'default' } : {}) }
           }
+        }
+        if (!o.parent && o.defaultPermission === undefined) {
+          const defaultPermission = await a.sessionPermissionDefault?.()
+          if (defaultPermission !== undefined) o = { ...o, defaultPermission }
         }
         if (profile.composition) {
           const name = o.preset ?? profile.presets.default
@@ -516,15 +529,26 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             throw new HostError('E_WORKSPACE_REQUIRED', 'session needs authenticated workspace authority', {
               detail: { reason: 'workspace-binding-required' },
             })
-          const presetName = o.preset ?? profile.presets.default
-          if (!profile.presets.allowed.includes(presetName))
+          const selection = sessionSelection(profile, {
+            ...(o.preset !== undefined ? { preset: o.preset } : {}),
+            ...(o.permission !== undefined ? { permission: o.permission } : {}),
+            ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
+          })
+          const presetName = selection.name
+          if (
+            !selectionAllowed(
+              profile,
+              presetName,
+              selection.permission ?? selection.fallback ?? legacyPermission(presetName),
+            )
+          )
             throw new HostError('E_PRESET_UNSUPPORTED', `preset ${presetName} is not in presets.allowed`, {
               detail: { source: presetName, capability: 'preset' },
             })
           checkPresetHardRequirements(
             profile,
             a,
-            await sessionPresetForOpen(profile, a, presetName, o.key),
+            await sessionPresetForOpen(profile, a, presetName, o.key, selection),
             presetName,
           )
           let canonicalRoot: string
@@ -587,7 +611,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         } else if (o.binding) {
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
-          const inheritedPreset = o.parent ? a.kernel.get(o.parent.key)?.preset.name : undefined
+          const inheritedView = o.parent ? a.kernel.get(o.parent.key)?.preset : undefined
+          const inheritedPreset = inheritedView?.name
           if (!o.parent) {
             const [selection] = await a.adapters.storage.scan(binding.sessionKey, {
               type: ['session/start', 'x/core/preset-switch'],
@@ -599,16 +624,33 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
               const persisted = selection.type === 'session/start' ? data?.preset : data?.to
               if (typeof persisted !== 'string')
                 throw new HostError('E_PRESET_UNSUPPORTED', 'persisted sandbox preset is malformed')
-              if (!profile.presets.allowed.includes(persisted))
+              if (!presetNameAllowed(profile, persisted))
                 throw new HostError('E_PRESET_UNSUPPORTED', 'persisted sandbox preset is no longer allowed')
-              o = { ...o, preset: persisted }
+              // The level is recorded once, at session/start; a later switch cannot change it.
+              const [start] = await a.adapters.storage.scan(binding.sessionKey, {
+                type: 'session/start',
+                limit: 1,
+              })
+              const recorded = (start?.data as { permission?: unknown } | null | undefined)?.permission
+              const { permission: _requested, ...unrecorded } = o
+              o = {
+                ...unrecorded,
+                preset: persisted,
+                ...(isPermission(recorded) ? { permission: recorded } : {}),
+              }
             }
           }
-          const runtimePreset = resolvePreset(
-            inheritedPreset ?? o.preset ?? profile.presets.default,
-            a.presets,
-            a.sessionPresetLimits(),
-          ).doc
+          const runtimeSelection = sessionSelection(profile, {
+            ...(inheritedView ? { parent: inheritedView } : {}),
+            ...(o.preset !== undefined ? { preset: o.preset } : {}),
+            ...(o.permission !== undefined ? { permission: o.permission } : {}),
+            ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
+          })
+          const runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
+            ...a.sessionPresetLimits(),
+            ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
+            ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
+          }).doc
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
             openWorkspaceRuntime(binding, runtimePreset, invocation),
           )
@@ -742,19 +784,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         throw new HostError('E_DEP_MISSING', `session ${sessionKey} is not open`, {
           detail: { sessionKey, reason: 'session-not-open' },
         })
-      const resolved = validatePresetSwitch(profile, a, name)
-      const current = resolvePreset(session.preset.name, a.presets, a.sessionPresetLimits())
-      if (
-        sandboxStaticConfigHash(normalizeSandboxStaticConfig(current.doc)) !==
-        sandboxStaticConfigHash(normalizeSandboxStaticConfig(resolved.doc))
-      )
-        throw new HostError(
-          'E_PRESET_UNSUPPORTED',
-          'changing sandbox permissions requires a new session; select the preset with --preset or in admin session defaults',
-          {
-            detail: { reason: 'workspace-sandbox-change', source: name },
-          },
-        )
+      const resolved = validatePresetSwitch(profile, a, name, session.preset.permission)
+      assertSandboxUnchanged(a, session.preset, resolved, name)
       if (profile.composition)
         assertCompositionCompatible(a.compositionForPreset(), a.compositionForPreset(name))
       return session.setPreset(resolved.view)
@@ -797,10 +828,15 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         return a.extensionRows.apply(rows)
       },
     },
-    validatePresetSwitch: (name) => {
+    validatePresetSwitch: (name, sessionKey) => {
       if (profile.composition)
         assertCompositionCompatible(a.compositionForPreset(), a.compositionForPreset(name))
-      return validatePresetSwitch(profile, a, name)
+      // With a session named, the caller applies the result to it in process, so the session's own
+      // permission carries over and the sandbox comparison runs here rather than only in the worker.
+      const session = sessionKey ? a.kernel.get(sessionKey) : undefined
+      const resolved = validatePresetSwitch(profile, a, name, session?.preset.permission)
+      if (session) assertSandboxUnchanged(a, session.preset, resolved, name)
+      return resolved
     },
     validateModelSwitch: (sel) => validateModelSwitch(profile, a, sel),
     close() {

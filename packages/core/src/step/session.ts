@@ -1034,6 +1034,7 @@ export class SessionImpl {
           resolvedProfileHash: this.d.resolvedProfileHash,
           ...(this.d.resolvedPresetHash ? { resolvedPresetHash: this.d.resolvedPresetHash } : {}),
           preset: this.preset.name,
+          ...(this.preset.permission ? { permission: this.preset.permission } : {}),
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),

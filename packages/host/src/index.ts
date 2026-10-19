@@ -535,6 +535,7 @@ export {
   hostInspectionSource,
 } from './runtime/lifecycle/host-facade.js'
 export { closeHost, Rollback } from './runtime/lifecycle/lifecycle.js'
+export { sessionPermissionCatalog } from './runtime/lifecycle/permission-catalog.js'
 export { manageMemory } from './runtime/memory/admin.js'
 export * from './runtime/profile/bundle-selection.js'
 export {

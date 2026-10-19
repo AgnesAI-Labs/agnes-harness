@@ -6,6 +6,7 @@ import {
   createAdminSessionSelection,
   type Host,
   type SessionDefaultsConfigurationService,
+  sessionPermissionCatalog,
 } from '@agnes/host'
 import {
   type AdminLoop,
@@ -19,6 +20,7 @@ import {
 
 type Catalog = {
   presets?: readonly { id: string; isDefault: boolean }[]
+  permissions?: readonly { id: string; isDefault: boolean }[]
   loops: readonly AdminLoop[]
   modelAdapters: readonly AdminModelAdapter[]
 }
@@ -35,6 +37,7 @@ export function sessionSelectionProvider(
   return createAdminSessionSelection(
     {
       presets: async () => (await catalog()).presets?.map((entry) => entry.id) ?? [],
+      permissions: async () => (await catalog()).permissions?.map((entry) => entry.id) ?? [],
       loops: async () => (await catalog()).loops,
       modelAdapters: modelCatalog ?? (async () => (await catalog()).modelAdapters),
       models: async (adapter) => (isAdminModelAdapter(adapter) ? adapter.models : []),
@@ -49,6 +52,7 @@ export async function hostSessionCatalog(host: Host): Promise<Catalog> {
       id,
       isDefault: id === host.profile.presets.default,
     })),
+    permissions: sessionPermissionCatalog(host.profile),
     loops: host.kernel.loops.catalog(),
     modelAdapters: conversationModelAdapters(
       host.modelAdapterCatalog(),

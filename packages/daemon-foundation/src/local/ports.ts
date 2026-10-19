@@ -80,6 +80,8 @@ export type SessionMetaRow = {
   lastSeq: number
   generation: number
   preset: string | null
+  /** The live session's permission level; absent for a recipe that fixes its own or an unloaded row. */
+  permission?: string
   loop?: { id: string; version: string }
   title?: string
   titleSource?: 'user'

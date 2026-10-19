@@ -1,6 +1,7 @@
 import type { Kernel, PresetView, SeamImplementations, ToolRegistry } from '@agnes/core'
 import type { MemorySession, SystemPromptProvider } from '@agnes/extension-api'
 import type { ComputerUseArtifactGcRuntime } from '@agnes/host-artifacts/computer-use-artifact-gc'
+import type { Permission } from '@agnes/host-common/presets/permission'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { CompositionPatch, ResolvedComposition } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -65,6 +66,7 @@ export type Assembled = {
   /** The implementation each seam kind was bound to when this container was built. */
   seamBindings(): readonly import('@agnes/host-providers/assemble/seam-rows').SeamBinding[]
   sessionPresetDefault?(): Promise<string | undefined>
+  sessionPermissionDefault?(): Promise<Permission | undefined>
   sessionModelSlots?(): Promise<Pick<import('@agnes/protocol').ModelSlotsSnapshot, 'slots' | 'auto'>>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>

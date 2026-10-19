@@ -949,11 +949,19 @@ it('does not read a provider choice from the removed onboarding selection file',
   expect((await service.get()).accounts ?? []).toEqual([])
 })
 
+it('reads a stored default recipe that names a permission level as the default permission', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await service.saveSessionDefaults({ revision: 0, defaults: { preset: 'full-access' } })
+  expect(await service.sessionDefaults()).toEqual({ revision: 1, defaults: { permission: 'full-access' } })
+})
+
 it('persists session defaults in existing configuration with cross-instance revision checks', async () => {
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   const defaults = {
-    preset: 'read-only',
+    preset: 'minimal',
+    permission: 'read-only' as const,
     providers: {
       loop: { provider: 'workflow', version: '1.0.0' },
       'model-adapter': { provider: 'adapter', version: '2.0.0' },
@@ -1011,15 +1019,15 @@ it('persists child engines beside session defaults and drops invalid fields', as
     },
   } as never)
   expect(await readFile(file, 'utf8')).not.toContain('super-secret')
-  await service.saveSessionDefaults({ revision: 2, defaults: { preset: 'read-only' } })
+  await service.saveSessionDefaults({ revision: 2, defaults: { preset: 'minimal' } })
   expect((await service.childEngines()).engines.codex).toMatchObject({ enabled: true, allow: ['codex'] })
   await service.saveChildEngines({ revision: 3, engines })
-  expect(await service.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'read-only' } })
+  expect(await service.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'minimal' } })
   const stored = JSON.parse(await readFile(file, 'utf8')) as { childEngines?: unknown }
   stored.childEngines = { broken: true }
   await writeFile(file, JSON.stringify(stored))
   const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
-  expect(await reloaded.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'read-only' } })
+  expect(await reloaded.sessionDefaults()).toEqual({ revision: 4, defaults: { preset: 'minimal' } })
   expect((await reloaded.childEngines()).engines.codex.enabled).toBe(false)
   await expect(reloaded.saveChildEngines({ revision: 0, engines })).rejects.toMatchObject({
     code: 'CONFIG_REVISION_CONFLICT',

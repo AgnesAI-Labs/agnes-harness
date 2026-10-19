@@ -690,7 +690,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
 
   it('forks through the parent worker, reopens the child independently, and keeps retry identity', async () => {
     const parentCommand = vi.fn(async (method: string) => {
-      if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
+      if (method === 'ping') return { lastSeq: 12, preset: 'coding', permission: 'full-access', parent: null }
       if (method === 'projectUI') return { opState: null }
       if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
       if (method === 'fork') return { sessionId: 'child', parent: { key: 'parent', boundarySeq: 9 } }
@@ -724,7 +724,11 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       ),
     } as unknown as WorkerPool
     const registry = new WorkerRegistry(pool)
-    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
+    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding', permission: 'full-access' })
+    expect(pool.acquire).toHaveBeenCalledWith(
+      'parent',
+      expect.objectContaining({ preset: 'coding', permission: 'full-access' }),
+    )
 
     const childBinding = await workspaceBinding('child')
     const first = await registry.fork({ parent: 'parent', at: 9, childKey: 'child', binding: childBinding })
@@ -747,6 +751,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       cwd: '/workspace',
       binding: childBinding,
       preset: 'coding',
+      permission: 'full-access',
       parent: { key: 'parent', boundarySeq: 9 },
     })
   })

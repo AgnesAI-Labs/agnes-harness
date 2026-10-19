@@ -1,4 +1,5 @@
 import { HostError } from '@agnes/host-common/errors'
+import { presetNameAllowed } from '@agnes/host-common/presets/admission'
 import { mergeValue } from '@agnes/host-common/presets/merge'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -88,7 +89,7 @@ export function admitSessionBundlePresets<P extends ResolvedProfile>(
     : admission
   // One offered preset is the bundle's own choice; several need the caller to name one.
   const preset = input.preset ?? (names.length === 1 ? (names[0] as string) : admission.presets.default)
-  if (!profile.presets.allowed.includes(preset))
+  if (!presetNameAllowed(profile, preset))
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${preset} is not in presets.allowed`, {
       detail: { reason: 'preset-not-allowed', preset },
     })

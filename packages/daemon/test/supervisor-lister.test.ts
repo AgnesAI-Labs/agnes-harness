@@ -49,6 +49,20 @@ const expected = [
 ]
 
 describe('supervisorLister', () => {
+  it('reports the permission a live worker runs under and leaves projected rows without one', async () => {
+    const live = {
+      keys: () => ['a-new-silent'],
+      get: (key: string) => (key === 'a-new-silent' ? { generation: 2, session: { lastSeq: 1 } } : undefined),
+      status: async () => ({ lastSeq: 1, preset: 'standard', permission: 'full-access' }),
+    } as never
+    const page = await supervisorLister(live, seeded()).list({ limit: 50 })
+    expect(page.items.find((row) => row.sessionId === 'a-new-silent')).toMatchObject({
+      preset: 'standard',
+      permission: 'full-access',
+    })
+    expect(page.items.find((row) => row.sessionId === 'b-tie')).not.toHaveProperty('permission')
+  })
+
   it('orders by the latest user message, then creation time, ties and unprojected rows last', async () => {
     const page = await supervisorLister(idle, seeded()).list({ limit: 50 })
     expect(page.items.map((row) => row.sessionId)).toEqual(expected)

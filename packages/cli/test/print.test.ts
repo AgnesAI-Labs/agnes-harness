@@ -266,6 +266,8 @@ describe('runPrint in text mode', () => {
     [['-p', 'q', '--park'], '--park'],
     [['-p', 'q', '--preset', 'standard', '--continue'], '--preset'],
     [['-p', 'q', '--preset', 'standard', '--resume', FAKE_SESSION_ID], '--preset'],
+    [['-p', 'q', '--permission', 'read-only', '--continue'], '--permission'],
+    [['-p', 'q', '--permission', 'read-only', '--resume', FAKE_SESSION_ID], '--permission'],
   ])('%j is refused by the flag it names, with exit 2', async (argv, flag) => {
     const e = await runPrint(await booted(), parseArgs(argv as string[]), io()).catch((x: unknown) => x)
     expect(e).toMatchObject({ name: 'UsageError', code: 2 })
@@ -345,8 +347,19 @@ describe('runPrint in text mode', () => {
   it('--preset on a new session is passed through rather than refused', async () => {
     const ep = scriptedEndpoint()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--preset', 'standard']), io())).toBe(0)
+    const params = ep.calls.find((c) => c.method === 'session/new')?.params as {
+      _meta: Record<string, Record<string, unknown>>
+    }
+    expect(params).toMatchObject({ _meta: { 'ai.agnes.harness': { preset: 'standard' } } })
+    expect(params._meta['ai.agnes.harness']).not.toHaveProperty('permission')
+  })
+
+  it('--permission on a new session travels with --preset on session/new', async () => {
+    const ep = scriptedEndpoint()
+    const argv = ['-p', 'q', '--preset', 'standard', '--permission', 'full-access']
+    expect(await runPrint(await booted(ep), parseArgs(argv), io())).toBe(0)
     expect(ep.calls.find((c) => c.method === 'session/new')?.params).toMatchObject({
-      _meta: { 'ai.agnes.harness': { preset: 'standard' } },
+      _meta: { 'ai.agnes.harness': { preset: 'standard', permission: 'full-access' } },
     })
   })
 })

@@ -86,6 +86,12 @@ describe('parseArgs: the common forms', () => {
   it('every long value flag records its value under its own key', () => {
     const p = parseArgs(['--profile', 'a', '--preset', 'b', '--cwd', '/c', '--connect', 'unix:///s'])
     expect(p).toMatchObject({ profile: 'a', preset: 'b', cwd: '/c', connect: 'unix:///s' })
+    expect(p.permission).toBeUndefined()
+    for (const level of ['read-only', 'workspace-write', 'full-access', 'default'])
+      expect(parseArgs(['--preset', 'b', '--permission', level])).toMatchObject({
+        preset: 'b',
+        permission: level,
+      })
     expect(parseArgs(['--resume', 'sid']).resume).toBe('sid')
   })
 
@@ -237,6 +243,7 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--mode', 'rpc'], '--mode must be one of text|json|acp'],
     [['--format', 'yaml'], '--format must be one of agnes|sharegpt|claude-code'],
     [['--from', 'aider'], '--from must be one of claude-code|codex|pi|auto'],
+    [['--permission', 'root'], '--permission must be one of read-only|workspace-write|full-access|default'],
     [['--model'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'noequals'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'primary=gateway'], '--model expects <slot>=<route>/<model>'],
@@ -444,6 +451,7 @@ it('selects an explicit agent without exposing bundle knowledge and refuses conf
     ['--agent', 'missing-ref'],
     ['--agent', '@acme/kit#review', '--loop', 'dag@1'],
     ['--agent', '@acme/kit#review', '--preset', 'safe'],
+    ['--agent', '@acme/kit#review', '--permission', 'read-only'],
     ['--continue', '--agent', '@acme/kit#review'],
     ['tools', '--session', 'existing', '--agent', '@acme/kit#review'],
   ])

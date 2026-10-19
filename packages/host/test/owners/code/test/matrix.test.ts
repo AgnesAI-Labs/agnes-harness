@@ -13,10 +13,13 @@ const docs: Record<string, PresetDoc> = {
   ...loadAllPresets(),
 }
 
+// Permission overlays are merged after a recipe; they are not recipes a session can open.
+const RECIPES = PRESET_NAMES.filter((name) => !name.startsWith('permission-'))
+
 describe('preset matrix through the host resolver', () => {
   it('every shipped recipe resolves and projects to a PresetView', () => {
-    expect(PRESET_NAMES.length).toBeGreaterThan(0)
-    for (const name of PRESET_NAMES) {
+    expect(RECIPES.length).toBeGreaterThan(0)
+    for (const name of RECIPES) {
       const r = resolvePreset(name, docs)
       expect(r.doc.name, name).toBe(name)
       expect(() => toPresetView(r.doc), name).not.toThrow()
@@ -161,14 +164,14 @@ describe('preset matrix through the host resolver', () => {
     // document - a session never opens on it at all.
     expect(() => resolvePreset('z', { ...docs, z: zero })).toThrow(/approval\.timeout_ms/)
     // And every recipe that ships passes the same check, so the refusal is about this document.
-    for (const name of PRESET_NAMES) expect(() => resolvePreset(name, docs), name).not.toThrow()
+    for (const name of RECIPES) expect(() => resolvePreset(name, docs), name).not.toThrow()
   })
 
   it('hash is stable across resolutions and differs per preset', () => {
-    for (const name of PRESET_NAMES)
+    for (const name of RECIPES)
       expect(resolvePreset(name, docs).hash, name).toBe(resolvePreset(name, docs).hash)
-    const hashes = PRESET_NAMES.map((n) => resolvePreset(n, docs).hash)
-    expect(new Set(hashes).size).toBe(PRESET_NAMES.length)
+    const hashes = RECIPES.map((n) => resolvePreset(n, docs).hash)
+    expect(new Set(hashes).size).toBe(RECIPES.length)
   })
 })
 

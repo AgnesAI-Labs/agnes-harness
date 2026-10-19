@@ -64,6 +64,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     {
       cwd: string
       preset: string | null
+      permission: string | null
       agent: string | null
       bundles: string | null
       loop: string | null
@@ -90,6 +91,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    permission?: string
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
@@ -105,6 +107,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.historySignal ? { historySignal: o.historySignal } : {}),
       ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.permission ? { permission: o.permission } : {}),
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
@@ -119,6 +122,10 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           existing.session.d.cwd !== request.cwd ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
+          // `default` names whatever the deployment default is, which only the Host resolves.
+          (request.permission !== undefined &&
+            request.permission !== 'default' &&
+            existing.session.preset.permission !== request.permission) ||
           (request.loop !== undefined &&
             (existing.session.loop.id !== request.loop.id ||
               existing.session.loop.version !== request.loop.version)) ||
@@ -133,6 +140,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (
           pending.cwd !== request.cwd ||
           pending.preset !== (request.preset ?? null) ||
+          pending.permission !== (request.permission ?? null) ||
           pending.agent !==
             (request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest])) ||
           pending.bundles !== (request.bundles === undefined ? null : JSON.stringify(request.bundles)) ||
@@ -146,6 +154,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       this.opening.set(request.key, {
         cwd: request.cwd,
         preset: request.preset ?? null,
+        permission: request.permission ?? null,
         agent: request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest]),
         bundles: request.bundles === undefined ? null : JSON.stringify(request.bundles),
         loop: request.loop ? JSON.stringify(request.loop) : null,
@@ -166,6 +175,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     cwd: string
     binding?: WorkspaceBinding
     preset?: string
+    permission?: string
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
@@ -401,6 +411,7 @@ export class RegistryLister implements SessionLister {
           lastSeq: e.session.lastSeq,
           generation: e.generation,
           preset: e.session.preset.name,
+          ...(e.session.preset.permission ? { permission: e.session.preset.permission } : {}),
           loop: e.session.loop,
           cwd: e.session.d.cwd,
         }

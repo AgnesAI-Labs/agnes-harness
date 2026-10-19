@@ -34,6 +34,8 @@ export interface Registry<Entry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    /** A permission level or `default`; absent keeps the pre-split meaning of `preset`. */
+    permission?: string
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]

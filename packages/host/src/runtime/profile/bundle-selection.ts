@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs
 import { mkdir, open, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { withConfigurationLock } from '@agnes/host-common/configuration-lock'
+import { presetNameAllowed } from '@agnes/host-common/presets/admission'
 import { mergeValue } from '@agnes/host-common/presets/merge'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { compositionDump, expandBundles, resolveComposition } from '@agnes/host-common/profile/composition'
@@ -58,7 +59,7 @@ export function readBundleSelection(profileDir: string): BundleSelection {
 
 /** Offline inspection walks composition inheritance without importing plugin entry modules. */
 export function compositionPreset(profile: ResolvedProfile, name: string): PresetDoc {
-  if (!profile.presets.allowed.includes(name)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  if (!presetNameAllowed(profile, name)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const seen = new Set<string>()
   const visit = (id: string): PresetDoc => {
     if (seen.has(id)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
