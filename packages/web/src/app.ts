@@ -1283,13 +1283,6 @@ const restoreSettingsLocation = () => {
   if (!settings.isOpen()) run(() => settings.open())
 }
 const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
-onSurfaceEvent('agnes:permission-settings', () =>
-  run(async () => {
-    settingsRegion.open('model')
-    await settings.open()
-    settingsRegion.route('security')
-  }),
-)
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
   host: hosts.firstRun,
