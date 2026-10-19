@@ -1,4 +1,5 @@
 import type { Handler, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import type { MetaState } from '@agnes/daemon-foundation/local/meta'
 import { notify } from '@agnes/daemon-foundation/rpc'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { waitForHistoryOpen } from './history-open.js'
@@ -96,14 +97,16 @@ export function registerSessionLoading(
         // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
         // silently truncate a long transcript at whatever limit was written here.
         const lastSeq = entry.session.lastSeq
+        let replayMeta: MetaState | undefined
         for (let from = 1; from <= lastSeq; from += 500) {
           if (signal.aborted) throw new Error('session load disconnected')
-          feed.replayLoad(
+          replayMeta = feed.replayLoad(
             (await entry.session.scan({
               fromSeq: from,
               toSeq: Math.min(lastSeq, from + 499),
               limit: 500,
             })) as EventEnvelope[],
+            replayMeta,
           )
           ep.push(
             notify('_agnes/v1/session.loading', {

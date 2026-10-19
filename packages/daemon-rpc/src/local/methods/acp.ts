@@ -338,14 +338,30 @@ export class Feed {
   }
 
   /**
-   * Replays a transcript into this Feed. It does not touch any other connection's Feed - but it is
-   * not isolated from this one's live stream either: feedFor() caches one Feed per session, so a
-   * load on a session that is also live rewinds this Feed's own MetaState and the promptTurnId of
-   * the live frames that follow is wrong. Registered as I2 debt; the fix is a Feed per load rather
-   * than a comment.
+   * Rebuilds transcript metadata from every row, including turn boundaries that have no ACP
+   * projection. Each load threads its own state across pages; none of the live metadata, preview
+   * bookkeeping or pushed-row cursor is read or changed by replay.
    */
-  replayLoad(events: EventEnvelope[]): void {
-    for (const e of events) if (LOADABLE.includes(e.type)) this.onEvent(e, { replay: true })
+  replayLoad(
+    events: EventEnvelope[],
+    state: MetaState = { promptTurnId: null, generation: this.entry.generation },
+  ): MetaState {
+    for (const e of events) {
+      const { meta, next } = stampMeta(e, state)
+      state = next
+      if (!LOADABLE.includes(e.type) || !this.projects()) continue
+      for (const u of toSessionUpdates(e, { replay: true }))
+        this.ep.push(
+          notify(
+            'session/update',
+            setHarnessMeta(
+              { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } },
+              meta,
+            ),
+          ),
+        )
+    }
+    return state
   }
 
   omitHistory(cut: number): void {

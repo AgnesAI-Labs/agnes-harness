@@ -48,7 +48,7 @@ async function drain(ep: {
 }
 type N = {
   method?: string
-  params?: { _meta?: Record<string, { phase: string; eventSequence: number }> }
+  params?: { _meta?: Record<string, { phase: string; eventSequence: number; promptTurnId: string }> }
 }
 
 describe('local endpoint: ACP round trip', () => {
@@ -283,12 +283,13 @@ describe('local endpoint: ACP round trip', () => {
 
   it.each([
     { method: 'session/load', cold: false },
+    { method: 'session/load', cold: true },
     { method: '_agnes/v1/session.open', cold: false },
     { method: '_agnes/v1/session.open', cold: true },
   ])(
     '$method admits and verifies history (cold=$cold), replaying only for ACP load',
     async ({ method, cold }) => {
-      const h = await openTestHost({ script: [say('hi')] })
+      const h = await openTestHost({ script: [say('hi'), say('again')] })
       let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
       await ep.handle(init)
       await addWorkspace(ep, h.dataDir)
@@ -304,12 +305,19 @@ describe('local endpoint: ACP round trip', () => {
         method: 'session/prompt',
         params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
       })
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'session/prompt',
+        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'next' }] },
+      })
       if (cold) {
         await ep.close()
         ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
         await ep.handle(init)
       }
-      const before = ep.pending().events
+      // Preview frames use a separate budget but share the ordered notification queue.
+      const before = ep.pending().events + ep.pendingPreviews().events
       expect(
         await ep.handle({
           jsonrpc: '2.0',
@@ -323,6 +331,9 @@ describe('local endpoint: ACP round trip', () => {
         }),
       ).toMatchObject({ result: {} })
       const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+      const turns = raw
+        .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
+        .all(ok.result.sessionId) as { seq: number }[]
       raw
         .prepare(
           "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
@@ -356,6 +367,15 @@ describe('local endpoint: ACP round trip', () => {
         await h.close()
         return
       }
+      expect(turns).toHaveLength(2)
+      for (const n of replayed.filter((n) => n.method === 'session/update')) {
+        const meta = n.params?._meta?.['ai.agnes.harness']
+        expect(meta).toBeDefined()
+        if (meta)
+          expect(meta.promptTurnId).toBe(
+            String(turns.filter((t) => t.seq <= meta.eventSequence).at(-1)?.seq ?? 0),
+          )
+      }
       // Only the durable classes come back; chunks and turn edges are not part of a load.
       expect(kinds).toContain('user_message_chunk')
       expect(
@@ -370,7 +390,10 @@ describe('local endpoint: ACP round trip', () => {
         .filter((u) => u.sessionUpdate === 'agent_message_chunk')
         .map((u) => u.content?.text ?? '')
         .join('')
-      expect(said).toBe('hi')
+      // A cold connection can also receive the registry's historical live-tail backlog. Check
+      // attribution on every frame above without making duplicate delivery part of this contract.
+      if (cold) expect(said).toContain('hiagain')
+      else expect(said).toBe('hiagain')
       await h.close()
     },
   )

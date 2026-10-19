@@ -1,7 +1,115 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import type { EventEnvelope, HarnessMeta } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { waitForHistoryOpen } from '../src/local/history-open.js'
-import { disposeFeeds, type Feed, type LocalContext, registerAcp } from '../src/local/methods/acp.js'
+import { disposeFeeds, Feed, type LocalContext, registerAcp } from '../src/local/methods/acp.js'
+import type { SessionEntry } from '../src/local/sessions.js'
+
+it.each([false, true])(
+  'ACP load rebuilds historical turns across pages without changing live turns (resumed=%s)',
+  async (resumed) => {
+    const row = (seq: number, type: string, data: unknown = {}): EventEnvelope =>
+      ({ seq, type, data, lane: 'main' }) as EventEnvelope
+    const message = (seq: number, type: string, text: string) =>
+      row(seq, type, { content: [{ type: 'text', text }] })
+    const history = [
+      row(1, 'turn/start'),
+      message(2, 'user/message', 'old'),
+      message(3, 'assistant/message', 'old answer'),
+      row(4, 'turn/end', { reason: 'completed' }),
+      row(498, 'cost/ledger', { credits: 7 }),
+      row(499, 'turn/start'),
+      message(500, 'user/message', 'second'),
+      message(501, 'assistant/message', 'second answer'),
+      row(502, 'turn/end', { reason: 'completed' }),
+      row(600, 'turn/start'),
+      row(601, 'cost/ledger', { credits: 99 }),
+    ]
+    const ep = new LocalEndpoint({ clock: () => 0, principalId: 'owner' })
+    ep.conn.initialized = true
+    const feeds = new Map<string, Feed>()
+    const entry = {
+      key: 'owned',
+      generation: 3,
+      session: {
+        lastSeq: 601,
+        latest: () => null,
+        verifyHistory: async () => 601,
+        scan: async ({ fromSeq, toSeq }: { fromSeq: number; toSeq: number }) => {
+          // A new live turn starts while the replay still has an older turn to finish.
+          if (fromSeq === 501) {
+            feeds.get('owned')?.onEvent(row(620, 'turn/start'))
+            feeds.get('owned')?.onEvent(row(621, 'cost/ledger', { credits: 123 }))
+          }
+          return history.filter((e) => e.seq >= fromSeq && e.seq <= toSeq)
+        },
+      },
+    } as unknown as SessionEntry
+    if (!resumed) {
+      const feed = new Feed(ep, entry, () => undefined)
+      feeds.set(entry.key, feed)
+      feed.onEvent(row(600, 'turn/start'))
+      feed.onEvent(row(601, 'cost/ledger', { credits: 99 }))
+    }
+    registerAcp(
+      ep,
+      {
+        sessionOwnership: { resolve: () => ({ principalId: 'owner' }) },
+        workspaces: { restoreBinding: async () => ({ canonicalRoot: '/synthetic' }) },
+        registry: {
+          get: () => (resumed ? undefined : entry),
+          open: async () => entry,
+          subscribe: (_key: string, listener: (e: EventEnvelope) => void) => {
+            listener(row(600, 'turn/start'))
+            listener(row(601, 'cost/ledger', { credits: 99 }))
+            return () => {}
+          },
+          subscribePreview: () => () => {},
+          previewSnapshot: async () => [],
+        },
+      } as unknown as LocalContext,
+      feeds,
+      new Map(),
+    )
+    try {
+      await expect(
+        ep.handle({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'session/load',
+          params: { sessionId: 'owned', cwd: '/synthetic', mcpServers: [] },
+        }),
+      ).resolves.toMatchObject({ result: {} })
+      const feed = feeds.get('owned')
+      if (!feed) throw new Error('load did not create a feed')
+      expect(feed.lastPushed).toBe(621)
+      feed.onEvent(message(622, 'assistant/message', 'live answer'))
+      feed.onEvent(row(623, 'turn/end', { reason: 'completed' }))
+      await ep.close()
+      const metas: HarnessMeta[] = []
+      for await (const frame of ep.notifications) {
+        const n = frame as { method?: string; params?: { _meta?: { 'ai.agnes.harness'?: HarnessMeta } } }
+        if (n.method === 'session/update' && n.params?._meta?.['ai.agnes.harness'])
+          metas.push(n.params._meta['ai.agnes.harness'])
+      }
+      expect(metas.map((m) => [m.eventSequence, m.promptTurnId])).toEqual([
+        [2, '1'],
+        [3, '1'],
+        [500, '499'],
+        [501, '499'],
+        [622, '620'],
+        [623, '620'],
+      ])
+      expect(metas[0]).not.toHaveProperty('credits')
+      expect(metas[3]?.credits).toEqual({ used: 7, source: 'estimated' })
+      expect(metas[4]?.credits).toEqual({ used: 123, source: 'estimated' })
+      expect(metas.every((m) => m.generation === 3)).toBe(true)
+    } finally {
+      disposeFeeds(feeds)
+      await ep.close()
+    }
+  },
+)
 
 it('cancels one admission wait without cancelling another open or returning a stale success', async () => {
   const waiting: (() => void)[] = []

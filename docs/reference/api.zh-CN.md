@@ -52,6 +52,8 @@ async function listSessions(options: CreateClientOptions) {
 
 `client.session.open(id, { cwd?, signal?, onPermissionRequest?, onProgress? })` 执行会话准入，不重放 ACP 历史。当 `initialize.agentCapabilities._meta["ai.agnes.harness"].sessionOpen` 为 `true` 时，SDK 使用 `_agnes/v1/session.open`（`sessionId`、可选工作区提示 `cwd`、唯一 `requestId`）；旧 daemon 使用 `session/load`。准入拒绝不会触发回退。工作区、所有权、插件恢复和完整历史校验与 `session/load` 相同；普通 ACP load 仍完整重放转录。SDK 恢复记住该 handle 的打开方式。
 
+ACP 回放根据历史 `turn/start` 的序号推导 `_meta["ai.agnes.harness"].promptTurnId`，跨回放分页保留正确的轮次归属。每次 load 独立重建元数据，与实时 feed 隔离；后续实时更新仍归属于实时轮次。
+
 Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工作区提示的新建、分叉或直接附加句柄在 worker 回收后也只做准入恢复。其他 SDK 客户端默认 `'full'`；显式 `session.load` 仍为该句柄保留完整重放，即使连接的恢复默认值不同。
 
 `client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。
