@@ -18,6 +18,8 @@ export type PackageAdminAuthority = Readonly<{
   authoringOrigin?: import('@agnes/protocol').AuthoringOrigin
   /** Trusted worker invocation only; public admin params cannot grant full access. */
   permissionContext?: import('@agnes/protocol').PermissionContext | undefined
+  /** Private exact publication lease, never a public request field. */
+  authoringAdmission?: import('@agnes/protocol').PermissionEffectAdmission
   authoringPermission?: (binding: { sessionKey: string; bindingHash: string }) => Promise<void>
   authoringSignal?: AbortSignal
   /** Trusted per-invocation sandbox runner; never accepted from RPC parameters. */

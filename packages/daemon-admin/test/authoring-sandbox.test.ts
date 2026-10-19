@@ -115,3 +115,22 @@ it('reports Windows as unisolated and refuses missing POSIX isolation or a remot
   ).rejects.toThrow('local sandbox')
   expect(runIsolatedCommand).not.toHaveBeenCalled()
 })
+
+it('rechecks the candidate test lease after sandbox setup before spawning the command', async () => {
+  const root = setup('darwin')
+  vi.mocked(detectBackend).mockResolvedValue(SEATBELT_BACKEND)
+  let live = true
+  const assertActive = () => {
+    if (!live) throw Error('permission unavailable')
+  }
+  const result = await authoringSandbox(
+    { home: join(root, 'private'), admission: { verify: async () => assertActive(), assertActive } },
+    root,
+    new AbortController().signal,
+  )
+  live = false
+  await expect(
+    result.sandbox.exec(['node', 'test.mjs'], { cwd: root, signal: new AbortController().signal }),
+  ).rejects.toThrow('permission unavailable')
+  expect(runIsolatedCommand).not.toHaveBeenCalled()
+})

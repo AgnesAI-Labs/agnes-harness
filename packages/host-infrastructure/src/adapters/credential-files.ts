@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { closeSync, constants, fstatSync, fsyncSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, fsyncSync, unlinkSync, writeFileSync } from 'node:fs'
 import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileSecretsDir } from '@agnes/host-common/paths'
+import type { PermissionEffectAdmission } from '@agnes/protocol'
 import {
   createPrivateFileSync,
   hasPrivateDaclSync,
@@ -419,6 +420,7 @@ async function syncDirectory(
 }
 
 export async function atomicWriteCredentialFile(options: {
+  admission?: PermissionEffectAdmission
   root: string
   ref: string
   kind: CredentialKind
@@ -446,6 +448,8 @@ export async function atomicWriteCredentialFile(options: {
         !windowsReadPrivateFileSync(temp, MAX_CREDENTIAL_BYTES).equals(Buffer.from(options.contents, 'utf8'))
       )
         throw storeError(options.ref, 'changed')
+      await options.admission?.verify()
+      options.admission?.assertActive()
       renameWriteThroughSync(temp, path)
       return
     } catch (error) {
@@ -477,7 +481,11 @@ export async function atomicWriteCredentialFile(options: {
     await handle.close()
     handle = undefined
     try {
-      await rename(temp, path)
+      if (options.admission) {
+        await options.admission.verify()
+        options.admission.assertActive()
+        renameWriteThroughSync(temp, path)
+      } else await rename(temp, path)
     } catch (error) {
       throw storeError(options.ref, 'io', path, error)
     }
@@ -492,6 +500,7 @@ export async function atomicWriteCredentialFile(options: {
 }
 
 export async function removeCredentialFile(options: {
+  admission?: PermissionEffectAdmission
   root: string
   ref: string
   kind: CredentialKind
@@ -504,7 +513,11 @@ export async function removeCredentialFile(options: {
   const path = resolveCredentialFile(options.root, options.ref, options.kind)
   if ((await checkedFileStat(path, options.ref, options.enforcement)) === null) return false
   try {
-    await unlink(path)
+    if (options.admission) {
+      await options.admission.verify()
+      options.admission.assertActive()
+      unlinkSync(path)
+    } else await unlink(path)
   } catch (error) {
     throw storeError(options.ref, 'io', path, error)
   }

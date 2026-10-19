@@ -686,6 +686,7 @@ export {
   automaticPermissionDecision,
   isPermissionPurpose,
   type PermissionContext,
+  type PermissionEffectAdmission,
   samePermissionContext,
 } from './permission-decision.js'
 export {

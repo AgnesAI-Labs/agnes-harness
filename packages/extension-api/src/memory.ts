@@ -28,9 +28,14 @@ export type MemoryFilePort = Readonly<{
 }>
 export type MemoryInspection = Readonly<import('@agnes/protocol/gen/app-server').MemoryInspection>
 
+export type MemoryEffectAdmission = import('@agnes/protocol').PermissionEffectAdmission
+
 /** A refusal is a human answer; delivery/cancellation failures remain unanswered. */
 export type MemoryApprovalResult = Readonly<
-  | { status: 'approved' }
+  | {
+      status: 'approved' /** Private backend lease; never supplied by tool arguments. */
+      admission?: MemoryEffectAdmission
+    }
   | { status: 'rejected' }
   | { status: 'unanswered'; reason: import('@agnes/protocol').ApprovalReason }
 >

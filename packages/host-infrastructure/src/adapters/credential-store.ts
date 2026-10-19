@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileSecretsDir } from '@agnes/host-common/paths'
+import type { PermissionEffectAdmission } from '@agnes/protocol'
 import {
   atomicWriteCredentialFile,
   type CredentialFileEnforcement,
@@ -59,14 +60,19 @@ export type StoredCredential = StoredCredentialV1 | SubscriptionCredentialV2
 export interface CredentialWriter {
   putApiKey(ref: string, value: string): Promise<void>
   putOAuth(ref: string, value: OAuthCredential): Promise<void>
-  remove(ref: string): Promise<void>
+  remove(ref: string, admission?: PermissionEffectAdmission): Promise<void>
 }
 
 export interface CredentialStore extends CredentialWriter {
   readonly enforcement: CredentialFileEnforcement
   read(ref: string): Promise<StoredCredential | null>
   listGeneric(): Promise<GenericCredentialMetadata[]>
-  putGeneric(ref: string, value: string, metadata: { label: string; createdAt: string }): Promise<void>
+  putGeneric(
+    ref: string,
+    value: string,
+    metadata: { label: string; createdAt: string },
+    admission?: PermissionEffectAdmission,
+  ): Promise<void>
 }
 
 export type GenericCredentialMetadata = { id: string; label: string; kind: 'api-key'; createdAt: string }
@@ -277,7 +283,7 @@ export function createCredentialStore(options: CreateCredentialStoreOptions): Cr
       }
       return items
     },
-    async putGeneric(ref, value, metadata) {
+    async putGeneric(ref, value, metadata, admission) {
       const { provider, name } = parseCredentialRef(ref)
       const envelope: ApiKeyCredentialV1 = { version: 1, kind: 'api-key', provider, value, ...metadata }
       if (provider !== 'generic' || !/^[a-f0-9-]{36}$/.test(name) || !isGenericCredential(envelope))
@@ -289,6 +295,7 @@ export function createCredentialStore(options: CreateCredentialStoreOptions): Cr
         ref,
         kind: 'api-key',
         contents: encode(envelope),
+        ...(admission ? { admission } : {}),
         enforcement,
       })
     },
@@ -339,14 +346,26 @@ export function createCredentialStore(options: CreateCredentialStoreOptions): Cr
         enforcement,
       })
     },
-    async remove(ref) {
+    async remove(ref, admission) {
       parseCredentialRef(ref)
       // Validate both objects before unlinking either, so a safe credential is not removed while an
       // unsafe counterpart remains hidden under the same ref.
       await readRaw(ref, 'api-key')
       await readRaw(ref, 'oauth')
-      await removeCredentialFile({ root: options.root, ref, kind: 'api-key', enforcement })
-      await removeCredentialFile({ root: options.root, ref, kind: 'oauth', enforcement })
+      await removeCredentialFile({
+        root: options.root,
+        ref,
+        kind: 'api-key',
+        enforcement,
+        ...(admission ? { admission } : {}),
+      })
+      await removeCredentialFile({
+        root: options.root,
+        ref,
+        kind: 'oauth',
+        enforcement,
+        ...(admission ? { admission } : {}),
+      })
     },
   }
 }

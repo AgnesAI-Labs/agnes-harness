@@ -1,7 +1,10 @@
+import type { PermissionEffectAdmission } from '@agnes/protocol'
 import { PackageError } from './errors.js'
 import type { FetchedSource, PackageSource } from './sources.js'
 
 export type OperationOptions = {
+  /** Private backend admission, absent for ordinary human administration. */
+  admission?: PermissionEffectAdmission
   signal?: AbortSignal
   onProgress?: (
     progress: Readonly<{ phase: 'fetching' | 'inspecting' | 'committing' | 'completed'; percent: number }>,

@@ -183,11 +183,13 @@ export class CompositeTargetStore {
   publishDesired(
     artifact: RuntimeTargetArtifact,
     confirmation?: Readonly<{ generation: number; report: CompositeTargetReport }>,
+    admission?: import('@agnes/protocol').PermissionEffectAdmission,
   ): void {
     const next = freezeArtifact(artifact)
     const report = confirmation ? this.#freezeReport(confirmation.report) : undefined
     this.#table.transaction(() => {
       const current = this.#row()
+      admission?.assertActive()
       this.configAudit.commit(parseArtifact(current.desired_json)?.digest, next.digest)
       const previous = current.desired_json
       const acknowledged = parseJson<CompositeTargetAck>(current.acknowledged_json)
@@ -204,6 +206,7 @@ export class CompositeTargetStore {
           throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
         this.#writeQualification(confirmation.generation, next, report)
       }
+      admission?.assertActive()
     })
     for (const listener of this.#desiredListeners) listener(next)
     if (report) for (const listener of this.#reportListeners) listener(report)

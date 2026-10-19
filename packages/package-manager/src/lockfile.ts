@@ -110,6 +110,16 @@ export function readLock(profileDir: string, opts: { profile: string; agnesVersi
 }
 
 export function writeLock(profileDir: string, lock: Lockfile): void {
+  const pending = prepareLockPublication(profileDir, lock)
+  try {
+    pending.publish()
+  } finally {
+    pending.discard()
+  }
+}
+
+/** Private staged publication lets an admitted transaction re-verify after the real flush. */
+export function prepareLockPublication(profileDir: string, lock: Lockfile) {
   const out = { ...lock, generatedAt: new Date().toISOString() }
   // Validated before the tmp file is even opened: the contract is that anything on disk reads back,
   // and checking after rename would make that contract a hope. A draft (null resolvedProfileHash,
@@ -122,9 +132,19 @@ export function writeLock(profileDir: string, lock: Lockfile): void {
     })
   const file = resolve(lockPath(profileDir))
   const tmp = `${file}.tmp`
-  writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`)
-  syncFileSync(tmp)
-  renameWriteThroughSync(tmp, file)
+  try {
+    writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`)
+    syncFileSync(tmp)
+  } catch (error) {
+    if (existsSync(tmp)) unlinkSync(tmp)
+    throw error
+  }
+  return {
+    publish: () => renameWriteThroughSync(tmp, file),
+    discard: () => {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    },
+  }
 }
 
 export async function withLock<T>(

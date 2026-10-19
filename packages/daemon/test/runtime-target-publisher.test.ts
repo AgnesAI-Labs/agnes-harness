@@ -169,3 +169,63 @@ describe('publishProbedRuntimeTarget', () => {
     expect(store.report()).toBeUndefined()
   })
 })
+
+it.each(
+  (['probe', 'apply', 'transaction'] as const).flatMap((boundary) =>
+    (['epoch', 'deadline'] as const).map((loss) => ({ boundary, loss })),
+  ),
+)(
+  'refuses activation after losing $loss at $boundary and restores its previous runtime',
+  async ({ boundary, loss }) => {
+    const tables = sqliteTables()
+    try {
+      const handle = tables.table('composite')
+      const store = new CompositeTargetStore(handle, 'default')
+      const prior = artifact('ext:prior'),
+        next = artifact('ext:next')
+      store.publishDesired(prior)
+      let epoch = 1,
+        now = 0,
+        runtime = prior
+      const expire = () => {
+        if (loss === 'epoch') epoch++
+        else now = 10
+      }
+      const assertActive = () => {
+        if (epoch !== 1 || now >= 10) throw Error('permission unavailable')
+      }
+      const exec = handle.exec.bind(handle)
+      handle.exec = (sql, params = []) => {
+        exec(sql, params)
+        if (boundary === 'transaction' && String(sql).includes('SET desired_json')) expire()
+      }
+      await expect(
+        publishProbedRuntimeTarget({
+          store,
+          artifact: next,
+          admission: { verify: async () => assertActive(), assertActive },
+          probe: async () => {
+            if (boundary === 'probe') expire()
+          },
+          apply: async () => {
+            runtime = next
+            if (boundary === 'apply') expire()
+            return {
+              generation: 1,
+              report: { hash: next.identity.treeHash, ok: true, rows: [] },
+              restore: async () => {
+                runtime = prior
+              },
+            }
+          },
+        }),
+      ).rejects.toThrow('permission unavailable')
+      expect(runtime).toEqual(prior)
+      expect(store.desired()).toEqual(prior)
+      expect(store.lastGood()).toBeUndefined()
+      expect(store.acknowledged()).toBeUndefined()
+    } finally {
+      await tables.close()
+    }
+  },
+)

@@ -326,3 +326,55 @@ describe('file memory contract', () => {
     expect(userLayer).toContain('Memory omitted')
   })
 })
+
+it.each(
+  (['queued', 'temp-flushed'] as const).flatMap((boundary) =>
+    (['epoch', 'deadline'] as const).map((loss) => ({ boundary, loss })),
+  ),
+)('refuses memory publication when $loss is lost at $boundary', async ({ boundary, loss }) => {
+  const f = await fixture()
+  await f.session.configure({ mode: 'ask' })
+  let epoch = 1,
+    now = 0
+  const expire = () => {
+    if (loss === 'epoch') epoch++
+    else now = 10
+  }
+  const assertActive = () => {
+    if (epoch !== 1 || now >= 10) throw Error('permission unavailable')
+  }
+  const admission = { verify: async () => assertActive(), assertActive }
+  const { MemoryStore } = await import('../src/store.js')
+  const { vi } = await import('vitest')
+  const { readdir } = await import('node:fs/promises')
+  const atomic = MemoryStore.prototype.atomic
+  const spy = vi.spyOn(MemoryStore.prototype, 'atomic').mockImplementation(function (path, content, verify) {
+    return atomic.call(this, path, content, () => {
+      if (boundary === 'temp-flushed' && path === f.index) expire()
+      verify?.()
+    })
+  })
+  const lock = boundary === 'queued' ? new DatabaseSync(join(f.session.root, 'commit.sqlite')) : undefined
+  lock?.exec('BEGIN EXCLUSIVE')
+  try {
+    const write = f
+      .files(1, async () => ({ status: 'approved', admission }))
+      .write(f.index, 'Reviewed preference.')
+    const refused = expect(write).rejects.toThrow('permission unavailable')
+    if (lock) {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expire()
+      lock.exec('COMMIT')
+    }
+    await refused
+    expect((await f.session.readFile('MEMORY.md')).content).toBe('')
+    expect(await readdir(f.session.root)).not.toContain('writer.json')
+    expect((await readdir(f.session.root)).filter((path) => path.endsWith('.tmp'))).toEqual([])
+    spy.mockRestore()
+    await f.files(2).write(f.index, 'Human-approved preference.')
+    expect((await f.session.readFile('MEMORY.md')).content).toBe('Human-approved preference.')
+  } finally {
+    spy.mockRestore()
+    lock?.close()
+  }
+})

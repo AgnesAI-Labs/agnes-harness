@@ -692,3 +692,99 @@ it.each([
       })
   },
 )
+
+it.each(
+  (['install', 'update', 'trust', 'enable'] as const).flatMap((operation) =>
+    (['queued', 'prepared', 'new-moved', 'lock-flushed'] as const).flatMap((boundary) =>
+      (['epoch', 'deadline'] as const).map((loss) => ({ operation, boundary, loss })),
+    ),
+  ),
+)(
+  'revokes $operation at $boundary after losing $loss without publishing state',
+  async ({ operation, boundary, loss }) => {
+    let epoch = 1,
+      now = 0,
+      armed = false
+    const expire = () => {
+      if (loss === 'epoch') epoch++
+      else now = 10
+    }
+    const assertActive = () => {
+      if (epoch !== 1 || now >= 10) throw Error('permission unavailable')
+    }
+    const admission = { verify: async () => assertActive(), assertActive }
+    const m = manager({
+      references: emptyRefs,
+      checkpoint: (point) => {
+        if (armed && point === boundary) expire()
+      },
+    })
+    if (operation !== 'install') await install(m)
+    if (operation === 'enable') await m.trust(profile, id, await decision(m))
+    if (operation === 'update') version('2.0.0')
+    const preview = await m.inspect(profile, source)
+    const trust = operation === 'trust' ? await decision(m) : undefined
+    const before = load()
+    const directory = packageDir(root, 'local-dev', id)
+    const { hashDirectory } = await import('../src/sources.js')
+    const beforeTree = existsSync(directory) ? hashDirectory(directory, { exclude: [] }) : null
+    const lockfile = await import('../src/lockfile.js')
+    const prepare = lockfile.prepareLockPublication
+    const spy = vi.spyOn(lockfile, 'prepareLockPublication').mockImplementation((...args) => {
+      const pending = prepare(...args)
+      if (armed && boundary === 'lock-flushed') expire()
+      return pending
+    })
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const holding = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const held =
+      boundary === 'queued'
+        ? lockfile.withLock(profile, async () => {
+            entered()
+            await gate
+          })
+        : undefined
+    if (held) await holding
+    armed = true
+    try {
+      const result =
+        operation === 'install'
+          ? m.install(profile, source, { expectedIntegrity: preview.integrity, admission })
+          : operation === 'update'
+            ? m.update(profile, id, source, { expectedIntegrity: preview.integrity, admission })
+            : operation === 'trust'
+              ? m.trust(profile, id, trust!, { admission })
+              : m.enable(profile, id, true, { admission })
+      const refusal = expect(result).rejects.toThrow('permission unavailable')
+      if (held) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expire()
+        release()
+        await held
+      }
+      await refusal
+      expect(load()).toEqual(before)
+      expect(existsSync(directory) ? hashDirectory(directory, { exclude: [] }) : null).toBe(beforeTree)
+      expect(
+        readdirSync(profile).filter((name) => name.includes('transaction') || name.endsWith('.tmp')),
+      ).toEqual([])
+      armed = false
+      // Ordinary administrator operations do not inherit the failed private admission.
+      if (operation === 'install') await m.install(profile, source, { expectedIntegrity: preview.integrity })
+      else if (operation === 'update')
+        await m.update(profile, id, source, { expectedIntegrity: preview.integrity })
+      else if (operation === 'trust') await m.trust(profile, id, trust!)
+      else await m.enable(profile, id, true)
+    } finally {
+      release()
+      await held
+      spy.mockRestore()
+    }
+  },
+)

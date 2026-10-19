@@ -3,6 +3,7 @@ import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
 import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
+import { memoryAdmission } from './memory-admission.js'
 
 /** A file candidate has its own one-shot binding; session grants cannot approve it; the central full-access rule can. */
 export async function approveMemoryFile(
@@ -73,17 +74,27 @@ export async function approveMemoryFile(
     return { status: 'unanswered', reason: 'stopped' }
   }
   if (result?.reason === 'answered' && !decision.snapshot.invalidation) {
+    const admission = memoryAdmission(session, proposal, decision.snapshot, asked.deadline, signal)
     await session.locked(async () => {
-      await session.d.log.append([
-        ...session.decisions.consumptionEvents([decision.snapshot.handle], decision.source, null),
-        session.ev(
-          'x/core/decision-checkpoint',
-          { handle: decision.snapshot.handle, operationId },
-          { ignorable: true },
-        ),
-      ])
+      await session.d.log.append(
+        [
+          ...session.decisions.consumptionEvents([decision.snapshot.handle], decision.source, null),
+          session.ev(
+            'x/core/decision-checkpoint',
+            { handle: decision.snapshot.handle, operationId },
+            { ignorable: true },
+          ),
+        ],
+        {
+          beforeCommit: () =>
+            void session.decisions.consumptionEvents([decision.snapshot.handle], decision.source, null),
+        },
+      )
     })
-    return result.response.option === 'allowed-once' ? { status: 'approved' } : { status: 'rejected' }
+    await admission?.verify()
+    return result.response.option === 'allowed-once'
+      ? { status: 'approved', ...(admission ? { admission } : {}) }
+      : { status: 'rejected' }
   }
   const deliveryReason = (decision.park?.data as { waitEndedBy?: string } | undefined)?.waitEndedBy
   const code =

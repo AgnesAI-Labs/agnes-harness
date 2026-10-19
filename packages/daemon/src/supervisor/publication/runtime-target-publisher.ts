@@ -11,6 +11,7 @@ export type RuntimeTargetApplyReceipt = Readonly<{
 }>
 
 export type ProbedRuntimeTargetPublish = Readonly<{
+  admission?: import('@agnes/protocol').PermissionEffectAdmission
   store: CompositeTargetStore
   artifact: RuntimeTargetArtifact
   pins?: readonly string[]
@@ -31,10 +32,14 @@ export async function publishProbedRuntimeTarget(options: ProbedRuntimeTargetPub
     identity: Object.freeze({ ...options.artifact.identity }),
   })
   decodeRuntimeTargetArtifact(artifact)
+  await options.admission?.verify()
+  options.admission?.assertActive()
   const baseline = options.store.desired()?.digest
   for (const pin of options.pins ?? []) options.store.pin(pin)
   await options.probe(artifact)
   if (options.store.desired()?.digest !== baseline) throw new Error('E_RUNTIME_TARGET_STALE')
+  await options.admission?.verify()
+  options.admission?.assertActive()
   const receipt = await options.apply?.(artifact)
   try {
     if (
@@ -52,7 +57,9 @@ export async function publishProbedRuntimeTarget(options: ProbedRuntimeTargetPub
       if (!remaining.has(pin)) throw new Error(`E_RUNTIME_TARGET_PIN: pin ${pin} missing after probe`)
     }
     // Desired, config audit and qualification commit together, before leaving compensation scope.
-    options.store.publishDesired(artifact, receipt)
+    await options.admission?.verify()
+    options.admission?.assertActive()
+    options.store.publishDesired(artifact, receipt, options.admission)
   } catch (error) {
     // Remain inside the publication lane while restoring after a post-apply refusal/CAS failure.
     try {

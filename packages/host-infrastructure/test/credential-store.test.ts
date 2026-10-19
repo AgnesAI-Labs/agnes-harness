@@ -302,6 +302,36 @@ describe.runIf(process.getuid !== undefined)('credential store', () => {
     })
   })
 
+  it.each(['write', 'remove'] as const)(
+    'keeps credential bytes unchanged when permission expires before %s publication',
+    async (operation) => {
+      const store = createCredentialStore({ root })
+      const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+      const metadata = { label: 'Work', createdAt: '2026-10-11T00:00:00.000Z' }
+      await store.putGeneric(ref, 'original-marker', metadata)
+      const file = resolveCredentialFile(root, ref, 'api-key')
+      const original = readFileSync(file, 'utf8')
+      let live = true
+      const admission = {
+        verify: async () => {
+          live = false
+        },
+        assertActive: () => {
+          if (!live) throw Error('permission unavailable')
+        },
+      }
+      await expect(
+        operation === 'write'
+          ? store.putGeneric(ref, 'replacement-marker', metadata, admission)
+          : store.remove(ref, admission),
+      ).rejects.toMatchObject({ reason: 'io' })
+      expect(readFileSync(file, 'utf8')).toBe(original)
+      expect(readdirSync(dirname(file)).filter((name) => name.includes('.tmp-'))).toEqual([])
+      await store.putGeneric(ref, 'human-marker', metadata)
+      expect(await store.read(ref)).toMatchObject({ value: 'human-marker' })
+    },
+  )
+
   it('places temp files in the destination directory and leaves none after a successful rename', async () => {
     const store = createCredentialStore({ root })
     await store.putApiKey('secret://deepseek/default', 'api-key-marker')

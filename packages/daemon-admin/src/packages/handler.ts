@@ -94,6 +94,7 @@ import {
 import { PluginConfiguration } from './plugin-config.js'
 import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-status.js'
 import type { PackageProfileDirectory } from './project.js'
+import { publicationAdmission, publicationMetadata } from './publication-admission.js'
 import { packageReadOperation } from './read-operation.js'
 import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
@@ -138,6 +139,7 @@ export type PackageActivationAdapter = Readonly<{
     operationId: string
     operation: 'enable' | 'disable' | 'update' | 'rollback' | 'remove'
     signal: AbortSignal
+    admission?: import('@agnes/protocol').PermissionEffectAdmission
   }): Promise<PackageActivationObservation & { error?: PackageAdminError }>
 }>
 
@@ -819,19 +821,9 @@ class Service implements PackageAdminService {
       ])
     return this.candidates.serialized(directory, async () => {
       const expected = params.expectedHash as string
-      const verifyPublication = async () => {
-        if (!automatic) return
-        const candidate = this.candidates.show(directory, id, owner)
-        const context = authority.permissionContext
-        if (
-          !context ||
-          candidate.origin.sessionKey !== context.sessionKey ||
-          authority.authoringOrigin?.sessionKey !== context.sessionKey
-        )
-          throw rpcError('CAPABILITY_DENIED', { reason: 'Candidate belongs to a different session' })
-        await authority.authoringPermission!({ sessionKey: context.sessionKey, bindingHash: expected })
-        authority.authoringSignal?.throwIfAborted()
-      }
+      const { verifyPublication, admission } = publicationAdmission(automatic, authority, expected, () =>
+        this.candidates.show(directory, id, owner),
+      )
       if (action === 'submit' && automatic) await verifyPublication()
       if (action === 'create')
         return this.candidates.create(
@@ -872,16 +864,10 @@ class Service implements PackageAdminService {
           if (!value.preview?.capabilityHash) throw new Error('Candidate capability snapshot is missing')
           await verifyPublication()
           const signal = authority.authoringSignal ?? AbortSignal.timeout(120_000)
-          const authoring = {
-            candidateId: value.candidateId,
-            candidateHash: value.candidateHash,
-            baseHash: value.baseHash,
-            reviewHash: value.reviewHash!,
-            origin: value.origin,
-            reviewer: automatic ? 'full-access' : owner,
-          }
+          const authoring = publicationMetadata(value, automatic ? 'full-access' : owner)
           if (value.baseHash === null)
             await this.options.manager.install(directory, source, {
+              ...(admission ? { admission } : {}),
               expectedIntegrity: value.candidateHash,
               installer: 'agent',
               authoring,
@@ -889,6 +875,7 @@ class Service implements PackageAdminService {
             })
           else
             await this.options.manager.update(directory, value.packageId, source, {
+              ...(admission ? { admission } : {}),
               expectedIntegrity: value.candidateHash,
               expectedInstalledIntegrity: value.baseHash,
               installer: 'agent',
@@ -896,12 +883,19 @@ class Service implements PackageAdminService {
               signal,
             })
           await verifyPublication()
-          await this.options.manager.trust(directory, value.packageId, {
-            integrity: value.candidateHash,
-            capabilityHash: value.preview.capabilityHash,
-          })
+          await this.options.manager.trust(
+            directory,
+            value.packageId,
+            {
+              integrity: value.candidateHash,
+              capabilityHash: value.preview.capabilityHash,
+            },
+            { ...(admission ? { admission } : {}), signal },
+          )
           await verifyPublication()
           await this.options.manager.enable(directory, value.packageId, true, {
+            ...(admission ? { admission } : {}),
+            signal,
             expectedInstalledIntegrity: value.candidateHash,
           })
           if (!this.options.activation) throw new Error('Runtime activation is unavailable')
@@ -911,6 +905,7 @@ class Service implements PackageAdminService {
             packageId: value.packageId,
             operationId: value.candidateId,
             operation: value.baseHash === null ? 'enable' : 'update',
+            ...(admission ? { admission } : {}),
             signal,
           })
           await this.refreshClientModules(profile, directory, 'rebuilt')

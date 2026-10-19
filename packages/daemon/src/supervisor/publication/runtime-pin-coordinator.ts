@@ -138,14 +138,18 @@ export function createRuntimePinCoordinator(
       /** The desired target the artifact was derived from, when derivation ran outside this lane. */
       derivedFrom?: Readonly<{ digest: string | undefined }>,
       apply?: (target: RuntimeTargetArtifact) => Promise<RuntimeTargetApplyReceipt>,
+      admission?: import('@agnes/protocol').PermissionEffectAdmission,
     ) =>
       exclusive(async () => {
+        await admission?.verify()
+        admission?.assertActive()
         const baseline = input.store.desired()?.digest
         if (derivedFrom && derivedFrom.digest !== baseline) throw new Error('E_RUNTIME_TARGET_STALE')
         try {
           const inventoryHash = await ensure(artifact)
           await publishProbedRuntimeTarget({
             store: input.store,
+            ...(admission ? { admission } : {}),
             artifact,
             ...(apply
               ? {

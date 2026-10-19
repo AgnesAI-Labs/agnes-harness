@@ -1503,7 +1503,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               deliverable: () => !pool.isQuarantined('@shared'),
             },
             ...(runtimeTargetProbe ? { probe: runtimeTargetProbe } : {}),
-            ...(pinCoordinator ? { publish: pinCoordinator.publish } : {}),
+            ...(pinCoordinator
+              ? {
+                  publish: (target, probe, base, admission) =>
+                    pinCoordinator.publish(target, probe, base, undefined, admission),
+                }
+              : {}),
             ...(pinCoordinator ? { collectPins: pinCoordinator.collect } : {}),
             ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),

@@ -1,3 +1,4 @@
+import { withLock } from '@agnes/package-manager'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -1005,3 +1006,47 @@ it.each(['cancelled', 'unavailable', 'rejected'] as const)(
     }
   },
 )
+
+it('round4: plugin trust waiting for its profile lock cannot commit after publication approval expires', async () => {
+  const s = await setup('allow')
+  const candidate = await s.request({ action: 'prepare', files })
+  await s.request({ action: 'test', proposalId: candidate.candidateId })
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  const trust = s.manager.trust.bind(s.manager)
+  let queued = false
+  const spy = vi.spyOn(s.manager, 'trust').mockImplementation(async (...args) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const blocker = withLock(s.profileDir, () => held)
+    try {
+      const pending = trust(...args)
+      void pending.catch(() => undefined)
+      queued = true
+      clock.mockReturnValue(now + 110_001)
+      release()
+      await blocker
+      await vi.advanceTimersByTimeAsync(25)
+      return await pending
+    } finally {
+      release()
+      await blocker
+      vi.useRealTimers()
+    }
+  })
+  try {
+    await s.request({ action: 'commit', proposalId: candidate.candidateId }).catch(() => undefined)
+    expect(queued).toBe(true)
+    expect((await s.manager.inventory(s.profileDir)).packages[0]).toMatchObject({
+      trusted: false,
+      enabled: false,
+    })
+  } finally {
+    spy.mockRestore()
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
+})

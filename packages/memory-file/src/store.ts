@@ -15,7 +15,7 @@ import {
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
-import type { MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
+import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { defaults, fault, file, settings, validateContent } from './content.js'
 import { missing, name, safe } from './paths.js'
@@ -106,7 +106,7 @@ export class MemoryStore {
     }
   }
   /** SQLite owns the lock across processes and releases it on crash; no stale PID markers. */
-  async locked<T>(action: () => T, signal?: AbortSignal): Promise<T> {
+  async locked<T>(action: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted()
     this.ensure()
     const path = join(this.root, 'commit.sqlite')
@@ -129,8 +129,9 @@ export class MemoryStore {
       }
       try {
         const value = action()
+        const result = value instanceof Promise ? await value : value
         db.exec('COMMIT')
-        return value
+        return result
       } catch (error) {
         db.exec('ROLLBACK')
         throw error
@@ -153,8 +154,10 @@ export class MemoryStore {
     source: MemorySource,
     agentMode: false | 'ask' | 'auto',
     signal?: AbortSignal,
+    admission?: MemoryEffectAdmission,
   ): Promise<MemoryFile> {
-    return this.locked(() => {
+    const commit = () => {
+      admission?.assertActive()
       const config = this.configuration()
       if (agentMode && config.mode === 'off') throw fault('MEMORY_DISABLED')
       if (agentMode && config.mode !== agentMode) throw fault('MEMORY_POLICY_CHANGED')
@@ -178,14 +181,25 @@ export class MemoryStore {
       signal?.throwIfAborted()
       this.atomic(join(this.root, candidate.path), candidate.content, () => {
         if (this.read(candidate.path).hash !== baseHash) throw fault('MEMORY_CONFLICT')
+        admission?.assertActive()
       })
       // The file has committed if metadata fails: do not report an unwritten file.
       try {
-        this.atomic(join(this.root, 'writer.json'), JSON.stringify(source))
+        this.atomic(join(this.root, 'writer.json'), JSON.stringify(source), admission?.assertActive)
       } catch {
         throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       }
       return candidate
-    }, signal)
+    }
+    return this.locked(
+      admission
+        ? async () => {
+            await admission.verify()
+            admission.assertActive()
+            return commit()
+          }
+        : commit,
+      signal,
+    )
   }
 }

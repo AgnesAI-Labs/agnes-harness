@@ -53,6 +53,7 @@ export type CompositeTargetActivationOptions = Readonly<{
     artifact: RuntimeTargetArtifact,
     probe: (artifact: RuntimeTargetArtifact) => Promise<void>,
     derivedFrom: Readonly<{ digest: string | undefined }>,
+    admission?: import('@agnes/protocol').PermissionEffectAdmission,
   ): Promise<void>
   collectPins?(): Promise<void>
   collectGenerations?(): Promise<void>
@@ -289,6 +290,8 @@ export function createCompositeTargetActivation(
       return packageStopped(options.store, options.workerGeneration?.(), packageId)
     },
     async reconcile(input) {
+      await input.admission?.verify()
+      input.admission?.assertActive()
       const probe = options.probe
       if (!probe) return { actual: 'failed', error: unavailable }
       const wait = options.settle && {
@@ -328,12 +331,17 @@ export function createCompositeTargetActivation(
         }
         if (!next) return { actual: 'failed', error: unavailable }
         try {
-          if (options.publish) await options.publish(next, probe, derivedFrom)
+          if (options.publish) await options.publish(next, probe, derivedFrom, input.admission)
           else {
             if (options.store.desired()?.digest !== derivedFrom.digest)
               throw new Error('E_RUNTIME_TARGET_STALE')
             dropUnpinnedLastGood(options.store, input.packageId, next)
-            await publishProbedRuntimeTarget({ store: options.store, artifact: next, probe })
+            await publishProbedRuntimeTarget({
+              store: options.store,
+              artifact: next,
+              probe,
+              ...(input.admission ? { admission: input.admission } : {}),
+            })
           }
           break
         } catch (error) {
@@ -346,6 +354,8 @@ export function createCompositeTargetActivation(
             throw error
         }
       }
+      await input.admission?.verify()
+      input.admission?.assertActive()
       await options.deliver?.(next)
       for (const packageId of [input.packageId, ...(input.packageIds ?? [])])
         options.store.clearPackageFailure(packageId)

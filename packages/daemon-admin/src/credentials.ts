@@ -3,6 +3,7 @@ import { createCredentialStore, createFileAudit } from '@agnes/host'
 import {
   automaticPermissionDecision,
   type PermissionContext,
+  type PermissionEffectAdmission,
   rpcError,
   samePermissionContext,
   validateAgainst,
@@ -45,6 +46,8 @@ export function createCredentialAdmin(options: {
     actor: string,
     permission?: { context: PermissionContext; current(): Promise<PermissionContext | undefined> },
   ) {
+    const deadline = Date.now() + 120_000
+    if (permission) permission = { ...permission, context: structuredClone(permission.context) }
     const automatic = automaticPermissionDecision(permission?.context, 'credential.admin')
     const checkPermission = async () => {
       if (automatic && permission && !samePermissionContext(permission.context, await permission.current()))
@@ -91,15 +94,40 @@ export function createCredentialAdmin(options: {
     })
     await audit.close?.()
     await checkPermission()
+    let revoked = false
+    const admission: PermissionEffectAdmission | undefined = automatic
+      ? {
+          verify: async () => {
+            try {
+              await checkPermission()
+              admission!.assertActive()
+            } catch (error) {
+              revoked = true
+              throw error
+            }
+          },
+          assertActive: () => {
+            if (revoked || Date.now() >= deadline) {
+              revoked = true
+              failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
+            }
+          },
+        }
+      : undefined
     if (action === 'delete') {
-      await store.remove(id)
+      await store.remove(id, admission)
       return {}
     }
     const createdAt = before?.createdAt ?? new Date().toISOString()
     const label = params.label ?? (before?.label as string)
     const existing = action === 'rename' ? await store.read(id) : undefined
     if (action === 'rename' && existing?.kind !== 'api-key') return failed('CONFIG_CREDENTIAL_NOT_FOUND')
-    await store.putGeneric(id, params.value ?? (existing as { value: string }).value, { label, createdAt })
+    await store.putGeneric(
+      id,
+      params.value ?? (existing as { value: string }).value,
+      { label, createdAt },
+      admission,
+    )
     // Project only metadata. Reuse the reference read from before the write, avoiding a failed post-write response.
     return { id, label, kind: 'api-key', createdAt, references: before?.references ?? [] }
   }

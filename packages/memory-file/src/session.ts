@@ -155,8 +155,10 @@ export function openMemory(input: {
             diff: diff(before.content, candidate.content),
             source,
           })
+          let admission: import('@agnes/extension-api').MemoryEffectAdmission | undefined
           if (config.mode === 'ask') {
             const result = await approve(proposal)
+            if (result.status === 'approved') admission = result.admission
             if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
             if (result.status !== 'approved')
               throw Object.assign(fault('MEMORY_APPROVAL_UNANSWERED'), {
@@ -167,7 +169,7 @@ export function openMemory(input: {
           signal.throwIfAborted()
           // A policy change during approval cannot silently convert it into an auto write.
           if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
-          await store.commit(candidate, before.hash, source, config.mode, signal)
+          await store.commit(candidate, before.hash, source, config.mode, signal, admission)
         },
       })
     },

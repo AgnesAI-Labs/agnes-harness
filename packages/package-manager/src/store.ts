@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { validateLockfile } from '@agnes/protocol'
+import { type PermissionEffectAdmission, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
 import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
-import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
+import { type LockEntry, type Lockfile, prepareLockPublication, readLock } from './lockfile.js'
 import { hashDirectory, packageDir } from './sources.js'
 import { currentStoredShape } from './stored-metadata.js'
 
@@ -27,6 +27,7 @@ export type RuntimeSnapshotCommitPoint =
   | 'runtime-gc-state-written'
   | 'runtime-finished'
 export type PackageStore = {
+  admission?: PermissionEffectAdmission
   dataDir: string
   profileDir: string
   profile: string
@@ -290,6 +291,35 @@ export function commitPackage(
 export type PackageChange = { id: string; next: LockEntry | null; operation: string; stage?: string }
 /** One atomic lock publication, with digest-checked rollback before it and roll-forward after it. */
 export function commitPackages(s: PackageStore, lock: Lockfile, changes: readonly PackageChange[]): void {
+  if (s.admission) throw new Error('Admitted package mutations require the asynchronous transaction')
+  for (const _ of packageTransaction(s, lock, changes)) {
+    /* synchronous human path */
+  }
+}
+
+export async function commitPackagesAdmitted(
+  s: PackageStore,
+  lock: Lockfile,
+  changes: readonly PackageChange[],
+): Promise<void> {
+  const transaction = packageTransaction(s, lock, changes)
+  try {
+    for (;;) {
+      await s.admission?.verify()
+      s.admission?.assertActive()
+      if (transaction.next().done) return
+    }
+  } catch (error) {
+    transaction.throw(error)
+    throw error
+  }
+}
+
+function* packageTransaction(
+  s: PackageStore,
+  lock: Lockfile,
+  changes: readonly PackageChange[],
+): Generator<void, void> {
   if (!changes.length || changes.length > 33 || new Set(changes.map((c) => c.id)).size !== changes.length)
     fail('transaction-group')
   if (existsSync(journalPath(s))) fail('pending-transaction')
@@ -306,18 +336,53 @@ export function commitPackages(s: PackageStore, lock: Lockfile, changes: readonl
   if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
   const file = journalPath(s),
     tmp = `${file}.tmp`
-  mkdirSync(dirname(paths(s, entries[0]!).dest), { recursive: true })
-  writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
-  renameWriteThroughSync(resolve(tmp), resolve(file))
-  s.checkpoint?.('prepared')
-  for (const j of entries) {
-    const p = paths(s, j)
-    if ((j.stage || j.next === null) && j.oldTree !== null) renameSync(p.dest, p.backup)
-    s.checkpoint?.('old-moved')
-    if (p.stage) renameSync(p.stage, p.dest)
-    s.checkpoint?.('new-moved')
+  s.admission?.assertActive()
+  let published = false
+  try {
+    mkdirSync(dirname(paths(s, entries[0]!).dest), { recursive: true })
+    writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
+    yield
+    s.admission?.assertActive()
+    renameWriteThroughSync(resolve(tmp), resolve(file))
+    s.checkpoint?.('prepared')
+    for (const j of entries) {
+      yield
+      s.admission?.assertActive()
+      const p = paths(s, j)
+      if ((j.stage || j.next === null) && j.oldTree !== null) renameSync(p.dest, p.backup)
+      s.checkpoint?.('old-moved')
+      yield
+      s.admission?.assertActive()
+      if (p.stage) renameSync(p.stage, p.dest)
+      s.checkpoint?.('new-moved')
+    }
+    const pending = prepareLockPublication(s.profileDir, draft)
+    try {
+      yield
+      s.admission?.assertActive()
+      pending.publish()
+      published = true
+    } finally {
+      pending.discard()
+    }
+  } catch (error) {
+    if (s.admission && !published) {
+      if (existsSync(file)) {
+        // A directory flush can fail after rename. Preserve the journal for roll-forward if
+        // the lock already names the new trees; never restore trees behind a published lock.
+        const disk = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion })
+        const committed = entries.every(
+          (j) => canonical(own(disk.packages, j.id) ?? null) === canonical(j.next),
+        )
+        if (!committed) {
+          for (const j of [...entries].reverse()) restore(s, j)
+          complete({ ...s, checkpoint: undefined })
+        }
+      }
+      rmSync(tmp, { force: true })
+    }
+    throw error
   }
-  writeLock(s.profileDir, draft)
   s.checkpoint?.('lock-written')
   for (const j of entries) finish(s, j)
   complete(s)

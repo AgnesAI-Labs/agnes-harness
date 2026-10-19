@@ -18,7 +18,7 @@ import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, progress } from './ports.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
 import { clearStage } from './staging.js'
-import { commitPackages, type PackageChange, type PackageStore } from './store.js'
+import { commitPackages, commitPackagesAdmitted, type PackageChange, type PackageStore } from './store.js'
 
 type Options = Parameters<PackageManager['update']>[3]
 /** Called under the profile lock and the daemon's publication admission barrier. */
@@ -162,7 +162,8 @@ export async function updatePackages(deps: {
       )
         throw new PackageError('E_LOCK_MISMATCH', 'staging changed before commit')
     checkCancelled(op.signal)
-    commitPackages(store, lock, changes)
+    if (store.admission) await commitPackagesAdmitted(store, lock, changes)
+    else commitPackages(store, lock, changes)
     try {
       op.onProgress?.(Object.freeze({ phase: 'completed', percent: 100 }))
     } catch {}

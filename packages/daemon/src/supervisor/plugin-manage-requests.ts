@@ -11,6 +11,7 @@ import {
 } from '@agnes/daemon-admin/packages/index'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import {
+  acquirePermissionLease,
   assertCurrentPermission,
   assertPermissionBinding,
   currentPermissionContext,
@@ -152,6 +153,10 @@ export function createPluginManageRequests(options: {
           permissionContext: currentPermissionContext(),
           ...(suffix === 'submit' && automaticPermissionDecision(currentPermissionContext())
             ? {
+                authoringAdmission: await acquirePermissionLease(
+                  { sessionKey, scope: 'plugin.publish', bindingHash: String(params.expectedHash) },
+                  signal,
+                ),
                 authoringPermission: async (binding: { sessionKey: string; bindingHash: string }) => {
                   signal.throwIfAborted()
                   await assertPermissionBinding({ ...binding, scope: 'plugin.publish' })
@@ -273,6 +278,11 @@ export function createPluginManageRequests(options: {
               code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
               reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
             })
+          const admission = await acquirePermissionLease(
+            { sessionKey, scope: 'plugin.test', bindingHash: value.candidateHash },
+            signal,
+          )
+          if (admission) testContext = { ...testContext!, admission }
         }
       }
       if (

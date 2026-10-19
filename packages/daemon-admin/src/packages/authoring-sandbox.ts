@@ -15,6 +15,7 @@ import { runIsolatedCommand } from '@agnes/package-isolation'
 /** Supplied only by Host/daemon composition, never by tool arguments or RPC parameters. */
 export type AuthoringSandboxContext = {
   home: string
+  admission?: import('@agnes/protocol').PermissionEffectAdmission
   session?: NonNullable<ReturnType<NonNullable<import('@agnes/host').HostSession['commandSandboxPolicy']>>>
 }
 
@@ -90,6 +91,9 @@ export async function authoringSandbox(
     exec: async (argv, options) => {
       const [command, ...args] = argv
       if (!command) throw new Error('Missing candidate test executable')
+      await context.admission?.verify()
+      context.admission?.assertActive()
+      signal.throwIfAborted()
       const result = await runIsolatedCommand(command, args, {
         cwd: options.cwd,
         env: options.env ?? {},

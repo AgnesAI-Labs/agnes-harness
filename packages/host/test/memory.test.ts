@@ -487,3 +487,77 @@ import { fileMemoryRoots } from '@agnes/base'
 function hostMemoryRoot(home: string, workspace = home) {
   return join(fileMemoryRoots(home, workspace).root, 'MEMORY.md')
 }
+
+it('round4: a memory file awaiting its approved response cannot write after the session is narrowed', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-memory-permission-review-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  await mkdir(workspace)
+  const target = hostMemoryRoot(home, workspace)
+  const { host } = await createTestHost({
+    dataDir: home,
+    workspaceRoot: workspace,
+    allowed: ['standard', 'full-access'],
+    presets: {
+      'full-access': {
+        name: 'full-access',
+        extends: 'standard',
+      },
+      'permission-full-access': loadPreset('permission-full-access'),
+    },
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async () => {
+      throw new Error('Unexpected human approval')
+    },
+    script: [() => call('write', { path: target, content: 'Reviewed preference.' }), () => done],
+  })
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  let run: Promise<unknown> | undefined
+  try {
+    const inspection = host.memory(workspace, 'human')
+    if (!inspection) throw new Error('Memory unavailable')
+    await inspection.configure({ mode: 'ask' })
+    const session = await host.createSession({ cwd: workspace, preset: 'full-access' })
+    const memory = session.d.memory
+    if (!memory) throw new Error('Session memory unavailable')
+    const wrapped: typeof memory = {
+      ...memory,
+      files: (fallback, source, signal, approve) =>
+        memory.files(fallback, source, signal, async (proposal) => {
+          const result = await approve(proposal)
+          if (result.status === 'approved') {
+            entered()
+            await gate
+          }
+          return result
+        }),
+    }
+    Object.assign(session.d, { memory: wrapped })
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'Review memory commit' }],
+    })
+    run = session.run({ until: 'turn-end', signal: new AbortController().signal })
+    await reached
+    const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
+    expect(decision?.result).toMatchObject({ code: 'full-access' })
+    expect(decision?.consumption).not.toBeNull()
+    await session.setPreset({ ...session.preset, name: 'standard', permission: 'workspace-write' })
+    expect(session.permissionContext.policy).toBe('workspace-write')
+    release()
+    await run
+    expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+  } finally {
+    release()
+    await run?.catch(() => undefined)
+    await host.close()
+  }
+})

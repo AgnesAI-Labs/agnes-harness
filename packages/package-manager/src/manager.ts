@@ -12,6 +12,7 @@ import {
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
+import { packageAdmission, withPackageAdmission } from './effect-admission.js'
 import { isPackageError, PackageError } from './errors.js'
 import { previewWithExampleParent } from './example-parent.js'
 import { inspectStaged } from './inspect.js'
@@ -127,7 +128,7 @@ export interface PackageManager {
     },
   ): Promise<LockEntry>
   add(profileDir: string, spec: string, opts?: { trust?: 'verify' | 'skip' }): Promise<LockEntry>
-  trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
+  trust(profileDir: string, id: string, decision?: TrustDecision, opts?: OperationOptions): Promise<LockEntry>
   untrust(profileDir: string, id: string, decision: TrustDecision): Promise<LockEntry>
   /** Ordinary concurrent reads share only their in-flight scan. Publication/authorization reads
    * use fresh to establish a new verification boundary. Completed inventories are never retained. */
@@ -150,7 +151,7 @@ export interface PackageManager {
     profileDir: string,
     id: string,
     enabled: boolean,
-    opts?: Readonly<{ expectedInstalledIntegrity?: string }>,
+    opts?: Readonly<OperationOptions & { expectedInstalledIntegrity?: string }>,
   ): Promise<LockEntry>
   update(
     profileDir: string,
@@ -174,7 +175,7 @@ export interface PackageManager {
     profileDir: string,
     id: string,
     enabled: boolean,
-    opts?: Readonly<{ expectedInstalledIntegrity?: string }>,
+    opts?: Readonly<OperationOptions & { expectedInstalledIntegrity?: string }>,
   ): Promise<LockEntry>
   remove(profileDir: string, id: string): Promise<void>
   rollback(
@@ -362,6 +363,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     }
   }
   const storeFor = (profileDir: string): RuntimeSnapshotStore => ({
+    ...packageAdmission(),
     dataDir: options.dataDir,
     profileDir,
     profile: profileName(profileDir),
@@ -375,31 +377,37 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   const locked = <T>(
     profileDir: string,
     fn: () => Promise<T>,
-    op: { signal?: AbortSignal } = {},
+    op: OperationOptions = {},
     ordinaryRead = false,
   ): Promise<T> => {
     const key = profileKey(profileDir)
     if (!ordinaryRead) inventoryReads.delete(key)
-    return (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
-      withLock(
-        profileDir,
-        async () => {
-          if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
-            withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
-          }
-          // A clean read validates the same complete snapshot set without entering recovery.
-          // Journals and abandoned temp state still take the original recovery path.
-          const recoveryNeeded = [
-            '.agnes-runtime-transaction.json',
-            '.agnes-runtime-transaction.json.tmp',
-            '.agnes-runtime-snapshots.json.tmp',
-          ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
-          if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
-          else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
-          recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
-          return fn()
-        },
-        op,
+    return withPackageAdmission(op.admission, () =>
+      (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
+        withLock(
+          profileDir,
+          async () => {
+            await op.admission?.verify()
+            op.admission?.assertActive()
+            if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
+              withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
+            }
+            // A clean read validates the same complete snapshot set without entering recovery.
+            // Journals and abandoned temp state still take the original recovery path.
+            const recoveryNeeded = [
+              '.agnes-runtime-transaction.json',
+              '.agnes-runtime-transaction.json.tmp',
+              '.agnes-runtime-snapshots.json.tmp',
+            ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
+            if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
+            else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
+            recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
+            await op.admission?.verify()
+            op.admission?.assertActive()
+            return fn()
+          },
+          op,
+        ),
       ),
     ).finally(() => {
       if (!ordinaryRead) inventoryReads.delete(key)
@@ -431,7 +439,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           exclude: [],
         }),
       }
-    commitPackage(storeFor(profileDir), lock, id, entry, operation, stage)
+    await commitPackage(storeFor(profileDir), lock, id, entry, operation, stage)
   }
   let localReload: LocalPluginReload | undefined
   const localFailures = new Map<
@@ -541,7 +549,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           }
         if (current) entry.previous = previousSnapshot(current)
         readyStage(stage)
-        commitPackage(storeFor(profileDir), lock, id, entry, current ? 'update' : 'install', stage)
+        await commitPackage(storeFor(profileDir), lock, id, entry, current ? 'update' : 'install', stage)
         localPending.add(id)
         changed.push(id)
       } catch {
@@ -563,7 +571,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     for (const [id, entry] of Object.entries(lock.packages)) {
       lock = load(profileDir)
       if (entry.source.type !== 'local' || seen.has(entry.source.ref) || !entry.state.enabled) continue
-      commitPackage(
+      await commitPackage(
         storeFor(profileDir),
         lock,
         id,
@@ -910,7 +918,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             )
               throw new PackageError('E_LOCK_MISMATCH', 'staging changed before commit')
             checkCancelled(op.signal)
-            commitPackage(storeFor(profileDir), lock, preview.id, entry, 'install', stage)
+            await commitPackage(storeFor(profileDir), lock, preview.id, entry, 'install', stage)
             try {
               op.onProgress?.(Object.freeze({ phase: 'completed', percent: 100 }))
             } catch {
@@ -921,7 +929,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             clearStage(stage)
           }
         },
-        { ...(op.signal ? { signal: op.signal } : {}) },
+        op,
       )
     },
     async add(profileDir, spec, addOptions = {}) {
@@ -972,54 +980,62 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
 
-    async trust(profileDir, id, decision) {
-      return locked(profileDir, async () => {
-        const lock = load(profileDir)
-        writable(lock)
-        const entry = entryOf(lock, id)
-        if (entry.contributions !== undefined) {
-          const next = confirmTrust(
-            storeFor(profileDir),
-            lock,
-            id,
-            decision,
-            minimumReleaseAgeMin,
-            ceiling(lock),
-          )
-          commitPackage(storeFor(profileDir), lock, id, next, 'trust')
-          return next
-        }
-        const dir = packageDir(options.dataDir, profileName(profileDir), id)
-        let reference: string | undefined
-        try {
-          if (entry.source.type === 'npm') {
-            reference = stageFor(profileDir)
-            const fetched = await fetch(parseSource(entry.source.ref), reference, options.cwd ?? profileDir)
-            if (fetched.integrity !== entry.integrity)
-              throw new PackageError('E_LOCK_MISMATCH', `${id} source integrity differs from the lockfile`, {
-                detail: { id, reason: 'integrity' },
-              })
+    async trust(profileDir, id, decision, op = {}) {
+      return locked(
+        profileDir,
+        async () => {
+          const lock = load(profileDir)
+          writable(lock)
+          const entry = entryOf(lock, id)
+          if (entry.contributions !== undefined) {
+            const next = confirmTrust(
+              storeFor(profileDir),
+              lock,
+              id,
+              decision,
+              minimumReleaseAgeMin,
+              ceiling(lock),
+            )
+            await commitPackage(storeFor(profileDir), lock, id, next, 'trust')
+            return next
           }
-          verifyInstalledIntegrity(id, entry, dir, reference)
-          const manifest = undefined
-          verifyIdentity(id, entry, dir, manifest)
-          const trusted = stamp()
-          runTrustGate({
-            id,
-            entry,
-            ...(manifest ? { manifest } : {}),
-            ceiling: ceiling(lock),
-            now: trusted,
-            minimumReleaseAgeMin,
-          })
-          const next = structuredClone(entry)
-          next.state.trusted = trusted
-          commitPackage(storeFor(profileDir), lock, id, next, 'trust')
-          return next
-        } finally {
-          if (reference) clearStage(reference)
-        }
-      })
+          const dir = packageDir(options.dataDir, profileName(profileDir), id)
+          let reference: string | undefined
+          try {
+            if (entry.source.type === 'npm') {
+              reference = stageFor(profileDir)
+              const fetched = await fetch(parseSource(entry.source.ref), reference, options.cwd ?? profileDir)
+              if (fetched.integrity !== entry.integrity)
+                throw new PackageError(
+                  'E_LOCK_MISMATCH',
+                  `${id} source integrity differs from the lockfile`,
+                  {
+                    detail: { id, reason: 'integrity' },
+                  },
+                )
+            }
+            verifyInstalledIntegrity(id, entry, dir, reference)
+            const manifest = undefined
+            verifyIdentity(id, entry, dir, manifest)
+            const trusted = stamp()
+            runTrustGate({
+              id,
+              entry,
+              ...(manifest ? { manifest } : {}),
+              ceiling: ceiling(lock),
+              now: trusted,
+              minimumReleaseAgeMin,
+            })
+            const next = structuredClone(entry)
+            next.state.trusted = trusted
+            await commitPackage(storeFor(profileDir), lock, id, next, 'trust')
+            return next
+          } finally {
+            if (reference) clearStage(reference)
+          }
+        },
+        op,
+      )
     },
 
     async untrust(profileDir, id, decision) {
@@ -1050,49 +1066,53 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         next.state.trusted = null
         next.state.enabled = false
         delete next.trustDecision
-        commitPackage(store, lock, id, next, 'untrust')
+        await commitPackage(store, lock, id, next, 'untrust')
         return next
       })
     },
 
     async enable(profileDir, id, enabled, opts = {}) {
-      return locked(profileDir, async () => {
-        const lock = load(profileDir)
-        writable(lock)
-        const entry = entryOf(lock, id)
-        if (
-          opts.expectedInstalledIntegrity !== undefined &&
-          entry.integrity !== opts.expectedInstalledIntegrity
-        )
-          throw new PackageError('E_LOCK_MISMATCH', 'installed package preview is stale', {
-            code: 'E_PACKAGE_PREVIEW_STALE',
-          })
-        if (entry.contributions !== undefined) {
-          const store = storeFor(profileDir),
-            row = installed(store, lock, id, !enabled, ceiling(lock))
-          if (enabled && row.blockers.length)
-            throw new PackageError('E_API_RANGE', 'package inventory is blocked', {
-              detail: { blockers: row.blockers },
+      return locked(
+        profileDir,
+        async () => {
+          const lock = load(profileDir)
+          writable(lock)
+          const entry = entryOf(lock, id)
+          if (
+            opts.expectedInstalledIntegrity !== undefined &&
+            entry.integrity !== opts.expectedInstalledIntegrity
+          )
+            throw new PackageError('E_LOCK_MISMATCH', 'installed package preview is stale', {
+              code: 'E_PACKAGE_PREVIEW_STALE',
             })
-          if (enabled && !row.trusted)
-            throw new PackageError('E_WORKSPACE_UNTRUSTED', 'package has no valid trust decision')
-          if (!enabled) await assertNoReferences(store, lock, id, 'disable', options.references)
+          if (entry.contributions !== undefined) {
+            const store = storeFor(profileDir),
+              row = installed(store, lock, id, !enabled, ceiling(lock))
+            if (enabled && row.blockers.length)
+              throw new PackageError('E_API_RANGE', 'package inventory is blocked', {
+                detail: { blockers: row.blockers },
+              })
+            if (enabled && !row.trusted)
+              throw new PackageError('E_WORKSPACE_UNTRUSTED', 'package has no valid trust decision')
+            if (!enabled) await assertNoReferences(store, lock, id, 'disable', options.references)
+            const next = structuredClone(entry)
+            next.state.enabled = enabled
+            await commitPackage(store, lock, id, next, enabled ? 'enable' : 'disable')
+            return next
+          }
+          if (!enabled && (options.references || lock.workspace))
+            await assertNoReferences(storeFor(profileDir), lock, id, 'disable', options.references)
+          if (enabled && entry.state.trusted === null)
+            throw new PackageError('E_WORKSPACE_UNTRUSTED', `${id} has not passed package trust`, {
+              detail: { id, reason: 'not-trusted' },
+            })
           const next = structuredClone(entry)
           next.state.enabled = enabled
-          commitPackage(store, lock, id, next, enabled ? 'enable' : 'disable')
+          await commitPackage(storeFor(profileDir), lock, id, next, enabled ? 'enable' : 'disable')
           return next
-        }
-        if (!enabled && (options.references || lock.workspace))
-          await assertNoReferences(storeFor(profileDir), lock, id, 'disable', options.references)
-        if (enabled && entry.state.trusted === null)
-          throw new PackageError('E_WORKSPACE_UNTRUSTED', `${id} has not passed package trust`, {
-            detail: { id, reason: 'not-trusted' },
-          })
-        const next = structuredClone(entry)
-        next.state.enabled = enabled
-        commitPackage(storeFor(profileDir), lock, id, next, enabled ? 'enable' : 'disable')
-        return next
-      })
+        },
+        opts,
+      )
     },
 
     async remove(profileDir, id) {
@@ -1106,7 +1126,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           installed(store, lock, id, true)
           await assertNoReferences(store, lock, id, 'remove', options.references)
           collectRuntimeSnapshotsStore(store, id)
-          commitPackage(store, lock, id, null, 'remove')
+          await commitPackage(store, lock, id, null, 'remove')
           return
         }
         if (options.references || lock.workspace)
@@ -1125,7 +1145,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             detail: { id, reason: 'residue', residue: [...residue] },
           })
         collectRuntimeSnapshotsStore(store, id)
-        commitPackage(store, lock, id, null, 'remove')
+        await commitPackage(store, lock, id, null, 'remove')
       })
     },
 
@@ -1214,7 +1234,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               Object.assign(next, trusted)
             }
             await assertNoReferences(store, lock, id, 'rollback', options.references)
-            commitPackage(store, lock, id, next, 'rollback', stage)
+            await commitPackage(store, lock, id, next, 'rollback', stage)
             return next
           } finally {
             clearStage(stage)

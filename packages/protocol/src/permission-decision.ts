@@ -9,6 +9,12 @@ export interface PermissionContext {
   readonly sessionId: string
   readonly epoch: number
 }
+/** Private backend capability carried into the effect's transaction; never accepted from JSON. */
+export type PermissionEffectAdmission = Readonly<{
+  verify(): Promise<void>
+  assertActive(): void
+}>
+
 const permissionPurposes = new Set([
   'permission',
   'tool.permission',
