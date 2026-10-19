@@ -2673,33 +2673,133 @@
     cursor: grab;
   }
 
-  /* Three permission modes as cards side by side; the chosen one is outlined in the accent. */
+  /* Three permission modes as cards side by side. The chosen card has one accent edge (1px border
+   plus a 0.5px inset) on a faint accent fill; hover only darkens the edge, so it never reads as
+   disabled. A card that cannot be picked sits on the quieter fill and keeps its words readable. */
   fieldset.agnes-settings-modes {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--s8);
+    gap: var(--s12);
     min-width: 0;
     margin: 0;
     padding: 0;
     border: 0;
   }
   .agnes-settings-modes > div {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s10);
     min-width: 0;
-  }
-  .agnes-settings-modes .appearance-option {
-    align-items: flex-start;
-    height: 100%;
     box-sizing: border-box;
-    padding: var(--s10) var(--s12);
+    padding: var(--s16);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
     background: var(--agnes-bg-group);
+    transition: border-color 120ms ease;
   }
-  .agnes-settings-modes .appearance-option:has(input:checked) {
+  .agnes-settings-modes > div:not(:has(input:disabled)):hover {
+    border-color: var(--agnes-line-emphasis);
+  }
+  .agnes-settings-modes > div:has(input:checked) {
     border-color: var(--agnes-brand-primary);
-    background: var(--agnes-bg-group);
-    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
+    box-shadow: inset 0 0 0 0.5px var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 5%, var(--agnes-bg-group));
+  }
+  /* Only the full-access card grows while its five exceptions are open. */
+  fieldset.agnes-settings-modes:has(.agh-disclosure[data-open="true"]) {
+    align-items: start;
+  }
+  .agnes-settings-modes:not([data-busy]) > div:has(input:disabled) {
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-settings-modes:not([data-busy]) > div:has(input:disabled:checked) {
+    border-color: color-mix(in srgb, var(--agnes-brand-primary) 55%, var(--agnes-line-primary));
+    box-shadow: none;
+  }
+  .agnes-settings-modes > div:has(input:focus-visible) {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+  }
+  .agnes-settings-modes > div:has(input:checked) .agh-icon-tile {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  /* The bottom line of a card: what happens to commands, and full access's five exceptions. */
+  .agnes-settings-mode-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s4) var(--s8);
+    margin-top: auto;
+    padding-top: var(--s10);
+    border-top: 1px solid var(--agnes-line-hairline);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-mode-foot > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agnes-settings-mode-foot > .agh-disclosure {
+    display: contents;
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-summary {
+    min-height: 0;
+    color: var(--agnes-brand-primary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-summary .agh-disclosure-chevron {
+    order: 1;
+    color: inherit;
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-body {
+    flex-basis: 100%;
+  }
+  .agnes-settings-exceptions {
+    display: grid;
+    gap: var(--s10);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .agnes-settings-exceptions > li {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+  }
+  .agnes-settings-exceptions > li > svg {
+    flex: 0 0 auto;
+    margin-top: 0.125rem;
+    color: var(--agnes-status-warning-text);
+  }
+  .agnes-settings-exceptions > li > span {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agnes-settings-exception-name {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-settings-exception-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+  }
+  /* The same five, as the confirmation dialog lists them. */
+  .agnes-settings-exceptions-box {
+    display: grid;
+    gap: var(--s8);
+    margin-top: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-panel);
+    background: var(--agnes-bg-subtle);
   }
   @media (max-width: 639px) {
     fieldset.agnes-settings-modes {

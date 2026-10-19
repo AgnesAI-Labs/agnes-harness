@@ -116,7 +116,7 @@ it('picks the default permission from three cards, confirms full access, and off
   )
   expect(host.querySelectorAll('.agnes-settings-modes input[type="radio"]')).toHaveLength(3)
   expect(host.querySelector('.agnes-settings-modes .appearance-option-hint')?.textContent).toBe(
-    'View allowed files and public webpages; changes and command execution are denied.',
+    'Can read files and view public webpages. Doesn’t change files or run commands.',
   )
   expect(
     host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')?.checked,
@@ -174,7 +174,7 @@ it('names an automatic fast reviewer instead of calling it unset, and still warn
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')).not.toBeNull()
 })
 
-it('rereads the defaults on a revision conflict, keeps the chosen preset, and retries on the new revision', async () => {
+it('rereads the defaults on a revision conflict, shows the stored preset, and retries on the new revision', async () => {
   const saves: { revision: number; defaults: Record<string, unknown> }[] = []
   let revision = 3
   let conflictOnce = true
@@ -210,12 +210,19 @@ it('rereads the defaults on a revision conflict, keeps the chosen preset, and re
   await click(host, '[data-testid="security-read-only"] input')
   await act(async () => {})
   expect(saves.at(-1)?.revision).toBe(3)
-  expect(host.querySelector('[data-testid="security-default-conflict"]')).not.toBeNull()
-  // The choice is kept on screen while it waits.
-  expect(host.querySelector<HTMLInputElement>('[data-testid="security-read-only"] input')?.checked).toBe(true)
-  await click(host, '[data-testid="settings-save-retry"]')
+  // The stored value stays selected; the note names it and the choice that was not saved.
+  expect(host.querySelector('[data-testid="security-default-conflict"]')?.textContent).toContain(
+    'Default permissions were just changed elsewhere to “Edit workspace”. Your choice “Read only” was not saved.',
+  )
+  expect(
+    host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')?.checked,
+  ).toBe(true)
+  expect(host.querySelector<HTMLInputElement>('[data-testid="security-read-only"] input')?.checked).toBe(
+    false,
+  )
+  await click(host, '[data-testid="security-default-retry"]')
   expect(saves.at(-1)).toEqual({ revision: 7, defaults: { preset: 'read-only' } })
-  expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
+  expect(host.querySelector('[data-testid="security-default-conflict"]')).toBeNull()
   // Defaults saved elsewhere are read again.
   const reads = fetcher.mock.calls.filter(([url]) => url === '/admin/api/defaults').length
   await act(async () => window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed')))

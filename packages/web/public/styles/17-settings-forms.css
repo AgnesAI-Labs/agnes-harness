@@ -737,6 +737,50 @@
     background: none;
     accent-color: var(--agnes-brand-primary);
   }
+  /* A permission card draws its own edge and fill (components.css), so its choice is bare: icon tile
+   and radio on the first line, name and meaning under them, no row fill on hover or pick. */
+  .agnes-settings-modes .appearance-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s10) var(--s8);
+    padding: 0;
+  }
+  .agnes-settings-modes .appearance-option:hover,
+  .agnes-settings-modes .appearance-option:has(input:checked) {
+    background: none;
+  }
+  .agnes-settings-modes .appearance-option:has(input:focus-visible) {
+    outline: none;
+    box-shadow: none;
+  }
+  .agnes-settings-modes .appearance-option > input {
+    grid-area: 1 / 2;
+  }
+  .agnes-settings-modes .appearance-option > .agh-icon-tile {
+    grid-area: 1 / 1;
+  }
+  .agnes-settings-modes .appearance-option-copy {
+    grid-column: 1 / -1;
+    gap: var(--s4);
+  }
+  .agnes-settings-modes .appearance-option-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-settings-modes .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-secondary);
+  }
+  /* While a save or reread is in flight, the cards wait as they are instead of greying out. */
+  .agnes-settings-modes[data-busy] .appearance-option:has(input:disabled) {
+    cursor: progress;
+  }
+  .agnes-settings-modes[data-busy] .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-primary);
+  }
   /* A group of choices is one outlined list; its fieldset draws no frame of its own. */
   fieldset.agnes-settings-choices {
     min-width: 0;
