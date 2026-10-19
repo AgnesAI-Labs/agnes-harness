@@ -42,3 +42,15 @@ packages/package-manager/bundled-plugins/jev-loop/index.mjs.*.tmp
 
 # Deterministic presentation build records
 packages/package-manager/bundled-plugins/*/client-build.json
+
+# Presentation clients and their dependency notices are build outputs, not source.
+packages/package-manager/bundled-plugins/conversation-ui/src/client.js
+packages/package-manager/bundled-plugins/conversation-ui/NOTICE
+packages/package-manager/bundled-plugins/navigation-ui/src/client.js
+packages/package-manager/bundled-plugins/navigation-ui/NOTICE
+packages/package-manager/bundled-plugins/interaction-ui/src/client.js
+packages/package-manager/bundled-plugins/interaction-ui/NOTICE
+packages/package-manager/bundled-plugins/goal-ui/src/client.js
+packages/package-manager/bundled-plugins/goal-ui/NOTICE
+packages/package-manager/bundled-plugins/deliverables-ui/src/client.js
+packages/package-manager/bundled-plugins/deliverables-ui/NOTICE
