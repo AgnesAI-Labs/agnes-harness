@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { type ServiceContext, type ToolContext, toolPolicyKind } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
@@ -144,7 +145,7 @@ export const reports = defineTool({
     try {
       const p = read(ctx.store),
         document = report(p, input.kind, input.batch ?? 'B-2410-017', input.locale)
-      const stem = `pharma-output/${input.kind}-${input.batch ?? 'plant'}-r${p.revision}-${input.locale}-${ctx.session.toolUseId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)}`
+      const stem = `pharma-output/${input.kind}-${input.batch ?? 'plant'}-r${p.revision}-${input.locale}-${randomUUID()}`
       const files = [`${stem}.md`, `${stem}.html`]
       await ctx.fs.write(files[0]!, document.markdown)
       ctx.signal.throwIfAborted()
@@ -170,7 +171,7 @@ export const main = defineAgnesPlugin({
       async decide(input, signal, ports) {
         const base = await ctx.providers.resolve(toolPolicyKind, 'default').decide(input, signal, ports)
         if (base.effect === 'deny') return base
-        return ['pharma_release', 'pharma_record'].includes(input.call.name)
+        return ['pharma_release', 'pharma_record', 'pharma_report'].includes(input.call.name)
           ? qualityPolicy.decide(input, signal, ports)
           : base
       },

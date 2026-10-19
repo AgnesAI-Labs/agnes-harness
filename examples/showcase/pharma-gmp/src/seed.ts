@@ -11,7 +11,16 @@ const measure = (
   min: number,
   max: number,
   time: string,
-): Measurement => ({ id, name: label(zh, en), value, unit, min, max, at: time, source: `LIMS-${id}` })
+): Measurement => ({
+  id,
+  name: label(zh, en),
+  value: Number(value.toFixed(3)),
+  unit,
+  min,
+  max,
+  at: time,
+  source: `LIMS-${id}`,
+})
 const operations = [
   [
     'dispensing',

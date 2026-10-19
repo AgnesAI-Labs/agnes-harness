@@ -33,3 +33,5 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 完整演示和浏览器证据脚本位于 `scripts/`；使用独立 home、独立端口和显式费用上限。包不内置账号或密钥。使用 EU GMP Annex 1、Annex 11、21 CFR Part 11、ICH Q9/Q10 与 ALCOA+ 的术语参考，不代表合规认证。
 
 角色 preset 通过公开 tool-policy SPI 选择包内策略：保留默认策略的拒绝结果，对质量写入与放行显式要求“人工、单次、绑定精确参数及版本”，包括 full-access 会话；缺少该凭证的直接调用仍拒绝。
+
+仅精确的夜间 EM 导出（kind=em 加支持的语言）允许无人值守：只读取质量状态，并在 pharma-output/ 内创建新的报告文件。其他报告形状保留默认决策；质量记录与放行始终需要人工批准。

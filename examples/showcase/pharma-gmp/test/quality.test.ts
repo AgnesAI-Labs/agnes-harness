@@ -14,6 +14,33 @@ import { seed } from '../src/seed.js'
 const packageDir = fileURLToPath(new URL('../', import.meta.url)),
   batch = 'B-2410-017'
 it('models original OOS, independent signatures, alert-vs-action and retrospective equipment risk', async () => {
+  for (const [args, effect] of [
+    [{ kind: 'em', locale: 'zh-CN' }, 'allow'],
+    [{ kind: 'dossier', locale: 'en' }, 'ask'],
+    [{ kind: 'em', locale: 'en', batch: 'B-2410-017' }, 'ask'],
+  ] as const)
+    expect(
+      await qualityPolicy.decide(
+        {
+          sessionKey: 'nightly',
+          workspaceRoot: '/synthetic',
+          cwd: '/synthetic',
+          actor: { id: 'job:nightly', org: 'test', role: 'system', deptPath: [], attrs: {} },
+          call: { id: 'nightly', name: 'pharma_report', args },
+          policy: {
+            isReadOnly: false,
+            isDestructive: false,
+            replay: 'never',
+            requiresApproval: 'never',
+            approvalScopes: [],
+          },
+          tainted: true,
+          fullAccess: false,
+          approvalMode: 'manual',
+        },
+        new AbortController().signal,
+      ),
+    ).toMatchObject({ effect })
   expect(
     await qualityPolicy.decide(
       {
@@ -51,6 +78,7 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
   expect(emStatus(p, { ...evidence.em[0]!, viable: 50 })).toBe('control')
   expect(dossier(p, 'B-2410-021').rows.find((r) => r.key === 'em')?.pass).toBe(false)
   const b = p.batches.find((b) => b.id === batch)!
+  expect(b.steps[0]!.cpp[0]!.value).toBe(0.12)
   b.steps[0]!.verifier = { ...b.steps[0]!.operator }
   expect(findings(p, batch).some((f) => f.code === 'ALCOA')).toBe(true)
   b.qc[0]!.value = 94

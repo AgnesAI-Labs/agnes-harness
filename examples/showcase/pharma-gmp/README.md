@@ -33,3 +33,5 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 Isolated acceptance scripts live in `scripts/`; use a dedicated home/port and explicit real-model budget. No account or key ships in the package. EU GMP Annex 1/11, 21 CFR Part 11, ICH Q9/Q10 and ALCOA+ are reference frameworks, not compliance certification.
 
 Role presets select an application-owned policy through the public tool-policy SPI. It preserves the default policy’s refusals and requires a human, once, bound to the exact arguments/revision for quality writes and release, including full-access sessions. A direct call without that proof refuses.
+
+Only the exact nightly EM export (`kind=em` plus a supported locale) may run unattended: it reads quality state and writes new report files inside `pharma-output/`. Other report shapes retain the default decision; quality records and release always require a human.

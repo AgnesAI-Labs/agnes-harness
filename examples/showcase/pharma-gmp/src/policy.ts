@@ -7,6 +7,22 @@ export const qualityPolicy: ToolPolicy = {
   version: '1.0.0',
   decide(input, signal, ports) {
     signal.throwIfAborted()
+    const args = input.call.args
+    if (
+      input.call.name === 'pharma_report' &&
+      input.policy.requiresApproval === 'never' &&
+      !input.policy.isDestructive &&
+      args &&
+      typeof args === 'object' &&
+      !Array.isArray(args) &&
+      Object.keys(args).length === 2 &&
+      args.kind === 'em' &&
+      (args.locale === 'zh-CN' || args.locale === 'en')
+    )
+      return {
+        effect: 'allow',
+        reason: 'Synthetic EM export only: reads quality state and creates new owned report files',
+      }
     if (input.call.name === 'pharma_release' || input.call.name === 'pharma_record') {
       return {
         effect: 'ask',
