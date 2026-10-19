@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_ENABLED_BUNDLED_PACKAGES, OPTIONAL_BUNDLED_PACKAGES } from '@agnes/package-manager'
+import {
+  BUNDLED_EXAMPLES,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  OPTIONAL_BUNDLED_PACKAGES,
+} from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
@@ -115,8 +119,13 @@ it('ships all official example payloads with runnable community entries and no c
   roots.push(root)
   await copyBundledExamples(root)
   const families = await readdir(join(root, 'bundled-examples'))
-  expect(families.sort()).toEqual(['community', 'fde', 'loops'])
-  expect(await readdir(join(root, 'bundled-examples/fde'))).toHaveLength(12)
+  // The catalog is the single source of truth for which example families and payloads ship.
+  expect(families.sort()).toEqual([...new Set(BUNDLED_EXAMPLES.map((example) => example.family))].sort())
+  expect((await readdir(join(root, 'bundled-examples/fde'))).sort()).toEqual(
+    BUNDLED_EXAMPLES.filter((example) => example.family === 'fde')
+      .map((example) => example.name)
+      .sort(),
+  )
   expect(await readdir(join(root, 'bundled-examples/loops'))).toHaveLength(2)
   for (const name of ['tool-panel', 'mcp-skills', 'dag-loop-adapter']) {
     const payload = join(root, 'bundled-examples/community', name)
