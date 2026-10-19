@@ -187,6 +187,7 @@ export type LogFrame = {
 export type ResourceStatusFrame = { kind: 'resourceStatus'; serverId: string; status: McpStatus }
 export type WorkerReplyFrame = {
   kind: 'reply'
+  permissionEvidence?: import('@agnes/protocol').JsonValue[]
   requestId: string
   result?: unknown
   error?:
@@ -201,6 +202,8 @@ export type WorkerReplyFrame = {
 export type SessionReplyFrame = WorkerReplyFrame & { sessionKey: string }
 export type RequestFrame = {
   kind: 'request'
+  /** Host-stamped effective session policy, outside model-accessible params. */
+  permissionContext?: import('@agnes/protocol').PermissionContext
   sessionKey: string
   requestId: string
   method:

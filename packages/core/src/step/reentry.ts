@@ -433,7 +433,7 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  * last would win regardless of which one actually committed first on the ledger.
  */
 export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> {
-  return s.locked(async () => {
+  const seq = await s.locked(async () => {
     if (s.d.sessionOverlay) await s.d.sessionOverlay.apply(s.key, { preset: view.name })
     const r = await s.d.log.append([
       s.ev('x/core/preset-switch', { from: s.preset.name, to: view.name }, { ignorable: true }),
@@ -442,6 +442,9 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
     s.d.runtime.preset = view
     return r.firstSeq
   })
+  // Reconcile already-pending permission decisions and wake their existing delivery waiters.
+  await s.decisions.list()
+  return seq
 }
 
 /**

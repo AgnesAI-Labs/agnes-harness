@@ -31,6 +31,7 @@ import {
   type AuthoringCandidate,
   type AuthoringFile,
   type AuthoringWriteParams,
+  automaticPermissionDecision,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -801,14 +802,15 @@ class Service implements PackageAdminService {
     const owner = authority.principalId,
       id = params.candidateId as string
     const action = method.slice('_agnes/v1/plugins.candidates.'.length)
+    const automatic = automaticPermissionDecision(authority.permissionContext)
     if (action === 'list') return { candidates: this.candidates.list(directory, owner) }
     if (action === 'show') return this.candidates.show(directory, id, owner)
     this.requireBoundClient(method, params as EffectParams, authority)
     if (['create', 'write'].includes(action) && (!authority.installer || !authority.authoringOrigin))
       throw rpcError('CAPABILITY_DENIED')
-    if (['approve', 'reject'].includes(action) && authority.installer === 'agent')
+    if (['approve', 'reject'].includes(action) && authority.installer === 'agent' && !automatic)
       throw rpcError('CAPABILITY_DENIED', { reason: 'Agent cannot approve its own candidate' })
-    if (action === 'approve')
+    if (action === 'approve' || (action === 'submit' && automatic))
       requirePackageAdminPermissions(method, authority, [
         'packages.install',
         'packages.trust',
@@ -837,14 +839,20 @@ class Service implements PackageAdminService {
             authority.authoringTestRunner ??
             createAuthoringTestRunner({ home: this.options.authoringHome ?? dirname(dirname(directory)) }),
         )
-      if (action === 'submit') return this.candidates.submit(directory, id, owner, expected)
+      if (action === 'submit' && automatic) {
+        const existing = this.candidates.show(directory, id, owner)
+        if (existing.state === 'published' && existing.candidateHash === expected) return existing
+      }
+      const submitted =
+        action === 'submit' ? await this.candidates.submit(directory, id, owner, expected) : undefined
+      if (submitted && !automatic) return submitted
       return this.candidates.decide(
         directory,
         id,
         owner,
         expected,
-        params.reviewHash as string,
-        action === 'approve',
+        submitted?.reviewHash ?? (params.reviewHash as string),
+        action === 'approve' || (action === 'submit' && automatic !== undefined),
         async (source, value: AuthoringCandidate) => {
           if (!value.preview?.capabilityHash) throw new Error('Candidate capability snapshot is missing')
           const signal = AbortSignal.timeout(120_000)
@@ -854,7 +862,7 @@ class Service implements PackageAdminService {
             baseHash: value.baseHash,
             reviewHash: value.reviewHash!,
             origin: value.origin,
-            reviewer: owner,
+            reviewer: automatic ? 'full-access' : owner,
           }
           if (value.baseHash === null)
             await this.options.manager.install(directory, source, {
@@ -899,6 +907,7 @@ class Service implements PackageAdminService {
           if (row?.entry.integrity !== value.candidateHash || !row.enabled || !row.trusted)
             throw new Error('Candidate changed during runtime activation')
         },
+        automatic ? 'full-access' : owner,
       )
     })
   }

@@ -104,7 +104,7 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_test',
     description:
-      'Run bounded Node author tests for this exact candidate hash using the public testkit. One hash-bound confirmation authorizes execution; full-access skips it only with enforced OS isolation. Tests never verify install or browser appearance, and never publish.',
+      'Run bounded Node author tests for this exact candidate hash using the public testkit. One hash-bound confirmation authorizes execution; full-access automatically allows it on every platform; OS isolation is retained where available. Tests never verify install or browser appearance, and never publish.',
     parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
     // The daemon owns the sole exact-hash execution confirmation.
     meta: { ...meta, isDestructive: false, requiresApproval: 'never' },
@@ -115,7 +115,7 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_install_local',
     description:
-      'Submit this passing candidate for human review in Settings → Plugins. This never installs, trusts or enables code; the human publishes the exact reviewed hash.',
+      'Submit this passing candidate. Full-access automatically installs, trusts and enables the exact hash; other presets require human publication in Settings → Plugins.',
     parameters: Type.Object({ candidateId, expectedHash }, { additionalProperties: false }),
     meta,
     async execute(args, ctx) {

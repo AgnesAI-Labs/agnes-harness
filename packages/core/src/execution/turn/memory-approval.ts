@@ -4,7 +4,7 @@ import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/exte
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
-/** A file candidate has its own one-shot binding; full access and session grants cannot approve it. */
+/** A file candidate has its own one-shot binding; session grants cannot approve it; the central full-access rule can. */
 export async function approveMemoryFile(
   session: SessionImpl,
   proposal: MemoryProposal,

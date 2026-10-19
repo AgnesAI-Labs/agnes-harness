@@ -84,6 +84,7 @@ export function ConversationToolCard({
   const step = toolStep(node, t, interaction)
   // The row already names the tool and how it ended; the detail is what went in and what came out.
   const nextDetail = [
+    ...(node.permissionDecision ? [t('timeline.reason.fullAccess')] : []),
     ...(step.command
       ? [`$ ${step.command}`]
       : node.argsPreview
@@ -113,7 +114,13 @@ export function ConversationToolCard({
             ? 'cancelled'
             : undefined
   // Success is silent; only a step that failed, waits, was cancelled or never ran says so.
-  const note = notRun ? t('tool.status.notRun') : state && state !== 'running' ? outcome.label : undefined
+  const note = notRun
+    ? t('tool.status.notRun')
+    : state && state !== 'running'
+      ? outcome.label
+      : node.permissionDecision
+        ? t('timeline.reason.fullAccess')
+        : undefined
   const target = step.target || (meaningful ? summary : '')
   return (
     <div

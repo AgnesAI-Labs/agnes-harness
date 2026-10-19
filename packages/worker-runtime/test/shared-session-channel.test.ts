@@ -159,3 +159,50 @@ describe('SharedSessionChannel', () => {
     await expect(other).resolves.toBe('ok')
   })
 })
+
+it('stamps session policy outside tool params and persists automatic decision evidence before returning', async () => {
+  const sent: unknown[] = []
+  const evidence: unknown[] = []
+  const context = {
+    policy: 'full-access',
+    actor: { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  const channel = new SharedSessionChannel((frame) => sent.push(frame), {
+    context: () => context,
+    record: async (_key, rows) => {
+      evidence.push(...rows)
+    },
+  })
+  const waiting = channel.run('s', () =>
+    channel.request(
+      'plugin-manage',
+      { permissionContext: { policy: 'forged' } },
+      new AbortController().signal,
+    ),
+  )
+  expect(sent[0]).toMatchObject({
+    permissionContext: context,
+    params: { permissionContext: { policy: 'forged' } },
+  })
+  channel.settle({
+    kind: 'reply',
+    sessionKey: 's',
+    requestId: 'w1',
+    result: {
+      value: 'published',
+      __aghPermissionEvidence: [{ reason: 'full-access' }],
+    },
+  })
+  expect(await waiting).toBe('published')
+  expect(evidence).toEqual([{ reason: 'full-access' }])
+  const failed = channel.run('s', () => channel.request('plugin-manage', {}, new AbortController().signal))
+  channel.settle({
+    kind: 'reply',
+    sessionKey: 's',
+    requestId: 'w2',
+    error: { code: 'E_REQUEST', message: 'fixture' },
+    permissionEvidence: [{ reason: 'full-access', failed: true }],
+  })
+  await expect(failed).rejects.toMatchObject({ code: 'E_REQUEST' })
+  expect(evidence).toContainEqual({ reason: 'full-access', failed: true })
+})

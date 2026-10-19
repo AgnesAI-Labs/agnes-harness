@@ -1,3 +1,5 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import type { DecisionSpec, LoopContext, LoopFactory } from '@agnes/extension-api'
 import { loopCheckpointCodec } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
@@ -456,4 +458,111 @@ describe('session decision authority', () => {
       await f.session.close()
     }
   })
+})
+
+it.each(['full-access', 'workspace-write', 'custom'])(
+  'durably resolves permission gates using the effective %s preset without inventing a human answer',
+  async (policy) => {
+    const preset = presetDefaults()
+    preset.name = policy
+    preset.approval.policy = policy === 'custom' ? 'full-access' : policy
+    // This test exercises decision authority independently of provider registration.
+    const toolPolicies = new ToolPolicyRegistry()
+    toolPolicies.register('fixture', {
+      id: preset.approval.policy,
+      version: '1.0.0',
+      decide: () => ({ effect: 'allow', reason: 'fixture' }),
+    })
+    const f = await fixture({ preset, toolPolicies })
+    try {
+      const port = f.session.decisions.port({
+        owner: 'fixture/permission',
+        operationId: 'operation',
+        sourcePackage: '@fixture/permission',
+        packageVersion: '1.0.0',
+        alive() {},
+      })
+      for (const purpose of [
+        'candidate.test',
+        'plugin.publish',
+        'memory',
+        'credential.admin',
+        'skills.install',
+        'mcp.connect',
+        'gate',
+        'tool.permission',
+      ]) {
+        const handle = await port.request({
+          key: purpose,
+          purpose,
+          subject: { hash: 'exact' },
+          prompt: 'Allow?',
+          options: ['allowed-once', 'rejected'],
+          responseSchema: { type: 'null' },
+        })
+        const value = await port.get(handle)
+        if (policy === 'full-access') {
+          expect(value.result).toMatchObject({
+            reason: 'answered',
+            code: 'full-access',
+            response: { option: 'allowed-once', value: null },
+            answeredBy: { id: actor.id, role: 'system' },
+          })
+          expect((await port.wait(handle)).status).toBe('resolved')
+          expect(value.answerCommand).toBeNull()
+        } else expect(value.result).toBeNull()
+      }
+      const question = await port.request({ ...spec, key: 'question' })
+      expect((await port.get(question)).result).toBeNull()
+      for (const purpose of ['plan.exit', 'unknown-outcome']) {
+        const handle = await port.request({
+          ...spec,
+          key: purpose,
+          purpose,
+          options: ['allowed-once', 'rejected'],
+        })
+        expect((await port.get(handle)).result).toBeNull()
+      }
+      const persisted = await f.session.scan({ type: 'decision/state', limit: 100 })
+      expect(persisted.length).toBeGreaterThan(0)
+      expect(
+        persisted.filter(
+          (row) => (row.data as { result?: { code?: string } }).result?.code === 'full-access',
+        ),
+      ).toHaveLength(policy === 'full-access' ? 8 : 0)
+    } finally {
+      await f.session.close()
+    }
+  },
+)
+
+it('auto-resolves an outstanding permission when the effective preset switches to full access', async () => {
+  const f = await fixture()
+  try {
+    const port = f.session.decisions.port({
+      owner: 'fixture/permission',
+      operationId: 'switch',
+      sourcePackage: '@fixture/permission',
+      packageVersion: '1.0.0',
+      alive() {},
+    })
+    const handle = await port.request({
+      ...spec,
+      key: 'switch',
+      purpose: 'tool.permission',
+      options: ['allowed-once', 'rejected'],
+    })
+    expect((await port.get(handle)).result).toBeNull()
+    const next = presetDefaults()
+    next.name = 'full-access'
+    next.approval.policy = 'full-access'
+    await f.session.setPreset(next)
+    expect((await port.get(handle)).result).toMatchObject({
+      reason: 'answered',
+      code: 'full-access',
+      response: { option: 'allowed-once' },
+    })
+  } finally {
+    await f.session.close()
+  }
 })

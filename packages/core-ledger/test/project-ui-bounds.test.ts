@@ -132,3 +132,44 @@ it('bounds extension-supplied context section and contribution conflict names', 
   expect(timeline.nodes.map((node) => node.kind)).toEqual(['user', 'context-sections', 'contribute-conflict'])
   expectPublishable(timeline)
 })
+
+it('projects durable automatic permission evidence beside its tool without a pending approval card', async () => {
+  const event = builder()
+  const actor = {
+    id: 'owner',
+    org: 'local',
+    role: 'system',
+    deptPath: [],
+    attrs: { permissionPolicy: 'full-access' },
+  }
+  const timeline = await projectUI(
+    [
+      event('tool/call', { toolUseId: 'call', name: 'plugin_test', args: {}, ordinal: 0 }),
+      event(
+        'x/core/permission-auto-allowed',
+        {
+          requestId: 'candidate-test',
+          sessionKey: 'bounds',
+          toolUseId: 'call',
+          scope: 'plugin.test',
+          summary: 'Run candidate',
+          bindingHash: 'exact',
+          verdict: 'allowed-once',
+          reason: 'full-access',
+          answeredBy: actor,
+        },
+        { ignorable: true },
+      ),
+    ],
+    { sessionKey: 'bounds' },
+  )
+  expectPublishable(timeline)
+  expect(timeline.nodes.find((node) => node.kind === 'tool')).toMatchObject({
+    permissionDecision: { reason: 'full-access', decisionId: 'candidate-test', actor },
+  })
+  expect(timeline.nodes.find((node) => node.kind === 'approval')).toMatchObject({
+    state: 'decided',
+    decision: { reason: 'full-access' },
+    options: [],
+  })
+})

@@ -89,7 +89,7 @@ import {
   runtimeTargetFailureMessage,
 } from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
-import { SharedSessionChannel } from './shared-session-channel.js'
+import { SharedSessionChannel, sessionPermissions } from './shared-session-channel.js'
 import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
 export type { WorkerHostSkillResources } from './host-resources.js'
@@ -217,7 +217,10 @@ export async function runWorker(
     link.write(encodeFrame(frame))
   }
 
-  const sharedChannel = new SharedSessionChannel(send)
+  const sharedChannel = new SharedSessionChannel(
+    send,
+    sessionPermissions((key) => host?.kernel.sessions.get(key)),
+  )
   const scheduling: NonNullable<HostOptions['scheduling']> = (session, operation, input, signal) => {
     if (session.key !== sharedChannel.currentSessionKey()) throw new Error('Scheduling session mismatch')
     return sharedChannel.request(

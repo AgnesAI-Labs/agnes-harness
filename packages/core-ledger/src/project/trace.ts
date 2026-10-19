@@ -269,6 +269,18 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
         span.review = data.review as ToolReviewFact
       return
     }
+    case 'x/core/permission-auto-allowed': {
+      const evidence = event.data as { requestId?: string; toolUseId?: string; reason?: string }
+      if (event.origin !== 'system' || event.trust !== 'trusted' || evidence.reason !== 'full-access') return
+      const parent = state.spans.get(state.toolToSpan.get(evidence.toolUseId ?? '') ?? '')
+      const span = register(
+        state,
+        makeSpan(`span:approval:${evidence.requestId}`, 'approval', 'full-access', event),
+      )
+      ;(parent ?? ensureStep(state, event)).children.push(span)
+      closeSpan(span, event, 'completed')
+      return
+    }
     case 'decision/state': {
       const value = event.data as import('@agnes/protocol').DecisionSnapshot
       const requestId = value.handle.id
@@ -282,6 +294,8 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
         state.approvalToSpan.set(requestId, span.id)
         ;(parent ?? ensureStep(state, event)).children.push(span)
       }
+      if (value.result?.reason === 'answered' && value.result.code === 'full-access')
+        span.name = 'full-access'
       if (span.status === 'waiting' && (value.result || value.invalidation))
         closeSpan(
           span,

@@ -841,6 +841,42 @@ export class UIProjectionCell {
         }
         break
       }
+      case 'x/core/permission-auto-allowed': {
+        const evidence = data as {
+          requestId?: string
+          toolUseId?: string
+          summary?: string
+          reason?: string
+          answeredBy?: import('@agnes/protocol').Actor
+        }
+        if (event.origin !== 'system' || event.trust !== 'trusted' || evidence.reason !== 'full-access') break
+        this.pushNode({
+          kind: 'approval',
+          id,
+          seq,
+          state: 'decided',
+          summary: clip(evidence.summary ?? '', 4096),
+          risk: 'always',
+          options: [],
+          decision: {
+            verdict: 'allowed-once',
+            via: 'full-access',
+            reason: 'full-access',
+            ...(evidence.answeredBy?.id ? { byLabel: evidence.answeredBy.id } : {}),
+          },
+        })
+        const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
+        if (tool && evidence.answeredBy && evidence.requestId) {
+          tool.permissionDecision = {
+            reason: 'full-access',
+            decisionId: evidence.requestId,
+            actor: evidence.answeredBy,
+          }
+          changed.add(tool.id)
+        }
+        changed.add(id)
+        break
+      }
       case 'decision/state': {
         const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
         if (
@@ -886,14 +922,17 @@ export class UIProjectionCell {
             ? {
                 decision: {
                   verdict: result.reason === 'answered' ? result.response.option : result.reason,
-                  via: 'human',
+                  via:
+                    result.reason === 'answered' && result.code === 'full-access' ? 'full-access' : 'human',
                   ...(value.invalidation
                     ? { reason: value.invalidation.code }
-                    : result.reason !== 'answered'
-                      ? { reason: result.code }
-                      : result.response.option === 'rejected'
-                        ? { reason: 'user-rejected' }
-                        : {}),
+                    : result.reason === 'answered' && result.code === 'full-access'
+                      ? { reason: 'full-access' }
+                      : result.reason !== 'answered'
+                        ? { reason: result.code }
+                        : result.response.option === 'rejected'
+                          ? { reason: 'user-rejected' }
+                          : {}),
                   ...(result.reason === 'answered' ? { byLabel: result.answeredBy.id } : {}),
                 },
               }
@@ -903,7 +942,16 @@ export class UIProjectionCell {
         if (old) this.nodes[this.nodeIndexes.get(old.id)!] = node
         else this.pushNode(node)
         changed.add(node.id)
-        const tool = this.tools.get(value.request.operationId)
+        const subject = value.request.spec.subject as { source?: { toolUseId?: string } } | null
+        const tool = this.tools.get(subject?.source?.toolUseId ?? value.request.operationId)
+        if (tool && result?.reason === 'answered' && result.code === 'full-access') {
+          tool.permissionDecision = {
+            reason: 'full-access',
+            decisionId: value.handle.id,
+            actor: result.answeredBy,
+          }
+          changed.add(tool.id)
+        }
         if (tool && value.request.owner === 'core/tool-permission' && !value.consumption) {
           tool.status =
             node.state === 'pending'

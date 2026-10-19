@@ -112,15 +112,19 @@ async function harness() {
   return { context, controller, list, decide, showError }
 }
 
-it.each(['preview', 'pending'])('keeps %s approval display from authorizing an answer', async (mode) => {
-  const { context, controller, decide } = await harness()
-  context.projection = timeline([approval])
-  if (mode === 'preview') context.readOnly = { id: 's', maxNodes: 200, hasEarlier: false }
-  else context.sessionPending = true
-  controller.renderApproval()
-  expect(document.querySelector('[data-testid="approval-card"]')).toBeNull()
-  expect(decide).not.toHaveBeenCalled()
-})
+it.each(['preview', 'pending', 'full-access'])(
+  'keeps %s approval display from authorizing an answer',
+  async (mode) => {
+    const { context, controller, decide } = await harness()
+    context.projection = timeline([approval])
+    if (mode === 'preview') context.readOnly = { id: 's', maxNodes: 200, hasEarlier: false }
+    else if (mode === 'pending') context.sessionPending = true
+    else context.permissionMode = 'full'
+    controller.renderApproval()
+    expect(document.querySelector('[data-testid="approval-card"]')).toBeNull()
+    expect(decide).not.toHaveBeenCalled()
+  },
+)
 
 it('projects the current turn start and distinguishes running, approval, stopping and read-only status', async () => {
   const { context, controller } = await harness()

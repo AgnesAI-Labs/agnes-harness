@@ -3,9 +3,7 @@ import {
   Banner,
   Button,
   Dialog,
-  Disclosure,
   fallbackT,
-  Icon,
   IconTile,
   reportSuccess,
   SettingsBlock,
@@ -28,14 +26,6 @@ import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 type Snapshot = import('@agnes/protocol').SessionDefaultsSnapshot
 const presets = ['read-only', 'workspace-write', 'full-access'] as const
 const icons = { 'read-only': 'eye', 'workspace-write': 'pencil', 'full-access': 'lock-keyhole' } as const
-/** Limits full access does not relax (docs/guide/security.md#full-access-exceptions). */
-const exceptions = {
-  protected: 'shield',
-  readFirst: 'file-text',
-  plugins: 'puzzle',
-  memory: 'archive',
-  candidateTests: 'terminal',
-} as const
 const isolationTone: Record<RuntimeSecurityStatus['platform']['l1']['level'], StatusDotTone> = {
   full: 'success',
   partial: 'warning',
@@ -184,19 +174,6 @@ export function PermissionDefaults({
     const level = security.platform.l1.level
     return [isolationTone[level], `${t('commandIsolation')} · ${t(`state.${level}`)}`]
   }
-  const exceptionList = (detailed: boolean) => (
-    <ul className="agnes-settings-exceptions" data-testid={detailed ? 'security-full-exceptions' : undefined}>
-      {Object.entries(exceptions).map(([key, icon]) => (
-        <li key={key}>
-          <Icon name={detailed ? icon : 'check'} />
-          <span>
-            <span className="agnes-settings-exception-name">{t(`exception.${key}`)}</span>
-            {detailed && <span className="agnes-settings-exception-hint">{t(`exception.${key}Help`)}</span>}
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
   const locked = !canSave || !snapshot || busy
   const retry = () => failedPreset && void save(failedPreset)
   return (
@@ -251,16 +228,6 @@ export function PermissionDefaults({
                   <StatusDot tone={saving === preset ? 'accent' : tone} running={saving === preset} />
                   {saving === preset ? t('saving') : status}
                 </span>
-                {preset === 'full-access' && (
-                  <Disclosure
-                    variant="plain"
-                    summary={t('exceptionsToggle')}
-                    summaryProps={{ 'data-testid': 'security-full-exceptions-toggle' }}
-                  >
-                    {exceptionList(true)}
-                    <p className="agnes-settings-note">{t('exceptionsScope')}</p>
-                  </Disclosure>
-                )}
               </div>
             </div>
           )
@@ -326,10 +293,6 @@ export function PermissionDefaults({
         }
       >
         <p>{t('fullConfirmBody')}</p>
-        <div className="agnes-settings-exceptions-box">
-          <p className="agnes-settings-exception-name">{t('fullConfirmList')}</p>
-          {exceptionList(false)}
-        </div>
         {saveFailed && <SettingsState tone="error">{t('failed')}</SettingsState>}
       </Dialog>
     </SettingsBlock>

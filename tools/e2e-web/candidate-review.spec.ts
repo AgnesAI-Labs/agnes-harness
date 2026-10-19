@@ -39,8 +39,9 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const old = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'workspace-write',
   })
+  old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   await old.attach()
   const authoringIdle = async () => {
     const view = await old.projectUI(undefined, { surface: 'web' })

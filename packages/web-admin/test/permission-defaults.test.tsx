@@ -65,11 +65,8 @@ it.each([false, true])(
       expect(host.querySelector('[data-testid="security-default-locked"]')?.textContent ?? null).toBe(
         readOnly ? securityUxCatalog.en?.lockedReadOnly : null,
       )
-      // The five exceptions open inside the full-access card without choosing it.
-      const toggle = host.querySelector<HTMLButtonElement>('[data-testid="security-full-exceptions-toggle"]')!
-      await act(async () => toggle.click())
-      expect(toggle.getAttribute('aria-expanded')).toBe('true')
-      expect(host.querySelectorAll('[data-testid="security-full-exceptions"] li')).toHaveLength(5)
+      expect(host.querySelector('[data-testid="security-full-exceptions-toggle"]')).toBeNull()
+      expect(host.textContent).toContain('Everything is allowed automatically; no approval prompts')
       expect(pick('full-access').checked).toBe(false)
       expect(document.querySelector('[data-testid="security-full-confirm"]')).toBeNull()
       expect(writes).toEqual([])
@@ -113,7 +110,7 @@ it.each(['en', 'zh-CN'] as const)('describes default permission boundaries in %s
   expect(copy?.['workspace-writeHelp']).toContain(
     locale === 'en' ? 'Asks you before running commands' : '运行命令前先问你',
   )
-  expect(copy?.['full-accessHelp']).toContain(locale === 'en' ? 'still need your confirmation' : '仍要你确认')
+  expect(copy?.['full-accessHelp']).toContain(locale === 'en' ? 'no approval prompts' : '不再弹出审批')
 })
 
 it.each(['pending', 'failed'])(

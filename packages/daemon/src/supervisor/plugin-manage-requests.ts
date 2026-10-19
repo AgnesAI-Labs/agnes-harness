@@ -10,14 +10,19 @@ import {
   type PackageAdminService,
 } from '@agnes/daemon-admin/packages/index'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import { currentPermissionContext, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { createFileAudit } from '@agnes/host'
-import { type AuthoringCandidate, type PackageAdminMethodName, rpcError } from '@agnes/protocol'
+import {
+  type AuthoringCandidate,
+  automaticPermissionDecision,
+  type PackageAdminMethodName,
+  rpcError,
+} from '@agnes/protocol'
 import { managementConnection } from './management-connection.js'
 import { checkedPluginFiles } from './plugin-files.js'
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
-/** Agent lane can draft, test and submit. Only authenticated human administration can publish. */
+/** Agent authoring uses the effective session permission decision for tests and publication. */
 export function createPluginManageRequests(options: {
   directory: string
   home?: string
@@ -57,7 +62,6 @@ export function createPluginManageRequests(options: {
         (k) =>
           ![
             'input',
-            'candidateTestPolicy',
             'candidateTestSandbox',
             'turn',
             'sessionKey',
@@ -68,9 +72,6 @@ export function createPluginManageRequests(options: {
             'rowId',
           ].includes(k),
       ) ||
-      (raw.candidateTestPolicy !== undefined &&
-        raw.candidateTestPolicy !== 'allow' &&
-        raw.candidateTestPolicy !== 'ask') ||
       raw.sessionKey !== sessionKey ||
       !Number.isSafeInteger(raw.turn) ||
       Number(raw.turn) < 0 ||
@@ -122,7 +123,13 @@ export function createPluginManageRequests(options: {
     const call = (suffix: string, params: Record<string, unknown>) => {
       assertActive()
       signal.throwIfAborted()
-      const auth = localPackageAdminAuthority(['packages.read', 'packages.install', 'extensions.execute'])({
+      const auth = localPackageAdminAuthority([
+        'packages.read',
+        'packages.install',
+        'packages.trust',
+        'packages.activate',
+        'extensions.execute',
+      ])({
         conn: live.get(),
         clock: Date.now,
         signal,
@@ -136,6 +143,7 @@ export function createPluginManageRequests(options: {
         {
           ...auth,
           installer: 'agent',
+          permissionContext: currentPermissionContext(),
           authoringSignal: signal,
           ...(testContext ? { authoringTestRunner: createAuthoringTestRunner(testContext) } : {}),
           authoringOrigin: {
@@ -179,7 +187,7 @@ export function createPluginManageRequests(options: {
         } finally {
           rmSync(probe, { recursive: true, force: true })
         }
-        if (raw.candidateTestPolicy !== 'allow' || !isolated) {
+        {
           const prompt = new PrompterRouter({
             record: (outcome) =>
               createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
@@ -250,24 +258,40 @@ export function createPluginManageRequests(options: {
               code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
               reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
             })
-        } else {
-          assertActive()
-          signal.throwIfAborted()
-          createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
-            kind: 'extension.service-call',
-            detail: {
-              action: 'candidate.test',
-              session: sessionKey,
-              candidateId: id,
-              packageId: value.packageId,
-              actor: connActor(conn),
-              bindingHash: value.candidateHash,
-              verdict: 'allowed-once',
-              via: 'full-access-policy',
-              isolation: 'sandbox',
-            },
-          })
         }
+      }
+      if (
+        (action === 'submit' || action === 'commit') &&
+        automaticPermissionDecision(currentPermissionContext())
+      ) {
+        const prompt = new PrompterRouter({
+          connections: live.candidates,
+          originOf: () => live.candidates()[0],
+          clock: Date.now,
+          endpointFor: (target) => {
+            const endpoint = options.endpoint(target)
+            if (!endpoint) throw new Error('closed')
+            return endpoint
+          },
+        })
+        await prompt.ask(
+          {
+            requestId: `publish-${randomUUID()}`,
+            kind: 'tool',
+            sessionKey,
+            stepId: 'candidate-publish',
+            toolUseId: raw.toolUseId as string,
+            summary: `Install, trust and enable ${value.packageId}`,
+            risk: 'always',
+            actor: connActor(conn),
+            taint: false,
+            bindingHash: value.candidateHash,
+            deadline: new Date(Date.now() + 110_000).toISOString(),
+            scope: 'plugin.publish',
+            options: ['allowed-once', 'rejected'],
+          },
+          { signal },
+        )
       }
       const result = (await call(action === 'commit' ? 'submit' : action, {
         ...command(),

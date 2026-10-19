@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
+import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
 import type { SkillInstallBridge, SkillInstallInvocation } from '@agnes/host'
 import {
   createResourceControlService,
@@ -341,3 +342,32 @@ it('reports missing attachment precisely and preserves the installation guard', 
   expect(s.call).not.toHaveBeenCalled()
   await s.ep.close()
 })
+
+it.each(['full-access', 'workspace-write'])(
+  'imports and enables a Skill under %s without losing source or install decision evidence',
+  async (policy) => {
+    const s = setup()
+    const evidence: AutomaticPermissionEvidence[] = []
+    await withPermissionContext(
+      { policy, actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} } },
+      (value) => evidence.push(value),
+      async () => {
+        const prepared = await s.request()
+        if (!prepared.proposalId) throw new Error('Missing Skill proposal')
+        await s.request({ action: 'commit', proposalId: prepared.proposalId })
+        await expectReady(s.request, prepared.proposalId)
+      },
+    )
+    expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 2)
+    if (policy === 'full-access') {
+      expect(evidence).toHaveLength(2)
+      for (const decision of evidence)
+        expect(decision).toMatchObject({
+          reason: 'full-access',
+          verdict: 'allowed-once',
+          answeredBy: { role: 'system' },
+        })
+    } else expect(evidence).toEqual([])
+    await s.ep.close()
+  },
+)

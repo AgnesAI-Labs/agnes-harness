@@ -16,6 +16,8 @@ export type PackageAdminAuthority = Readonly<{
   /** Set only by the daemon's reviewed agent-authoring lane, never by RPC params. */
   installer?: 'agent'
   authoringOrigin?: import('@agnes/protocol').AuthoringOrigin
+  /** Trusted worker invocation only; public admin params cannot grant full access. */
+  permissionContext?: import('@agnes/protocol').PermissionContext | undefined
   authoringSignal?: AbortSignal
   /** Trusted per-invocation sandbox runner; never accepted from RPC parameters. */
   authoringTestRunner?: import('@agnes/package-manager').AuthoringTestRunner

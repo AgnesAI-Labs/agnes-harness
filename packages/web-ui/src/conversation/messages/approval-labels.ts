@@ -18,6 +18,7 @@ export const verdictLabelKeys: Record<string, string> = {
 
 /** Why the decision ended as it did. A ledger from before reasons existed has none and falls back to the verdict. */
 export const reasonLabelKeys: Record<string, string> = {
+  'full-access': 'timeline.reason.fullAccess',
   'user-rejected': 'timeline.reason.userRejected',
   deadline: 'timeline.reason.timeout',
   'no-approver': 'timeline.reason.noApprover',

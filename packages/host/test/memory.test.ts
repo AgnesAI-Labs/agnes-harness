@@ -59,7 +59,10 @@ const memoryCases = [
 ] as const
 it.each(
   ['standard', 'workspace-write', 'full-access'].flatMap((preset) =>
-    memoryCases.map((initialAnswer) => ({ preset, initialAnswer })),
+    (preset === 'full-access' ? ['rejected' as const] : memoryCases).map((initialAnswer) => ({
+      preset,
+      initialAnswer,
+    })),
   ),
 )(
   'settles an initial $initialAnswer memory write under $preset without losing revision or approval facts',
@@ -219,6 +222,22 @@ it.each(
     }
     try {
       const rejected = await turn('rejected')
+      if (preset === 'full-access') {
+        expect(rejected.results[0]?.data).toMatchObject({ isError: false })
+        expect((await memory.readFile('MEMORY.md')).content).toBe('Prefer short answers.')
+        expect(asked).toEqual([])
+        const decisions = await rejected.session.decisions.list()
+        expect(decisions.find((value) => value.request.spec.purpose === 'memory')).toMatchObject({
+          result: {
+            reason: 'answered',
+            code: 'full-access',
+            response: { option: 'allowed-once' },
+            answeredBy: { role: 'system' },
+          },
+          consumption: expect.any(Object),
+        })
+        return
+      }
       if (initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure') {
         expect(rejected.results[0]?.data).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
         expect((await memory.readFile('MEMORY.md')).content).toBe(

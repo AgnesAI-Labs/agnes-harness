@@ -6,9 +6,9 @@ English | [简体中文](testing.zh-CN.md)
 
 Business agents can ship as plugins with offline, repeatable author tests. Import the helpers from **`@agnes/host/author-testkit`**. The preview SDK is source-only; link matching packages with [the quickstart](quickstart.md) before running tests. No model account or API key is needed for scripted or replay tests.
 
-Candidate tests use the [Host isolation and exact-hash confirmation rules](../guide/security.md): workspace-write/standard shows one confirmation; full-access skips it only with enforced OS isolation. Windows always requires confirmation because candidate code runs unisolated on the local machine. Test approval never publishes or enables a package.
+Candidate tests retain the [Host isolation and exact-hash rules](../guide/security.md). Full access automatically allows tests on every platform, including unisolated Windows; workspace-write/standard still requires one confirmation. Testing alone never publishes a package. Submitting a passing candidate under full access automatically installs, trusts and enables it through the existing publication transaction; other presets retain human review.
 
-Full access still requires explicit confirmation for installing, trusting or enabling candidates, plugins and Skills, and for capability scope changes. It does not waive memory-write approval in **ask before writing** mode or credential administration confirmations. Protected paths retain their existing hard refusals; full access cannot approve ordinary file-tool access to credentials or private application state. Skill import/install and MCP registration/start approvals are unchanged. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
+Full-access tool requests also automatically allow Skill import/install, capability changes, MCP registration/start, ask-mode memory writes and credential administration confirmations. Each permission decision records its actor and reason `full-access`. Protected paths retain their hard refusals. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
 
 ## Run your package's tests
 

@@ -26,10 +26,20 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
   )
     fail('invalid deadline')
   if (decisionSubjectDigest(next.request.spec.subject) !== next.request.subjectDigest) fail('subject digest')
+  const automatic = next.result?.reason === 'answered' && next.result.code === 'full-access'
+  if (
+    automatic &&
+    (next.result?.reason !== 'answered' ||
+      next.result.response.option !== 'allowed-once' ||
+      next.result.answeredBy.role !== 'system' ||
+      next.result.answeredBy.attrs.permissionPolicy !== 'full-access' ||
+      next.answerCommand !== null)
+  )
+    fail('invalid automatic permission')
   if (!previous) {
     if (
       next.revision !== 1 ||
-      next.result !== null ||
+      (next.result !== null && !automatic) ||
       next.consumption !== null ||
       next.answerCommand !== null ||
       next.invalidation !== null
@@ -74,11 +84,15 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
   if (next.result?.reason === 'answered') {
     if (Date.parse(next.result.at) < Date.parse(next.request.createdAt)) fail('answer before request')
     if (
+      !automatic &&
       !previous?.result &&
       (next.answerCommand?.revision !== next.revision || next.answerCommand.seq !== event.seq)
     )
       fail('answer receipt mismatch')
-    if (!next.request.spec.options.includes(next.result.response.option) || next.answerCommand === null)
+    if (
+      !next.request.spec.options.includes(next.result.response.option) ||
+      (!automatic && next.answerCommand === null)
+    )
       fail('unoffered answer')
     if (next.request.expiresAt !== null && Date.parse(next.result.at) >= Date.parse(next.request.expiresAt))
       fail('late answer')

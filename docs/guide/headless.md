@@ -20,9 +20,11 @@ agh run --bundle ./bundle.json --input ./prompts --batch --json > batch.jsonl
 
 The CLI sends transient profile inputs through Host composition and its normal validation. It does not save admin bundle selection. Unknown ids and missing dependencies fail before a session starts; no plugins are auto-installed. A Host without bundle composition refuses `--bundle`.
 
-Optional run flags are `--profile`, `--preset`, `--loop ID@VERSION`, `--model primary=ROUTE/MODEL` and `--cwd`. Options go after `run`. Input is UTF-8 text, limited to 4 MiB; bundle JSON is limited to 1 MiB. `--batch` reads regular files immediately inside the folder in filename order, one session per file, without recursion or symlink traversal. Every record also carries the input path so results can be grouped by input and `runId`. Permission requests are rejected in unattended runs; configure an appropriate backend policy before running.
+Optional run flags are `--profile`, `--preset`, `--loop ID@VERSION`, `--model primary=ROUTE/MODEL` and `--cwd`. Options go after `run`. Input is UTF-8 text, limited to 4 MiB; bundle JSON is limited to 1 MiB. `--batch` reads regular files immediately inside the folder in filename order, one session per file, without recursion or symlink traversal. Every record also carries the input path so results can be grouped by input and `runId`. Full-access permission requests are allowed automatically; other presets retain unattended refusal when no approval handler is available.
 
 The exit code is 0 for completed runs, 1 for errors or incomplete event drains, 2 for usage/startup failures, 3 for parked, 4 for blocked/budget, 5 for max steps, and 130/143/129 for SIGINT/SIGTERM/SIGHUP. Batch continues after an individual failure and returns the first nonzero status. A signal cancels the current prompt and stops the batch; shutdown has a five-second grace period.
+
+Schedules and webhook sessions use their effective permission preset. Full access automatically allows and records permission requests before unattended handoff/refusal policy, so no approval prompt parks the run. Other presets retain their unattended policy. User questions and explicitly chosen plan/read-only modes retain their behavior.
 
 ## SDK
 

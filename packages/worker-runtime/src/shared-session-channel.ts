@@ -1,8 +1,25 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Prompter } from '@agnes/host'
+import type { HostSession, Prompter } from '@agnes/host'
 import type { RequestFrame, SessionReplyFrame, WorkerReplyFrame } from './frames.js'
 
 type SessionContext = Readonly<{ sessionKey: string }>
+
+export function sessionPermissions(lookup: (key: string) => HostSession | undefined) {
+  return {
+    context(key: string) {
+      const session = lookup(key)
+      return session ? { policy: session.preset.name, actor: session.d.actor } : undefined
+    },
+    async record(key: string, evidence: readonly import('@agnes/protocol').JsonValue[]) {
+      const session = lookup(key)
+      if (!session) throw new Error('Permission evidence session is closed')
+      if (evidence.length)
+        await session.d.log.append(
+          evidence.map((value) => session.ev('x/core/permission-auto-allowed', value, { ignorable: true })),
+        )
+    },
+  }
+}
 
 /**
  * Attributes Host-wide callbacks to the session whose async work produced them.
@@ -16,7 +33,13 @@ export class SharedSessionChannel {
   >()
   private nextRequestId = 1
 
-  constructor(private readonly send: (frame: unknown) => void) {}
+  constructor(
+    private readonly send: (frame: unknown) => void,
+    private readonly permissions?: {
+      context(sessionKey: string): import('@agnes/protocol').PermissionContext | undefined
+      record(sessionKey: string, evidence: readonly import('@agnes/protocol').JsonValue[]): Promise<void>
+    },
+  ) {}
 
   run<T>(sessionKey: string, operation: () => T): T {
     if (!sessionKey) throw new Error('session key is required')
@@ -48,6 +71,9 @@ export class SharedSessionChannel {
   request(method: RequestFrame['method'], params: unknown, signal: AbortSignal): Promise<unknown> {
     const sessionKey = this.currentSessionKey()
     const requestId = `w${this.nextRequestId++}`
+    const permissionContext = ['permission', 'plugin-manage', 'mcp-manage', 'skill-install'].includes(method)
+      ? this.permissions?.context(sessionKey)
+      : undefined
     return new Promise((resolve, reject) => {
       const cancel = (): void => {
         if (
@@ -90,7 +116,17 @@ export class SharedSessionChannel {
         cancel,
         resolve: (value) => {
           signal.removeEventListener('abort', onAbort)
-          resolve(value)
+          if (permissionContext && value && typeof value === 'object' && '__aghPermissionEvidence' in value) {
+            const envelope = value as {
+              value: unknown
+              __aghPermissionEvidence: import('@agnes/protocol').JsonValue[]
+            }
+            resolve(
+              this.permissions!.record(sessionKey, envelope.__aghPermissionEvidence).then(
+                () => envelope.value,
+              ),
+            )
+          } else resolve(value)
         },
         reject: (error) => {
           signal.removeEventListener('abort', onAbort)
@@ -103,7 +139,14 @@ export class SharedSessionChannel {
       }
       signal.addEventListener('abort', onAbort, { once: true })
       try {
-        this.send({ kind: 'request', sessionKey, requestId, method, params } satisfies RequestFrame)
+        this.send({
+          kind: 'request',
+          sessionKey,
+          requestId,
+          method,
+          params,
+          ...(permissionContext ? { permissionContext } : {}),
+        } satisfies RequestFrame)
       } catch (error) {
         this.pending.delete(requestId)
         signal.removeEventListener('abort', onAbort)
@@ -124,8 +167,14 @@ export class SharedSessionChannel {
     const sessionKey = 'sessionKey' in frame ? frame.sessionKey : undefined
     if (sessionKey !== pending.sessionKey) throw new Error('supervisor reply session mismatch')
     this.pending.delete(frame.requestId)
-    if (frame.error) pending.reject(frame.error)
-    else pending.resolve(frame.result)
+    if (frame.error) {
+      if (frame.permissionEvidence?.length && this.permissions)
+        void this.permissions.record(pending.sessionKey, frame.permissionEvidence).then(
+          () => pending.reject(frame.error),
+          (error) => pending.reject(error),
+        )
+      else pending.reject(frame.error)
+    } else pending.resolve(frame.result)
     return true
   }
 

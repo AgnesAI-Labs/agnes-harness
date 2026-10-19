@@ -244,7 +244,12 @@ const nodeRaw = (node: UINode): string => {
     return JSON.stringify(node.system, null, 2)
   if (node.kind === 'assistant') return [node.thinking, node.text].filter(Boolean).join('\n\n')
   if (node.kind === 'tool')
-    return [traceText('trace.raw.tool', { name: node.name }), node.argsPreview, node.resultPreview]
+    return [
+      traceText('trace.raw.tool', { name: node.name }),
+      node.permissionDecision ? traceText('trace.approval.fullAccess') : undefined,
+      node.argsPreview,
+      node.resultPreview,
+    ]
       .filter(Boolean)
       .join('\n\n')
   return nodePreview(node)
@@ -327,7 +332,13 @@ function describe(
     return { title: system ? system.preview : traceText('trace.title.user'), text: preview }
   }
   if (node.kind === 'approval')
-    return { title: traceText('trace.title.approval', { summary: clip(preview, 60) }), text: preview }
+    return {
+      title:
+        node.decision?.reason === 'full-access'
+          ? traceText('trace.approval.fullAccess')
+          : traceText('trace.title.approval', { summary: clip(preview, 60) }),
+      text: preview,
+    }
   if (node.kind === 'compaction') return { title: traceText('trace.title.compaction'), text: preview }
   return { title: preview, text: preview }
 }

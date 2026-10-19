@@ -447,6 +447,7 @@ export class AuthoringCandidates {
     reviewHash: string,
     approve: boolean,
     publish: (source: { type: 'file'; ref: string }, value: AuthoringCandidate) => Promise<void>,
+    reviewer = owner,
   ) {
     const record = this.load(profileDir, id, owner)
     this.verify(record, expected)
@@ -469,12 +470,12 @@ export class AuthoringCandidates {
       authoringError('Installed version changed since review')
     if (!approve) {
       record.value.state = 'rejected'
-      record.value.reviewer = owner
+      record.value.reviewer = reviewer
       this.save(profileDir, record)
       return this.project(record, profileDir)
     }
     record.value.state = 'publishing'
-    record.value.reviewer = owner
+    record.value.reviewer = reviewer
     this.save(profileDir, record)
     this.publications.add(id)
     try {

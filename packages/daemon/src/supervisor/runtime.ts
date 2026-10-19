@@ -1,4 +1,5 @@
 import { supervisorHostFacade } from './host-facade.js'
+import { permissionRequest } from './permission-requests.js'
 
 export { supervisorHostFacade } from './host-facade.js'
 
@@ -1148,11 +1149,19 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         if (f.method === 'scheduling')
           return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
         if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
-        if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
+        if (['plugin-manage', 'mcp-manage', 'skill-install'].includes(f.method))
+          return permissionRequest(f.permissionContext, resourceControlDirectory, () => {
+            if (f.method === 'plugin-manage')
+              return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+            if (f.method === 'mcp-manage')
+              return mcpManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+            return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+          })
+        if (f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
-        if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
+        if (f.method === 'mcp-manage-abort')
           return mcpManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
-        if (f.method === 'skill-install' || f.method === 'skill-install-abort')
+        if (f.method === 'skill-install-abort')
           return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         const permissionKey = `${sessionKey}\0${f.requestId}`
         if (f.method === 'permission-abort') {
@@ -1170,7 +1179,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           const controller = new AbortController()
           permissionRequests.set(permissionKey, controller)
           try {
-            return await prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) })
+            return await permissionRequest(f.permissionContext, resourceControlDirectory, () =>
+              prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) }),
+            )
           } finally {
             permissionRequests.delete(permissionKey)
           }
