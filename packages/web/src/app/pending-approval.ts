@@ -63,6 +63,7 @@ function approvalNode(
   return {
     kind: 'approval',
     id: ref.id,
+    purpose: spec.purpose,
     seq: 0,
     state,
     decisionRef: ref,

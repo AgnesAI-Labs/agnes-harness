@@ -112,7 +112,7 @@ async function harness() {
   return { context, controller, list, decide, showError }
 }
 
-it.each(['preview', 'pending', 'full-access'])(
+it.each(['preview', 'pending', 'full-access', 'full-plan', 'legacy-yolo'])(
   'keeps %s approval display from authorizing an answer',
   async (mode) => {
     const { context, controller, decide } = await harness()
@@ -120,8 +120,20 @@ it.each(['preview', 'pending', 'full-access'])(
     if (mode === 'preview') context.readOnly = { id: 's', maxNodes: 200, hasEarlier: false }
     else if (mode === 'pending') context.sessionPending = true
     else context.permissionMode = 'full'
+    context.sessionRows = [
+      {
+        sessionId: 's',
+        createdAt: '2026-10-20T00:00:00Z',
+        lastSeq: 1,
+        generation: 1,
+        preset: mode === 'legacy-yolo' ? 'workspace-write' : 'full-access',
+      },
+    ]
+    if (mode === 'full-plan') context.projection = timeline([{ ...approval, purpose: 'plan.exit' }])
     controller.renderApproval()
-    expect(document.querySelector('[data-testid="approval-card"]')).toBeNull()
+    if (mode === 'full-plan' || mode === 'legacy-yolo')
+      await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull())
+    else expect(document.querySelector('[data-testid="approval-card"]')).toBeNull()
     expect(decide).not.toHaveBeenCalled()
   },
 )

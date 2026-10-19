@@ -213,16 +213,17 @@ export function createTurnController(
         ? cachedApproval?.node
         : undefined)
     const durable = known?.state === 'pending' ? known : undefined
-    const modeChoice = context.liveApproval
-      ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
-      : context.projection?.nodes.some(
-          (node) =>
-            node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
-        )
-    if (
-      known?.decision?.reason === 'full-access' ||
-      (context.permissionMode === 'full' && !modeChoice && !known?.reconcile)
-    ) {
+    const fullAccess =
+      context.sessionRows.find((row) => row.sessionId === context.current?.id)?.preset === 'full-access'
+    const modeChoice =
+      known?.purpose === 'plan.exit' ||
+      (context.liveApproval
+        ? approvalToolName(context.liveApproval.request.toolCall) === 'exit_plan_mode'
+        : context.projection?.nodes.some(
+            (node) =>
+              node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
+          ))
+    if (known?.decision?.reason === 'full-access' || (fullAccess && !modeChoice && !known?.reconcile)) {
       context.approvalRuntime.render(undefined)
       return
     }
