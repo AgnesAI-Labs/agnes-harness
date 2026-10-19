@@ -45,3 +45,5 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 真实模型投资者演示：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs pharma-gmp --real`，外层使用 heavy-lock 和 web-gate-lock，按任务要求从 keychain 命令级注入密钥。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
 
 设置 `AGH_SHOWCASE_REQUIRE_REVIEW=1` 可显式审查测试候选：脚本在隔离运行目录写入 `candidate-review.json`，等待操作者核对源码与测试后写入包含相同 `candidateHash`、`reviewHash` 的 `review-approved.json`。该测试夹具不提供生产自动批准能力。
+
+签署卡按当前界面语言展示业务对象、审阅版本、精确签名含义及证据链接；宿主答复必须返回该展示版本绑定的原文。回执和审计保存所见含义；仅返回旧式空答复不能完成新签署。

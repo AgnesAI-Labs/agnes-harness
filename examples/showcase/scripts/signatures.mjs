@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 export function testOperatorSignatures(
   client,
   session,
-  { answer = () => 'allowed-once', beforeAnswer = async () => {} } = {},
+  { answer = () => 'allowed-once', beforeAnswer = async () => {}, locale = 'zh-CN' } = {},
 ) {
   let stopped = false,
     failure
@@ -19,7 +19,10 @@ export function testOperatorSignatures(
           ...snapshot.handle,
           revision: snapshot.revision,
           commandId: randomUUID(),
-          response: { option: answer(snapshot), value: null },
+          response: {
+            option: answer(snapshot),
+            value: snapshot.request.spec.presentation?.[locale]?.responseValue ?? null,
+          },
         })
       }
       await new Promise((done) => setTimeout(done, 100))

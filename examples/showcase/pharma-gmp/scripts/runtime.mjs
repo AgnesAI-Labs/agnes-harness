@@ -17,7 +17,7 @@ export async function until(read, accept, label, timeout = 60000) {
   }
   throw new Error(`Timed out: ${label}`)
 }
-export async function runtime(real, application = 'pharma-gmp') {
+export async function runtime(real, application = 'pharma-gmp', { demoModel = false } = {}) {
   const root = join(
     homedir(),
     'agh-real-eval',
@@ -58,14 +58,50 @@ export async function runtime(real, application = 'pharma-gmp') {
   // Use dollar-denominated credits for isolated real-model accounting.
   // The acceptance runner supplies hard ceilings on its interactive turns.
   // An explicit profile intentionally disables the platform's fresh-home Demo fallback.
-  if (real) {
+  if (real || demoModel) {
     // Let the normal CLI initialize the versioned empty home before adding configuration.
     await cli(['daemon', 'start'])
     await cli(['daemon', 'stop'])
     await mkdir(join(home, 'profiles/local-dev'), { recursive: true, mode: 0o700 })
     await writeFile(
       join(home, 'profiles/local-dev/profile.yaml'),
-      JSON.stringify({ name: 'local-dev', limits: { 'cost.credits_per_usd': 1 } }),
+      JSON.stringify({
+        name: 'local-dev',
+        limits: { 'cost.credits_per_usd': 1 },
+        ...(demoModel
+          ? {
+              provider: {
+                package: '@agnes/ai',
+                routes: [
+                  {
+                    route: 'demo',
+                    api: 'scripted',
+                    keyless: true,
+                    baseUrl: 'https://demo.invalid',
+                    compat: { demo: true },
+                    models: [
+                      {
+                        id: 'demo-model',
+                        name: 'Local Demo',
+                        route: 'demo',
+                        api: 'scripted',
+                        baseUrl: 'https://demo.invalid',
+                        reasoning: false,
+                        input: ['text'],
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                        contextWindow: 128000,
+                        maxTokens: 8192,
+                        toolCallFormats: ['native'],
+                        thinkingReplay: 'native',
+                        contract_id: null,
+                      },
+                    ],
+                  },
+                ],
+              },
+            }
+          : {}),
+      }),
       { mode: 0o600 },
     )
   }

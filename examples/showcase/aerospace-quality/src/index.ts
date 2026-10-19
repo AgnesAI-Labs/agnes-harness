@@ -221,18 +221,29 @@ export const tools = [
               ? state.zeroing.find((row) => row.id === i.id)
               : state.rule
       const meaning = {
-        mrb: 'I approve this MRB disposition for implementation; hardware remains on hold pending verification. / 我批准实施本 MRB 处置；硬件保持隔离，等待复验。',
-        configuration:
-          'I approve this configuration change and its required verification, without claiming tests have passed. / 我批准本技术状态更改及所需验证，不宣称试验通过。',
-        rule: 'I approve activation of this reviewed screening rule. / 我批准启用本次已审阅的筛选规则。',
-        zeroing:
-          'I confirm the complete reviewed evidence and approve quality closure. / 我确认完整的已审阅证据并批准质量归零关闭。',
+        mrb: {
+          en: 'I approve this MRB disposition for implementation; hardware remains on hold pending verification.',
+          'zh-CN': '我批准实施本 MRB 处置；硬件保持隔离，等待复验。',
+        },
+        configuration: {
+          en: 'I approve this configuration change and its required verification, without claiming tests have passed.',
+          'zh-CN': '我批准本技术状态更改及所需验证，不宣称试验通过。',
+        },
+        rule: {
+          en: 'I approve activation of this reviewed screening rule.',
+          'zh-CN': '我批准启用本次已审阅的筛选规则。',
+        },
+        zeroing: {
+          en: 'I confirm the complete reviewed evidence and approve quality closure.',
+          'zh-CN': '我确认完整的已审阅证据并批准质量归零关闭。',
+        },
       }[i.kind]
       const approval = await sign(c, { ...i, record }, meaning, i.id)
       return {
         ...decide(c.store, i, approval),
         signature: {
           decisionId: approval.requestId,
+          meaning: approval.signedMeaning,
           signer: approval.answeredBy.id,
           signedAt: approval.signedAt,
           reviewedRevision: i.expectedRevision,

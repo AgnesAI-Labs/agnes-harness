@@ -243,10 +243,12 @@ it('asks for a separate human business signature under standard and full-access 
         expectedRevision: 1,
       })
       expect(draft.isError).not.toBe(true)
-      for (const [role, option, success] of [
-        ['system', 'allowed-once', false],
-        ['reviewer', 'rejected', false],
-        ['reviewer', 'allowed-once', true],
+      for (const [role, option, success, badValue] of [
+        ['system', 'allowed-once', false, undefined],
+        ['reviewer', 'rejected', false, undefined],
+        ['reviewer', 'allowed-once', false, null],
+        ['reviewer', 'allowed-once', false, 'altered signature meaning'],
+        ['reviewer', 'allowed-once', true, undefined],
       ] as const) {
         const pending = s.invoke('aero_decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 2 })
         let question: Awaited<ReturnType<typeof s.decisions>>[number] | undefined
@@ -261,12 +263,31 @@ it('asks for a separate human business signature under standard and full-access 
           .toBe(true)
         const snapshot = question!
         expect(snapshot.request.spec.subject).toMatchObject({ input: expect.stringContaining('NCR-018') })
+        const view = snapshot.request.spec.presentation?.['zh-CN']
+        expect(view?.fields.find((f) => f.label === '签名含义')?.value).toBe(view?.responseValue)
+        expect(view?.title).toBe('人工质量签署')
+        if (badValue !== undefined) {
+          await expect(
+            s.answerDecision(
+              {
+                handle: snapshot.handle,
+                revision: snapshot.revision,
+                commandId: `invalid:${snapshot.handle.id}`,
+                response: { option, value: badValue },
+              },
+              { id: 'signer.reviewer', role, org: 'test', deptPath: [], attrs: {} },
+            ),
+          ).rejects.toThrow('RESPONSE_SCHEMA')
+        }
         await s.answerDecision(
           {
             handle: snapshot.handle,
             revision: snapshot.revision,
             commandId: `review:${snapshot.handle.id}`,
-            response: { option, value: null },
+            response: {
+              option: badValue === undefined ? option : 'rejected',
+              value: snapshot.request.spec.presentation?.['zh-CN']?.responseValue ?? null,
+            },
           },
           { id: `signer.${role}`, role, org: 'test', deptPath: [], attrs: {} },
         )
@@ -276,6 +297,13 @@ it('asks for a separate human business signature under standard and full-access 
           revision: number
         }
         expect(state.revision).toBe(success ? 3 : 2)
+        if (success)
+          expect(result.structured).toMatchObject({
+            data: {
+              signature: { meaning: view?.responseValue },
+              audit: { signatureMeaning: view?.responseValue },
+            },
+          })
       }
       expect(ordinaryReviews.length > 0).toBe(base === 'standard')
     } finally {

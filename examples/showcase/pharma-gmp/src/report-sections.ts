@@ -8,7 +8,10 @@ export function dossierSections(p: Plant, id: string, locale: 'zh-CN' | 'en') {
   return [
     '',
     `## ${t('原始批记录 / IPC', 'Original BPR / IPC')}`,
-    '| Step | Equipment / room | CPP / IPC | Result | Limit | Operator / verifier |',
+    t(
+      '| 工序 | 设备 / 房间 | CPP / IPC | 结果 | 限度 | 操作人 / 复核人 |',
+      '| Step | Equipment / room | CPP / IPC | Result | Limit | Operator / verifier |',
+    ),
     '|---|---|---|---|---|---|',
     ...b.steps.flatMap((s) =>
       s.cpp.map(
@@ -28,10 +31,10 @@ export function dossierSections(p: Plant, id: string, locale: 'zh-CN' | 'en') {
       .flatMap((d) => [
         `### ${d.id} · ${d.severity} · ${d.stage}`,
         d.cause || t('根因未确认', 'Root cause unconfirmed'),
-        `Impact: ${d.impact.join(', ')}`,
+        `${t('影响批次', 'Impact')}: ${d.impact.join(', ')}`,
         ...d.actions.map(
           (a) =>
-            `- ${a.id}: ${a.text[locale]}; ${a.owner}; due=${a.due}; effectiveness=${a.effective}; evidence=${a.evidence || 'MISSING'}`,
+            `- ${a.id}: ${a.text[locale]}; ${a.owner}; ${t('到期', 'due')}=${a.due}; ${t('有效性', 'effectiveness')}=${a.effective ? t('已确认', 'confirmed') : t('待确认', 'pending')}; ${t('证据', 'evidence')}=${a.evidence || 'MISSING'}`,
         ),
       ]),
     '',
@@ -46,7 +49,7 @@ export function dossierSections(p: Plant, id: string, locale: 'zh-CN' | 'en') {
       .filter((e) => b.steps.some((s) => s.equipment === e.id))
       .map(
         (e) =>
-          `- ${e.id}: ${e.qualification}; calibrated=${e.calibrated}; due=${e.due}; ${e.evidence.join('; ')}`,
+          `- ${e.id}: ${e.qualification}; ${t('校准日期', 'calibrated')}=${e.calibrated}; ${t('到期日期', 'due')}=${e.due}; ${e.evidence.join('; ')}`,
       ),
     '',
     `## ${t('审计索引', 'Audit index')}`,
@@ -75,7 +78,7 @@ export function reviewSections(p: Plant, locale: 'zh-CN' | 'en') {
     `- LOD: n=${lod.length}; min=${Math.min(...lod)}%; max=${Math.max(...lod)}%; mean=${(lod.reduce((a, b) => a + b, 0) / lod.length).toFixed(2)}%. ${t('包含原始 OOS；独立复验不替换原始值。', 'Includes original OOS; independent retests do not replace originals.')}`,
     '',
     `## ${t('偏差周趋势（样本计数，不推断发生率）', 'Weekly deviation trend (counts, not inferred incidence)')}`,
-    '| Period | Minor | Major | Critical | Total |',
+    t('| 期间 | 次要 | 主要 | 关键 | 合计 |', '| Period | Minor | Major | Critical | Total |'),
     '|---|---:|---:|---:|---:|',
     ...[
       [1, 7],

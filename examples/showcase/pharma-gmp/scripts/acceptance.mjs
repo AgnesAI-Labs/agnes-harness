@@ -176,7 +176,7 @@ try {
   revision++
   rt.onApproval(undefined)
   assert.ok(released.dossier.certificate.approvalId)
-  assert.equal(released.dossier.certificate.meaning, meaning)
+  assert.equal(released.dossier.certificate.meaning, '我已审核完整质量档案，批准本批放行。')
   assert.equal(released.dossier.certificate.dossierRevision, 5)
   evidence.certificate = released.dossier.certificate
   evidence.checks.push('approved-capa-retest-bpr-release')

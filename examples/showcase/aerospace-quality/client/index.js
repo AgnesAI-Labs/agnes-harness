@@ -71,7 +71,7 @@ export function apply(ctx, config) {
     ctx.homeEntries.register({
       id,
       titleKey: `aero.nav.${id}`,
-      icon: 'plugin',
+      icon: ['activity', 'list', 'monitor', 'shield', 'settings', 'check'][Object.keys(titles).indexOf(id)],
       order: Object.keys(titles).indexOf(id) + 10,
       placement: 'primary',
       component: ProgrammePage,

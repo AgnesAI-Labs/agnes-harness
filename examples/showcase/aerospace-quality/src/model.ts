@@ -80,6 +80,7 @@ export type Part = {
   status: string
 }
 export type Audit = {
+  signatureMeaning?: string
   id: string
   at: string
   action: string

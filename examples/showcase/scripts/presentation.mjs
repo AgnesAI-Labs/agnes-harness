@@ -15,6 +15,11 @@ const pharma = app === 'pharma-gmp',
 execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
   stdio: 'inherit',
 })
+if (process.argv.includes('--polish')) {
+  assert.ok(!real, 'Presentation polish uses only the local Demo model')
+  await import('./polish.mjs')
+  process.exit(process.exitCode ?? 0)
+}
 const brandModes = JSON.parse(
   await readFile(join('examples/showcase', app, 'client/agnes.client.json'), 'utf8'),
 ).skins[0].tokens['--agnes-brand-primary']
@@ -198,7 +203,10 @@ async function run(s, prompt, label, required = [], signatureOption = 'allowed-o
           ...snapshot.handle,
           revision: snapshot.revision,
           commandId: randomUUID(),
-          response: { option: signatureOption, value: null },
+          response: {
+            option: signatureOption,
+            value: snapshot.request.spec.presentation?.['zh-CN']?.responseValue ?? null,
+          },
         })
         evidence.signatures.push({
           handle: snapshot.handle,

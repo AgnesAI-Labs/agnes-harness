@@ -86,6 +86,7 @@ export type Sample = {
   evidence: string
 }
 export type Audit = {
+  signatureMeaning?: string
   id: string
   at: string
   actor: string
@@ -109,5 +110,8 @@ export type Plant = {
 }
 export const out = (m: Measurement) => m.value < m.min || m.value > m.max
 export const DEMO_DATE = '2024-10-20'
-export const SIGNATURE_MEANING =
-  'I approve this batch for release after reviewing the complete quality dossier. / 我已审核完整质量档案，批准本批放行。'
+export const SIGNATURE_MEANINGS = {
+  en: 'I approve this batch for release after reviewing the complete quality dossier.',
+  'zh-CN': '我已审核完整质量档案，批准本批放行。',
+}
+export const SIGNATURE_MEANING = `${SIGNATURE_MEANINGS.en} / ${SIGNATURE_MEANINGS['zh-CN']}`

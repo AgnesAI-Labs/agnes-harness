@@ -4,7 +4,7 @@ import { type ServiceContext, type ToolContext, toolPolicyKind } from '@agnes/ex
 import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
 import type {} from '@agnes/resource-control-runtime'
 import { Type } from '@sinclair/typebox'
-import { SIGNATURE_MEANING } from './model.js'
+import { SIGNATURE_MEANING, SIGNATURE_MEANINGS } from './model.js'
 import { qualityPolicy } from './policy.js'
 import { dashboard, dossier, investigation } from './quality.js'
 import { change, read, release } from './records.js'
@@ -43,6 +43,7 @@ const meta = (write = false, approve = false) => ({
 })
 const signatureReceipt = (approval: Awaited<ReturnType<typeof sign>>, reviewedRevision: number) => ({
   decisionId: approval.requestId,
+  meaning: approval.signedMeaning,
   signer: approval.answeredBy.id,
   signedAt: approval.signedAt,
   reviewedRevision,
@@ -101,8 +102,8 @@ export const record = defineTool({
       const approval = await sign(
         ctx,
         { ...input, currentDossier: dossier(read(ctx.store), input.batch) },
-        'I attest to this synthetic quality record. / 我确认本合成质量记录。',
-        `${input.batch} · ${input.action}`,
+        { en: 'I attest to this synthetic quality record.', 'zh-CN': '我确认本合成质量记录。' },
+        input.batch,
       )
       const p = change(ctx.store, input, { ...who(ctx), approval })
       return result({
@@ -129,7 +130,7 @@ export const releaseTool = defineTool({
       const check = dossier(read(ctx.store), input.batch)
       if (!check.ready || check.revision !== input.expectedRevision || input.meaning !== SIGNATURE_MEANING)
         throw new Error('Release prerequisites or signature meaning not satisfied / 放行条件或签名含义不满足')
-      const approval = await sign(ctx, { ...input, dossier: check }, input.meaning, input.batch)
+      const approval = await sign(ctx, { ...input, dossier: check }, SIGNATURE_MEANINGS, input.batch)
       const p = release(ctx.store, input, { ...who(ctx), approval })
       return result({
         revision: p.revision,

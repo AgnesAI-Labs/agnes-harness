@@ -1,9 +1,8 @@
 import type { Plant } from './model.js'
+import { escapeHtml, printReport } from './print-report.js'
 import { dashboard, dossier, emStatus } from './quality.js'
 import { dossierSections, reviewSections } from './report-sections.js'
 
-const escapeHtml = (s: string) =>
-  s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 export function report(
   p: Plant,
   kind: 'dossier' | 'apqr' | 'deviations' | 'em',
@@ -27,7 +26,7 @@ export function report(
       '合成演示数据；场景日期 2024-10-20；非监管提交文件。',
       'Synthetic demo; scenario date 2024-10-20; not a regulatory submission.',
     ),
-    `Revision: ${p.revision}`,
+    `${t('档案修订', 'Revision')}: ${p.revision}`,
     '',
   ]
   if (kind === 'dossier') {
@@ -36,7 +35,20 @@ export function report(
       `## ${batch}`,
       ...check.rows.map((r) => `- [${r.pass ? 'x' : ' '}] ${r.title[locale]}`),
       '',
-      JSON.stringify(check.certificate ?? { status: 'BLOCKED / 阻止放行' }, null, 2),
+      ...(check.certificate
+        ? [
+            `### ${t('放行证书', 'Release certificate')}`,
+            ...Object.entries({
+              [t('证书编号', 'Certificate')]: check.certificate.id,
+              [t('签署人', 'Signer')]: check.certificate.signer,
+              [t('签名时间', 'Signed at')]: check.certificate.at,
+              [t('签名含义', 'Signature meaning')]: check.certificate.meaning,
+              [t('审阅版本', 'Reviewed revision')]: check.certificate.dossierRevision,
+              [t('批准回执', 'Approval receipt')]: check.certificate.approvalId,
+              [t('签署绑定摘要', 'Signed subject digest')]: check.certificate.subjectRevision,
+            }).map(([label, value]) => `- ${label}: ${value}`),
+          ]
+        : [t('状态：阻止放行', 'Status: release blocked')]),
       ...dossierSections(p, batch, locale),
     )
   } else if (kind === 'em') {
@@ -44,7 +56,7 @@ export function report(
     for (const r of p.rooms) {
       const samples = p.samples.filter((s) => s.room === r.id)
       lines.push(
-        `- ${r.id} (${r.grade}): n=${samples.length}; alert=${samples.filter((s) => emStatus(p, s) === 'alert').length}; action=${samples.filter((s) => emStatus(p, s) === 'action').length}; CFU/m³ alert/action=${r.viableAlert}/${r.viableAction}`,
+        `- ${r.id} (${r.grade}): n=${samples.length}; ${t('警戒', 'alert')}=${samples.filter((s) => emStatus(p, s) === 'alert').length}; ${t('行动限超限', 'action')}=${samples.filter((s) => emStatus(p, s) === 'action').length}; CFU/m³ ${t('警戒限 / 行动限', 'alert/action')}=${r.viableAlert}/${r.viableAction}`,
       )
     }
     lines.push(
@@ -53,7 +65,7 @@ export function report(
         '## C-201 日趋势（每日两次主动空气采样的最大值）',
         '## C-201 daily trend (maximum of two active-air samples)',
       ),
-      '| Day | n | CFU/m³ max | Alert | Action |',
+      t('| 日期 | 采样数 | CFU/m³ 最大值 | 警戒限 | 行动限 |', '| Day | n | CFU/m³ max | Alert | Action |'),
       '|---|---:|---:|---:|---:|',
       ...Array.from({ length: 20 }, (_, i) => {
         const samples = p.samples.filter((s) => s.room === 'C-201' && Number(s.at.slice(8, 10)) === i + 1)
@@ -70,7 +82,7 @@ export function report(
     const k = dashboard(p)
     lines.push(
       t('## 2024 年回顾节选：仅 10 月 1–20 日样本', '## 2024 review section: October 1–20 sample only'),
-      `Batches: ${k.batches}; released: ${k.released}; RFT: ${k.rft}%`,
+      `${t('批次', 'Batches')}: ${k.batches}; ${t('已放行', 'released')}: ${k.released}; RFT: ${k.rft}%`,
       t(
         'RFT 分母为全部 36 批；未完成批次使该演示指标仅供运营参考。',
         'RFT denominator includes all 36 batches; unfinished batches make this an operational demo indicator.',
@@ -98,6 +110,6 @@ export function report(
     ),
   )
   const markdown = lines.join('\n')
-  const html = `<!doctype html><html lang="${locale}"><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font:15px/1.6 system-ui;max-width:900px;margin:40px auto;padding:24px;color:#172e34}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{border-bottom:3px solid #087d7d;padding-bottom:16px}@media print{body{margin:0;padding:0}h1{break-after:avoid}pre{font-size:11pt}}</style><h1>${escapeHtml(title)}</h1><pre>${escapeHtml(markdown)}</pre></html>`
+  const html = `<!doctype html><html lang="${locale}"><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font:15px/1.6 system-ui;max-width:900px;margin:40px auto;padding:24px;color:#172e34}p,li,td{overflow-wrap:anywhere}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #c8d8d8;padding:8px;text-align:left}th{background:#eff6f5}h2{font-size:20px;margin-top:28px}h3{font-size:16px}tr{break-inside:avoid}h1{border-bottom:3px solid #087d7d;padding-bottom:16px}@media print{body{margin:0;padding:0;font-size:11pt}h1,h2,h3{break-after:avoid}table{font-size:9pt}}</style><h1>${escapeHtml(title)}</h1>${printReport(lines)}</html>`
   return { title, markdown, html }
 }

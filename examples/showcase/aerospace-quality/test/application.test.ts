@@ -26,6 +26,11 @@ it('public package inspection resolves the third-party application, six profile 
   expect(inspected.snapshot.application?.id).toBe('qiongxu-aerospace-quality')
   expect(inspected.snapshot.application?.agents).toHaveLength(5)
   expect(inspected.snapshot.application?.presentation?.navigation?.entries).toHaveLength(6)
+  const pageIcons = inspected.snapshot.contributions.flatMap((row) =>
+    'client' in row ? (row.client?.homeEntries ?? []).map((page) => page.navigation?.icon) : [],
+  )
+  expect(new Set(pageIcons).size).toBe(6)
+  expect(pageIcons).not.toContain('plugin')
   const card = inspected.snapshot.contributions.find(
     (contribution) => 'client' in contribution && contribution.client?.slots?.includes('tool.call.toolview'),
   )

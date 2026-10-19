@@ -95,6 +95,7 @@ const deviation = obj({
   ),
 })
 const audit = obj({
+  signatureMeaning: Type.Optional(text),
   id,
   at: text,
   actor: text,
@@ -186,6 +187,7 @@ export const receiptSchema = obj({
       signedAt: text,
       reviewedRevision: revision,
       purpose: Type.Literal('business.confirm'),
+      meaning: text,
     }),
   ),
 })

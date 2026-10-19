@@ -107,7 +107,11 @@ export function apply(ctx, config) {
     return h(
       'main',
       { className: 'ph-app', 'data-pharma-page': name },
-      h('div', { className: 'ph-eyebrow' }, 'SABLELEAF / QUALITY OPERATIONS'),
+      h(
+        'div',
+        { className: 'ph-eyebrow' },
+        locale === 'zh-CN' ? '沙叶 / 质量运营' : 'SABLELEAF / QUALITY OPERATIONS',
+      ),
       h(PageHeader, {
         title: t[name],
         description: t.subtitle,

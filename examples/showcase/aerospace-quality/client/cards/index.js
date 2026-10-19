@@ -2,6 +2,13 @@ import { Tag } from '@agnes/web-ui'
 import React from 'react'
 
 const h = React.createElement
+const titles = {
+  aero_investigate: ['异常调查证据', 'Anomaly investigation'],
+  aero_mrb_draft: ['MRB 处置草案', 'MRB disposition draft'],
+  aero_decide: ['质量决策回执', 'Quality decision receipt'],
+  aero_change_review: ['更改影响评审', 'Change impact review'],
+  aero_report: ['证据报告', 'Evidence report'],
+}
 
 /** Read the full durable result; the transcript preview is deliberately truncated. */
 function useOutput(ctx, block) {
@@ -89,7 +96,7 @@ export function apply(ctx) {
             h(
               'div',
               { className: 'aero-row' },
-              h('strong', null, name),
+              h('strong', null, titles[name][zh ? 0 : 1]),
               h(
                 Tag,
                 {
@@ -115,7 +122,13 @@ export function apply(ctx) {
                   ),
                   h('p', null, data.hypothesis?.[locale] ?? data.hypothesis?.en),
                   h('p', null, `${zh ? '受控证据' : 'Controlled evidence'}: ${data.evidence.join(' · ')}`),
-                  h('p', null, data.assessmentScope),
+                  h(
+                    'p',
+                    null,
+                    zh
+                      ? '本结果只评估电流上限；未提供温度和真空度验收限值，不能判定其试验通过。'
+                      : 'Only the current upper limit is assessed here. Temperature and pressure have no supplied acceptance limits; do not declare their tests passed.',
+                  ),
                 )
               : typeof data?.screeningRequired === 'boolean'
                 ? h(

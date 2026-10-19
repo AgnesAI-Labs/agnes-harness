@@ -28,6 +28,7 @@ export function status(t, value) {
 export const table = (caption, columns, rows, t, props = {}) =>
   h(Table, {
     caption,
+    captionRepeatsHeading: true,
     rowKey: 'id',
     columns,
     dataSource: rows,

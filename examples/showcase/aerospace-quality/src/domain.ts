@@ -196,7 +196,9 @@ export type DecisionInput = {
   id: string
   expectedRevision: number
 }
-type Approval = import('@agnes/extension-api').ToolContext['approval']
+type Approval =
+  | (NonNullable<import('@agnes/extension-api').ToolContext['approval']> & { signedMeaning?: string })
+  | undefined
 function update(
   store: OwnedStore | undefined,
   expected: number,
@@ -218,6 +220,7 @@ function update(
       action,
       subject,
       approval: approval?.requestId ?? null,
+      ...(approval?.signedMeaning ? { signatureMeaning: approval.signedMeaning } : {}),
       revision: s.revision,
     }
     s.audit.push(audit)

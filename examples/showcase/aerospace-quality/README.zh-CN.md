@@ -69,3 +69,5 @@ Host 测试覆盖持久数据、重启、拒绝、取消、修订漂移、审批
 MRB 处置、技术状态更改、规则启用与归零关闭属于业务签署。工具通过公开决策端口以 `business.confirm` 请求签名，绑定精确对象、版本、证据和签名含义，验证宿主记录的真人回答；系统或模型回答、拒绝、取消、失效均不改变业务状态。即使在 full-access 下也需人工签名。普通工具权限仍由预设控制：非 full-access 按策略询问，full-access 的权限自动批准不代表业务签署。页面 effect 继续使用宿主人工确认与修订校验。
 
 真实模型投资者演示：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs aerospace-quality --real`，外层使用 heavy-lock 和 web-gate-lock，按任务要求从 keychain 命令级注入密钥。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
+
+签署卡按当前界面语言展示业务对象、审阅版本、精确签名含义及证据链接；宿主答复必须返回该展示版本绑定的原文。回执和审计保存所见含义；仅返回旧式空答复不能完成新签署。

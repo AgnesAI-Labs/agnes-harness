@@ -102,7 +102,14 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
     const document = report(p, kind, batch, 'en')
     expect(document.markdown).toContain('Synthetic')
     expect(document.html).toContain('@media print')
+    expect(document.html).not.toContain('<pre>')
+    expect(document.html).toContain('<table>')
+    expect(document.html).not.toContain('|---|')
   }
+  p.deviations[0]!.cause = '<script>unsafe()</script>'
+  const safe = report(p, 'dossier', batch, 'zh-CN').html
+  expect(safe).not.toContain('<script>')
+  expect(safe).toContain('&lt;script&gt;unsafe()&lt;/script&gt;')
 })
 it('shares service/tool state, persists across Host restart, and refuses missing proof, stale writes and cancellation', async () => {
   const storeDir = await mkdtemp(join(tmpdir(), 'agh-pharma-store-'))
@@ -119,7 +126,7 @@ it('shares service/tool state, persists across Host restart, and refuses missing
             result: {
               reason: 'answered',
               at: '2026-10-20T00:00:00Z',
-              response: { option: 'allowed-once', value: null },
+              response: { option: 'allowed-once', value: '我确认本合成质量记录。' },
               answeredBy: { id: 'fixture-human', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
             },
           },
@@ -144,6 +151,7 @@ it('shares service/tool state, persists across Host restart, and refuses missing
     const state = (await host.invokeProfileService('pharma.snapshot', {})) as { plant: Plant }
     expect(state.plant.deviations[0]!.stage).toBe('investigation')
     expect(state.plant.audit.at(-1)!.approval).toBe('fixture-human-approval')
+    expect(state.plant.audit.at(-1)?.signatureMeaning).toBe('我确认本合成质量记录。')
     await expect(host.invokeProfileService('pharma.change', args)).rejects.toThrow('approval proof')
     expect((await host.invoke('pharma_record', args)).isError).toBe(true)
     expect(
@@ -226,12 +234,18 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
                 )
                   continue
                 expect(snapshot.request.spec.options).toEqual(['allowed-once', 'rejected'])
+                const view = snapshot.request.spec.presentation?.['zh-CN']
+                expect(view?.fields.find((f) => f.label === '签名含义')?.value).toBe(view?.responseValue)
+                expect(view?.title).toBe('人工质量签署')
                 await s.answerDecision(
                   {
                     handle: snapshot.handle,
                     revision: snapshot.revision,
                     commandId: `human:${snapshot.handle.id}`,
-                    response: { option: verdict, value: null },
+                    response: {
+                      option: verdict,
+                      value: snapshot.request.spec.presentation?.['zh-CN']?.responseValue ?? null,
+                    },
                   },
                   { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
                 )
@@ -348,7 +362,13 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
         expect(released.isError, JSON.stringify(released)).not.toBe(true)
         expect(released.structured).toMatchObject({
           revision: 6,
-          dossier: { certificate: { signer: 'human.qa', dossierRevision: 5, meaning: SIGNATURE_MEANING } },
+          dossier: {
+            certificate: {
+              signer: 'human.qa',
+              dossierRevision: 5,
+              meaning: '我已审核完整质量档案，批准本批放行。',
+            },
+          },
         })
         expect((await invoke('pharma_inspect', { batch })).structured).toMatchObject({
           findings: expect.arrayContaining([

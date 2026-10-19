@@ -10,7 +10,11 @@ export type Change = {
   evidence?: string
 }
 export type Release = { batch: string; expectedRevision: number; meaning: string }
-type Identity = { actor: string; session: string | null; approval?: ToolContext['approval'] }
+type Identity = {
+  actor: string
+  session: string | null
+  approval?: ToolContext['approval'] & { signedMeaning?: string }
+}
 export function read(store?: OwnedStore): Plant {
   if (!store) throw new Error('Owner store unavailable / 业务存储不可用')
   const value = store.get('plant.header')
@@ -76,6 +80,7 @@ function write(
       reason,
       session: identity.session,
       approval: identity.approval?.requestId ?? null,
+      ...(identity.approval?.signedMeaning ? { signatureMeaning: identity.approval.signedMeaning } : {}),
     })
     persist(store, p)
     return p
@@ -217,7 +222,7 @@ export function release(store: OwnedStore | undefined, input: Release, who: Iden
       batch: b.id,
       at: new Date().toISOString(),
       signer: who.approval!.answeredBy.id,
-      meaning: input.meaning,
+      meaning: who.approval!.signedMeaning ?? input.meaning,
       approvalId: who.approval!.requestId,
       subjectRevision: who.approval!.subjectRevision,
       dossierRevision: p.revision,
