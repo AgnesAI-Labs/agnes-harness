@@ -30,7 +30,7 @@ const bounded = async <T>(promise: Promise<T>, label: string): Promise<T> => {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out`)), 60_000)
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), 120_000)
       }),
     ])
   } finally {
@@ -101,6 +101,9 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       JSON.stringify({
         name: PROFILE,
         computerUse: { enabled: false },
+        // The first request that needs the shared worker boots it, and assembling its Host takes
+        // about 15 s on an idle machine; the 30 s default fails on a loaded or swapping one.
+        limits: { 'worker.startup_ms': 120_000 },
         adapters: { secrets: { kind: 'file', path: secrets } },
         provider: {
           package: '@agnes/ai',
@@ -162,9 +165,13 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
     socketPath = owner.socketPath
-    sdk = createClient({ journal: memoryJournal(), transport: { kind: 'unix', path: owner.socketPath } })
+    sdk = createClient({
+      journal: memoryJournal(),
+      timeouts: { request: 120_000 },
+      transport: { kind: 'unix', path: owner.socketPath },
+    })
     await sdk.initialize()
-  }, 120_000)
+  }, 180_000)
 
   afterAll(async () => {
     await sdk?.close()
@@ -177,7 +184,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     await fake?.close()
     if (socketPath) rmSync(dirname(socketPath), { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
-  })
+  }, 40_000)
 
   it('offers the loop in the Market, installs and uninstalls it, then installs it again, lists the loop and runs a turn on it', async () => {
     const loops = async () => (await sdk.sessionSelection.loops()).map((l) => `${l.id}@${l.version}`)
