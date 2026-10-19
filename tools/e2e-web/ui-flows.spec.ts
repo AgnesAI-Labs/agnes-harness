@@ -25,8 +25,16 @@ import {
 } from './ui.js'
 
 async function open(page: Page, runtime: Runtime) {
+  const config = await (await runtime.connect()).config.get()
   await preferences(page)
   await page.goto(runtime.url)
+  // Fresh homes initialize diagnostics before showing setup; the underlying composer is already visible.
+  if (config.accounts?.length === 0 || (config.accounts === undefined && !config.configured)) {
+    const guide = page.getByTestId('first-run-guide')
+    await expect(guide).toBeVisible()
+    await page.getByTestId('first-run-skip').click()
+    await expect(guide).toBeHidden()
+  }
   await chooseWorkspace(page, runtime)
   await fresh(page)
 }
