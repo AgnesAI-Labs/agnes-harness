@@ -28,6 +28,30 @@ describe('setPreset command', () => {
   })
 })
 
+it('reads generation status cooperatively while accepting a legacy synchronous Host', async () => {
+  const status = { generations: [], plugins: [] }
+  const frame = {
+    kind: 'command' as const,
+    requestId: 'status',
+    method: 'pluginGenerations.status' as const,
+    params: {},
+  }
+  const host = {
+    pluginGenerationStatus: () => {
+      throw new Error('blocking status must not run')
+    },
+    pluginGenerationStatusAsync: async () => status,
+  } as unknown as Host
+  await expect(handleServiceCommand(host, frame, new Map())).resolves.toEqual(status)
+  await expect(
+    handleServiceCommand({ pluginGenerationStatus: () => status } as unknown as Host, frame, new Map()),
+  ).resolves.toEqual(status)
+  host.pluginGenerationStatusAsync = async () => {
+    throw new Error('E_GENERATION_INTEGRITY')
+  }
+  await expect(handleServiceCommand(host, frame, new Map())).rejects.toThrow('E_GENERATION_INTEGRITY')
+})
+
 it('exposes publication status and migration only through an assembled Host', async () => {
   const publication = {
     operation: 'models' as const,

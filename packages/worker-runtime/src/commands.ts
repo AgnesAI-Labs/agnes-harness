@@ -903,8 +903,13 @@ export async function handleServiceCommand(
     case 'observability.health':
       return exporterHealth()
     case 'pluginGenerations.status':
-      if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
-      return withPackageVerification(async () => host.pluginGenerationStatus!())
+      if (!host?.pluginGenerationStatus && !host?.pluginGenerationStatusAsync)
+        throw new Error('Plugin generation status is unavailable')
+      return withPackageVerification(async () =>
+        host.pluginGenerationStatusAsync
+          ? host.pluginGenerationStatusAsync()
+          : host.pluginGenerationStatus!(),
+      )
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

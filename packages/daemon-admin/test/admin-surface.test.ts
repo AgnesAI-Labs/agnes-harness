@@ -189,6 +189,22 @@ describe('local package admin surface trust boundary', () => {
       features: [],
     })
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
+    s.invoke.mockClear()
+    expect(await (await s.request('overview')).json()).toEqual({ context, inventory: { packages: [] } })
+    expect(s.invoke).toHaveBeenCalledTimes(1)
+    expect(s.invoke).toHaveBeenCalledWith('list', { profile: 'local-dev' })
+    s.invoke.mockRejectedValueOnce(new Error('private backend detail'))
+    const recovery = await (await s.request('overview')).json()
+    expect(recovery.context).toMatchObject({
+      readOnly: true,
+      permissions: ['packages.read', 'credentials.read'],
+    })
+    expect(recovery).not.toHaveProperty('inventory')
+    expect(JSON.stringify(recovery)).not.toContain('private backend detail')
+    expect((await s.request('overview', undefined, { Origin: 'http://evil.invalid' })).status).toBe(403)
+    const denied = await server(undefined, undefined, { permissions: [] })
+    expect((await denied.request('overview')).status).toBe(403)
+    expect(denied.invoke).not.toHaveBeenCalled()
   })
 
   it('returns only validated live Surface links through the exact-origin BFF', async () => {

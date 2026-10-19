@@ -15,13 +15,15 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
   vi.useFakeTimers()
   let hidden = false
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
-  vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
-    profile: 'test',
-    clientId: 'web',
-    permissions: ['packages.read'],
-    readOnly: false,
+  const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
+    context: {
+      profile: 'test',
+      clientId: 'web',
+      permissions: ['packages.read'],
+      readOnly: false,
+    },
+    inventory: { packages: [] },
   })
-  vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
   const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
@@ -83,17 +85,17 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
     await vi.advanceTimersByTimeAsync(0)
     expect(operation).toHaveBeenCalledTimes(3)
     expect(tree).toHaveBeenCalledTimes(5)
-    vi.mocked(PluginAdminApi.prototype.list).mockRejectedValueOnce(new Error('temporary outage'))
+    overview.mockRejectedValueOnce(new Error('temporary outage'))
     await page.refresh()
     expect(page.viewContext().state.connection).toBe('offline')
     expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
     await page.refresh()
     expect(page.viewContext().state.connection).toBe('connected')
-    expect(tree).toHaveBeenCalledTimes(7)
+    expect(tree).toHaveBeenCalledTimes(6)
     page.dispose()
     window.dispatchEvent(new Event('agnes:plugins-invalidated'))
     await vi.advanceTimersByTimeAsync(120_000)
-    expect(tree).toHaveBeenCalledTimes(7)
+    expect(tree).toHaveBeenCalledTimes(6)
   } finally {
     page.dispose()
   }
@@ -111,17 +113,24 @@ it('coalesces changes during a read into one follow-up and ignores completion af
   try {
     const first = reader.request()
     await Promise.resolve()
-    for (let i = 0; i < 3; i++) window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    finish?.()
+    await first
     expect(read).toHaveBeenCalledTimes(1)
+    const next = reader.request()
+    await Promise.resolve()
+    for (let i = 0; i < 3; i++) window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+    expect(read).toHaveBeenCalledTimes(2)
     finish?.()
     await Promise.resolve()
     await Promise.resolve()
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(read).toHaveBeenCalledTimes(3)
     window.dispatchEvent(new Event('agnes:plugins-invalidated'))
     reader.dispose()
     finish?.()
-    await first
-    expect(read).toHaveBeenCalledTimes(2)
+    await next
+    expect(read).toHaveBeenCalledTimes(3)
   } finally {
     reader.dispose()
   }

@@ -1,5 +1,4 @@
 import { relative, resolve as resolvePath } from 'node:path'
-import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -49,7 +48,13 @@ import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf
 import { assertMigrationSettled } from './migration-state.js'
 import { openGenerationStore } from './process-liveness.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
-import { describeColdSession, describeHostSession, generationSessions } from './runtime-descriptor.js'
+import {
+  describeColdSession,
+  describeHostSession,
+  generationSessions,
+  packageRequiresRestart,
+  readGenerationStatusAsync,
+} from './runtime-descriptor.js'
 import {
   assertPinsMatch,
   assertRepinConsented,
@@ -539,15 +544,9 @@ export async function createRuntimeGenerationHost(
     if (errors.length) throw new AggregateError(errors, 'generation collection failed')
   }
   const enqueue = calls.enqueue
-  const requiresRestart = (host: Host, id: string): boolean =>
-    basePackages.has(id) ||
-    host.providers
-      .catalog()
-      .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
-  const status = (): PluginGenerationStatus => {
+  const status = (pins = store.sessions(), readSnapshot = store.read.bind(store)) => {
     const errors = new Map(failures)
     const counts = new Map<string, number>()
-    const pins = store.sessions()
     const pinsByKey = new Map(pins.map((pin) => [pin.sessionKey, pin.generationId]))
     for (const pin of pins) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
     const snapshots = new Map([
@@ -557,7 +556,7 @@ export async function createRuntimeGenerationHost(
     for (const id of counts.keys())
       if (!snapshots.has(id)) {
         try {
-          snapshots.set(id, store.read(id))
+          snapshots.set(id, readSnapshot(id))
         } catch (error) {
           errors.set(id, String(error))
         }
@@ -601,7 +600,7 @@ export async function createRuntimeGenerationHost(
           state:
             error || previous?.state === 'failed'
               ? 'failed'
-              : requiresRestart(current?.host ?? initial, packageId)
+              : packageRequiresRestart(current?.host ?? initial, packageId, basePackages)
                 ? 'restart-required'
                 : active.has(packageId)
                   ? 'active'
@@ -623,7 +622,7 @@ export async function createRuntimeGenerationHost(
         plugins.set(id, {
           id,
           state: 'restart-required',
-          boundSessions: store.sessions().length,
+          boundSessions: pins.length,
           drainingSessions: 0,
           historicalSessions: 0,
         })
@@ -762,7 +761,7 @@ export async function createRuntimeGenerationHost(
       }
     const sources = await sourcesFor(target)
     for (const previous of head.snapshot.sources)
-      if (requiresRestart(head.host, previous.snapshot.packageId)) {
+      if (packageRequiresRestart(head.host, previous.snapshot.packageId, basePackages)) {
         const next = sources.find((item) => item.snapshot.packageId === previous.snapshot.packageId)
         if (
           previous.snapshot.integrity !== next?.snapshot.integrity ||
@@ -949,6 +948,7 @@ export async function createRuntimeGenerationHost(
     ),
     kernel,
     pluginGenerationStatus: status,
+    pluginGenerationStatusAsync: () => readGenerationStatusAsync(store, status, [live, failedSnapshots]),
     securityStatus: () => {
       const head = (current?.host ?? initial).securityStatus?.()
       if (!head) throw new Error('Security status is unavailable')
@@ -999,7 +999,7 @@ export async function createRuntimeGenerationHost(
       enqueue(async () => {
         const head = await ensureCurrent()
         const pkg = profile.packages.find((pkg) => pkg.id === id)
-        if (requiresRestart(head.host, id))
+        if (packageRequiresRestart(head.host, id, basePackages))
           throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} owns a workspace/process provider or backend`)
         const available = (await options.runtimePluginSources?.()) ?? options.runtimePluginSnapshots ?? []
         const path =

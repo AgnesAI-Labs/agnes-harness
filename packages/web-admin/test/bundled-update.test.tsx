@@ -56,14 +56,16 @@ it.each(['en', 'zh-CN'])(
       compatibility: 'supported',
       retrievedAt: '2026-10-16T00:00:00.000Z',
     }
-    vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
-      profile: 'local-dev',
-      clientId: 'fixture',
-      authScope: 'fixture',
-      readOnly: false,
-      permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
+    vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
+      context: {
+        profile: 'local-dev',
+        clientId: 'fixture',
+        authScope: 'fixture',
+        readOnly: false,
+        permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
+      },
+      inventory: { packages: [installed] },
     })
-    vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [installed] })
     vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [candidate], nextCursor: null })
     vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockResolvedValue({ orphans: [] })
     for (const method of ['surfaceLinks', 'treeList', 'runtime', 'composition'] as const)

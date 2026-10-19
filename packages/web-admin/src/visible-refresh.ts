@@ -32,10 +32,17 @@ export function visibleRefresh(
     if (!deferInvalidation()) void request().catch(() => undefined)
   }
   const wake = () => {
-    if (visible()) invalidate()
+    if (!visible()) {
+      dirty = true
+      return
+    }
+    // Visibility and focus commonly describe the same return to the page. Join an
+    // in-flight read; only a real invalidation should require another read after it.
+    if (deferInvalidation()) dirty = true
+    else void request().catch(() => undefined)
   }
   for (const event of events) window.addEventListener(event, invalidate)
-  window.addEventListener('online', wake)
+  window.addEventListener('online', invalidate)
   window.addEventListener('focus', wake)
   document.addEventListener('visibilitychange', wake)
   return {
@@ -45,7 +52,7 @@ export function visibleRefresh(
       stopped = true
       dirty = false
       for (const event of events) window.removeEventListener(event, invalidate)
-      window.removeEventListener('online', wake)
+      window.removeEventListener('online', invalidate)
       window.removeEventListener('focus', wake)
       document.removeEventListener('visibilitychange', wake)
     },

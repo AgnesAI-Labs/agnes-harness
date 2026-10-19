@@ -24,7 +24,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
-import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
+import { mergeGenerationStatus, projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
@@ -455,6 +455,58 @@ export async function createCompositionHost(
     adminLoop: () => readAdminLoopDefault(configuration),
     open,
   })
+  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]): PluginGenerationStatus => {
+    const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
+    const all = new Map<string, PluginGenerationStatus['generations'][number]>()
+    for (const status of statuses)
+      for (const item of status.generations) {
+        const previous = all.get(item.id)
+        if (!previous) {
+          all.set(item.id, item)
+          continue
+        }
+        all.set(item.id, mergeGenerationStatus(previous, item, opened.values()))
+      }
+    const blocked = [
+      ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((i) => [i.file, i])).values(),
+    ]
+    return {
+      ...statuses[0]!,
+      ...(blocked.length ? { blocked } : {}),
+      generations: [...all.values()],
+      plugins: [
+        ...new Map(
+          statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
+        ).values(),
+      ].map((plugin) => {
+        if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
+        const relevant = [...all.values()].filter((generation) =>
+          generation.packages.some((pkg) => pkg.id === plugin.id),
+        )
+        return {
+          ...plugin,
+          state: relevant.some((generation) => generation.state === 'active')
+            ? ('active' as const)
+            : relevant.some((generation) => generation.openSessions > 0)
+              ? ('draining' as const)
+              : ('historical' as const),
+          boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
+          historicalSessions: relevant.reduce(
+            (count, generation) =>
+              count +
+              (generation.state === 'active'
+                ? 0
+                : Math.max(0, generation.boundSessions - generation.openSessions)),
+            0,
+          ),
+          drainingSessions: relevant.reduce(
+            (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
+            0,
+          ),
+        }
+      }),
+    }
+  }
   const overrides: HostFacadeOverrides = {
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
     sessionBundleCatalog: () => calls.enqueue(async () => (await admission()).current.bundleCatalog),
@@ -599,95 +651,24 @@ export async function createCompositionHost(
         for (const { host } of containers.values()) await host.collectPluginGenerations?.()
         await collectIdle()
       }),
-    pluginGenerationStatus: () => {
-      const statuses = [...containers.values()].map(({ host, draining }) => {
-        const status = host.pluginGenerationStatus!()
-        return !draining
-          ? status
-          : {
-              ...status,
-              generations: status.generations.map((item) => ({
-                ...item,
-                state:
-                  item.state === 'active'
-                    ? item.openSessions > 0
-                      ? ('draining' as const)
-                      : ('historical' as const)
-                    : item.state,
-              })),
-              plugins: status.plugins.map((item) => ({
-                ...item,
-                state:
-                  item.state === 'active'
-                    ? status.generations.some(
-                        (generation) =>
-                          generation.openSessions > 0 &&
-                          generation.packages.some((pkg) => pkg.id === item.id),
-                      )
-                      ? ('draining' as const)
-                      : ('historical' as const)
-                    : item.state,
-                drainingSessions: item.boundSessions,
-                historicalSessions: status.generations
-                  .filter((generation) => generation.packages.some((pkg) => pkg.id === item.id))
-                  .reduce(
-                    (count, generation) =>
-                      count + Math.max(0, generation.boundSessions - generation.openSessions),
-                    0,
-                  ),
-              })),
-            }
-      })
-      const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-      const all = new Map<string, PluginGenerationStatus['generations'][number]>()
-      for (const status of statuses)
-        for (const item of status.generations) {
-          const previous = all.get(item.id)
-          if (!previous) {
-            all.set(item.id, item)
-            continue
-          }
-          all.set(item.id, mergeGenerationStatus(previous, item, opened.values()))
-        }
-      const blocked = [
-        ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((i) => [i.file, i])).values(),
-      ]
-      return {
-        ...statuses[0]!,
-        ...(blocked.length ? { blocked } : {}),
-        generations: [...all.values()],
-        plugins: [
-          ...new Map(
-            statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
-          ).values(),
-        ].map((plugin) => {
-          if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
-          const relevant = [...all.values()].filter((generation) =>
-            generation.packages.some((pkg) => pkg.id === plugin.id),
-          )
-          return {
-            ...plugin,
-            state: relevant.some((generation) => generation.state === 'active')
-              ? ('active' as const)
-              : relevant.some((generation) => generation.openSessions > 0)
-                ? ('draining' as const)
-                : ('historical' as const),
-            boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
-            historicalSessions: relevant.reduce(
-              (count, generation) =>
-                count +
-                (generation.state === 'active'
-                  ? 0
-                  : Math.max(0, generation.boundSessions - generation.openSessions)),
-              0,
-            ),
-            drainingSessions: relevant.reduce(
-              (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
-              0,
-            ),
-          }
-        }),
-      }
+    pluginGenerationStatus: () =>
+      mergeGenerationStatuses(
+        [...containers.values()].map((container) =>
+          projectGenerationStatus(container.host.pluginGenerationStatus!(), container.draining),
+        ),
+      ),
+    pluginGenerationStatusAsync: async () => {
+      const statuses: PluginGenerationStatus[] = []
+      // Each Host bounds its historical reads; do not multiply that IO across compositions.
+      for (const container of containers.values())
+        statuses.push(
+          projectGenerationStatus(
+            await (container.host.pluginGenerationStatusAsync?.() ??
+              container.host.pluginGenerationStatus!()),
+            container.draining,
+          ),
+        )
+      return mergeGenerationStatuses(statuses)
     },
     setSessionPreset: (key, name) =>
       calls.enqueue(async () => {

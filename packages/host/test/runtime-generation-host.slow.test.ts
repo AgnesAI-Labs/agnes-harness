@@ -449,6 +449,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       id: 'acme/generation',
       version: '1.0.0',
     })
+    expect(await host.pluginGenerationStatusAsync?.()).toEqual(host.pluginGenerationStatus?.())
     expect(host.kernel.get(b.key)).toBeDefined()
     expect(host.kernel.get(a.key)).toBeUndefined()
     expect(() => kernelAdmission(a.key, {} as never)).toThrow('E_GENERATION_NOT_LIVE')

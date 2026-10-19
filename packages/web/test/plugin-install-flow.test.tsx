@@ -114,17 +114,20 @@ function backend(options: { inspect?: Outcome; install?: Outcome } = {}) {
     const url = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'install-flow-test',
-        permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.install-flow-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'install-flow-test',
+          permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.install-flow-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: installed },
       })
     if (url.endsWith('/catalog/list')) return Response.json({ items: [entry], nextCursor: null })
-    if (url.endsWith('/list')) return Response.json({ packages: installed })
+
     if (url.endsWith('/tree/list')) return Response.json({ desiredDigest: 'sha256-x', actual: true })
     if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })

@@ -21,6 +21,7 @@ import {
   type ProcessLiveness,
   RuntimeGenerationSnapshotStore,
 } from '../src/runtime-snapshots-generations.js'
+import { hashDirectory } from '../src/sources.js'
 
 const homes: string[] = []
 afterEach(() => {
@@ -187,7 +188,7 @@ describe('generation record shape gate', () => {
     } catch (error) {
       caught = error
     }
-    return { caught, file }
+    return { caught, file, store, id: snapshot.id }
   }
 
   it.each([
@@ -210,12 +211,69 @@ describe('generation record shape gate', () => {
       }),
     ],
     ['bad artifact', (record: Record<string, unknown>) => ({ ...record, artifact: 7 })],
-  ])('reports %s as a located integrity error', (_name, mutate) => {
-    const { caught, file } = corrupted(mutate as never)
+  ])('reports %s as a located integrity error', async (_name, mutate) => {
+    const { caught, file, store, id } = corrupted(mutate as never)
     expect(caught).toBeInstanceOf(DurableStateError)
     expect((caught as DurableStateError).code).toBe('E_GENERATION_INTEGRITY')
     expect((caught as DurableStateError).file).toBe(file)
+    await expect(store.readAsync(id)).rejects.toMatchObject({ code: 'E_GENERATION_INTEGRITY', file })
   })
+
+  it.each(['package', 'resources'] as const)(
+    'asynchronously verifies %s bytes and refuses edits after a completed read',
+    async (kind) => {
+      const { home, store } = fixture()
+      const source = join(home, 'source')
+      mkdirSync(source)
+      writeFileSync(join(source, 'index.js'), 'first')
+      const integrity = hashDirectory(source, { exclude: [] })
+      const target = buildRuntimeTarget({
+        rows: [],
+        resources: { mcp: [], skills: {} },
+        resourceRevision: 'a'.repeat(64),
+        compositeRevision: 'b'.repeat(64),
+      })
+      const snapshot = store.create(
+        target,
+        [
+          {
+            generation: 1,
+            trusted: true,
+            snapshot: {
+              snapshotId: integrity,
+              profile: 'local-dev',
+              packageId: 'fixture/package',
+              version: '1.0.0',
+              integrity,
+              treeIntegrity: integrity,
+              capabilityHash: 'c'.repeat(64),
+              directory: source,
+              contributions: [],
+            },
+          },
+        ],
+        'compat',
+        undefined,
+        { data: {}, directories: [source] },
+        SEAMS,
+      )
+      await expect(store.readAsync(snapshot.id)).resolves.toEqual(store.read(snapshot.id))
+      const file = join(
+        store.root,
+        snapshot.id,
+        ...(kind === 'package' ? ['0'] : ['resources', '0']),
+        'index.js',
+      )
+      const before = new Date(0)
+      utimesSync(file, before, before)
+      writeFileSync(file, 'other')
+      utimesSync(file, before, before)
+      await expect(store.readAsync(snapshot.id)).rejects.toThrow(
+        kind === 'package' ? 'E_GENERATION_INTEGRITY' : 'E_GENERATION_RESOURCE_MISSING',
+      )
+      expect(() => store.read(snapshot.id)).toThrow()
+    },
+  )
 
   it('still refuses a newer snapshot as newer, not corrupt', () => {
     const { caught } = corrupted((record) => ({ ...record, version: 99 }))

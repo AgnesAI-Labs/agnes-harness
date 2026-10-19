@@ -199,6 +199,35 @@ it('keeps a read-only recovery context available when inventory reads need separ
   expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
+it('shares only in-flight overview reads and rejects unverified inventory or authority', async () => {
+  const snapshot = { context, inventory: { packages: [] } }
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(snapshot))
+  const [one, two] = await Promise.all([PluginAdminApi.overview(fetcher), PluginAdminApi.overview(fetcher)])
+  expect(one).toEqual(snapshot)
+  expect(two).toEqual(snapshot)
+  expect(one).not.toBe(two)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/plugins/api/overview')
+  await PluginAdminApi.overview(fetcher)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  for (const [invalid, code] of [
+    [{ context }, 'ADMIN_RESPONSE_INVALID'],
+    [{ context, inventory: { packages: 'invalid' } }, 'ADMIN_RESPONSE_INVALID'],
+    [
+      { context: { ...context, permissions: ['invented'] }, inventory: { packages: [] } },
+      'ADMIN_CONTEXT_INVALID',
+    ],
+  ] as const) {
+    fetcher.mockResolvedValueOnce(Response.json(invalid))
+    await expect(PluginAdminApi.overview(fetcher)).rejects.toMatchObject({
+      details: { code },
+    })
+  }
+  const recovery = { context: { ...context, readOnly: true } }
+  fetcher.mockResolvedValueOnce(Response.json(recovery))
+  await expect(PluginAdminApi.overview(fetcher)).resolves.toEqual(recovery)
+})
+
 it('accepts a legacy context but treats every optional hot-update feature as unsupported', async () => {
   const legacy = {
     profile: context.profile,

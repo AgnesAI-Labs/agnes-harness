@@ -1,4 +1,5 @@
-import type { ProviderCatalogEntry } from '@agnes/extension-api'
+import { type ProviderCatalogEntry, providerRestartRequired } from '@agnes/extension-api'
+import type { PluginGenerationSnapshot, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { SessionCapabilitySet, SessionRuntimeDescriptor } from '@agnes/protocol'
 import type { Host } from '../lifecycle/host.js'
 
@@ -330,4 +331,86 @@ export function mergeGenerationStatus(
     live: previous.live || item.live,
     ...(previous.sessions || item.sessions ? { sessions: [...sessions.values()] } : {}),
   }
+}
+
+type GenerationStatus = ReturnType<NonNullable<Host['pluginGenerationStatus']>>
+
+export function projectGenerationStatus(status: GenerationStatus, draining = false): GenerationStatus {
+  return !draining
+    ? status
+    : {
+        ...status,
+        generations: status.generations.map((item) => ({
+          ...item,
+          state:
+            item.state === 'active'
+              ? item.openSessions > 0
+                ? ('draining' as const)
+                : ('historical' as const)
+              : item.state,
+        })),
+        plugins: status.plugins.map((item) => ({
+          ...item,
+          state:
+            item.state === 'active'
+              ? status.generations.some(
+                  (generation) =>
+                    generation.openSessions > 0 && generation.packages.some((pkg) => pkg.id === item.id),
+                )
+                ? ('draining' as const)
+                : ('historical' as const)
+              : item.state,
+          drainingSessions: item.boundSessions,
+          historicalSessions: status.generations
+            .filter((generation) => generation.packages.some((pkg) => pkg.id === item.id))
+            .reduce(
+              (count, generation) => count + Math.max(0, generation.boundSessions - generation.openSessions),
+              0,
+            ),
+        })),
+      }
+}
+
+export async function readGenerationStatusAsync(
+  store: Pick<RuntimeGenerationSnapshotStore, 'sessions' | 'readAsync'>,
+  describe: (
+    pins: ReturnType<RuntimeGenerationSnapshotStore['sessions']>,
+    read: (id: string) => PluginGenerationSnapshot,
+  ) => GenerationStatus,
+  loaded: readonly ReadonlyMap<string, unknown>[],
+): Promise<GenerationStatus> {
+  const pins = store.sessions()
+  const ids = [...new Set(pins.map((pin) => pin.generationId))].filter(
+    (id) => !loaded.some((snapshots) => snapshots.has(id)),
+  )
+  const snapshots = new Map<string, PluginGenerationSnapshot>()
+  const errors = new Map<string, unknown>()
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(4, ids.length) }, async () => {
+      while (next < ids.length) {
+        const id = ids[next++]!
+        try {
+          snapshots.set(id, await store.readAsync(id))
+        } catch (error) {
+          errors.set(id, error)
+        }
+      }
+    }),
+  )
+  return describe(pins, (id) => {
+    const snapshot = snapshots.get(id)
+    if (!snapshot) throw errors.get(id) ?? new Error('E_GENERATION_SNAPSHOT_MISSING')
+    return snapshot
+  })
+}
+
+/** Provider/base packages keep their existing restart boundary in every generation view. */
+export function packageRequiresRestart(host: Host, id: string, basePackages: ReadonlySet<string>): boolean {
+  return (
+    basePackages.has(id) ||
+    host.providers
+      .catalog()
+      .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
+  )
 }

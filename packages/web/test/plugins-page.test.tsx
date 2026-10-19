@@ -533,13 +533,15 @@ it('coalesces pending-review reads and rejects a response invalidated in flight'
   const { PluginAdminApi } = await import('@agnes/web-admin/admin/plugins/api')
   const { PluginsPage } = await import('../src/pages/plugins-page.js')
   const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}))
-  vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
-    profile: 'synthetic',
-    clientId: 'web',
-    permissions: ['packages.read'],
-    readOnly: false,
+  vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
+    context: {
+      profile: 'synthetic',
+      clientId: 'web',
+      permissions: ['packages.read'],
+      readOnly: false,
+    },
+    inventory: { packages: [] } as never,
   })
-  vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))

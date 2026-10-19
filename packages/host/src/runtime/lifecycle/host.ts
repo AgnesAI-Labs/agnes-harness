@@ -108,6 +108,8 @@ export interface Host {
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
+  /** Read-only status with cooperative integrity verification of historical snapshots. */
+  pluginGenerationStatusAsync?(): Promise<PluginGenerationStatus>
   sessionGeneration?(sessionKey: string): string | undefined
   /** The outcome of the most recent publish, including a refusal and whether the previous state held. */
   lastChange?(): import('../generation/change-result.js').ChangeResult | undefined
