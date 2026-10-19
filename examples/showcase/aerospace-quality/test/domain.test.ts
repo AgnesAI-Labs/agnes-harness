@@ -208,20 +208,34 @@ it('traceability exposes orphan/design/untested gaps and reports preserve uncert
 it('asks for a separate human business signature under standard and full-access before MRB disposition', async () => {
   const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
   for (const base of ['standard', 'full-access']) {
+    const ordinaryReviews: string[] = []
     const kit = await createAuthorTestkit({
       plugin: main,
       packageId: '@test/aerospace-signature',
       version: '1.0.0',
       capabilities: { store: true },
       preset: base,
-      presets: { 'full-access': { name: 'full-access', extends: 'standard' } },
-      approval: async () => ({
-        verdict: 'allowed-once',
-        answeredBy: { id: 'human.permission', role: 'reviewer', org: 'test', deptPath: [], attrs: {} },
-      }),
+      presets: {
+        'full-access': { name: 'full-access', extends: 'standard' },
+        'permission-full-access': {
+          name: 'permission-full-access',
+          providers: { 'tool-policy': { provider: 'full-access' } },
+        },
+      },
+      approval: async (request) => {
+        ordinaryReviews.push(request.requestId)
+        return {
+          verdict: 'allowed-once',
+          answeredBy: { id: 'human.permission', role: 'reviewer', org: 'test', deptPath: [], attrs: {} },
+        }
+      },
     })
     try {
       const s = await kit.openSession()
+      if (base === 'full-access')
+        expect((await s.facts()).find((event) => event.type === 'session/start')?.data).toMatchObject({
+          permission: 'full-access',
+        })
       const draft = await s.invoke('aero_mrb_draft', {
         ncrId: 'NCR-018',
         disposition: 'rework',
@@ -263,6 +277,7 @@ it('asks for a separate human business signature under standard and full-access 
         }
         expect(state.revision).toBe(success ? 3 : 2)
       }
+      expect(ordinaryReviews.length > 0).toBe(base === 'standard')
     } finally {
       await kit.dispose()
     }

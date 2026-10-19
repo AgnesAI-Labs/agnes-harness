@@ -183,6 +183,7 @@ it('shares service/tool state, persists across Host restart, and refuses missing
 it('requires real Core human approval; preserves original OOS through CAPA/retest and binds the certificate to the actual signer', async () => {
   for (const base of ['standard', 'full-access'])
     for (const verdict of ['rejected', 'allowed-once'] as const) {
+      const ordinaryReviews: string[] = []
       const kit = await createAuthorTestkit({
         plugin: main,
         packageId: '@test/quality-application',
@@ -193,16 +194,26 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           'full-access': {
             name: 'full-access',
             extends: 'standard',
-            providers: { 'tool-policy': { provider: 'sableleaf-quality' } },
+          },
+          'permission-full-access': {
+            name: 'permission-full-access',
+            providers: { 'tool-policy': { provider: 'full-access' } },
           },
         },
-        approval: async () => ({
-          verdict: 'allowed-once',
-          answeredBy: { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
-        }),
+        approval: async (request) => {
+          ordinaryReviews.push(request.requestId)
+          return {
+            verdict: 'allowed-once',
+            answeredBy: { id: 'human.qa', org: 'test', role: 'reviewer', deptPath: [], attrs: {} },
+          }
+        },
       })
       try {
         const s = await kit.openSession()
+        if (base === 'full-access')
+          expect((await s.facts()).find((event) => event.type === 'session/start')?.data).toMatchObject({
+            permission: 'full-access',
+          })
         const invoke: typeof s.invoke = async (name, args, signal) => {
           const controller = new AbortController()
           const responding = (async () => {
@@ -241,6 +252,7 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           meaning: SIGNATURE_MEANING,
         })
         expect(blocked.isError).toBe(true)
+        expect(ordinaryReviews.length > 0).toBe(base === 'standard')
         if (verdict === 'rejected') {
           const refused = await invoke('pharma_record', { action: 'investigate', batch, expectedRevision: 0 })
           expect(refused.isError).toBe(true)
