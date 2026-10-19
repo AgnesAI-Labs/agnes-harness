@@ -1,10 +1,12 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
+import { forgetInventory } from '../src/admin/plugins/admin/inventory-cache.js'
 import { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { visibleRefresh } from '../src/visible-refresh.js'
 
 afterEach(() => {
+  forgetInventory()
   vi.restoreAllMocks()
   vi.useRealTimers()
   document.body.replaceChildren()
@@ -87,7 +89,8 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
     await page.refresh()
     expect(page.viewContext().state.connection).toBe('offline')
     expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
-    await page.refresh()
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
     expect(page.viewContext().state.connection).toBe('connected')
     expect(tree).toHaveBeenCalledTimes(7)
     page.dispose()
@@ -111,6 +114,8 @@ it('coalesces changes during a read into one follow-up and ignores completion af
   try {
     const first = reader.request()
     await Promise.resolve()
+    window.dispatchEvent(new Event('focus'))
+    document.dispatchEvent(new Event('visibilitychange'))
     for (let i = 0; i < 3; i++) window.dispatchEvent(new Event('agnes:plugins-invalidated'))
     expect(read).toHaveBeenCalledTimes(1)
     finish?.()
@@ -124,5 +129,74 @@ it('coalesces changes during a read into one follow-up and ignores completion af
     expect(read).toHaveBeenCalledTimes(2)
   } finally {
     reader.dispose()
+  }
+})
+
+it('reuses recent inventory only after checking context, while changes and expiry force reads', async () => {
+  vi.useFakeTimers()
+  const context = vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
+    profile: 'fresh',
+    clientId: 'web',
+    permissions: ['packages.read'],
+    readOnly: false,
+  })
+  const list = vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+  vi.spyOn(PluginAdminApi.prototype, 'runtime').mockResolvedValue({ providers: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'composition').mockResolvedValue({} as never)
+  vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+  const pins = vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockRejectedValue(new Error('not allowed'))
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    document.body.append(dialog)
+  }
+  const create = () =>
+    new PluginAdminPage({
+      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+    })
+  let page = create()
+  try {
+    await page.start()
+    expect(list).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event('focus'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(list).toHaveBeenCalledTimes(1)
+    page.dispose()
+    page = create()
+    await page.start()
+    expect(context).toHaveBeenCalledTimes(2)
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(page.viewContext().state.connection).toBe('connected')
+    expect(pins).not.toHaveBeenCalled()
+    await page.refresh()
+    expect(list).toHaveBeenCalledTimes(2)
+    page.dispose()
+    window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+    page = create()
+    await page.start()
+    expect(list).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(30_001)
+    window.dispatchEvent(new Event('focus'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(list).toHaveBeenCalledTimes(4)
+    page.dispose()
+    context.mockResolvedValue({ profile: 'other', clientId: 'web', permissions: [], readOnly: true })
+    page = create()
+    await page.start()
+    expect(list).toHaveBeenCalledTimes(5)
+    expect(page.viewContext().canEffect('packages.install')).toBe(false)
+    page.dispose()
+    context.mockRejectedValueOnce(new Error('offline'))
+    page = create()
+    await page.start()
+    expect(list).toHaveBeenCalledTimes(5)
+    expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
+    expect(page.viewContext().state.connection).toBe('offline')
+  } finally {
+    page.dispose()
   }
 })

@@ -29,6 +29,7 @@ function usePendingReviews(api: PluginView['api']) {
     if (!api) return
     let alive = true
     let epoch = 0
+    let checkedAt = Number.NEGATIVE_INFINITY
     let dirty = false
     let pending: Promise<void> | undefined
     const visible = () => document.visibilityState !== 'hidden'
@@ -42,9 +43,12 @@ function usePendingReviews(api: PluginView['api']) {
             const requested = epoch
             try {
               const value = await api.candidatesList()
-              if (alive && requested === epoch)
+              if (alive && requested === epoch) {
+                checkedAt = Date.now()
                 setCount(value.candidates.filter((item) => item.state === 'review').length)
+              }
             } catch {
+              checkedAt = Number.NEGATIVE_INFINITY
               // Retain the last confirmed count; a later invalidation can retry.
             }
           } while (alive && dirty && visible())
@@ -58,7 +62,9 @@ function usePendingReviews(api: PluginView['api']) {
       dirty = true
       read()
     }
-    const wake = () => read()
+    const wake = () => {
+      if (dirty || Date.now() - checkedAt >= 30_000) read()
+    }
     read()
     window.addEventListener('agnes:plugins-invalidated', invalidate)
     window.addEventListener('agnes:candidate-count-changed', invalidate)
@@ -93,7 +99,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     candidateSessionTurnTime: sources.sessionTurnTime,
   })
   const summaries = useCapabilitySummaries(view?.api, data, t)
-  usePageProgress(!view || view.state.loading)
+  usePageProgress(!!view && view.state.loading && view.state.connection === 'loading')
   // A capability that moved to settings: its old link opens the page there, once. A link the app
   // starts with mounts this page before the workbench has finished starting, so wait for that.
   const moved = route.settings

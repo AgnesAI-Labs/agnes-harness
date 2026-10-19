@@ -1,4 +1,6 @@
-import type { AdminPageState } from '../types.js'
+import type { PluginAdminApi } from '../api.js'
+import type { AdminContext, AdminPageState } from '../types.js'
+import { readBundledCatalog } from './model.js'
 
 type Inventory = Pick<AdminPageState, 'context' | 'installed' | 'generations' | 'surfaceLinks' | 'tree'>
 
@@ -23,4 +25,55 @@ export function seededState(state: AdminPageState): AdminPageState {
 /** Forget the remembered inventory (tests). */
 export function forgetInventory(): void {
   last = undefined
+  invalidateInventory()
+}
+
+/** A short display freshness window; authorization is always read separately. */
+export const INVENTORY_FRESH_MS = 30_000
+let revision = 0
+let fresh: { key: string; expires: number; snapshot: Awaited<ReturnType<typeof fetchInventory>> } | undefined
+let stopWatching: (() => void) | undefined
+
+function invalidateInventory() {
+  revision++
+  fresh = undefined
+  stopWatching?.()
+  stopWatching = undefined
+}
+
+async function fetchInventory(api: PluginAdminApi) {
+  const [list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog] = await Promise.all([
+    api.list(),
+    api.surfaceLinks().catch(() => undefined),
+    api.treeList().catch(() => undefined),
+    api.runtime().catch(() => undefined),
+    api.composition().catch(() => undefined),
+    readBundledCatalog(api).catch(() => []),
+  ])
+  return { list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog }
+}
+
+/** The caller supplies a newly read context, never a remembered permission decision. */
+export async function readInventorySnapshot(api: PluginAdminApi, context: AdminContext, reuse: boolean) {
+  const key = JSON.stringify(context)
+  if (reuse && fresh?.key === key && Date.now() < fresh.expires) return fresh.snapshot
+  invalidateInventory()
+  const requested = revision
+  const expires = Date.now() + INVENTORY_FRESH_MS
+  // Keep invalidation alive across page unmounts, but only for the lifetime of this cache entry.
+  const events = ['agnes:plugins-invalidated', 'online']
+  for (const event of events) window.addEventListener(event, invalidateInventory)
+  const timer = setTimeout(invalidateInventory, INVENTORY_FRESH_MS)
+  stopWatching = () => {
+    clearTimeout(timer)
+    for (const event of events) window.removeEventListener(event, invalidateInventory)
+  }
+  try {
+    const snapshot = await fetchInventory(api)
+    if (requested === revision) fresh = { key, expires, snapshot }
+    return snapshot
+  } catch (error) {
+    if (requested === revision) invalidateInventory()
+    throw error
+  }
 }

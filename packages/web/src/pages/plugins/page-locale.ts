@@ -72,8 +72,6 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'recovery.title': 'Read-only recovery mode',
     'recovery.description':
       'You can still see what is installed. Checks and changes are off until recovery finishes.',
-    'pins.title': 'Some retired plugin versions are still held',
-    'pins.open': 'Resolve',
     'market.agents.title': 'Want a ready-made business workflow?',
     'market.agents.desc': 'Agent examples start in one click.',
     'market.agents.open': 'Go to agents',
@@ -195,8 +193,6 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'filter.kind': '按类型筛选',
     'recovery.title': '只读恢复模式',
     'recovery.description': '仍可查看已安装的内容；恢复完成前，检查和变更操作都已停用。',
-    'pins.title': '存在未释放的遗留占用',
-    'pins.open': '去处理',
     'market.agents.title': '想直接用现成的业务流程？',
     'market.agents.desc': '智能体示例，一键开始。',
     'market.agents.open': '去智能体',

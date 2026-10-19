@@ -186,15 +186,6 @@ export function PluginStatus({ view, t, data }: { view: PluginView; t: Text; dat
           <strong>{t('recovery.title')}</strong> {t('recovery.description')}
         </Banner>
       )}
-      {(view.orphanPinList.length > 0 || !!view.orphanPinFetchError) && (
-        <Banner
-          tone="warning"
-          data-testid="plugin-held-versions"
-          action={<Button onClick={() => data.openSettings('diagnostics')}>{t('pins.open')}</Button>}
-        >
-          {t('pins.title')}
-        </Banner>
-      )}
       {notice.message &&
         (notice.kind === 'error' ? (
           <Banner tone="error" data-testid="plugin-notice">

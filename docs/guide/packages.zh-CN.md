@@ -230,3 +230,10 @@ node agnes.mjs packages pins inspect
 实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web-admin/src/admin/plugins/admin.tsx)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host-providers/src/runtime-target-publisher.ts)。
 
 随发行版的 local-dev 与 enterprise 模板显式允许内置示例所用的现代声明类别。已有自定义 profile 若 ceiling 较窄，需要明确加入愿意准入的新声明类别；这只改变准入审核，不改变受信任代码的操作系统权限。
+
+
+### 插件列表刷新与文件清理
+
+Web 插件页打开时会检查管理上下文。上下文未变化时，可以复用 30 秒内读取的插件列表。窗口重新获得焦点不会反复加载仍然新鲜的数据；插件变更通知和手动刷新仍会触发读取。后台刷新保留已显示的列表，授权与操作预览仍由后端裁定。
+
+打开 **设置 → 运行时与诊断 → 插件文件清理**，检查不再使用的文件保留记录。检查在打开清理面板时执行，不随插件列表刷新。检查失败会显示重试入口，不会误报存在待清理记录。清理需要确认和删除权限；后台会再次核验使用情况，跳过重新被使用的记录。解除保留记录让文件可以被回收，不保证立即释放磁盘空间。
