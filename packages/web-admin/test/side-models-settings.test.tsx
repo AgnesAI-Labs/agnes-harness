@@ -217,7 +217,10 @@ it('shows an empty state with its own add action and no route hint', async () =>
   const empty = host.querySelector('[data-testid="side-models-empty"]')
   expect(empty?.textContent).toContain('No side models yet')
   expect(empty?.textContent).toContain('Loop plugins (such as the Jev loop) call it')
-  expect(empty?.querySelector('[data-testid="side-model-add"]')).not.toBeNull()
+  // The add icon sits in the button's icon slot, beside the label rather than above it.
+  expect(empty?.querySelector('[data-testid="side-model-add"] .ant-btn-icon svg')).not.toBeNull()
+  // The empty state's description replaces the group note instead of repeating it.
+  expect(host.querySelector('[data-testid="side-models-note"]')).toBeNull()
   expect(host.querySelector('[data-testid="side-models-count"]')).toBeNull()
   expect(host.querySelector('[data-testid="side-model-route-hint"]')).toBeNull()
   await click(host, 'side-model-add')

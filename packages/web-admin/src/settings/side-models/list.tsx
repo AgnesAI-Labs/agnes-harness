@@ -53,13 +53,8 @@ export type SideModelListProps = {
 export function SideModelList(props: SideModelListProps) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
   const { accounts, canSave, busy, editing } = props
+  const empty = accounts.length === 0 && !editing
   const addProps = { 'data-testid': 'side-model-add', disabled: !canSave || busy, onClick: props.onAdd }
-  const addLabel = (
-    <>
-      <Icon name="plus" />
-      {t('side.add')}
-    </>
-  )
   return (
     <SettingsBlock
       bare
@@ -76,10 +71,13 @@ export function SideModelList(props: SideModelListProps) {
         </>
       }
     >
-      <p className="side-models-note" data-testid="side-models-note">
-        {t('side.note')}
-      </p>
-      {accounts.length === 0 && !editing ? (
+      {/* The empty state explains the same thing in its own description. */}
+      {!empty && (
+        <p className="side-models-note" data-testid="side-models-note">
+          {t('side.note')}
+        </p>
+      )}
+      {empty ? (
         <SettingsGroup className="side-models-empty">
           <EmptyState
             data-testid="side-models-empty"
@@ -87,8 +85,8 @@ export function SideModelList(props: SideModelListProps) {
             title={t('side.emptyTitle')}
             description={t('side.emptyNote')}
             actions={
-              <Button appearance="primary" {...addProps}>
-                {addLabel}
+              <Button appearance="primary" icon={<Icon name="plus" />} {...addProps}>
+                {t('side.add')}
               </Button>
             }
           />
@@ -99,7 +97,8 @@ export function SideModelList(props: SideModelListProps) {
             <SideModelRow key={account.accountId} account={account} {...props} />
           ))}
           <Button type="text" className="config-account-add" {...addProps}>
-            {addLabel}
+            <Icon name="plus" />
+            {t('side.add')}
           </Button>
         </SettingsGroup>
       )}
