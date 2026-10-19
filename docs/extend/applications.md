@@ -9,6 +9,10 @@ trusting or enabling its package only makes it a candidate. An administrator exp
 adopts it in **Settings → Application**. Selecting it does not enable dependencies or change execution
 profiles, composition hashes, saved sessions, pins, actors, permissions or model personas.
 
+
+Catalog application cards may include `applicationAssets.mark`: bounded raster discovery bytes derived from the declared package asset. These bytes are presentation hints only; installation re-inspects the source and adoption uses the verified immutable package and its consent digest. The gallery groups role agents under one application card. Install and adopt retains separate installation/trust review and explicit application consent, then opens the declared home.
+
+
 ## Assembly through the same Acme example
 
 Deployment profile → plugin → agent → application presentation each has a distinct job:

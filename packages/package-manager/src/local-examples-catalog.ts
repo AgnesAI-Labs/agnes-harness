@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
+import { readApplicationAssets } from './application-assets.js'
 import { BUNDLED_EXAMPLES, bundledExampleSource } from './bundled-plugin-source.js'
 import { type CatalogRead, createCatalog, staticCatalogSource } from './catalog.js'
 import { PackageError } from './errors.js'
@@ -82,37 +83,51 @@ async function descriptor(
   if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string' || typeof pkg.license !== 'string')
     return invalid('identity')
   const source = { type: 'file' as const, ref: sourceRef ?? `file:./${relativeDirectory}` }
-  const integrity = hashDirectory(owned, { ...(signal ? { signal } : {}) })
-  const { preview } = await inspectStaged({
-    dir: owned,
-    source,
-    fetched: {
-      dir: owned,
-      version: pkg.version,
+  // Source workspaces can contain pnpm links. Inspect the fetched payload, exactly as install does,
+  // rather than treating dependency links outside the distributable payload as package bytes.
+  const staging = mkdtempSync(join(tmpdir(), 'agnes-catalog-inspect-'))
+  try {
+    const staged = join(staging, 'package')
+    await fetchSource({ type: 'file', ref: `file:./${relativeDirectory}` }, staged, {
+      cwd: workspace,
+      ...(signal ? { signal } : {}),
+    })
+    const integrity = hashDirectory(staged, { ...(signal ? { signal } : {}) })
+    const { preview } = await inspectStaged({
+      dir: staged,
+      source,
+      fetched: {
+        dir: staged,
+        version: pkg.version,
+        integrity,
+        license: pkg.license,
+        dependencies: (pkg.dependencies ?? {}) as Record<string, string>,
+      },
+      ...(signal ? { signal } : {}),
+    })
+    if (preview.blockers.length) return invalid('blocked-example')
+    const assets = preview.application ? await readApplicationAssets(staged, preview.application) : undefined
+    const value = {
+      id: preview.id,
+      version: preview.version,
+      source,
       integrity,
-      license: pkg.license,
-      dependencies: (pkg.dependencies ?? {}) as Record<string, string>,
-    },
-    ...(signal ? { signal } : {}),
-  })
-  if (preview.blockers.length) return invalid('blocked-example')
-  const value = {
-    id: preview.id,
-    version: preview.version,
-    source,
-    integrity,
-    license: preview.license,
-    contributions: preview.contributions,
-    ...(preview.agents ? { agents: preview.agents } : {}),
-    ...(preview.application ? { application: preview.application } : {}),
-    ...(preview.presentation ? { presentation: preview.presentation } : {}),
-    ...(preview.metadata ? { metadata: preview.metadata } : {}),
-    ...(preview.provides === undefined ? {} : { provides: preview.provides }),
-    compatibility: 'supported' as const,
+      license: preview.license,
+      contributions: preview.contributions,
+      ...(assets?.mark ? { applicationAssets: { mark: assets.mark } } : {}),
+      ...(preview.agents ? { agents: preview.agents } : {}),
+      ...(preview.application ? { application: preview.application } : {}),
+      ...(preview.presentation ? { presentation: preview.presentation } : {}),
+      ...(preview.metadata ? { metadata: preview.metadata } : {}),
+      ...(preview.provides === undefined ? {} : { provides: preview.provides }),
+      compatibility: 'supported' as const,
+    }
+    const projected = { ...value, sourceId: SOURCE_ID, retrievedAt: new Date(0).toISOString() }
+    if (!validatePackageAdminData('PackageCatalogDescriptor', projected).ok) return invalid('descriptor')
+    return value
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
   }
-  const projected = { ...value, sourceId: SOURCE_ID, retrievedAt: new Date(0).toISOString() }
-  if (!validatePackageAdminData('PackageCatalogDescriptor', projected).ok) return invalid('descriptor')
-  return value
 }
 
 /**

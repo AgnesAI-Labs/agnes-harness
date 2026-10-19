@@ -1544,6 +1544,18 @@
         "application": {
           "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
         },
+        "applicationAssets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 174800,
+              "pattern": "^data:image/(png|jpeg|webp|gif|x-icon);base64,[A-Za-z0-9+/=]+$"
+            }
+          }
+        },
         "agents": {
           "type": "array",
           "maxItems": 64,
