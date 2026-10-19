@@ -312,6 +312,18 @@
     },
     {
       "path": "packages/loop-jev/tsconfig.test.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/conversation-ui"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/navigation-ui"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/goal-ui"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/interaction-ui"
     }
   ]
 }

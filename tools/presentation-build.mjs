@@ -1,17 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile, writeFile, rename, readdir } from 'node:fs/promises'
+import { readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertClientExternals, clientPlatformExternals } from './web-client-externals.mjs'
 import { notices } from './presentation-notices.mjs'
+import { assertClientExternals, clientPlatformExternals } from './web-client-externals.mjs'
 
 export const presentationRoot = fileURLToPath(new URL('../', import.meta.url))
 export const presentationEntries = {
-  'goal-ui': 'packages/web-conversation/src/goal-presentation.tsx',
-  'interaction-ui': 'packages/web-conversation/src/intelligent-ui-presentation.ts',
-  'navigation-ui': 'packages/web/src/presentations/navigation.tsx',
-  'conversation-ui': 'packages/web/src/presentations/conversation.tsx',
+  'goal-ui': 'packages/package-manager/bundled-plugins/goal-ui/src/presentation.tsx',
+  'interaction-ui': 'packages/package-manager/bundled-plugins/interaction-ui/src/presentation.ts',
+  'navigation-ui': 'packages/package-manager/bundled-plugins/navigation-ui/src/presentation.ts',
+  'conversation-ui': 'packages/package-manager/bundled-plugins/conversation-ui/src/presentation.ts',
+  'deliverables-ui': 'packages/package-manager/bundled-plugins/deliverables-ui/src/client-entry.mjs',
 }
 const require = createRequire(join(presentationRoot, 'packages/web/package.json'))
 const { build, version: esbuildVersion } = require('esbuild')
@@ -20,19 +21,31 @@ const json = (data) => `${JSON.stringify(data, null, 2)}\n`
 const payloadRoot = (name) => join(presentationRoot, 'packages/package-manager/bundled-plugins', name)
 
 async function commonInputs() {
-  const paths = ['pnpm-lock.yaml', 'tools/presentation-build.mjs', 'tools/presentation-notices.mjs',
-    'tools/web-client-externals.mjs', 'packages/web/public/index.html']
+  const paths = [
+    'pnpm-lock.yaml',
+    'tools/presentation-build.mjs',
+    'tools/presentation-notices.mjs',
+    'tools/web-client-externals.mjs',
+    'packages/web/public/index.html',
+  ]
   for (const parent of ['packages', 'packages/package-manager/bundled-plugins'])
     for (const name of (await readdir(join(presentationRoot, parent))).sort()) {
       const path = `${parent}/${name}/package.json`
-      try { await readFile(join(presentationRoot, path)); paths.push(path) } catch {}
+      try {
+        await readFile(join(presentationRoot, path))
+        paths.push(path)
+      } catch {}
     }
   return paths
 }
 async function inputHash(inputs) {
   const hash = createHash('sha256').update(`presentation-v1:${esbuildVersion}\0`)
-  for (const path of [...new Set([...await commonInputs(), ...inputs])].sort()) {
-    hash.update(path).update('\0').update(await readFile(join(presentationRoot, path))).update('\0')
+  for (const path of [...new Set([...(await commonInputs()), ...inputs])].sort()) {
+    hash
+      .update(path)
+      .update('\0')
+      .update(await readFile(join(presentationRoot, path)))
+      .update('\0')
   }
   return `sha256-${hash.digest('hex')}`
 }
@@ -58,29 +71,46 @@ export async function buildPresentations({ check = false, force = false } = {}) 
   for (const [name, entry] of Object.entries(presentationEntries)) {
     const root = payloadRoot(name)
     let previous
-    try { previous = await verifyPresentation(root) } catch (error) {
+    try {
+      previous = await verifyPresentation(root)
+    } catch (error) {
       if (check && error.code !== 'ENOENT') throw error
     }
     if (!check && !force && previous) {
       try {
-        if (previous.entry === entry && previous.inputHash === await inputHash(previous.inputs)) {
+        if (previous.entry === entry && previous.inputHash === (await inputHash(previous.inputs))) {
           results.push(previous)
           continue
         }
       } catch {}
     }
     const result = await build({
-      absWorkingDir: presentationRoot, entryPoints: [entry], outfile: join(root, 'src/client.js'),
-      bundle: true, format: 'esm', platform: 'browser', target: 'es2023', jsx: 'automatic',
-      nodePaths: [join(presentationRoot, 'packages/web/node_modules')], plugins: [clientPlatformExternals],
-      minify: true, legalComments: 'eof', write: false, metafile: true,
+      absWorkingDir: presentationRoot,
+      entryPoints: [entry],
+      outfile: join(root, 'src/client.js'),
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: 'es2023',
+      jsx: 'automatic',
+      nodePaths: [join(presentationRoot, 'packages/web/node_modules')],
+      plugins: [clientPlatformExternals],
+      minify: true,
+      legalComments: 'eof',
+      write: false,
+      metafile: true,
     })
     assertClientExternals(result.metafile)
     const output = `// Generated by tools/build-feature-clients.mjs. Edit the source, then regenerate.\n${result.outputFiles[0].text}`
     const notice = await notices(presentationRoot, result.metafile.inputs)
     const inputs = Object.keys(result.metafile.inputs).sort()
     const record = {
-      schemaVersion: 1, name, entry, esbuildVersion, inputHash: await inputHash(inputs), inputs,
+      schemaVersion: 1,
+      name,
+      entry,
+      esbuildVersion,
+      inputHash: await inputHash(inputs),
+      inputs,
       bytes: Buffer.byteLength(output),
       files: { 'src/client.js': digest(output), NOTICE: digest(notice) },
     }

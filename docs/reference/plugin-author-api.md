@@ -55,7 +55,7 @@ transaction<T>(work: () => T): T
 ```
 
 Browser profile pages / 浏览器 profile 页面:
-Import React from 'react'; use React.createElement for plain .js (no JSX compilation), or compile JSX before delivery. The Host import map supplies exactly: react, react/jsx-runtime, @agnes/web-client, @agnes/web-ui. These are ESM imports, NOT globalThis.React or an injected h prop. / 从 react 导入 React；普通 JS 用 createElement，JSX 须先编译；不要猜测全局 React 或 h 注入。
+Import React from 'react'; use React.createElement for plain .js (no JSX compilation), or compile JSX before delivery. The Host import map supplies exactly: react, react/jsx-runtime, @agnes/web-client, @agnes/web-ui, @agnes/protocol, @agnes/sdk/browser, @agnes/sdk, @agnes/web-units/shell, @agnes/web-foundation/locale-catalog, @agnes/web-conversation/goal-renderers, @agnes/web-conversation/interaction-renderer, @agnes/web/presentation-renderers. These are ESM imports, NOT globalThis.React or an injected h prop. / 从 react 导入 React；普通 JS 用 createElement，JSX 须先编译；不要猜测全局 React 或 h 注入。
 ```ts
 profile: Readonly<{
     streams: ReturnType<typeof scopedProfileStreams>

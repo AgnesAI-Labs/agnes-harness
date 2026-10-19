@@ -10,5 +10,8 @@ export type PresentationBuild = {
 }
 export const presentationRoot: string
 export const presentationEntries: Record<string, string>
-export function buildPresentations(options?: { check?: boolean; force?: boolean }): Promise<PresentationBuild[]>
+export function buildPresentations(options?: {
+  check?: boolean
+  force?: boolean
+}): Promise<PresentationBuild[]>
 export function verifyPresentation(root: string): Promise<PresentationBuild>

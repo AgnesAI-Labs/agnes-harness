@@ -8,7 +8,9 @@
     "index.mjs",
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "client-build.json",
+    "NOTICE"
   ],
   "agnes": {
     "plugins": [

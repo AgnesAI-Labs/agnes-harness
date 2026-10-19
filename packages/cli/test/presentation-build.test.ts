@@ -1,8 +1,12 @@
-import { mkdtemp, cp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { buildPresentations, presentationRoot, verifyPresentation } from '../../../tools/presentation-build.mjs'
+import {
+  buildPresentations,
+  presentationRoot,
+  verifyPresentation,
+} from '../../../tools/presentation-build.mjs'
 import { copyBundledPlugins } from '../tools/build-local.js'
 
 it('rebuilds deterministic presentations, caches unchanged inputs and ships verifiable hashes', async () => {
@@ -24,7 +28,10 @@ it('rebuilds deterministic presentations, caches unchanged inputs and ships veri
       await writeFile(join(payload, 'src/client.js'), original)
       await rm(join(payload, 'client-build.json'))
       await expect(verifyPresentation(payload)).rejects.toThrow()
-      await cp(join(presentationRoot, 'packages/package-manager/bundled-plugins', record.name, 'client-build.json'), join(payload, 'client-build.json'))
+      await cp(
+        join(presentationRoot, 'packages/package-manager/bundled-plugins', record.name, 'client-build.json'),
+        join(payload, 'client-build.json'),
+      )
       expect(await verifyPresentation(payload)).toEqual(record)
     }
   } finally {

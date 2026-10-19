@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import postject from 'postject'
+import { presentationEntries, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { bundledManifests } from '../tools/bundled-manifests.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -182,6 +183,8 @@ for (const name of [
   'ripgrep',
 ])
   cpSync(join(local, name), join(out, name), { recursive: true })
+for (const name of Object.keys(presentationEntries))
+  await verifyPresentation(join(out, 'bundled-plugins', name))
 if (existsSync(join(local, 'native'))) cpSync(join(local, 'native'), join(out, 'native'), { recursive: true })
 cpSync(
   join(local, 'node_modules', '@agnes', 'system-node'),

@@ -25,7 +25,9 @@
     "./conversation-registry": "./src/conversation-registry.tsx",
     "./workbench/terminal": "./src/workbench/terminal-client.ts",
     "./workbench": "./src/workbench/register.tsx",
-    "./session-actions": "./src/registered-card.tsx"
+    "./session-actions": "./src/registered-card.tsx",
+    "./goal-renderers": "./src/goal-renderers.ts",
+    "./interaction-renderer": "./src/intelligent-ui/mount.tsx"
   },
   "scripts": {
     "test": "pnpm --dir ../.. exec vitest run packages/web-conversation/test --maxWorkers=1",

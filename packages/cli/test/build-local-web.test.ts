@@ -243,6 +243,13 @@ it('rejects a local package when an HTML or import-map asset is missing', async 
       'vendor/cordis.js',
       'vendor/web-client.js',
       'vendor/web-ui.js',
+      'vendor/protocol.js',
+      'vendor/sdk-browser.js',
+      'vendor/web-units-shell.js',
+      'vendor/web-locale-catalog.js',
+      'vendor/goal-renderers.js',
+      'vendor/interaction-renderer.js',
+      'vendor/presentation-renderers.js',
     ]) {
       const path = join(web, asset)
       const contents = await readFile(path)

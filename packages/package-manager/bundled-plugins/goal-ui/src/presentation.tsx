@@ -1,9 +1,7 @@
 import type { UITimeline } from '@agnes/protocol'
 import { type ClientContext, readGoal } from '@agnes/web-client'
+import { GoalCard, GoalPanel, workbenchLocaleCatalog } from '@agnes/web-conversation/goal-renderers'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
-import { GoalCard } from './goal-card.js'
-import { GoalPanel } from './workbench/goal-panel.js'
-import { workbenchLocaleCatalog } from './workbench/locales.js'
 
 export const inject = ['slots', 'session', 'locale']
 export function apply(ctx: ClientContext) {

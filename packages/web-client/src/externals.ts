@@ -9,6 +9,15 @@ export const externals = [
   'react-dom/client',
   '@agnes/cordis',
   '@agnes/web-client',
+  '@agnes/web-ui',
+  '@agnes/protocol',
+  '@agnes/sdk/browser',
+  '@agnes/sdk',
+  '@agnes/web-units/shell',
+  '@agnes/web-foundation/locale-catalog',
+  '@agnes/web-conversation/goal-renderers',
+  '@agnes/web-conversation/interaction-renderer',
+  '@agnes/web/presentation-renderers',
 ] as const
 
 export type ExternalSpecifier = (typeof externals)[number]

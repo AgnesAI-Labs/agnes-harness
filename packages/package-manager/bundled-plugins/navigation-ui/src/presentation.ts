@@ -1,7 +1,6 @@
+import { bindNavigationHistory, mountSidebarRegion } from '@agnes/web/presentation-renderers'
 import type { ClientContext } from '@agnes/web-client'
 import type {} from '@agnes/web-units/shell'
-import { bindNavigationHistory } from '../navigation-history.js'
-import { mountSidebarRegion } from '../regions/sidebar.js'
 
 /** Release-owned navigation renderer. State and navigation operations remain host projections. */
 export function apply(ctx: ClientContext) {

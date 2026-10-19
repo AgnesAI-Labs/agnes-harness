@@ -4,7 +4,10 @@
     "outDir": "dist/test",
     "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
   },
-  "include": ["test/**/*.ts", "test/**/*.tsx"],
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx"
+  ],
   "references": [
     {
       "path": "."
@@ -32,6 +35,9 @@
     },
     {
       "path": "../web-foundation/tsconfig.testkit.json"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/goal-ui"
     }
   ]
 }

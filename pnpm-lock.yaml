@@ -1294,6 +1294,12 @@ importers:
 
   packages/package-manager/bundled-plugins/conversation-ui:
     devDependencies:
+      '@agnes/web':
+        specifier: workspace:*
+        version: link:../../../web
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../../../web-units
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
@@ -1339,6 +1345,15 @@ importers:
 
   packages/package-manager/bundled-plugins/goal-ui:
     devDependencies:
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../../../protocol
+      '@agnes/web-foundation':
+        specifier: workspace:*
+        version: link:../../../web-foundation
+      '@agnes/web-conversation':
+        specifier: workspace:*
+        version: link:../../../web-conversation
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
@@ -1351,6 +1366,9 @@ importers:
 
   packages/package-manager/bundled-plugins/interaction-ui:
     devDependencies:
+      '@agnes/web-conversation':
+        specifier: workspace:*
+        version: link:../../../web-conversation
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
@@ -1363,6 +1381,12 @@ importers:
 
   packages/package-manager/bundled-plugins/navigation-ui:
     devDependencies:
+      '@agnes/web':
+        specifier: workspace:*
+        version: link:../../../web
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../../../web-units
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client

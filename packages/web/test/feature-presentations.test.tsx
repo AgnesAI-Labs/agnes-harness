@@ -217,7 +217,9 @@ it.each(['interaction-first', 'conversation-first'] as const)(
   async (order) => {
     const { clientModule, presentationRoles } = await import('@agnes/web-client')
     const { startClientModules } = await import('../src/client-modules/boot.js')
-    const { apply: conversation } = await import('../src/presentations/conversation.js')
+    const { apply: conversation } = await import(
+      '../../package-manager/bundled-plugins/conversation-ui/src/presentation.js'
+    )
     const host = document.createElement('div')
     document.body.append(host)
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))

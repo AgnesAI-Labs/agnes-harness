@@ -86,3 +86,19 @@ export function listSourceFiles(
   for (const base of typeof dir === 'string' ? [dir] : dir) walk(base)
   return out.sort()
 }
+
+/** Handwritten presentation sources use the same fences as TS. Generated clients are byte-budgeted. */
+export const PRESENTATION_NAMES = [
+  'conversation-ui',
+  'navigation-ui',
+  'interaction-ui',
+  'goal-ui',
+  'deliverables-ui',
+] as const
+export function presentationSourceFiles(root: string): string[] {
+  return PRESENTATION_NAMES.flatMap((name) =>
+    listSourceFiles(join(root, 'packages/package-manager/bundled-plugins', name), {
+      extensions: [...SOURCE_EXTENSIONS, '.js', '.mjs'],
+    }),
+  ).filter((file) => !file.endsWith('/src/client.js'))
+}

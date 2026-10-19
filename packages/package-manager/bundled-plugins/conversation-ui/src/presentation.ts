@@ -1,8 +1,10 @@
+import {
+  mountComposerRegion,
+  mountConversationRegion,
+  mountTranscriptRegion,
+} from '@agnes/web/presentation-renderers'
 import type { ClientContext } from '@agnes/web-client'
 import type {} from '@agnes/web-units/shell'
-import { mountComposerRegion } from '../regions/composer.js'
-import { mountConversationRegion } from '../regions/conversation.js'
-import { mountTranscriptRegion } from '../regions/transcript.js'
 
 /** Frame/transcript and composer are independently selectable presentations of host-owned work. */
 export function apply(ctx: ClientContext) {

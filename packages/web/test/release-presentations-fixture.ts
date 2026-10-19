@@ -1,7 +1,7 @@
 import { clientModule, type ModuleIdentity } from '@agnes/web-client'
+import { apply as conversationPresentation } from '../../package-manager/bundled-plugins/conversation-ui/src/presentation.js'
+import { apply as navigationPresentation } from '../../package-manager/bundled-plugins/navigation-ui/src/presentation.js'
 import type { ClientModulesRuntime } from '../src/client-modules/boot.js'
-import { apply as conversationPresentation } from '../src/presentations/conversation.js'
-import { apply as navigationPresentation } from '../src/presentations/navigation.js'
 
 /** Mount the shipped default experiences through their public module facade. */
 export async function mountReleasePresentations(runtime: ClientModulesRuntime): Promise<void> {

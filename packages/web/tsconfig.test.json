@@ -14,7 +14,10 @@
     "tools/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ],
   "references": [
     {
       "path": "."
@@ -60,6 +63,12 @@
     },
     {
       "path": "../web-units"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/conversation-ui"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/navigation-ui"
     }
   ]
 }

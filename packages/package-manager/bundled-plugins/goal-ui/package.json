@@ -47,11 +47,17 @@
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",
     "@agnes/web-ui": "0.0.0",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/protocol": "0.0.0",
+    "@agnes/web-foundation": "0.0.0",
+    "@agnes/web-conversation": "0.0.0"
   },
   "devDependencies": {
     "@agnes/web-client": "workspace:*",
     "@agnes/web-ui": "workspace:*",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/web-foundation": "workspace:*",
+    "@agnes/web-conversation": "workspace:*"
   }
 }

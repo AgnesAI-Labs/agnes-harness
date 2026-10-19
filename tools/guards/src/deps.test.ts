@@ -1,7 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_EXCLUDE_DIRS, isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
+import {
+  DEFAULT_EXCLUDE_DIRS,
+  isTestFile,
+  listPackages,
+  listSourceFiles,
+  presentationSourceFiles,
+  repoRoot,
+} from './repo.js'
 
 const root = repoRoot()
 // Bundled payloads are independent packages even though their sources live beneath package-manager.
@@ -150,8 +157,8 @@ const LAYER: Record<string, number> = {
   '@agnes/jev-loop': 10,
   '@agnes/goal-ui': 10,
   '@agnes/interaction-ui': 10,
-  '@agnes/navigation-ui': 10,
-  '@agnes/conversation-ui': 10,
+  '@agnes/navigation-ui': 10.1,
+  '@agnes/conversation-ui': 10.1,
   '@agnes/mcp-helper': 10,
   '@agnes/plugin-helper': 10,
   '@agnes/skill-helper': 10,
@@ -268,9 +275,12 @@ it('production source and manifests form declared, acyclic package graphs', () =
     const edges = new Set<string>()
     sourceGraph.set(pkg.name, edges)
     manifestGraph.set(pkg.name, new Set(Object.keys(declared).filter((name) => byName.has(name))))
-    for (const file of listSourceFiles(pkg.dir, {
+    const sourceFiles = listSourceFiles(pkg.dir, {
       excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'testkit', 'fixtures', 'tools', 'scripts'],
-    })) {
+    })
+    if (pkg.dir.startsWith(`${bundledRoot}${sep}`))
+      sourceFiles.push(...presentationSourceFiles(root).filter((file) => ownerOf(file) === pkg))
+    for (const file of new Set(sourceFiles)) {
       if (ownerOf(file) !== pkg || isTestFile(file) || file.endsWith('vitest.config.ts')) continue
       for (const spec of importedModules(readFileSync(file, 'utf8'))) {
         if (spec.startsWith('.')) {

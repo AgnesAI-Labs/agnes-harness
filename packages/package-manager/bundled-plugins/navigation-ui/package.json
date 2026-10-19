@@ -61,11 +61,15 @@
   "peerDependencies": {
     "@agnes/web-client": "0.0.0",
     "@agnes/web-ui": "0.0.0",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/web": "0.0.0",
+    "@agnes/web-units": "0.0.0"
   },
   "devDependencies": {
     "@agnes/web-client": "workspace:*",
     "@agnes/web-ui": "workspace:*",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/web": "workspace:*",
+    "@agnes/web-units": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
 import type { ClientContext } from '@agnes/web-client'
-import { mountIntelligentUi } from './intelligent-ui/mount.js'
+import { mountIntelligentUi } from '@agnes/web-conversation/interaction-renderer'
 
 export const inject = ['slots', 'session', 'locale', 'theme']
 export function apply(ctx: ClientContext) {
