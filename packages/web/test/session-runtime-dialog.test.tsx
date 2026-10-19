@@ -98,6 +98,20 @@ it('states loop, model, permission and version in plain words before any identif
   expect(summary).toContain(enT('session.runtime.permission.workspace'))
   expect(summary).toContain(enT('session.runtime.versionNewer'))
   expect(summary).not.toContain('gen-1')
+  // A recipe is not a permission: the level the session list reports names what the session may do.
+  const recipe = (permission?: string) => {
+    const value = structuredClone(tools)
+    ;(value.capabilities as { permissions: { preset: string } }).permissions.preset = 'ptc'
+    return createElement(RuntimeInfo, { runtime, tools: value, permission, t: enT })
+  }
+  const policy = () =>
+    [...view.host.querySelectorAll('[data-testid="session-runtime-summary"] *')]
+      .map((node) => node.textContent ?? '')
+      .find((text) => text.startsWith(enT('session.runtime.policy')))
+  await view.render(recipe('full-access'))
+  expect(policy()).toContain(enT('session.runtime.permission.full'))
+  await view.render(recipe())
+  expect(policy()).toContain(enT('session.runtime.permission.preset').replace('{name}', 'ptc'))
   // Identifiers stay available, under technical details.
   expect(view.host.querySelector('[data-testid="session-runtime-technical"]')?.textContent).toContain(
     'fde.knowledge-qa 5.0.0',

@@ -594,7 +594,7 @@ describe('web permission synchronization', () => {
     option.click()
   }
 
-  async function boot(yolo: boolean | undefined) {
+  async function boot(yolo: boolean | undefined, row: { permission?: string } = {}) {
     installPublicFixture()
     const timeline = idleTimeline('old')
     timeline.upto = 10
@@ -663,7 +663,10 @@ describe('web permission synchronization', () => {
         providers: vi.fn(async () => ({ providers: [] })),
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
-      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', ...row }] })),
+        load: vi.fn(async () => old),
+      },
     }
     sdk.createClient.mockReturnValue(client)
     binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
@@ -846,6 +849,30 @@ describe('web permission synchronization', () => {
     expect(old.setYolo).toHaveBeenCalledTimes(calls)
     expect(old.projectUIPatch).toHaveBeenCalled()
   }, 40_000)
+
+  it.each([
+    ['read-only', '完全访问', false, '只读'],
+    ['workspace-write', '只读', false, '可修改工作区'],
+    ['full-access', '可修改工作区', false, '完全访问'],
+    ['workspace-write', '完全访问', true, '完全访问'],
+  ] as const)(
+    'keeps a %s session at its own level when %s is chosen, changing only approvals',
+    async (level, choice, yolo, shown) => {
+      const { old } = await boot(false, { permission: level })
+      const setPreset = vi.fn()
+      Object.assign(old, { setPreset })
+      await vi.waitFor(() => expect(label()).toBe(level === 'workspace-write' ? '可修改工作区' : shown))
+      await choose(choice)
+      await vi.waitFor(() => expect(old.setYolo).toHaveBeenLastCalledWith(yolo))
+      await vi.waitFor(() => expect(label()).toBe(shown))
+      // The level part is never sent to an open session; a different level is for new sessions.
+      expect(setPreset).not.toHaveBeenCalled()
+      const notice = document.getElementById('notice')?.textContent ?? ''
+      if (choice === shown) expect(notice).not.toContain('只对新会话生效')
+      else expect(notice).toContain(`权限档只对新会话生效。本会话仍为「${shown}」`)
+    },
+    40_000,
+  )
 
   it.each([false, true])(
     'refreshes permission before sending after reconnect (previous full: %s)',

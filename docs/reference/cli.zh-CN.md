@@ -17,7 +17,7 @@
 | `agh -p [prompt]` | 一次性任务，读取管道输入 |
 | `agh --mode text\|json` | 自动 print；ACP 为单独模式 |
 | `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
-| `agh --profile NAME --preset NAME --cwd DIR` | 普通运行选项，不是所有转发子命令均支持 |
+| `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
 | `agh resume ID [-p prompt]` | 恢复入口 |
 | `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | 列表/详情 |
@@ -26,6 +26,8 @@
 | `agh --connect TARGET` | 只连接目标，失败不回退 |
 | `agh --standalone` / `agh --ephemeral` | 嵌入/临时执行 |
 | `agh acp` / `agh --mode acp` | ACP 协议入口 |
+
+`--preset` 选择配方（`standard`、`minimal`、`ptc` 或其他允许的预设），`--permission` 选择会话能做什么；任何允许的组合均可，例如 `agh --preset ptc --permission read-only`，或只写 `agh --permission read-only`。旧写法 `agh --preset read-only`（以及 `workspace-write`、`full-access`）仍表示该权限下的 `standard`，不能与不同的 `--permission` 组合。见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets)。
 
 Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
 
@@ -85,6 +87,6 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 
 ## 按智能体创建会话
 
-`node agnes.mjs --agent '@acme/kit#review' -p '检查这个工作区'` 通过后端解析该 Bundle 自己声明的 `launch`，选择精确的 Loop、会话 Bundle 和必填 preset。`--agent` 不能与 `--loop`、`--preset` 或恢复选项组合。只有 Loop 的插件仍可使用 `--loop id@version`。
+`node agnes.mjs --agent '@acme/kit#review' -p '检查这个工作区'` 通过后端解析该 Bundle 自己声明的 `launch`，选择精确的 Loop、会话 Bundle 和必填 preset。`--agent` 不能与 `--loop`、`--preset`、`--permission` 或恢复选项组合。只有 Loop 的插件仍可使用 `--loop id@version`。
 
 目标必须已信任、已启用且可启动；引用、依赖或严格模型/权限准入失败会拒绝创建，不会退回普通会话。草稿提示词不会自动发送。

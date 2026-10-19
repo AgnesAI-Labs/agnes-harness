@@ -60,7 +60,13 @@ export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
 
 export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file' | 'resource_link' }>
 
-export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
+export type PermissionPickerState = {
+  disabled: boolean
+  pending: boolean
+  selected: PermissionMode | null
+  /** The level new sessions start under, marked in the list; absent when the Host does not say. */
+  defaultMode?: PermissionMode
+}
 
 export type PermissionPickerProps = {
   state: PermissionPickerState

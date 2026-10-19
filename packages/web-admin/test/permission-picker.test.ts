@@ -261,3 +261,19 @@ it.each([
     expect(option(full).title).toContain(exceptions)
   },
 )
+
+it('marks the level new sessions start under, and nothing when the Host does not say', async () => {
+  const { trigger, render } = mountPicker({
+    disabled: false,
+    pending: false,
+    selected: 'view',
+    defaultMode: 'workspace',
+  })
+  trigger.click()
+  await opened()
+  const labels = () =>
+    [...listbox().querySelectorAll('.permission-picker-label')].map((node) => node.textContent?.trim())
+  expect(labels()).toEqual(['只读', '可修改工作区 （默认）', '完全访问'])
+  render({ disabled: false, pending: false, selected: 'view' })
+  expect(labels()).toEqual(['只读', '可修改工作区', '完全访问'])
+})

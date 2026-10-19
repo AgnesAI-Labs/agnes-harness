@@ -10,6 +10,7 @@ import {
 } from '@agnes/web-conversation/live-projection'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
+import { openSessionMode, sessionPermissionLevel } from '../session-permission.js'
 import { sessionTitle } from '../session-title.js'
 import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'
 import { type ApprovalNode, answeredApproval, approvalExpiry, pendingApproval } from './pending-approval.js'
@@ -47,6 +48,7 @@ export function createTurnController(
     | 'renderControls'
     | 'renderer'
     | 'run'
+    | 'runtimeCatalog'
     | 'sessionControls'
     | 'sessionRows'
     | 'sessionPending'
@@ -100,11 +102,14 @@ export function createTurnController(
     ) {
       context.sessionYoloEnabled = context.projection.yolo
       if (context.initialPermissionPending === undefined)
-        context.permissionMode = context.projection.yolo
-          ? 'full'
-          : context.permissionMode === 'view'
-            ? 'view'
-            : 'workspace'
+        context.permissionMode = openSessionMode(
+          sessionPermissionLevel(
+            context.sessionRows.find((row) => row.sessionId === viewId),
+            context.runtimeCatalog,
+          ),
+          context.projection.yolo,
+          context.permissionMode,
+        )
     }
     if (
       context.projection.usage?.model &&

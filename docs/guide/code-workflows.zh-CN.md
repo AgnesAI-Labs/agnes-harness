@@ -2,8 +2,10 @@
 
 [English](code-workflows.md) | 简体中文
 
-创建本地会话时选择 **ptc** preset。它继承 workspace-write 权限策略，
-向模型展示 `run_code`，并提供工具参数的 TypeScript 类型声明。
+创建本地会话时选择 **ptc** preset，例如 `agh --preset ptc`。它向模型展示 `run_code`，
+并提供工具参数的 TypeScript 类型声明。preset 不决定权限：未另选时会话使用
+`workspace-write`，也可组合其他级别，例如 `agh --preset ptc --permission read-only`，
+见[权限与预设](security.zh-CN.md#permissions-and-presets)。
 每个 cell 运行在所选 sandbox provider 管理的独立 Node 进程中，
 支持顶层 await 和 return；变量不会跨 cell 保留。
 cell 使用 Node 类型擦除，支持类型注解；enum、构造器参数属性等需要运行时转换的
@@ -27,12 +29,12 @@ return await tools.workflow({
 普通审批策略要求批准 cell；嵌套工具仍经过后端的参数校验、审批、
 预算和深度检查。每个 cell 最多接受 256 次桥调用，同时最多运行 4 次，
 并受执行时间和输出限制。取消会终止进程并取消未完成的桥调用。
-代码中的直接进程操作也受当前权限 preset 的隔离限制。
+代码中的直接进程操作也受会话权限的隔离限制。
 
 官方 preset 设置 `raw_io: false`，Node 权限模式禁止直接文件访问和创建子进程；
 这些操作需要使用受审批的工具。自定义 preset 可显式设置
 `code_runtime.raw_io: true`，此时按整个 cell 审批，结果标记为
-`ioEnforcement: cell-approval`，进程仍遵守 preset 的 OS 沙箱。
+`ioEnforcement: cell-approval`，进程仍遵守会话的 OS 沙箱。
 
 工作流按顺序执行阶段，每阶段最多并行运行 4 个成员。
 子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。

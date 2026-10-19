@@ -90,12 +90,15 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
   expect(count).toBeGreaterThan(25)
   const { settingsCatalog } = await import('../src/settings/locales.js')
   const { adminListLocaleCatalog } = await import('@agnes/web-ui')
-  for (const [locale, execution, edit, leftover] of [
-    ['en', 'Running mode', 'Edit workspace', 'Leftover usage'],
-    ['zh-CN', '运行方式', '可修改工作区', '遗留占用'],
+  for (const [locale, execution, edit, leftover, standard, readTools] of [
+    ['en', 'Running mode', 'Edit workspace', 'Leftover usage', 'Standard', 'Read tools only'],
+    ['zh-CN', '运行方式', '可修改工作区', '遗留占用', '标准', '只暴露读类工具'],
   ] as const) {
     expect(settingsCatalog[locale]['provider.loop']).toBe(execution)
     expect(settingsCatalog[locale]['choice.workspace-write']).toBe(edit)
+    // `standard` is a preset now, not a permission level; the minimal preset only exposes read tools.
+    expect(settingsCatalog[locale]['choice.standard']).toBe(standard)
+    expect(settingsCatalog[locale]['choiceHelp.minimal']).toBe(readTools)
     expect(settingsCatalog[locale].workspaceWrite).toBe(edit)
     expect(adminListLocaleCatalog[locale]['orphan.title']).toBe(leftover)
   }

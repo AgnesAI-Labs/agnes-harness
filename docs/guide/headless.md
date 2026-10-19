@@ -20,7 +20,7 @@ agh run --bundle ./bundle.json --input ./prompts --batch --json > batch.jsonl
 
 The CLI sends transient profile inputs through Host composition and its normal validation. It does not save admin bundle selection. Unknown ids and missing dependencies fail before a session starts; no plugins are auto-installed. A Host without bundle composition refuses `--bundle`.
 
-Optional run flags are `--profile`, `--preset`, `--loop ID@VERSION`, `--model primary=ROUTE/MODEL` and `--cwd`. Options go after `run`. Input is UTF-8 text, limited to 4 MiB; bundle JSON is limited to 1 MiB. `--batch` reads regular files immediately inside the folder in filename order, one session per file, without recursion or symlink traversal. Every record also carries the input path so results can be grouped by input and `runId`. Permission requests are rejected in unattended runs; configure an appropriate backend policy before running.
+Optional run flags are `--profile`, `--preset`, `--permission LEVEL` (`read-only`, `workspace-write`, `full-access` or `default`; see [permissions and presets](security.md#permissions-and-presets)), `--loop ID@VERSION`, `--model primary=ROUTE/MODEL` and `--cwd`. Options go after `run`. Input is UTF-8 text, limited to 4 MiB; bundle JSON is limited to 1 MiB. `--batch` reads regular files immediately inside the folder in filename order, one session per file, without recursion or symlink traversal. Every record also carries the input path so results can be grouped by input and `runId`. Permission requests are rejected in unattended runs; configure an appropriate backend policy before running.
 
 The exit code is 0 for completed runs, 1 for errors or incomplete event drains, 2 for usage/startup failures, 3 for parked, 4 for blocked/budget, 5 for max steps, and 130/143/129 for SIGINT/SIGTERM/SIGHUP. Batch continues after an individual failure and returns the first nonzero status. A signal cancels the current prompt and stops the batch; shutdown has a five-second grace period.
 
@@ -45,7 +45,7 @@ try {
 }
 ```
 
-`write` is awaited in stream order. Supply a Promise that resolves after your sink accepts the record; a rejected write cancels the turn and rejects the run. `preset`, `loop`, `model` and `runId` are optional. `drainMs` defaults to 1000: if terminal ledger notifications do not arrive within that bound after the RPC settles, the result declares `eventsComplete: false`.
+`write` is awaited in stream order. Supply a Promise that resolves after your sink accepts the record; a rejected write cancels the turn and rejects the run. `preset`, `permission`, `loop`, `model` and `runId` are optional. `drainMs` defaults to 1000: if terminal ledger notifications do not arrive within that bound after the RPC settles, the result declares `eventsComplete: false`.
 
 ## JSONL schema v1
 

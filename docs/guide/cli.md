@@ -49,6 +49,8 @@ Type `/` to see the current menu. Common actions:
 | Resources | `/skills`, `/skill refresh ...`, `/mcp ...` |
 | Display / exit | `/theme [light\|dark\|mono]`, `/help`, `/quit` |
 
+Choose what a new session may do when you start it, for example `node agnes.mjs --permission read-only`; `--preset NAME` picks the recipe independently (see [permissions and presets](security.md#permissions-and-presets)). `/preset NAME` switches the open session's preset and keeps its permission; a different permission needs a new session.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. The TUI has no command to disable full access.

@@ -24,9 +24,18 @@ import { PluginAdminApi } from '../admin/plugins/api.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
+import {
+  allowedPermissions,
+  isPermissionLevel,
+  PERMISSION_LEVELS,
+  recipePresets,
+  splitSessionDefaults,
+} from './session-choice.js'
 
 type Snapshot = import('@agnes/protocol').SessionDefaultsSnapshot
-const presets = ['read-only', 'workspace-write', 'full-access'] as const
+type Entry = { id: string; isDefault: boolean }
+/** One saved default: the permission level, or the preset (recipe); '' clears the preset. */
+type Choice = { field: 'permission' | 'preset'; value: string }
 const icons = { 'read-only': 'eye', 'workspace-write': 'pencil', 'full-access': 'lock-keyhole' } as const
 /** Limits full access does not relax (docs/guide/security.md#full-access-exceptions). */
 const exceptions = {
@@ -42,12 +51,20 @@ const isolationTone: Record<RuntimeSecurityStatus['platform']['l1']['level'], St
   unavailable: 'danger',
   unprobed: 'neutral',
 }
+/**
+ * 默认权限 and the default preset for new sessions. They are separate fields of the saved defaults:
+ * choosing one keeps the other, and a permission level is never written as a preset.
+ */
 export function PermissionDefaults({
-  available,
+  presets,
+  permissions,
   security,
   fetcher = fetch,
 }: {
-  available: readonly string[]
+  /** The runtime catalog's presets; the legacy permission-level names among them are not offered. */
+  presets: readonly Entry[]
+  /** The runtime catalog's permission levels; an older Host omits them. */
+  permissions?: readonly Entry[] | undefined
   /** This computer's command isolation, stated under the workspace card. */
   security?: RuntimeSecurityStatus | undefined
   fetcher?: typeof fetch
@@ -64,7 +81,7 @@ export function PermissionDefaults({
   const [saveFailed, setSaveFailed] = useState(false)
   // Another place saved the defaults first: they are read again and the choice waits for a retry.
   const [conflict, setConflict] = useState(false)
-  const [failedPreset, setFailedPreset] = useState<string>()
+  const [pending, setPending] = useState<Choice>()
   const [confirm, setConfirm] = useState(false)
   const [revision, setRevision] = useState(0)
   const lifetime = useRef<AbortController>()
@@ -85,8 +102,10 @@ export function PermissionDefaults({
       .then(async (response) => {
         if (!response.ok) return
         const resolved: unknown = await response.json()
-        if (!abort.signal.aborted && resolved && typeof resolved === 'object' && 'preset' in resolved)
-          setEffective(typeof resolved.preset === 'string' ? resolved.preset : undefined)
+        if (abort.signal.aborted || !resolved || typeof resolved !== 'object') return
+        const row = resolved as { permission?: unknown; preset?: unknown }
+        const level = row.permission ?? row.preset
+        setEffective(isPermissionLevel(level) ? level : undefined)
       })
       .catch(() => {})
     void trackPageRequest(
@@ -125,20 +144,33 @@ export function PermissionDefaults({
     window.addEventListener('agnes:session-configuration-changed', reread)
     return () => window.removeEventListener('agnes:session-configuration-changed', reread)
   }, [])
-  async function save(preset: string) {
-    if (!canSave || !snapshot || busy || !available.includes(preset)) return
+  const allowed = allowedPermissions(permissions, presets)
+  const recipes = recipePresets(presets)
+  const defaultRecipe = recipes.find((preset) => preset.isDefault)?.id ?? 'standard'
+  const more = recipes.map((preset) => preset.id).filter((id) => id !== defaultRecipe)
+  async function save(choice: Choice) {
+    if (!canSave || !snapshot || busy) return
+    if (choice.field === 'permission' && !allowed.some((level) => level === choice.value)) return
+    if (choice.field === 'preset' && choice.value && !more.includes(choice.value)) return
+    // Each choice replaces its own field only; the rest of the saved defaults is sent back as read.
+    const current = splitSessionDefaults(snapshot.defaults)
+    const { preset: _replaced, ...withoutPreset } = current
+    const defaults =
+      choice.field === 'permission'
+        ? { ...current, permission: choice.value }
+        : { ...withoutPreset, ...(choice.value ? { preset: choice.value } : {}) }
     setBusy(true)
-    setSaving(preset)
+    setSaving(choice.field === 'permission' ? choice.value : undefined)
     setSaveFailed(false)
     setConflict(false)
-    setFailedPreset(preset)
+    setPending(choice)
     try {
       const response = await fetcher('/admin/api/defaults', {
         method: 'PUT',
         credentials: 'same-origin',
         signal: lifetime.current?.signal ?? null,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ revision: snapshot.revision, defaults: { ...snapshot.defaults, preset } }),
+        body: JSON.stringify({ revision: snapshot.revision, defaults }),
       })
       if (response.status === 409) {
         // The revision this page read is stale. Read the current defaults; the retry then saves the
@@ -156,7 +188,7 @@ export function PermissionDefaults({
       setSnapshot(value as Snapshot)
       reportSuccess('permission-defaults', fallbackT('ui.defaultsSaved'))
       setConfirm(false)
-      setFailedPreset(undefined)
+      setPending(undefined)
     } catch {
       if (!lifetime.current?.signal.aborted) setSaveFailed(true)
     } finally {
@@ -166,23 +198,28 @@ export function PermissionDefaults({
       }
     }
   }
+  const saved = snapshot && splitSessionDefaults(snapshot.defaults)
   // Only what is stored is shown as chosen; a choice in flight shows on its own card until it lands.
-  const stored = snapshot?.defaults.preset ?? effective
+  const stored =
+    saved?.permission ??
+    effective ??
+    permissions?.find((level) => level.isDefault && isPermissionLevel(level.id))?.id
   const chosen = saving ?? stored
-  const more = available.filter((preset) => !(presets as readonly string[]).includes(preset))
-  const name = (id: string | undefined) => {
-    if (!id) return '—'
-    const text = choiceText(`choice.${id}`)
-    return text === `choice.${id}` ? id : text
+  const chosenPreset = saved?.preset ?? ''
+  const text = (key: string, fallback: string) => {
+    const value = choiceText(key)
+    return value === key ? fallback : value
   }
-  const isolation = (preset: (typeof presets)[number]): [StatusDotTone, string] => {
-    if (preset === 'read-only') return ['neutral', t('noCommands')]
-    if (preset === 'full-access') return ['warning', t('notIsolated')]
+  const name = (id: string | undefined) => (id ? text(`choice.${id}`, id) : '—')
+  const recipeHelp = (id: string) => text(`choiceHelp.${id}`, '')
+  const isolation = (level: (typeof PERMISSION_LEVELS)[number]): [StatusDotTone, string] => {
+    if (level === 'read-only') return ['neutral', t('noCommands')]
+    if (level === 'full-access') return ['warning', t('notIsolated')]
     if (!security) return ['neutral', t('isolationUnknown')]
-    if (security.presetPolicies.find((policy) => policy.id === preset)?.level === 'L0')
-      return ['warning', t('notIsolated')]
-    const level = security.platform.l1.level
-    return [isolationTone[level], `${t('commandIsolation')} · ${t(`state.${level}`)}`]
+    const policies = security.permissionPolicies ?? security.presetPolicies
+    if (policies.find((policy) => policy.id === level)?.level === 'L0') return ['warning', t('notIsolated')]
+    const state = security.platform.l1.level
+    return [isolationTone[state], `${t('commandIsolation')} · ${t(`state.${state}`)}`]
   }
   const exceptionList = (detailed: boolean) => (
     <ul className="agnes-settings-exceptions" data-testid={detailed ? 'security-full-exceptions' : undefined}>
@@ -198,7 +235,7 @@ export function PermissionDefaults({
     </ul>
   )
   const locked = !canSave || !snapshot || busy
-  const retry = () => failedPreset && void save(failedPreset)
+  const retry = () => pending && void save(pending)
   return (
     <SettingsBlock
       label={t('defaultPermissions')}
@@ -210,8 +247,8 @@ export function PermissionDefaults({
     >
       <p className="agnes-settings-note">{t('defaultHelp')}</p>
       {snapshot && lockReason && <Banner data-testid="security-default-locked">{t(lockReason)}</Banner>}
-      {snapshot && stored && !(presets as readonly string[]).includes(stored) && (
-        <Banner data-testid="security-default-other">{t('otherPreset', { name: name(stored) })}</Banner>
+      {snapshot && saved?.preset && !recipes.some((preset) => preset.id === saved.preset) && (
+        <Banner data-testid="security-default-other">{t('otherPreset', { name: name(saved.preset) })}</Banner>
       )}
       {/* While a save or reread is in flight the cards wait without greying out (data-busy). */}
       <fieldset
@@ -219,39 +256,39 @@ export function PermissionDefaults({
         aria-label={t('defaultPermissions')}
         data-busy={(busy && !!snapshot) || undefined}
       >
-        {presets.map((preset) => {
-          const allowed = available.includes(preset)
-          const [tone, status] = isolation(preset)
+        {PERMISSION_LEVELS.map((level) => {
+          const permitted = allowed.includes(level)
+          const [tone, status] = isolation(level)
           return (
-            <div key={preset} data-testid={`security-${preset}`} data-on={chosen === preset || undefined}>
+            <div key={level} data-testid={`security-${level}`} data-on={chosen === level || undefined}>
               <SettingsChoice
                 type="radio"
-                name="security-default-preset"
-                value={preset}
-                checked={chosen === preset}
-                disabled={locked || !allowed}
-                preview={<IconTile name={icons[preset]} />}
+                name="security-default-permission"
+                value={level}
+                checked={chosen === level}
+                disabled={locked || !permitted}
+                preview={<IconTile name={icons[level]} />}
                 label={
                   <>
-                    {t(preset)}
-                    {preset === 'workspace-write' && (
+                    {t(level)}
+                    {level === 'workspace-write' && (
                       <SettingsTag tone="muted">{t('recommended')}</SettingsTag>
                     )}
-                    {!allowed && <SettingsTag tone="muted">{t('notAllowed')}</SettingsTag>}
+                    {!permitted && <SettingsTag tone="muted">{t('notAllowed')}</SettingsTag>}
                   </>
                 }
-                hint={t(`${preset}Help`)}
+                hint={t(`${level}Help`)}
                 onChange={() => {
-                  if (preset === 'full-access') setConfirm(true)
-                  else void save(preset)
+                  if (level === 'full-access') setConfirm(true)
+                  else void save({ field: 'permission', value: level })
                 }}
               />
               <div className="agnes-settings-mode-foot">
-                <span data-testid={`security-${preset}-isolation`}>
-                  <StatusDot tone={saving === preset ? 'accent' : tone} running={saving === preset} />
-                  {saving === preset ? t('saving') : status}
+                <span data-testid={`security-${level}-isolation`}>
+                  <StatusDot tone={saving === level ? 'accent' : tone} running={saving === level} />
+                  {saving === level ? t('saving') : status}
                 </span>
-                {preset === 'full-access' && (
+                {level === 'full-access' && (
                   <Disclosure
                     variant="plain"
                     summary={t('exceptionsToggle')}
@@ -266,30 +303,37 @@ export function PermissionDefaults({
           )
         })}
       </fieldset>
-      {saveFailed && snapshot && failedPreset && (
+      {saveFailed && snapshot && pending && (
         <Banner
           tone={conflict ? 'warning' : 'error'}
           data-testid={conflict ? 'security-default-conflict' : 'security-default-failed'}
           action={
             <Button size="small" data-testid="security-default-retry" onClick={retry}>
-              {conflict ? t('retryChoice', { chosen: name(failedPreset) }) : t('retry')}
+              {conflict ? t('retryChoice', { chosen: name(pending.value || defaultRecipe) }) : t('retry')}
             </Button>
           }
         >
-          {t(conflict ? 'conflict' : 'saveFailed', { actual: name(stored), chosen: name(failedPreset) })}
+          {t(conflict ? 'conflict' : 'saveFailed', {
+            actual: name(stored),
+            chosen: name(pending.value || defaultRecipe),
+          })}
         </Banner>
       )}
       {more.length > 0 && (
         <SettingsBlock>
-          <SettingsItem label={t('morePresets')} description={t('morePresetsHelp')}>
+          <SettingsItem
+            label={t('defaultRecipe')}
+            info={t('defaultRecipeHelp')}
+            description={recipeHelp(more.includes(chosenPreset) ? chosenPreset : defaultRecipe) || undefined}
+          >
             <SettingsSelect
               data-testid="security-more-presets"
-              aria-label={t('morePresets')}
-              value={chosen && more.includes(chosen) ? chosen : ''}
+              aria-label={t('defaultRecipe')}
+              value={more.includes(chosenPreset) ? chosenPreset : ''}
               disabled={locked}
-              onChange={(event) => event.target.value && void save(event.target.value)}
+              onChange={(event) => void save({ field: 'preset', value: event.target.value })}
             >
-              <option value="">{t('morePresetsNone')}</option>
+              <option value="">{t('defaultRecipeFollow', { name: name(defaultRecipe) })}</option>
               {more.map((preset) => (
                 <option key={preset} value={preset}>
                   {name(preset)}
@@ -318,7 +362,7 @@ export function PermissionDefaults({
               dangerFilled
               loading={busy}
               data-testid="security-full-confirm"
-              onClick={() => void save('full-access')}
+              onClick={() => void save({ field: 'permission', value: 'full-access' })}
             >
               {t('fullConfirmAction')}
             </Button>

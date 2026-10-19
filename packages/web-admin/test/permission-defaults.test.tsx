@@ -8,14 +8,56 @@ import { securityUxCatalog } from '../src/settings/security-locale.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 afterEach(() => document.body.replaceChildren())
+const recipes = [
+  { id: 'standard', isDefault: true },
+  { id: 'minimal', isDefault: false },
+  { id: 'ptc', isDefault: false },
+]
+const levels = [
+  { id: 'read-only', isDefault: false },
+  { id: 'workspace-write', isDefault: true },
+  { id: 'full-access', isDefault: false },
+]
+const context = (readOnly = false, permissions = ['packages.read', 'packages.activate']) =>
+  Response.json({
+    profile: 'local-dev',
+    clientId: 'fixture',
+    authScope: 'auth.fixture',
+    permissions,
+    readOnly,
+  })
+const status = (level: 'full' | 'partial' | 'unavailable' | 'unprobed') => ({
+  platform: { os: 'darwin', l1: { level, scope: level === 'full' ? ['file', 'process', 'network'] : [] } },
+  presetPolicies: [],
+  workspaces: [],
+})
+async function render(props: Parameters<typeof PermissionDefaults>[0]) {
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  await act(async () => root.render(createElement(PermissionDefaults, props)))
+  return { host, unmount: () => act(async () => root.unmount()) }
+}
+const pickIn = (host: ParentNode) => (id: string) =>
+  host.querySelector<HTMLInputElement>(`[data-testid="security-${id}"] input`)!
+const recipeSelect = (host: ParentNode) =>
+  host.querySelector<HTMLSelectElement>('[data-testid="security-more-presets"]')
+async function pickRecipe(host: ParentNode, value: string) {
+  await act(async () => {
+    const select = recipeSelect(host)
+    if (!select) throw new Error('no preset select')
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
 
 it.each([false, true])(
-  'saves revision-aware defaults, confirms full access and respects read-only=%s',
+  'saves the permission and the preset as separate fields, confirms full access and respects read-only=%s',
   async (readOnly) => {
-    let snapshot = {
+    let snapshot: { revision: number; defaults: Record<string, unknown> } = {
       revision: 4,
       defaults: {
-        preset: 'workspace-write',
+        preset: 'minimal',
+        permission: 'workspace-write',
         providers: {
           loop: { provider: 'default-loop', version: '1.0.0' },
           'model-adapter': { provider: 'default-model', version: '1.0.0' },
@@ -27,15 +69,9 @@ it.each([false, true])(
     const notified = vi.fn()
     window.addEventListener('agnes:session-configuration-changed', notified)
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
-      if (String(url).endsWith('/context'))
-        return Response.json({
-          profile: 'local-dev',
-          clientId: 'fixture',
-          authScope: 'auth.fixture',
-          permissions: ['packages.read', 'packages.activate'],
-          readOnly,
-        })
-      if (String(url).endsWith('/composition')) return Response.json({ preset: 'workspace-write' })
+      if (String(url).endsWith('/context')) return context(readOnly)
+      if (String(url).endsWith('/composition'))
+        return Response.json({ preset: 'minimal', permission: 'workspace-write' })
       if (init?.method === 'PUT') {
         const input = JSON.parse(String(init.body))
         writes.push(input)
@@ -49,16 +85,11 @@ it.each([false, true])(
     const root = createRoot(host)
     try {
       await act(async () =>
-        root.render(
-          createElement(PermissionDefaults, {
-            available: ['read-only', 'workspace-write', 'full-access'],
-            fetcher,
-          }),
-        ),
+        root.render(createElement(PermissionDefaults, { presets: recipes, permissions: levels, fetcher })),
       )
-      const pick = (id: string) =>
-        host.querySelector<HTMLInputElement>(`[data-testid="security-${id}"] input`)!
+      const pick = pickIn(host)
       expect(pick('workspace-write').checked).toBe(true)
+      expect(recipeSelect(host)?.value).toBe('minimal')
       expect(pick('read-only').disabled).toBe(readOnly)
       expect(host.textContent).toContain('Only affects new sessions.')
       // A locked block says why instead of only greying out.
@@ -79,7 +110,10 @@ it.each([false, true])(
         expect(notified).not.toHaveBeenCalled()
         return
       }
-      expect(writes).toEqual([{ revision: 4, defaults: { ...snapshot.defaults, preset: 'read-only' } }])
+      // The permission is its own field: the preset and the rest of the defaults are sent back as read.
+      expect(writes).toEqual([
+        { revision: 4, defaults: { ...snapshot.defaults, permission: 'read-only', preset: 'minimal' } },
+      ])
       expect(pick('read-only').checked).toBe(true)
       await act(async () => pick('full-access').click())
       expect(writes).toHaveLength(1)
@@ -90,7 +124,8 @@ it.each([false, true])(
       expect(writes[1]).toEqual({
         revision: 5,
         defaults: {
-          preset: 'full-access',
+          preset: 'minimal',
+          permission: 'full-access',
           providers: {
             loop: { provider: 'default-loop', version: '1.0.0' },
             'model-adapter': { provider: 'default-model', version: '1.0.0' },
@@ -99,7 +134,18 @@ it.each([false, true])(
         },
       })
       expect(pick('full-access').checked).toBe(true)
-      expect(notified).toHaveBeenCalledTimes(2)
+      // The preset is chosen apart and keeps the permission; 「默认」 stores no preset at all.
+      await pickRecipe(host, 'ptc')
+      expect(writes[2]).toEqual({
+        revision: 6,
+        defaults: { ...(writes[1] as { defaults: object }).defaults, preset: 'ptc' },
+      })
+      await pickRecipe(host, '')
+      const { preset: _cleared, ...unset } = (writes[1] as { defaults: Record<string, unknown> }).defaults
+      expect(writes[3]).toEqual({ revision: 7, defaults: unset })
+      expect(recipeSelect(host)?.value).toBe('')
+      expect(pick('full-access').checked).toBe(true)
+      expect(notified).toHaveBeenCalledTimes(4)
     } finally {
       window.removeEventListener('agnes:session-configuration-changed', notified)
       await act(async () => root.unmount())
@@ -120,16 +166,9 @@ it.each(['pending', 'failed'])(
   'shows saved defaults while composition is %s without loading loops',
   async (status) => {
     const fetcher = vi.fn<typeof fetch>(async (url) => {
-      if (String(url).endsWith('/context'))
-        return Response.json({
-          profile: 'local-dev',
-          clientId: 'fixture',
-          authScope: 'auth.fixture',
-          permissions: ['packages.read', 'packages.activate'],
-          readOnly: false,
-        })
+      if (String(url).endsWith('/context')) return context()
       if (url === '/admin/api/defaults')
-        return Response.json({ revision: 4, defaults: { preset: 'workspace-write' } })
+        return Response.json({ revision: 4, defaults: { permission: 'workspace-write' } })
       if (url === '/admin/api/composition') {
         if (status === 'failed') throw new Error('catalog unavailable')
         return new Promise<Response>(() => {})
@@ -140,12 +179,7 @@ it.each(['pending', 'failed'])(
     const root = createRoot(host)
     try {
       await act(async () =>
-        root.render(
-          createElement(PermissionDefaults, {
-            available: ['read-only', 'workspace-write', 'full-access'],
-            fetcher,
-          }),
-        ),
+        root.render(createElement(PermissionDefaults, { presets: recipes, permissions: levels, fetcher })),
       )
       const choice = host.querySelector<HTMLInputElement>('[data-testid="security-workspace-write"] input')!
       expect(choice.checked).toBe(true)
@@ -157,26 +191,89 @@ it.each(['pending', 'failed'])(
   },
 )
 
-const context = (readOnly = false, permissions = ['packages.read', 'packages.activate']) =>
-  Response.json({
-    profile: 'local-dev',
-    clientId: 'fixture',
-    authScope: 'auth.fixture',
-    permissions,
-    readOnly,
+it('offers only recipe presets beside the permission levels, even when the catalog lists the legacy names', async () => {
+  const writes: unknown[] = []
+  // An older store kept the permission in `preset`; it reads as the permission and is saved as one.
+  let snapshot: { revision: number; defaults: Record<string, unknown> } = {
+    revision: 2,
+    defaults: { preset: 'read-only' },
+  }
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/context')) return context()
+    if (String(url).endsWith('/composition')) return Response.json({})
+    if (init?.method === 'PUT') {
+      const input = JSON.parse(String(init.body))
+      writes.push(input)
+      snapshot = { revision: snapshot.revision + 1, defaults: input.defaults }
+      return Response.json(snapshot)
+    }
+    return Response.json(snapshot)
   })
-const status = (level: 'full' | 'partial' | 'unavailable' | 'unprobed') => ({
-  platform: { os: 'darwin', l1: { level, scope: level === 'full' ? ['file', 'process', 'network'] : [] } },
-  presetPolicies: [],
-  workspaces: [],
-})
-async function render(props: Parameters<typeof PermissionDefaults>[0]) {
   const host = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
-  await act(async () => root.render(createElement(PermissionDefaults, props)))
-  return { host, unmount: () => act(async () => root.unmount()) }
-}
-const all = ['read-only', 'workspace-write', 'full-access']
+  try {
+    await act(async () =>
+      root.render(
+        createElement(PermissionDefaults, {
+          // An older Host: no permission catalog, and the levels still listed as presets.
+          presets: [
+            { id: 'workspace-write', isDefault: true },
+            { id: 'read-only', isDefault: false },
+            { id: 'full-access', isDefault: false },
+            { id: 'standard', isDefault: false },
+            { id: 'minimal', isDefault: false },
+          ],
+          fetcher,
+        }),
+      ),
+    )
+    const pick = pickIn(host)
+    expect(pick('read-only').checked).toBe(true)
+    expect([...(recipeSelect(host)?.options ?? [])].map((option) => [option.value, option.text])).toEqual([
+      ['', 'Default (Standard)'],
+      ['minimal', 'Minimal tools'],
+    ])
+    expect(host.textContent).toContain('Every tool the permission allows')
+    await pickRecipe(host, 'minimal')
+    expect(writes).toEqual([{ revision: 2, defaults: { permission: 'read-only', preset: 'minimal' } }])
+    expect(host.textContent).toContain('Read tools only')
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
+it.each([
+  ['the permission catalog', [{ id: 'standard', isDefault: true }], levels.slice(0, 2), ['full-access']],
+  [
+    'the presets of an older Host',
+    [{ id: 'standard', isDefault: true }],
+    undefined,
+    ['read-only', 'workspace-write', 'full-access'],
+  ],
+] as const)('allows only the levels %s names', async (_source, presets, permissions, refused) => {
+  const writes: unknown[] = []
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/context')) return context()
+    if (String(url).endsWith('/composition')) return Response.json({})
+    if (init?.method === 'PUT') writes.push(JSON.parse(String(init.body)))
+    return Response.json({ revision: 1, defaults: {} })
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(PermissionDefaults, { presets, permissions, fetcher })))
+    const pick = pickIn(host)
+    for (const level of ['read-only', 'workspace-write', 'full-access'])
+      expect(pick(level).disabled, level).toBe(refused.includes(level as never))
+    // Only the catalog's default level reads as chosen when nothing is saved.
+    expect(pick('workspace-write').checked).toBe(!!permissions)
+    // A preset list with only the default recipe has nothing else to offer.
+    expect(recipeSelect(host)).toBeNull()
+    expect(writes).toEqual([])
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
 
 it.each([
   [undefined, 'Isolation status unknown'],
@@ -187,9 +284,16 @@ it.each([
   const fetcher = vi.fn<typeof fetch>(async (url) =>
     String(url).endsWith('/context')
       ? context()
-      : Response.json({ revision: 1, defaults: { preset: 'workspace-write' } }),
+      : String(url).endsWith('/composition')
+        ? Response.json({})
+        : Response.json({ revision: 1, defaults: { permission: 'workspace-write' } }),
   )
-  const { host, unmount } = await render({ available: all, fetcher, ...(security ? { security } : {}) })
+  const { host, unmount } = await render({
+    presets: recipes,
+    permissions: levels,
+    fetcher,
+    ...(security ? { security } : {}),
+  })
   const foot = (id: string) => host.querySelector(`[data-testid="security-${id}-isolation"]`)?.textContent
   expect(foot('read-only')).toBe('No commands')
   expect(foot('workspace-write')).toBe(workspace)
@@ -200,19 +304,20 @@ it.each([
 it('returns to the stored value when a save fails, names both, and retries the same choice', async () => {
   const writes: string[] = []
   let fail = true
-  let stored = { revision: 1, defaults: { preset: 'workspace-write' } }
+  let stored = { revision: 1, defaults: { permission: 'workspace-write' } }
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/context')) return context()
+    if (String(url).endsWith('/composition')) return Response.json({})
     if (init?.method === 'PUT') {
-      const preset = JSON.parse(String(init.body)).defaults.preset
-      writes.push(preset)
+      const permission = JSON.parse(String(init.body)).defaults.permission
+      writes.push(permission)
       if (fail) return Response.json({ error: 'boom' }, { status: 500 })
-      stored = { revision: 2, defaults: { preset } }
+      stored = { revision: 2, defaults: { permission } }
     }
     return Response.json(stored)
   })
-  const { host, unmount } = await render({ available: all, fetcher })
-  const pick = (id: string) => host.querySelector<HTMLInputElement>(`[data-testid="security-${id}"] input`)!
+  const { host, unmount } = await render({ presets: recipes, permissions: levels, fetcher })
+  const pick = pickIn(host)
   await act(async () => pick('read-only').click())
   expect(pick('workspace-write').checked).toBe(true)
   expect(pick('read-only').checked).toBe(false)
@@ -229,28 +334,40 @@ it('returns to the stored value when a save fails, names both, and retries the s
 })
 
 it.each([
-  ['ptc', true, 'New sessions use the “Programmatic tools” profile'],
-  ['standard', false, 'New sessions use the “Standard permissions” profile'],
-  ['workspace-write', true, null],
-] as const)('names a stored %s profile above the cards', async (preset, offered, note) => {
-  const fetcher = vi.fn<typeof fetch>(async (url) =>
-    String(url).endsWith('/context') ? context() : Response.json({ revision: 1, defaults: { preset } }),
-  )
-  const { host, unmount } = await render({ available: offered ? [...all, 'ptc'] : all, fetcher })
-  const shown = host.querySelector('[data-testid="security-default-other"]')?.textContent ?? null
-  if (note === null) expect(shown).toBeNull()
-  else expect(shown).toContain(note)
-  expect(host.querySelectorAll('.agnes-settings-modes input:checked')).toHaveLength(note ? 0 : 1)
-  await unmount()
-})
+  ['ghost', 'New sessions use the “ghost” profile'],
+  ['ptc', null],
+  ['workspace-write', null],
+] as const)(
+  'names a stored %s preset above the cards only when the catalog lacks it',
+  async (preset, note) => {
+    const fetcher = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith('/context')
+        ? context()
+        : String(url).endsWith('/composition')
+          ? Response.json({})
+          : Response.json({ revision: 1, defaults: { preset } }),
+    )
+    const { host, unmount } = await render({ presets: recipes, permissions: levels, fetcher })
+    const shown = host.querySelector('[data-testid="security-default-other"]')?.textContent ?? null
+    if (note === null) expect(shown).toBeNull()
+    else expect(shown).toContain(note)
+    await unmount()
+  },
+)
 
 it('marks a card this profile does not offer and keeps its description', async () => {
   const fetcher = vi.fn<typeof fetch>(async (url) =>
     String(url).endsWith('/context')
       ? context(false, ['packages.read'])
-      : Response.json({ revision: 1, defaults: { preset: 'workspace-write' } }),
+      : String(url).endsWith('/composition')
+        ? Response.json({})
+        : Response.json({ revision: 1, defaults: { permission: 'workspace-write' } }),
   )
-  const { host, unmount } = await render({ available: ['read-only', 'workspace-write'], fetcher })
+  const { host, unmount } = await render({
+    presets: recipes,
+    permissions: levels.slice(0, 2),
+    fetcher,
+  })
   const card = host.querySelector('[data-testid="security-full-access"]')!
   expect(card.textContent).toContain(securityUxCatalog.en?.['full-accessHelp'])
   expect(card.textContent).toContain('Unavailable in this profile')

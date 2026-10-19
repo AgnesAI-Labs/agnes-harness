@@ -28,6 +28,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { recipePresets } from './session-permission.js'
 
 export type LoopSelection = { id: string; version: string }
 export type NewSessionCatalog = SessionDefaultsSnapshot & {
@@ -36,6 +37,8 @@ export type NewSessionCatalog = SessionDefaultsSnapshot & {
   modelAdapters: readonly AdminModelAdapter[]
 }
 export const loopIdentity = (loop: LoopSelection): string => JSON.stringify([loop.id, loop.version])
+/** What a recipe does, where its name alone does not say (the same help the admin catalog shows). */
+const PRESET_DESCRIPTIONS: Record<string, string> = { minimal: 'choiceHelp.minimal', ptc: 'choiceHelp.ptc' }
 
 /** Read only same-origin public descriptions through the authenticated launcher BFF. */
 export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Promise<NewSessionCatalog> {
@@ -92,8 +95,10 @@ export interface LoopPickerView {
   inherited: string
   unavailable: string
   onSelect(loop: LoopSelection | undefined): void
+  /** The Host's preset catalog; legacy permission-level names in it are not offered as recipes. */
   presets?: readonly { id: string; isDefault: boolean }[]
   preset?: string | undefined
+  /** The recipe a draft runs when it names none; the 「默认」 entry carries its name. */
   inheritedPreset?: string | undefined
   presetLabel?: string
   bundles?: readonly {
@@ -159,16 +164,20 @@ export function LoopPicker() {
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   // A bundle or preset already chosen for this draft stays visible: it changes what the session does.
   const composition = advancedSettingsShown() || !!state.selectedBundles?.length || state.preset !== undefined
+  // The recipes a draft may choose. The default one is the 「默认」 entry, never listed twice.
+  const recipes = recipePresets(state.presets)
+  const choices = recipes.filter((entry) => entry.id !== state.inheritedPreset)
+  const presetValue = state.preset === state.inheritedPreset ? '' : (state.preset ?? '')
+  const presetDescription = (id: string) => {
+    const key = PRESET_DESCRIPTIONS[id]
+    return key ? { title: tr(key) } : {}
+  }
   const advancedAvailable =
     launchable.length > 0 ||
     state.loops.length >= 2 ||
     stale ||
     !!state.error ||
-    (composition &&
-      (!!state.bundles?.length ||
-        !!state.presets?.some(
-          (entry) => !['read-only', 'workspace-write', 'full-access'].includes(entry.id),
-        )))
+    (composition && (!!state.bundles?.length || recipes.length > 0))
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -295,11 +304,11 @@ export function LoopPicker() {
           )}
         </Field>
       )}
-      {composition && state.presets && (
+      {composition && recipes.length > 0 && (
         <Field label={tr('composer.agent.preset')}>
-          {state.presets.length === 1 ? (
+          {recipes.length === 1 && recipes[0] ? (
             <div data-testid="new-session-preset-readonly" title={tr('composer.agent.presetSource')}>
-              <ChoiceLabel entry={state.presets[0]!} t={tr} />
+              <ChoiceLabel entry={recipes[0]} t={tr} />
             </div>
           ) : (
             <Select<string>
@@ -307,18 +316,34 @@ export function LoopPicker() {
               data-testid="new-session-preset"
               virtual={false}
               disabled={state.disabled}
-              value={state.preset ?? ''}
+              value={presetValue}
               className="agent-picker-select"
               options={[
                 {
+                  // No preset is sent: the session follows the administrator default.
                   value: '',
-                  label: `${tr('composer.agent.default')} (${state.inheritedPreset ? choiceName({ id: state.inheritedPreset }, tr) : tr('composer.agent.unresolved')})`,
+                  label: tr('composer.agent.defaultPreset').replace(
+                    '{name}',
+                    state.inheritedPreset
+                      ? choiceName({ id: state.inheritedPreset }, tr)
+                      : tr('composer.agent.unresolved'),
+                  ),
                   title: tr('composer.agent.presetSource'),
                 },
-                ...state.presets.map((entry) => ({
+                ...choices.map((entry) => ({
                   value: entry.id,
                   label: <ChoiceLabel entry={entry} t={tr} />,
+                  ...presetDescription(entry.id),
                 })),
+                ...(presetValue && !choices.some((entry) => entry.id === presetValue)
+                  ? [
+                      {
+                        value: presetValue,
+                        label: <ChoiceLabel entry={{ id: presetValue }} t={tr} />,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
               ]}
               onChange={(preset) => state.onPreset?.(preset || undefined)}
             />

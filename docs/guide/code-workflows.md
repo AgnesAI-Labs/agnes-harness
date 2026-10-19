@@ -2,9 +2,12 @@
 
 English | [简体中文](code-workflows.zh-CN.md)
 
-Select the **ptc** preset when creating a local session. It inherits the
-workspace-write permission policy and exposes `run_code` to the model. The tool
-SDK supplies TypeScript parameter declarations for available tools.
+Select the **ptc** preset when creating a local session, for example
+`agh --preset ptc`. It exposes `run_code` to the model; the tool SDK supplies
+TypeScript parameter declarations for available tools. The preset does not
+choose a permission: the session runs under `workspace-write` unless you pick
+another level, for example `agh --preset ptc --permission read-only`. See
+[permissions and presets](security.md#permissions-and-presets).
 
 Each cell runs in a fresh Node process owned by the selected sandbox provider.
 Top-level `await` and `return` are supported; variables do not survive cells.
@@ -31,13 +34,13 @@ pass through validation, approval, budget and depth checks. Up to four bridge
 calls may run concurrently; a cell accepts at most 256 calls. Cells respect the
 configured elapsed-time and output limits. Cancellation terminates the process
 and cancels outstanding bridge calls. Direct process operations remain confined
-by the current permission preset.
+by the session's permission.
 
 The official preset sets `raw_io: false`. Node permission mode blocks direct
 filesystem access and child-process creation; use the approved tools instead.
 Custom presets may explicitly enable raw I/O with `code_runtime.raw_io: true`;
 these cells have cell-level approval and report `ioEnforcement: cell-approval`,
-while their process still uses the preset's OS sandbox.
+while their process still uses the session's OS sandbox.
 
 Stages execute sequentially, with at most four parallel members per stage.
 Children use the official `subagent_spawn` tool and inherit its depth, fan-out,

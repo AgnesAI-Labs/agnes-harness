@@ -16,6 +16,8 @@ export const securityCatalog: LocaleCatalog = {
     probeHelp:
       'These results come from background checks. The workspace status below belongs to each open session; the platform result alone does not prove a session is isolated. Refresh only re-reads results and runs no command.',
     permissionRequirements: 'What each permission needs from isolation',
+    presetIsolationRequirements: 'What each tool set needs from isolation',
+    permissionLevel: 'Permission',
     sandboxLevel: 'Sandbox level',
     required: 'Required',
     onUnavailable: 'If unavailable',
@@ -65,6 +67,8 @@ export const securityCatalog: LocaleCatalog = {
     probeHelp:
       '这些结果来自后台检测。下方的工作区状态属于各个已打开的会话；只看平台结果不能说明某个会话已被隔离。刷新只重新读取结果，不会运行命令。',
     permissionRequirements: '各权限对隔离的要求',
+    presetIsolationRequirements: '各工具集对隔离的要求',
+    permissionLevel: '权限',
     sandboxLevel: '沙箱级别',
     required: '是否必须',
     onUnavailable: '不可用时',

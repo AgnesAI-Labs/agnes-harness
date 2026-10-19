@@ -1,7 +1,6 @@
 import { defaultLoop, userImagePolicy } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { choiceName } from '@agnes/web-admin/settings/choices'
-import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import {
   composerActionPresentation,
@@ -14,8 +13,8 @@ import { renderSessionActions } from '@agnes/web-conversation/session-actions'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { shortcutLabel, shortenHome, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
-import { rememberWebComposer } from '../composer-memory.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
+import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
 
@@ -40,6 +39,7 @@ export function createComposerController(
     | 'draftLoopAvailable'
     | 'draftLoopEdited'
     | 'draftPreset'
+    | 'draftSessionRequest'
     | 'draftingNew'
     | 'goalHost'
     | 'knownSessionModel'
@@ -62,7 +62,6 @@ export function createComposerController(
     | 'run'
     | 'runtimeCatalog'
     | 'runtimeModels'
-    | 'selectedDraftPreset'
     | 'selectedModelAvailable'
     | 'selectedWorkspace'
     | 'sessionControls'
@@ -359,6 +358,14 @@ export function createComposerController(
           context.permissionRefreshPending,
         pending: context.permissionChangePending || context.permissionRefreshPending,
         selected: permissionUnknown ? null : context.permissionMode,
+        // Only a Host that lists permission levels says which one is the default.
+        ...(context.runtimeCatalog?.permissions
+          ? {
+              defaultMode: permissionModeOf(
+                defaultPermissionLevel(context.newSessionCatalog?.defaults, context.runtimeCatalog),
+              ),
+            }
+          : {}),
       },
       queue: {
         items:
@@ -456,12 +463,8 @@ export function createComposerController(
       },
     }
     if (context.draftingNew && !context.draftLoopAvailable()) composerView.send.disabled = true
-    if (
-      context.draftingNew &&
-      context.permissionMode === 'view' &&
-      permissionForSessionPreset(context.selectedDraftPreset(), context.runtimeCatalog) !== 'view'
-    )
-      composerView.send.disabled = true
+    // A level the deployment refuses, or one an older Host cannot apply to the recipe, is not sent.
+    if (context.draftingNew && !context.draftSessionRequest()) composerView.send.disabled = true
     if (context.draftingNew && context.loopCatalogPending) composerView.send.disabled = true
     if (
       context.draftingNew &&
@@ -502,16 +505,12 @@ export function createComposerController(
         renderControls()
       },
       preset: context.draftPreset,
-      inheritedPreset: effectiveSessionPreset(
-        undefined,
-        context.newSessionCatalog?.defaults,
-        context.runtimeCatalog,
-      ),
+      inheritedPreset: defaultRecipe(context.newSessionCatalog?.defaults, context.runtimeCatalog),
       presetLabel: context.settingsText('presets'),
       onPreset(preset) {
+        // The recipe never changes the chosen permission level.
         context.draftPreset = preset
         context.syncDraftPermission()
-        rememberWebComposer({ permission: context.permissionMode })
         renderControls()
       },
     })
