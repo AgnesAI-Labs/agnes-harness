@@ -85,3 +85,37 @@ it('shows one polite toast for 3 seconds without moving focus, then advances eve
   expect(feedback.store.getSnapshot().queue).toEqual([])
   expect(document.activeElement).toBe(trigger)
 })
+
+it('clears 启用插件后可使用 as soon as the plugin is set to enabled, before it is running', async () => {
+  const { installFeedbackSink } = await import('@agnes/web-ui')
+  const { PluginOperationFeedback } = await import('@agnes/web-admin/admin/plugins/operation-feedback')
+  const feedback = createOperationFeedback()
+  const release = installFeedbackSink(feedback.sink)
+  const row = (desired: string, actual: string) =>
+    [{ id: 'acme', desired, actual, metadata: { displayName: 'Acme' } }] as never
+  const install = {
+    operationId: 'install-1',
+    operation: 'install',
+    state: 'completed',
+    packageId: 'acme',
+  } as never
+  const host = document.body.appendChild(document.createElement('div'))
+  const render = (installed: never) =>
+    createElement(PluginOperationFeedback, { operation: install, installed, onEnable() {} })
+  const { createRoot } = await import('react-dom/client')
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        createElement(PluginOperationFeedback, { operation: undefined, installed: [], onEnable() {} }),
+      ),
+    )
+    await act(async () => root.render(render(row('installed-disabled', 'not-running'))))
+    expect(feedback.store.getSnapshot().notices.map((item) => item.scope)).toEqual(['plugin-enable:acme'])
+    await act(async () => root.render(render(row('enabled', 'starting'))))
+    expect(feedback.store.getSnapshot().notices).toEqual([])
+  } finally {
+    await act(async () => root.unmount())
+    release()
+  }
+})

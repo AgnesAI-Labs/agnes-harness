@@ -38,14 +38,24 @@
                   "minLength": 1,
                   "maxLength": 128,
                   "default": "jev",
-                  "description": "Side-call route that serves the Jev model."
+                  "description": "Side-call route that serves the Jev model.",
+                  "x-locales": {
+                    "zh-CN": {
+                      "description": "提供 Jev 模型的旁路模型路由。"
+                    }
+                  }
                 },
                 "model": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
                   "default": "typesafe/jev-1.13-20260917",
-                  "description": "Model id on that route. Pin a dated version."
+                  "description": "Model id on that route. Pin a dated version.",
+                  "x-locales": {
+                    "zh-CN": {
+                      "description": "该路由上的模型 ID，请固定为带日期的版本。"
+                    }
+                  }
                 },
                 "deadlineMs": {
                   "type": "integer",

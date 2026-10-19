@@ -9,6 +9,7 @@ import {
   type PluginSchema,
   pluginFormKind,
   pluginSchemaDefault,
+  pluginSchemaText,
   resolvePluginSchema,
 } from '../src/plugin-schema-model.js'
 
@@ -33,6 +34,20 @@ describe('plugin schema form projection', () => {
   ])('chooses a control or lossless fallback for %j', (schema, kind) => {
     expect(pluginFormKind(schema, 0)).toBe(kind)
     expect(pluginFormKind(schema, 6)).toBe('json')
+  })
+
+  it('shows author text in the reader’s language and falls back to the schema’s own text', () => {
+    const field = {
+      type: 'string',
+      title: 'Route',
+      description: 'Side-call route.',
+      'x-locales': { 'zh-CN': { description: '旁路模型路由。' } },
+    }
+    expect(pluginFormKind(field, 0)).toBe('string')
+    expect(pluginSchemaText(field, 'description', 'zh-CN')).toBe('旁路模型路由。')
+    expect(pluginSchemaText(field, 'title', 'zh-CN')).toBe('Route')
+    expect(pluginSchemaText(field, 'description', 'en')).toBe('Side-call route.')
+    expect(pluginSchemaText({ type: 'string', 'x-locales': 'zh' }, 'description', 'zh-CN')).toBeUndefined()
   })
 
   it('resolves nested and recursive refs with bounded defaults, without overwriting assertion siblings', () => {

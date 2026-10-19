@@ -16,8 +16,8 @@ export function PluginOperationFeedback({
   const { t, locale } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
   const initial = useRef(operation?.operationId)
   useEffect(() => {
-    for (const item of installed)
-      if (item.desired === 'enabled' && item.actual === 'running') resolveFeedback(`plugin-enable:${item.id}`)
+    // The notice asks for an enable; once one is set, readiness shows on the plugin itself.
+    for (const item of installed) if (item.desired === 'enabled') resolveFeedback(`plugin-enable:${item.id}`)
     if (operation?.state !== 'completed' || initial.current === operation.operationId) return
     const kind = operation.operation
     if (!['enable', 'disable', 'install', 'update', 'remove', 'rollback'].includes(kind)) return

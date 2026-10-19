@@ -30,7 +30,7 @@ import {
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
+import { LoopPicker, namedLoops, updateLoopPicker } from '../src/loop-picker.js'
 import {
   defaultRecipe,
   draftPermissionMode,
@@ -936,6 +936,38 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
     }),
   )
   expect(host.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
+})
+
+it('names a plugin loop after its installed plugin, leaving built-in and shared sources alone', () => {
+  const loop = (id: string, sourcePackage: string) => ({
+    id,
+    version: '1.0.0',
+    capabilities: [],
+    sourcePackage,
+  })
+  const installed = [
+    {
+      id: '@agnes/jev-loop',
+      metadata: { displayName: 'Jev Agent Loop', locales: { 'zh-CN': { displayName: 'Jev 运行方式' } } },
+    },
+    { id: 'acme', metadata: { displayName: 'Acme' } },
+  ] as never
+  const loops = [
+    loop('agnes.default', '@agnes/base'),
+    loop('agnes.jev', '@agnes/jev-loop'),
+    loop('acme.a', 'acme'),
+    loop('acme.b', 'acme'),
+    loop('other', 'missing'),
+  ]
+  const t = (key: string) => (key === 'choice.agnes.default' ? 'Default' : key)
+  expect(namedLoops(loops, installed, 'zh-CN', t).map((entry) => entry.label)).toEqual([
+    undefined,
+    'Jev 运行方式',
+    undefined,
+    undefined,
+    undefined,
+  ])
+  expect(namedLoops(loops, installed, 'en', t)[1]?.label).toBe('Jev Agent Loop')
 })
 
 it('offers only the loop from the chip until advanced settings show or a bundle is in effect', async () => {

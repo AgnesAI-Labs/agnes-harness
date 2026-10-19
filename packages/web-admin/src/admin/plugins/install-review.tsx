@@ -1,4 +1,4 @@
-import type { PackageSource } from '@agnes/protocol'
+import type { PackagePreview, PackageSource } from '@agnes/protocol'
 import {
   ADMIN_LOCALE_NAMESPACE,
   adminLocaleCatalog,
@@ -139,6 +139,13 @@ export function shortSource(source: PackageSource): string {
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
+/** A warning in the reader's language; a code this page does not know keeps the Host's text. */
+function warningText(warning: PackagePreview['warnings'][number], t: Text): string {
+  const key = `review.warning.${warning.code}`
+  const text = t(key)
+  return text === key ? warning.safeMessage : text
+}
+
 /**
  * The review of a finished plugin check, for an install or an update. Every fact and choice the
  * confirmation used to show is here; only their grouping changed.
@@ -210,7 +217,7 @@ export function PluginInstallReview({
           )}
           {preview.warnings.length > 0 && (
             <Banner tone="warning" data-testid="install-review-warnings">
-              {preview.warnings.map((warning) => warning.safeMessage).join(t('review.separator'))}
+              {preview.warnings.map((warning) => warningText(warning, t)).join(t('review.separator'))}
             </Banner>
           )}
         </>
