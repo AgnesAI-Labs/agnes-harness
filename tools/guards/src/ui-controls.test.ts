@@ -1,9 +1,26 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { expect, it } from 'vitest'
 import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './repo.js'
 import { segmentedPresentationViolations } from './segmented-controls.js'
 import { controlPresentationCounts, newControlPresentationViolations } from './ui-controls.js'
+
+function segmentedErrors(root: string) {
+  return [...new Set([...listSourceFiles(join(root, 'packages')), ...presentationSourceFiles(root)])]
+    .map((file) => file.split(sep).join('/'))
+    .filter(
+      (file) =>
+        !isTestFile(file) &&
+        !/\/(?:test|tests)\//.test(file) &&
+        !file.endsWith('/web-ui/src/ui/segmented.tsx'),
+    )
+    .flatMap((file) =>
+      segmentedPresentationViolations(readFileSync(file, 'utf8')).map(
+        (error) => `${relative(root, file).split(sep).join('/')}:${error}`,
+      ),
+    )
+}
 
 it('permits hidden/file fields and tokens, refuses new raw controls and all colour literal forms', () => {
   expect(
@@ -75,21 +92,28 @@ it('reserves segmented presentation for fixed 2–5 short choices and permits de
     `<Segmented options={[{value: 'a', label: 'This is a very long option label'}, {value: 'b', label: 'B'}]} />`,
   ])
     expect(segmentedPresentationViolations(source), source).not.toEqual([])
+  const fixture = mkdtempSync(join(tmpdir(), 'agh-segmented-sources-'))
+  try {
+    const directory = join(fixture, 'packages/package-manager/bundled-plugins/deliverables-ui/src')
+    mkdirSync(directory, { recursive: true })
+    for (const extension of ['ts', 'js', 'mjs'])
+      writeFileSync(
+        join(directory, `review-segmented.${extension}`),
+        "import { createElement } from 'react'\nimport { Segmented } from '@agnes/web-ui'\n" +
+          "export const reviewSegmented = () => createElement(Segmented, {options:[{value:'a'},{value:'b'},{value:'c'},{value:'d'},{value:'e'},{value:'f'}]})\n",
+      )
+    const errors = segmentedErrors(fixture)
+    expect(errors).toHaveLength(3)
+    for (const extension of ['ts', 'js', 'mjs'])
+      expect(errors).toContain(
+        `packages/package-manager/bundled-plugins/deliverables-ui/src/review-segmented.${extension}:3: Segmented requires 2–5 fixed options (found 6)`,
+      )
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
 })
 it('guards segmented presentation without forcing descriptive option lists into Segmented', () => {
   const root = repoRoot()
-  const errors = listSourceFiles(join(root, 'packages'))
-    .map((file) => file.split(sep).join('/'))
-    .filter(
-      (file) =>
-        !isTestFile(file) &&
-        !/\/(?:test|tests)\//.test(file) &&
-        !file.endsWith('/web-ui/src/ui/segmented.tsx'),
-    )
-    .flatMap((file) =>
-      segmentedPresentationViolations(readFileSync(file, 'utf8')).map(
-        (error) => `${relative(root, file).split(sep).join('/')}:${error}`,
-      ),
-    )
+  const errors = segmentedErrors(root)
   expect(errors, errors.join('\n')).toEqual([])
 })
