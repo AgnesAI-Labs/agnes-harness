@@ -1,4 +1,5 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
+import { mentionedPaths } from './mentions.js'
 import { halveEvidence, referencePaths, updateViews } from './observations.js'
 import type {
   ContentBlock,
@@ -8,6 +9,7 @@ import type {
   Note,
   Observation,
   ObservationView,
+  ReferenceKind,
   Workspace,
 } from './types.js'
 import { clip, tail } from './util.js'
@@ -32,7 +34,16 @@ export const CONTEXT_CONTRACT: JsonObject = Object.freeze({
 })
 
 export function emptyWorkspace(): Workspace {
-  return { goal: '', previousAnswer: '', answer: '', notes: [], history: [], turnStart: 0, views: [] }
+  return {
+    goal: '',
+    previousAnswer: '',
+    answer: '',
+    notes: [],
+    history: [],
+    turnStart: 0,
+    views: [],
+    mentioned: [],
+  }
 }
 
 /** The text blocks of a user message, one per line. */
@@ -44,15 +55,29 @@ export function goalText(content: readonly ContentBlock[]): string {
 
 /**
  * A new user goal: transient evidence resets, the last few entries stay visible and the
- * observation views stay as they are.
+ * observation views stay as they are. The paths the goal names are this turn's alone.
  */
 export function newTurn(ws: Workspace, goal: string): void {
   ws.previousAnswer = tail(ws.answer, PRIOR_ANSWER_CHARS)
   ws.answer = ''
   ws.goal = goal
+  ws.mentioned = mentionedPaths(goal)
   ws.notes = []
   ws.history = ws.history.slice(-PRIOR_TURN_ENTRIES)
   ws.turnStart = ws.history.length
+}
+
+/** Every path of `kind` the workspace has seen, newest first: what the views reference. */
+export function knownPaths(ws: Workspace, kind: ReferenceKind): string[] {
+  return referencePaths(ws.views, kind)
+}
+
+/** Whether the user's message named `path` as a `kind` that no result has shown. */
+export function isMentionedOnly(ws: Workspace, kind: ReferenceKind, path: string): boolean {
+  return (
+    ws.mentioned.some((ref) => ref.kind === kind && ref.value === path) &&
+    !knownPaths(ws, kind).includes(path)
+  )
 }
 
 export function addNote(ws: Workspace, note: Note): void {
@@ -207,7 +232,14 @@ export function buildState(ws: Workspace, level: number, decisionSurface: JsonOb
     goal,
     previous_answer:
       level >= 3 ? tail(ws.previousAnswer, SHRUNK_ANSWER_CHARS) : tail(ws.previousAnswer, PRIOR_ANSWER_CHARS),
-    known_files: referencePaths(ws.views, 'file'),
+    known_files: knownPaths(ws, 'file'),
+    ...(ws.mentioned.length > 0
+      ? {
+          mentioned_paths: ws.mentioned.map((ref) =>
+            ref.kind === 'directory' ? `${ref.value}/` : ref.value,
+          ),
+        }
+      : {}),
     observation_views: stateViews(ws.views, level),
     current_turn_notes: notes.map(noteView),
     file_activity: fileActivity(ws),

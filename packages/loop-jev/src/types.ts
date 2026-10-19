@@ -39,7 +39,14 @@ export type ObservationView = {
 /** Where the references of a result came from. */
 export type ReferenceSource = 'structured' | 'arguments' | 'text' | 'none'
 /** A complete call Jev may pick as a target, built from an observed reference. */
-export type Candidate = { key: string; kind: ReferenceKind; label: string; args: JsonObject }
+export type Candidate = {
+  key: string
+  kind: ReferenceKind
+  label: string
+  args: JsonObject
+  /** `mentioned`: the user's message named the path and no result has shown it; absent for an observed path. */
+  origin?: 'mentioned'
+}
 
 export type ResolvedTool = {
   readonly name: string
@@ -155,6 +162,8 @@ export type Workspace = {
   history: HistoryEntry[]
   turnStart: number
   views: ObservationView[]
+  /** Paths the user's message of this turn named; replaced at every new turn, never carried over. */
+  mentioned: ViewReference[]
 }
 
 export type JevLoopConfig = {
@@ -207,6 +216,7 @@ export type Counters = {
   textReferences: number
   duplicateRefusals: number
   unavailableRefusals: number
+  mentionedSteps: number
 }
 export type JevState = {
   v: 1

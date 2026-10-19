@@ -310,16 +310,54 @@ describe('checkpoints with observations', () => {
   it('reads a checkpoint written before observation views and the new counters existed', () => {
     const decoded = parseJevState(codec.decode({ codecVersion: 1, state: OLD_CHECKPOINT }) as never)
     expect(decoded.workspace.views).toEqual([])
+    expect(decoded.workspace.mentioned).toEqual([])
     for (const key of ADDED_COUNTERS) expect(decoded.counters[key]).toBe(0)
     const old = structuredClone(OLD_CHECKPOINT) as unknown as Loose & { workspace: object }
     expect(decoded).toEqual({
       ...old,
-      workspace: { ...old.workspace, views: [] },
+      workspace: { ...old.workspace, views: [], mentioned: [] },
       counters: { ...old.counters, ...Object.fromEntries(ADDED_COUNTERS.map((key) => [key, 0])) },
     })
     const again = codec.encode(decoded as never)
     expect(again.codecVersion).toBe(1)
     expect(parseJevState(codec.decode(again) as never)).toEqual(decoded)
+  })
+  it('round-trips the paths a turn named, accepts their absence and rejects a malformed or oversize list', () => {
+    const s = initialState()
+    s.workspace.mentioned = [
+      { kind: 'file', value: 'config/app.toml' },
+      { kind: 'directory', value: 'src' },
+    ]
+    expect(parseJevState(codec.decode(encodeState(s)) as never).workspace.mentioned).toEqual(
+      s.workspace.mentioned,
+    )
+    const without = structuredClone(encodeState(initialState()).state) as unknown as {
+      workspace: { mentioned?: unknown }
+    }
+    delete without.workspace.mentioned
+    expect(parseJevState(without as never).workspace.mentioned).toEqual([])
+    const bad = (mentioned: unknown) => {
+      const state = structuredClone(encodeState(initialState()).state) as unknown as {
+        workspace: { mentioned?: unknown }
+      }
+      state.workspace.mentioned = mentioned
+      return () => parseJevState(state as never)
+    }
+    expect(bad([{ kind: 'link', value: 'x' }])).toThrow('workspace.mentioned[0].kind')
+    expect(bad([{ kind: 'file', value: 1 }])).toThrow('workspace.mentioned[0].value')
+    expect(bad([{ kind: 'file', value: 'x', extra: 1 }])).toThrow('workspace.mentioned[0].extra')
+    expect(bad(Array.from({ length: 9 }, () => ({ kind: 'file', value: 'x' })))).toThrow(
+      'workspace.mentioned',
+    )
+    expect(bad('x')).toThrow('workspace.mentioned')
+  })
+  it('drops the named paths last, only when everything else already shrank and it is still oversize', () => {
+    const s = initialState()
+    s.workspace.mentioned = [{ kind: 'file', value: 'config/app.toml' }]
+    s.workspace.answer = 'a'.repeat(CHECKPOINT_MAX_BYTES + 100)
+    expect(parseJevState(encodeState(s).state).workspace.mentioned).toEqual([])
+    s.workspace.answer = 'a'
+    expect(parseJevState(encodeState(s).state).workspace.mentioned).toEqual(s.workspace.mentioned)
   })
   // A canary: a realistic worst case that fits with under 1 KiB to spare, so a new per-entry field
   // or a larger view bound fails here first and the shrink order must be revisited.

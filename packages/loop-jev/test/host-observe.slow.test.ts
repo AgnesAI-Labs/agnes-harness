@@ -60,6 +60,41 @@ describe('agnes.jev with the platform path references', () => {
       await kit.host.close()
     }
   })
+  it('reads a file the request names with no listing first, as a direct step', async () => {
+    const dataDir = jevDataDir()
+    writeFileSync(join(dataDir, 'notes.txt'), 'remember the milk\n')
+    const fake = await startJev(
+      jevAnswers([
+        {
+          phase: 'INSPECT',
+          action__inspect: 'read',
+          target__inspect__read: 'notes.txt',
+        },
+        PICK_RESPOND,
+      ]),
+    )
+    const kit = await bootJevLoop({ dataDir, fake, main: [textReply('The note says to remember the milk.')] })
+    try {
+      const session = await kit.open('observe-named')
+      expect((await runTurn(session, 'What does notes.txt say?')).reason).toBe('completed')
+      const rows = await rowsOf(session)
+      const calls = ofType(rows, 'tool/call').map((r) => data(r))
+      expect(calls.map((c) => [c.name, c.args])).toEqual([
+        ['read', { path: 'notes.txt', offset: 1, limit: 200 }],
+      ])
+      expect(sideCosts(rows)).toHaveLength(2)
+      expect(costs(rows).filter((r) => data(r).purpose === 'inference')).toHaveLength(1)
+      const steps = ofType(rows, 'x/agnes/code/jev.step').map((r) => data(r))
+      expect(steps.map((d) => [d.route, d.bindingMode])).toEqual([
+        ['direct', 'observed'],
+        ['answer', 'llm_parameters'],
+      ])
+      expect(steps[0]).toMatchObject({ binding: { targets: ['notes.txt'], mentioned: 1 } })
+      expect(violations(rows)).toEqual([])
+    } finally {
+      await kit.host.close()
+    }
+  })
   it('reads three listed files in one direct batch', async () => {
     const dataDir = jevDataDir()
     const files = ['a.md', 'b.md', 'c.md']

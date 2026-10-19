@@ -44,7 +44,7 @@ import {
   type Route,
 } from './types.js'
 import { digest16, errorCode, tail } from './util.js'
-import { buildState, currentTurn } from './workspace.js'
+import { buildState, currentTurn, isMentionedOnly } from './workspace.js'
 
 const ANSWER_CHARS = 4000
 
@@ -223,6 +223,7 @@ export async function decodeAndRoute(
     }),
   )
   if (route.decision.bindingMode === 'observed') st.counters.observedSteps++
+  if (mentionedTargets(s, calls) > 0) st.counters.mentionedSteps++
   if (calls.length > 1) st.counters.batchSteps++
   return dispatchStep(s, calls, route, signal)
 }
@@ -431,6 +432,19 @@ function targetsOf(s: Scope, calls: readonly PendingCall[]): string[] {
   })
 }
 
+/** How many of the calls read or list a path that only the user's message named so far. */
+function mentionedTargets(s: Scope, calls: readonly PendingCall[]): number {
+  return calls.filter((call) => {
+    const target = targetOf(call.name, call.args, s.cwd)
+    return (
+      target !== null &&
+      (call.name === 'ls'
+        ? isMentionedOnly(s.state.workspace, 'directory', target)
+        : isMentionedOnly(s.state.workspace, 'file', target))
+    )
+  }).length
+}
+
 /**
  * Announces and runs the calls (or, with `replay`, replays the recorded ones with the same ids),
  * then records one observation. `llm` is the model part of this step's event. A new dispatch first
@@ -447,6 +461,7 @@ export async function dispatchStep(
   const st = s.state
   const { decision } = route
   // `binding` describes the calls that were dispatched: a batch Core narrowed to its first call reports one.
+  const mentioned = route.kind === 'direct' ? mentionedTargets(s, calls) : 0
   const event = (dropped: number): StepEvent => ({
     ...routeEvent(route),
     ...(route.kind === 'direct'
@@ -455,6 +470,7 @@ export async function dispatchStep(
             mode: decision.bindingMode,
             targets: targetsOf(s, calls.slice(0, calls.length - dropped)),
             batch: calls.length - dropped,
+            ...(mentioned > 0 ? { mentioned } : {}),
           },
         }
       : {}),

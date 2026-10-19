@@ -1,10 +1,17 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
 import { describe, expect, it } from 'vitest'
-import { CHANGED_LABEL, candidatesFor, READ_LABEL, targetCandidates } from '../src/candidates.js'
+import {
+  CANDIDATE_CAP,
+  CHANGED_LABEL,
+  candidatesFor,
+  MENTIONED_LABEL,
+  READ_LABEL,
+  targetCandidates,
+} from '../src/candidates.js'
 import { normalizeView } from '../src/observations.js'
 import { resolveTool } from '../src/profile.js'
 import type { ResolvedTool, Workspace } from '../src/types.js'
-import { emptyWorkspace, recordStep } from '../src/workspace.js'
+import { emptyWorkspace, fileActivity, newTurn, recordStep } from '../src/workspace.js'
 import { BUILTIN_SCHEMAS, turnView } from './helpers/view.js'
 
 const tool = (name: string) =>
@@ -172,6 +179,76 @@ describe('targetCandidates', () => {
     expect(first).toBeDefined()
     if (first !== undefined) first.args.limit = 999
     expect(read.bindingDefaults).toEqual({ offset: 1, limit: 200 })
+  })
+})
+
+describe('mentioned candidates', () => {
+  const turn = (goal: string, refs: Array<['file' | 'directory', string]> = []) => {
+    const ws = observed(refs)
+    newTurn(ws, goal)
+    return ws
+  }
+  const read = (ws: Workspace) => targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, ws)
+  it('offers a file the message names, marked mentioned, with the read defaults', () => {
+    expect(read(turn('Please read config/app.toml'))).toEqual([
+      {
+        key: 'config/app.toml',
+        kind: 'file',
+        label: `config/app.toml${MENTIONED_LABEL}`,
+        args: { offset: 1, limit: 200, path: 'config/app.toml' },
+        origin: 'mentioned',
+      },
+    ])
+  })
+  it('offers a named directory to ls and a named file only to read', () => {
+    const ws = turn('List src/ and read a.md')
+    expect(targetCandidates(tool('ls'), BUILTIN_SCHEMAS.ls, ws).map((c) => [c.key, c.origin])).toEqual([
+      ['src', 'mentioned'],
+    ])
+    expect(read(ws).map((c) => c.key)).toEqual(['a.md'])
+    expect(targetCandidates(tool('write'), BUILTIN_SCHEMAS.write, ws)).toEqual([])
+  })
+  it('lets an observation win: a named path a result showed is an ordinary candidate', () => {
+    const ws = turn('Read a.md and b.md', [['file', 'a.md']])
+    expect(read(ws).map((c) => [c.key, c.origin, c.label])).toEqual([
+      ['b.md', 'mentioned', `b.md${MENTIONED_LABEL}`],
+      ['a.md', undefined, 'a.md'],
+    ])
+  })
+  it('puts named paths first and keeps the total at the candidate cap', () => {
+    const seen: Array<['file', string]> = Array.from({ length: 20 }, (_, i) => ['file', `o${i}.md`])
+    const ws = turn('x1.md x2.md x3.md', seen)
+    const keys = read(ws).map((c) => c.key)
+    expect(keys).toHaveLength(CANDIDATE_CAP)
+    expect(keys.slice(0, 3)).toEqual(['x1.md', 'x2.md', 'x3.md'])
+    expect(keys.slice(3)).toEqual(seen.slice(0, 17).map(([, v]) => v))
+  })
+  it('is replaced by the next turn: nothing named earlier stays a candidate', () => {
+    const ws = turn('read old.md')
+    newTurn(ws, 'now only new.md')
+    expect(read(ws).map((c) => c.key)).toEqual(['new.md'])
+    newTurn(ws, 'nothing named here')
+    expect(read(ws)).toEqual([])
+  })
+  it('comes from the user message alone: tool output, notes and answers name nothing', () => {
+    const ws = turn('what is in the repo')
+    recordStep(ws, {
+      ...step({ operation: 'read', target: 'a.md', read_files: ['a.md'] }),
+      notes: [{ kind: 'file', target: 'a.md', text: 'see secret/plan.md and docs/' }],
+    })
+    ws.answer = 'look at hidden/answer.md'
+    expect(ws.mentioned).toEqual([])
+    expect(read(ws)).toEqual([])
+  })
+  it('does not count as read: freshness ignores it', () => {
+    const ws = turn('read a.md twice')
+    expect(fileActivity(ws)).toMatchObject({ read_current: [], changed_unread: [], read_counts: {} })
+    expect(read(ws)[0]?.label).toBe(`a.md${MENTIONED_LABEL}`)
+    // Once read, the path is evidence like any other, and the read label wins.
+    ws.views = observed([['file', 'a.md']]).views
+    recordStep(ws, step({ operation: 'read', target: 'a.md', read_files: ['a.md'] }))
+    expect(read(ws)).toMatchObject([{ key: 'a.md', label: `a.md${READ_LABEL}` }])
+    expect(read(ws)[0]?.origin).toBeUndefined()
   })
 })
 

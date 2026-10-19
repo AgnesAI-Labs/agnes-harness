@@ -56,6 +56,67 @@ describe('observations in the loop', () => {
     })
     expect(r.metrics.at(-1)).toMatchObject({ observedSteps: 1, directSuccess: 2 })
   })
+  it('reads a file the goal names with no listing before it, directly and with no model request for its path', async () => {
+    const r = await run([readPick('config/app.toml'), { pick: PICK_RESPOND }], {
+      goal: 'Read `config/app.toml` and tell me which port it sets.',
+      tools: toolPort({ read: () => ok('port = 8080') }),
+      replies: [textReply('It sets port 8080.')],
+    })
+    expect(r.tools.executed.map((c) => [c.name, c.args])).toEqual([
+      ['read', { path: 'config/app.toml', offset: 1, limit: 200 }],
+    ])
+    expect(r.requests).toHaveLength(1)
+    expect(r.steps[0]).toMatchObject({
+      route: 'direct',
+      bindingMode: 'observed',
+      binding: { mode: 'observed', targets: ['config/app.toml'], batch: 1, mentioned: 1 },
+    })
+    expect(r.steps[0]?.bindingMode).not.toBe('llm_parameters')
+    expect(r.metrics.at(-1)).toMatchObject({ observedSteps: 1, mentionedSteps: 1, directSuccess: 1 })
+    // The first decision saw the path as a named candidate and did not count it as read.
+    const first = jevState(r.jev, 0)
+    expect(first.mentioned_paths).toEqual(['config/app.toml'])
+    expect(first.file_activity).toMatchObject({ read_current: [], changed_unread: [] })
+    expect(first.known_files).toEqual([])
+    // After the read the path is evidence: seen, and no longer only named.
+    const next = jevState(r.jev, 1)
+    expect(next.known_files).toEqual(['config/app.toml'])
+    expect(next.file_activity).toMatchObject({ read_current: ['config/app.toml'] })
+  })
+  it('reads several named files in one direct batch', async () => {
+    const batchPick = {
+      pick: {
+        phase: 'INSPECT',
+        action__inspect: 'read',
+        target_mode__inspect__read: 'many',
+        include__inspect__read__0: 'include',
+        include__inspect__read__1: 'include',
+        include__inspect__read__2: 'skip',
+      },
+    }
+    const r = await run([batchPick, { pick: PICK_RESPOND }], {
+      goal: 'Compare a.toml and b.toml, ignoring c.toml.',
+      tools: toolPort({ read: (args) => ok(`content of ${args.path}`) }),
+      replies: [textReply('done')],
+    })
+    expect(r.steps[0]).toMatchObject({ route: 'direct', binding: { batch: 2, mentioned: 2 } })
+    expect(r.metrics.at(-1)).toMatchObject({ batchSteps: 1, mentionedSteps: 1 })
+  })
+  it('reads a file named in a later turn, not one named in an earlier turn', async () => {
+    const r = await run([readPick('old.md'), { pick: PICK_RESPOND }, { pick: PICK_RESPOND }], {
+      inputs: [
+        { content: [{ type: 'text', text: 'Read old.md' }] },
+        { content: [{ type: 'text', text: 'Thanks, now just summarize' }] },
+      ],
+      tools: toolPort({ read: () => ok('x') }),
+      replies: [textReply('one'), textReply('two')],
+      until: 'idle',
+    })
+    const second = jevState(r.jev, 2)
+    expect(second.mentioned_paths).toBeUndefined()
+    // It was read, so it stays known as evidence; it is no longer a named candidate.
+    expect(second.known_files).toEqual(['old.md'])
+  })
   it('reads three observed files in one direct batch with one history entry and one view', async () => {
     const files = ['a.md', 'b.md', 'c.md']
     const batchPick = {

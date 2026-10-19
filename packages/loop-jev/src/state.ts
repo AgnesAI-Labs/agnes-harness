@@ -1,4 +1,5 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
+import { MENTION_CAP } from './mentions.js'
 import { DIRECTORY_REF_CAP, FILE_REF_CAP, halveEvidence, VIEW_CAP } from './observations.js'
 import { MAX_BATCH } from './profile.js'
 import type { Counters, JevState, JsonValue } from './types.js'
@@ -14,6 +15,7 @@ export const ADDED_COUNTERS = [
   'textReferences',
   'duplicateRefusals',
   'unavailableRefusals',
+  'mentionedSteps',
 ] as const
 
 export function emptyCounters(): Counters {
@@ -36,6 +38,7 @@ export function emptyCounters(): Counters {
     textReferences: 0,
     duplicateRefusals: 0,
     unavailableRefusals: 0,
+    mentionedSteps: 0,
   }
 }
 
@@ -58,6 +61,7 @@ export function initialState(): JevState {
       history: [],
       turnStart: 0,
       views: [],
+      mentioned: [],
     },
     counters: emptyCounters(),
     internalErrors: 0,
@@ -330,6 +334,17 @@ function checkViews(value: unknown, path: string): void {
   for (const [i, view] of views.entries()) checkView(view, `${path}[${i}]`)
 }
 
+function checkMentioned(value: unknown, path: string): void {
+  const items = arr(value, path)
+  if (items.length > MENTION_CAP) fail(path)
+  for (const [i, item] of items.entries()) {
+    const ref = obj(item, `${path}[${i}]`)
+    only(ref, ['kind', 'value'], `${path}[${i}]`)
+    oneOf(ref.kind, REFERENCE_KINDS, `${path}[${i}].kind`)
+    str(ref.value, `${path}[${i}].value`)
+  }
+}
+
 function checkWorkspace(value: unknown, path: string): void {
   const w = obj(value, path)
   str(w.goal, `${path}.goal`)
@@ -340,6 +355,7 @@ function checkWorkspace(value: unknown, path: string): void {
   for (const [i, entry] of history.entries()) checkHistoryEntry(entry, `${path}.history[${i}]`)
   if (int(w.turnStart, `${path}.turnStart`) > history.length) fail(`${path}.turnStart`)
   optional(w, 'views', checkViews, path)
+  optional(w, 'mentioned', checkMentioned, path)
 }
 
 function checkCounters(value: unknown, path: string): void {
@@ -407,6 +423,7 @@ export function parseJevState(value: JsonValue): JevState {
   const state = structuredClone(s) as unknown as JevState
   for (const key of ADDED_COUNTERS) state.counters[key] ??= 0
   state.workspace.views ??= []
+  state.workspace.mentioned ??= []
   return state
 }
 
@@ -419,7 +436,8 @@ const sizeOf = (state: JevState): number => utf8Bytes(JSON.stringify(state))
  * The checkpoint for a state. When over CHECKPOINT_MAX_BYTES, shrink in this order: histories from
  * before the current turn (oldest first), the evidence of every observation view (first half, once),
  * the previous answer (last 1000 characters), the goal (first 2000 + last 2000 characters), then
- * the command and output excerpts of every history entry but the last. It never throws and never
+ * the command and output excerpts of every history entry but the last, the paths the turn's message
+ * named. It never throws and never
  * drops current-turn entries or views, so the result can still be larger when the fields it does
  * not shrink are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`,
  * `cur.calls[].content` and `workspace.views`, which the driver is responsible for bounding (views
@@ -442,6 +460,8 @@ export function encodeState(state: JevState): LoopCheckpoint {
       delete entry.command_excerpt
       delete entry.output_excerpt
     }
+  // Last: the paths the message named only make a step easier to take direct.
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.mentioned = []
   return { codecVersion: 1, state: next as unknown as JsonValue }
 }
 
