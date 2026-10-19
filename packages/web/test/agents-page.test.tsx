@@ -352,3 +352,59 @@ it('reacts to the effective application for catalog and installed agents, includ
     await act(async () => root.unmount())
   }
 })
+
+it.each([false, true])(
+  'groups all application roles in one card, including installed offline inventory (%s)',
+  async (offline) => {
+    const entry = {
+      id: '@community/industry',
+      version: '1.0.0',
+      source: { type: 'file', ref: 'file:./bundled-examples/showcase/arbitrary-industry' },
+      application: {
+        id: 'industry',
+        brand: { title: { en: 'Industry platform' } },
+        agents: ['@community/industry#role-0'],
+      },
+      agents: Array.from({ length: 5 }, (_, index) => ({
+        ref: `@community/industry#role-${index}`,
+        launch: {
+          title: { en: `Role ${index}` },
+          description: { en: `Role ${index} description` },
+          preset: 'standard',
+        },
+      })),
+    }
+    mock.connect.mockResolvedValue({
+      context: { permissions: [], readOnly: false },
+      api: {
+        catalog: async () => {
+          if (offline) throw new Error('offline')
+          return { items: [entry] }
+        },
+        list: async () => ({
+          packages: offline ? [{ ...entry, trusted: true, desired: 'enabled', actual: 'running' }] : [],
+        }),
+        loops: async () => ({ loops: [], defaults: {}, revision: 1 }),
+      },
+    })
+    applicationIdentity.set({
+      revision: 1,
+      status: 'active',
+      selection: null,
+      effective: entry.application,
+      assets: {},
+      candidates: [],
+    })
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
+      await vi.waitFor(() => expect(host.querySelectorAll('[data-application]')).toHaveLength(1))
+      expect(host.querySelectorAll('.application-roles li')).toHaveLength(5)
+      expect(host.textContent).toContain('5 role agents')
+      expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(0)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

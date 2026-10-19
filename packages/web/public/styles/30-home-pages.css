@@ -419,3 +419,87 @@
     color: var(--agnes-status-danger-text);
   }
 }
+
+@layer app {
+  /* Applications are package-level products; their roles stay within the product card. */
+  .application-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s16);
+    margin: var(--s12) 0 var(--s16);
+  }
+  .application-card {
+    gap: 18px;
+    padding: 22px;
+  }
+  .application-card header {
+    align-items: center;
+  }
+  .application-card header img {
+    border-radius: 16px;
+    object-fit: contain;
+  }
+  .application-card .application-eyebrow {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+    margin: 0 0 6px;
+  }
+  .application-card .agent-card-heading h3 {
+    font-size: 20px;
+  }
+  .application-card .agent-card-heading p {
+    margin: 4px 0;
+  }
+  .application-card .agent-card-summary {
+    max-width: 76ch;
+  }
+  .application-preview {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--agnes-bg-subtle);
+    border: 1px solid var(--agnes-line-primary);
+  }
+  .application-preview img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+  }
+  .application-preview p {
+    margin: 8px 0;
+  }
+  .application-preview span {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .application-card .application-roles .agh-disclosure-summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .application-card .application-roles ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 16px 20px;
+  }
+  .application-card .application-roles p {
+    color: var(--agnes-text-secondary);
+    font-size: 13px;
+  }
+  .application-card footer {
+    margin-top: auto;
+  }
+  @media (max-width: 760px) {
+    .application-gallery {
+      grid-template-columns: 1fr;
+    }
+    .application-card {
+      padding: 18px;
+    }
+    .application-preview {
+      flex-wrap: wrap;
+    }
+  }
+}

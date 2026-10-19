@@ -1,6 +1,7 @@
 /** Agents: the gallery page and the one-click start other surfaces reuse. */
 
 export { AGENTS_NAMESPACE, agentsCatalog } from './agents/agents-locale.js'
+export { ApplicationCard } from './agents/application-card.js'
 export {
   type BusinessAgent,
   type BusinessAgentState,

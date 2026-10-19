@@ -139,6 +139,15 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
     readyAgents: loaded?.readyAgents ?? [],
     /** Why package changes are refused here; undefined when the user may start any agent. */
     denied,
+    ...(context
+      ? {
+          adoptionDenied: context.readOnly
+            ? ('readOnly' as const)
+            : !hasPermission(context.permissions, 'packages.activate')
+              ? ('noPermission' as const)
+              : undefined,
+        }
+      : {}),
     busy: read.loading,
     failed: read.error !== undefined,
     error: read.error,

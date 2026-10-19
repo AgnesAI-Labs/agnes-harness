@@ -56,7 +56,7 @@ export class StartError extends Error {
 
 /** What the confirmation shows and the run needs: the package as inspected or as installed. */
 export type StartPlan = {
-  entry: PackageCatalogDescriptor
+  entry: Pick<PackageCatalogDescriptor, 'id' | 'source' | 'agents'>
   installed: PackageInstalledDescriptor | undefined
   /** Present only when the package still has to be installed. */
   preview: PackagePreview | undefined
@@ -157,7 +157,7 @@ const neededFor = (installed: PackageInstalledDescriptor | undefined): StartPlan
  */
 export async function planBusinessAgentStart(
   api: StartApi,
-  entry: PackageCatalogDescriptor,
+  entry: StartPlan['entry'],
   options: StartOptions = {},
 ): Promise<StartPlan> {
   const installed = await installedOf(api, entry.id, 'install', options.signal)
@@ -173,15 +173,15 @@ export const planBlocked = (plan: StartPlan): boolean =>
   (plan.preview?.blockers.length ?? 0) > 0 || (plan.installed?.blockers.length ?? 0) > 0
 
 /**
- * Install → trust → enable → prepare the declared agent for review. Stops at the first step that
+ * Install → trust → enable the reviewed package. Stops at the first step that
  * fails and leaves completed steps in place: the package stays as far along as it got.
  */
-export async function runBusinessAgentStart(
+export async function runBusinessPackageInstall(
   api: StartApi,
   plan: StartPlan,
   onProgress: (progress: StartProgress) => void,
   options: StartOptions = {},
-): Promise<StartTarget> {
+): Promise<void> {
   const id = plan.entry.id
   const sleep = options.sleep ?? pause
   const progress: Record<StartStep, StartStepState> = {
@@ -302,18 +302,51 @@ export async function runBusinessAgentStart(
       }
     })
   }
+}
 
-  return run('session', async () => {
-    const current = await installedOf(api, id, 'session', options.signal)
-    assertReviewed('session', current)
+/** Install admission is shared with application adoption; neither path starts a session implicitly. */
+export async function runBusinessAgentStart(
+  api: StartApi,
+  plan: StartPlan,
+  onProgress: (progress: StartProgress) => void,
+  options: StartOptions = {},
+): Promise<StartTarget> {
+  let progress: StartProgress = {
+    install: 'pending',
+    trust: 'pending',
+    enable: 'pending',
+    session: 'pending',
+  }
+  await runBusinessPackageInstall(
+    api,
+    plan,
+    (next) => {
+      progress = next
+      onProgress(next)
+    },
+    options,
+  )
+  onProgress({ ...progress, session: 'running' })
+  try {
+    const current = await installedOf(api, plan.entry.id, 'session', options.signal)
+    const reviewed = plan.installed ?? plan.preview
+    if (
+      !current ||
+      !reviewed ||
+      current.integrity !== reviewed.integrity ||
+      current.capabilityHash !== reviewed.capabilityHash
+    )
+      throw new StartError({ step: 'session', code: 'changed' })
     const declared = plan.entry.agents?.length === 1 ? plan.entry.agents[0] : undefined
     if (!declared) throw new StartError({ step: 'session', code: 'blocked' })
-    try {
-      const prepared = await api.prepareAgent(declared.ref)
-      if (prepared.presentation.ref !== declared.ref) throw new Error('agent selection changed')
-      return { ...prepared.presentation, launchTicket: prepared.launchTicket }
-    } catch (error) {
-      throw new StartError({ step: 'session', code: 'request', detail: detailOf(error) })
-    }
-  })
+    const prepared = await api.prepareAgent(declared.ref)
+    if (prepared.presentation.ref !== declared.ref) throw new Error('agent selection changed')
+    options.signal?.throwIfAborted()
+    onProgress({ ...progress, session: 'done' })
+    return { ...prepared.presentation, launchTicket: prepared.launchTicket }
+  } catch (error) {
+    onProgress({ ...progress, session: 'failed' })
+    if (error instanceof StartError || options.signal?.aborted) throw error
+    throw new StartError({ step: 'session', code: 'request', detail: detailOf(error) })
+  }
 }

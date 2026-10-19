@@ -19,6 +19,7 @@ import {
   planBlocked,
   planBusinessAgentStart,
   runBusinessAgentStart,
+  runBusinessPackageInstall,
   type StartApi,
   StartError,
   type StartProgress,
@@ -477,4 +478,14 @@ describe('start confirmation guarantees', () => {
     expect(titles([])).toEqual([])
     expect(titles([preset({ readOnly: 'yes' }), preset({ network: 'allowed' })] as never)).toEqual([])
   })
+})
+
+it('admits an application package without preparing or starting an agent', async () => {
+  const { api, calls } = daemon(undefined)
+  api.prepareAgent = async () => {
+    throw new Error('Application adoption must not prepare a session')
+  }
+  const plan = await planBusinessAgentStart(api, entry(), options)
+  await runBusinessPackageInstall(api, plan, () => {}, options)
+  expect(calls).toEqual(['inspect', 'install', 'trust', 'enable'])
 })

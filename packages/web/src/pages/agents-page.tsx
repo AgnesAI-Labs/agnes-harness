@@ -1,6 +1,12 @@
-import { defaultLoop, resolvePluginMetadata } from '@agnes/protocol'
+import {
+  defaultLoop,
+  type PackageCatalogDescriptor,
+  type PackageInstalledDescriptor,
+  resolvePluginMetadata,
+} from '@agnes/protocol'
 import {
   AGENTS_NAMESPACE,
+  ApplicationCard,
   agentsCatalog,
   type BusinessAgentsData,
   useBusinessAgents,
@@ -52,17 +58,34 @@ function AgentList({
   })
   const starter = useAgentLaunch(data)
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
-  const cards = applicationAgents(
-    declaredAgentCards(
-      data.agents.map((agent) => agent.entry),
-      locale,
-      data.installed,
-    ),
+  const declared = declaredAgentCards(
+    data.agents.map((agent) => agent.entry),
+    locale,
+    data.installed,
   )
+  const cards = applicationAgents(declared)
   const needle = query.trim().toLocaleLowerCase()
-  const shown = cards.filter((card) =>
-    [card.name, card.summary, card.entry.id].some((text) => text?.toLocaleLowerCase().includes(needle)),
+  const products = new Map<string, PackageCatalogDescriptor | PackageInstalledDescriptor>()
+  for (const agent of data.agents) products.set(agent.entry.id, agent.entry)
+  for (const installed of data.installed) products.set(installed.id, installed)
+  const applications = [...products.values()]
+    .filter((entry) => entry.application)
+    .map((entry) => {
+      const assets = data.agents.find((agent) => agent.entry.id === entry.id)?.entry.applicationAssets
+      return {
+        ...entry,
+        agents: declared.filter((card) => card.entry.id === entry.id).map((card) => card.declaration),
+        ...(assets ? { applicationAssets: assets } : {}),
+      }
+    })
+  const shownApplications = applications.filter((entry) =>
+    JSON.stringify([entry.application?.brand, entry.metadata, entry.id]).toLocaleLowerCase().includes(needle),
   )
+  const shown = cards
+    .filter((card) => !applications.some((entry) => entry.id === card.entry.id))
+    .filter((card) =>
+      [card.name, card.summary, card.entry.id].some((text) => text?.toLocaleLowerCase().includes(needle)),
+    )
   const request = selection as { focus?: string; agent?: string; start?: boolean } | undefined
   const handled = useRef<unknown>()
   const focused = cards.find(
@@ -106,6 +129,23 @@ function AgentList({
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
       <SearchBar label={t('search')} value={query} onChange={setQuery} />
+      <div className="application-gallery" data-testid="applications-gallery">
+        {shownApplications.map((entry) => (
+          <ApplicationCard
+            key={entry.id}
+            entry={entry}
+            data={data}
+            onStartAgent={
+              cards.some((card) => card.entry.id === entry.id)
+                ? (ref) => {
+                    const card = cards.find((item) => item.ref === ref)
+                    if (card) starter.start(card)
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </div>
       <div className="agent-gallery" data-testid="agents-gallery">
         {(!needle || `${t('general')} ${t('generalHelp')}`.toLocaleLowerCase().includes(needle)) && (
           <article className="agent-card" data-testid="general-agent">
@@ -118,23 +158,24 @@ function AgentList({
               </div>
             </header>
             <p>{t('generalHelp')}</p>
-            <Field label={t('runningMode')}>
-              <Select
-                value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
-                aria-label={t('runningMode')}
-                onChange={setLoop}
-                options={(loops.data?.loops ?? []).map((item) => ({
-                  value: `${item.id}@${item.version}`,
-                  label: item.label ?? item.id,
-                }))}
-              />
-            </Field>
             <Loadable
               loading={loops.loading}
               error={loops.error}
               hasData={!!loops.data}
               onRetry={loops.reload}
-            />
+            >
+              <Field label={t('runningMode')}>
+                <Select
+                  value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
+                  aria-label={t('runningMode')}
+                  onChange={setLoop}
+                  options={(loops.data?.loops ?? []).map((item) => ({
+                    value: `${item.id}@${item.version}`,
+                    label: item.label ?? item.id,
+                  }))}
+                />
+              </Field>
+            </Loadable>
             <Button
               disabled={!chosenLoop}
               disabledReason={t('noRunningMode')}
@@ -184,7 +225,7 @@ function AgentList({
           )
         })}
       </div>
-      {!shown.length && (
+      {!shown.length && !shownApplications.length && (
         <p>
           {t('emptyTitle')} <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
         </p>
