@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { chmod, copyFile, mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { presentationEntries, verifyPresentation } from '../presentation-build.mjs'
 import { PUBLIC_PACKAGE_VERSION, publishableManifest } from './npx-package.js'
 import { preparePackPayload } from './pack-payload.js'
 
@@ -29,6 +30,8 @@ export async function packNpxPackage(stage: string): Promise<{ stage: string; tr
   )
   await publishNativeLayout(dist, triple)
   await preparePackPayload(stage, repo)
+  for (const name of Object.keys(presentationEntries))
+    await verifyPresentation(join(dist, 'bundled-plugins', name))
   await mkdir(join(stage, 'bin'), { recursive: true })
   const bin = join(stage, 'bin', 'agh')
   await copyFile(join(repo, 'packages/cli/bin/agh'), bin)
