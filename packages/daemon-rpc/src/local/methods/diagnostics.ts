@@ -11,7 +11,12 @@ import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { memoryPrivateEvent } from '@agnes/extension-api'
 import { redactDetail } from '@agnes/host'
-import { administerObservability, observabilityHome, readDiagnosticJournal } from '@agnes/observability'
+import {
+  administerObservability,
+  DIAGNOSTIC_JOURNAL_LIMIT,
+  observabilityHome,
+  readDiagnosticJournal,
+} from '@agnes/observability'
 import {
   type DiagnosticsCollectParams,
   type DiagnosticsCollectResult,
@@ -282,10 +287,11 @@ export function registerDiagnostics(
             | 'fail'
             | 'unavailable',
         })),
-      errors: readDiagnosticJournal(deps.home ?? observabilityHome(), diagnosticId ? 1 : 4096, diagnosticId),
+      errors: readDiagnosticJournal(deps.home ?? observabilityHome(), DIAGNOSTIC_JOURNAL_LIMIT, diagnosticId),
       audit: audit.slice(-limit),
       ...(session ? { session } : {}),
-      limits: { audit: limit, errors: diagnosticId ? 1 : 4096 },
+      // The retained window; an ID lookup searches all of it.
+      limits: { audit: limit, errors: DIAGNOSTIC_JOURNAL_LIMIT },
     }
   })
 

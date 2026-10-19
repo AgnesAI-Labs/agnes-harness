@@ -5,7 +5,7 @@ import { memoryPrivateEvent } from '@agnes/extension-api'
 import { type EventEnvelope, normalizeRpcError, rpcError } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { observabilityConfig } from '../src/config.js'
-import { installDiagnosticJournal, readDiagnosticJournal } from '../src/journal.js'
+import { DIAGNOSTIC_JOURNAL_LIMIT, installDiagnosticJournal, readDiagnosticJournal } from '../src/journal.js'
 import { createObservability } from '../src/provider.js'
 import { OtlpTransport } from '../src/transport.js'
 import { memoryCollector } from '../testkit/index.js'
@@ -214,8 +214,20 @@ it('persists diagnostic ids and projects untrusted history without messages or c
         JSON.stringify(recent) +
         '\n',
     )
-    expect(readDiagnosticJournal(home, 1, historical[0]!.diagnosticId)).toEqual([])
+    // An ID lookup scans the same window as the list, not just the last record's share of it.
+    expect(readDiagnosticJournal(home, 1, historical[0]!.diagnosticId)).toEqual([historical[0]])
     expect(readDiagnosticJournal(home, 1, recent.diagnosticId)).toEqual([recent])
+    // The window stays bounded: a record older than the retained window is not found.
+    await writeFile(
+      join(home, 'diagnostics', 'errors.jsonl'),
+      JSON.stringify(historical[0]) +
+        '\n' +
+        (' '.repeat(2049) + '\n').repeat(Math.ceil((DIAGNOSTIC_JOURNAL_LIMIT * 4096) / 2050)) +
+        JSON.stringify(recent) +
+        '\n',
+    )
+    expect(readDiagnosticJournal(home, DIAGNOSTIC_JOURNAL_LIMIT, historical[0]!.diagnosticId)).toEqual([])
+    expect(readDiagnosticJournal(home, DIAGNOSTIC_JOURNAL_LIMIT, recent.diagnosticId)).toEqual([recent])
   } finally {
     retain()
     stop()

@@ -34,5 +34,5 @@ export const observabilityPlugin = {
 }
 export { administerObservability, telemetrySnapshot } from './admin.js'
 export { correlatedLogger, currentCorrelation, withObservedSession } from './correlation.js'
-export { installDiagnosticJournal, readDiagnosticJournal } from './journal.js'
+export { DIAGNOSTIC_JOURNAL_LIMIT, installDiagnosticJournal, readDiagnosticJournal } from './journal.js'
 export { acquireObservability, exporterHealth } from './runtime.js'

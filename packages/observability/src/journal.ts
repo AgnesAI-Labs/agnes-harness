@@ -84,17 +84,26 @@ function release(home: string): void {
     registrations.delete(home)
   }
 }
-/** Journal files are untrusted on export. Project only the fixed schema, including lookup within a bounded recent window. */
+/** The most recent records a read retains; older ones can no longer be listed or found by ID. */
+export const DIAGNOSTIC_JOURNAL_LIMIT = 1000
+/**
+ * Journal files are untrusted on export. Project only the fixed schema. An ID lookup scans the
+ * same bounded window as the fullest list, so an ID is found exactly when that list shows it.
+ */
 export function readDiagnosticJournal(
   home: string,
   limit: number,
   diagnosticId?: string,
 ): DiagnosticRecord[] {
-  limit = Number.isFinite(limit) ? Math.max(1, Math.min(1000, Math.floor(limit))) : 1
+  limit = diagnosticId
+    ? DIAGNOSTIC_JOURNAL_LIMIT
+    : Number.isFinite(limit)
+      ? Math.max(1, Math.min(DIAGNOSTIC_JOURNAL_LIMIT, Math.floor(limit)))
+      : 1
   const byId = new Map<string, DiagnosticRecord>()
   const accept = (input: unknown): void => {
     const row = safeDiagnosticRecord(input)
-    if (!row || (diagnosticId && row.diagnosticId !== diagnosticId)) return
+    if (!row) return
     byId.delete(row.diagnosticId)
     byId.set(row.diagnosticId, row)
     if (byId.size > limit) byId.delete(byId.keys().next().value!)
@@ -145,7 +154,8 @@ export function readDiagnosticJournal(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   for (const row of diagnosticRecords()) accept(row)
-  return [...byId.values()]
+  const rows = [...byId.values()]
+  return diagnosticId ? rows.filter((row) => row.diagnosticId === diagnosticId) : rows
 }
 
 import { readSync as readChunk } from 'node:fs'
