@@ -495,3 +495,30 @@ it.each([
   expect(evidence).toMatchObject([{ scope, bindingHash: 'h', reason: 'full-access' }])
   await ep.close()
 })
+
+it('keeps expiry and cancellation authoritative for automatic permission decisions', async () => {
+  for (const state of ['expired', 'cancelled', 'cancelled-during-journal'] as const) {
+    const controller = new AbortController()
+    if (state === 'cancelled') controller.abort('stopped')
+    const { ep, r } = mk({ clock: () => (state === 'expired' ? 60_000 : 0), connections: () => [] })
+    const evidence: unknown[] = []
+    try {
+      const answer = await withPermissionContext(
+        { policy: 'full-access', actor },
+        async (value) => {
+          evidence.push(value)
+          controller.abort('stopped')
+        },
+        () => r.ask(req, { signal: controller.signal }),
+      )
+      expect(answer).toEqual(
+        state === 'expired'
+          ? { verdict: 'unavailable', reason: 'deadline' }
+          : { verdict: 'cancelled', reason: 'stopped' },
+      )
+      expect(evidence).toHaveLength(state === 'cancelled-during-journal' ? 1 : 0)
+    } finally {
+      await ep.close()
+    }
+  }
+})

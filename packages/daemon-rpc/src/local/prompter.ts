@@ -157,15 +157,20 @@ export class PrompterRouter implements Prompter {
           ? { verdict: 'unavailable', reason: 'deadline' }
           : { verdict: 'cancelled', reason: 'stopped' },
       )
+    if (this.o.signal) opts = { signal: AbortSignal.any([opts.signal, this.o.signal]) }
     if (opts.signal.aborted) return interrupted()
-    const automatic = await automaticRequestDecision(req)
-    if (automatic) return this.done(req.requestId, 'full-access', automatic)
     const deadline = Date.parse(req.deadline)
     if (!Number.isFinite(deadline))
       return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
     if (deadline <= this.o.clock())
       return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
-    if (this.o.signal) opts = { signal: AbortSignal.any([opts.signal, this.o.signal]) }
+    const automatic = await automaticRequestDecision(req)
+    if (automatic) {
+      if (opts.signal.aborted) return interrupted()
+      if (deadline <= this.o.clock())
+        return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+      return this.done(req.requestId, 'full-access', automatic)
+    }
     if (this.o.local) {
       const snapshot = structuredClone(req)
       const raw = await this.o.local.ask(structuredClone(req), opts)

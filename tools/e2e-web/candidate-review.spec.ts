@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { install, toolResult } from './sdk.js'
+import { install, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
@@ -41,7 +41,6 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     cwd: runtime.workspace,
     preset: 'workspace-write',
   })
-  old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   await old.attach()
   const authoringIdle = async () => {
     const view = await old.projectUI(undefined, { surface: 'web' })
@@ -72,7 +71,6 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expect((await old.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   await client.session.rename(old.id, 'Text statistics workshop')
   old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
-  const { prompt } = await import('./sdk.js')
   await promptOld('call plugin_helper_guide {"kind":"tool"}')
   const guide = JSON.parse(
     (await toolResult(old, 'plugin_helper_guide'))!.content[0]!.type === 'text'
@@ -617,4 +615,65 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(publishedFacts).toContainText(`${draft.packageId} 0.1.0 · Published`)
   await expect(publishedFacts).toContainText('Human review recorded')
   await expect(publishedFacts).toContainText('Tests passed: 1')
+})
+
+test('full access candidate submission publishes without a human offer and retains daemon evidence', async ({
+  page,
+  runtime,
+}) => {
+  test.setTimeout(120_000)
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: crypto.randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await session.attach()
+  // No approval handler: any attempted human delivery makes the real tool flow fail.
+  await prompt(session, 'call plugin_helper_guide {"kind":"tool"}')
+  const guideResult = (await toolResult(session, 'plugin_helper_guide'))!.content[0]!
+  if (guideResult.type !== 'text') throw new Error('Expected authoring guide')
+  const guide = JSON.parse(guideResult.text) as { files: { path: string; content: string }[] }
+  await prompt(session, `call plugin_helper_create ${JSON.stringify({ files: guide.files })}`)
+  const created = (await toolResult(session, 'plugin_helper_create'))!.content[0]!
+  if (created.type !== 'text') throw new Error('Expected candidate receipt')
+  const draft = JSON.parse(created.text) as import('@agnes/protocol').AuthoringCandidate
+  for (const name of ['plugin_test', 'plugin_install_local']) {
+    await prompt(
+      session,
+      `call ${name} ${JSON.stringify({ candidateId: draft.candidateId, expectedHash: draft.candidateHash })}`,
+    )
+    await toolResult(session, name)
+  }
+  expect(
+    await client.request('_agnes/v1/plugins.candidates.show', {
+      profile: 'local-dev',
+      candidateId: draft.candidateId,
+    }),
+  ).toMatchObject({ state: 'published', candidateHash: draft.candidateHash, reviewer: 'full-access' })
+  const installed = (await client.packages.list({ profile: 'local-dev' })).packages.find(
+    (p) => p.id === draft.packageId,
+  )
+  expect(installed).toMatchObject({ desired: 'enabled' })
+  const timeline = await session.projectUI(undefined, { surface: 'web' })
+  expect(timeline.nodes.filter((node) => node.kind === 'approval' && node.state === 'pending')).toEqual([])
+  expect(timeline.nodes.filter((node) => node.kind === 'tool' && node.permissionDecision)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: 'plugin_test',
+        permissionDecision: expect.objectContaining({ reason: 'full-access' }),
+      }),
+      expect.objectContaining({
+        name: 'plugin_install_local',
+        permissionDecision: expect.objectContaining({ reason: 'full-access' }),
+      }),
+    ]),
+  )
+  await preferences(page)
+  await page.goto(`${runtime.url}/?session=${encodeURIComponent(session.id)}`)
+  await chooseWorkspace(page, runtime)
+  await expect(page.getByTestId('approval-card')).toHaveCount(0)
+  await expect(
+    page.getByTestId('approval-step').filter({ hasText: 'Auto-allowed (Full access)' }).first(),
+  ).toBeVisible()
 })
