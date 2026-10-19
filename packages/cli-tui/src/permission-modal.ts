@@ -134,9 +134,12 @@ export class PermissionModal implements Component {
     }
     const row = (line: string) =>
       framed ? `${edge('│')} ${fitLine(line, inner)} ${edge('│')}` : fitLine(line, width)
-    const details = wrapText(heading, inner)
+    // The top border already shows a heading that fits it; repeating it as the first detail row only
+    // costs a row. It stays in the body when the border would clip it or there is nothing else to page.
+    const hasInput = question.request.toolCall.rawInput !== undefined
+    const details = framed && hasInput && displayWidth(heading) <= inner ? [] : wrapText(heading, inner)
     const headingRows = details.length
-    if (question.request.toolCall.rawInput !== undefined)
+    if (hasInput)
       details.push(
         ...wrapText(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
       )

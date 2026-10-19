@@ -28,6 +28,17 @@ it('defaults Enter to rejection and only explicit option selection permits appro
   modal.handleInput('1')
   expect(await second).toEqual({ optionId: 'a' })
   expect(modal.handleInput('1')).toBe(false)
+  // With input to show, a heading that fits the top border is not repeated as a detail row.
+  const third = modal.ask(
+    { ...request, toolCall: { title: 'write', rawInput: { path: 'a.txt' } } },
+    { signal: new AbortController().signal },
+  )
+  const withInput = modal.render(80)
+  expect(withInput.join('\n').split('Approval: write')).toHaveLength(2)
+  expect(withInput[1]).toContain('{')
+  expect(withInput.at(-1)).toContain('details 1-3/3')
+  modal.handleInput('\r')
+  expect(await third).toEqual({ optionId: 'r' })
 })
 it('cancels a queued question without dismissing the active question, and rejects after close', async () => {
   const modal = new PermissionModal(vi.fn())
