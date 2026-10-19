@@ -11,6 +11,9 @@ import {
   formatUsdMicros,
 } from '../src/tui/format-usage.js'
 import { displayWidth } from '../src/tui/terminal.js'
+import { TuiTheme } from '../src/tui/theme.js'
+
+const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 const usage = (overrides: Partial<UsageView> = {}): UsageView => ({
   totals: { input: 1_600, output: 58, cacheRead: 20, cacheWrite: 0, reasoning: 12 },
@@ -71,14 +74,14 @@ describe('usage footer degradation', () => {
   // starts at >=100. Task-owner ruling: the tier table wins; the sample freezes the full line's two
   // content groups, while the 120-column snapshot below freezes their actual right alignment.
   it('preserves the canonical full footer content at the full-width tier', () => {
-    const line = formatUsageLine(usage(), 120, createAnsi('none'))
+    const line = formatUsageLine(usage(), 120, PLAIN)
     expect(line.startsWith('Σ ↑1.6k ↓58 $0.001 ≈0.2%/1.0M (auto)')).toBe(true)
     expect(line.endsWith('deepseek-v4-pro • high')).toBe(true)
   })
 
   it('has exact 120/80/59/40/20-column snapshots', () => {
     const rendered = [120, 80, 59, 40, 20].map((width) =>
-      formatUsageLine(usage(), width, createAnsi('none')).replaceAll(' ', '·'),
+      formatUsageLine(usage(), width, PLAIN).replaceAll(' ', '·'),
     )
     expect(rendered).toMatchInlineSnapshot(`
       [
@@ -93,7 +96,7 @@ describe('usage footer degradation', () => {
 
   it('omits the dollar segment entirely when billing is absent', () => {
     const { cost: _cost, ...withoutCost } = usage()
-    const line = formatUsageLine(withoutCost, 120, createAnsi('none'))
+    const line = formatUsageLine(withoutCost, 120, PLAIN)
     expect(line).not.toContain('$')
     expect(line).toContain('↑1.6k ↓58')
   })
@@ -107,7 +110,7 @@ describe('usage footer degradation', () => {
       },
     })
     for (const width of [120, 80, 59, 40, 20, 1, 0]) {
-      const line = formatUsageLine(hostile, width, createAnsi('256'))
+      const line = formatUsageLine(hostile, width, new TuiTheme('dark').ansi(createAnsi('256')))
       expect(displayWidth(line)).toBe(Math.max(1, width))
       for (const control of ['\n', '\r', '\u0000', '\u2028', '\u2029']) expect(line).not.toContain(control)
       expect(line.replace(ANSI_RE, '')).not.toContain('\u001b')
@@ -115,14 +118,15 @@ describe('usage footer degradation', () => {
   })
 
   it('styles exact 70/90 boundaries without leaving an unterminated SGR sequence', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('16'))
     const cases = [
-      [{ tokens: 70, window: 100, autoCompact: false }, '\u001b[2m≈70.0%/100\u001b[22m'],
-      [{ tokens: 701, window: 1_000, autoCompact: false }, '\u001b[93m≈70.1%/1.0k\u001b[39m'],
-      [{ tokens: 90, window: 100, autoCompact: false }, '\u001b[93m≈90.0%/100\u001b[39m'],
-      [{ tokens: 901, window: 1_000, autoCompact: false }, '\u001b[91m≈90.1%/1.0k\u001b[39m'],
+      [{ tokens: 70, window: 100, autoCompact: false }, ansi.dim('≈70.0%/100')],
+      [{ tokens: 701, window: 1_000, autoCompact: false }, ansi.fg('warning', '≈70.1%/1.0k')],
+      [{ tokens: 90, window: 100, autoCompact: false }, ansi.fg('warning', '≈90.0%/100')],
+      [{ tokens: 901, window: 1_000, autoCompact: false }, ansi.fg('danger', '≈90.1%/1.0k')],
     ] as const
     for (const [context, marker] of cases) {
-      const line = formatUsageLine(usage({ context }), 120, createAnsi('16'))
+      const line = formatUsageLine(usage({ context }), 120, ansi)
       expect(line).toContain(marker)
       expect(line.replace(ANSI_RE, '')).not.toContain('\u001b')
       expect(displayWidth(line)).toBe(120)

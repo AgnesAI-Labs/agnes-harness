@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
-import { createAnsi, xterm256 } from './ansi.js'
+import { createAnsi, hexColour } from './ansi.js'
 import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
@@ -149,7 +149,7 @@ export class TuiApp {
     this.hints = new Hints()
     this.localCommandView = (command, output) =>
       new VStack([
-        new Text(`${ansi.bold(ansi.fg(141, '›'))} ${ansi.bold(escapeControl(command.trim()))}`),
+        new Text(`${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`),
         new Text(escapeControl(output)),
       ])
     this.header = new Header(ansi, branding)
@@ -223,7 +223,7 @@ export class TuiApp {
             text.startsWith('you: ') ? text.slice('you: '.length) : text,
             ansi,
             this.theme,
-            xterm256(branding.accent),
+            hexColour(branding.accent) ?? 'accent',
           )
         }
         const text = nodeText(node)
@@ -248,7 +248,7 @@ export class TuiApp {
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
       dim: (s) => ansi.dim(s),
-      promptStyle: (s) => ansi.bold(ansi.fg(141, s)),
+      promptStyle: (s) => ansi.bold(ansi.fg('accent', s)),
       menuStyle: (s) => this.theme.menu(ansi, s),
       onSubmit: (text) => {
         void this.runInput(text)

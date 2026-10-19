@@ -1,6 +1,7 @@
-import type { Ansi } from '../ansi.js'
+import type { Colour } from '../ansi.js'
 import { type Component, escapeControl, padLine, wrapText } from '../component.js'
-import type { TuiTheme } from '../theme.js'
+import type { Tone } from '../palette.js'
+import type { ThemedAnsi, TuiTheme } from '../theme.js'
 
 /** A Grok-like turn separator: quiet full-width surface, with only the role marker in brand colour. */
 export class UserMessage implements Component {
@@ -8,9 +9,9 @@ export class UserMessage implements Component {
 
   constructor(
     text: string,
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly theme: TuiTheme,
-    private readonly accent = 141,
+    private readonly accent: Tone | Colour = 'accent',
   ) {
     this.text = escapeControl(text)
   }

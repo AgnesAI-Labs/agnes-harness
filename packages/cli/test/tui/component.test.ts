@@ -103,14 +103,15 @@ describe('components', () => {
   it('user messages use a theme-aware full-width surface with a plain exit transcript', () => {
     const ansi = createAnsi('256')
     const theme = new TuiTheme('light')
-    const message = new UserMessage('中文 hello '.repeat(20), theme.ansi(ansi), theme, 63)
+    const themed = theme.ansi(ansi)
+    const message = new UserMessage('中文 hello '.repeat(20), themed, theme, 63)
     const rows = message.render(120)
     expect(rows[0]).toContain('\x1b[38;5;63m›\x1b[39m')
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
-    expect(rows.join('')).toContain('\x1b[48;5;254m')
+    expect(rows.join('')).toContain(themed.bg('surface', themed.fg('surfaceFg', '    ')))
     theme.set('mono')
     expect(message.render(120).join('')).not.toContain('\x1b[48;5;')
-    expect(new UserMessage('中文 hello', ansi, theme).transcript(16)).toEqual(['you: 中文 hello'])
+    expect(new UserMessage('中文 hello', themed, theme).transcript(16)).toEqual(['you: 中文 hello'])
   })
 
   it('VStack stops at the first child that consumes the input', () => {

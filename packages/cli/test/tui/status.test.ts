@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { displayWidth } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { Header, StatusBar } from '../../src/tui/views/status-bar.js'
 
 const BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
+const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 describe('status bar and header (cli 稿 §9.2)', () => {
   it('composes slot lines, budget, parked and link state', () => {
-    const s = new StatusBar(createAnsi('none'))
+    const s = new StatusBar(PLAIN)
     s.setSlots([{ text: '数据截至 9/6', level: 'warn' }])
     s.setBudget(78, 100)
     s.setParked('tk-abcdefgh')
@@ -28,7 +30,7 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('renders the projected usage as a separate Pi-style footer and clears it', () => {
-    const s = new StatusBar(createAnsi('none'))
+    const s = new StatusBar(PLAIN)
     s.setUsage({
       totals: { input: 1_600, output: 58, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
       cost: { usdMicros: 1_000, source: 'estimated', subscription: false },
@@ -44,7 +46,7 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('header shows brand, profile, preset, session tail, generation and op state', () => {
-    const h = new Header(createAnsi('none'), BRANDING)
+    const h = new Header(PLAIN, BRANDING)
     h.set({
       profile: 'local-dev',
       preset: 'standard',
@@ -58,20 +60,31 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('header paints the brand in the accent colour and dims the separators on a colour tier', () => {
-    const h = new Header(createAnsi('256'), BRANDING)
-    h.set({ profile: 'local-dev', preset: 'standard', sessionId: 'agnes:x:y:cli:dm:12345678', generation: 1 })
+    const state = {
+      profile: 'local-dev',
+      preset: 'standard',
+      sessionId: 'agnes:x:y:cli:dm:12345678',
+      generation: 1,
+    }
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const h = new Header(ansi, BRANDING)
+    h.set(state)
     const line = h.render(60)[0] as string
     expect(line).toContain('\x1b[1m\x1b[38;5;63magnes\x1b[39m\x1b[22m')
-    expect(line).toContain('\x1b[2m · \x1b[22m')
-    expect(line).not.toContain('\x1b[2m · \x1b[22m\x1b[2m')
+    expect(line).toContain(`${ansi.dim(' · ')}${ansi.fg('muted', 'local-dev')}`)
+    // Mono keeps SGR dim, so the separator must not leak dim into the field after it.
+    const mono = new Header(new TuiTheme('mono').ansi(createAnsi('256')), BRANDING)
+    mono.set(state)
+    expect(mono.render(60)[0]).toContain('\x1b[2m · \x1b[22m')
+    expect(mono.render(60)[0]).not.toContain('\x1b[2m · \x1b[22m\x1b[2m')
     // The none tier must emit zero escape sequences for the very same content.
-    const plain = new Header(createAnsi('none'), BRANDING)
+    const plain = new Header(PLAIN, BRANDING)
     plain.set({ profile: 'p', preset: 's', sessionId: 'id:12345678', generation: 1 })
     expect(plain.render(60)[0]).not.toContain('\x1b')
   })
 
   it('takes the compact mark and accent from the shared branding contract', () => {
-    const h = new Header(createAnsi('none'), {
+    const h = new Header(PLAIN, {
       accent: '#00875A',
       mark: 'acme',
       selfLabel: 'Acme Workbench',
@@ -82,23 +95,24 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('status bar colors the budget segment, the notice and the link spinner', () => {
-    const s = new StatusBar(createAnsi('256'))
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const s = new StatusBar(ansi)
     s.setBudget(92, 100)
     s.setNotice('执行中断，30 s 内自动恢复', 'error')
     s.setLink('reconnecting')
     const line = s.render(100)[0] as string
-    expect(line).toContain('\x1b[38;5;196mcredits 92/100 · 92% ⚠\x1b[39m')
-    expect(line).toContain('\x1b[38;5;203m执行中断，30 s 内自动恢复\x1b[39m')
-    expect(line).toContain('\x1b[38;5;178m⟳\x1b[39m')
+    expect(line).toContain(ansi.bold(ansi.fg('danger', 'credits 92/100 · 92% ⚠')))
+    expect(line).toContain(ansi.fg('danger', '执行中断，30 s 内自动恢复'))
+    expect(line).toContain(ansi.fg('warning', '⟳'))
     s.setNotice('模型已切换', 'success')
-    expect(s.render(100)[0]).toContain('\x1b[38;5;78m模型已切换\x1b[39m')
+    expect(s.render(100)[0]).toContain(ansi.fg('success', '模型已切换'))
     s.setNotice('普通提示')
-    expect(s.render(100)[0]).toContain('\x1b[2m普通提示\x1b[22m')
+    expect(s.render(100)[0]).toContain(ansi.dim('普通提示'))
     // The link glyph only lights up while the link is not ok.
     s.setLink('ok')
     expect(s.render(100)[0]).not.toContain('⟳')
     // none tier: identical text, zero escapes.
-    const plain = new StatusBar(createAnsi('none'))
+    const plain = new StatusBar(PLAIN)
     plain.setBudget(92, 100)
     plain.setNotice('n')
     plain.setLink('catching-up')
@@ -108,7 +122,7 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('localizes fixed parked and link-state copy without changing slot content', () => {
-    const s = new StatusBar(createAnsi('none'), 'zh-CN')
+    const s = new StatusBar(PLAIN, 'zh-CN')
     s.setSlots([{ text: 'source-owned', level: 'info' }])
     s.setParked('tk-abcdefgh')
     s.setLink('catching-up')
@@ -119,12 +133,12 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('bounds header and status chrome to one row at narrow terminal widths', () => {
-    const status = new StatusBar(createAnsi('none'), 'zh-CN')
+    const status = new StatusBar(PLAIN, 'zh-CN')
     status.setSlots([{ text: '一条很长的状态文本', level: 'warn' }])
     status.setBudget(5, 100)
     status.setParked('tk-abcdefgh')
     status.setLink('reconnecting')
-    const header = new Header(createAnsi('none'), BRANDING)
+    const header = new Header(PLAIN, BRANDING)
     header.set({
       profile: 'local-development-profile',
       preset: 'standard',
@@ -142,19 +156,19 @@ describe('status bar and header (cli 稿 §9.2)', () => {
   })
 
   it('hides the credits segment below the 70% warning threshold, however large the raw numbers', () => {
-    const s = new StatusBar(createAnsi('none'))
+    const s = new StatusBar(PLAIN)
     s.setBudget(50, 100)
     expect(s.render(80)[0]).not.toContain('credits')
   })
 
   it('never shows credits without a hard cap, however large the accumulated amount', () => {
-    const s = new StatusBar(createAnsi('none'))
+    const s = new StatusBar(PLAIN)
     s.setBudget(999_999.999, undefined)
     expect(s.render(80)[0]).not.toContain('credits')
   })
 
   it('renders a fractional credits amount rounded, never the raw float', () => {
-    const s = new StatusBar(createAnsi('none'))
+    const s = new StatusBar(PLAIN)
     s.setBudget(0.02808099999999999, 0.04)
     expect(s.render(80)[0]).toContain('credits 0.03/0.04 · 70%')
     expect(s.render(80)[0]).not.toContain('028080')

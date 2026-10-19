@@ -5,6 +5,7 @@ import { attachmentLink } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { resourceCapabilityMissing } from '../../src/commands/resources.js'
+import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import {
   attachmentsFrom,
@@ -15,6 +16,7 @@ import {
   slashCommandFor,
 } from '../../src/tui/commands.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { scriptedEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
 
@@ -188,7 +190,11 @@ describe('runSlash', () => {
       first.term.feed('\r')
       await vi.waitFor(() => expect(first.app.themeName).toBe('dark'))
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'dark' })
-      expect(first.term.writes.join('')).toContain('\x1b[48;5;234m')
+      expect(first.term.writes.join('')).toContain(
+        createAnsi('256')
+          .bg(new TuiTheme('dark').colour('bg') as Colour, '')
+          .slice(0, -'\x1b[49m'.length),
+      )
       const second = await unstartedApp(undefined, undefined, path)
       try {
         expect(second.app.themeName).toBe('dark')

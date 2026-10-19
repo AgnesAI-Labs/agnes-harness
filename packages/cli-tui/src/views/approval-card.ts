@@ -1,8 +1,8 @@
 import type { UINode } from '@agnes/protocol'
-import type { Ansi } from '../ansi.js'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
+import type { ThemedAnsi } from '../theme.js'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -31,7 +31,7 @@ export class ApprovalCard implements Component {
   constructor(
     private readonly n: ApprovalNode,
     private readonly o: {
-      ansi: Ansi
+      ansi: ThemedAnsi
       locale?: Locale
       onDecide(ref: NonNullable<ApprovalNode['decisionRef']>, verdict: Verdict): Promise<void>
       /**
@@ -92,14 +92,14 @@ export class ApprovalCard implements Component {
     // Verdict glyph coloured by outcome: green once decided, red on failure/expiry, yellow while
     // a durable request still waits on a keypress.
     if (this.phase === 'decided')
-      return [fitLine(`${ansi.fg(78, '✓')} ${summary} -> ${escapeControl(this.note)}`, width)]
+      return [fitLine(`${ansi.fg('success', '✓')} ${summary} -> ${escapeControl(this.note)}`, width)]
     if (this.phase === 'failed')
-      return [fitLine(`${ansi.fg(203, '✗')} ${summary} -> ${escapeControl(this.note)}`, width)]
-    if (!n.decisionRef) return [fitLine(`${ansi.fg(178, '⚠')} ${summary}`, width)]
+      return [fitLine(`${ansi.fg('danger', '✗')} ${summary} -> ${escapeControl(this.note)}`, width)]
+    if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '⚠')} ${summary}`, width)]
     const locale = this.o.locale ?? 'en'
     const keys = n.options.map((kind, i) => `[${i + 1}] ${t(OPTION_LABEL[kind], locale)}`).join('  ')
     return [
-      fitLine(ansi.bold(`${ansi.fg(178, '⚠')} ${t('approval.waiting', locale)}: ${summary}`), width),
+      fitLine(ansi.bold(`${ansi.fg('warning', '⚠')} ${t('approval.waiting', locale)}: ${summary}`), width),
       fitLine(
         `decision ${escapeControl(n.decisionRef.id).slice(0, 8)}… · expires ${escapeControl(n.expiresAt ?? 'unknown')}`,
         width,

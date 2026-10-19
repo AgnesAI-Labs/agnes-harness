@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { CURSOR_MARKER, createAnsi } from '../src/ansi.js'
+import { type Colour, CURSOR_MARKER, createAnsi } from '../src/ansi.js'
+import { PALETTE, type Tone } from '../src/palette.js'
 import { TuiTheme } from '../src/theme.js'
 import { readTheme, saveTheme } from '../src/theme-preference.js'
 import { ThemePicker } from '../src/views/theme-picker.js'
@@ -42,15 +43,46 @@ describe('TUI themes', () => {
   it('paints blank rows and restores palette after nested resets without losing the cursor', () => {
     const ansi = createAnsi('256')
     const theme = new TuiTheme('dark')
+    const open = (styled: string): string => styled.slice(0, styled.indexOf('\x1b[', 1))
+    const tone = (layer: 'fg' | 'bg', name: Tone): string =>
+      open(ansi[layer](theme.colour(name) as Colour, ''))
     const rows = theme.frame(ansi, [`a${CURSOR_MARKER}${ansi.fg(78, 'b')}c\x1b[0md`], 20, 3)
     expect(rows).toHaveLength(3)
     expect(rows[0]).toContain(CURSOR_MARKER)
-    expect(rows[0]).toContain('b\x1b[38;5;252mc')
-    expect(rows[1]).toContain('\x1b[48;5;234m')
+    expect(rows[0]).toContain(`b${tone('fg', 'fg')}c`)
+    expect(rows[1]).toContain(tone('bg', 'bg'))
     theme.set('light')
-    expect(theme.frame(ansi, ['a'], 20, 1)[0]).toContain('\x1b[48;5;255m')
+    expect(theme.frame(ansi, ['a'], 20, 1)[0]).toContain(tone('bg', 'bg'))
     expect(theme.frame(createAnsi('none'), ['a'], 20, 1)[0]).not.toContain('\x1b')
     theme.set('mono')
     expect(theme.frame(ansi, ['a'], 20, 1)).toEqual(['a'])
+  })
+  it('keeps the 24-bit background after a nested reset inside a truecolor row', () => {
+    const ansi = createAnsi('truecolor')
+    const theme = new TuiTheme('dark')
+    const [row] = theme.frame(ansi, [`${ansi.bg(PALETTE.dark.danger, 'x')}y\x1b[0mz`], 10, 1)
+    expect(row).toBe(
+      '\x1b[48;2;20;19;28m\x1b[38;2;230;227;242m' +
+        '\x1b[48;2;255;107;125mx\x1b[48;2;20;19;28my' +
+        '\x1b[0m\x1b[48;2;20;19;28m\x1b[38;2;230;227;242mz       \x1b[0m',
+    )
+    for (const tier of ['256', '16'] as const) {
+      const base = createAnsi(tier)
+      const bg = base.bg(theme.colour('bg') as Colour, '').replace('\x1b[49m', '')
+      const [narrow] = theme.frame(base, [`${base.bg(PALETTE.dark.danger, 'x')}y\x1b[0mz`], 10, 1)
+      expect(narrow).toContain(`x${bg}y`)
+      expect(narrow).toContain(`\x1b[0m${bg}`)
+    }
+  })
+  it('resolves tones per theme, leaves data colours as given and paints nothing in mono', () => {
+    const theme = new TuiTheme('light')
+    const ansi = theme.ansi(createAnsi('truecolor'))
+    expect(ansi.fg('accent', 'x')).toBe('\x1b[38;2;94;87;254mx\x1b[39m')
+    theme.set('dark')
+    expect(ansi.fg('accent', 'x')).toBe('\x1b[38;2;139;131;255mx\x1b[39m')
+    expect(ansi.bg(PALETTE.light.success, 'x')).toBe('\x1b[48;2;30;138;90mx\x1b[49m')
+    theme.set('mono')
+    expect(ansi.fg('accent', ansi.bg(PALETTE.light.success, 'x'))).toBe('x')
+    expect(theme.colour('accent')).toBeUndefined()
   })
 })

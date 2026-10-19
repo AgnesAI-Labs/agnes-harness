@@ -1,10 +1,12 @@
 import type { UINode } from '@agnes/protocol'
-import { type Ansi, createAnsi } from '../ansi.js'
+import { createAnsi } from '../ansi.js'
 import { type Component, escapeControl, padLine, Text, VStack } from '../component.js'
 import { Box } from '../components/box.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
+import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
+import { type ThemedAnsi, TuiTheme } from '../theme.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -42,7 +44,12 @@ export function renderBarChart(
 
 /** Presentation of the core projection; no event reduction or direct tool access. */
 // State is carried by one diamond and, only while non-terminal, one word; the rest stays quiet.
-const STATUS_COLOR: Record<string, number> = { completed: 78, running: 178, failed: 203, error: 203 }
+const STATUS_TONE: Record<string, Tone> = {
+  completed: 'success',
+  running: 'warning',
+  failed: 'danger',
+  error: 'danger',
+}
 const STATUS_GLYPH: Record<string, string> = {
   completed: '◆',
   running: '◆',
@@ -81,9 +88,14 @@ export class ToolCard implements Component {
 
   constructor(
     node: ToolNode,
-    options: { collapsed?: boolean; ansi?: Ansi; onAction?(actionId: string): void; locale?: string } = {},
+    options: {
+      collapsed?: boolean
+      ansi?: ThemedAnsi
+      onAction?(actionId: string): void
+      locale?: string
+    } = {},
   ) {
-    const ansi = options.ansi ?? createAnsi('none')
+    const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
     this.onAction = options.onAction ?? (() => {})
     const locale = options.locale ?? 'en'
     const summary = node.summary.replace(/\s+/g, ' ').trim()
@@ -91,8 +103,8 @@ export class ToolCard implements Component {
     const name = toolKey ? tt(toolKey, locale) : escapeControl(node.name)
     const statusKey = STATUS_KEYS[node.status]
     const status = statusKey ? tt(statusKey, locale) : escapeControl(node.status)
-    const colour = STATUS_COLOR[node.status]
-    const paint = colour === undefined ? (s: string) => s : ansi.fg.bind(ansi, colour)
+    const tone = STATUS_TONE[node.status]
+    const paint = tone === undefined ? (s: string) => s : (s: string) => ansi.fg(tone, s)
     const glyph = paint(STATUS_GLYPH[node.status] ?? '·')
     this.headline = ` ${glyph} ${ansi.bold(name)}${summary ? `  ${ansi.dim(escapeControl(summary))}` : ''}${
       node.status === 'completed' ? '' : `  ${paint(status)}`

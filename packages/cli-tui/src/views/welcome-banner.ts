@@ -1,11 +1,10 @@
 import type { Branding } from '@agnes/sdk'
-import type { Ansi } from '../ansi.js'
-import { xterm256 } from '../ansi.js'
+import { hexColour } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import { displayWidth } from '../terminal.js'
-import { tuiColor } from '../theme.js'
+import type { ThemedAnsi } from '../theme.js'
 
 /**
  * The one expressive element in the TUI: a quiet session card that scrolls with the conversation.
@@ -20,7 +19,7 @@ export class WelcomeBanner implements Component {
       preset?: string
       model?: string
       branding: Branding
-      ansi: Ansi
+      ansi: ThemedAnsi
       locale?: string
     },
   ) {
@@ -38,7 +37,9 @@ export class WelcomeBanner implements Component {
     width = Math.max(1, Math.trunc(width))
     const { ansi, branding } = this.o
     const locale = this.o.locale ?? 'en'
-    const brand = ansi.bold(ansi.fg(xterm256(branding.accent), escapeControl(branding.selfLabel)))
+    const brand = ansi.bold(
+      ansi.fg(hexColour(branding.accent) ?? 'accent', escapeControl(branding.selfLabel)),
+    )
     if (width < 24) return [fitLine(tt('welcome.brandTagline', locale, { brand }), width)]
 
     const cardWidth = Math.min(78, width - 2)
@@ -52,7 +53,7 @@ export class WelcomeBanner implements Component {
       .filter((field): field is string => Boolean(field))
       .map(escapeControl)
       .join(' · ')
-    const model = `${ansi.fg(tuiColor.success, '●')} ${escapeControl(this.model ?? tt('welcome.modelResolving', locale))}`
+    const model = `${ansi.fg('success', '●')} ${escapeControl(this.model ?? tt('welcome.modelResolving', locale))}`
     const hint = ansi.dim(tt('welcome.commandHint', locale))
     const gap = inner - displayWidth(model) - displayWidth(hint)
     return [
