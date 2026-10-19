@@ -475,9 +475,36 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     const chip = (kind: string) => root.querySelector<HTMLButtonElement>(`.trace-chip[data-kind="${kind}"]`)
+    const toggle = () => root.querySelector<HTMLButtonElement>('[data-testid="trace-chips-toggle"]')
     expect(chip('all')?.getAttribute('aria-pressed')).toBe('true')
     expect(chip('tool')?.textContent).toBe('Tool1')
     expect(chip('approval')).toBeNull()
+    // Four types fit the folded row, so there is nothing to expand.
+    expect(toggle()).toBeNull()
+    const approval: UINode = {
+      kind: 'approval',
+      id: 'ap1',
+      seq: 5,
+      state: 'pending',
+      ticket: 'ticket-1',
+      summary: 'Allow action?',
+      risk: 'unknown',
+      options: [],
+    }
+    panel.render([...nodes, approval], [turn(sampleTrace, ['u1', 'c1', 'a1', 't1', 'ap1'])])
+    // A fifth type folds the last one behind "Show all".
+    expect(chip('context')).toBeNull()
+    expect(toggle()?.textContent).toBe('Show all +1')
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
+    flushSync(() => toggle()?.click())
+    expect(chip('context')?.textContent).toBe('Context1')
+    // A pressed chip stays in view after the row folds again, leaving nothing to expand.
+    flushSync(() => chip('context')?.click())
+    flushSync(() => toggle()?.click())
+    expect(chip('context')?.getAttribute('aria-pressed')).toBe('true')
+    expect(toggle()).toBeNull()
+    flushSync(() => chip('context')?.click())
+    panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     flushSync(() => chip('tool')?.click())
     flushSync(() => chip('assistant')?.click())
     expect(

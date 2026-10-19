@@ -115,8 +115,8 @@
       corner-shape: round;
     }
   }
-  /* One toolbar row: Loop and stats, type chips, search with its count and stepping, fold-all and
-   the ⋯ menu. It wraps only when the panel is too narrow to hold it. */
+  /* Two toolbar rows: Loop and stats, search with its count and stepping, fold-all and the ⋯ menu;
+   then the type chips on a row of their own. The first row wraps only when the panel is too narrow. */
   .trace-toolbar {
     grid-row: 2;
     display: flex;
@@ -155,10 +155,23 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
+  .trace-chips-row {
+    display: flex;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+  }
   .trace-chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s4);
+  }
+  .trace-chips-toggle.agnes-ui-button {
+    height: 26px;
+    min-height: 26px;
+    padding: 0 var(--s4);
+    font-size: var(--font-size-xs);
   }
   .trace-chip {
     display: inline-flex;
