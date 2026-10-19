@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { type McpServerDefinitionInput, rpcError, validateResourceControlData } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
+import { renameWriteThrough, renameWriteThroughSync } from '@agnes/system-node'
 import type { McpOperation, McpRow } from './mcp.js'
 import type { ResourceEffectAdmission } from './permissions.js'
 import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
@@ -135,7 +135,8 @@ export class McpJournalStore {
           await admission.verify()
           admission.assertActive()
         }
-        if (windows) await renameWriteThrough(tmp, target)
+        if (admission) renameWriteThroughSync(tmp, target)
+        else if (windows) await renameWriteThrough(tmp, target)
         else await rename(tmp, target)
       } catch (error) {
         await handle.close().catch(() => undefined)

@@ -763,7 +763,6 @@ it.each(
               : m.enable(profile, id, true, { admission })
       const refusal = expect(result).rejects.toThrow('permission unavailable')
       if (held) {
-        await new Promise((resolve) => setTimeout(resolve, 20))
         expire()
         release()
         await held

@@ -47,7 +47,6 @@ export function createCredentialAdmin(options: {
     permission?: { context: PermissionContext; current(): Promise<PermissionContext | undefined> },
   ) {
     const deadline = Date.now() + 120_000
-    if (permission) permission = { ...permission, context: structuredClone(permission.context) }
     const automatic = automaticPermissionDecision(permission?.context, 'credential.admin')
     const checkPermission = async () => {
       if (automatic && permission && !samePermissionContext(permission.context, await permission.current()))
@@ -145,10 +144,11 @@ export function createCredentialAdmin(options: {
       } catch {
         return Promise.reject(rpcError('INVALID_PARAMS'))
       }
+      const ownedPermission = permission && { ...permission, context: structuredClone(permission.context) }
       pending++
       const task = tail.then(async () => {
         try {
-          return await run(action, owned, actor, permission)
+          return await run(action, owned, actor, ownedPermission)
         } catch (error) {
           if (error instanceof CredentialAdminFailure && error.reason === 'INVALID_PARAMS')
             throw rpcError('INVALID_PARAMS')

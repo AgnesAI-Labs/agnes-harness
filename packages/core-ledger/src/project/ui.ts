@@ -35,7 +35,12 @@ import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
-import { type ApprovalNode, approvalSubject, reconcileTool } from './approval-subject.js'
+import {
+  type ApprovalNode,
+  approvalSubject,
+  automaticToolPermission,
+  reconcileTool,
+} from './approval-subject.js'
 import {
   applyCacheHealthEvent,
   type CacheHealthState,
@@ -867,11 +872,7 @@ export class UIProjectionCell {
         })
         const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
         if (tool && evidence.answeredBy && evidence.requestId) {
-          tool.permissionDecision = {
-            reason: 'full-access',
-            decisionId: evidence.requestId,
-            actor: evidence.answeredBy,
-          }
+          tool.permissionDecision = automaticToolPermission(evidence.requestId, evidence.answeredBy)
           changed.add(tool.id)
         }
         changed.add(id)
@@ -948,11 +949,7 @@ export class UIProjectionCell {
         const subject = value.request.spec.subject as { source?: { toolUseId?: string } } | null
         const tool = this.tools.get(subject?.source?.toolUseId ?? value.request.operationId)
         if (tool && result?.reason === 'answered' && result.code === 'full-access') {
-          tool.permissionDecision = {
-            reason: 'full-access',
-            decisionId: value.handle.id,
-            actor: result.answeredBy,
-          }
+          tool.permissionDecision = automaticToolPermission(value.handle.id, result.answeredBy)
           changed.add(tool.id)
         }
         if (tool && value.request.owner === 'core/tool-permission' && !value.consumption) {

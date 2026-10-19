@@ -348,7 +348,12 @@ it.each(
   const { vi } = await import('vitest')
   const { readdir } = await import('node:fs/promises')
   const atomic = MemoryStore.prototype.atomic
-  const spy = vi.spyOn(MemoryStore.prototype, 'atomic').mockImplementation(function (path, content, verify) {
+  const spy = vi.spyOn(MemoryStore.prototype, 'atomic').mockImplementation(function (
+    this: import('../src/store.js').MemoryStore,
+    path,
+    content,
+    verify,
+  ) {
     return atomic.call(this, path, content, () => {
       if (boundary === 'temp-flushed' && path === f.index) expire()
       verify?.()
@@ -362,7 +367,7 @@ it.each(
       .write(f.index, 'Reviewed preference.')
     const refused = expect(write).rejects.toThrow('permission unavailable')
     if (lock) {
-      await new Promise((resolve) => setTimeout(resolve, 30))
+      await Promise.resolve()
       expire()
       lock.exec('COMMIT')
     }

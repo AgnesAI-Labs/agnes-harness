@@ -1,4 +1,4 @@
-import type { UINode } from '@agnes/protocol'
+import type { Actor, UINode } from '@agnes/protocol'
 
 export type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
@@ -30,3 +30,10 @@ export function reconcileTool(subject: unknown): string {
   const name = (subject as { name?: unknown } | null)?.name
   return typeof name === 'string' && name ? name.slice(0, 256) : 'tool'
 }
+
+/** The same trusted automatic evidence decorates live and durable tool projections. */
+export const automaticToolPermission = (decisionId: string, actor: Actor) => ({
+  reason: 'full-access' as const,
+  decisionId,
+  actor,
+})
