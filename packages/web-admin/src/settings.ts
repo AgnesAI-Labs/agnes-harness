@@ -6,14 +6,10 @@ import type {
   ConfigSnapshot,
   ConfigTestResult,
   ModelSettings,
-  ThinkingLevel,
 } from '@agnes/protocol'
-import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
-  modelThinkingOptions,
-  parseContextBudget,
   renderRegion,
   SettingsAccounts,
   setDisclosureOpen,
@@ -23,17 +19,11 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
+import { accountForm, endpointHost, fieldError } from './settings/account-form.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
+import { accountWelcome, defaultAccountLabel, providerTiles, settledTest } from './settings/account-tiles.js'
 import {
-  accountWelcome,
-  defaultAccountLabel,
-  providerTiles,
-  settledTest,
-  syncAccountHeading,
-} from './settings/account-tiles.js'
-import {
-  configurationField,
   configurationReason,
   errorText,
   focusable,
@@ -78,6 +68,7 @@ type AsyncPhase = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
  */
 export function createSettingsController(options: SettingsControllerOptions): SettingsController {
   const ui = readElements()
+  const form = accountForm(ui)
   const networkFields = accountNetworkFields(
     optionalElement('config-account-network', 'div') ?? null,
     tr,
@@ -116,7 +107,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     accountRestore,
   )
   const advanced = optionalElement('config-account-advanced', 'div')
-  const modelFields = optionalElement('config-model-fields', 'fieldset')
   let inlineHost: HTMLElement | undefined
   let accountStep: 'provider' | 'connection' = 'connection'
   const autoTest = settledTest(() => {
@@ -216,7 +206,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     pending: (value) => {
       testGeneration += 1
       testPending = value
-      if (value) ui.error.textContent = ''
+      if (value) form.clearErrors()
       updateButtons()
     },
     ready: (models) => {
@@ -252,19 +242,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const secret = ui.apiKey.value
     const translated = configurationReason(error, tr)
     const message = translated ?? errorText(error, secret, tr)
-    ui.error.textContent = message
-    const field = configurationField(error)
-    const control = field === 'baseUrl' ? ui.baseUrl : field === 'apiKey' ? ui.apiKey : undefined
-    if (control) {
-      control.setAttribute('aria-invalid', 'true')
-      control.setAttribute(
-        'aria-describedby',
-        `${control === ui.apiKey ? 'config-key-hint ' : ''}${ui.error.id}`,
-      )
-    }
-    const invalid = accountBody?.querySelector<HTMLElement>('[aria-invalid="true"]')
-    if (invalid && advanced) setDisclosureOpen(advanced, true)
-    invalid?.focus()
+    // A field's own error is told under it; the connection's result above stays as it was.
+    if (!form.error(error, message)) return
     say('')
     // A test nobody asked for by hand reports on its own line only.
     if (!notify) return
@@ -294,7 +273,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     oauth.visible(oauthSelected)
     oauth.disabled(!connected || busy)
     networkFields.disabled(!connected || busy)
-    if (ui.apiKey.closest('label')) (ui.apiKey.closest('label') as HTMLElement).hidden = oauthSelected
+    ui.apiKey.closest<HTMLElement>('.account-key-field')?.toggleAttribute('hidden', oauthSelected)
     ui.provider.disabled =
       !connected || busy || oauth.operation() !== undefined || selectedAccount() !== undefined
     ui.authMethod.disabled = !connected || busy || oauth.operation() !== undefined
@@ -316,10 +295,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       loadPhase === 'error' ||
       (accountStep === 'connection' && oauthSelected && (!modelReadyForSave() || !ui.models.value))
     ui.save.textContent = tr(accountStep === 'provider' ? 'accounts.continue' : 'accounts.save')
-    // The default model and thinking effort appear once the connection has models to choose from.
-    if (modelFields) modelFields.hidden = !tested?.models.length
-    const provider = providers.find((row) => row.id === providerId())?.label ?? ''
-    syncAccountHeading(accountDialogTitle, accountStep, !!selectedAccount(), !!inlineHost, provider, tr)
+    form.sync({
+      step: accountStep,
+      editing: !!selectedAccount(),
+      inline: !!inlineHost,
+      provider: providers.find((row) => row.id === providerId()),
+      oauth: oauthSelected,
+      tested,
+      timeouts: networkFields.values(),
+    })
     ui.save.setAttribute('aria-busy', String(busy))
     if (accountBody) accountBody.dataset.accountStep = accountStep
     const back = optionalElement('config-account-back', 'button')
@@ -327,7 +311,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       back.hidden = accountStep !== 'connection' || !!selectedAccount()
       back.disabled = busy
     }
-    if (advanced) advanced.hidden = accountStep !== 'connection'
 
     providerPicker.sync()
   }
@@ -346,67 +329,16 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     updateButtons()
   }
 
-  const readModelSettings = (): ModelSettings => {
-    const model = tested?.models.find((entry) => entry.id === ui.models.value)
-    const thinking = ui.thinking?.value ?? model?.defaultSettings?.thinking
-    const window = ui.contextWindow?.value.trim() ?? String(model?.defaultSettings?.contextWindow ?? '')
-    const tokens = parseContextBudget(window)
-    if (
-      thinking &&
-      !modelThinkingOptions(model?.thinkingLevelMap, tr).some((option) => option.value === thinking)
-    ) {
-      ui.thinking?.setAttribute('aria-invalid', 'true')
-      throw new Error(tr('settings.model.thinkingUnsupported'))
-    }
-    ui.thinking?.setAttribute('aria-invalid', 'false')
-    if (
-      window &&
-      (tokens === undefined ||
-        tokens < minimumContextBudget(model?.contextWindow) ||
-        (model?.contextWindow !== undefined && tokens > model.contextWindow))
-    ) {
-      ui.contextWindow?.setAttribute('aria-invalid', 'true')
-      throw new Error(
-        tr('settings.model.contextRange', {
-          min: minimumContextBudget(model?.contextWindow).toLocaleString(),
-        }),
-      )
-    }
-    ui.contextWindow?.setAttribute('aria-invalid', 'false')
-    return {
-      ...(thinking ? { thinking: thinking as ThinkingLevel } : {}),
-      ...(tokens === undefined ? {} : { contextWindow: tokens }),
-    }
-  }
-  const renderModelSettings = (): void => {
-    const model = tested?.models.find((entry) => entry.id === ui.models.value)
-    const defaults =
+  const chosenModel = () => tested?.models.find((entry) => entry.id === ui.models.value)
+  const readModelSettings = (): ModelSettings => form.readModelSettings(chosenModel())
+  const renderModelSettings = (): void =>
+    form.renderModelSettings(
+      chosenModel(),
       modelDrafts.get(ui.models.value) ??
-      selectedAccount()?.models.find((entry) => entry.id === ui.models.value)?.defaultSettings ??
-      model?.defaultSettings ??
-      {}
-    if (ui.thinking) {
-      const options = modelThinkingOptions(model?.thinkingLevelMap, tr)
-      if (defaults.thinking && !options.some((option) => option.value === defaults.thinking))
-        options.push({
-          value: defaults.thinking,
-          label: tr('settings.model.savedThinkingUnavailable', { value: defaults.thinking }),
-        })
-      setSettingsSelectOptions(ui.thinking, options)
-      ui.thinking.value = defaults.thinking ?? ''
-    }
-    if (ui.contextWindow) {
-      ui.contextWindow.value = String(defaults.contextWindow ?? '')
-      if (model?.contextWindow) ui.contextWindow.max = String(model.contextWindow)
-      else ui.contextWindow.removeAttribute('max')
-      ui.contextWindow.setAttribute('aria-invalid', 'false')
-    }
-    if (ui.modelSettingsHint)
-      ui.modelSettingsHint.textContent =
-        (model?.contextWindow
-          ? `${tr('settings.model.capacity', { tokens: model.contextWindow.toLocaleString() })} `
-          : '') + tr('settings.model.budgetHint')
-  }
+        selectedAccount()?.models.find((entry) => entry.id === ui.models.value)?.defaultSettings ??
+        chosenModel()?.defaultSettings ??
+        {},
+    )
 
   const renderKeyHint = (): void =>
     renderAccountKeyHint(ui, savedProvider(), providerId(), connected, isOAuth())
@@ -464,10 +396,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     tested = saved?.models.length ? { models: saved.models, verified: false } : undefined
     ui.models.value = ''
     renderModels()
-    if (clearError) {
-      ui.error.textContent = ''
-      for (const field of [ui.baseUrl, ui.apiKey]) field.removeAttribute('aria-invalid')
-    }
+    if (clearError) form.clearErrors()
     // Only a connection that had passed needs telling that its result no longer holds.
     say(retest ? tr('settings.state.connectionChanged') : '', 'warn')
   }
@@ -540,7 +469,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderAccounts()
       providers = [...result.providers].sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
       tested = undefined
-      ui.error.textContent = ''
+      form.clearErrors()
       say('')
       renderProviders()
       renderModels()
@@ -564,7 +493,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       const model = ui.models.value
       if (!model) return
       testPending = true
-      ui.error.textContent = ''
+      form.clearErrors()
       say(tr('settings.step.testingModel'), 'progress')
       updateButtons()
       try {
@@ -591,8 +520,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       return
     }
     testPending = true
-    ui.error.textContent = ''
-    say(tr('settings.step.second'), 'progress')
+    form.clearErrors()
+    say(tr('settings.step.second', { host: endpointHost(ui.baseUrl.value) }), 'progress')
     updateButtons()
     try {
       const result = await options.client.config.test({
@@ -604,7 +533,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
       tested = result
       say(tr('settings.step.third', { count: result.models.length }), 'ok')
-      ui.error.textContent = ''
+      form.clearErrors()
       renderModels(result.models)
     } catch (error) {
       if (!ownsTest()) return
@@ -640,13 +569,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       networkTimeouts = networkFields.read()
       defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
       if (accountName && editingId && !accountName.value.trim())
-        throw new Error(tr('settings.account.nameRequired'))
+        throw fieldError('name', tr('settings.account.nameRequired'))
     } catch (error) {
       setError(error)
       return
     }
     savePending = true
-    ui.error.textContent = ''
+    form.clearErrors()
     say(tr('settings.step.saving'))
     updateButtons()
     try {
@@ -705,7 +634,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (current(token, inputRevision)) setError(error)
     } finally {
       // Keep the private draft on failure so users can retry; clear after success or a stale result.
-      if (!current(token, inputRevision) || !ui.error.textContent) ui.apiKey.value = ''
+      if (!current(token, inputRevision) || !form.hasError()) ui.apiKey.value = ''
       savePending = false
       if (current(token)) updateButtons()
     }
@@ -720,7 +649,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (!current(token, inputRevision) || !modelReadyForSave() || !ui.models.value) return false
     const previous = configuration?.revision
     await save()
-    return configuration?.revision !== previous && !ui.error.textContent
+    return configuration?.revision !== previous && !form.hasError()
   }
   const selectProvider = (id: string, custom = false) => {
     ui.provider.value = id
@@ -964,7 +893,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     control?.addEventListener('change', () => {
       try {
         modelDrafts.set(ui.models.value, readModelSettings())
-        ui.error.textContent = ''
+        form.clearErrors()
       } catch (error) {
         setError(error)
       }

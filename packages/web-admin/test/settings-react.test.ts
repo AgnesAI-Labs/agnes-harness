@@ -256,7 +256,13 @@ it('operates the React settings pane and account dialog without losing native fo
     })
     dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
     await vi.waitFor(() => expect(baseUrl.getAttribute('aria-invalid')).toBe('true'))
-    expect(dialog.querySelector('#config-error')?.textContent).toBe(zhT('settings.config.invalidBaseUrl'))
+    // An address the backend refuses is told under the address, in the advanced options it opens.
+    expect(dialog.querySelector('#config-base-url-error')?.textContent).toBe(
+      zhT('settings.config.invalidBaseUrl'),
+    )
+    expect(baseUrl.getAttribute('aria-describedby')).toContain('config-base-url-error')
+    expect(dialog.querySelector('#config-account-advanced')?.getAttribute('data-open')).toBe('true')
+    expect(dialog.querySelector('#config-error')?.textContent).toBe('')
     dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
     await vi.waitFor(() =>
       expect(save).toHaveBeenCalledWith(
@@ -275,7 +281,7 @@ it('operates the React settings pane and account dialog without losing native fo
     )
     expect(dialog.querySelector<HTMLDialogElement>('#account-dialog')?.open).toBe(false)
     expect(dialog.querySelector<HTMLSelectElement>('#config-provider')?.value).toBe('openai')
-    expect(dialog.querySelector('#config-api-key')?.closest('label')).toBeTruthy()
+    expect(dialog.querySelector('label[for="config-api-key"]')).toBeTruthy()
     // The page shows the two steps in place, starting at choosing a provider.
     expect(dialog.querySelector('.account-dialog-body')?.getAttribute('data-account-step')).toBe('provider')
     // 返回 leaves the page and gives the form back.

@@ -121,9 +121,9 @@ describe('settings controller', () => {
     installDom()
     expect(node('config-account-name').getAttribute('placeholder')).toBe('例如：工作账户、本地模型')
     expect(node('config-provider').previousElementSibling?.textContent).toBe('Provider')
-    expect(node('config-thinking').previousElementSibling?.textContent).toBe('默认思考强度')
-    expect(node('config-context-window').getAttribute('placeholder')).toBe('自动（模型目录默认值）')
-    expect(node('config-model-settings-hint').textContent).toContain('新会话继承这些默认值')
+    expect(node('config-thinking').previousElementSibling?.textContent).toBe('思考强度')
+    expect(node('config-context-window').getAttribute('placeholder')).toBe('自动')
+    expect(node('config-model-settings-hint').textContent).toContain('留空即自动')
     expect(fixtureWindow.document.querySelector('[data-i18n]')).toBeNull()
   })
 
@@ -246,7 +246,7 @@ describe('settings controller', () => {
 
     node('config-test').dispatch('click')
     await vi.waitFor(() => expect(node('config-model').children).toHaveLength(3))
-    expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+    expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
     expect(node('config-state').dataset.tone).toBe('ok')
   })
 
@@ -274,7 +274,7 @@ describe('settings controller', () => {
       await vi.advanceTimersByTimeAsync(400)
       expect(test).toHaveBeenCalledOnce()
       expect(test.mock.calls[0]?.[0]).toMatchObject({ apiKey: 'half-then-whole' })
-      expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+      expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
       // A changed key after a passed test says the earlier result no longer holds, then tests again.
       key.value = 'pasted-value'
       key.dispatch('paste')
@@ -329,7 +329,7 @@ describe('settings controller', () => {
     node('config-api-key').dispatch('input')
     node('config-test').dispatch('click')
     await Promise.resolve()
-    expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+    expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
     expect(node('config-state').dataset.tone).toBe('ok')
     expect(node('config-api-key').value).toBe('secret-value')
     expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([

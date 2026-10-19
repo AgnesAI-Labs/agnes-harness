@@ -225,8 +225,10 @@ const TEXT_DISABLED_SELECTORS = [
 /**
  * 本产品没有消费点、且已在设计 §6.2 显式删除的语义 token 的"保留名单"。
  * 保持为空是目标：任何名字被加回来都会让 adoption 门禁提醒重新登记。
+ * 玻璃面两档是公开主题 token（extension-api theme-tokens），皮肤仍可设置；
+ * 账户表单的密钥帮助改用信息色后它们暂无本产品消费点。
  */
-const RESERVED_TOKENS = new Set<string>()
+const RESERVED_TOKENS = new Set<string>(['--agnes-surface-glass-soft', '--agnes-surface-glass-hover'])
 
 /** mask 的不透明停靠点不是主题色，按设计 §5.1 豁免。 */
 const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])

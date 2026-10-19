@@ -51,103 +51,167 @@ function SettingsFixture() {
             </fieldset>
             <div id="config-provider-choices" />
             <div className="account-connection-step">
-              <fieldset className="config-section">
-                <label className="form-field form-field-wide" htmlFor="config-api-key">
-                  <span>{text('settings-shell.apiKeyLabel', 'API Key')}</span>
-                  <SettingsInput
-                    id="config-api-key"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder={text('settings-shell.keyPlaceholder', '输入新密钥或保留当前密钥')}
-                    aria-describedby="config-key-hint"
-                  />
-                </label>
-                <Disclosure
-                  variant="plain"
-                  className="account-key-help"
-                  summary={text('accounts.keyHelp', '在哪里获取密钥？')}
-                >
-                  <p>{text('accounts.keyHelpText', '在提供商的账户控制台创建 API Key，然后粘贴到这里。')}</p>
-                </Disclosure>
+              <div className="account-provider-card" id="config-provider-card">
+                <span className="agnes-settings-logo" id="config-provider-logo" aria-hidden="true" />
+                <span className="account-provider-card-copy">
+                  <strong id="config-provider-name" />
+                  <span id="config-provider-host" />
+                </span>
+                <Button id="config-provider-change" htmlType="button" appearance="link" size="small">
+                  <span>{text('accounts.changeProvider', '换一个服务商')}</span>
+                </Button>
+              </div>
+              <fieldset className="config-section account-connection">
+                <legend>{text('accounts.connectionLegend', '连接')}</legend>
+                <div id="config-auth-method-field" className="account-auth-method">
+                  <span hidden>
+                    <SettingsSelect id="config-auth-method" />
+                  </span>
+                  <div id="config-auth-choice" />
+                </div>
+                <div className="account-field account-key-field">
+                  <div className="account-field-head">
+                    <label className="form-field" htmlFor="config-api-key">
+                      <span>{text('settings-shell.apiKeyLabel', 'API Key')}</span>
+                    </label>
+                    <Button htmlType="button" appearance="link" size="small" aria-controls="config-key-help">
+                      <span>{text('accounts.keyHelp', '在哪里获取？')}</span>
+                    </Button>
+                  </div>
+                  <p id="config-key-help" className="account-help" hidden>
+                    {text('accounts.keyHelpText', '在服务商的账户控制台创建 API Key，复制后粘贴到这里。')}
+                  </p>
+                  <span className="account-input">
+                    <SettingsInput
+                      id="config-api-key"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={text('accounts.keyPlaceholderNew', '粘贴 API Key')}
+                      aria-describedby="config-key-hint"
+                    />
+                  </span>
+                </div>
                 <p id="config-key-hint" className="field-hint form-field-wide" />
                 <div id="config-oauth-controls" className="form-field-wide" />
+                <div className="account-status" id="config-account-status">
+                  <p id="config-state" aria-live="polite" />
+                  <p id="config-error" role="alert" />
+                  <Button id="config-test" htmlType="button" appearance="link" size="small">
+                    <span>{text('settings-shell.testConnection', '重新测试')}</span>
+                  </Button>
+                  <Button id="config-retry" hidden htmlType="button" appearance="secondary" size="small">
+                    <span>{text('settings-shell.retryRead', '重试读取配置')}</span>
+                  </Button>
+                </div>
+              </fieldset>
+              <fieldset className="config-section config-validation-section" id="config-model-fields">
+                <legend>{text('settings-shell.validationLegend', '默认模型')}</legend>
+                <p id="config-model-lock" className="account-lock-note">
+                  <span id="config-model-lock-text" />
+                  <Button id="config-model-lock-test" htmlType="button" appearance="link" size="small" hidden>
+                    <span>{text('accounts.testNow', '测试连接')}</span>
+                  </Button>
+                </p>
+                <div className="account-field-pair">
+                  <div className="account-field">
+                    <label className="form-field" htmlFor="config-model">
+                      <span>{text('settings-shell.defaultModelLabel', '模型')}</span>
+                      <SettingsSelect id="config-model" />
+                    </label>
+                  </div>
+                  <div className="account-field">
+                    <label className="form-field" htmlFor="config-thinking">
+                      <span>{text('settings-shell.defaultThinkingLabel', '思考强度')}</span>
+                      <SettingsSelect id="config-thinking" />
+                    </label>
+                    <p id="config-thinking-error" className="account-field-error" />
+                  </div>
+                </div>
+                <div className="account-field account-budget-field">
+                  <label className="form-field" htmlFor="config-context-window">
+                    <span>
+                      {text('settings-shell.contextBudgetLabel', '上下文预算')}
+                      <span id="config-model-capacity" className="account-field-aside" />
+                    </span>
+                    <span className="account-input">
+                      <SettingsInput
+                        id="config-context-window"
+                        type="text"
+                        maxLength={32}
+                        placeholder={text('settings-shell.contextBudgetPlaceholder', '自动')}
+                        aria-describedby="config-model-settings-hint"
+                      />
+                      <span className="account-input-suffix">{text('accounts.tokensUnit', 'tokens')}</span>
+                    </span>
+                  </label>
+                  <p id="config-model-settings-hint" className="field-hint">
+                    {text(
+                      'settings-shell.modelSettingsHint',
+                      '留空即自动。可写 128K、1M，最少 2K，不超过模型容量。',
+                    )}
+                  </p>
+                  <p id="config-context-window-error" className="account-field-error" />
+                </div>
               </fieldset>
               <Disclosure
                 variant="plain"
                 id="config-account-advanced"
                 summary={text('accounts.advanced', '高级选项')}
+                meta={<span id="config-account-advanced-meta" className="account-advanced-meta" />}
               >
-                <fieldset className="config-section">
-                  <label className="form-field" htmlFor="config-account-name">
-                    <span>{text('settings-shell.accountNameLabel', '账户名称')}</span>
-                    <SettingsInput
-                      id="config-account-name"
-                      maxLength={128}
-                      autoComplete="off"
-                      placeholder={text('settings-shell.accountNamePlaceholder', '例如：工作账户、本地模型')}
-                    />
-                  </label>
-                  <label
-                    className="form-field form-field-wide"
-                    id="config-auth-method-field"
-                    htmlFor="config-auth-method"
-                  >
-                    <span>{text('settings-shell.authMethodLabel', '认证方式')}</span>
-                    <SettingsSelect id="config-auth-method" />
-                  </label>
-                  <label className="form-field form-field-wide" htmlFor="config-base-url">
-                    <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
-                    <SettingsInput id="config-base-url" autoComplete="url" />
-                  </label>
-                </fieldset>
-                <fieldset className="config-section config-validation-section">
-                  <legend>{text('settings-shell.validationLegend', '验证与默认模型')}</legend>
-                  <div className="config-validation-controls">
-                    <label className="form-field" htmlFor="config-model">
-                      <span>{text('settings-shell.defaultModelLabel', '默认模型')}</span>
-                      <SettingsSelect id="config-model" />
+                <div className="account-advanced">
+                  <div className="account-field">
+                    <label className="form-field" htmlFor="config-account-name">
+                      <span>{text('settings-shell.accountNameLabel', '账户名称')}</span>
+                      <SettingsInput
+                        id="config-account-name"
+                        maxLength={128}
+                        autoComplete="off"
+                        placeholder={text(
+                          'settings-shell.accountNamePlaceholder',
+                          '例如：工作账户、本地模型',
+                        )}
+                        aria-describedby="config-account-name-hint"
+                      />
                     </label>
-                    <Button id="config-test" htmlType="button" appearance="secondary">
-                      <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-                      </svg>
-                      <span>{text('settings-shell.testConnection', '测试连接')}</span>
-                    </Button>
+                    <p id="config-account-name-hint" className="field-hint" />
+                    <p id="config-account-name-error" className="account-field-error" />
                   </div>
-                  <label className="form-field" htmlFor="config-thinking">
-                    <span>{text('settings-shell.defaultThinkingLabel', '默认思考强度')}</span>
-                    <SettingsSelect id="config-thinking" />
-                  </label>
-                  <label className="form-field" htmlFor="config-context-window">
-                    <span>{text('settings-shell.contextBudgetLabel', '默认上下文预算（Token）')}</span>
+                  <div className="account-field">
+                    <div className="account-field-head">
+                      <label className="form-field" htmlFor="config-base-url">
+                        <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
+                      </label>
+                      <Button
+                        id="config-base-url-reset"
+                        htmlType="button"
+                        appearance="link"
+                        size="small"
+                        hidden
+                      >
+                        <span>{text('accounts.resetBaseUrl', '恢复默认')}</span>
+                      </Button>
+                    </div>
                     <SettingsInput
-                      id="config-context-window"
-                      type="text"
-                      maxLength={32}
-                      placeholder={text('settings-shell.contextBudgetPlaceholder', '自动（模型目录默认值）')}
-                      aria-describedby="config-model-settings-hint config-error"
+                      id="config-base-url"
+                      autoComplete="url"
+                      aria-describedby="config-base-url-hint"
                     />
-                  </label>
-                  <p id="config-model-settings-hint" className="field-hint">
-                    {text(
-                      'settings-shell.modelSettingsHint',
-                      '支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。',
-                    )}
-                  </p>
-                </fieldset>
-                <div id="config-account-network" />
-                <p id="config-account-guard">
-                  {text(
-                    'settings-shell.accountGuard',
-                    '默认账户不可停用或删除；如需调整，请先将其他已启用账户设为默认。',
-                  )}
-                </p>
+                    <p id="config-base-url-hint" className="field-hint" />
+                    <p id="config-base-url-error" className="account-field-error" />
+                  </div>
+                  <div className="account-field">
+                    <div id="config-account-network" />
+                    <p id="config-account-network-error" className="account-field-error" />
+                  </div>
+                </div>
               </Disclosure>
-              <p id="config-state" aria-live="polite" />
-              <Button id="config-retry" hidden htmlType="button" appearance="secondary" size="small">
-                <span>{text('settings-shell.retryRead', '重试读取配置')}</span>
-              </Button>
-              <p id="config-error" role="alert" />
+              <p id="config-account-guard">
+                {text(
+                  'settings-shell.accountGuard',
+                  '默认账户不可停用或删除；如需调整，请先将其他已启用账户设为默认。',
+                )}
+              </p>
             </div>
           </div>
           <div className="config-detail-footer">

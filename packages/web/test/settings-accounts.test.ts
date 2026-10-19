@@ -349,6 +349,73 @@ it('requires an explicit second confirmation before removing an account', async 
   })
 })
 
+it('names the provider, explains the locked model group and tells each error under its field', async () => {
+  const h = await setup()
+  const text = (id: string) => h.doc.getElementById(id)?.textContent
+  const hidden = (id: string) => h.doc.getElementById(id)?.hasAttribute('hidden')
+  const advanced = () => h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')
+  const change = (id: string, event = 'change') =>
+    h.doc.getElementById(id)?.dispatchEvent(new (window as Window).Event(event, { bubbles: true }))
+  // A new account names its provider and asks for a key; 换一个服务商 returns to the tiles.
+  await h.click('#config-add-account')
+  await h.click('[data-provider="openai"]')
+  expect(text('config-provider-name')).toBe('OpenAI')
+  expect(text('config-provider-host')).toBe('api.openai.com/v1')
+  expect(h.input('config-api-key').placeholder).toBe(zhT('accounts.keyPlaceholderNew'))
+  expect(text('config-model-lock')).toContain(zhT('accounts.modelLocked'))
+  expect(hidden('config-model-lock')).toBe(false)
+  await h.click('#config-provider-change')
+  expect(h.doc.querySelector('.account-dialog-body')?.getAttribute('data-account-step')).toBe('provider')
+  await h.click('#account-dialog-close')
+  // Editing keeps the saved-key wording and offers a test from the locked group.
+  await h.click('button[aria-label="编辑 personal"]')
+  expect(h.input('config-api-key').placeholder).toBe(zhT('accounts.keyPlaceholder'))
+  expect(hidden('config-provider-change')).toBe(true)
+  await h.click('#config-model-lock-test')
+  await settle()
+  expect(text('config-state')).toBe(zhT('settings.step.third', { count: '1' }))
+  expect(h.input('config-test').disabled).toBe(false)
+  expect(hidden('config-model-lock')).toBe(true)
+  // Closed advanced options show the values they hold.
+  expect(
+    [...h.doc.querySelectorAll('#config-account-advanced-meta .agnes-settings-tag')].map(
+      (tag) => tag.textContent,
+    ),
+  ).toEqual([
+    zhT('accounts.summaryName', { name: 'personal' }),
+    zhT('accounts.summaryCustomUrl'),
+    zhT('accounts.summaryTimeouts'),
+  ])
+  // A budget over the model's capacity is told under the budget, outside advanced options.
+  h.input('config-context-window').value = '1M'
+  change('config-context-window')
+  expect(text('config-context-window-error')).toBe(zhT('accounts.overCapacity', { tokens: '128K' }))
+  expect(h.input('config-context-window').getAttribute('aria-invalid')).toBe('true')
+  expect(h.input('config-context-window').getAttribute('aria-describedby')).toContain(
+    'config-context-window-error',
+  )
+  expect(text('config-error')).toBe('')
+  expect(advanced()).toBe('false')
+  h.input('config-context-window').value = ''
+  change('config-context-window')
+  expect(text('config-context-window-error')).toBe('')
+  expect(h.input('config-context-window').getAttribute('aria-invalid')).not.toBe('true')
+  // A missing name opens advanced options and puts the reader on the name.
+  h.input('config-account-name').value = ' '
+  change('config-account-name', 'input')
+  change('config-form', 'submit')
+  await settle()
+  expect(h.config.save).not.toHaveBeenCalled()
+  expect(advanced()).toBe('true')
+  expect(h.doc.activeElement?.id).toBe('config-account-name')
+  expect(text('config-account-name-error')).toBe(zhT('settings.account.nameRequired'))
+  expect(h.input('config-account-name').getAttribute('aria-invalid')).toBe('true')
+  expect(text('config-error')).toBe('')
+  // The connection's own result is untouched by a field's error.
+  expect(text('config-state')).toBe(zhT('settings.step.third', { count: '1' }))
+  h.controller.close()
+})
+
 it('updates the empty state after saving the first account and removing the last one', async () => {
   const h = await setup([])
   expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')

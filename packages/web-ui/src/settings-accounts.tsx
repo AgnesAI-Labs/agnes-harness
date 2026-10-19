@@ -36,7 +36,7 @@ function accountStatus(account: ConfigAccount): 'inactive' | 'ready' | 'missing'
 }
 
 /** A stable colour for a provider's logo tile, from its id. */
-function hue(providerId: string): number {
+export function providerHue(providerId: string): number {
   let sum = 0
   for (const char of providerId) sum = (sum * 31 + char.charCodeAt(0)) % 997
   return sum % 6
@@ -93,7 +93,7 @@ export function SettingsAccounts({
         data-status={status}
         data-enabled={account.enabled}
       >
-        <span className="agnes-settings-logo" data-hue={hue(account.providerId)} aria-hidden="true">
+        <span className="agnes-settings-logo" data-hue={providerHue(account.providerId)} aria-hidden="true">
           {(account.label.trim()[0] ?? '?').toUpperCase()}
         </span>
         <span className="agnes-settings-item-copy">

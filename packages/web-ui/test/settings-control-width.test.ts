@@ -65,3 +65,10 @@ it('drops the account dialog title bar and dividers when the account form is a s
   expect(footer).toContain('border-top: 0')
   expect(footer).toContain('background: transparent')
 })
+
+it('keeps 重新测试 beside any connection result and hides it while a test runs', () => {
+  expect(rule(forms, '.account-status > #config-test')).toContain('display: none')
+  const shown = rule(forms, '#config-error:not(:empty)', '> #config-test:not(:disabled')
+  expect(shown).toContain('display: inline-flex')
+  expect(forms).toContain('.account-status:has(> #config-state:not(:empty), > #config-error:not(:empty))')
+})

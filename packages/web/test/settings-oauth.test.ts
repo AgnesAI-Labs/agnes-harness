@@ -5,7 +5,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { createSettingsController, type SettingsController } from '@agnes/web-admin/settings'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
-import { type HTMLButtonElement as HappyButton, type HTMLLabelElement as HappyLabel, Window } from 'happy-dom'
+import { type HTMLButtonElement as HappyButton, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
@@ -224,8 +224,11 @@ it('allows replacing an unavailable saved OAuth model and revalidates each selec
 
 it('offers subscription controls, keeps polling during manual input and commits the selected model', async () => {
   const h = await setup()
-  const keyLabel = must(h.doc.getElementById('config-api-key')).closest('label') as HappyLabel | null
-  expect(keyLabel?.hidden).toBe(true)
+  // Subscription sign-in needs no key: the whole key field, its label and note, is hidden.
+  const keyField = must(h.doc.getElementById('config-api-key')).closest('.account-key-field') as {
+    hidden: boolean
+  } | null
+  expect(keyField?.hidden).toBe(true)
   expect((h.doc.getElementById('config-base-url') as unknown as HTMLInputElement).disabled).toBe(true)
   h.button('浏览器登录').click()
   await vi.waitFor(() => expect(h.panel.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer'))

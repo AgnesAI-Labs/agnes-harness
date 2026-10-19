@@ -8,6 +8,53 @@ import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
 import { Icon } from './ui/icon.js'
+import { IconButton } from './ui/icon-button.js'
+
+/**
+ * The key field. Its label row offers where to get a key, opened in place above the field, and the
+ * key can be shown while it is typed; the controller owns its value, state and placeholder.
+ */
+function AccountKeyField({ t }: { t: Translate }) {
+  const [help, setHelp] = useState(false)
+  const [shown, setShown] = useState(false)
+  return (
+    <div className="account-field account-key-field">
+      <div className="account-field-head">
+        <Field className="form-field" label={t('accounts.apiKeyLabel')} htmlFor="config-api-key" />
+        <Button
+          appearance="link"
+          size="small"
+          htmlType="button"
+          aria-expanded={help}
+          aria-controls="config-key-help"
+          onClick={() => setHelp(!help)}
+        >
+          {t('accounts.keyHelp')}
+        </Button>
+      </div>
+      <p id="config-key-help" className="account-help" hidden={!help}>
+        {t('accounts.keyHelpText')}
+      </p>
+      <span className="account-input">
+        <SettingsInput
+          id="config-api-key"
+          className="account-mono"
+          type={shown ? 'text' : 'password'}
+          autoComplete="new-password"
+          placeholder={t('accounts.keyPlaceholderNew')}
+          aria-describedby="config-key-hint"
+        />
+        <IconButton
+          name={shown ? 'eye-off' : 'eye'}
+          label={t(shown ? 'accounts.hideKey' : 'accounts.showKey')}
+          aria-pressed={shown}
+          htmlType="button"
+          onClick={() => setShown(!shown)}
+        />
+      </span>
+    </div>
+  )
+}
 
 export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
   const bodyRef = useRef<HTMLElement>()
@@ -57,83 +104,152 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               </fieldset>
               <div id="config-provider-choices" />
               <div className="account-connection-step">
-                <fieldset className="config-section">
-                  <Field className="form-field form-field-wide" label={t('accounts.apiKeyLabel')}>
-                    <SettingsInput
-                      id="config-api-key"
-                      type="password"
-                      autoComplete="new-password"
-                      placeholder={t('accounts.keyPlaceholder')}
-                      aria-describedby="config-key-hint"
-                    />
-                  </Field>
-                  <Disclosure variant="plain" className="account-key-help" summary={t('accounts.keyHelp')}>
-                    <p>{t('accounts.keyHelpText')}</p>
-                  </Disclosure>
-                  <p id="config-key-hint" className="field-hint form-field-wide" />
-                  <div id="config-oauth-controls" className="form-field-wide" />
-                </fieldset>
-                {/* The key is tested as soon as it is entered; the result reads here, where it happened. */}
-                <div className="account-status" id="config-account-status">
-                  <p id="config-state" aria-live="polite" />
-                  <p id="config-error" role="alert" />
-                  <Button id="config-test" appearance="ghost" size="small" htmlType="button">
-                    <Icon name="refresh-cw" />
-                    <span>{t('accounts.testConnection')}</span>
-                  </Button>
-                  <Button id="config-retry" size="small" htmlType="button" hidden>
-                    {t('accounts.retryRead')}
+                {/* The provider being connected; 换一个服务商 goes back to the tiles. */}
+                <div className="account-provider-card" id="config-provider-card">
+                  <span className="agnes-settings-logo" id="config-provider-logo" aria-hidden="true" />
+                  <span className="account-provider-card-copy">
+                    <strong id="config-provider-name" />
+                    <span id="config-provider-host" />
+                  </span>
+                  <Button id="config-provider-change" appearance="link" size="small" htmlType="button">
+                    {t('accounts.changeProvider')}
                   </Button>
                 </div>
-                {/* What a new session starts with: shown once the connection has models to offer. */}
+                <fieldset className="config-section account-connection">
+                  <legend>{t('accounts.connectionLegend')}</legend>
+                  {/* The select holds the choice; the controller shows it as two segments. */}
+                  <div id="config-auth-method-field" className="account-auth-method">
+                    <span hidden>
+                      <SettingsOptionSelect id="config-auth-method" />
+                    </span>
+                    <div id="config-auth-choice" />
+                  </div>
+                  <AccountKeyField t={t} />
+                  <p id="config-key-hint" className="field-hint form-field-wide" />
+                  <div id="config-oauth-controls" className="form-field-wide" />
+                  {/* The key is tested as soon as it is entered; the result reads here, where it happened. */}
+                  <div className="account-status" id="config-account-status">
+                    <p id="config-state" aria-live="polite" />
+                    <p id="config-error" role="alert" />
+                    <Button id="config-test" appearance="link" size="small" htmlType="button">
+                      {t('accounts.testConnection')}
+                    </Button>
+                    <Button id="config-retry" size="small" htmlType="button" hidden>
+                      {t('accounts.retryRead')}
+                    </Button>
+                  </div>
+                </fieldset>
+                {/* What a new session starts with; it opens once the connection has models to offer. */}
                 <fieldset className="config-section config-validation-section" id="config-model-fields">
                   <legend>{t('accounts.validationLegend')}</legend>
-                  <Field className="form-field" label={t('accounts.defaultModelLabel')}>
-                    <SettingsOptionSelect id="config-model" />
-                  </Field>
-                  <Field className="form-field" label={t('accounts.defaultThinkingLabel')}>
-                    <SettingsOptionSelect id="config-thinking" />
-                  </Field>
-                </fieldset>
-                <Disclosure
-                  variant="plain"
-                  id="config-account-advanced"
-                  summary={t('accounts.advanced')}
-                  meta={t('accounts.advancedSummary')}
-                >
-                  <fieldset className="config-section">
-                    <Field className="form-field" label={t('accounts.nameLabel')}>
-                      <SettingsInput
-                        id="config-account-name"
-                        maxLength={128}
-                        autoComplete="off"
-                        placeholder={t('accounts.namePlaceholder')}
-                      />
-                    </Field>
-                    <Field
-                      className="form-field form-field-wide"
-                      id="config-auth-method-field"
-                      label={t('settings.oauth.methodLabel')}
+                  <p id="config-model-lock" className="account-lock-note">
+                    <Icon name="lock-keyhole" />
+                    <span id="config-model-lock-text">{t('accounts.modelLocked')}</span>
+                    <Button
+                      id="config-model-lock-test"
+                      appearance="link"
+                      size="small"
+                      htmlType="button"
+                      hidden
                     >
-                      <SettingsOptionSelect id="config-auth-method" />
-                    </Field>
-                    <Field className="form-field form-field-wide" label={t('accounts.baseUrlLabel')}>
-                      <SettingsInput id="config-base-url" autoComplete="url" />
-                    </Field>
-                    <Field className="form-field" label={t('accounts.contextBudgetLabel')}>
-                      <SettingsInput
-                        id="config-context-window"
-                        type="text"
-                        maxLength={32}
-                        placeholder={t('accounts.contextBudgetPlaceholder')}
-                        aria-describedby="config-model-settings-hint config-error"
-                      />
+                      {t('accounts.testNow')}
+                    </Button>
+                  </p>
+                  <div className="account-field-pair">
+                    <div className="account-field">
+                      <Field className="form-field" label={t('accounts.defaultModelLabel')}>
+                        <SettingsOptionSelect id="config-model" />
+                      </Field>
+                    </div>
+                    <div className="account-field">
+                      <Field className="form-field" label={t('accounts.defaultThinkingLabel')}>
+                        <SettingsOptionSelect id="config-thinking" />
+                      </Field>
+                      <p id="config-thinking-error" className="account-field-error" />
+                    </div>
+                  </div>
+                  <div className="account-field account-budget-field">
+                    <Field
+                      className="form-field"
+                      htmlFor="config-context-window"
+                      label={
+                        <>
+                          {t('accounts.contextBudgetLabel')}
+                          <span id="config-model-capacity" className="account-field-aside" />
+                        </>
+                      }
+                    >
+                      <span className="account-input">
+                        <SettingsInput
+                          id="config-context-window"
+                          type="text"
+                          maxLength={32}
+                          placeholder={t('accounts.contextBudgetPlaceholder')}
+                          aria-describedby="config-model-settings-hint"
+                        />
+                        <span className="account-input-suffix">{t('accounts.tokensUnit')}</span>
+                      </span>
                     </Field>
                     <p id="config-model-settings-hint" className="field-hint">
                       {t('accounts.modelSettingsHint')}
                     </p>
-                  </fieldset>
-                  <div id="config-account-network" />
+                    <p id="config-context-window-error" className="account-field-error" />
+                  </div>
+                </fieldset>
+                {/* The summary names the values set inside, so a closed section still says what it holds. */}
+                <Disclosure
+                  variant="plain"
+                  id="config-account-advanced"
+                  summary={t('accounts.advanced')}
+                  meta={<span id="config-account-advanced-meta" className="account-advanced-meta" />}
+                >
+                  <div className="account-advanced">
+                    <div className="account-field">
+                      <Field className="form-field" label={t('accounts.nameLabel')}>
+                        <SettingsInput
+                          id="config-account-name"
+                          maxLength={128}
+                          autoComplete="off"
+                          placeholder={t('accounts.namePlaceholder')}
+                          aria-describedby="config-account-name-hint"
+                        />
+                      </Field>
+                      <p id="config-account-name-hint" className="field-hint">
+                        {t('accounts.nameHint')}
+                      </p>
+                      <p id="config-account-name-error" className="account-field-error" />
+                    </div>
+                    <div className="account-field">
+                      <div className="account-field-head">
+                        <Field
+                          className="form-field"
+                          label={t('accounts.baseUrlLabel')}
+                          htmlFor="config-base-url"
+                        />
+                        <Button
+                          id="config-base-url-reset"
+                          appearance="link"
+                          size="small"
+                          htmlType="button"
+                          hidden
+                        >
+                          {t('accounts.resetBaseUrl')}
+                        </Button>
+                      </div>
+                      <SettingsInput
+                        id="config-base-url"
+                        className="account-mono"
+                        autoComplete="url"
+                        aria-describedby="config-base-url-hint"
+                      />
+                      <p id="config-base-url-hint" className="field-hint" />
+                      <p id="config-base-url-error" className="account-field-error" />
+                    </div>
+                    <div className="account-field">
+                      <div id="config-account-network" />
+                      <p id="config-account-network-error" className="account-field-error" />
+                    </div>
+                  </div>
                 </Disclosure>
                 <p id="config-account-guard">{t('accounts.guard')}</p>
               </div>

@@ -2,13 +2,13 @@ import type { ConfigAccount, ConfigSaveInput } from '@agnes/protocol'
 import type { ConfigSchema, Translate } from '@agnes/web-ui'
 import {
   configIssues,
+  Field,
   renderRegion,
-  SettingsBlock,
-  SettingsItem,
   SettingsPresetSelect,
   secondPresets,
   unmountRegion,
 } from '@agnes/web-ui'
+import { fieldError } from './account-form.js'
 
 const NETWORK_KEYS = ['connectMs', 'requestMs', 'streamIdleMs'] as const
 /** Second presets per timeout; 自定义 keeps any other stored value. */
@@ -48,13 +48,20 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
     if (!root) return
     renderRegion(
       root,
-      <SettingsBlock
-        label={t('accounts.network.legend')}
+      // Three equal controls side by side; 自定义 turns its own column into a seconds field.
+      <fieldset
+        className="account-network"
         data-testid="account-network-timeouts"
         aria-disabled={disabled || undefined}
       >
+        <legend className="account-network-legend">{t('accounts.network.legend')}</legend>
         {NETWORK_KEYS.map((key) => (
-          <SettingsItem key={key} label={t(`accounts.network.${key}`)}>
+          <div key={key} className="account-field">
+            <Field
+              className="form-field"
+              label={t(`accounts.network.${key}Short`)}
+              htmlFor={`account-network-${key}`}
+            />
             <SettingsPresetSelect
               id={`account-network-${key}`}
               data-testid={`account-network-${key}`}
@@ -74,9 +81,9 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
                 onChange()
               }}
             />
-          </SettingsItem>
+          </div>
         ))}
-      </SettingsBlock>,
+      </fieldset>,
     )
   }
   return {
@@ -95,9 +102,15 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
           account.networkTimeouts?.[key as keyof NonNullable<ConfigAccount['networkTimeouts']>],
       )
     },
+    /** The timeouts as entered, for the advanced options' summary. */
+    values: (): Record<string, number> =>
+      Object.fromEntries(
+        NETWORK_KEYS.flatMap((key) => (typeof value[key] === 'number' ? [[key, value[key]]] : [])),
+      ),
     read(): NonNullable<ConfigSaveInput['networkTimeouts']> {
       const next = normalized()
-      if (configIssues(accountNetworkSchema, next).length) throw new Error(t('accounts.network.invalid'))
+      if (configIssues(accountNetworkSchema, next).length)
+        throw fieldError('network', t('accounts.network.invalid'))
       return next
     },
     render,

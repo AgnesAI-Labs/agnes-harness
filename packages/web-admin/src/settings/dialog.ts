@@ -80,7 +80,6 @@ export type SettingsElements = {
   models: HTMLSelectElement
   thinking?: HTMLSelectElement | undefined
   contextWindow?: HTMLInputElement | undefined
-  modelSettingsHint?: HTMLParagraphElement | undefined
   save: HTMLButtonElement
   error: HTMLParagraphElement
   state: HTMLParagraphElement
@@ -109,7 +108,7 @@ export function readElements(): SettingsElements {
     form: element('config-form', 'form'),
     provider: element('config-provider', 'select'),
     authMethod: element('config-auth-method', 'select'),
-    authMethodField: element('config-auth-method-field', 'label'),
+    authMethodField: element('config-auth-method-field', 'div'),
     oauthMount: element('config-oauth-controls', 'div'),
     baseUrl: element('config-base-url', 'input'),
     apiKey: element('config-api-key', 'input'),
@@ -117,7 +116,6 @@ export function readElements(): SettingsElements {
     models: element('config-model', 'select'),
     thinking: optionalElement('config-thinking', 'select'),
     contextWindow: optionalElement('config-context-window', 'input'),
-    modelSettingsHint: optionalElement('config-model-settings-hint', 'p'),
     save: element('config-save', 'button'),
     error: element('config-error', 'p'),
     state: element('config-state', 'p'),

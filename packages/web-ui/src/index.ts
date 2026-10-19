@@ -107,7 +107,7 @@ export * from './select-picker.js'
 export * from './session-auxiliary-models.js'
 export { type SessionOption, SessionPicker } from './session-picker.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
-export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
+export { providerHue, SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export { AUTOSAVE_IDLE_MS, type Autosave, SettingsUndoScope, useAutosave } from './settings-autosave.js'
 export {
   ComputerUseCapability,
