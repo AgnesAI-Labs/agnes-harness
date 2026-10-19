@@ -139,6 +139,47 @@ it.each(['preview', 'pending', 'full-access', 'full-plan', 'legacy-yolo'])(
   },
 )
 
+it.each(['live', 'durable'])(
+  'budget permission uses its backend %s category without authorizing from the browser',
+  async (source) => {
+    const { context, controller, decide } = await harness()
+    context.sessionRows = [
+      {
+        sessionId: 's',
+        createdAt: '2026-10-20T00:00:00Z',
+        lastSeq: 1,
+        generation: 1,
+        preset: 'workspace-write',
+      },
+    ]
+    context.projection = timeline(
+      source === 'durable' ? [{ ...approval, category: 'permission', purpose: 'budget' }] : [],
+    )
+    if (source === 'live')
+      context.liveApproval = {
+        request: {
+          sessionId: 's',
+          toolCall: {
+            toolCallId: 'budget',
+            title: 'Budget quote',
+            kind: 'other',
+            status: 'pending',
+            _meta: { 'ai.agnes.harness': { category: 'permission', purpose: 'budget' } },
+          },
+          options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow' }],
+        },
+        finish: vi.fn(),
+        afterSeq: 1,
+      } as unknown as typeof context.liveApproval
+    controller.renderApproval()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull())
+    context.sessionRows = context.sessionRows.map((row) => ({ ...row, preset: 'full-access' }))
+    controller.renderApproval()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).toBeNull())
+    expect(decide).not.toHaveBeenCalled()
+  },
+)
+
 it('projects the current turn start and distinguishes running, approval, stopping and read-only status', async () => {
   const { context, controller } = await harness()
   const startedAt = '2026-10-15T00:00:00Z'

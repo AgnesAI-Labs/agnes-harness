@@ -1,6 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readdir, readFile, rename, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
 import type { ResourceControlMethodName } from '@agnes/protocol'
 import {
   jcs,
@@ -15,11 +13,11 @@ import {
   type TrustState,
   validateResourceControlData,
 } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
 import type { McpLifecycleAdapter } from './adapters.js'
 import { definedRow, disclosureOnlyUpdate } from './mcp-definition-row.js'
-import type { ResourceAuthority } from './permissions.js'
-import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
+import { McpJournalStore } from './mcp-journal.js'
+import type { ResourceAuthority, ResourceEffectAdmission } from './permissions.js'
+import type { ResourceProfileScope } from './profile-scope.js'
 
 /** The value set an OAuth 2.1 authorization_code flow can durably record for an oauth-bound MCP
  * server, minus 'pending' - a callback only ever transitions *out of* pending, never back into it
@@ -39,178 +37,23 @@ export type McpRow = Readonly<{
   localStartApproval?: string
   authorizationStatus?: McpAuthorizationStatus
 }>
-type Op = Readonly<{
+export type McpOperation = Readonly<{
   operation: ResourceOperation
   owner: { principalId: string; clientId: string }
   command: { method: string; commandId: string; hash: string }
   params: Record<string, unknown>
 }>
-type Journal = Readonly<{
-  version: 1
-  servers: Record<string, McpRow>
-  operations: readonly Op[]
-  legacyPresetImported: boolean
-}>
 const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
-const windows = process.platform === 'win32' // guards-allow-platform: Windows journal replacement and read handle lifetime.
 const digest = (value: unknown) => createHash('sha256').update(jcs(value), 'utf8').digest('hex')
 const copy = <T>(value: T): T => structuredClone(value)
-const initial = (): Journal => ({
-  version: 1,
-  servers: Object.create(null),
-  operations: [],
-  legacyPresetImported: false,
-})
 const fail = (code: string, message: string): SafeError => ({ code, message })
 class McpLifecycleFailure extends Error {
   constructor(readonly safeError: SafeError) {
     super(safeError.code)
   }
 }
-const bad = (): never => {
-  throw rpcError('INTERNAL_ERROR', { code: 'MCP_JOURNAL_CORRUPT' })
-}
 const plain = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
-function decode(value: unknown): Journal {
-  if (
-    !plain(value) ||
-    value.version !== 1 ||
-    Object.keys(value).some(
-      (key) => !['version', 'servers', 'operations', 'legacyPresetImported'].includes(key),
-    ) ||
-    !plain(value.servers) ||
-    !Array.isArray(value.operations) ||
-    value.operations.length > 1_000 ||
-    (value.legacyPresetImported !== undefined && typeof value.legacyPresetImported !== 'boolean')
-  )
-    bad()
-  const journal = value as Record<string, unknown>
-  const servers = journal.servers as Record<string, unknown>
-  const operations = journal.operations as unknown[]
-  for (const [id, row] of Object.entries(servers)) {
-    if (
-      !plain(row) ||
-      Object.keys(row).some(
-        (key) =>
-          ![
-            'definition',
-            'revision',
-            'trust',
-            'desired',
-            'status',
-            'authorizationStatus',
-            'localStartApproval',
-          ].includes(key),
-      ) ||
-      !validateResourceControlData('McpServerDefinitionInput', row.definition).ok ||
-      (row.definition as McpServerDefinitionInput).serverId !== id ||
-      !/^[a-f0-9]{64}$/.test(String(row.revision)) ||
-      (row.localStartApproval !== undefined && row.localStartApproval !== row.revision) ||
-      !['trusted', 'untrusted', 'rejected'].includes(String(row.trust)) ||
-      !['enabled', 'disabled'].includes(String(row.desired)) ||
-      !validateResourceControlData('McpStatus', row.status).ok ||
-      (row.authorizationStatus !== undefined &&
-        !['authorized', 'needs-reconnect', 'error'].includes(String(row.authorizationStatus)))
-    )
-      bad()
-  }
-  for (const op of operations)
-    if (
-      !plain(op) ||
-      !validateResourceControlData('ResourceOperation', op.operation).ok ||
-      !plain(op.owner) ||
-      typeof op.owner.principalId !== 'string' ||
-      typeof op.owner.clientId !== 'string' ||
-      !plain(op.command) ||
-      typeof op.command.method !== 'string' ||
-      typeof op.command.commandId !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(String(op.command.hash)) ||
-      !plain(op.params)
-    )
-      bad()
-  return {
-    ...(journal as Omit<Journal, 'legacyPresetImported'>),
-    legacyPresetImported: journal.legacyPresetImported === true,
-  }
-}
-class McpJournalStore {
-  private readonly root: string
-  private readonly tails = new Map<string, Promise<unknown>>()
-  constructor(
-    directory: string,
-    private readonly scope: ResourceProfileScope,
-  ) {
-    this.root = resolve(directory)
-  }
-  private path(profile: string) {
-    assertResourceProfile(this.scope, profile)
-    return join(this.root, `${profile}.mcp.json`)
-  }
-  private async load(profile: string): Promise<Journal> {
-    const path = this.path(profile)
-    try {
-      return decode(JSON.parse(await readFile(path, 'utf8')))
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return initial()
-      if ((error as { code?: unknown }).code === 'INTERNAL_ERROR') throw error
-      return bad()
-    }
-  }
-  async txn<T>(
-    profile: string,
-    fn: (value: Journal) => Promise<{ next: Journal; result: T }> | { next: Journal; result: T },
-  ): Promise<T> {
-    return this.serialize(profile, async () => {
-      const result = await fn(await this.load(profile))
-      const next = decode(result.next)
-      await mkdir(this.root, { recursive: true, mode: 0o700 })
-      const target = this.path(profile)
-      const tmp = `${target}.${randomUUID()}.tmp`
-      const handle = await open(tmp, 'wx', 0o600)
-      try {
-        await handle.writeFile(JSON.stringify(next))
-        await handle.sync()
-        await handle.close()
-        if (windows) await renameWriteThrough(tmp, target)
-        else await rename(tmp, target)
-      } catch (error) {
-        await handle.close().catch(() => undefined)
-        await rm(tmp, { force: true }).catch(() => undefined)
-        throw error
-      }
-      return result.result
-    })
-  }
-  private async serialize<T>(profile: string, action: () => Promise<T>): Promise<T> {
-    const prior = this.tails.get(profile) ?? Promise.resolve()
-    const run = prior.catch(() => undefined).then(action)
-    this.tails.set(profile, run)
-    try {
-      return await run
-    } finally {
-      if (this.tails.get(profile) === run) this.tails.delete(profile)
-    }
-  }
-  async read<T>(profile: string, fn: (value: Journal) => T | Promise<T>): Promise<T> {
-    const journal = windows
-      ? await this.serialize(profile, () => this.load(profile))
-      : await this.load(profile)
-    return fn(journal)
-  }
-  async profiles(): Promise<string[]> {
-    try {
-      return (await readdir(this.root)).flatMap((name) =>
-        name.endsWith('.mcp.json') && this.scope.allowedProfiles.includes(name.slice(0, -9))
-          ? [name.slice(0, -9)]
-          : [],
-      )
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw error
-    }
-  }
-}
 function descriptor(row: McpRow): McpServerDescriptor {
   const status = row.status
   return {
@@ -434,19 +277,28 @@ export class McpResourceStore {
     }
   }
   /** Daemon-only: called after approval bound to this exact definition, never exposed as RPC. */
-  async approveLocalStart(profile: string, serverId: string, revision: string): Promise<void> {
-    await this.journal.txn(profile, (journal) => {
-      const row = journal.servers[serverId]
-      if (!row || row.revision !== revision || row.trust !== 'trusted')
-        throw rpcError('SEMANTIC_REJECTED', { code: 'REVISION_CONFLICT' })
-      return {
-        next: {
-          ...journal,
-          servers: { ...journal.servers, [serverId]: { ...row, localStartApproval: revision } },
-        },
-        result: undefined,
-      }
-    })
+  async approveLocalStart(
+    profile: string,
+    serverId: string,
+    revision: string,
+    admission?: ResourceEffectAdmission,
+  ): Promise<void> {
+    await this.journal.txn(
+      profile,
+      (journal) => {
+        const row = journal.servers[serverId]
+        if (!row || row.revision !== revision || row.trust !== 'trusted')
+          throw rpcError('SEMANTIC_REJECTED', { code: 'REVISION_CONFLICT' })
+        return {
+          next: {
+            ...journal,
+            servers: { ...journal.servers, [serverId]: { ...row, localStartApproval: revision } },
+          },
+          result: undefined,
+        }
+      },
+      admission,
+    )
   }
   async workerManaged(profile: string): Promise<
     Array<{
@@ -560,154 +412,158 @@ export class McpResourceStore {
     authority: ResourceAuthority,
   ): Promise<unknown> {
     const profile = params.profile as string
-    const receipt = await this.journal.txn(profile, (journal) => {
-      const commandId = params.commandId as string
-      const requestHash = digest({
-        method,
-        payload: Object.fromEntries(
-          Object.entries(params).filter(([key]) => key !== 'clientId' && key !== 'commandId'),
-        ),
-      })
-      const replay = journal.operations.find(
-        (op) =>
-          op.owner.principalId === authority.principalId &&
-          op.owner.clientId === authority.clientId &&
-          op.command.commandId === commandId,
-      )
-      if (replay) {
-        if (replay.command.method !== method || replay.command.hash !== requestHash)
-          throw rpcError('SEMANTIC_REJECTED', { code: 'COMMAND_CONFLICT' })
-        return {
-          next: journal,
-          result: {
-            operationId: replay.operation.operationId,
-            state: replay.operation.kind.includes('.cancel') ? 'succeeded' : 'received',
-          },
-        }
-      }
-      const cancellation =
-        method === '_agnes/v1/resources.operation.cancel'
-          ? journal.operations.find((entry) => entry.operation.operationId === params.operationId)
-          : undefined
-      const serverId = (params.serverId ??
-        (params.definition as McpServerDefinitionInput | undefined)?.serverId ??
-        cancellation?.operation.target.slice(4)) as string
-      const prior = journal.servers[serverId]
-      if (!serverId || (!prior && method !== '_agnes/v1/mcp.servers.create' && !cancellation))
-        throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
-      if (
-        method === '_agnes/v1/mcp.servers.remove' &&
-        (prior?.desired === 'enabled' ||
-          journal.operations.some(
-            (entry) => entry.operation.target === `mcp/${serverId}` && !terminal.has(entry.operation.state),
-          ))
-      )
-        throw rpcError('SEMANTIC_REJECTED', {
-          code: 'RESOURCE_REMOVE_BLOCKED',
-          reason: 'disable and settle the MCP resource before removal',
-        })
-      if (params.expectedRevision && prior?.revision !== params.expectedRevision)
-        throw rpcError('SEMANTIC_REJECTED', { code: 'REVISION_CONFLICT' })
-      const existingRevision = prior?.revision ?? cancellation?.operation.revision
-      const revision =
-        method === '_agnes/v1/mcp.servers.create' || method === '_agnes/v1/mcp.servers.update'
-          ? digest(params.definition)
-          : existingRevision
-      if (!revision) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
-      const time = new Date().toISOString()
-      const operation: ResourceOperation = {
-        operationId: `resource-${randomUUID()}`,
-        kind: method,
-        state: 'received',
-        profile,
-        target: `mcp/${serverId}`,
-        revision,
-        createdAt: time,
-        updatedAt: time,
-        progress: 0,
-      }
-      if (method === '_agnes/v1/mcp.servers.create' && prior)
-        throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_ALREADY_EXISTS', serverId })
-      // Candidate activation may replace the journal row temporarily, but the operation retains
-      // the verified prior generation so a failed candidate cannot erase its durable LKG.
-      const op: Op = {
-        operation,
-        owner: { principalId: authority.principalId, clientId: authority.clientId },
-        command: { method, commandId, hash: requestHash },
-        params: copy(method === '_agnes/v1/mcp.servers.update' ? { ...params, previous: prior } : params),
-      }
-      const servers = { ...journal.servers }
-      if (method === '_agnes/v1/mcp.servers.create' || method === '_agnes/v1/mcp.servers.update') {
-        const definition = copy(params.definition as McpServerDefinitionInput)
-        servers[serverId] = definedRow(prior, definition, revision, status(serverId, 'unavailable'))
-      }
-      if (method === '_agnes/v1/mcp.servers.trust.set') {
-        if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
-        const { localStartApproval, ...unapproved } = prior
-        servers[serverId] = {
-          ...(params.trust === 'trusted' ? prior : unapproved),
-          trust: params.trust as TrustState,
-        }
-      }
-      if (method === '_agnes/v1/mcp.servers.enable') {
-        if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
-        servers[serverId] = { ...prior, desired: 'enabled' }
-      }
-      if (method === '_agnes/v1/mcp.servers.disable') {
-        if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
-        servers[serverId] = { ...prior, desired: 'disabled' }
-      }
-      if (method === '_agnes/v1/resources.operation.cancel') {
-        const target = cancellation
-        if (!target) throw rpcError('CAPABILITY_DENIED', { code: 'RESOURCE_OPERATION_UNAVAILABLE' })
-        if (
-          target.owner.principalId !== authority.principalId &&
-          !authority.permissions.includes('resources.reconcile' as ResourcePermission)
-        )
-          throw rpcError('CAPABILITY_DENIED', { code: 'RESOURCE_OPERATION_OWNER_REQUIRED' })
-        // Do this inside the journal admission transaction, before allocating an accepted
-        // cancellation operation or touching an active controller. Terminal work is immutable.
-        if (terminal.has(target.operation.state))
-          throw rpcError('SEMANTIC_REJECTED', {
-            code: 'RESOURCE_OPERATION_TERMINAL',
-            reason: 'operation has already reached a terminal state',
-          })
-        this.active.get(target.operation.operationId)?.abort()
-        const operations = [
-          ...journal.operations.map((entry) =>
-            entry.operation.operationId === target.operation.operationId &&
-            !terminal.has(entry.operation.state)
-              ? {
-                  ...entry,
-                  operation: {
-                    ...entry.operation,
-                    state: 'cancelled' as const,
-                    updatedAt: new Date().toISOString(),
-                    progress: 100,
-                    lastSafeError: fail('CANCELLED', 'operation cancellation was requested'),
-                  },
-                }
-              : entry,
+    const receipt = await this.journal.txn(
+      profile,
+      (journal) => {
+        const commandId = params.commandId as string
+        const requestHash = digest({
+          method,
+          payload: Object.fromEntries(
+            Object.entries(params).filter(([key]) => key !== 'clientId' && key !== 'commandId'),
           ),
-          { ...op, operation: { ...operation, state: 'succeeded' as const, progress: 100 } },
-        ]
-        return {
-          next: { ...journal, servers, operations },
-          result: { operationId: operation.operationId, state: 'succeeded' },
-        }
-      }
-      const pending = journal.operations.filter((entry) => !terminal.has(entry.operation.state))
-      if (pending.length >= 900)
-        throw rpcError('OVERLOADED', {
-          code: 'RESOURCE_OPERATION_LIMIT',
-          reason: 'too many non-terminal resource operations',
         })
-      const finished = journal.operations.filter((entry) => terminal.has(entry.operation.state)).slice(-500)
-      return {
-        next: { ...journal, servers, operations: [...pending, ...finished, op] },
-        result: { operationId: operation.operationId, state: 'received' },
-      }
-    })
+        const replay = journal.operations.find(
+          (op) =>
+            op.owner.principalId === authority.principalId &&
+            op.owner.clientId === authority.clientId &&
+            op.command.commandId === commandId,
+        )
+        if (replay) {
+          if (replay.command.method !== method || replay.command.hash !== requestHash)
+            throw rpcError('SEMANTIC_REJECTED', { code: 'COMMAND_CONFLICT' })
+          return {
+            next: journal,
+            result: {
+              operationId: replay.operation.operationId,
+              state: replay.operation.kind.includes('.cancel') ? 'succeeded' : 'received',
+            },
+          }
+        }
+        const cancellation =
+          method === '_agnes/v1/resources.operation.cancel'
+            ? journal.operations.find((entry) => entry.operation.operationId === params.operationId)
+            : undefined
+        const serverId = (params.serverId ??
+          (params.definition as McpServerDefinitionInput | undefined)?.serverId ??
+          cancellation?.operation.target.slice(4)) as string
+        const prior = journal.servers[serverId]
+        if (!serverId || (!prior && method !== '_agnes/v1/mcp.servers.create' && !cancellation))
+          throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
+        if (
+          method === '_agnes/v1/mcp.servers.remove' &&
+          (prior?.desired === 'enabled' ||
+            journal.operations.some(
+              (entry) => entry.operation.target === `mcp/${serverId}` && !terminal.has(entry.operation.state),
+            ))
+        )
+          throw rpcError('SEMANTIC_REJECTED', {
+            code: 'RESOURCE_REMOVE_BLOCKED',
+            reason: 'disable and settle the MCP resource before removal',
+          })
+        if (params.expectedRevision && prior?.revision !== params.expectedRevision)
+          throw rpcError('SEMANTIC_REJECTED', { code: 'REVISION_CONFLICT' })
+        const existingRevision = prior?.revision ?? cancellation?.operation.revision
+        const revision =
+          method === '_agnes/v1/mcp.servers.create' || method === '_agnes/v1/mcp.servers.update'
+            ? digest(params.definition)
+            : existingRevision
+        if (!revision) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
+        const time = new Date().toISOString()
+        const operation: ResourceOperation = {
+          operationId: `resource-${randomUUID()}`,
+          kind: method,
+          state: 'received',
+          profile,
+          target: `mcp/${serverId}`,
+          revision,
+          createdAt: time,
+          updatedAt: time,
+          progress: 0,
+        }
+        if (method === '_agnes/v1/mcp.servers.create' && prior)
+          throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_ALREADY_EXISTS', serverId })
+        // Candidate activation may replace the journal row temporarily, but the operation retains
+        // the verified prior generation so a failed candidate cannot erase its durable LKG.
+        const op: McpOperation = {
+          operation,
+          owner: { principalId: authority.principalId, clientId: authority.clientId },
+          command: { method, commandId, hash: requestHash },
+          params: copy(method === '_agnes/v1/mcp.servers.update' ? { ...params, previous: prior } : params),
+        }
+        const servers = { ...journal.servers }
+        if (method === '_agnes/v1/mcp.servers.create' || method === '_agnes/v1/mcp.servers.update') {
+          const definition = copy(params.definition as McpServerDefinitionInput)
+          servers[serverId] = definedRow(prior, definition, revision, status(serverId, 'unavailable'))
+        }
+        if (method === '_agnes/v1/mcp.servers.trust.set') {
+          if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
+          const { localStartApproval, ...unapproved } = prior
+          servers[serverId] = {
+            ...(params.trust === 'trusted' ? prior : unapproved),
+            trust: params.trust as TrustState,
+          }
+        }
+        if (method === '_agnes/v1/mcp.servers.enable') {
+          if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
+          servers[serverId] = { ...prior, desired: 'enabled' }
+        }
+        if (method === '_agnes/v1/mcp.servers.disable') {
+          if (!prior) throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_NOT_FOUND' })
+          servers[serverId] = { ...prior, desired: 'disabled' }
+        }
+        if (method === '_agnes/v1/resources.operation.cancel') {
+          const target = cancellation
+          if (!target) throw rpcError('CAPABILITY_DENIED', { code: 'RESOURCE_OPERATION_UNAVAILABLE' })
+          if (
+            target.owner.principalId !== authority.principalId &&
+            !authority.permissions.includes('resources.reconcile' as ResourcePermission)
+          )
+            throw rpcError('CAPABILITY_DENIED', { code: 'RESOURCE_OPERATION_OWNER_REQUIRED' })
+          // Do this inside the journal admission transaction, before allocating an accepted
+          // cancellation operation or touching an active controller. Terminal work is immutable.
+          if (terminal.has(target.operation.state))
+            throw rpcError('SEMANTIC_REJECTED', {
+              code: 'RESOURCE_OPERATION_TERMINAL',
+              reason: 'operation has already reached a terminal state',
+            })
+          this.active.get(target.operation.operationId)?.abort()
+          const operations = [
+            ...journal.operations.map((entry) =>
+              entry.operation.operationId === target.operation.operationId &&
+              !terminal.has(entry.operation.state)
+                ? {
+                    ...entry,
+                    operation: {
+                      ...entry.operation,
+                      state: 'cancelled' as const,
+                      updatedAt: new Date().toISOString(),
+                      progress: 100,
+                      lastSafeError: fail('CANCELLED', 'operation cancellation was requested'),
+                    },
+                  }
+                : entry,
+            ),
+            { ...op, operation: { ...operation, state: 'succeeded' as const, progress: 100 } },
+          ]
+          return {
+            next: { ...journal, servers, operations },
+            result: { operationId: operation.operationId, state: 'succeeded' },
+          }
+        }
+        const pending = journal.operations.filter((entry) => !terminal.has(entry.operation.state))
+        if (pending.length >= 900)
+          throw rpcError('OVERLOADED', {
+            code: 'RESOURCE_OPERATION_LIMIT',
+            reason: 'too many non-terminal resource operations',
+          })
+        const finished = journal.operations.filter((entry) => terminal.has(entry.operation.state)).slice(-500)
+        return {
+          next: { ...journal, servers, operations: [...pending, ...finished, op] },
+          result: { operationId: operation.operationId, state: 'received' },
+        }
+      },
+      authority.admission,
+    )
     if (!this.deferDrive) void this.drive(profile, receipt.operationId)
     return receipt
   }
@@ -773,7 +629,7 @@ export class McpResourceStore {
   }
   private async apply(
     profile: string,
-    op: Op,
+    op: McpOperation,
     signal: AbortSignal,
   ): Promise<{ toolCount?: number; catalogRevision?: string } | undefined> {
     if (!this.adapter) throw new Error('MCP adapter unavailable')
@@ -834,7 +690,7 @@ export class McpResourceStore {
       }
     })
   }
-  private async restorePrevious(profile: string, op: Op): Promise<void> {
+  private async restorePrevious(profile: string, op: McpOperation): Promise<void> {
     if (op.operation.kind !== '_agnes/v1/mcp.servers.update') return
     const previous = op.params.previous
     if (

@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { type AskOutcome, assertCurrentPermission, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import {
+  type AskOutcome,
+  acquirePermissionLease,
+  assertCurrentPermission,
+  PrompterRouter,
+} from '@agnes/daemon-rpc/local/prompter'
 import {
   agnesHome,
   createSkillInstaller,
@@ -101,6 +106,8 @@ export function createSkillInstallRequests(options: {
       ...(workerSignal ? [workerSignal] : []),
     ])
     pending.set(key(sessionKey, requestId), controller)
+    let background = false
+    let lease: Awaited<ReturnType<typeof acquirePermissionLease>>
     let approvalOutcome: AskOutcome | undefined
     const prompt = new PrompterRouter({
       record: (outcome) => {
@@ -123,7 +130,22 @@ export function createSkillInstallRequests(options: {
           profile: options.profile,
           workspaceRoot: workspace,
           agnesHome: agnesHome(process.env),
-          assertActive,
+          assertActive: () => {
+            assertActive()
+            signal.throwIfAborted()
+            lease?.assertActive()
+          },
+          verifyPermission: async () => {
+            if (lease) await lease.verify()
+            else await assertCurrentPermission()
+            lease?.assertActive()
+            assertActive()
+            signal.throwIfAborted()
+          },
+          background: (task) => {
+            background = true
+            void task.finally(() => pending.delete(key(sessionKey, requestId)))
+          },
           ask: async (summary, bindingHash, requestSignal) => {
             await assertCurrentPermission()
             assertActive()
@@ -156,13 +178,21 @@ export function createSkillInstallRequests(options: {
               throw new Error('SKILL_INSTALL_PERMISSION_NO_HANDLER')
             if (via === 'malformed') throw new Error('SKILL_INSTALL_PERMISSION_INVALID')
             if (via === 'aborted' || verdict === 'cancelled') throw new Error('SKILL_INSTALL_CANCELLED')
+            if (verdict === 'allowed-once')
+              lease = await acquirePermissionLease(
+                { scope: 'skills.install', bindingHash, sessionKey },
+                signal,
+              )
             return (
               verdict === 'allowed-once' || verdict === 'allowed-session' || verdict === 'allowed-permanent'
             )
           },
           resources: async (method, resourceParams) => {
-            await assertCurrentPermission()
+            if (lease) await lease.verify()
+            else await assertCurrentPermission()
+            lease?.assertActive()
             assertActive()
+            signal.throwIfAborted()
             const currentAuthority = (options.authority ?? localResourceAuthority())({ conn: live.get() })
             if (!currentAuthority || currentAuthority.principalId !== authority.principalId)
               throw rpcError('CAPABILITY_DENIED')
@@ -188,7 +218,7 @@ export function createSkillInstallRequests(options: {
         signal,
       )
     } finally {
-      pending.delete(key(sessionKey, requestId))
+      if (!background) pending.delete(key(sessionKey, requestId))
     }
   }
 }

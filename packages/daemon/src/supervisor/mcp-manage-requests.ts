@@ -4,7 +4,9 @@ import { access, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/pr
 import { delimiter, isAbsolute, join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import {
+  acquirePermissionLease,
   assertCurrentPermission,
+  PermissionGrantUnavailable,
   type PrompterAnswer,
   PrompterRouter,
 } from '@agnes/daemon-rpc/local/prompter'
@@ -160,9 +162,31 @@ export function createMcpManageRequests(options: {
       if (!value) throw rpcError('CAPABILITY_DENIED')
       return value
     }
+    let lease: Awaited<ReturnType<typeof acquirePermissionLease>>
+    const verifyPermission = async () => {
+      if (lease) await lease.verify()
+      else await assertCurrentPermission()
+      lease?.assertActive()
+      authority()
+    }
+    const admission = {
+      verify: verifyPermission,
+      assertActive: () => {
+        lease?.assertActive()
+        authority()
+      },
+    }
     const call = async (name: ResourceControlMethodName, params: Record<string, unknown>) => {
-      await assertCurrentPermission()
-      return options.service.call(name, { ...params, profile: options.profile }, authority())
+      await verifyPermission()
+      lease?.assertActive()
+      return options.service.call(
+        name,
+        { ...params, profile: options.profile },
+        {
+          ...authority(),
+          ...(lease ? { admission } : {}),
+        },
+      )
     }
     const effect = async (name: ResourceControlMethodName, params: Record<string, unknown>, id: string) => {
       const auth = authority()
@@ -376,8 +400,13 @@ export function createMcpManageRequests(options: {
           await save(receipt)
           return publicReceipt(receipt)
         }
+        lease = await acquirePermissionLease(
+          { scope: 'mcp.connect', bindingHash: receipt.revision, sessionKey },
+          signal,
+        )
         const prior = (await list()).find((row) => row.serverId === receipt.serverId)
         if (prior && prior.revision !== receipt.revision) fail('MCP_DEFINITION_CONFLICT')
+        await verifyPermission()
         // Persist intent before admission. Recovery never silently repeats approval or an unknown write.
         delete receipt.via
         delete receipt.reason
@@ -395,8 +424,14 @@ export function createMcpManageRequests(options: {
           `${receipt.proposalId}-trust`,
         )
         if (policy.localStartApprovals && proposal.definition.transport.kind === 'stdio') {
-          authority()
-          await options.store.mcp.approveLocalStart(options.profile, receipt.serverId, receipt.revision)
+          await verifyPermission()
+          lease?.assertActive()
+          await options.store.mcp.approveLocalStart(
+            options.profile,
+            receipt.serverId,
+            receipt.revision,
+            lease ? admission : undefined,
+          )
         }
         const enabled = await effect(
           '_agnes/v1/mcp.servers.enable',
@@ -408,6 +443,13 @@ export function createMcpManageRequests(options: {
         await save(receipt)
         return publicReceipt(receipt)
       } catch (error) {
+        if (error instanceof PermissionGrantUnavailable) {
+          receipt.state = 'cancelled'
+          receipt.via = 'unavailable'
+          delete receipt.reason
+          await save(receipt)
+          return publicReceipt(receipt)
+        }
         if (receipt.state !== 'prepared' && receipt.state !== 'cancelled' && receipt.state !== 'submitted') {
           receipt.state = 'failed'
           await save(receipt)

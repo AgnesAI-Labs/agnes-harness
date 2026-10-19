@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
@@ -15,6 +23,64 @@ import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createSkillInstallRequests } from '../src/supervisor/skill-install-requests.js'
 
 const roots: string[] = []
+it.each(['revoked', 'narrowed', 'closed', 'cancelled', 'expired', 'actor-changed'])(
+  'round2: a %s background Skill installation cannot publish files',
+  async (reason) => {
+    const s = setup()
+    const controller = new AbortController()
+    const context = {
+      sessionKey: 'session',
+      sessionId: 'round2-skill',
+      epoch: 0,
+      policy: 'full-access',
+      actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }
+    let current: typeof context | undefined = context
+    const clock = vi.spyOn(Date, 'now')
+    try {
+      const prepared = await withPermissionContext(
+        context,
+        () => undefined,
+        () => s.request(),
+        async () => current,
+      )
+      await withPermissionContext(
+        context,
+        () => undefined,
+        () =>
+          s.handler(
+            'session',
+            'round2-skill-commit',
+            'skill-install',
+            {
+              ...s.invocation,
+              input: { action: 'commit', proposalId: prepared.proposalId },
+            },
+            controller.signal,
+          ),
+        async () => current,
+      )
+      if (reason === 'revoked' || reason === 'narrowed')
+        current = { ...context, epoch: 1, policy: 'workspace-write' }
+      if (reason === 'closed') current = undefined
+      if (reason === 'actor-changed') current = { ...context, actor: { ...context.actor, id: 'other' } }
+      if (reason === 'revoked' || reason === 'cancelled') controller.abort()
+      if (reason === 'expired') clock.mockReturnValue(Date.now() + 110_001)
+      const terminal = await vi.waitUntil(
+        async () => {
+          const status = await s.request({ action: 'status', proposalId: prepared.proposalId })
+          return ['prepared', 'running'].includes(status.state) ? false : status
+        },
+        { timeout: 3_000 },
+      )
+      expect(terminal.state).toBe('failed')
+      expect(existsSync(join(s.home, 'skills', 'demo', 'SKILL.md'))).toBe(false)
+    } finally {
+      clock?.mockRestore()
+      await s.ep.close()
+    }
+  },
+)
 afterEach(() => {
   vi.unstubAllEnvs()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })

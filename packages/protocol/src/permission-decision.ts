@@ -20,6 +20,7 @@ const permissionPurposes = new Set([
   'gate',
   'refine',
   'calibrate',
+  'budget',
 ])
 
 export const isPermissionPurpose = (purpose: string) => permissionPurposes.has(purpose)

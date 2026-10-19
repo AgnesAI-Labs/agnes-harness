@@ -37,6 +37,10 @@ export type SkillInstallAuthority = Readonly<{
   agnesHome: string
   /** Revalidates authenticated ownership. No plugin-provided actor participates. */
   assertActive(): void
+  /** Backend lease verification; called again after receipt writes and before effect admission. */
+  verifyPermission?(): Promise<void>
+  /** Retains cancellation routing until the background task settles. */
+  background?(task: Promise<void>): void
   ask(summary: string, bindingHash: string, signal: AbortSignal): Promise<boolean>
   resources(method: ResourceControlMethodName, params: Record<string, unknown>): Promise<unknown>
 }>
@@ -52,6 +56,7 @@ type Proposal = {
   pendingWrite?: Promise<void>
   busy: boolean
   approvalAbort?: AbortController
+  signal?: AbortSignal
   cancelled: boolean
   review?: Readonly<{ principalId: string; digest: string; at: string }>
 }
@@ -105,8 +110,14 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
   }
   const check = (p: Proposal) => {
     if (p.cancelled) throw installError('SKILL_INSTALL_CANCELLED')
+    p.signal?.throwIfAborted()
     p.authority.assertActive()
     if (Date.now() > p.expires) throw installError('SKILL_INSTALL_EXPIRED')
+  }
+  const verify = async (p: Proposal) => {
+    check(p)
+    await p.authority.verifyPermission?.()
+    check(p)
   }
   const update = async (p: Proposal, patch: Partial<SkillInstallResult>) => {
     const committed = (p.pendingWrite ?? Promise.resolve())
@@ -122,6 +133,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     await committed
   }
   const call = async (p: Proposal, method: ResourceControlMethodName, params: Record<string, unknown>) => {
+    await verify(p)
     check(p)
     return p.authority.resources(method, { profile: p.authority.profile, ...params })
   }
@@ -154,6 +166,8 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
     try {
       check(p)
       await update(p, { state: 'running', phase: 'publish' })
+      await verify(p)
+      check(p)
       unlinked(dirname(p.target))
       mkdirSync(dirname(p.target), { recursive: true })
       unlinked(p.target)
@@ -171,6 +185,8 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         })
         if (current.digest !== p.bundle.digest) throw installError('SKILL_TARGET_CONFLICT')
       } else {
+        // No asynchronous gap between the live lease check and atomic publication. The synchronous
+        // callback also checks cancellation/deadline while staging and immediately before rename.
         publishInstallBundle(p.target, p.bundle, () => check(p))
       }
       const candidate = p.bundle.candidate
@@ -368,6 +384,9 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
         return p.result
       }
       if (p.busy) return p.result
+      // The commit's fresh permission, not the prepare/read grant, owns all background effects.
+      p.authority = authority
+      p.signal = signal
       check(p)
       p.busy = true
       let acquired = false
@@ -405,7 +424,8 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
           at: new Date().toISOString(),
         }
         await update(p, { state: 'running', phase: 'accepted' })
-        void run(p)
+        const task = run(p)
+        authority.background?.(task)
         return p.result
       } catch (error) {
         if (acquired) locks.delete(p.target.toLowerCase())
