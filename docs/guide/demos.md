@@ -32,6 +32,18 @@ Set `AGH_DEMO_MODEL` to a configured provider id and model, for example `deepsee
 
 Do not put credentials in command arguments, committed files or shared transcripts. Real-model acceptance is separate from the offline CI gate.
 
+## Agent gallery browser acceptance
+
+After building the local CLI and provisioning Playwright Chromium, run the heavy browser acceptance:
+
+```sh
+pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
+```
+
+It enumerates all example Bundle declarations with `launch`, installs/trusts/enables through the Web UI, checks the model/permissions/package sources/draft review, confirms without sending, then explicitly submits each sample prompt. The default uses the offline Demo model. It checks durable tool results, completion and report cards, and answers synthetic business questions and tool approvals through their normal controls.
+
+Real inference requires explicit `AGH_REAL_AGENT_SWEEP=1` plus `AGH_DEMO_API_KEY` supplied through secure shell secret handling. It saves a DeepSeek account (`deepseek-flash`) through the public configuration API. Real homes are retained under `~/agh-real-eval/sweep-*`; ports are allocated on loopback. Each agent has a six-minute run cap; the sweep cancels/stops when AGH-recorded cost exceeds $5. `AGH_AGENT_FILTER` optionally selects comma-separated agent reference substrings for a focused rerun. Use `AGH_WEB_TEST_OUTPUT` to retain reports separately for each run. The JSON evidence and screenshots are test artifacts, not source files; protect them like other runtime evidence. A scripted pass does not establish real-model answer quality.
+
 ## Headless smoke
 
 `--check` replaces terminal confirmations with explicit approval of this synthetic demonstration, including the generated template. It runs the same real backend and assertions, with no test retries or Playwright:
