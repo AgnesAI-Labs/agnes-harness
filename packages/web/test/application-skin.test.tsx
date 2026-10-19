@@ -62,15 +62,24 @@ async function controller(skins = [row] as (Omit<typeof row, 'css'> & { css?: st
     listSkins: async () => ({ revision: 'one', skins }),
   })
 }
-it.each(['skin-first', 'application-first'])(
+it.each(['skin-first', 'application-first', 'runtime-ready'])(
   'applies and synchronously revokes application CSS/tokens with %s arrival',
   async (order) => {
     const css = vi.spyOn(CSSStyleSheet.prototype, 'replaceSync')
     if (order === 'application-first') projectApplication(app)
-    const c = await controller()
+    const available = order === 'runtime-ready' ? [] : [row]
+    const c = await controller(available)
     const frameworkSheets = [...document.adoptedStyleSheets]
     await c.skins.refresh()
-    if (order === 'skin-first') projectApplication(app)
+    if (order !== 'application-first') projectApplication(app)
+    if (order === 'runtime-ready') {
+      expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('')
+      available.push(row)
+      window.dispatchEvent(new CustomEvent('agnes:plugins-invalidated'))
+      await vi.waitFor(() =>
+        expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#123456'),
+      )
+    }
     expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#123456')
     expect(css).toHaveBeenCalledWith(expect.stringContaining(row.css))
     projectApplication({ ...app, status: 'unresolved', effective: null, reason: 'disabled' })

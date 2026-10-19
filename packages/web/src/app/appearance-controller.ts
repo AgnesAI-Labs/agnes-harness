@@ -189,6 +189,9 @@ export function createAppearanceController(options: {
   const stopApplication = applicationIdentity.subscribe(updateApplicationSkin)
   updateApplicationSkin()
   const stopPackages = onBroadcast('agnes:packages-changed', () => void skins.refresh())
+  // A cold daemon can initially report no active backend rows. Re-read after its
+  // authoritative tree/package notice, just as the client module roster does.
+  const stopRuntime = onBroadcast('agnes:plugins-invalidated', () => void skins.refresh())
   const stopFocus = onWindowFocus(() => void skins.refresh())
   onPageHide(() => {
     disposed = true
@@ -196,6 +199,7 @@ export function createAppearanceController(options: {
     skinEpoch += 1
     publishApplicationSkin(null)
     stopPackages()
+    stopRuntime()
     stopFocus()
     selection += 1
   })
