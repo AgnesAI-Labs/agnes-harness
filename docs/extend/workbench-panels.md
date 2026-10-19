@@ -4,6 +4,8 @@ English | [简体中文](workbench-panels.zh-CN.md)
 
 A workbench panel is a presentation contribution. Import the shared `workbenchPanels` singleton from `@agnes/web-client`; do not bundle another copy. Register translations with the host locale service before rendering.
 
+Set `restoreOpen: false` for panels that should open only after an explicit action in the current session. They do not inherit saved open state on reload or from another session; manual navigation and plugin navigation can still open them. Other panels keep the existing restoration behavior.
+
 ```tsx
 const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 40, edge: 'right',

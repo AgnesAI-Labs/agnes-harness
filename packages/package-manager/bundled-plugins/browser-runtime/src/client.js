@@ -28,6 +28,7 @@ export function apply(ctx) {
           id: 'browser',
           order: 56,
           edge: 'right',
+          restoreOpen: false,
           titleKey: 'browser.title',
           title: () => (mounted.locale.locale === 'zh-CN' ? '浏览器' : 'Browser'),
           component: () => h(BrowserPanel, { ctx: mounted }),

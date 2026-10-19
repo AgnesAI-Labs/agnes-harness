@@ -4,6 +4,8 @@
 
 工作台面板是展示层贡献。通过 `@agnes/web-client` 导入共享的 `workbenchPanels` 单例，不要打包另一份实例。渲染前向宿主语言服务注册翻译。
 
+需要在当前会话明确触发后才展开的面板，可设置 `restoreOpen: false`。刷新页面或切换会话时，它不会沿用上次展开的状态；用户手动导航和插件导航仍可打开。其他面板保持原来的状态恢复行为。
+
 ```tsx
 const dispose = ctx.workbenchPanels.register({
   id: 'example.notes', order: 40, edge: 'right',

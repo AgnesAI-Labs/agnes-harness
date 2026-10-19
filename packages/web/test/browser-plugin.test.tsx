@@ -66,6 +66,7 @@ it('enables transport and panel together, tolerates the legacy viewer, and disco
   expect(workbenchPanels.get('browser')).toBeDefined()
   expect(query).not.toHaveBeenCalled()
   const ownPanel = workbenchPanels.get('browser')
+  expect(ownPanel?.restoreOpen).toBe(false)
   const stopViewer = viewer.apply(ctx('viewer'))
   expect(workbenchPanels.get('browser')).toBe(ownPanel)
   expect(roles.getSnapshot()).toEqual([])

@@ -192,6 +192,30 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       return { right: 'files', bottom: 'terminal' }
     }
   })
+  const [activated, setActivated] = useState<
+    Partial<Record<'right' | 'bottom', { id: string; sessionId: string | undefined }>>
+  >({})
+  const selectPanel = useCallback(
+    (edge: 'right' | 'bottom', id: string) => {
+      setSelected((value) => ({ ...value, [edge]: id }))
+      setActivated((value) => ({ ...value, [edge]: { id, sessionId } }))
+    },
+    [sessionId],
+  )
+  const panelsFor = (edge: 'right' | 'bottom') =>
+    workbenchPanels
+      .entries()
+      .filter((panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)))
+  const mayRestore = (edge: 'right' | 'bottom') => {
+    const entries = panelsFor(edge)
+    const panel = entries.find((entry) => entry.id === selected[edge]) ?? entries[0]
+    return (
+      panel?.restoreOpen !== false ||
+      (activated[edge]?.id === panel.id && activated[edge]?.sessionId === sessionId)
+    )
+  }
+  const rightOpen = layout.rightOpen && mayRestore('right')
+  const bottomOpen = layout.bottomOpen && mayRestore('bottom')
   const surfaces = useMemo(
     () => ({
       split: document.querySelector<HTMLElement>('.workbench-split'),
@@ -260,7 +284,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       const panel = workbenchPanels.get(id)
       if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return false
       rememberFocus(panel.edge)
-      setSelected((value) => ({ ...value, [panel.edge]: id }))
+      selectPanel(panel.edge, id)
       setLayout((value) => ({
         ...value,
         [`${panel.edge}Open`]: true,
@@ -285,7 +309,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       removePanel()
       removeMentions()
     }
-  }, [rememberFocus, context])
+  }, [rememberFocus, context, selectPanel])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -302,20 +326,21 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     }
     const split = surfaces.split
     if (!split) return
-    split.classList.toggle('workbench-right-open', layout.rightOpen)
-    split.classList.toggle('workbench-bottom-open', layout.bottomOpen && bottomAvailable)
+    split.classList.toggle('workbench-right-open', rightOpen)
+    split.classList.toggle('workbench-bottom-open', bottomOpen && bottomAvailable)
     split.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
     split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
-      if (host) host.hidden = !layout[`${edge}Open`] || (edge === 'bottom' && !bottomAvailable)
+      if (host) host.hidden = !(edge === 'right' ? rightOpen : bottomOpen && bottomAvailable)
     }
-  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable])
+  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable, rightOpen, bottomOpen])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
-        (value) => layout[`${value}Open`] && surfaces[value]?.contains(event.target as Node),
+        (value) =>
+          (value === 'right' ? rightOpen : bottomOpen) && surfaces[value]?.contains(event.target as Node),
       )
       if (!edge || event.defaultPrevented) return
       if (event.key === 'Escape') {
@@ -349,14 +374,14 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     }
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
-  }, [layout, surfaces, restoreFocus])
+  }, [rightOpen, bottomOpen, surfaces, restoreFocus])
   const openPanel = (id: string, payload?: unknown) => {
     const panel = workbenchPanels.get(id)
     if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return
     const edge = panel.edge
     rememberFocus(edge)
     setSelection(payload)
-    setSelected((value) => ({ ...value, [edge]: id }))
+    selectPanel(edge, id)
     setLayout((value) => ({
       ...value,
       [`${edge}Open`]: true,
@@ -388,16 +413,12 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const controlsView = (
     <div ref={controls} className="workbench-controls">
       {[...edges].reverse().map((edge) => {
-        const entries = workbenchPanels
-          .entries()
-          .filter(
-            (panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)),
-          )
+        const entries = panelsFor(edge)
         if (entries.length === 0 && edge === 'bottom') return null
         const active = entries.find((panel) => panel.id === selected[edge]) ?? entries[0]
         const Component = active?.component
         const host = surfaces[`${edge}Content`]
-        const open = layout[`${edge}Open`]
+        const open = edge === 'right' ? rightOpen : bottomOpen
         return (
           <span key={edge}>
             <Tooltip title={t(`workbench.${edge}`)}>
@@ -413,6 +434,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                 aria-label={t(`workbench.${edge}`)}
                 onClick={() => {
                   rememberFocus(edge)
+                  if (!open && active) selectPanel(edge, active.id)
                   setLayout((value) => ({
                     ...value,
                     [`${edge}Open`]: !open,
@@ -486,7 +508,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                         count: panel.count?.read(context),
                       }))}
                       activeId={active?.id}
-                      select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}
+                      select={(id) => selectPanel(edge, id)}
                       open={openPanel}
                     />
                     <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />

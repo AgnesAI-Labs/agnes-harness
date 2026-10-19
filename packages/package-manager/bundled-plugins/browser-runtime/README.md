@@ -11,6 +11,7 @@ No process or download starts until `browser_open`. No separate viewer installat
 Ordinary chat does not open the panel. A live browser tool call in the current main conversation
 opens it once per turn; closing it manually stays effective for the rest of that turn. History replay,
 other conversations and child lanes do not bring it forward.
+The browser panel does not inherit a saved open dock on reload or in a new session. Manual opening remains available.
 The legacy `@agnes/browser-ui` remains compatible; this plugin wins panel selection to avoid duplicates.
 
 Uses pinned agent-browser 0.39.1 native binaries (Apache-2.0) and Chrome for Testing's official

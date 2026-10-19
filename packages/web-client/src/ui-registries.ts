@@ -54,6 +54,8 @@ export type WorkbenchPanel = Readonly<{
   titleKey: string
   /** Presentation only. Omitted visibility keeps existing panels always visible. */
   visibility?: 'always' | 'contextual'
+  /** False requires an explicit open in this session instead of restoring a saved open dock. */
+  restoreOpen?: boolean
   icon?: string
   when?(context: UiExtensionContext): boolean
   /** Optional dynamic presentation title, e.g. a business surface title. */

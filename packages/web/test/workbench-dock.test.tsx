@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { resolve } from 'node:path'
-import { settingsSections, workbenchPanels } from '@agnes/web-client'
+import { settingsSections, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
@@ -191,6 +191,79 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     localStorage.clear()
   }
 })
+
+it.each(['test.browser', 'test.retired'])(
+  'opens an opt-out panel only explicitly in its session, restoring saved selection %s safely',
+  (savedPanel) => {
+    localStorage.clear()
+    localStorage.setItem('agnes.workbench.layout.v1', JSON.stringify({ rightOpen: true }))
+    localStorage.setItem('agnes.workbench.selection.v1', JSON.stringify({ right: savedPanel }))
+    document.body.innerHTML =
+      '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+    const host = document.getElementById('controls') as HTMLElement
+    const dock = document.getElementById('workbench-right') as HTMLElement
+    const filePanel = workbenchPanels.register({
+      id: 'test.files',
+      order: 1,
+      edge: 'right',
+      titleKey: 'Files',
+      component: () => <p>Files view</p>,
+    })
+    const browserPanel = workbenchPanels.register({
+      id: 'test.browser',
+      order: 0,
+      edge: 'right',
+      titleKey: 'Browser',
+      restoreOpen: false,
+      component: () => <p>Browser view</p>,
+    })
+    const refresh = (id = 'one', message = '') =>
+      renderRegion(host, <Dock context={{ t: (key) => key, data: { session: { id }, message } }} />)
+    try {
+      refresh()
+      expect(dock.hidden).toBe(true)
+      expect(dock.textContent).not.toContain('Browser view')
+      refresh('one', 'ordinary user message')
+      expect(dock.hidden).toBe(true)
+      flushSync(() => {
+        expect(workbenchNavigation.open('test.browser')).toBe(true)
+      })
+      expect(dock.hidden).toBe(false)
+      expect(dock.textContent).toContain('Browser view')
+      refresh('one', 'tool progress')
+      expect(dock.hidden).toBe(false)
+      flushSync(() => dock.querySelector<HTMLButtonElement>('[aria-label="workbench.close"]')?.click())
+      refresh('one', 'another ordinary message')
+      expect(dock.hidden).toBe(true)
+      flushSync(() => {
+        workbenchNavigation.open('test.browser')
+      })
+      expect(dock.hidden).toBe(false)
+      refresh('two', 'first message in a new session')
+      expect(dock.hidden).toBe(true)
+      expect(dock.textContent).not.toContain('Browser view')
+      flushSync(() => host.querySelector<HTMLButtonElement>('[data-edge="right"]')?.click())
+      expect(dock.hidden).toBe(false)
+      expect(dock.textContent).toContain('Browser view')
+      unmountRegion(host)
+      refresh('two')
+      expect(dock.hidden).toBe(true)
+      flushSync(() => {
+        workbenchNavigation.open('test.files')
+      })
+      unmountRegion(host)
+      refresh('two')
+      expect(dock.hidden).toBe(false)
+      expect(dock.textContent).toContain('Files view')
+    } finally {
+      unmountRegion(host)
+      browserPanel()
+      filePanel()
+      document.body.replaceChildren()
+      localStorage.clear()
+    }
+  },
+)
 
 it('cycles visible trace and plugin docks in both directions and leaves modal focus intact', () => {
   document.body.innerHTML = `
