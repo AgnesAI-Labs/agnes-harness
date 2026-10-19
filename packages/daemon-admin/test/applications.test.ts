@@ -250,17 +250,40 @@ it('binds the dependency permission and role code sources, and rejects the loser
       presentationRoles: ['navigation' as const],
     },
   }
+  const packageDirectory = join(f.home, 'ordinary-application')
+  await mkdir(packageDirectory)
+  await writeFile(
+    join(packageDirectory, 'package.json'),
+    JSON.stringify({ agnes: { hostProvidedExternals: { '@synthetic/sdk': '^1.0.0', b: '*' } } }),
+  )
   const owner = {
     ...a!,
+    directory: packageDirectory,
     contributions: [roleClient],
     entry: {
       ...a!.entry,
-      dependencies: { b: '*' },
+      dependencies: { b: '*', '@synthetic/sdk': '^1.0.0' },
       application: { id: 'a', presentation: { roles: { navigation: { packageId: 'a', clientId: 'ui' } } } },
     },
   }
   f.replace([owner, b!])
   const preview = await f.applications.preview('local-dev', 'a')
+  expect(preview.dependencies.map((entry) => entry.packageId)).toEqual(['a', 'b'])
+  expect(
+    (
+      await f.applications.previewRole('local-dev', 'navigation', { packageId: 'a', clientId: 'ui' })
+    ).dependencies.map((entry) => entry.packageId),
+  ).toEqual(['a', 'b'])
+  f.replace([
+    { ...owner, entry: { ...owner.entry, dependencies: { ...owner.entry.dependencies, missing: '*' } } },
+    b!,
+  ])
+  for (const operation of [
+    () => f.applications.preview('local-dev', 'a'),
+    () => f.applications.previewRole('local-dev', 'navigation', { packageId: 'a', clientId: 'ui' }),
+  ])
+    await expect(operation()).rejects.toMatchObject({ data: { reason: 'APPLICATION_DEPENDENCY_MISSING' } })
+  f.replace([owner, b!])
   expect(preview.replacedRoles).toContainEqual(
     expect.objectContaining({ packageId: 'a', clientId: 'ui', entry: 'client.js' }),
   )

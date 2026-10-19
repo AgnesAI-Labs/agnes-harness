@@ -11,6 +11,7 @@ import {
   rpcError,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { applicationDependencies } from './application-dependencies.js'
 
 export const roleDigest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 const refuse = (reason: string): never => {
@@ -62,17 +63,17 @@ export async function previewRole(
   if (!eligible(p) || !active || !(await active(profile, p.id, p.entry.integrity)))
     return refuse('APPLICATION_ROLE_UNAVAILABLE')
   const required = new Map<string, InstalledPackage>()
-  const visit = (p: InstalledPackage) => {
+  const visit = async (p: InstalledPackage): Promise<void> => {
     if (required.has(p.id)) return
     if (!eligible(p)) return refuse('APPLICATION_DEPENDENCY_UNAVAILABLE')
     required.set(p.id, p)
-    for (const id of Object.keys(p.entry.dependencies ?? {})) {
+    for (const id of await applicationDependencies(p, packages)) {
       const dependency = packages.find((p) => p.id === id)
       if (!dependency) return refuse('APPLICATION_DEPENDENCY_MISSING')
-      visit(dependency)
+      await visit(dependency)
     }
   }
-  visit(p)
+  await visit(p)
   const source = validatePackageAdminData('PackageSource', p.entry.source)
   if (!source.ok) return refuse('APPLICATION_SOURCE_INVALID')
   const declaration: ApplicationTemplate = {

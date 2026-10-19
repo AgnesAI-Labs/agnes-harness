@@ -18,6 +18,7 @@ import {
   rpcError,
   validatePackageAdminData,
 } from '@agnes/protocol'
+import { applicationDependencies } from './application-dependencies.js'
 import type { PackageActivationAdapter } from './handler.js'
 import type { PackageAdminAuthority } from './permissions.js'
 import type { PackageProfileDirectory } from './project.js'
@@ -83,16 +84,16 @@ export class Applications {
       return pkg
     }
     const required = new Set<string>([row.id])
-    const visit = (id: string) => {
+    const visit = async (id: string): Promise<void> => {
       const p = packages.find((p) => p.id === id)
       if (!p) return fail('APPLICATION_DEPENDENCY_MISSING')
-      for (const id of Object.keys(p.entry.dependencies ?? {}))
+      for (const id of await applicationDependencies(p, packages))
         if (!required.has(id)) {
           required.add(id)
-          visit(id)
+          await visit(id)
         }
     }
-    visit(row.id)
+    await visit(row.id)
     for (const id of required) {
       const p = requiredPackage(id)
       if (!eligible(p)) return fail('APPLICATION_DEPENDENCY_UNAVAILABLE')

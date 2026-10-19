@@ -113,6 +113,10 @@ Settings adoption previews first summarize brand, pages/navigation, agents, repl
 
 The consent preview binds source and signature status, package/version/integrity, brand and assets,
 hidden entries, home/skin, agents, role code sources, dependency permissions/diff, scope and recovery.
+The dependency closure reviews managed plugins. Explicit `agnes.hostProvidedExternals` imports that
+are absent from the managed inventory use the Host ABI checked at code admission; they do not require
+separate plugin installation. A managed package is always reviewed even if also listed as an external,
+and undeclared missing dependencies still refuse application and interface-role previews.
 Adoption and clearing use the existing admin principal/method allowlists and configuration CAS revision.
 A changed preview or stale revision is refused. The accepted preview is retained with its digest so dependency changes compare the previous consented transitive closure with the new one, even after upgrade or uninstall. If the old consent cannot be verified, the diff explicitly reports unknown. Brand changes are normal package upgrades and require
 fresh trust and explicit adoption; old sessions retain their execution pins. Trusted JavaScript runs
