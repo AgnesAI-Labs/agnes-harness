@@ -377,6 +377,7 @@ for (const locale of ['en', 'zh-CN']) {
         : '全部操作自动允许，不再弹出审批',
     )
     await expect(picker).not.toContainText(locale === 'en' ? 'exceptions apply' : '仍有例外')
+    await page.screenshot({ path: test.info().outputPath('full-access-picker.png') })
     await page.keyboard.press('Escape')
     await page.evaluate(() => {
       const state = window as typeof window & { approvalPrompts?: number }
@@ -396,6 +397,7 @@ for (const locale of ['en', 'zh-CN']) {
         .filter({ hasText: locale === 'en' ? 'Auto-allowed (Full access)' : '自动允许（完全访问）' })
         .first(),
     ).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('full-access-evidence.png') })
     expect(
       await page.evaluate(() => (window as typeof window & { approvalPrompts?: number }).approvalPrompts),
     ).toBe(0)
