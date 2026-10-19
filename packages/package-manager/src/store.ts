@@ -376,7 +376,8 @@ function* packageTransaction(
         )
         if (!committed) {
           for (const j of [...entries].reverse()) restore(s, j)
-          complete({ ...s, checkpoint: undefined })
+          const { checkpoint: _checkpoint, ...recovery } = s
+          complete(recovery)
         }
       }
       rmSync(tmp, { force: true })
