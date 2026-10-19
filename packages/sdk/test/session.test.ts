@@ -21,6 +21,7 @@ it.each([true, false])(
       '_agnes/v1/session.open': () => ({}),
     })
     const client = createClient({
+      sessionRestoreHistory: 'none',
       transport: { kind: 'inproc', endpoint: f.endpoint },
       journal: memoryJournal(),
       authProviders: providers,
@@ -41,6 +42,7 @@ it.each([true, false])(
         expect(loads[0]?.params).not.toEqual(loads[1]?.params)
       }
       await client.session.load('web')
+      await client.restoreSession('web', '/workspace')
       expect(f.calls.at(-1)?.method).toBe('session/load')
     } finally {
       await client.close()
@@ -94,34 +96,48 @@ it('never falls back after admission refusal and cancels just the caller-owned o
   }
 })
 
-it('reconnect restoration of an admission-only Web handle never asks for ACP replay', async () => {
-  let attaches = 0
-  const f = fakeEndpoint({
-    initialize: () => ({
-      protocolVersion: 1,
-      agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
-    }),
-    '_agnes/v1/session.open': () => ({}),
-    '_agnes/v1/session.attach': () => {
-      if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'web' })
-      return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
-    },
-  })
-  const client = createClient({
-    transport: { kind: 'inproc', endpoint: f.endpoint },
-    journal: memoryJournal(),
-    authProviders: providers,
-  })
-  try {
-    const session = await client.session.open('web', { cwd: '/workspace' })
-    await session.attach()
-    await session.recover()
-    expect(f.calls.filter((call) => call.method === '_agnes/v1/session.open')).toHaveLength(2)
-    expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
-  } finally {
-    await client.close()
-  }
-})
+it.each(['open', 'new', 'fork'] as const)(
+  'reconnect restoration of a Web %s handle never asks for ACP replay',
+  async (creation) => {
+    let attaches = 0
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+      }),
+      '_agnes/v1/session.open': () => ({}),
+      'session/new': () => ({ sessionId: 'web' }),
+      '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'web' } }),
+      '_agnes/v1/submit.ack': () => ({}),
+      '_agnes/v1/session.attach': () => {
+        if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'web' })
+        return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+      },
+    })
+    const client = createClient({
+      sessionRestoreHistory: 'none',
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session =
+        creation === 'new'
+          ? await client.session.new({ cwd: '/workspace' })
+          : creation === 'fork'
+            ? await client.session.fork('parent', 1, { cwd: '/workspace' })
+            : await client.session.open('web', { cwd: '/workspace' })
+      await session.attach()
+      await session.recover()
+      expect(f.calls.filter((call) => call.method === '_agnes/v1/session.open')).toHaveLength(
+        creation === 'open' ? 2 : 1,
+      )
+      expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+    } finally {
+      await client.close()
+    }
+  },
+)
 
 it('cancels an opening during a shared handshake without cancelling initialization for the next selection', async () => {
   let finish!: (value: unknown) => void

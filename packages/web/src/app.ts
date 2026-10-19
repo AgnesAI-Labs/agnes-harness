@@ -654,6 +654,7 @@ const conversation = hosts.conversation
 const goalHost = hosts.goal
 const wsUrl = shellConfig.wsUrl
 const client = createClient({
+  sessionRestoreHistory: 'none',
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),

@@ -112,6 +112,8 @@ export type GenerationChangedEvent = { sessionId: string; generation: number }
 export type GapEvent = { sessionId: string; earliestSeq: number }
 
 export type CreateClientOptions = {
+  /** Recovery policy for handles created/attached without an explicit load. ACP remains the default. */
+  sessionRestoreHistory?: 'full' | 'none'
   transport: TransportOption
   auth?: AuthOption
   clientId?: string
@@ -175,7 +177,8 @@ type Schema = Parameters<typeof validateAgainst>[0]
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
 
 export class Client {
-  private readonly admissionOnly = new Set<string>()
+  private readonly sessionHistory = new Map<string, 'full' | 'none'>()
+  private readonly restoreHistory: 'full' | 'none'
   // Connection/options stay private so consumers cannot bypass client bookkeeping or expose auth.
   private readonly conn: RpcConnection
   readonly journal: JournalStore
@@ -210,6 +213,7 @@ export class Client {
   shuttingDown = false
 
   constructor(opts: CreateClientOptions) {
+    this.restoreHistory = opts.sessionRestoreHistory ?? 'full'
     const providers = {
       local: () => localAuth(),
       jwt: (o: AuthOption) => {
@@ -543,8 +547,7 @@ export class Client {
       }
       try {
         await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress, o.history === 'none', o.signal)
-        if (o.history === 'none') this.admissionOnly.add(id)
-        else this.admissionOnly.delete(id)
+        this.sessionHistory.set(id, o.history ?? 'full')
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
       } catch (error) {
@@ -580,9 +583,9 @@ export class Client {
     /** Replaces the bookmarked user prompts: UINode ids of kind 'user', kept in the order given. */
     setBookmarks: (sessionId: string, bookmarks: readonly string[]): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.bookmarks.set', { sessionId, bookmarks: [...bookmarks] }),
-    fork: async (id: string, at: number): Promise<Session> => {
+    fork: async (id: string, at: number, o: { cwd?: string } = {}): Promise<Session> => {
       const childId = await submitForkCommand(this, id, at)
-      return this.sessionHandle(childId)
+      return this.sessionHandle(childId, o.cwd)
     },
   }
 
@@ -627,7 +630,12 @@ export class Client {
    * wire call in the same place as an explicit session.load.
    */
   restoreSession(id: string, cwd: string): Promise<unknown> {
-    return this.loadSessionHistory(id, cwd, undefined, this.admissionOnly.has(id))
+    return this.loadSessionHistory(
+      id,
+      cwd,
+      undefined,
+      (this.sessionHistory.get(id) ?? this.restoreHistory) === 'none',
+    )
   }
 
   private async loadSessionHistory(

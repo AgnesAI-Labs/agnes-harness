@@ -413,7 +413,9 @@ export function createSessionController(
     const parent = context.current
     if (!parent || !turn.forkable || turn.endSeq === undefined || context.projection?.opState !== null)
       throw new Error(context.t('app.fork.notIdle'))
-    const forked = await context.client.session.fork(parent.id, turn.endSeq)
+    const cwd =
+      context.sessionRows.find((row) => row.sessionId === parent.id)?.cwd ?? context.selectedWorkspace?.path
+    const forked = await context.client.session.fork(parent.id, turn.endSeq, cwd ? { cwd } : {})
     if (!context.sessionBinding.isCurrent(epoch, parent)) return
     const opening = open(forked.id, { created: forked })
     const forkBinding = context.sessionBinding.capture()
@@ -432,7 +434,7 @@ export function createSessionController(
     if (timeline.opState !== null) throw new Error(context.t('app.fork.waitIdle'))
     const turn = timeline.turns.findLast((item) => item.forkable && item.endSeq !== undefined)
     if (turn?.endSeq === undefined) throw new Error(context.t('app.fork.noForkableTurn'))
-    const child = await context.client.session.fork(id, turn.endSeq)
+    const child = await context.client.session.fork(id, turn.endSeq, row?.cwd ? { cwd: row.cwd } : {})
     let namingError: unknown
     try {
       await context.client.session.rename(child.id, forkTitle(title))

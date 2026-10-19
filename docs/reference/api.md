@@ -60,6 +60,10 @@ The in-process Core/Host session also exposes read-only `isRunning`, which refle
 
 `client.session.open(id, { cwd?, signal?, onPermissionRequest?, onProgress? })` admits a session without replaying ACP history. It uses `_agnes/v1/session.open` (`sessionId`, optional workspace hint `cwd`, unique `requestId`) when `initialize.agentCapabilities._meta["ai.agnes.harness"].sessionOpen` is `true`; older daemons use `session/load`. A refusal never triggers fallback. Workspace, ownership, plugin recovery and complete history verification are the same as `session/load`. Ordinary ACP load still replays its full transcript. SDK recovery remembers the handle's opening mode.
 
+Web creates its SDK connection with `sessionRestoreHistory: 'none'` so newly created, forked and attached handles with a retained workspace hint also use admission-only recovery after worker reclamation. Other SDK clients default to `'full'`; an explicit `session.load` retains full replay for that handle even when the connection has a different recovery default.
+
+`client.session.fork(parentId, at, { cwd? })` can retain the parent's known workspace hint for child recovery. Web supplies that hint for both turn and sidebar forks. It stays client-side; the backend derives the child's authority from the parent binding and verifies the hint again when restoring.
+
 Read the bounded `projectUIOpening` after admission and subscribe from that opening's generation and exclusive `upto` cut; the open response is not a projection cursor. Register the permission handler before opening. Aborting the SDK call sends `session.loadingCancel` with the same request ID, releasing only that wait on that connection, without stopping a running turn. Omitting the ID retains the older connection/session-wide loading cancellation behavior. History previews and local drafts never authorize sending or answering approvals.
 
 | Method family | Purpose |
