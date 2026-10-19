@@ -48,7 +48,7 @@ export function apply(ctx, config) {
 
 `publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。React 与共享 Agnes 包使用宿主的平台 externals，仅将其它依赖打入浏览器产物。
 
-浏览器共享单例白名单是 [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts)：`react`、`react/jsx-runtime`、`@agnes/web-client` 和根入口 `@agnes/web-ui`。这些精确说明符通过 HTML import map 解析；包名被 external 并不表示任意子路径都有映射。发行打包会对照该 map 检查客户端产物的导入，拒绝无法解析的 external。
+浏览器共享单例白名单由 [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts) 维护，包括 React、客户端/UI API、浏览器 SDK/协议和可选公开呈现 renderer。精确出口与构建方法见[构建呈现插件](../extend/presentations.zh-CN.md)。这些精确说明符由 HTML import map 解析；将包名 external 不代表任意子路径都有映射。发行打包拒绝无法解析的输出 external。
 
 ## 安装与观察
 

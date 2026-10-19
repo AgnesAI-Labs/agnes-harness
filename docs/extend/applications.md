@@ -84,6 +84,8 @@ application or explicit user choice filters product candidates **before** priori
 unselected application's lower priority cannot take over. Ordinary pages, settings, cards and slots
 retain their existing scopes and semantics.
 
+Build a replacement using public exports: [Build a presentation plugin](presentations.md).
+
 ## Choose one interface implementation
 
 In **Settings → Application → Interface implementations**, an administrator can replace each standard

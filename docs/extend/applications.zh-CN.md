@@ -102,6 +102,8 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 
 在同一 home 和 profile 下，先启动选定 origin 的 Web 服务，再安装应用；或在安装后、启动 Web 前执行 `node agnes.mjs daemon stop`。`plugins add` 本身可能启动 daemon。若其 origin 不匹配，`serve --port 4198` 会拒绝并提示 `local daemon Web origin does not match the selected origin`。停止该 home 的 daemon 后重试同一 `serve` 命令即可；完整命令见 [Acme 部署流程](../../examples/acme/README.zh-CN.md#部署者采用流程)。
 
+通过公开出口构建替代实现：[构建呈现插件](presentations.zh-CN.md)。
+
 ## 单独选择界面实现
 
 在 **设置 → 应用 → 界面实现** 中，管理员可以分别替换 navigation、conversation、composer、goal、interaction、deliverables 六种标准角色。例如保留应用 A 的品牌和导航，只选择插件 B 的交付物界面；也可以保留默认 AGH 应用，直接选择 B，无需采纳任何应用。

@@ -52,7 +52,7 @@ Browser failure diagnostics retain a safe error code, package, presentation role
 
 `publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Use the host platform externals for React and shared Agnes packages; bundle only other dependencies into browser artifacts.
 
-The browser singleton allowlist is [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts): `react`, `react/jsx-runtime`, `@agnes/web-client` and the root `@agnes/web-ui`. These exact imports resolve through the HTML import map; an external package name does not imply that arbitrary subpaths are mapped. Distribution packaging checks emitted client imports against that map and rejects unresolved externals.
+The browser singleton allowlist is [`CLIENT_PLATFORM_IMPORTS`](../../packages/protocol/src/client-platform-imports.ts), including React, the client/UI APIs, browser SDK/protocol and the optional public presentation renderers. See [Build a presentation plugin](../extend/presentations.md) for exact exports and build instructions. These exact imports resolve through the HTML import map; an external package name does not imply arbitrary mapped subpaths. Distribution packaging rejects unresolved emitted externals.
 
 <a id="安装与观察"></a>
 
