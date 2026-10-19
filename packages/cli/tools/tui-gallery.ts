@@ -153,6 +153,7 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     preset: 'standard',
     model: 'deepseek-v4-pro',
     cwd: CWD,
+    probeWorkspace: async () => scene.workspace ?? { root: CWD, subpath: '' },
     themePreferencePath: join(prefs, `${variant.theme}.json`),
     ...(scene.locale ? { locale: scene.locale } : {}),
   })

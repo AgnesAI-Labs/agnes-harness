@@ -34,6 +34,8 @@ Ordinary automatic connections reuse a ready daemon after checking the canonical
 node agnes.mjs
 ```
 
+The input box's top edge shows the model, the directory with its Git worktree and branch, and how full the context is; `┊` marks where automatic compaction starts.
+
 Type `/` to see the current menu. Common actions:
 
 | Action | Usage |

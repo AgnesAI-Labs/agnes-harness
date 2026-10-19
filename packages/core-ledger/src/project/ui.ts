@@ -101,6 +101,7 @@ export type UIProjectionUsageOptions = {
   thinking: ThinkingLevel
   settings?: ModelSettings
   autoCompact: boolean
+  compactAt?: number
 }
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -343,6 +344,7 @@ export class UIProjectionCell {
         tokens: this.contextTokensValue,
         window: options.model.contextWindow,
         autoCompact: options.autoCompact,
+        ...(options.compactAt === undefined ? {} : { compactAt: options.compactAt }),
       },
       model: {
         route: options.route,

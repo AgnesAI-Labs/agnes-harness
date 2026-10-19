@@ -79,11 +79,12 @@ export function contextPressure(context: ContextUsage): ContextPressure {
   return 'normal'
 }
 
-function sanitizeLabel(label: string): string {
+export function sanitizeLabel(label: string): string {
   return label.replace(UNSAFE_LABEL, '')
 }
 
-function clipLabel(label: string, width: number): string {
+/** Clips by display width, ending in `…` when anything was cut. */
+export function clipLabel(label: string, width: number): string {
   if (width <= 0) return ''
   if (displayWidth(label) <= width) return label
   if (width === 1) return '…'
@@ -123,10 +124,12 @@ export function formatUsageLine(
   requestedWidth: number,
   ansi: ThemedAnsi,
   showModel = true,
+  /** False where the composer rail already draws the context gauge. */
+  showContext = true,
 ): string {
   if (!Number.isFinite(requestedWidth)) throw new Error('usage footer width must be finite')
   const width = Math.max(1, Math.trunc(requestedWidth))
-  const context = styledContext(usage, ansi)
+  const context = showContext ? styledContext(usage, ansi) : ''
   const model = sanitizeLabel(usage.model.id)
   // Only the left group is styled: the right group may be clipped, and clipping counts characters.
   const count = (arrow: string, n: number) =>
@@ -143,7 +146,7 @@ export function formatUsageLine(
             `${usage.cost.source === 'estimated' ? '≈' : ''}${formatUsdMicros(usage.cost.usdMicros)}${usage.billingComplete === false ? '*' : ''}`,
           ),
       context,
-      usage.context.autoCompact ? ansi.fg('faint', '(auto)') : '',
+      showContext && usage.context.autoCompact ? ansi.fg('faint', '(auto)') : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -151,7 +154,8 @@ export function formatUsageLine(
     return alignGroups(left, right, width)
   }
 
-  if (width >= 60) return alignGroups(`${tokens()} ${context}`, showModel ? model : '', width)
+  if (width >= 60)
+    return alignGroups([tokens(), context].filter(Boolean).join(' '), showModel ? model : '', width)
 
   if (width >= 30 || !showModel) return alignGroups(context, showModel ? model : '', width)
   return alignGroups('', model, width)

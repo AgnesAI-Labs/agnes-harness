@@ -12,6 +12,7 @@ import { type Locale, t } from '../locale.js'
 import type { Tone } from '../palette.js'
 import type { StatusItem } from '../slots.js'
 import { brandColour, type ThemedAnsi } from '../theme.js'
+import { RAIL_MIN_WIDTH } from './composer-rail.js'
 
 export type LinkState = 'ok' | 'reconnecting' | 'catching-up'
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
@@ -106,7 +107,9 @@ export class StatusBar implements Component {
       this.link === 'ok' ? '' : this.ansi.fg('warning', `⟳ ${link}`),
     ].filter(Boolean)
     const lines = [fitLine(parts.join(this.ansi.fg('faint', ' · ')), width)]
-    if (this.usage) lines.push(formatUsageLine(this.usage, width, this.ansi, false))
+    // The composer rail draws the context gauge at the same width; below its floor this line does.
+    const usage = this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH)
+    if (usage?.trim()) lines.push(usage)
     return lines
   }
 }

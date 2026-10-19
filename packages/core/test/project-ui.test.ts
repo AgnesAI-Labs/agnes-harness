@@ -1,3 +1,4 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import type { Event, EventInput } from '@agnes/core-common/types'
 import { projectUI, type SlotFillRunner, UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import type { ApprovalVerdict, UINode } from '@agnes/protocol'
@@ -58,7 +59,8 @@ it('projects empty defaults without invented generation, state or budget', async
     turns: [],
     usage: {
       totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-      context: { tokens: 0, window: 128000, autoCompact: true },
+      // The gauge's compaction mark sits where threshold compaction fires: window minus reserve.
+      context: { tokens: 0, window: 128000, autoCompact: true, compactAt: 128000 - 16384 },
       model: { route: 'default', id: 'default', thinking: 'off' },
     },
   })
@@ -69,9 +71,19 @@ it('projects empty defaults without invented generation, state or budget', async
     opState: null,
     nodes: [],
     turns: [],
-    usage: { context: { tokens: 0, window: 128000, autoCompact: true } },
+    usage: { context: { tokens: 0, window: 128000, autoCompact: true, compactAt: 128000 - 16384 } },
   })
   expect(validateAgainst(UITimeline, { ...timeline, generation: 7 }).ok).toBe(true)
+  const defaults = presetDefaults()
+  const { session: manual } = await open({
+    provider: fakeProvider([]),
+    preset: { ...defaults, compaction: { ...defaults.compaction, enabled: false } },
+  })
+  for (const cut of [undefined, 0]) {
+    const context = (await manual.projectUI(cut)).usage?.context
+    expect(context).toMatchObject({ autoCompact: false })
+    expect(context).not.toHaveProperty('compactAt')
+  }
 })
 
 it('pages through adapter scan caps instead of silently truncating a long session', async () => {

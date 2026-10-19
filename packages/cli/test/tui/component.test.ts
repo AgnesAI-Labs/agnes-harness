@@ -84,23 +84,32 @@ describe('components', () => {
     expect(new Rule(undefined, createAnsi('256').dim).render(4)).toEqual(['\x1b[2m────\x1b[22m'])
   })
 
-  it('Composer spans the terminal and integrates model state without disturbing cursor geometry', () => {
+  it('Composer is an open rail with model, workspace and usage on its edges, cursor geometry intact', () => {
     const ansi = new TuiTheme('light').ansi(createAnsi('256'))
     const input: Component = {
       render: () => [`❯ ${CURSOR_MARKER}hello`],
       invalidate() {},
     }
     const composer = new Composer(input, ansi)
-    composer.setMeta('deepseek-v4-pro · high')
+    composer.setWorkspace({ root: '~/repo', subpath: '', branch: 'main' })
+    composer.setUsage({
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      context: { tokens: 27_400, window: 262_144, autoCompact: true, compactAt: 245_760 },
+      model: { route: 'deepseek', id: 'deepseek-v4-pro', thinking: 'high' },
+    })
     const rows = composer.render(120)
     expect(rows).toHaveLength(3)
-    expect(rows[0]).toContain(ansi.fg('borderStrong', `╭${'─'.repeat(117)}╮`))
-    expect(rows[1]).toContain(`❯ ${CURSOR_MARKER}hello`)
-    expect(rows[1]).toContain(ansi.fg('borderStrong', '│'))
-    expect(rows[2]).toContain(` ${ansi.fg('muted', 'deepseek-v4-pro')}${ansi.fg('faint', ' · high')} `)
-    expect(rows[2]).toContain(ansi.fg('borderStrong', '╯'))
+    expect(rows[0]).toContain(ansi.fg('border', '╭─'))
+    expect(rows[0]).toContain(ansi.bg('surface', ansi.bold(ansi.fg('code', '◆ deepseek-v4-pro'))))
+    expect(rows[0]).toContain(ansi.fg('border', '─╮'))
+    // No side lines: the input row is the editor's own row, offset by the open frame.
+    expect(rows[1]?.startsWith(`   ❯ ${CURSOR_MARKER}hello  `)).toBe(true)
+    expect(rows[1]?.trimEnd()).toBe(`   ❯ ${CURSOR_MARKER}hello`)
+    expect(rows[2]).toContain(ansi.italic(ansi.fg('muted', 'thinking high')))
+    expect(rows[2]).toContain(ansi.fg('border', '─╯'))
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
-    expect(rows.join('')).not.toContain('\x1b[48;5;')
+    // Below the rail floor only the editor row remains.
+    expect(composer.render(39)).toEqual([`❯ ${CURSOR_MARKER}hello`])
   })
 
   it('user messages use a theme-aware full-width surface with a plain exit transcript', () => {

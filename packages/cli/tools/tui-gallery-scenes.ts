@@ -1,3 +1,4 @@
+import type { WorkspaceInfo } from '@agnes/cli-tui'
 import type { JsonRpcNotification } from '@agnes/sdk'
 import type { FakeTerminal } from '../src/tui/terminal.js'
 import type { FakeEndpoint } from '../test/fake-endpoint.js'
@@ -14,6 +15,8 @@ export type Scene = {
   ready?: string[]
   act?: (ctx: Ctx) => void
   done?: string[]
+  /** What the composer rail's git probe answers; the bare gallery cwd otherwise. */
+  workspace?: WorkspaceInfo
 }
 
 export const SID = 'agnes:local:default:cli:dm:4f9c2a7e'
@@ -90,6 +93,33 @@ const CONVERSATION = [
   user('Summarise the repository layout and how to run the checks.'),
   { kind: 'assistant', id: 'a1', seq: 2, text: ANSWER },
 ]
+const LANE: WorkspaceInfo = {
+  root: '~/agnes-harness',
+  subpath: 'packages/web',
+  worktree: 'lane-a',
+  branch: 'feat/agh-plugin-core',
+}
+/** The composer rail's gauge at `tokens` of a 1M window that compacts at 85%. */
+const railUsage = (tokens: number) => ({
+  ...usage,
+  context: { tokens, window: 1_000_000, autoCompact: true, compactAt: 850_000 },
+  model: { route: 'agnes', id: 'GLM-5.3-Flash', thinking: 'high' },
+})
+const rail = (
+  id: string,
+  title: string,
+  workspace: WorkspaceInfo,
+  tokens: number,
+  extra: Partial<Scene> = {},
+) => ({
+  id,
+  title,
+  cols: 120,
+  timeline: timeline(CONVERSATION, { usage: railUsage(tokens) }),
+  workspace,
+  ready: ['behaviour', `${Math.round(tokens / 10_000)}%`],
+  ...extra,
+})
 const typed =
   (...keys: string[]) =>
   (ctx: Ctx) => {
@@ -274,4 +304,21 @@ export const SCENES: Scene[] = [
     ),
     ready: ['介绍一下', '改动保持聚焦'],
   },
+  rail('rail-worktree', 'Composer rail: linked worktree in a subdirectory', LANE, 230_000),
+  rail(
+    'rail-detached',
+    'Composer rail: detached HEAD',
+    { root: '~/agnes-harness', subpath: '', detached: '16f42a3' },
+    80_000,
+  ),
+  rail('rail-no-git', 'Composer rail: outside git', { root: '~/Downloads/notes', subpath: '' }, 20_000),
+  rail('rail-gauge-normal', 'Composer rail gauge: 12%', LANE, 120_000),
+  rail('rail-gauge-half', 'Composer rail gauge: 58%', LANE, 580_000),
+  rail('rail-gauge-warning', 'Composer rail gauge: 78%, amber', LANE, 780_000),
+  rail('rail-gauge-crossed', 'Composer rail gauge: 93%, past the compaction mark', LANE, 930_000),
+  rail('rail-80', 'Composer rail at 80 columns: degraded labels', LANE, 230_000, { cols: 80, rows: 24 }),
+  rail('rail-zh-CN', 'Composer rail, zh-CN hints', LANE, 230_000, {
+    locale: 'zh-CN',
+    ready: ['behaviour', '思考 高'],
+  }),
 ]

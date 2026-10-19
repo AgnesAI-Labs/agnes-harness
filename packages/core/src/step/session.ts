@@ -157,7 +157,7 @@ import { type AbortResult, abortSession, closeTurn, finishAborted } from './cont
 import { DecisionCommands, type DecisionSource } from './decisions.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
-import { contextWindowFor } from './gate.js'
+import { compactionSettingsFor, contextWindowFor } from './gate.js'
 import {
   budgetOverrideEvent,
   claimFrom,
@@ -2542,7 +2542,14 @@ export class SessionImpl {
       },
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
+      ...this.compactAt(contextWindowFor(this, target.route, target.model)),
     })
+  }
+
+  /** Where threshold compaction fires (compaction.ts's `window - reserve`), for the usage gauge. */
+  private compactAt(contextWindow: number): { compactAt?: number } {
+    if (!this.preset.compaction.enabled) return {}
+    return { compactAt: contextWindow - compactionSettingsFor(this, contextWindow).reserveTokens }
   }
 
   private async projectHistoricalUI(
@@ -2596,6 +2603,7 @@ export class SessionImpl {
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,
+      ...this.compactAt(contextWindowFor(this, target.route, target.model)),
     })
     const timeline = await projectUI(events, {
       sessionKey: this.key,

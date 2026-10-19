@@ -4006,6 +4006,11 @@
             "autoCompact": {
               "type": "boolean"
             },
+            "compactAt": {
+              "description": "Context tokens at which threshold compaction fires; present only while autoCompact is on.",
+              "type": "integer",
+              "minimum": 0
+            },
             "source": {
               "const": "estimated"
             }

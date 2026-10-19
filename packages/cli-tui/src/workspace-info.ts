@@ -1,0 +1,102 @@
+import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
+import { basename, dirname, sep } from 'node:path'
+
+/** What the composer rail says about where the CLI runs. Raw text: the renderer sanitizes it. */
+export type WorkspaceInfo = {
+  /** Main repository root, or the directory itself outside git, with the home directory as `~`. */
+  root: string
+  /** The directory below `root`, `''` at the root. */
+  subpath: string
+  /** Linked worktree name, only inside a linked worktree. */
+  worktree?: string
+  branch?: string
+  /** Short commit id while HEAD is detached. */
+  detached?: string
+}
+
+export type WorkspaceProbe = (cwd: string) => Promise<WorkspaceInfo>
+
+const TIMEOUT_MS = 1_000
+
+export function tildePath(path: string, home = homedir()): string {
+  return home && (path === home || path.startsWith(home + sep)) ? `~${path.slice(home.length)}` : path
+}
+
+/** One fixed-argument git call without a shell; any failure, timeout or missing git reads as no answer. */
+function git(cwd: string, args: string[], signal: AbortSignal): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      args,
+      { cwd, signal, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 },
+      (error, out) => resolve(error ? undefined : out),
+    )
+  })
+}
+
+/** Reads the repository facts for `cwd`, degrading to the bare directory whenever git cannot answer. */
+export async function readWorkspaceInfo(
+  cwd: string,
+  options: { home?: string; signal?: AbortSignal } = {},
+): Promise<WorkspaceInfo> {
+  const home = options.home ?? homedir()
+  const signal = options.signal ?? AbortSignal.timeout(TIMEOUT_MS)
+  const fallback = { root: tildePath(cwd, home), subpath: '' }
+  // Absolute paths make the git dirs comparable; --show-prefix stays relative, which is what we show.
+  const paths = await git(
+    cwd,
+    [
+      'rev-parse',
+      '--path-format=absolute',
+      '--show-toplevel',
+      '--git-dir',
+      '--git-common-dir',
+      '--show-prefix',
+    ],
+    signal,
+  )
+  const [top, gitDir, commonDir, prefix = ''] = paths?.split('\n') ?? []
+  if (!top || !gitDir || !commonDir) return fallback
+  const linked = gitDir !== commonDir
+  const root = linked && basename(commonDir) === '.git' ? dirname(commonDir) : top
+  // Separate from rev-parse above: a repository without commits has a branch but no HEAD commit.
+  const branch = (await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal))?.trim()
+  const detached = branch ? undefined : (await git(cwd, ['rev-parse', '--short', 'HEAD'], signal))?.trim()
+  return {
+    root: tildePath(root, home),
+    subpath: prefix.replace(/\/$/, ''),
+    ...(linked ? { worktree: basename(top) } : {}),
+    ...(branch ? { branch } : {}),
+    ...(detached ? { detached } : {}),
+  }
+}
+
+/**
+ * Keeps at most one probe in flight. A refresh asked for mid-read runs once more after it, so the
+ * last request always sees the state it was asked about.
+ */
+export function workspaceRefresher(
+  cwd: string,
+  probe: WorkspaceProbe,
+  apply: (info: WorkspaceInfo) => void,
+): () => void {
+  let running = false
+  let again = false
+  const run = (): void => {
+    running = true
+    void probe(cwd)
+      .then(apply, () => {})
+      .finally(() => {
+        running = false
+        if (again) {
+          again = false
+          run()
+        }
+      })
+  }
+  return () => {
+    if (running) again = true
+    else run()
+  }
+}

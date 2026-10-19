@@ -22,6 +22,7 @@ export type UsageProjectionInput = {
   settings?: ModelSettings
   contextTokens: number
   autoCompact: boolean
+  compactAt?: number
 }
 
 /** Estimates context at the same bounded cut as a UI projection, without mutable session state. */
@@ -147,6 +148,7 @@ export function projectUsage(input: UsageProjectionInput): UsageView {
       tokens: input.contextTokens,
       window: input.model.contextWindow,
       autoCompact: input.autoCompact,
+      ...(input.compactAt === undefined ? {} : { compactAt: input.compactAt }),
     },
     model: {
       route: input.route,

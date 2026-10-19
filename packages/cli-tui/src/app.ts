@@ -37,6 +37,7 @@ import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
 import { WelcomeBanner } from './views/welcome-banner.js'
+import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
 
@@ -110,6 +111,7 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
+  private readonly refreshWorkspace: () => void
 
   constructor(
     // `header` is a back-compat fallback: real callers (`modes/tui.ts`) pass `profile`/`preset`
@@ -138,6 +140,8 @@ export class TuiApp {
       themePreferencePath?: string
       /** Shown once on the status bar after a fresh session inherits a model or full permission. */
       initialNotice?: string
+      /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
+      probeWorkspace?: WorkspaceProbe
     },
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
@@ -298,7 +302,13 @@ export class TuiApp {
       },
     })
     this.packageController = new PackageController(o.controlClient, () => this.profile)
-    this.composer = new Composer(this.editor, ansi)
+    this.composer = new Composer(this.editor, ansi, locale)
+    this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
+    // At startup and after every turn (the agent may have switched branch); never blocks a frame.
+    this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
+      this.composer.setWorkspace(info)
+      if (!this.stopped) this.renderer.requestRender()
+    })
     // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
     // immediately visible by design (see loader.ts's doc comment), so the app -- not the
     // component -- is what decides a fresh session shows nothing yet.
@@ -543,6 +553,7 @@ export class TuiApp {
       client.on('closed', () => this.handleClosed()),
     ]
     if (this.o.initialNotice) this.statusBar.setNotice(this.o.initialNotice)
+    this.refreshWorkspace()
     try {
       this.renderer.start()
       await this.projection.start()
@@ -701,13 +712,7 @@ export class TuiApp {
     if (value.usage) {
       this.welcomeBanner.setModel(value.usage.model.id)
     }
-    this.composer.setMeta(
-      value.usage
-        ? `${escapeControl(value.usage.model.id)}${
-            value.usage.model.thinking ? ` · ${escapeControl(value.usage.model.thinking)}` : ''
-          }`
-        : undefined,
-    )
+    this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
     // from, in the same transaction. That is a stronger consistency guarantee than a separate
@@ -775,6 +780,7 @@ export class TuiApp {
       const elapsedMs = this.turnStartedAt !== undefined ? Date.now() - this.turnStartedAt : undefined
       this.loader.stop(elapsedMs !== undefined ? formatTurnSummary(this.currentTurn, elapsedMs) : undefined)
       this.turnStartedAt = undefined
+      this.refreshWorkspace()
     } else if (active) {
       this.loader.setLabel(opState.phase)
     }

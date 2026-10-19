@@ -28,6 +28,8 @@ node agnes.mjs --mode json --chunks --meta "解释当前项目"
 node agnes.mjs
 ```
 
+输入框顶边显示模型、所在目录及其 Git worktree 与分支，以及上下文用量；`┊` 标出自动压缩的起点。
+
 输入 `/` 可查看当前菜单。常用操作：
 
 | 操作 | 用法 |
