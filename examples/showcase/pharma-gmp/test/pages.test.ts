@@ -60,6 +60,9 @@ it.each(['zh-CN', 'en'] as const)(
       const refresh = host.container.querySelector('button')!
       await host.act(async () => refresh.click())
       expect(host.container.textContent).toContain('B-2410-017')
+      expect(host.container.querySelector('.ph-alert-copy')?.textContent).toContain(
+        locale === 'en' ? 'Historical originals' : '原始历史发现',
+      )
       for (const page of ['batches', 'deviations', 'em', 'release', 'audit', 'home']) {
         await host.render(`pharma-${page}`)
         expect(host.container.querySelector(`[data-pharma-page="${page}"]`)).not.toBeNull()
@@ -82,6 +85,11 @@ it.each(['zh-CN', 'en'] as const)(
       expect(host.window.sessionStorage.length).toBe(1)
       expect(calls.find((r) => r.kind === 'operation')?.operationId).toBe(
         calls.find((r) => r.kind === 'effect')?.operationId,
+      )
+      plant.batches.find((batch) => batch.id === 'B-2410-017')!.status = 'released'
+      await host.render('pharma-home')
+      expect(host.container.querySelector('.ph-alert-state')?.textContent).toContain(
+        locale === 'en' ? 'Released' : '已放行',
       )
     } finally {
       await host.dispose()

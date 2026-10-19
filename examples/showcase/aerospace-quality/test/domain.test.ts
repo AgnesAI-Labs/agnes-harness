@@ -19,10 +19,27 @@ const skills = { register: () => () => {} }
 it('Host tools and profile services share durable state; restart preserves drafts; stale, malformed and unauthorized decisions refuse', async () => {
   const storeDir = await mkdtemp(join(tmpdir(), 'agh-aero-store-'))
   roots.push(storeDir)
-  let host = await createPluginTestHost(main, { packageDir, storeDir, services: { skills } })
+  let host = await createPluginTestHost(main, {
+    packageDir,
+    storeDir,
+    services: { skills },
+    context: {
+      skillInstall: {
+        request: async () => {
+          throw { message: 'SKILL_INSTALL_REJECTED' }
+        },
+      },
+    },
+  })
   try {
     const initial = (await host.invokeProfileService('aero.snapshot', {})) as any
     expect(initial.requirements).toHaveLength(39)
+    const refusedInstall = await host.invoke('aero_skill_candidate', {
+      action: 'status',
+      proposalId: 'skill-install-synthetic',
+    })
+    expect(refusedInstall.isError).toBe(true)
+    expect(JSON.stringify(refusedInstall.content)).toContain('SKILL_INSTALL_REJECTED')
     expect(initial.campaigns.flatMap((c: any) => c.samples).length).toBe(484)
     expect(initial.campaigns[4].samples).toEqual([])
     const diagnosis = await host.invoke('aero_investigate', { anomalyId: 'AN-027' })

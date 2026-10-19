@@ -7,6 +7,7 @@ const age = (opened) =>
   Math.max(0, Math.floor((Date.parse('2024-10-20T23:59:59Z') - Date.parse(opened)) / 86400000))
 export function Home({ data, t, locale, selectBatch }) {
   const { plant: p, kpi: k } = data
+  const tracked = p.batches.find((batch) => batch.id === 'B-2410-017')
   return h(
     React.Fragment,
     null,
@@ -32,6 +33,8 @@ export function Home({ data, t, locale, selectBatch }) {
           'div',
           null,
           h('p', { className: 'ph-alert-copy' }, t.attention),
+          tracked &&
+            h('p', { className: 'ph-alert-state' }, t.currentRecord, ' · ', badge(tracked.status, t)),
           button('B-2410-017 →', () => selectBatch('B-2410-017')),
           h('p', { className: 'ph-note' }, t.demoFlow),
         ),

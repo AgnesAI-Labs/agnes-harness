@@ -48,6 +48,7 @@ for (const [locale, theme] of [
   })
   await context.addInitScript(
     ({ locale, theme }) => {
+      if (window !== window.top) return
       localStorage.setItem('agnes-locale', locale)
       localStorage.setItem('agnes-theme', theme)
     },
@@ -61,12 +62,26 @@ async function shot(label, item) {
   await item.page.evaluate(() => document.fonts.ready)
   const file = `${label}-${item.locale}-${item.theme}.png`
   await item.page.screenshot({ path: join(output, file), fullPage: true, animations: 'disabled' })
+  evidence.screenshots = evidence.screenshots.filter((shot) => shot.file !== file)
   evidence.screenshots.push({ file, label, locale: item.locale, theme: item.theme })
 }
 async function capture(label, path, selector) {
   for (const item of pages) {
     await item.page.goto(`${rt.url}${path}`)
+    if (selector && path.startsWith('/?session=')) {
+      await item.page.locator(selector).first().waitFor({ state: 'attached', timeout: 45000 })
+      await until(
+        async () => {
+          await item.page.locator('#view-chat').click()
+          return item.page.locator(selector).first().isVisible()
+        },
+        (visible) => visible,
+        'conversation view ready',
+        15000,
+      )
+    }
     if (selector) await item.page.locator(selector).first().waitFor({ timeout: 45000 })
+    await item.page.getByTestId(`home-entry-${home}`).waitFor({ timeout: 45000 })
     if (label === '06-investigation-evidence') {
       await item.page.getByTestId('turn-process-toggle').first().click()
       for (const toggle of await item.page.getByTestId('turn-activity-toggle').all()) {
@@ -102,7 +117,7 @@ async function capture(label, path, selector) {
       await preview
         .contentFrame()
         .locator('body')
-        .filter({ hasText: pharma ? /Sableleaf|沙叶/ : /AN-027/ })
+        .filter({ hasText: pharma ? /Sableleaf|沙叶/ : /QV-X27/ })
         .waitFor({ timeout: 30000 })
     }
     await shot(label, item)
@@ -124,9 +139,12 @@ async function open(role, fullAccess = false) {
     sessionKey: randomUUID(),
   })
   s.onPermissionRequest(async (request) => {
-    evidence.steps.push({ kind: 'ordinary-permission', session: s.id, requestId: request.requestId })
-    if (!pharma && JSON.stringify(request.toolCall).toLowerCase().includes('skill'))
-      await capture('09-reviewed-candidate', `/?session=${s.id}`, '[data-testid="approval-card"]')
+    evidence.steps.push({
+      kind: 'ordinary-permission',
+      session: s.id,
+      requestId: request.requestId,
+      reviewedTool: request.toolCall,
+    })
     const option = request.options.find((o) => o.kind === 'allow_once')
     assert.ok(option)
     return { optionId: option.optionId }
@@ -262,7 +280,7 @@ try {
   await capture(
     '04-transformed-home',
     '/',
-    pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page]',
+    pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page] .aero-kpis',
   )
   const adopted = await rt.client.request('_agnes/v1/applications.get', { profile: 'local-dev' })
   assert.equal(adopted.status, 'active')
@@ -270,7 +288,7 @@ try {
   await capture(
     '05-incident',
     pagePath(pharma ? 'pharma-deviations' : 'aero-tests'),
-    pharma ? '[data-pharma-page="deviations"] .ph-card' : '[data-aero-page]',
+    pharma ? '[data-pharma-page="deviations"] .ph-card' : '[data-aero-page] .aero-chart-section',
   )
   if (pharma)
     await capture('05b-em-alert-action', pagePath('pharma-em'), '[data-pharma-page="em"] figure svg')
@@ -490,14 +508,17 @@ try {
     const installedSkill = await toolResult(s, 'aero_skill_candidate')
     assert.equal(installedSkill.data.state, 'ready')
     evidence.installedSkill = installedSkill.data
+    await capture('09-reviewed-candidate', `/?session=${s.id}`, '[data-testid="conversation-turn"]')
     await run(s, '请请求我签署 TVAC-LOT-001 项目规则的启用。', 'rule-signature', ['aero_decide'])
     const configuration = await open('configuration')
     await run(
       configuration,
       '请使用刚审阅安装的 TVAC 筛选技能重新分析 ECR-016，告诉我新规则是否生效及新增验证。先别改变基线。',
       'learned-next-run',
-      ['aero_change_review'],
+      ['skill_read', 'aero_change_review'],
     )
+    const learnedSkill = await toolResult(configuration, 'skill_read')
+    assert.equal(learnedSkill.name, evidence.installedSkill.name)
     const learned = await toolResult(configuration, 'aero_change_review')
     assert.equal(learned.data.screeningRequired, true)
     await run(
@@ -521,11 +542,11 @@ try {
       15000,
     )
     await item.page.locator('#trace-panel .trace-row').first().waitFor({ timeout: 30000 })
-    const toolRow = item.page
+    const requestRow = item.page
       .locator('#trace-panel .trace-row')
-      .filter({ has: item.page.locator('.kind-tool') })
+      .filter({ has: item.page.locator('.kind-assistant') })
       .last()
-    await toolRow.click()
+    await requestRow.click()
     await item.page
       .locator('.trace-inspector')
       .getByRole('tab', { name: item.locale === 'en' ? 'Source' : '来源', exact: true })
@@ -562,16 +583,12 @@ try {
   await job.attach()
   await account(job)
   await toolResult(job, pharma ? 'pharma_report' : 'aero_report')
-  await capture(
-    '10-automation',
-    '/?page=automation',
-    '[data-testid="schedules-row"]',
-  )
+  await capture('10-automation', '/?page=automation', '[data-testid="schedules-row"]')
   await capture('11-automated-report', `/?session=${job.id}`, '[data-testid="conversation-turn"]')
   await capture(
     '12-final-home',
     pagePath(home),
-    pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page]',
+    pharma ? '[data-pharma-page="home"] .ph-card' : '[data-aero-page] .aero-kpis',
   )
   for (const item of pages) {
     await item.page.goto(`${rt.url}/?settings=application`)
@@ -581,6 +598,17 @@ try {
         exact: true,
       })
       .waitFor({ timeout: 30000 })
+    await until(
+      () =>
+        item.page
+          .getByRole('button', {
+            name: item.locale === 'en' ? 'Clear application and interface choices' : '清除应用与界面实现选择',
+            exact: true,
+          })
+          .isEnabled(),
+      Boolean,
+      'application settings loaded',
+    )
     await shot('13-restore-in-settings', item)
   }
   await pages[0].page.getByRole('button', { name: '清除应用与界面实现选择', exact: true }).click()

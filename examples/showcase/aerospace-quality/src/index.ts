@@ -73,7 +73,14 @@ function tool<S extends TSchema>(
         const output = { revision: read(ctx.store).revision, data: json(data) }
         return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structured: output }
       } catch (error) {
-        return toolError(error instanceof Error ? error.message : String(error))
+        const code = (error as { message?: unknown } | null)?.message
+        return toolError(
+          error instanceof Error
+            ? error.message
+            : typeof code === 'string' && /^SKILL_[A-Z_]+$/.test(code)
+              ? code
+              : String(error),
+        )
       }
     },
   })
