@@ -41,13 +41,34 @@ function plugin(version: string, approval = false, wait?: (signal: AbortSignal) 
 describe('public author testkit', () => {
   it('boots with declared capabilities when the git-worktree registrar has no plugin row', async () => {
     const kit = await createAuthorTestkit({
-      plugin: plugin('1'),
+      plugin: defineAgnesPlugin({
+        inject: ['tools'],
+        apply(ctx: Context) {
+          ctx.tools.register({
+            ...fixtureTool('owned_value'),
+            meta: {
+              ...fixtureTool('owned_value').meta,
+              isReadOnly: false,
+              isConcurrencySafe: false,
+              replay: 'never',
+            },
+            async execute(_args, call) {
+              if (!call.store) throw new Error('Declared store missing')
+              const value = Number(call.store.get('value') ?? 0) + 1
+              call.store.set('value', value)
+              return { content: [{ type: 'text', text: String(value) }], structured: { value } }
+            },
+          })
+        },
+      }),
       version: '1.0.0',
-      capabilities: { uiData: ['author.test'] },
+      capabilities: { uiData: ['author.test'], store: true } as const,
     })
     try {
       const session = await kit.openSession()
-      expect((await session.invoke('version', {})).structured).toEqual({ version: '1' })
+      expect((await session.invoke('owned_value', {})).structured).toEqual({ value: 1 })
+      const next = await kit.openSession()
+      expect((await next.invoke('owned_value', {})).structured).toEqual({ value: 2 })
     } finally {
       await kit.dispose()
     }

@@ -74,7 +74,7 @@ try {
 
 The full fixture assembles a real Host/Core with isolated SQLite ledgers and normal runtime generations. The default `author.invoke` Loop invokes tools through Core's policy, approval and effect path. Approval defaults to `rejected`; supply `allowed-once`, `allowed-session` or another supported verdict explicitly. `assertApproval` reads durable approval facts. `assertRefused` checks the last matching tool call's error result and absence of an execution intent, so a tool that executes and then returns an error is not a refusal.
 
-Pass `capabilities: { uiData: ['acme.records.read'] }` when the fixture needs declared UI data permissions. The testkit writes them on its synthetic `agnes.plugins` entry before inspection and capability hashing; `reload` accepts the same option for the new version.
+Pass ordinary `PluginCapabilities`, for example `capabilities: { store: true, uiData: ['acme.records.read'] }`, when the fixture needs owner storage or declared UI data permissions. The testkit writes them on its synthetic `agnes.plugins` entry before inspection and capability hashing; `reload` accepts the same option for the new version.
 
 To exercise your registered business Loop, open `kit.openSession({ loop: { id: 'acme.business', version: '1.0.0' } })`, call `session.enqueue('synthetic request')`, then `session.drive(5)`. This advances at most five public Loop edges and stops at idle, parked or turn-end. You can continue with another `drive(N)` and inspect `facts()`/`effects()`. Pass an AbortSignal for cancellation. Open a separate default session for `invoke`.
 

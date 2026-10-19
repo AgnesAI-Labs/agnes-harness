@@ -26,6 +26,7 @@ import {
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type {
+  PluginCapabilities,
   RouteDecl,
   UiActionParams,
   UiActionReceipt,
@@ -45,7 +46,7 @@ export interface AuthorPluginVersion {
   /** Reviewed browser declaration and self-contained code, copied into the synthetic package. */
   clientModule?: { declaration: import('@agnes/protocol').ClientContribution; code: string }
   /** Manifest capabilities written before the development capability hash. Omission leaves the hash unchanged. */
-  capabilities?: { readonly uiData?: readonly string[] }
+  capabilities?: Omit<PluginCapabilities, 'uiData'> & { readonly uiData?: readonly string[] }
 }
 export interface AuthorTestOptions extends AuthorPluginVersion {
   packageId?: string

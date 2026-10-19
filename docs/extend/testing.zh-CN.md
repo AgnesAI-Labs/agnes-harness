@@ -71,7 +71,7 @@ try {
 
 完整 fixture 装配真实 Host/Core，使用隔离 SQLite ledger 和正常 runtime generation。默认 `author.invoke` Loop 通过 Core 策略、审批与 effect 路径调用工具。审批默认 `rejected`；需要允许时明确返回 `allowed-once`、`allowed-session` 等支持的 verdict。`assertApproval` 读取持久审批事实。`assertRefused` 检查最后一次匹配调用的错误结果及执行 intent 缺失；先执行再返回错误不能冒充拒绝。
 
-需要声明 UI 数据权限时，传入 `capabilities: { uiData: ['acme.records.read'] }`。testkit 会在静态检查与能力哈希计算前，将声明写入合成的 `agnes.plugins` 条目；`reload` 的新版本同样接受该选项。
+可传入普通 `PluginCapabilities`，例如 `capabilities: { store: true, uiData: ['acme.records.read'] }`，为测试声明 owner 存储或 UI 数据权限。testkit 会在静态检查与能力哈希计算前，将声明写入合成的 `agnes.plugins` 条目；`reload` 的新版本同样接受该选项。
 
 验证插件注册的业务 Loop 时，调用 `kit.openSession({ loop: { id: 'acme.business', version: '1.0.0' } })`，再 `session.enqueue('合成请求')` 和 `session.drive(5)`。最多推进五条公共 Loop edge，遇到 idle、parked 或 turn-end 停止；可继续 `drive(N)` 并查看 `facts()`/`effects()`。传 AbortSignal 可取消。直接 `invoke` 使用另开的默认会话。
 
