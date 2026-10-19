@@ -16,6 +16,7 @@ export const badge = (value, t) =>
     },
     t[value] ?? value,
   )
+/** @returns {React.ReactElement} */
 export const button = (label, onClick, props = {}) => h(Button, { onClick, ...props }, label)
 export const table = (rows, columns, caption, props = {}) =>
   h(Table, { rowKey: 'id', dataSource: rows, columns, caption, captionRepeatsHeading: true, ...props })

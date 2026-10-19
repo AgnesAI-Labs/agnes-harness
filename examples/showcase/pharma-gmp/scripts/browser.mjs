@@ -2,6 +2,33 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { chromium } from '@playwright/test'
 
+/** Before install/adoption: showcase discovery must advertise all five roles on a fresh home. */
+export async function captureFeaturedGallery(rt) {
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
+    await page.addInitScript(() => {
+      localStorage.setItem('agnes-locale', 'zh-CN')
+      localStorage.setItem('agnes-theme', 'light')
+    })
+    await page.goto(`${rt.url}/?page=agents`)
+    const roles = page.locator('[data-agent-ref^="@agnes-showcase/pharma-gmp#"]')
+    await roles.first().waitFor({ timeout: 30000 })
+    assert.equal(await roles.count(), 5)
+    assert.equal(
+      (await rt.client.packages.list({ profile: 'local-dev' })).packages.some(
+        (p) => p.id === '@agnes-showcase/pharma-gmp',
+      ),
+      false,
+    )
+    const path = join(rt.root, 'featured-gallery-fresh-zh-light.png')
+    await page.screenshot({ path, fullPage: true })
+    await rt.save('gallery.json', { path, roles: await roles.allTextContents(), installed: false })
+  } finally {
+    await browser.close()
+  }
+}
+
 /** Uses real adopted application/BFF/services; no DOM or backend interception. */
 export async function captureBrowser(rt) {
   const browser = await chromium.launch({ headless: true })

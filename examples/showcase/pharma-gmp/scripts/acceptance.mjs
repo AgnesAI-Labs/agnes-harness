@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { runtime, toolResult, until } from './runtime.mjs'
 import { ruleFiles } from './rule-candidate.mjs'
-import { captureBrowser } from './browser.mjs'
+import { captureBrowser, captureFeaturedGallery } from './browser.mjs'
 
 const real = process.argv.includes('--real'),
   browser = process.argv.includes('--browser')
@@ -30,6 +30,11 @@ async function call(s, name, args, label = name) {
   return run(s, `call ${name} ${JSON.stringify(args)}`, label, name)
 }
 try {
+  if (browser) {
+    await rt.startWeb()
+    await captureFeaturedGallery(rt)
+    evidence.checks.push('fresh-home-featured-gallery-five-roles')
+  }
   const preview = await rt.install('examples/showcase/pharma-gmp')
   assert.equal(preview.id, '@agnes-showcase/pharma-gmp')
   assert.equal(preview.application.id, 'sableleaf-quality')
@@ -60,7 +65,6 @@ try {
   }
   evidence.checks.push('inspect-install-adopt-five-agents')
   if (browser) {
-    await rt.startWeb()
     browserRun = await captureBrowser(rt)
     evidence.browser = browserRun.evidence
   }

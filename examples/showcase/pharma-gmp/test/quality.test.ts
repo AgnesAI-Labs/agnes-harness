@@ -85,8 +85,8 @@ it('shares service/tool state, persists across Host restart, and refuses missing
     const inspected = await host.invoke('pharma_inspect', { batch })
     expect(inspected.isError).not.toBe(true)
     const state = (await host.invokeProfileService('pharma.snapshot', {})) as { plant: Plant }
-    expect(state.plant.deviations[0].stage).toBe('investigation')
-    expect(state.plant.audit.at(-1).approval).toBe('fixture-human-approval')
+    expect(state.plant.deviations[0]!.stage).toBe('investigation')
+    expect(state.plant.audit.at(-1)!.approval).toBe('fixture-human-approval')
     await expect(host.invokeProfileService('pharma.change', args)).rejects.toThrow('approval proof')
     expect((await host.invoke('pharma_record', args)).isError).toBe(true)
     expect(
