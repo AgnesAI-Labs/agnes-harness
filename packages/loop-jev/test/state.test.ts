@@ -311,11 +311,12 @@ describe('checkpoints with observations', () => {
     const decoded = parseJevState(codec.decode({ codecVersion: 1, state: OLD_CHECKPOINT }) as never)
     expect(decoded.workspace.views).toEqual([])
     expect(decoded.workspace.mentioned).toEqual([])
+    expect(decoded.workspace.index).toEqual({ files: [], directories: [] })
     for (const key of ADDED_COUNTERS) expect(decoded.counters[key]).toBe(0)
     const old = structuredClone(OLD_CHECKPOINT) as unknown as Loose & { workspace: object }
     expect(decoded).toEqual({
       ...old,
-      workspace: { ...old.workspace, views: [], mentioned: [] },
+      workspace: { ...old.workspace, views: [], index: { files: [], directories: [] }, mentioned: [] },
       counters: { ...old.counters, ...Object.fromEntries(ADDED_COUNTERS.map((key) => [key, 0])) },
     })
     const again = codec.encode(decoded as never)
@@ -350,6 +351,105 @@ describe('checkpoints with observations', () => {
       'workspace.mentioned',
     )
     expect(bad('x')).toThrow('workspace.mentioned')
+  })
+  describe('the seen-path index', () => {
+    const withIndex = (files: number, directories: number) => {
+      const s = initialState()
+      s.workspace.index = {
+        files: Array.from(
+          { length: files },
+          (_, i) => `packages/feature/src/module${i}/${'x'.repeat(60)}.ts`,
+        ),
+        directories: Array.from({ length: directories }, (_, i) => `packages/feature/src/module${i}`),
+      }
+      return s
+    }
+    const decoded = (s: ReturnType<typeof initialState>) => parseJevState(encodeState(s).state).workspace
+    const filler = (s: ReturnType<typeof initialState>, over: number) => {
+      s.workspace.answer = ''
+      s.workspace.answer = 'a'.repeat(Math.max(0, CHECKPOINT_MAX_BYTES - utf8Bytes(JSON.stringify(s)) + over))
+    }
+    it('round-trips, is absent in an old checkpoint and is rejected when malformed or over its caps', () => {
+      const s = withIndex(64, 16)
+      expect(decoded(s).index).toEqual(s.workspace.index)
+      const raw = () =>
+        structuredClone(encodeState(initialState()).state) as unknown as { workspace: { index?: unknown } }
+      const old = raw()
+      delete old.workspace.index
+      expect(parseJevState(old as never).workspace.index).toEqual({ files: [], directories: [] })
+      const bad = (index: unknown) => () => {
+        const state = raw()
+        state.workspace.index = index
+        parseJevState(state as never)
+      }
+      expect(bad({ files: [], directories: [], extra: [] })).toThrow('workspace.index.extra')
+      expect(bad({ files: [1], directories: [] })).toThrow('workspace.index.files[0]')
+      expect(bad({ files: [] })).toThrow('workspace.index.directories')
+      expect(bad({ files: Array(65).fill('a'), directories: [] })).toThrow('workspace.index.files')
+      expect(bad({ files: [], directories: Array(17).fill('a') })).toThrow('workspace.index.directories')
+      expect(bad(null)).toThrow('workspace.index')
+    })
+    it('is kept whole while the state fits', () => {
+      const s = withIndex(64, 16)
+      filler(s, -100)
+      expect(utf8Bytes(JSON.stringify(s))).toBeLessThanOrEqual(CHECKPOINT_MAX_BYTES)
+      expect(decoded(s).index).toEqual(s.workspace.index)
+    })
+    it('is cut to the newest 16 files and 4 directories before any view evidence is halved', () => {
+      const s = withIndex(64, 16)
+      s.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: 'c',
+          scope: 'f.ts',
+          evidence: 'e'.repeat(1000),
+          references: [],
+          truncated: false,
+        }),
+      )
+      filler(s, 500)
+      const out = decoded(s)
+      expect(out.index.files).toEqual(s.workspace.index.files.slice(0, 16))
+      expect(out.index.directories).toEqual(s.workspace.index.directories.slice(0, 4))
+      expect(out.views[0]?.evidence).toHaveLength(1000)
+      expect(utf8Bytes(JSON.stringify(encodeState(s).state))).toBeLessThanOrEqual(CHECKPOINT_MAX_BYTES)
+    })
+    it('is cut after prior history goes and before evidence, which halves only when still oversize', () => {
+      const s = withIndex(64, 16)
+      s.workspace.history = Array.from({ length: 60 }, (_, i) => big(i))
+      s.workspace.turnStart = 60
+      const out = decoded(s)
+      expect(out.history.length).toBeLessThan(60)
+      expect(out.index.files).toHaveLength(64)
+      const t = withIndex(64, 16)
+      t.workspace.views.push(
+        normalizeView({
+          operation: 'read',
+          callId: 'c',
+          scope: 'f.ts',
+          evidence: 'e'.repeat(1400),
+          references: [],
+          truncated: false,
+        }),
+      )
+      // Over by more than the index cut saves, but by less than halving the evidence saves on top of it.
+      const trimmed = structuredClone(t)
+      trimmed.workspace.index.files.length = 16
+      trimmed.workspace.index.directories.length = 4
+      filler(t, utf8Bytes(JSON.stringify(t)) - utf8Bytes(JSON.stringify(trimmed)) + 300)
+      const cut = decoded(t)
+      expect(cut.index.files).toHaveLength(16)
+      expect(cut.views[0]?.evidence).toHaveLength(700)
+    })
+    it('is dropped whole only after the goal and the excerpts, with the named paths', () => {
+      const s = withIndex(64, 16)
+      s.workspace.mentioned = [{ kind: 'file', value: 'x.md' }]
+      filler(s, 1)
+      s.workspace.answer += 'a'.repeat(CHECKPOINT_MAX_BYTES)
+      const out = decoded(s)
+      expect(out.index).toEqual({ files: [], directories: [] })
+      expect(out.mentioned).toEqual([])
+    })
   })
   it('drops the named paths last, only when everything else already shrank and it is still oversize', () => {
     const s = initialState()

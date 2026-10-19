@@ -2,9 +2,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   DIRECTORY_REF_CAP,
+  emptyIndex,
   FILE_REF_CAP,
+  INDEX_DIRECTORY_CAP,
+  INDEX_FILE_CAP,
   normalizeView,
   referencePaths,
+  touchIndex,
   updateViews,
   VIEW_CAP,
   VIEW_CHARS,
@@ -151,5 +155,37 @@ describe('observation views', () => {
     if (copy === undefined) throw new Error('no view')
     copy.evidence = 'changed'
     expect(before[0]?.evidence).not.toBe('changed')
+  })
+})
+
+describe('the seen-path index', () => {
+  const f = (...values: string[]): ViewReference[] => values.map((value) => ({ kind: 'file', value }))
+  const d = (...values: string[]): ViewReference[] => values.map((value) => ({ kind: 'directory', value }))
+  it('puts the incoming paths first in their own order and moves a path seen again to that place', () => {
+    let index = touchIndex(emptyIndex(), f('a.md', 'b.md', 'c.md'))
+    expect(index.files).toEqual(['a.md', 'b.md', 'c.md'])
+    index = touchIndex(index, [...f('d.md', 'c.md'), ...d('src')])
+    expect(index).toEqual({ files: ['d.md', 'c.md', 'a.md', 'b.md'], directories: ['src'] })
+  })
+  it('keeps the newest 64 files and 16 directories', () => {
+    let index = emptyIndex()
+    for (let i = 0; i < INDEX_FILE_CAP + 10; i++) index = touchIndex(index, f(`f${i}.md`))
+    for (let i = 0; i < INDEX_DIRECTORY_CAP + 5; i++) index = touchIndex(index, d(`d${i}`))
+    expect(index.files).toHaveLength(INDEX_FILE_CAP)
+    expect(index.files[0]).toBe(`f${INDEX_FILE_CAP + 9}.md`)
+    expect(index.files.at(-1)).toBe('f10.md')
+    expect(index.directories).toHaveLength(INDEX_DIRECTORY_CAP)
+    expect(index.directories[0]).toBe(`d${INDEX_DIRECTORY_CAP + 4}`)
+    // Many paths in one call: the incoming ones are capped as well.
+    expect(
+      touchIndex(emptyIndex(), f(...Array.from({ length: 100 }, (_, i) => `g${i}.md`))).files,
+    ).toHaveLength(INDEX_FILE_CAP)
+  })
+  it('ignores unsafe paths and a path of the wrong kind, and returns a copy', () => {
+    const before = touchIndex(emptyIndex(), f('a.md'))
+    const after = touchIndex(before, [...f('/etc/passwd', '../x', 'ok/b.md', '.', 'c\\d.md', ''), ...d('..')])
+    expect(after).toEqual({ files: ['ok/b.md', 'a.md'], directories: [] })
+    expect(before).toEqual({ files: ['a.md'], directories: [] })
+    expect(after.files).not.toBe(before.files)
   })
 })

@@ -8,7 +8,7 @@ import {
   READ_LABEL,
   targetCandidates,
 } from '../src/candidates.js'
-import { normalizeView } from '../src/observations.js'
+import { normalizeView, VIEW_CAP } from '../src/observations.js'
 import { resolveTool } from '../src/profile.js'
 import type { ResolvedTool, Workspace } from '../src/types.js'
 import { emptyWorkspace, fileActivity, newTurn, recordStep } from '../src/workspace.js'
@@ -238,7 +238,8 @@ describe('mentioned candidates', () => {
     })
     ws.answer = 'look at hidden/answer.md'
     expect(ws.mentioned).toEqual([])
-    expect(read(ws)).toEqual([])
+    // Only the file the call itself read is known; nothing the notes or the answer say.
+    expect(read(ws).map((c) => [c.key, c.origin])).toEqual([['a.md', undefined]])
   })
   it('does not count as read: freshness ignores it', () => {
     const ws = turn('read a.md twice')
@@ -249,6 +250,43 @@ describe('mentioned candidates', () => {
     recordStep(ws, step({ operation: 'read', target: 'a.md', read_files: ['a.md'] }))
     expect(read(ws)).toMatchObject([{ key: 'a.md', label: `a.md${READ_LABEL}` }])
     expect(read(ws)[0]?.origin).toBeUndefined()
+  })
+})
+
+describe('candidates and the seen-path index', () => {
+  const shown = (path: string, scope: string) =>
+    ({
+      ...step({ operation: 'ls', target: scope }),
+      view: normalizeView({
+        operation: 'ls',
+        callId: scope,
+        scope,
+        evidence: '',
+        references: [{ kind: 'file', value: path }],
+        truncated: false,
+      }),
+    }) as never
+  it('still offers a file after its view was pushed out of the window', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, shown('lost.md', 'first'))
+    for (let i = 0; i < VIEW_CAP; i++) recordStep(ws, shown(`later${i}.md`, `scope${i}`))
+    expect(ws.views.flatMap((v) => v.references.map((r) => r.value))).not.toContain('lost.md')
+    expect(targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, ws).map((c) => c.key)).toEqual([
+      'later3.md',
+      'later2.md',
+      'later1.md',
+      'later0.md',
+      'lost.md',
+    ])
+  })
+  it('keeps a file that was seen again once, at its newest place, and cuts at the candidate cap', () => {
+    const ws = emptyWorkspace()
+    for (let i = 0; i < 30; i++) recordStep(ws, shown(`f${i}.md`, `s${i}`))
+    recordStep(ws, shown('f3.md', 'again'))
+    const keys = targetCandidates(tool('read'), BUILTIN_SCHEMAS.read, ws).map((c) => c.key)
+    expect(keys).toHaveLength(CANDIDATE_CAP)
+    expect(keys.slice(0, 3)).toEqual(['f3.md', 'f29.md', 'f28.md'])
+    expect(keys.filter((key) => key === 'f3.md')).toHaveLength(1)
   })
 })
 

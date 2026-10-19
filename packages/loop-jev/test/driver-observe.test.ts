@@ -102,6 +102,42 @@ describe('observations in the loop', () => {
     expect(r.steps[0]).toMatchObject({ route: 'direct', binding: { batch: 2, mentioned: 2 } })
     expect(r.metrics.at(-1)).toMatchObject({ batchSteps: 1, mentionedSteps: 1 })
   })
+  it('reads a file from an old listing directly after four later views pushed the listing out of the window', async () => {
+    const files = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+    const r = await run(
+      [
+        { pick: PICK_LS },
+        readPick('b.md'),
+        readPick('c.md'),
+        readPick('d.md'),
+        readPick('e.md'),
+        readPick('a.md'),
+        { pick: PICK_RESPOND },
+      ],
+      {
+        tools: toolPort({
+          ls: lsResult(files.join('\n'), paths(...files.map((f) => ['file', f] as [string, string]))),
+          read: (args) => ok(`content of ${args.path}`),
+        }),
+        replies: [textReply('done')],
+      },
+    )
+    // At the sixth decision the listing's view is gone, yet a.md is still known and offered.
+    const state = jevState(r.jev, 5)
+    expect((state.observation_views as JsonObject[]).map((v) => v.kind)).toEqual([
+      'read',
+      'read',
+      'read',
+      'read',
+    ])
+    expect(state.known_files).toEqual(['e.md', 'd.md', 'c.md', 'b.md', 'a.md'])
+    expect(r.steps[5]).toMatchObject({
+      route: 'direct',
+      bindingMode: 'observed',
+      binding: { targets: ['a.md'] },
+    })
+    expect(r.requests).toHaveLength(1)
+  })
   it('reads a file named in a later turn, not one named in an earlier turn', async () => {
     const r = await run([readPick('old.md'), { pick: PICK_RESPOND }, { pick: PICK_RESPOND }], {
       inputs: [

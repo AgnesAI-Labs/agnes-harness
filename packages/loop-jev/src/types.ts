@@ -36,6 +36,11 @@ export type ObservationView = {
   truncated: boolean
   invocation?: JsonObject
 }
+/**
+ * The files and directories results have pointed at, most recently seen first, kept apart from the
+ * views so that a view leaving the window does not make its paths unknown.
+ */
+export type SeenIndex = { files: string[]; directories: string[] }
 /** Where the references of a result came from. */
 export type ReferenceSource = 'structured' | 'arguments' | 'text' | 'none'
 /** A complete call Jev may pick as a target, built from an observed reference. */
@@ -162,6 +167,7 @@ export type Workspace = {
   history: HistoryEntry[]
   turnStart: number
   views: ObservationView[]
+  index: SeenIndex
   /** Paths the user's message of this turn named; replaced at every new turn, never carried over. */
   mentioned: ViewReference[]
 }

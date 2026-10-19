@@ -1,6 +1,6 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
 import { mentionedPaths } from './mentions.js'
-import { halveEvidence, referencePaths, updateViews } from './observations.js'
+import { emptyIndex, halveEvidence, referencePaths, touchIndex, updateViews } from './observations.js'
 import type {
   ContentBlock,
   HistoryEntry,
@@ -10,6 +10,7 @@ import type {
   Observation,
   ObservationView,
   ReferenceKind,
+  ViewReference,
   Workspace,
 } from './types.js'
 import { clip, tail } from './util.js'
@@ -24,6 +25,9 @@ const RECENT_STEPS = 10
 const SHRUNK_RECENT_STEPS = 5
 const GOAL_FULL_CHARS = 4000
 const GOAL_END_CHARS = 2000
+/** The files `known_files` lists: all of the index up to level 1, 20 from level 2 (the cap before the index existed), 8 from level 5. */
+const KNOWN_FILES_SHRUNK = 20
+const KNOWN_FILES_LOW = 8
 /** Operations whose unknown outcome cannot have changed any file. */
 const OBSERVING_OPERATIONS: readonly string[] = ['ls', 'read', 'grep', 'find']
 
@@ -42,6 +46,7 @@ export function emptyWorkspace(): Workspace {
     history: [],
     turnStart: 0,
     views: [],
+    index: emptyIndex(),
     mentioned: [],
   }
 }
@@ -67,9 +72,10 @@ export function newTurn(ws: Workspace, goal: string): void {
   ws.turnStart = ws.history.length
 }
 
-/** Every path of `kind` the workspace has seen, newest first: what the views reference. */
+/** Every path of `kind` the workspace has seen, newest first: what the views reference, then the rest of the index. */
 export function knownPaths(ws: Workspace, kind: ReferenceKind): string[] {
-  return referencePaths(ws.views, kind)
+  const indexed = kind === 'file' ? ws.index.files : ws.index.directories
+  return [...new Set([...referencePaths(ws.views, kind), ...indexed])]
 }
 
 /** Whether the user's message named `path` as a `kind` that no result has shown. */
@@ -105,6 +111,19 @@ export function recordStep(ws: Workspace, obs: Observation): void {
   ws.history.push(copy)
   for (const note of obs.notes) addNote(ws, note)
   if (obs.view) ws.views = updateViews(ws.views, obs.view)
+  ws.index = touchIndex(ws.index, [...(obs.view?.references ?? []), ...touchedFiles(entry)])
+}
+
+/** The files a step read or changed, a write or edit of unknown outcome included: it may have made the file. */
+function touchedFiles(entry: HistoryEntry): ViewReference[] {
+  const paths = [...(entry.read_files ?? []), ...(entry.changed_files ?? [])]
+  if (
+    entry.dispatched &&
+    entry.disposition === 'UNKNOWN' &&
+    (entry.operation === 'write' || entry.operation === 'edit')
+  )
+    paths.push(...targetPaths(entry))
+  return paths.map((value) => ({ kind: 'file', value }))
 }
 
 export function currentTurn(ws: Workspace): HistoryEntry[] {
@@ -216,8 +235,8 @@ function historyView(entry: HistoryEntry, withEvidence: boolean): JsonObject {
 }
 
 /**
- * The state Jev sees. A higher `level` drops more: view evidence, the oldest view, answer, steps,
- * notes, then the middle of the goal.
+ * The state Jev sees. A higher `level` drops more: view evidence, the oldest view and the files beyond
+ * the newest 20 of `known_files`, answer, steps, notes (and files beyond 8), then the middle of the goal.
  */
 export function buildState(ws: Workspace, level: number, decisionSurface: JsonObject): JsonObject {
   const last = ws.history[ws.history.length - 1]
@@ -232,7 +251,10 @@ export function buildState(ws: Workspace, level: number, decisionSurface: JsonOb
     goal,
     previous_answer:
       level >= 3 ? tail(ws.previousAnswer, SHRUNK_ANSWER_CHARS) : tail(ws.previousAnswer, PRIOR_ANSWER_CHARS),
-    known_files: knownPaths(ws, 'file'),
+    known_files: knownPaths(ws, 'file').slice(
+      0,
+      level >= 5 ? KNOWN_FILES_LOW : level >= 2 ? KNOWN_FILES_SHRUNK : undefined,
+    ),
     ...(ws.mentioned.length > 0
       ? {
           mentioned_paths: ws.mentioned.map((ref) =>

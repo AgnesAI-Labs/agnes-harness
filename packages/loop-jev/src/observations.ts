@@ -1,5 +1,12 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
-import type { JsonObject, JsonValue, ObservationView, ReferenceKind, ViewReference } from './types.js'
+import type {
+  JsonObject,
+  JsonValue,
+  ObservationView,
+  ReferenceKind,
+  SeenIndex,
+  ViewReference,
+} from './types.js'
 import { clip, digest16, pyJson } from './util.js'
 
 /*
@@ -15,6 +22,12 @@ export const WINDOW_CHARS = 6000
 export const FILE_REF_CAP = 20
 export const DIRECTORY_REF_CAP = 8
 export const EVIDENCE_CHARS = 1600
+/** The seen-path index keeps this many files and directories, most recent first. */
+export const INDEX_FILE_CAP = 64
+export const INDEX_DIRECTORY_CAP = 16
+/** The index a checkpoint over its size limit is cut to before any view evidence is. */
+export const SHRUNK_INDEX_FILE_CAP = 16
+export const SHRUNK_INDEX_DIRECTORY_CAP = 4
 
 const SCOPE_CHARS = 512
 const PATH_CHARS = 512
@@ -173,6 +186,32 @@ export function halveEvidence(view: ObservationView): void {
   if (keep >= evidence.length) return
   view.evidence = evidence.slice(0, keep)
   view.truncated = true
+}
+
+export function emptyIndex(): SeenIndex {
+  return { files: [], directories: [] }
+}
+
+/**
+ * The index after `incoming` was seen, as a copy: the incoming paths come first in their own order, a
+ * path seen again moves to that place, and each list keeps its cap. Paths that are not whole, safe,
+ * workspace-relative are ignored.
+ */
+export function touchIndex(index: SeenIndex, incoming: readonly ViewReference[]): SeenIndex {
+  const next = emptyIndex()
+  for (const kind of ['file', 'directory'] as const) {
+    const list = kind === 'file' ? 'files' : 'directories'
+    const fresh: string[] = []
+    for (const ref of incoming) {
+      const value = ref.kind === kind ? viewPath(ref.value, kind) : null
+      if (value !== null && !fresh.includes(value)) fresh.push(value)
+    }
+    next[list] = [...fresh, ...index[list].filter((value) => !fresh.includes(value))].slice(
+      0,
+      kind === 'file' ? INDEX_FILE_CAP : INDEX_DIRECTORY_CAP,
+    )
+  }
+  return next
 }
 
 /** Paths of `kind`, newest view first, deduplicated, at most the cap of that kind. */

@@ -1,6 +1,16 @@
 import type { LoopCheckpoint, LoopCheckpointCodec } from '@agnes/extension-api'
 import { MENTION_CAP } from './mentions.js'
-import { DIRECTORY_REF_CAP, FILE_REF_CAP, halveEvidence, VIEW_CAP } from './observations.js'
+import {
+  DIRECTORY_REF_CAP,
+  emptyIndex,
+  FILE_REF_CAP,
+  halveEvidence,
+  INDEX_DIRECTORY_CAP,
+  INDEX_FILE_CAP,
+  SHRUNK_INDEX_DIRECTORY_CAP,
+  SHRUNK_INDEX_FILE_CAP,
+  VIEW_CAP,
+} from './observations.js'
 import { MAX_BATCH } from './profile.js'
 import type { Counters, JevState, JsonValue } from './types.js'
 import { clip, tail, utf8Bytes } from './util.js'
@@ -61,6 +71,7 @@ export function initialState(): JevState {
       history: [],
       turnStart: 0,
       views: [],
+      index: emptyIndex(),
       mentioned: [],
     },
     counters: emptyCounters(),
@@ -345,6 +356,15 @@ function checkMentioned(value: unknown, path: string): void {
   }
 }
 
+function checkIndex(value: unknown, path: string): void {
+  const index = obj(value, path)
+  only(index, ['files', 'directories'], path)
+  strings(index.files, `${path}.files`)
+  strings(index.directories, `${path}.directories`)
+  if ((index.files as unknown[]).length > INDEX_FILE_CAP) fail(`${path}.files`)
+  if ((index.directories as unknown[]).length > INDEX_DIRECTORY_CAP) fail(`${path}.directories`)
+}
+
 function checkWorkspace(value: unknown, path: string): void {
   const w = obj(value, path)
   str(w.goal, `${path}.goal`)
@@ -355,6 +375,7 @@ function checkWorkspace(value: unknown, path: string): void {
   for (const [i, entry] of history.entries()) checkHistoryEntry(entry, `${path}.history[${i}]`)
   if (int(w.turnStart, `${path}.turnStart`) > history.length) fail(`${path}.turnStart`)
   optional(w, 'views', checkViews, path)
+  optional(w, 'index', checkIndex, path)
   optional(w, 'mentioned', checkMentioned, path)
 }
 
@@ -423,6 +444,7 @@ export function parseJevState(value: JsonValue): JevState {
   const state = structuredClone(s) as unknown as JevState
   for (const key of ADDED_COUNTERS) state.counters[key] ??= 0
   state.workspace.views ??= []
+  state.workspace.index ??= emptyIndex()
   state.workspace.mentioned ??= []
   return state
 }
@@ -434,12 +456,12 @@ const sizeOf = (state: JevState): number => utf8Bytes(JSON.stringify(state))
 
 /**
  * The checkpoint for a state. When over CHECKPOINT_MAX_BYTES, shrink in this order: histories from
- * before the current turn (oldest first), the evidence of every observation view (first half, once),
- * the previous answer (last 1000 characters), the goal (first 2000 + last 2000 characters), then
- * the command and output excerpts of every history entry but the last, the paths the turn's message
- * named. It never throws and never
- * drops current-turn entries or views, so the result can still be larger when the fields it does
- * not shrink are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`,
+ * before the current turn (oldest first), the seen-path index (cut to its newest 16 files and 4
+ * directories), the evidence of every observation view (first half, once), the previous answer (last
+ * 1000 characters), the goal (first 2000 + last 2000 characters), the command and output excerpts of
+ * every history entry but the last, then the whole index and the paths the turn's message named. It
+ * never throws and never drops current-turn entries or views, so the result can still be larger when
+ * the fields it does not shrink are large: `cur.llm.note`, `workspace.answer`, `workspace.notes`,
  * `cur.calls[].content` and `workspace.views`, which the driver is responsible for bounding (views
  * through `updateViews` when they are recorded; decoding checks only the number of views and the
  * references per view). The argument is not changed.
@@ -451,6 +473,10 @@ export function encodeState(state: JevState): LoopCheckpoint {
     w.history.shift()
     w.turnStart--
   }
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) {
+    w.index.files.length = Math.min(w.index.files.length, SHRUNK_INDEX_FILE_CAP)
+    w.index.directories.length = Math.min(w.index.directories.length, SHRUNK_INDEX_DIRECTORY_CAP)
+  }
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES) for (const view of w.views) halveEvidence(view)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.previousAnswer = tail(w.previousAnswer, 1000)
   if (sizeOf(next) > CHECKPOINT_MAX_BYTES && w.goal.length > 4003)
@@ -460,8 +486,11 @@ export function encodeState(state: JevState): LoopCheckpoint {
       delete entry.command_excerpt
       delete entry.output_excerpt
     }
-  // Last: the paths the message named only make a step easier to take direct.
-  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) w.mentioned = []
+  // Last: the seen-path index and the paths the message named only make a step easier to take direct.
+  if (sizeOf(next) > CHECKPOINT_MAX_BYTES) {
+    w.index = emptyIndex()
+    w.mentioned = []
+  }
   return { codecVersion: 1, state: next as unknown as JsonValue }
 }
 

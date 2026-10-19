@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeView } from '../src/observations.js'
+import { normalizeView, VIEW_CAP } from '../src/observations.js'
 import type { HistoryEntry, Observation, ObservationView } from '../src/types.js'
 import {
   addNote,
@@ -8,6 +8,8 @@ import {
   emptyWorkspace,
   fileActivity,
   goalText,
+  isMentionedOnly,
+  knownPaths,
   latestRecoverable,
   newTurn,
   recordStep,
@@ -270,6 +272,53 @@ describe('views in the workspace', () => {
     )
     expect(ws.views.map((v) => v.evidence)).toEqual(['lines 201-400'])
     expect(fileActivity(ws).read_counts).toEqual({ 'a.ts': 2 })
+  })
+})
+
+describe('the seen-path index in the workspace', () => {
+  it('takes the references of a view, the files a step read or changed and a write of unknown outcome', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry({ operation: 'ls' }), viewOf('ls', '.', ['a.md', 'b.md'])))
+    expect(ws.index.files).toEqual(['a.md', 'b.md'])
+    recordStep(ws, entry({ operation: 'read', target: 'c.md', read_files: ['c.md', 'a.md'] }))
+    recordStep(ws, entry({ operation: 'edit', target: 'd.md', changed_files: ['d.md'], phase: 'ACT' }))
+    recordStep(
+      ws,
+      entry({ operation: 'write', target: 'new.md', disposition: 'UNKNOWN', status: 'failed', phase: 'ACT' }),
+    )
+    // A read that was never dispatched or that only observes leaves nothing behind.
+    recordStep(ws, entry({ operation: 'shell', target: null, disposition: 'UNKNOWN', dispatched: true }))
+    expect(ws.index.files).toEqual(['new.md', 'd.md', 'c.md', 'a.md', 'b.md'])
+  })
+  it('keeps the files of views that left the window, and the index across turns', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, withView(entry({ operation: 'ls' }), viewOf('ls', '.', ['lost.md'])))
+    for (let i = 0; i < VIEW_CAP; i++)
+      recordStep(ws, withView(entry({ operation: 'find' }), viewOf('find', `s${i}`, [`f${i}.md`])))
+    expect(ws.views.flatMap((v) => v.references.map((r) => r.value))).not.toContain('lost.md')
+    expect(knownPaths(ws, 'file')).toEqual(['f3.md', 'f2.md', 'f1.md', 'f0.md', 'lost.md'])
+    expect(buildState(ws, 0, surface).known_files).toEqual(['f3.md', 'f2.md', 'f1.md', 'f0.md', 'lost.md'])
+    newTurn(ws, 'another goal')
+    expect(knownPaths(ws, 'file')).toContain('lost.md')
+  })
+  it('shows the whole index at levels 0 and 1, the newest 20 files from level 2 and 8 from level 5', () => {
+    const ws = emptyWorkspace()
+    for (let i = 0; i < 40; i++)
+      recordStep(ws, entry({ operation: 'read', target: `f${i}.md`, read_files: [`f${i}.md`] }))
+    const known = (level: number) => buildState(ws, level, surface).known_files as string[]
+    expect(known(0)).toHaveLength(40)
+    expect(known(1)).toHaveLength(40)
+    expect(known(2)).toEqual(known(0).slice(0, 20))
+    expect(known(4)).toHaveLength(20)
+    expect(known(5)).toEqual(known(0).slice(0, 8))
+    expect(known(7)).toHaveLength(8)
+  })
+  it('names a path seen only through the index as seen, not as merely mentioned', () => {
+    const ws = emptyWorkspace()
+    recordStep(ws, entry({ operation: 'read', target: 'seen.md', read_files: ['seen.md'] }))
+    newTurn(ws, 'read seen.md and new.md')
+    expect(isMentionedOnly(ws, 'file', 'seen.md')).toBe(false)
+    expect(isMentionedOnly(ws, 'file', 'new.md')).toBe(true)
   })
 })
 
