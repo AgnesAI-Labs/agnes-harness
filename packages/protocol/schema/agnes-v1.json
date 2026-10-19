@@ -3588,6 +3588,11 @@
             "kind": {
               "const": "approval"
             },
+            "purpose": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Backend-owned decision purpose; mode choices and factual questions retain their semantics."
+            },
             "id": {
               "type": "string"
             },
