@@ -30,6 +30,7 @@ it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => 
   async ({ locale, parent }) => {
     const cordis = new Context(),
       session = new SessionService(cordis, 'session')
+    session.setReadiness('ready')
     const slots = new SlotRegistry(cordis),
       roles = new PresentationRoleRegistry()
     slots.declare('transcript-test', { kind: 'single', scope: 'session' })
@@ -271,6 +272,7 @@ it.each(
 )('cleans up failed provider $index with parent $parent', async ({ plugin, parent }) => {
   const cordis = new Context()
   const session = new SessionService(cordis, 'failed-session')
+  session.setReadiness('ready')
   const slots = new SlotRegistry(cordis)
   const roles = new PresentationRoleRegistry()
   slots.declare('failure-parent', { kind: 'single', scope: 'session' })

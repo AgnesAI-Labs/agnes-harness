@@ -83,6 +83,60 @@ test('session admission keeps history readable, drafts editable and sending gate
   expect(sent.some((m) => m.method === 'session/load' || m.method === 'session/prompt')).toBe(false)
 })
 
+// Uses the built CLI/browser payload and a durable synthetic session, without live providers.
+test('bundled deliverables survive a cold browser start and repeated reloads', async ({ page, runtime }) => {
+  const client = await runtime.connect()
+  for (let index = 0; index < 3; index++) {
+    const other = await client.session.new({
+      sessionKey: randomUUID(),
+      cwd: runtime.workspace,
+      preset: 'full-access',
+    })
+    await other.attach()
+    for (let turn = 0; turn < 4; turn++)
+      await prompt(other, `History ${index}/${turn}: ` + 'Synthetic long conversation. '.repeat(1000))
+    await prompt(other, 'call present {"files":[{"path":"report.md"}]}')
+  }
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+  })
+  await session.attach()
+  for (let turn = 0; turn < 4; turn++)
+    await prompt(session, `Target history ${turn}: ` + 'Synthetic long conversation. '.repeat(1000))
+  session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  await prompt(session, 'call present {"files":[{"path":"report.md","name":"Cold-start report.md"}]}')
+  const saved = await toolResult(session, 'present')
+  expect(saved?.artifactRefs).toHaveLength(1)
+  await runtime.restart()
+  await preferences(page)
+  const url = new URL(runtime.url)
+  url.searchParams.set('session', session.id)
+  const entries: string[] = []
+  page.on('response', (response) => {
+    if (/\/plugins\/.*deliverables-ui.*\/client\.js(?:\?|$)/.test(response.url())) {
+      expect(response.ok()).toBe(true)
+      entries.push(response.url())
+    }
+  })
+  for (let boot = 0; boot < 3; boot++) {
+    if (boot === 0) await page.goto(url.href)
+    else await page.reload()
+    const tail = page.getByTestId('turn-deliverables').filter({ hasText: 'Cold-start report.md' })
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+    await expect(tail).toHaveCount(1)
+    await expect(tail.getByTestId('deliverable-file')).toHaveCount(1)
+    await tail.locator('.agh-list-row-title').click()
+    await expect(page.getByTestId('workbench-deliverables')).toContainText('Synthetic delivery')
+  }
+  const restored = await (await runtime.connect()).session.open(session.id, { cwd: runtime.workspace })
+  expect((await toolResult(restored, 'present'))?.artifactRefs).toEqual(saved?.artifactRefs)
+  // Loading an immutable plugin URL proves this exercised the deployed package rather than source imports.
+  expect(entries.length).toBeGreaterThanOrEqual(3)
+  expect(new Set(entries.map((entry) => entry.split('?')[0])).size).toBe(1)
+})
+
 for (const [issue, version, action] of [
   ['newer', 9, 'Reopen after upgrading'],
   ['older', 1, 'Start a new session'],

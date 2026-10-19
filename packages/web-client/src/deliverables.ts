@@ -107,8 +107,13 @@ export class DeliverablesStore {
       this.generation++
       this.detach?.()
       const id = session.sessionId
-      this.set({ ...(id ? { sessionId: id } : {}), files: [], loading: !!id })
-      const handle = id ? client.sessions.get(id) : undefined
+      const readiness = session.readiness.getSnapshot()
+      this.set({
+        ...(id ? { sessionId: id } : {}),
+        files: [],
+        loading: !!id && (readiness.status === 'connecting' || readiness.status === 'ready'),
+      })
+      const handle = id && readiness.status === 'ready' ? client.sessions.get(id) : undefined
       const listener: Parameters<Session['listeners']['add']>[0] = () => {
         void this.refresh()
       }
@@ -118,7 +123,9 @@ export class DeliverablesStore {
       }
       void this.refresh()
     }
-    this.stops.push(session.subscribe(switchSession))
+    // A cold history preview and the admitted session share an id. Readiness epochs,
+    // rather than identity changes alone, retire old reads and bind the ready handle.
+    this.stops.push(session.readiness.subscribe(switchSession))
     for (const name of ['reconnected', 'gap', 'generationChanged'] as const)
       this.stops.push(
         client.on(name, () => {
@@ -147,7 +154,7 @@ export class DeliverablesStore {
         this.requested = false
         const generation = this.generation,
           sessionId = this.session.sessionId
-        if (!sessionId) continue
+        if (!sessionId || this.session.readiness.getSnapshot().status !== 'ready') continue
         try {
           const session = this.client.sessions.get(sessionId)
           if (!session) throw new Error('Session unavailable')

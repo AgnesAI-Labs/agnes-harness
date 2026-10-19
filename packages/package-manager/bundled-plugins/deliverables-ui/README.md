@@ -6,6 +6,8 @@ This profile-lifetime plugin registers the `deliverables` presentation role at p
 
 The public `@agnes/web-client` `DeliverablesStore` reads authorized session UI projections, durable `present` structured results and historical Intelligent UI file lists. `DeliverableRecord` carries session/lane, presentation identity, source, owning turn, display fields, placement and the complete existing ArtifactRef. `groupDeliveredFiles` groups by name and immutable content, not filesystem path or proven lineage. Existing `x/agnes/deliverables/presented` events remain canonical; no new storage or migration is introduced. New `present` results additionally persist their file metadata through `structured`; UI-only `details` are not durable.
 
+The reader follows session readiness epochs. A history preview can mount the role before admission; file reads and live event subscriptions start when that same session becomes ready. Leaving readiness clears the displayed files and invalidates pending reads, including when the session id stays the same.
+
 Every delivered version is a content snapshot. Editing the workspace file does not change it. Open and download always use `ClientResourceService` with the recorded lane and full artifact identity. Refusal and reclaimed/missing content remain failures. A reference is never authorization.
 
 Intelligent UI is an optional peer of the backend tool. If rendering is disabled or fails, `present` still records the snapshots and succeeds; this plugin displays the durable plain file list. Existing Intelligent UI file-list records remain readable after switching providers.
