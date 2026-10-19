@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -104,8 +104,15 @@ describe('repo', () => {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, '')
       }
-      symlinkSync(join(fixture, 'packages/src/main.ts'), join(fixture, 'tools/linked.ts'))
-      symlinkSync(join(fixture, 'packages/fixtures'), join(fixture, 'tools/linked-dir'))
+      // guards-allow-platform: exercise real file aliases and directory links without Windows symlink privileges.
+      const windows = process.platform === 'win32'
+      const linkFile = windows ? linkSync : symlinkSync
+      linkFile(join(fixture, 'packages/src/main.ts'), join(fixture, 'tools/linked.ts'))
+      symlinkSync(
+        join(fixture, 'packages/fixtures'),
+        join(fixture, 'tools/linked-dir'),
+        windows ? 'junction' : 'dir',
+      )
       const tsSources = [
         'packages/fixtures/source.tsx',
         'packages/src/main.cts',

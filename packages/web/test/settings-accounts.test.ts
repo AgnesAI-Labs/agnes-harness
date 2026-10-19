@@ -54,6 +54,10 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('window', window)
   vi.stubGlobal('getComputedStyle', window.getComputedStyle.bind(window))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json({}, { status: 503 })),
+  )
   disposeMarkup = renderSettingsMarkup(window.document.getElementById('config') as unknown as HTMLElement)
   const snapshot: ConfigSnapshot = {
     profile: 'local-dev',
@@ -351,7 +355,8 @@ it('updates the empty state after saving the first account and removing the last
   h.config.save.mockResolvedValue({ ...(await h.config.get()), revision: 5, accounts: [account('work')] })
   expect(h.doc.querySelector('.agnes-settings-page-header #config-add-account')).toBeNull()
   expect(h.doc.getElementById('config-add-account')).toBeNull()
-  expect(h.doc.querySelector('[aria-disabled="true"]')?.textContent).toContain('添加账户后可设置')
+  // Auxiliary models load independently; the account's empty state owns the connection guidance.
+  expect(h.doc.querySelector('.config-accounts-welcome')?.textContent).toContain(zhT('accounts.empty'))
   const newSession = h.doc.createElement('button')
   newSession.id = 'new'
   const begin = vi.fn()

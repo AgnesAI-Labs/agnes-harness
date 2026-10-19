@@ -13,6 +13,8 @@ export type RuntimeBootDelivery = Readonly<{
 }>
 
 export type CompositeRuntimeDeliveryOptions = Readonly<{
+  /** Invalidation only: a matching report is durably qualified before observers re-read. */
+  onConverged?: ((artifact: RuntimeTargetArtifact) => void) | undefined
   /** Called, without blocking the frame, after a failure of the desired target was recorded. */
   onFailureRecorded?: (() => unknown) | undefined
 }>
@@ -27,6 +29,7 @@ export class CompositeRuntimeDelivery {
   #startupPublication: RuntimeTargetArtifact | undefined
   readonly #store: CompositeTargetStore
   readonly #boots = new Map<number, RuntimeAdmission>()
+  readonly #onConverged: ((artifact: RuntimeTargetArtifact) => void) | undefined
   readonly #onFailureRecorded: (() => unknown) | undefined
   readonly #applies = new Map<
     number,
@@ -68,6 +71,7 @@ export class CompositeRuntimeDelivery {
   constructor(store: CompositeTargetStore, options: CompositeRuntimeDeliveryOptions = {}) {
     this.#store = store
     this.#onFailureRecorded = options.onFailureRecorded
+    this.#onConverged = options.onConverged
   }
 
   #failureRecorded(): void {
@@ -187,7 +191,15 @@ export class CompositeRuntimeDelivery {
     if (converged.ok) {
       const value = converged.value
       if (value.generation !== generation || value.digest !== desired.digest) return false
-      return this.#store.qualifyConverged(value.generation, desired, value.report)
+      const recorded = this.#store.qualifyConverged(value.generation, desired, value.report)
+      if (recorded) {
+        try {
+          this.#onConverged?.(desired)
+        } catch {
+          // An invalidation observer cannot undo durable qualification.
+        }
+      }
+      return recorded
     }
     const failed = validateRuntimeApplyFailedFrame(frame)
     if (failed.ok) {

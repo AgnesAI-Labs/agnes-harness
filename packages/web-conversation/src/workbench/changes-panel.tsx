@@ -204,7 +204,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
                     ) : (
                       <Icon name="file" className="workbench-file-icon" />
                     )}
-                    <span className="workbench-changes-path" title={file.path}>
+                    <span className="workbench-changes-path" title={file.path} translate="no">
                       {slash >= 0 && (
                         <span className="workbench-changes-dir">{file.path.slice(0, slash + 1)}</span>
                       )}
@@ -239,7 +239,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
         {selected ? (
           <article className="workbench-change-preview" aria-label={t('workbench.changes.diff')}>
             <header className="workbench-change-head">
-              <strong className="workbench-change-name" title={selected.path}>
+              <strong className="workbench-change-name" title={selected.path} translate="no">
                 {selected.path.slice(selected.path.lastIndexOf('/') + 1)}
               </strong>
               {latest && (

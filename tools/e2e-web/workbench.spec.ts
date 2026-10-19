@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { devNull } from 'node:os'
 import { dirname, join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
@@ -74,7 +75,7 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await files.locator('[data-path="report.md"]').click()
   await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
   await page.getByTestId('file-mention').click()
-  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('"report.md"')
+  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('@report.md ')
   await turn(page, 'call read {"path":"report.md"}')
   const client = await runtime.connect()
   const id = new URL(page.url()).searchParams.get('session')
@@ -90,8 +91,8 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   })
   await expect(files.locator('[data-path="report.md"] .workbench-git-mark')).toHaveText('Added')
   await expect(page.getByTestId('workbench-bottom-toggle')).toHaveCount(0)
-  // The redesigned 44px bar includes a 1px bottom divider.
-  expect(await page.locator('.topbar-row').evaluate((node) => node.getBoundingClientRect().height)).toBe(45)
+  // The current top bar is 44px including its divider.
+  expect(await page.locator('.topbar-row').evaluate((node) => node.getBoundingClientRect().height)).toBe(44)
   expect(
     await page.getByTestId('workbench-right-toggle').evaluate((node) => !!node.closest('.topbar-row')),
   ).toBe(true)
@@ -239,45 +240,62 @@ test('session terminal survives UI detachment, follows agent output and honors p
     await resize.press('ArrowLeft')
     await expect(resize).toHaveAttribute('aria-valuenow', String(320 + (i + 1) * 16))
   }
-  await panel
-    .getByRole('button', { name: /Attach.*Agent/ })
-    .first()
-    .click()
-  await expect(panel.getByTestId('workbench-terminal-output')).toHaveValue(/AGENT_END/)
+  // Agent jobs are attached automatically; selecting its tab follows the real output.
+  await panel.getByTestId('terminal-tab').filter({ hasText: agent.command }).click()
+  await expect.poll(async () => (await session.jobsRead(agent.id)).job?.stdout).toContain('AGENT_END')
+  await expect(
+    panel.getByTestId('workbench-terminal-output').locator('.xterm-accessibility-tree'),
+  ).toContainText('AGENT_END')
   await expect(panel.getByTestId('terminal-kill')).toHaveCount(0)
-  await panel.getByTestId('terminal-tab-close').click()
-  await panel.getByTestId('terminal-new').click()
+  await panel.getByRole('button', { name: 'Stop following', exact: true }).click()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(1)
+  await panel.getByTestId('terminal-tab').first().click()
   const output = panel.getByTestId('workbench-terminal-output')
+  const terminalText = output.locator('.xterm-accessibility-tree')
+  const terminalInput = output.locator('textarea')
   await expect(output).toBeVisible()
   const human = (await session.jobsRead()).jobs.find((job) => job.owner === 'human')
   if (!human) throw new Error('human terminal required')
-  await expect(output).toBeEnabled()
-  await output.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
-  await output.press('Enter')
-  await expect(output).toHaveValue(/\nE2E_TERMINAL_OK\r?\n/)
-  await output.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
-  await output.press('Enter')
-  await expect(output).toHaveValue(/WB1_TERMINAL_OK\r?\n/)
+  await expect(terminalInput).toBeEditable()
+  await terminalInput.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
+  await terminalInput.press('Enter')
+  await expect
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
+    .toMatch(/\nE2E_TERMINAL_OK\r?\n/)
+  await expect(terminalText).toContainText('E2E_TERMINAL_OK')
+  await terminalInput.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
+  await terminalInput.press('Enter')
+  await expect
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
+    .toMatch(/\nWB1_TERMINAL_OK\r?\n/)
+  await expect(terminalText).toContainText('WB1_TERMINAL_OK')
   await panel.getByTestId('terminal-new').click()
-  await expect(panel.getByRole('tab')).toHaveCount(2)
-  await panel.getByRole('tab').last().press('ArrowLeft')
-  await expect(panel.getByRole('tab').first()).toBeFocused()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+  await panel.getByTestId('terminal-tab').last().press('ArrowLeft')
+  await expect(panel.getByTestId('terminal-tab').first()).toBeFocused()
   await page.getByTestId('workbench-right-toggle').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await session.detach()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await page.reload()
   await page.getByTestId('workbench-right-toggle').click()
-  await expect(panel.getByRole('tab')).toHaveCount(2)
-  await panel.getByRole('tab').first().click()
-  await expect(output).toHaveValue(/WB1_TERMINAL_OK/)
-  await panel.getByTestId('terminal-interrupt').click()
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+  await panel.getByTestId('terminal-tab').first().click()
+  await expect(terminalText).toContainText('WB1_TERMINAL_OK')
+  await panel
+    .getByTestId('terminal-tab')
+    .and(page.locator('[aria-pressed="true"]'))
+    .click({ button: 'right' })
+  await page.getByTestId('terminal-interrupt').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   // Another client's read can precede the UI's control receipt; keyboard actions do not wait for enabled.
-  await expect(output).toBeEnabled()
-  await output.pressSequentially("printf 'WB1_AFTER_INTERRUPT\\n'")
-  await output.press('Enter')
-  await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT\r?\n/)
+  await expect(terminalInput).toBeEditable()
+  await terminalInput.pressSequentially("printf 'WB1_AFTER_INTERRUPT\\n'")
+  await terminalInput.press('Enter')
+  await expect
+    .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
+    .toMatch(/\nWB1_AFTER_INTERRUPT\r?\n/)
+  await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   await translated(page)
   await accessible(page, info, 'workbench-terminal')
   const folder = process.env.AGH_WORKBENCH_REPORT
@@ -294,8 +312,8 @@ test('session terminal survives UI detachment, follows agent output and honors p
           { locale, theme },
         )
         await page.reload()
-        await expect(panel.getByRole('tab')).toHaveCount(2)
-        await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
+        await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+        await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
         await settled(page)
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()
@@ -307,7 +325,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
     localStorage.setItem('agnes-theme', 'light')
   })
   await page.reload()
-  await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
+  await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   const second = await client.session.new({
     cwd: runtime.workspace,
     preset: 'full-access',
@@ -320,12 +338,13 @@ test('session terminal survives UI detachment, follows agent output and honors p
     otherUrl = new URL(originalUrl)
   otherUrl.searchParams.set('session', second.id)
   await page.goto(otherUrl.toString())
-  await expect(panel.getByRole('tab')).toHaveCount(0)
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(0)
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await page.goto(originalUrl)
-  await expect(panel.getByRole('tab')).toHaveCount(2)
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(session.setPreset('read-only')).rejects.toMatchObject({
-    data: { code: 'PRESET_SWITCH_REJECTED' },
+    code: -32008,
+    data: { code: 'E_PRESET_UNSUPPORTED' },
   })
   for (const path of protectedFiles) {
     await mkdir(dirname(path), { recursive: true })
@@ -367,14 +386,34 @@ test('session terminal survives UI detachment, follows agent output and honors p
     for (const path of protectedFiles) expect(await readFile(path, 'utf8')).toBe('WB1_PROTECTED_SYNTHETIC\n')
     await sandboxed.jobsControl({ operation: 'kill', jobId: workspace.output.id })
   }
-  await panel.getByTestId('terminal-tab-close').click()
+  await panel.getByTestId('terminal-tab-close').first().click()
+  await page
+    .getByRole('dialog', { name: 'Kill process', exact: true })
+    .getByRole('button', { name: 'Kill process', exact: true })
+    .click()
   await expect
     .poll(async () => (await session.jobsRead(human.id)).job?.status, { timeout: 30_000 })
     .toBe('killed')
-  await expect(panel.getByRole('tab')).toHaveCount(1)
-  await panel.getByRole('tab').first().click()
-  await panel.getByTestId('terminal-kill').click()
-  await expect(panel.getByRole('status').filter({ hasText: 'Killed' })).toBeVisible({ timeout: 30_000 })
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(1)
+  await panel.getByTestId('terminal-tab').first().click()
+  await panel
+    .getByTestId('terminal-tab')
+    .and(page.locator('[aria-pressed="true"]'))
+    .click({ button: 'right' })
+  const remaining = (await session.jobsRead()).jobs.find(
+    (job) => job.owner === 'human' && job.status === 'running',
+  )
+  if (!remaining) throw new Error('Remaining live terminal required')
+  await page.getByTestId('terminal-kill').click()
+  await page
+    .getByRole('dialog', { name: 'Kill process', exact: true })
+    .getByRole('button', { name: 'Kill process', exact: true })
+    .click()
+  await expect
+    .poll(async () => (await session.jobsRead(remaining.id)).job?.status, { timeout: 30_000 })
+    .toBe('killed')
+  const exited = (await session.jobsRead(remaining.id)).job
+  await expect(terminalText).toContainText(`Process exited (${exited?.code})`)
   await page.getByTestId('workbench-tab-terminal').press('Escape')
   await expect(panel).toBeHidden()
   await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
@@ -533,11 +572,13 @@ test('changed files review follows confirmed agent effects and preserves current
   await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
   await expect(panel.getByTestId('changed-file')).toContainText('+1')
   await expect(panel.getByTestId('changed-file')).toContainText('−0')
-  await expect(panel.getByTestId('changed-file').locator('span').first()).toHaveText('review.ts')
-  await expect(panel.locator('.workbench-change-preview > .workbench-panel-toolbar > code')).toHaveText(
-    'review.ts',
-  )
-  await expect(panel.getByTestId('changes-diff')).toContainText('--- a/review.ts\n+++ b/review.ts\n')
+  await expect(panel.getByTestId('changed-file').locator('.workbench-changes-path')).toHaveText('review.ts')
+  await expect(panel.locator('.workbench-change-name')).toHaveText('review.ts')
+  // The editor diff names the file in its header and renders numbered code rows.
+  expect(changed.selected?.diff).toContain('--- a/review.ts\n+++ b/review.ts\n')
+  await expect(
+    panel.getByTestId('changes-diff').locator('[data-kind=add] .workbench-diff-text'),
+  ).toContainText('export const answer = 2')
   await translated(page)
   await accessible(page, info, 'changed-files-review')
   const folder = process.env.AGH_WORKBENCH_REPORT
@@ -586,18 +627,22 @@ test('changed files review follows confirmed agent effects and preserves current
   expect(newer.selected?.diff).toContain('+export const answer = 2\n')
   expect(newer.selected?.diff).not.toContain('answer = 99')
   await panel.getByTestId('changes-mention').click()
-  await expect(composer).toHaveValue('"review.ts"')
+  await expect(composer).toHaveValue('@review.ts ')
+  await expect(page.getByTestId('composer-file-mention')).toContainText('review.ts')
   expect(await readFile(join(runtime.workspace, 'review.ts'), 'utf8')).toBe('export const answer = 99\n')
   await panel.locator('.workbench-change-evidence > :is(summary, .agh-disclosure-summary)').click()
-  await panel.getByTestId('changes-provenance').last().click()
-  await expect(page.getByTestId('workbench-tab-facts')).toHaveAttribute('aria-selected', 'true')
+  await panel.getByTestId('changes-effect').last().click()
+  await expect(page.locator('#view-trace')).toHaveAttribute('aria-selected', 'true')
   const receipt = changed.selected?.effects.at(-1)
   if (!receipt?.laneId) throw new Error('The review provenance must identify its actual ledger lane')
   const facts = await session.factChain({ kind: 'tool', toolUseId: receipt.toolUseId }, receipt.laneId)
   expect(facts.nodes).toContainEqual(
     expect.objectContaining({ kind: 'invocation', toolUseId: receipt.toolUseId }),
   )
-  await expect(page.getByTestId('fact-chain').locator('[data-fact-kind="invocation"]')).toContainText('edit')
+  await expect(page.locator('.trace-row[aria-current="true"]')).toContainText('Edit review.ts')
+  await expect(page.locator('.trace-inspector')).toHaveAttribute('data-kind', 'tool')
+  await expect(page.locator('.trace-inspector [data-link="receipt"]')).toBeVisible()
+  await page.locator('#view-chat').click()
   await workbenchTab(page, 'changed-files')
   await page.setViewportSize({ width: 375, height: 812 })
   await page.getByTestId('workbench-tab-changed-files').press('Escape')

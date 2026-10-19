@@ -41,6 +41,12 @@
   },
   "overrides": [
     {
+      "includes": ["packages/package-manager/test/fixtures/runtime-snapshots-v1/home/**"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": [
         "packages/web-ui/src/**",
         "packages/resource-control-web/src/**",

@@ -1,6 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, sep } from 'node:path'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { ProviderError } from '@agnes/extension-api'
+import { createPackageManager, parseSource } from '@agnes/package-manager'
 import {
   type Actor,
   type AuthoringCandidate,
@@ -441,9 +445,28 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
   expect(files.find((file) => file.path === 'SKILL.md')?.content).toContain('assistant ledger sequence 3')
   const manifest = JSON.parse(files.find((file) => file.path === 'package.json')!.content)
   expect(manifest.agnes).toMatchObject({
-    kinds: ['skills'],
+    provides: ['skills'],
     plugins: [{ id: 'ext:feedback-skill-cite-evidence/main', inject: ['skills'] }],
   })
+  // Model drafts must enter the same current manifest contract as user-authored candidates.
+  const root = await mkdtemp(join(tmpdir(), 'agh-feedback-manifest-'))
+  try {
+    const directory = join(root, 'candidate')
+    for (const file of files) {
+      const path = join(directory, file.path)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, file.content)
+    }
+    const manager = createPackageManager({ dataDir: join(root, 'data'), agnesVersion: '0.1.0', cwd: root })
+    const preview = await manager.inspect(
+      join(root, 'profile'),
+      parseSource(`file:${directory.split(sep).join('/')}`),
+    )
+    expect(preview.blockers).toEqual([])
+    expect(preview.provides).toEqual(['skills'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
   expect(requests).toHaveLength(1)
   expect(JSON.stringify(requests[0])).toContain('Cite evidence')
   doneReason = 'length'

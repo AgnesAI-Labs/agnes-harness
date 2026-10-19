@@ -33,7 +33,10 @@ it('agrees with the generated browser API reference and Host import map', async 
   ])
   expect(authorContract.browserContext.join('\n')).toContain('scopedHomeEntries')
   expect(authorReference).toContain('There is no ctx.tools.invoke from the browser')
-  expect(authorReference).toContain('private install dirs are denied by design')
+  expect(authorReference).toContain('Never search Host/installed source')
+  expect(authorReference).toContain(
+    'fs is policy-controlled WORKSPACE access, never a private plugin directory',
+  )
   const { outputs } = await import(new URL('../../../tools/authoring/reference.mjs', import.meta.url).href)
   for (const [path, expected] of Object.entries(outputs()))
     expect(readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')).toBe(expected)

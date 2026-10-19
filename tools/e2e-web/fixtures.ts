@@ -13,6 +13,10 @@ export const test = base.extend<{
   runtime: async ({ page, screenshot }, use, info) => {
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
+      {
+        localExamples: info.file.endsWith('/ui-gate.spec.ts'),
+        realModel: info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1',
+      },
     )
     try {
       await runtime.start()

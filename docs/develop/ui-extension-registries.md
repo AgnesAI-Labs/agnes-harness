@@ -90,7 +90,9 @@ The default bundled `@agnes/goal-ui` and `@agnes/interaction-ui` packages own th
 replacement normally registers at priority 0. Role cleanup removes the complete
 experience: cards, panels, composer commands, question dock, answer receipts and
 folding policy. Backend goals, cost admission and execution authorization are
-unaffected by presentation election.
+unaffected by presentation election. The conversation frame owns `conversation.view`;
+interaction renderers register through `ctx.slots.inject()` so they follow that
+parent declaration across module load ordering, frame replacement and restoration.
 
 A client descriptor can declare `requiresBackendRows: ["ext:vendor/feature"]`.
 These are optional presentation dependencies on exact backend row identities.

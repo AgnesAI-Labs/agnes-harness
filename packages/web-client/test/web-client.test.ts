@@ -1160,6 +1160,7 @@ it.each(['active', 'history-only'] as const)(
       }),
       {
         packageId: 'historical',
+        allowedSlots: ['conversation.view', 'tool.call.toolview'],
         slotCatalogVersion: DSH_SLOT_CATALOG_VERSION,
         revision: 'one',
         services: ['query'],
@@ -1169,6 +1170,9 @@ it.each(['active', 'history-only'] as const)(
     await fiber
     for (const register of [
       () => module.slots.register('workbench.panel', () => null),
+      () => module.slots.inject('workbench.panel', () => null),
+      () => module.slots.inject('unknown.session.slot', () => null),
+      () => module.slots.inject('conversation.chat.node', () => null),
       () =>
         module.workbenchPanels.register({
           id: 'history-panel',
@@ -1199,12 +1203,20 @@ it.each(['active', 'history-only'] as const)(
         }),
     ])
       expect(register).toThrow()
+    const registry = ctx.get('slots') as SlotRegistry
+    module.slots.inject('tool.call.toolview', () =>
+      module.slots.register({ name: 'tool.call.toolview', key: 'fixture' }, () => null),
+    )
+    expect(registry.entries('tool.call.toolview')).toHaveLength(0)
+    registry.declare('tool.call.toolview', { kind: 'keyed', scope: 'session' })
+    expect(registry.entries('tool.call.toolview')).toHaveLength(1)
     ;(ctx.get('slots') as SlotRegistry).declare('conversation.view', { kind: 'list', scope: 'session' })
     module.slots.register('conversation.view', () => null)
     expect((ctx.get('slots') as SlotRegistry).entries('conversation.view')).toHaveLength(1)
     await expect(module.profile.services.query('query', {})).rejects.toThrow('CAPABILITY_DENIED')
     await expect(module.profile.streams.open('history', {})).rejects.toThrow('unavailable')
     await fiber.dispose()
+    expect(registry.entries('tool.call.toolview')).toHaveLength(0)
   },
 )
 

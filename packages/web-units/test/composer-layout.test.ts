@@ -89,34 +89,59 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('keeps message controls and context use in the card, the new-session workspace in the row under it', () => {
-  const { host } = mount()
-  const card = host.querySelector('#composer')
-  const meta = host.querySelector('.composer-meta')
-  expect(card?.getAttribute('data-agnes-region')).toBe('composer')
-  expect(card?.nextElementSibling).toBe(meta)
-  // The approval mode sits beside the add button, inside the card.
-  for (const id of [
-    '#prompt',
-    '#composer-attach',
-    '#fixture-permission',
-    '#fixture-model',
-    '#send',
-    '#cancel',
-    '#composer-hint',
-    '#session-usage',
-  ])
-    expect(host.querySelector(id)?.closest('#composer'), id).toBe(card)
-  // Context use sits right before the model picker it measures.
-  expect(host.querySelector('#session-usage')?.nextElementSibling?.classList.contains('model-field')).toBe(
-    true,
-  )
-  expect(host.querySelector('#composer-workspace')?.closest('.composer-meta')).toBe(meta)
-  expect(host.querySelector('#composer-workspace')?.closest('#composer')).toBeNull()
-  expect(host.querySelector('#prompt')?.getAttribute('data-agnes-region')).toBe('composer-input')
-  expect(host.querySelectorAll('[data-agnes-region="composer-input"]')).toHaveLength(1)
-  expect(host.querySelector('label[for="prompt"]')?.textContent).toBe('任务内容')
-})
+it.each([false, true])(
+  'keeps message controls and context use in the card (native sizing %s)',
+  (nativeSizing) => {
+    const supports = CSS.supports.bind(CSS)
+    vi.spyOn(CSS, 'supports').mockImplementation((property: string, value?: string) => {
+      if (
+        (property === 'field-sizing' && value === 'content') ||
+        (property === 'min-height' && value === '1lh')
+      )
+        return nativeSizing
+      return value === undefined ? supports(property) : supports(property, value)
+    })
+    const { host, prompt, handle } = mount()
+    const card = host.querySelector('#composer')
+    const meta = host.querySelector('.composer-meta')
+    expect(card?.getAttribute('data-agnes-region')).toBe('composer')
+    expect(card?.nextElementSibling).toBe(meta)
+    // The approval mode sits beside the add button, inside the card.
+    for (const id of [
+      '#prompt',
+      '#composer-attach',
+      '#fixture-permission',
+      '#fixture-model',
+      '#send',
+      '#cancel',
+      '#composer-hint',
+      '#session-usage',
+    ])
+      expect(host.querySelector(id)?.closest('#composer'), id).toBe(card)
+    // Context use sits right before the model picker it measures.
+    expect(host.querySelector('#session-usage')?.nextElementSibling?.classList.contains('model-field')).toBe(
+      true,
+    )
+    expect(host.querySelector('#composer-workspace')?.closest('.composer-meta')).toBe(meta)
+    expect(host.querySelector('#composer-workspace')?.closest('#composer')).toBeNull()
+    expect(host.querySelector('#prompt')?.getAttribute('data-agnes-region')).toBe('composer-input')
+    expect(host.querySelectorAll('[data-agnes-region="composer-input"]')).toHaveLength(1)
+    expect(host.querySelector('label[for="prompt"]')?.textContent).toBe('任务内容')
+    if (nativeSizing) {
+      expect(prompt.style.height).toBe('auto')
+      expect(prompt.style.minHeight).toBe('2lh')
+      expect(prompt.style.maxHeight).toBe('8lh')
+      expect(prompt.style.overflowY).toBe('auto')
+    }
+    prompt.focus()
+    act(() => type(prompt, 'Retain my draft'))
+    act(() => handle.render({ ...idle, input: { ...idle.input, placeholder: 'Updated placeholder' } }))
+    expect(host.querySelector('#prompt')).toBe(prompt)
+    expect(document.activeElement).toBe(prompt)
+    expect(prompt.value).toBe('Retain my draft')
+    expect(prompt.selectionStart).toBe(prompt.value.length)
+  },
+)
 
 it('owns the draft as state: typing reports it, the host can replace it and read it back at once', () => {
   const { handle, prompt, props } = mount({ initialDraft: '已保存的草稿' })
@@ -359,6 +384,8 @@ it('stops on typing and paste, resumes only empty and unfocused, and stops for a
   })
   await act(async () => vi.advanceTimersByTime(5000))
   expect(hint()).toBeNull()
+  expect(prompt.value).toBe('my task')
+  expect(handle.getDraft()).toBe('my task')
   await act(async () => {
     type(prompt, '')
   })

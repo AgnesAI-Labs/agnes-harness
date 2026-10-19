@@ -129,6 +129,10 @@
     border-radius: var(--radius-md);
   }
   .plugin-candidates .candidate-file .agh-disclosure-summary {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--agnes-bg-surface);
     display: flex;
     align-items: center;
     gap: var(--s8);

@@ -632,6 +632,9 @@ export function canAccessPackageAdmin(
 // trying to print the whole literal type. An explicit annotation on the table sidesteps that by
 // giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
 export type PackageAdminDataName =
+  | 'PresentationRoleSelection'
+  | 'PresentationRoleSelections'
+  | 'PresentationRoleState'
   | 'ApplicationSelection'
   | 'ApplicationConfigSnapshot'
   | 'ApplicationPreviewParams'
@@ -722,6 +725,9 @@ export type PackageAdminDataName =
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
+  PresentationRoleSelection: P.PresentationRoleSelection,
+  PresentationRoleSelections: P.PresentationRoleSelections,
+  PresentationRoleState: P.PresentationRoleState,
   ApplicationSelection: P.ApplicationSelection,
   ApplicationConfigSnapshot: P.ApplicationConfigSnapshot,
   ApplicationPreviewParams: P.ApplicationPreviewParams,

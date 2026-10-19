@@ -22,9 +22,9 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await panel.getByTestId('plugin-config-field/credential').fill('secret://fixture/updated')
     await expect(save).toBeEnabled()
     await save.click()
-    await expect(panel.getByTestId('plugin-config-notice')).toHaveText(
-      locale === 'en' ? 'Configuration saved.' : '配置已保存。',
-    )
+    await expect(
+      page.getByRole('status').filter({ hasText: locale === 'en' ? 'Configuration saved.' : '配置已保存。' }),
+    ).toBeVisible()
     const saved = await client.packages.config.get({ profile: 'local-dev', id: pkg.id })
     expect(saved.entries[0]?.value).toMatchObject({ name: 'Sales', credential: 'secret://fixture/updated' })
     expect(JSON.stringify(saved.audit)).not.toContain('secret://')

@@ -35,24 +35,29 @@ for (const locale of ['en', 'zh-CN'])
       expect(diagnosticPaths.length).toBeGreaterThan(0)
       expect(toolsPaths.length).toBeGreaterThan(0)
       expect(diagnosticPaths).not.toEqual(toolsPaths)
-      const row = page.getByTestId('diagnostics-error').filter({ hasText: diagnosticId })
-      await expect(row).toBeVisible()
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
-      await page.getByTestId('diagnostics-check-details').locator('summary, .agh-disclosure-summary').click()
-      await expect(page.getByTestId('diagnostics-doctor').getByRole('article')).toHaveCount(11)
-      await page.getByTestId('diagnostics-find-id').locator('summary, .agh-disclosure-summary').click()
+      await expect(page.getByTestId('diagnostics-error').first()).toBeVisible()
+      const doctor = page.getByTestId('diagnostics-doctor')
+      await expect(doctor).toHaveAttribute('aria-busy', 'false')
+      await expect(doctor.locator('li[data-testid^="doctor-check-"]')).toHaveCount(12)
+      // Recent rows keep IDs in their details; the always-visible search is submitted with Enter.
       await page.getByTestId('diagnostics-query').scrollIntoViewIfNeeded()
       await page.getByTestId('diagnostics-query').fill(diagnosticId)
-      await page.getByTestId('diagnostics-search').click()
+      await page.getByTestId('diagnostics-query').press('Enter')
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
       await expect(page.getByTestId('diagnostics-error')).toHaveCount(1)
       await expect(page.getByTestId('diagnostics-error-code')).toBeHidden()
+      const row = page.getByTestId('diagnostics-error')
+      await row.getByTestId('diagnostics-error-toggle').click()
+      await expect(row.getByTestId('diagnostics-error-id')).toHaveText(diagnosticId)
+      await expect(row.getByTestId('diagnostics-error-code')).toHaveText('-32601')
+      await row.getByTestId('diagnostics-error-toggle').click()
       const fieldColor = await page
         .getByTestId('diagnostics-query')
         .evaluate((input) => getComputedStyle(input).backgroundColor)
       const surfaceColor = await page.getByTestId('diagnostics-query').evaluate((input) => {
         const probe = document.createElement('div')
-        probe.style.background = 'var(--agnes-bg-fill)'
+        probe.style.background = 'var(--agnes-input-surface)'
         input.parentElement?.appendChild(probe)
         const color = getComputedStyle(probe).backgroundColor
         probe.remove()
@@ -61,6 +66,8 @@ for (const locale of ['en', 'zh-CN'])
       expect(fieldColor).toBe(surfaceColor)
       const pending = page.waitForEvent('download')
       await page.getByTestId('diagnostics-export').click()
+      await expect(page.getByTestId('diagnostics-export-details')).toBeVisible()
+      await page.getByTestId('diagnostics-export-confirm').click()
       const download = await pending
       expect(download.suggestedFilename()).toBe('agh-diagnostics.json')
       const path = await download.path()
@@ -76,43 +83,42 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
       await page.getByTestId('diagnostics-query').scrollIntoViewIfNeeded()
       await page.getByTestId('diagnostics-query').fill('')
-      await page.getByTestId('diagnostics-query').blur()
-      await page.getByTestId('diagnostics-find-id').locator('summary, .agh-disclosure-summary').click()
-      await page.getByTestId('diagnostics-check-details').locator('summary, .agh-disclosure-summary').click()
+      await page.getByTestId('diagnostics-query').press('Enter')
       await page.getByTestId('diagnostics-errors').evaluate((element) => {
         for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
       })
+      await expect(page.locator('.agh-toast')).toHaveCount(0)
       await translated(page)
       await accessible(page, info, 'diagnostics')
       await screen(page, info, `diagnostics-${locale}-${theme}`, [
         page.getByTestId('diagnostics-error-id'),
         page.getByTestId('diagnostics-error-time'),
       ])
-      await expect(page.getByTestId('diagnostics-runtime')).toContainText(
+      await expect(doctor).toContainText(
         locale === 'zh-CN' ? '当前无运行中的 Worker' : 'No Worker is currently running',
       )
-      await page
-        .getByTestId('diagnostics-runtime')
-        .locator('summary, .agh-disclosure-summary')
-        .first()
-        .click()
-      await page.getByTestId('diagnostics-runtime').scrollIntoViewIfNeeded()
+      await doctor.scrollIntoViewIfNeeded()
       await screen(page, info, `diagnostics-status-${locale}-${theme}`)
       await page.getByTestId('diagnostics-doctor-run').click()
-      await page.getByTestId('diagnostics-check-details').locator('summary, .agh-disclosure-summary').click()
-      await expect(page.getByTestId('diagnostics-doctor').getByRole('article')).toHaveCount(11)
+      await expect(doctor).toHaveAttribute('aria-busy', 'false')
+      await expect(doctor.locator('li[data-testid^="doctor-check-"]')).toHaveCount(12)
       await translated(page)
       if (locale === 'zh-CN' && theme === 'light') {
         await section(page, 'models')
-        // The consolidated Agent page also serves the bundle/preset runtime catalog.
-        await expect(page.getByTestId('settings-refresh')).toBeVisible()
-        for (const id of ['bundles', 'providers', 'security']) {
+        // Runtime sections now own their reads; the shared manual-refresh action is retired.
+        await expect(page.getByTestId('settings-refresh')).toBeHidden()
+        for (const id of ['bundles', 'providers']) {
           await section(page, id)
-          const button = page.getByTestId('settings-refresh')
-          await expect(button).toBeVisible()
-          const action = await button.boundingBox()
+          await expect(page.getByTestId('settings-refresh')).toBeHidden()
+          await expect(
+            page.getByTestId(id === 'bundles' ? 'bundles-panel' : 'settings-subsection-provider-types'),
+          ).toBeVisible()
+          const heading = await page.locator('#config h2:visible').boundingBox()
           const exit = await close.boundingBox()
-          expect(action && exit && action.x + action.width <= exit.x).toBe(true)
+          expect(heading && exit && heading.x + heading.width <= exit.x).toBe(true)
         }
+        await section(page, 'security')
+        // Permissions load their own data rather than the shared runtime catalog.
+        await expect(page.getByTestId('settings-refresh')).toBeHidden()
       }
     })

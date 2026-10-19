@@ -350,34 +350,34 @@ it.each(['tool', 'skill'])(
   'publishes a reviewed %s package and preserves publication guidance after reopening',
   async (kind) => {
     const s = setup()
-    const r = await review(
-      s,
-      'draft',
-      kind === 'tool'
-        ? files
-        : [
-            {
-              path: 'package.json',
-              content: JSON.stringify({
-                name: 'reviewed-skill',
-                version: '1.0.0',
-                license: 'MIT',
-                agnes: {
-                  contributions: [
-                    { kind: 'skill', id: 'reviewed-skill/review', path: './skills/review/SKILL.md' },
-                  ],
-                },
-              }),
+    let inputFiles = files
+    if (kind === 'skill') {
+      const { createSkillCandidate } = (await import(
+        new URL('../bundled-plugins/skill-helper/src/candidate.mjs', import.meta.url).href
+      )) as { createSkillCandidate: (args: unknown, checked: unknown, ctx: unknown) => Promise<unknown> }
+      await createSkillCandidate(
+        { name: 'review' },
+        [
+          {
+            path: 'SKILL.md',
+            content: Buffer.from(
+              '---\r\nname: 复核助手\r\ndescription: 检查已批准的变更\r\ndisable-model-invocation: true\r\n---\r\nReviewed instructions',
+            ),
+          },
+          { path: 'references/example.md', content: Buffer.from('approved reference') },
+          { path: 'scripts/read.mjs', content: Buffer.from('export const reviewed = true;\n') },
+        ],
+        {
+          pluginManage: {
+            request: async (input: { files: typeof files }) => {
+              inputFiles = input.files
+              return {}
             },
-            {
-              path: 'skills/review/SKILL.md',
-              content:
-                '---\r\nname: 复核助手\r\ndescription: 检查已批准的变更\r\ndisable-model-invocation: true\r\n---\r\nReviewed instructions',
-            },
-            { path: 'skills/review/references/example.md', content: 'approved reference' },
-            { path: 'test/skill.test.mjs', content: '// host runner fixture\n' },
-          ],
-    )
+          },
+        },
+      )
+    }
+    const r = await review(s, 'draft', inputFiles)
     const published = await s.candidates.decide(
       s.profile,
       r.candidateId,
@@ -396,7 +396,7 @@ it.each(['tool', 'skill'])(
     if (kind === 'skill') {
       const installed = (await s.manager.inventory(s.profile)).packages[0]
       expect(installed?.contributions).toEqual([
-        { kind: 'skill', id: 'reviewed-skill/review', path: './skills/review/SKILL.md' },
+        { kind: 'skill', id: 'agh-skill-review/main', path: './skills/review/SKILL.md' },
       ])
       expect(installed?.capabilityHash).toBe(r.preview?.capabilityHash)
     }

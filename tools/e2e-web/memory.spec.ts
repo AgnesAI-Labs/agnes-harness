@@ -5,10 +5,10 @@ import {
   advanced,
   chooseWorkspace,
   closeSettings,
-  expand,
   fresh,
   preferences,
   section,
+  selectValue,
   settings,
 } from './ui.js'
 
@@ -28,31 +28,41 @@ for (const locale of ['en', 'zh-CN'])
       await advanced(page)
       await section(page, 'memory')
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await expand(page.getByTestId('memory-usage'))
-      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      const memorySection = page.getByTestId('home-page-plugins-memory')
+      const memorySection = page.getByTestId('personalization-memory')
       const memoryDialog = page.getByRole('dialog').filter({ has: memorySection })
       await expect(memoryDialog.getByRole('heading', { level: 2 })).toContainText(
-        locale === 'en' ? 'Memory' : '记忆',
+        locale === 'en' ? 'General' : '通用',
       )
       await expect(memorySection.getByTestId('settings-refresh')).toHaveCount(0)
-      await page.getByTestId('memory-workspace').selectOption(cwd)
-      await expect(page.getByTestId('memory-mode')).toHaveValue('off')
-      await page.getByTestId('memory-mode').selectOption('auto')
-      await expect(page.getByTestId('memory-saved')).toBeVisible()
+      await selectValue(page, 'memory-workspace', cwd)
+      await expect(page.getByTestId('memory-mode-off')).toBeChecked()
+      await page.getByTestId('memory-mode-auto').click()
+      await expect(page.getByTestId('memory-mode-auto')).toBeChecked()
+      const savedNotice = page.locator('.agh-toast').filter({
+        hasText: locale === 'en' ? 'Settings saved.' : '设置已保存。',
+      })
+      await expect(savedNotice).toBeVisible()
       const client = await runtime.connect()
       const state = await client.request('_agnes/v1/admin.memory', { cwd })
       expect(state.inspection?.settings.mode).toBe('auto')
       const root = state.inspection!.root
+      await expect(savedNotice).toBeHidden()
+      await translated(page)
+      await accessible(page, info, 'memory-settings')
+      await screen(page, info, `memory-${locale}-${theme}`, [
+        page.getByTestId('memory-root'),
+        page.getByTestId('memory-workspace'),
+      ])
       await page.getByTestId('memory-open').click()
       await expect(page.getByTestId('memory-content')).toBeVisible()
-      await expect(page.getByTestId('memory-mode')).toBeEnabled()
+      await expect(page.getByTestId('memory-content')).toBeEnabled()
+      await expect(page.getByTestId('memory-usage')).toBeVisible()
       await expect(page.getByTestId('memory-size')).toHaveText(
         locale === 'en' ? '0 KB used / 16 KB · Up to 200 lines' : '已用 0 KB / 16 KB · 最多 200 行',
       )
       const positions = await page
-        .getByTestId('memory-actions')
-        .getByRole('button')
+        .getByTestId('memory-reload')
+        .or(page.getByTestId('memory-save'))
         .evaluateAll((buttons) =>
           buttons.map((button) => ({
             x: button.getBoundingClientRect().x,
@@ -64,12 +74,9 @@ for (const locale of ['en', 'zh-CN'])
       if (!first || !second) throw new Error('Expected two memory toolbar buttons')
       expect(second.x).toBeGreaterThan(first.x)
       expect(second.y).toBe(first.y)
+      await expect(savedNotice).toBeHidden()
       await translated(page)
       await accessible(page, info, 'memory-settings')
-      await screen(page, info, `memory-${locale}-${theme}`, [
-        page.getByTestId('memory-root'),
-        page.getByTestId('memory-workspace'),
-      ])
       await page
         .getByTestId('memory-content')
         .evaluate((editor) => editor.scrollIntoView({ block: 'center', behavior: 'instant' }))
@@ -102,9 +109,7 @@ for (const locale of ['en', 'zh-CN'])
       await advanced(page)
       await section(page, 'memory')
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await expand(page.getByTestId('memory-usage'))
-      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await page.getByTestId('memory-workspace').selectOption(cwd)
+      await selectValue(page, 'memory-workspace', cwd)
       await page.getByTestId('memory-open').click()
       // Establish the editor's old revision before the external edit; a pending read may otherwise
       // observe that edit and make the following save a valid CAS, rather than the intended conflict.
@@ -134,7 +139,8 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('memory-content')).toHaveValue('Human edit outside this editor.')
       await page.getByTestId('memory-content').fill('Prefer precise synthetic summaries.')
       await page.getByTestId('memory-save').click()
-      await expect(page.getByTestId('memory-saved')).toBeVisible()
+      await expect(savedNotice).toBeVisible()
+      await expect(page.getByTestId('memory-save')).toBeDisabled()
       await closeSettings(page, locale)
       await expect(await send('show remembered preferences')).toContainText(
         'Prefer precise synthetic summaries.',
@@ -143,11 +149,10 @@ for (const locale of ['en', 'zh-CN'])
       await advanced(page)
       await section(page, 'memory')
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await expand(page.getByTestId('memory-usage'))
-      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await page.getByTestId('memory-workspace').selectOption(cwd)
-      await page.getByTestId('memory-mode').selectOption('off')
-      await expect(page.getByTestId('memory-saved')).toBeVisible()
+      await selectValue(page, 'memory-workspace', cwd)
+      await page.getByTestId('memory-mode-off').click()
+      await expect(page.getByTestId('memory-mode-off')).toBeChecked()
+      await expect(savedNotice).toBeVisible()
       await closeSettings(page, locale)
       await expect(await send('show remembered preferences')).not.toContainText(
         'Prefer precise synthetic summaries.',

@@ -40,7 +40,15 @@ it('indexes builtin locations per Host but reads changed capabilities and refuse
           packages: [{ id: 'fixture/pkg', version: '1.0.0', enabled, trust, integrity: 'fixture' }],
         },
       } as unknown as Inputs[0],
-      { dirs: new Map([['fixture/pkg', root]]), modules: new Map() } as Inputs[1],
+      {
+        dirs: new Map([['fixture/pkg', root]]),
+        modules: new Map(),
+        runtimePackages: new Map(),
+        runtimePackageIds: new Set(),
+        activeRuntimeSources: [],
+        inventory: new Map(),
+        loadRuntimeModule: async () => undefined,
+      },
       { dispatchExtensionShutdown: () => undefined } as unknown as Inputs[2],
       { rowExtensions: { activate: () => undefined } } as unknown as Inputs[3],
     )

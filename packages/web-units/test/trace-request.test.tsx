@@ -142,6 +142,16 @@ it('shows the request in folded sections, the sent JSON on demand, comparisons, 
       expect(q(`request-trace-section-${section}`)).not.toBeNull()
     expect(q('request-trace-section-system')?.textContent).toContain('1 sections')
     expect(q('request-trace-section-tools')?.textContent).toContain('1 tools')
+    const toolsToggle = () => q('request-trace-section-tools-toggle') as HTMLButtonElement
+    expect(toolsToggle().getAttribute('aria-expanded')).toBe('false')
+    await act(async () => toolsToggle().click())
+    expect(toolsToggle().getAttribute('aria-expanded')).toBe('true')
+    await act(async () =>
+      root.render(createElement(Harness, { sessionId: 'old', callId: ids.first, read, expose })),
+    )
+    expect(toolsToggle().getAttribute('aria-expanded')).toBe('true')
+    await act(async () => toolsToggle().click())
+    expect(toolsToggle().getAttribute('aria-expanded')).toBe('false')
     expect(q('request-trace-source')?.textContent).toContain('Your custom persona')
     expect(q('request-trace-source')?.getAttribute('title')).toContain('profile:system-prompt')
     expect(q('request-trace-summary')?.textContent).toContain('demo')
@@ -158,6 +168,7 @@ it('shows the request in folded sections, the sent JSON on demand, comparisons, 
     expect(host.querySelector('del')?.textContent).toContain('old persona')
     expect(host.querySelector('ins')?.textContent).toContain('new persona')
     expect(q('request-trace-section-system')?.textContent).toContain('Changed')
+    expect(q('request-trace-section-system-toggle')?.getAttribute('aria-expanded')).toBe('true')
     requestBaseline.pin({ sessionId: 'old', callId: ids.first })
     await act(async () =>
       root.render(createElement(Harness, { key: 'new', sessionId: 'new', callId: ids.second, read, expose })),

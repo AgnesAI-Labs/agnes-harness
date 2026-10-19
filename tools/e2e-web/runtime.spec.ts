@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, SESSION_VERSION_CODES } from '@agnes/protocol'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
@@ -67,6 +67,10 @@ for (const [issue, version, action] of [
     if (issue === 'corrupt') generation.compatibility = 42
     await writeFile(file, JSON.stringify(generation))
     await runtime.restart()
+    const restarted = await runtime.connect()
+    await expect(restarted.session.load(session.id, { cwd: runtime.workspace })).rejects.toMatchObject({
+      data: { code: SESSION_VERSION_CODES[issue] },
+    })
     await page.goto(`${runtime.url}/?session=${session.id}`)
     const banner = page.getByTestId('session-read-only')
     await expect(banner).toContainText('Read-only')
@@ -348,7 +352,7 @@ test('stored credential rejection offers account repair and recovers without res
     expect(provider.rejectedInferenceRequests).toBe(2)
     await page.screenshot({ path: info.outputPath('credential-repair-en-light.png') })
     await repair.click()
-    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeVisible()
+    await expect(page.getByTestId('account-page-edit')).toBeVisible()
     await expect(page.locator('#config-account-name')).toHaveValue('Revoked fixture account')
     await page.locator('#config-api-key').fill(provider.apiKey)
     await expect(page.locator('#config-save')).toHaveText('Save')
@@ -357,7 +361,7 @@ test('stored credential rejection offers account repair and recovers without res
     await page.locator('#config-save').click()
     await expect.poll(async () => (await client.config.get()).revision).not.toBe(revision)
     // The revision commits before model publication; wait for the save RPC and UI completion.
-    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeHidden()
+    await expect(page.getByTestId('account-page-edit')).toBeHidden()
     await prompt(session, 'After credential correction')
     const recovered = await session.projectUI()
     expect(recovered.turns.at(-1)?.status).toBe('completed')
@@ -435,6 +439,9 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
     preset: 'full-access',
   })
   await session.attach()
+  // MCP tools are deferred; discover the schema without bypassing normal tool authorization.
+  await prompt(session, 'call tool_describe {"name":"mcp__e2e__echo"}')
+  expect(JSON.stringify(await toolResult(session, 'tool_describe'))).toContain('mcp__e2e__echo')
   await prompt(session, 'call mcp__e2e__echo {"text":"E2E_MCP_STDIO"}')
   expect((await toolResult(session, 'mcp__e2e__echo'))?.content).toEqual([
     { type: 'text', text: 'E2E_MCP_STDIO' },
@@ -442,6 +449,9 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
   const workspace = await client.workspace.add(runtime.workspace)
   const workspaceId = workspace.workspace.workspaceId
   if (!workspaceId) throw new Error('Workspace registration must return a durable id')
+  await expect
+    .poll(() => runtime.cli(['skills', 'list', '--workspace-id', workspaceId]))
+    .toContain('e2e-playbook')
   const skills = await runtime.cli(['skills', 'list', '--workspace-id', workspaceId])
   expect(skills).toContain('e2e-playbook')
   expect(skills).toContain('trust=trusted')

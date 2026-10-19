@@ -26,6 +26,23 @@ import { snapshotHash } from '../src/integrity.js'
 import { readBundledManifest } from '../src/manifest.js'
 
 const roots: string[] = []
+// guards-allow-platform: Windows junctions exercise real link escapes without file-symlink privileges.
+const linkTypes = process.platform === 'win32' ? (['junction'] as const) : (['dir', 'file'] as const)
+const missingClientFile = (entry: string) =>
+  expect.objectContaining({
+    code: 'E_PACKAGE_STATE',
+    detail: expect.objectContaining({
+      reason: 'entry-escape',
+      diagnostics: [
+        expect.objectContaining({
+          code: 'missing-required-file',
+          path: 'package.json',
+          field: 'entry',
+          name: entry,
+        }),
+      ],
+    }),
+  })
 function makePackage(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-client-'))
   roots.push(dir)
@@ -176,18 +193,18 @@ describe('client asset resolution', () => {
   it('rejects an entry that does not exist in the install tree', () => {
     const dir = makePackage()
     expect(() => resolveClientAssets(dir, manifestWith({ entry: 'dist/client/missing.js' }))).toThrow(
-      /cannot be resolved/,
+      missingClientFile('dist/client/missing.js'),
     )
   })
-  it('rejects an entry that only reaches the package through a symlink', () => {
+  it.each(linkTypes)('rejects an entry that leaves the package through a %s link', (type) => {
     const dir = makePackage()
     const outside = makePackage()
     mkdirSync(join(dir, 'dist'), { recursive: true })
     writeFileSync(join(outside, 'evil.js'), 'export {}\n')
-    symlinkSync(join(outside, 'evil.js'), join(dir, 'dist', 'link.js'))
-    expect(() => resolveClientAssets(dir, manifestWith({ entry: 'dist/link.js' }))).toThrow(
-      /escapes the directory/,
-    )
+    const link = type === 'file' ? 'link.js' : 'link'
+    symlinkSync(type === 'file' ? join(outside, 'evil.js') : outside, join(dir, 'dist', link), type)
+    const entry = type === 'file' ? `dist/${link}` : `dist/${link}/evil.js`
+    expect(() => resolveClientAssets(dir, manifestWith({ entry }))).toThrow(/escapes the directory/)
   })
   it('makes readBundledManifest fail the package when declared client files are missing', () => {
     // 运行时读取路径（readBundledManifest → checkManifest → resolveClientAssets）与 staging 走同一道门。
@@ -206,7 +223,7 @@ describe('client asset resolution', () => {
         }),
       ),
     )
-    expect(() => readBundledManifest(dir)).toThrow(/cannot be resolved/)
+    expect(() => readBundledManifest(dir)).toThrow(missingClientFile('dist/client/index.js'))
     writeClientFiles(dir)
     expect(readBundledManifest(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
   })
@@ -362,15 +379,18 @@ describe('client module request resolution', () => {
     ])
       expect(resolveClientModuleAsset(root, pathname), pathname).toBeNull()
   })
-  it('refuses a symlink inside the snapshot that leaves the revision directory', () => {
+  it.each(linkTypes)('refuses a %s link inside the snapshot that leaves the revision directory', (type) => {
     const root = snapshotRoot()
     const outside = makePackage()
     writeFileSync(join(outside, 'secret.js'), 'export {}\n')
+    const link = type === 'file' ? 'linked.js' : 'linked'
     symlinkSync(
-      join(outside, 'secret.js'),
-      join(root, 'acme', 'panel', revision, 'dist', 'client', 'linked.js'),
+      type === 'file' ? join(outside, 'secret.js') : outside,
+      join(root, 'acme', 'panel', revision, 'dist', 'client', link),
+      type,
     )
-    expect(resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/linked.js`)).toBeNull()
+    const entry = type === 'file' ? link : `${link}/secret.js`
+    expect(resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/${entry}`)).toBeNull()
     // 旁边真实的文件仍能裁决，说明被拒的是链接本身而不是目录。
     expect(
       resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/index.js`),
@@ -384,7 +404,12 @@ describe('client module request resolution', () => {
     mkdirSync(join(outside, 'dist'), { recursive: true })
     writeFileSync(join(outside, 'dist', 'served.js'), 'export {}\n')
     const planted = `sha256-${'c'.repeat(64)}`
-    symlinkSync(outside, join(root, 'acme', 'panel', planted))
+    // guards-allow-platform: directory aliases do not require Developer Mode on Windows.
+    symlinkSync(
+      outside,
+      join(root, 'acme', 'panel', planted),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     expect(resolveClientModuleAsset(root, `/plugins/acme/panel/${planted}/dist/served.js`)).toBeNull()
   })
 })
@@ -516,6 +541,6 @@ describe('client capability hash integration', () => {
         },
         {},
       ),
-    ).rejects.toThrow(/cannot be resolved/)
+    ).rejects.toMatchObject(missingClientFile('./client/index.js'))
   })
 })

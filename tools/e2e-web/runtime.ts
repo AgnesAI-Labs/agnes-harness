@@ -1,7 +1,7 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
 import {
@@ -14,12 +14,20 @@ import {
 } from '@agnes/sdk'
 
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
-export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
+export async function isolatedRuntime(
+  launcher: 'root' | 'installed' = 'root',
+  options: { localExamples?: boolean; realModel?: boolean } = {},
+) {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
-  const root = await mkdtemp(join(sep === '\\' ? tmpdir() : '/tmp', 'agh-e2e-'))
+  const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
+  await mkdir(parent, { recursive: true })
+  const root = await mkdtemp(join(parent, options.realModel ? 'sweep-' : 'agh-e2e-'))
   const home = join(root, 'h')
   const workspace = join(root, 'w')
   await mkdir(workspace)
+  // The catalog matrix explicitly owns these public fixtures; the daemon still runs in its isolated workspace.
+  if (options.localExamples)
+    await cp(resolve('examples/packages'), join(workspace, 'examples/packages'), { recursive: true })
   await writeFile(join(workspace, 'report.md'), '# Synthetic delivery\nOffline E2E evidence.\n')
   await mkdir(join(workspace, AGH_DIR, 'skills/e2e-playbook'), { recursive: true })
   await writeFile(
@@ -103,7 +111,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       const child = execFile(
         process.execPath,
         [entry, ...args],
-        { cwd: process.cwd(), env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
+        { cwd: workspace, env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
         (error, stdout, stderr) => {
           log += `CLI ${args[0]}\n${stdout}${stderr}`
           error
@@ -145,7 +153,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       String(address.port),
     ]
     web = spawn(command, args, {
-      cwd: process.cwd(),
+      cwd: workspace,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -296,7 +304,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
         log += `Cleanup failed; retained isolated AGH_HOME: ${home}\n`
         throw error
       }
-      await rm(root, { recursive: true, force: true })
+      if (!options.realModel) await rm(root, { recursive: true, force: true })
     },
   }
   return runtime

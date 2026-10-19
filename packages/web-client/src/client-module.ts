@@ -301,7 +301,7 @@ function createFiberBoundRegistry(
   owner: string,
   allowedSlots: readonly string[] | undefined,
   configCatalogVersion: string | undefined,
-  assert: (name?: string) => void = () => {},
+  assert: (name?: string, deferred?: boolean) => void = () => {},
 ): SlotRegistry {
   const bound = Object.create(registry) as SlotRegistry
   // Session binding state belongs to the host registry, never to a role facade.
@@ -336,7 +336,16 @@ function createFiberBoundRegistry(
     return ownContribution(owner, off, effect)
   }) as SlotRegistry['register']
   bound.inject = ((name: string, factory: () => unknown) => {
-    assert(name)
+    assert(name, true)
+    const definition = getDshSlotDefinition(name)
+    if (definition) {
+      if (!isPublicDshSlot(name) || !isRuntimeSupportedDshSlot(name))
+        throw new Error(`client module ${owner} injected an unavailable slot ${name}`)
+      if (configCatalogVersion !== DSH_SLOT_CATALOG_VERSION)
+        throw new Error(`client module ${owner} uses unsupported slot catalog version`)
+    }
+    if (allowedSlots !== undefined && !allowedSlots.includes(name))
+      throw new Error(`client module ${owner} injected undeclared slot ${name}`)
     const off = registry.inject(name, factory)
     return ownContribution(owner, off, effect)
   }) as SlotRegistry['inject']

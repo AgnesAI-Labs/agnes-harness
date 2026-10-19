@@ -172,6 +172,8 @@ export function ReferencePicker({
     let disposed = false
     const close = () => {
       epoch++
+      // Native key handlers may run again before React commits the closed popup.
+      state.current = { ...state.current, opened: false }
       setOpened(false)
       if (timer) clearTimeout(timer)
     }

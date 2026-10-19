@@ -80,6 +80,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
         .replaceAll('__PACKAGE_NAME__', name)
         .replaceAll('__SKILL_NAME__', name)
         .replaceAll('__TOOL_NAME__', 'student_echo')
+        .replaceAll('__SERVICE_NAME__', name.replaceAll('-', ''))
     const manifest = JSON.parse(
       replace(
         await readFile(new URL(`../../../templates/${template}/package.json`, import.meta.url), 'utf8'),
@@ -102,7 +103,8 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       )
     )
       .replaceAll('__PACKAGE_NAME__', 'student-panel')
-      .replaceAll('__SKILL_NAME__', 'student-panel'),
+      .replaceAll('__SKILL_NAME__', 'student-panel')
+      .replaceAll('__SERVICE_NAME__', 'studentpanel'),
   )
   // The template now defaults to a profile page; this fixture exercises retained session panels.
   delete descriptor.client.homeEntries

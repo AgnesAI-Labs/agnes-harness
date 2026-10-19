@@ -62,6 +62,7 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await expect(original).toHaveAttribute('data-status', 'cancelled')
   await turn(page, 'Recovered after human cancellation')
 
+  await turn(page, 'call tool_describe {"name":"subagent_spawn"}')
   await turn(page, 'call subagent_spawn {"task":"call e2e_wait_for_cancel {}","isolation":"shared"}')
   const tree = page.getByTestId('child-control-tree')
   await tree.locator('summary, .agh-disclosure-summary').click()
@@ -86,7 +87,7 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
       ]),
     )
   await page.locator('#view-trace').click()
-  const evidence = page.getByTestId('control-facts')
-  await evidence.locator('summary, .agh-disclosure-summary').click()
-  await expect(evidence.getByTestId('control-fact').filter({ hasText: 'child-stop' }).last()).toBeVisible()
+  // Control facts now participate in the unified trace rows, with localized action names.
+  const evidence = page.locator('.trace-row').filter({ has: page.locator('.kind-control') })
+  await expect(evidence.filter({ hasText: 'Stop child' }).last()).toBeVisible()
 })

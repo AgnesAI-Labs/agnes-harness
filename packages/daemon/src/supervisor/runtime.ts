@@ -570,6 +570,8 @@ export function supervisorLister(
   }
 }
 
+declare const AGNES_VERSION: string | undefined
+
 export type StartSupervisorOptions = {
   config: DaemonConfig
   profile: ResolvedProfile
@@ -1045,9 +1047,21 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const runtimeStore = jobTables
       ? new CompositeTargetStore(jobTables.table('composite_runtime'), o.profile.name)
       : undefined
+    const notifyRuntimeTarget = (artifact: RuntimeTargetArtifact) =>
+      notices.emit('tree_changed', {
+        detail: {
+          profile: o.profile.name,
+          targetDigest: artifact.digest,
+          identity: artifact.identity,
+          hash: artifact.digest,
+        },
+      })
     let revertFailedDesired: (() => Promise<void>) | undefined
     const runtimeDelivery = runtimeStore
-      ? new CompositeRuntimeDelivery(runtimeStore, { onFailureRecorded: () => revertFailedDesired?.() })
+      ? new CompositeRuntimeDelivery(runtimeStore, {
+          onFailureRecorded: () => revertFailedDesired?.(),
+          onConverged: notifyRuntimeTarget,
+        })
       : undefined
     const runtimeTargetProbe = runtimeStore
       ? createRuntimeTargetProbeLauncher({
@@ -1208,15 +1222,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       notices,
     })
     runtimeStore?.onDesired((artifact) => {
+      // Candidate publication can change static Skills without creating a package operation.
+      skillWatcher?.changed({ rootKey: 'package' })
       pool.noteRuntimeTarget(artifact.digest)
-      notices.emit('tree_changed', {
-        detail: {
-          profile: o.profile.name,
-          targetDigest: artifact.digest,
-          identity: artifact.identity,
-          hash: artifact.digest,
-        },
-      })
+      notifyRuntimeTarget(artifact)
       if (runtimeDelivery?.stageStartup(artifact)) return
       void deliverDesiredToWorkers(pool, artifact).catch((error) => {
         o.audit?.({
@@ -2017,7 +2026,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         registry: supervisorRegistry,
         prompter,
         clock,
-        agnesVersion: '0.0.0',
+        agnesVersion: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0',
         quiescenceWaitMs: 2_000,
         configuration: o.configuration !== undefined,
         modelAdapters: adapterLookup,

@@ -1,12 +1,13 @@
-import { createHash } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { UserMessage } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
+import { toolResult } from './sdk.js'
 import { chooseWorkspace, fresh, preferences, turn } from './ui.js'
 
-test('selects file and session references, records send-time versions and links the source', async ({
+test('selects workspace file chips and versioned session references and links the source', async ({
   page,
   runtime,
 }) => {
@@ -29,20 +30,27 @@ test('selects file and session references, records send-time versions and links 
   await composer.press('ArrowDown')
   await expect(page.getByTestId('reference-option')).toHaveAttribute('aria-selected', 'true')
   await composer.press('Enter')
-  await expect(page.getByTestId('reference-draft-chips')).toContainText('reference.txt')
-  await expect(composer).toHaveValue('')
-  await composer.fill('@session needle')
+  await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
+  await expect(composer).toHaveValue('@reference.txt ')
+  await composer.press('End')
+  await composer.pressSequentially('@session needle')
   const sourceOption = page.getByTestId('reference-option').first()
   await expect(sourceOption).toBeVisible()
   await composer.press('Tab')
-  await expect(page.getByTestId('reference-draft-chips').locator('li')).toHaveCount(2)
+  await expect(page.getByTestId('reference-draft-chips').locator('li')).toHaveCount(1)
   await writeFile(join(runtime.workspace, 'reference.txt'), 'new send-time file contents')
-  await composer.fill('Compare these references.')
+  // Continue typing after the chosen file chip; replacing the entire input would remove it.
+  await expect(composer).toHaveValue('@reference.txt ')
+  await composer.press('End')
+  await composer.pressSequentially('Compare these references.')
+  await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
+  await expect(page.getByTestId('reference-option')).toHaveCount(0)
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 30_000,
   })
-  await expect(page.locator('[data-testid=reference-sent-chips]:visible').locator('li')).toHaveCount(2)
+  await expect(page.locator('[data-testid=reference-sent-chips]:visible').locator('li')).toHaveCount(1)
   await expect(page.locator('[data-testid=reference-session-link]:visible')).toHaveAttribute(
     'href',
     `?session=${sourceId}`,
@@ -61,13 +69,27 @@ test('selects file and session references, records send-time versions and links 
   expect(message).toMatchObject({ origin: 'system', trust: 'untrusted' })
   expect(messages.find((row) => row.origin === 'principal')).toMatchObject({
     trust: 'trusted',
-    data: { content: [{ type: 'text', text: 'Compare these references.' }] },
+    data: {
+      content: [
+        { type: 'text', text: '@reference.txt Compare these references.' },
+        {
+          type: 'resource_link',
+          uri: pathToFileURL(await realpath(join(runtime.workspace, 'reference.txt'))).href,
+          name: 'reference.txt',
+        },
+      ],
+    },
   })
   const serialized = JSON.stringify(message)
-  expect(serialized).toContain(createHash('sha256').update('new send-time file contents').digest('hex'))
-  expect(serialized).toContain('new send-time file contents')
+  // Session references are versioned untrusted context; file chips remain explicit workspace links.
+  expect(serialized).toContain('Reference source needle: compare the release notes.')
+  expect(serialized).not.toContain('new send-time file contents')
   expect(serialized).not.toContain('old file contents')
   expect(serialized).toContain('UNTRUSTED REFERENCE')
+  await turn(page, 'call read {"path":"reference.txt"}')
+  expect(JSON.stringify((await toolResult(session, 'read'))?.content)).toContain(
+    'new send-time file contents',
+  )
   await page.reload()
   await expect(page.locator('[data-testid=reference-session-link]:visible')).toHaveAttribute(
     'href',

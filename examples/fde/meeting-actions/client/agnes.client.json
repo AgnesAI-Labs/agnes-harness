@@ -3,8 +3,11 @@
     "entry": "./index.js",
     "styles": [],
     "slots": ["tool.call.toolview"],
-    "publicConfig": { "label": "Meeting actions" },
+    "publicConfig": {
+      "label": "Meeting actions"
+    },
     "services": [],
-    "projections": []
+    "projections": [],
+    "slotCatalogVersion": "dsh-client-slots/v1"
   }
 }

@@ -41,6 +41,7 @@ it.each(['automatic CLI', 'manual CLI', 'package Web', 'resource Web'])(
     const scope = {
       daemonDir,
       home: '/custom-home',
+      workspace: join(daemonDir, 'workspace'),
       scopeID: 'chosen',
       profile: 'chosen',
       dataDir: '/custom-data',

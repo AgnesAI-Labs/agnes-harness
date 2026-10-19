@@ -16,7 +16,7 @@ afterEach(async () => {
 it.each([
   { name: 'skill-helper', exportName: 'skillHelper', tools: 4 },
   { name: 'mcp-helper', exportName: 'mcpHelper', tools: 1 },
-  { name: 'plugin-helper', exportName: 'pluginHelper', tools: 3 },
+  { name: 'plugin-helper', exportName: 'pluginHelper', tools: 4 },
   { name: 'document-reader', exportName: 'documentReader', tools: 1 },
 ])('ships and relocates $name outside source workspace', async (helper) => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-helper-delivery-'))

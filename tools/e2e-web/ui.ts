@@ -33,7 +33,7 @@ export async function selectValue(page: Page, id: string, value: string) {
 export async function preferences(page: Page, locale = 'en', theme = 'light') {
   await page.addInitScript(
     ({ locale, theme }) => {
-      if (location.protocol !== 'http:') return
+      if (location.protocol !== 'http:' || window !== window.top) return
       localStorage.setItem('agnes-locale', locale)
       localStorage.setItem('agnes-theme', theme)
     },
@@ -41,16 +41,44 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
   )
 }
 
-export async function settings(page: Page, locale = 'en') {
-  if (!(await page.locator('#config').isVisible())) {
-    await sidebar(page)
-    await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+async function settingsVisible(page: Page) {
+  return (
+    (await page.locator('#config[open]').isVisible()) ||
+    (await page.locator('#config-form').isVisible()) ||
+    (await page.getByTestId('settings-navigation').isVisible()) ||
+    (await page.getByTestId('settings-back').isVisible()) ||
+    (await page.locator('[data-testid="settings-subpage-header"]:visible').count()) > 0
+  )
+}
+
+async function settingsRoot(page: Page) {
+  // Nested SettingsDrill content is portaled outside the hidden root form.
+  const subpage = page.locator('[data-testid="settings-subpage-header"]:visible')
+  // A real open dialog can precede its lazy navigation or deep-linked drill content.
+  await expect
+    .poll(
+      async () =>
+        (await page.getByTestId('settings-navigation').isVisible()) ||
+        (await page.getByTestId('settings-back').isVisible()) ||
+        (await subpage.count()) > 0,
+    )
+    .toBe(true)
+  if (await subpage.count()) {
+    await subpage.getByRole('button').first().click()
+    await expect(subpage).toHaveCount(0)
   }
-  // A reopened phone dialog retains its last detail page; return through its real navigation.
-  await expect(page.locator('#config')).toBeVisible()
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
   await expect(page.getByTestId('settings-navigation')).toBeVisible()
+}
+
+export async function settings(page: Page, locale = 'en') {
+  if (!(await settingsVisible(page))) {
+    await sidebar(page)
+    await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+  }
+  await expect.poll(() => settingsVisible(page)).toBe(true)
+  await settingsRoot(page)
 }
 
 /** Open a disclosure through its rendered control, including the React disclosure used by v3. */
@@ -61,11 +89,16 @@ export async function expand(root: import('@playwright/test').Locator) {
     await expect(root).toHaveAttribute('aria-expanded', 'true')
     return
   }
-  const toggle = root.locator(':scope > summary, :scope > .agh-disclosure-summary').first()
+  const toggle = root
+    .locator(
+      ':scope > summary, :scope > .agh-disclosure-summary, :scope > button.agnes-settings-drill[aria-expanded]',
+    )
+    .first()
   const native = (await root.evaluate((node) => node.tagName)) === 'DETAILS'
   const open = native
     ? (await root.getAttribute('open')) !== null
-    : (await root.getAttribute('data-open')) === 'true'
+    : (await root.getAttribute('data-open')) === 'true' ||
+      (await toggle.getAttribute('aria-expanded')) === 'true'
   if (!open) await toggle.click()
   if (native) await expect(root).toHaveAttribute('open', '')
   else await expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -82,17 +115,34 @@ export async function expandActivityGroups(turn: import('@playwright/test').Loca
 }
 
 export async function sidebar(page: Page) {
-  if (!(await page.locator('#settings').isVisible())) await page.locator('#sidebar-toggle').click()
+  // A session URL can render before the navigation presentation has attached.
+  const settings = page.locator('#settings')
+  const toggle = page.locator('#sidebar-toggle')
+  await expect.poll(async () => (await settings.isVisible()) || (await toggle.isVisible())).toBe(true)
+  if (!(await settings.isVisible())) await toggle.click()
+  await expect(settings).toBeVisible()
 }
 
 export async function homePage(page: Page, id: string, tab?: string) {
-  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  if (await settingsVisible(page)) await dismissSettings(page)
   const dock = page.getByTestId('workbench-right-toggle')
   if ((await dock.isVisible()) && (await dock.getAttribute('aria-expanded')) === 'true')
     await dismissWorkbench(page)
   await sidebar(page)
   await page.getByTestId(`home-entry-${id}`).click()
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
+  const back = page.getByTestId('push-back')
+  for (let level = 0; level < 8 && (await back.isVisible()); level++) {
+    const previous = page.url()
+    await back.click()
+    // Push navigation traverses history; await its route before choosing the next visible action.
+    await expect
+      .poll(async () => page.url() !== previous || !(await back.isVisible()) || (await settingsVisible(page)))
+      .toBe(true)
+    await settled(page)
+    if (await settingsVisible(page)) await dismissSettings(page)
+  }
+  await expect(back).toBeHidden()
   if (tab) {
     if (id === 'plugins')
       await page
@@ -108,7 +158,7 @@ export async function homePage(page: Page, id: string, tab?: string) {
 }
 
 export async function advanced(page: Page) {
-  if (!(await page.locator('#config').isVisible()))
+  if (!(await page.locator('#config-form').isVisible()))
     await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
@@ -130,11 +180,11 @@ export function sectionSurface(page: Page, id: string) {
     schedules: 'automation',
     triggers: 'automation',
     search: 'plugins-search',
-    memory: 'plugins-memory',
     engines: 'plugins-subagents',
     'computer-use': 'plugins-computer-use',
   }
   if (homes[id]) return page.getByTestId(`home-page-${homes[id]}`)
+  if (id === 'memory') return page.getByTestId('personalization-memory')
   if (id === 'model') return page.locator('#config-accounts')
   if (id === 'general') return page.locator('#appearance-settings-pane')
   if (id === 'history') return page.getByTestId('session-search')
@@ -152,10 +202,20 @@ export function sectionSurface(page: Page, id: string) {
 
 export async function section(page: Page, id: string) {
   if (await page.getByTestId('session-search').isVisible()) await page.keyboard.press('Escape')
+  if (id === 'memory') {
+    if (!(await page.locator('#config-form').isVisible()))
+      await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
+    const back = page.getByTestId('settings-back')
+    if (await back.isVisible()) await back.click()
+    await page.getByTestId('settings-nav-general').click()
+    await page.getByTestId('personalization-memory').scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('memory-panel')).toBeVisible()
+    return
+  }
   const dock = page.getByTestId('workbench-right-toggle')
   if (
     id !== 'jobs' &&
-    !(await page.locator('#config').isVisible()) &&
+    !(await page.locator('#config-form').isVisible()) &&
     (await dock.isVisible()) &&
     (await dock.getAttribute('aria-expanded')) === 'true'
   )
@@ -192,7 +252,6 @@ export async function section(page: Page, id: string) {
     feedback: ['plugins', 'review'],
     review: ['plugins', 'review'],
     search: ['plugins', 'plugins.search'],
-    memory: ['plugins', 'plugins.memory'],
     engines: ['plugins', 'plugins.subagents'],
     'computer-use': ['plugins', 'plugins.computer-use'],
     schedules: ['automation', 'schedules'],
@@ -203,7 +262,17 @@ export async function section(page: Page, id: string) {
     const [entry, tab] = target
     await homePage(page, entry, tab?.startsWith('plugins.') ? undefined : tab)
     if (tab?.startsWith('plugins.')) {
-      await page.getByTestId(`builtin-${tab.slice(8)}`).click()
+      const capability = tab.slice(8)
+      const zh = (await page.locator('html').getAttribute('lang')) === 'zh-CN'
+      const labels: Record<string, readonly [string, string]> = {
+        search: ['Web search', '网页搜索'],
+        subagents: ['Subagents', '子代理'],
+        'computer-use': ['Computer use', '电脑操作'],
+      }
+      await page
+        .getByTestId('plugin-capability-settings')
+        .getByRole('button', { name: new RegExp(`^${labels[capability]![zh ? 1 : 0]}(?: ·|$)`) })
+        .click()
       await expect(page.getByTestId(`home-page-plugins-${tab.slice(8)}`)).toBeVisible()
     }
     if (id === 'feedback')
@@ -214,7 +283,7 @@ export async function section(page: Page, id: string) {
     return
   }
   if (id === 'history' || id === 'archived') {
-    if (await page.locator('#config').isVisible()) await dismissSettings(page)
+    if (await settingsVisible(page)) await dismissSettings(page)
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
       await sidebar(page)
@@ -224,7 +293,7 @@ export async function section(page: Page, id: string) {
     }
     return
   }
-  if (!(await page.locator('#config').isVisible()))
+  if (!(await page.locator('#config-form').isVisible()))
     await settings(page, (await page.locator('html').getAttribute('lang')) ?? 'en')
   const back = page.getByTestId('settings-back')
   if (await back.isVisible()) await back.click()
@@ -237,10 +306,12 @@ export async function section(page: Page, id: string) {
         : id
   if (['models', 'diagnostics'].includes(canonical)) await advanced(page)
   await page.getByTestId(`settings-nav-${canonical}`).click()
-  if (['models', 'bundles', 'system-prompt', 'context'].includes(id)) {
-    const subsection = page.getByTestId(`settings-subsection-${id}`)
-    await expand(subsection)
-  }
+  if (id === 'models') await expect(page.locator('#settings-subsection-models')).toBeVisible()
+  else if (id === 'bundles') {
+    await expand(page.getByTestId('run-config-technical'))
+    await expand(page.getByTestId('settings-drill-bundles'))
+  } else if (id === 'system-prompt') await expand(page.getByTestId('settings-drill-system-prompt'))
+  else if (id === 'context') await expect(page.locator('#settings-subsection-context')).toBeVisible()
   if (id === 'providers') {
     await expand(page.getByTestId('plugin-diagnostics'))
     await expand(page.getByTestId('settings-subsection-provider-types'))
@@ -256,13 +327,23 @@ async function dismissWorkbench(page: Page) {
   }
 }
 
-/** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
-/** The goal popover opens from the top bar's more menu; its own toggle sits hidden under it. */
+/** The session composer command opens the Goal popover. */
 export async function openGoal(page: Page) {
-  await page.locator('#topbar-more').click()
-  await page.getByTestId('topbar-more-goal').click()
+  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).fill('/goal')
+  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).press('Enter')
+  await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 
+/** Select the stable record-order view through the trace's actual menu. */
+export async function traceSequence(page: Page) {
+  await page.getByTestId('trace-toolbar-more').click()
+  await page.getByTestId('trace-timeline-sequence').click()
+  await page.getByTestId('trace-toolbar-more').click()
+  await expect(page.getByTestId('trace-timeline-sequence')).toHaveText(/^✓ /)
+  await page.keyboard.press('Escape')
+}
+
+/** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
 export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
   const toggle = page.getByTestId('workbench-right-toggle')
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
@@ -293,10 +374,9 @@ export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal'
 }
 
 async function dismissSettings(page: Page) {
-  const close = page.locator('#config-close')
-  if (!(await close.isVisible())) await page.getByTestId('settings-back').click()
-  await close.click()
-  await expect(page.locator('#config')).toBeHidden()
+  await settingsRoot(page)
+  await page.locator('#config-close').click()
+  await expect.poll(() => settingsVisible(page)).toBe(false)
 }
 
 export async function closeSettings(page: Page, _locale = 'en') {
@@ -304,14 +384,14 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('session-search')).toBeHidden()
   }
-  if (await page.locator('#config').isVisible()) await dismissSettings(page)
+  if (await settingsVisible(page)) await dismissSettings(page)
   if (await page.locator('#home-page').isVisible()) {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
     if (id) {
       if ((await page.locator('#session-filter').getAttribute('data-filter')) === 'archived') {
         await page.locator('#session-filter').click()
-        await page.getByTestId('session-filter-active').click()
+        await page.getByTestId('session-filter-unarchived').click()
       }
       await page.locator(`.session[data-session="${id}"]`).click()
     } else await page.locator('#new').click()
@@ -343,7 +423,9 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
 }
 
 export async function fresh(page: Page, locale = 'en') {
-  await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
+  await page
+    .getByRole('button', { name: locale === 'en' ? 'New conversation' : '新对话', exact: true })
+    .click()
   await fullAccess(page, locale)
 }
 
@@ -376,6 +458,8 @@ export async function fullAccess(page: Page, locale = 'en') {
 }
 
 export async function send(page: Page, input: string) {
+  // This helper submits a new turn; busy input intentionally queues guidance instead.
+  await expect(page.locator('#composer')).toHaveAttribute('data-busy', 'false')
   const turns = page.getByTestId('conversation-turn')
   const before = await turns.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-turn-id')))
   const locale = await page.locator('html').getAttribute('lang')
@@ -385,6 +469,7 @@ export async function send(page: Page, input: string) {
   })
   await expect(composer).toBeEnabled()
   await composer.fill(input)
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
   // Child receipts can add a system turn while the prompt is being submitted. Follow
   // the new user input, rather than treating the next turn count as its identity.

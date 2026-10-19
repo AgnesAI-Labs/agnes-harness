@@ -103,6 +103,9 @@ const MODEL_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>
 }
 
 const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>> = {
+  PresentationRoleSelection: (x) => validatePackageAdminData('PresentationRoleSelection', x),
+  PresentationRoleSelections: (x) => validatePackageAdminData('PresentationRoleSelections', x),
+  PresentationRoleState: (x) => validatePackageAdminData('PresentationRoleState', x),
   ApplicationSelection: (x) =>
     validatePackageAdminData('ApplicationSelection' satisfies PackageAdminDataName, x),
   ApplicationConfigSnapshot: (x) =>

@@ -6,6 +6,31 @@
   body.sidebar-collapsed {
     grid-template-columns: 3.5rem minmax(0, 1fr);
   }
+  @media (min-width: 768px) and (max-width: 900px) {
+    body[data-agnes-region="app"]
+      :is(
+        .deliverable-row .agh-list-row-title,
+        .trace-search-box .trace-search,
+        .trace-fold-all.agh-btn--icon,
+        .workbench-files-filter .agh-search-bar-field > input,
+        .workbench-changes-file.agnes-ui-button,
+        .agnes-settings-chip-input,
+        .agnes-settings-block a
+      ) {
+      min-height: var(--s32);
+    }
+    .agnes-settings-block a {
+      display: inline-flex;
+      align-items: center;
+    }
+    .trace-search-box {
+      height: auto;
+      min-height: var(--s32);
+    }
+    body[data-agnes-region="app"] .trace-fold-all.agh-btn--icon {
+      min-width: var(--s32);
+    }
+  }
   @media (min-width: 901px) {
     body.sidebar-collapsed .sidebar {
       align-items: center;
@@ -278,6 +303,9 @@
     }
     [data-agnes-region="trace"]:has(.trace-inspector:not([hidden])) {
       grid-template-rows: minmax(0, 1fr);
+    }
+    [data-agnes-region="trace"]:has(.trace-inspector:not([hidden])) .trace-body {
+      grid-row: 1;
     }
     [data-agnes-region="trace"]:has(.trace-inspector:not([hidden]))
       :is(.trace-toolbar, .trace-gantt, .trace-list) {

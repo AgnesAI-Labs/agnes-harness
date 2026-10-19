@@ -14,6 +14,7 @@ run `node --import tsx capture.ts /absolute/path/to/empty-home` with Node 24.
 The generated home also contains the file-source trees. No daemon, model,
 credentials or network source is involved in generation. Keep the original
 snapshot records, pin request hashes, trust decisions and package bytes intact.
+The formatter leaves `home/` unchanged because its original bytes are integrity-bound test evidence.
 
 The fast PackageManager upgrade tests consume this home directly. The real
 previous-build gate merges its records into a stopped synthetic previous-build

@@ -7619,6 +7619,9 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ApplicationState: PackageAdminGen.ApplicationState,
     ApplicationAdoptParams: PackageAdminGen.ApplicationAdoptParams,
     ApplicationClearParams: PackageAdminGen.ApplicationClearParams,
+    PresentationRoleSelection: PackageAdminGen.PresentationRoleSelection,
+    PresentationRoleSelections: PackageAdminGen.PresentationRoleSelections,
+    PresentationRoleState: PackageAdminGen.PresentationRoleState,
 
     PackagePresentation: PackageAdminGen.PackagePresentation,
     PluginConfigAudit: PackageAdminGen.PluginConfigAudit,

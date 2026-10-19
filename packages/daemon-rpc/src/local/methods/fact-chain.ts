@@ -106,7 +106,9 @@ export function registerFactChain(
       truncated,
     })
     // Missing anchors disclose no captured request, composition, package or candidate metadata.
-    if (!result.nodes.length) return result
+    // Feedback candidates are drafted by the system, without a tool/call. Their authorized
+    // candidate record still owns provenance; an absent ordinary tool anchor reveals nothing.
+    if (!result.nodes.length && !candidate?.origin.feedbackId) return result
     appendIntelligentUiFactChain(result, rows)
     for (const node of [...result.nodes]) {
       if (node.kind !== 'request') continue
@@ -161,13 +163,16 @@ export function registerFactChain(
         turn: candidate.origin.turn,
         toolUseId: candidate.origin.toolUseId,
       })
-      result.edges.push({
-        from: `tool:${laneId}:${candidate.origin.toolUseId}`,
-        to: id,
-        relation: 'drafted',
-        evidence: [],
-        basis: 'authoring-record',
-      })
+      const source = `tool:${laneId}:${candidate.origin.toolUseId}`
+      if (result.nodes.some((node) => node.id === source))
+        result.edges.push({
+          from: source,
+          to: id,
+          relation: 'drafted',
+          evidence: [],
+          basis: 'authoring-record',
+        })
+      else result.gaps.push({ at: id, reason: 'source-unavailable' })
       if (!testsMatch) result.gaps.push({ at: id, reason: 'source-unavailable' })
     }
     const requests = result.nodes.filter(

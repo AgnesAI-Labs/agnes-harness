@@ -32,6 +32,18 @@ node examples/demos/growing-skills/run.mjs
 
 不要把凭据放进命令参数、提交文件或共享实录。真实模型验收与离线 CI 检查分开。
 
+## 智能体目录浏览器验收
+
+构建本地 CLI 并准备 Playwright Chromium 后，运行重型浏览器验收：
+
+```sh
+pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
+```
+
+测试枚举所有带 `launch` 的示例 Bundle，通过 Web UI 安装、信任、启用，检查模型、权限、来源包和草稿审阅，确认草稿入框且未发送，再显式提交每个示例提示词。默认使用离线 Demo 模型。测试检查持久化工具结果、完成状态和报告卡片，并通过正常控件回答模拟业务问题及工具授权。
+
+真实推理须显式设置 `AGH_REAL_AGENT_SWEEP=1`，并通过安全的 shell 凭据处理提供 `AGH_DEMO_API_KEY`。测试通过公开配置 API 保存 DeepSeek 账号（`deepseek-flash`）。真实 home 保留在 `~/agh-real-eval/sweep-*`，端口在本机回环随机分配。每个智能体运行限时六分钟；AGH 记录的费用超过 $5 后取消并停止巡检。可用 `AGH_AGENT_FILTER` 按逗号分隔的智能体引用子串做聚焦重跑，用 `AGH_WEB_TEST_OUTPUT` 分开保留每轮报告。JSON 证据和截图属于测试产物，不是源码文件，应按运行证据保护。脚本模型通过不代表真实模型回答质量通过。
+
 ## 无界面 smoke
 
 `--check` 明确自动批准本合成演示中的操作和生成模板，替代终端确认。后端和断言相同，无测试重试，不使用 Playwright：

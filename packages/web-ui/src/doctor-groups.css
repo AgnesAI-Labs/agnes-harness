@@ -228,6 +228,11 @@
     }
   }
   @container (max-width: 560px) {
+    .agnes-doctor-footer-actions {
+      flex-wrap: wrap;
+      flex-basis: 100%;
+      min-width: 0;
+    }
     .agnes-doctor-groups {
       grid-template-columns: 1fr;
     }

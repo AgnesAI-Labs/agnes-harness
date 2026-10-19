@@ -20,9 +20,12 @@ it.each(['complete', 'pages', 'stale', 'duplicate', 'oversized-write'])(
       hash = `sha256-${'b'.repeat(64)}`
     let candidateHash = hash,
       reads = 0,
-      written: unknown
+      written: { action: string; mode?: string; files?: unknown; expectedHash?: string } | undefined
     const sourceFiles = [
-      { path: 'skills/example/SKILL.md', content: '\ufeff# Example\r\n<!-- next-section -->\n' },
+      {
+        path: 'skills/example/SKILL.md',
+        content: `${mode === 'oversized-write' ? '\u0002'.repeat(200_000) : '\ufeff# Example\r\n'}<!-- next-section -->\n`,
+      },
       { path: 'other.txt', content: mode === 'complete' ? '中文'.repeat(10_000) : '\u0001'.repeat(100_000) },
       { path: 'empty.txt', content: mode === 'oversized-write' ? '\u0002'.repeat(100_000) : '' },
     ]
@@ -35,7 +38,7 @@ it.each(['complete', 'pages', 'stale', 'duplicate', 'oversized-write'])(
           if (args.action === 'candidate.show') {
             if (++reads === 2 && mode === 'stale') candidateHash = `sha256-${'c'.repeat(64)}`
           } else {
-            written = args.files
+            written = args
           }
           return {
             candidateId,
@@ -95,12 +98,13 @@ it.each(['complete', 'pages', 'stale', 'duplicate', 'oversized-write'])(
       expect(written).toBeUndefined()
     } else {
       await expect(run).resolves.toMatchObject({ candidateId, candidateHash: hash })
-      expect(written).toEqual([
+      // Merge writes only the changed file; unrelated large files stay on the Host.
+      expect(written).toMatchObject({ mode: 'merge', expectedHash: hash })
+      expect(written?.files).toEqual([
         {
           ...sourceFiles[0],
           content: sourceFiles[0]!.content.replace('<!-- next-section -->', 'A complete small section.'),
         },
-        ...sourceFiles.slice(1),
       ])
       expect(reads).toBe(
         mode === 'complete'
