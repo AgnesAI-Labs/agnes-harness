@@ -387,10 +387,13 @@ for (const locale of ['en', 'zh-CN']) {
           state.approvalPrompts!++
       }).observe(document.body, { childList: true, subtree: true })
     })
-    await turn(
+    const written = await turn(
       page,
       `call write ${JSON.stringify({ path: `${memory.inspection!.root}/MEMORY.md`, content: 'Synthetic automatic preference.' })}`,
     )
+    const process = written.getByTestId('turn-process-toggle')
+    if (!(await process.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
+      await process.click()
     await expect(
       page
         .getByTestId('approval-step')
@@ -407,6 +410,10 @@ for (const locale of ['en', 'zh-CN']) {
     ).toBe('Synthetic automatic preference.')
     await page.reload()
     await expect(page.getByTestId('approval-card')).toHaveCount(0)
+    const restored = page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle')
+    await expect(restored).toBeVisible()
+    if (!(await restored.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
+      await restored.click()
     await expect(
       page
         .getByTestId('approval-step')
