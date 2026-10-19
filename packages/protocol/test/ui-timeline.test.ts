@@ -70,6 +70,23 @@ describe('UI projection leaf contract', () => {
       }),
     ).toBe(true)
   })
+  it('carries a bound automatic permission decision on tool cards', () => {
+    const permissionDecision = {
+      reason: 'full-access',
+      decisionId: 'decision',
+      actor: {
+        id: 'owner',
+        org: 'local',
+        role: 'system',
+        deptPath: [],
+        attrs: { permissionPolicy: 'full-access' },
+      },
+    }
+    expect(Value.Check(UINode, { ...nodes[2], permissionDecision })).toBe(true)
+    expect(
+      Value.Check(UINode, { ...nodes[2], permissionDecision: { ...permissionDecision, reason: 'human' } }),
+    ).toBe(false)
+  })
   it('carries the reason behind an approval decision, optionally and as text only', () => {
     const decided = {
       ...nodes[3],

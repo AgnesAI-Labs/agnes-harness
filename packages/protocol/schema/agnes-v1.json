@@ -3499,6 +3499,16 @@
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
           "properties": {
+            "permissionDecision": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reason", "decisionId", "actor"],
+              "properties": {
+                "reason": { "const": "full-access" },
+                "decisionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "actor": { "$ref": "#/$defs/Actor" }
+              }
+            },
             "review": {
               "$ref": "#/$defs/ToolReviewFact"
             },
