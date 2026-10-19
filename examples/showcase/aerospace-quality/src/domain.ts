@@ -125,6 +125,17 @@ export function investigate(s: State) {
     peakA: Math.max(...campaign.samples.map((p) => p.current)),
     limitA: 1.8,
     windowMinutes: [66, 70],
+    units: { current: 'A', temperature: '°C', pressure: 'Pa', time: 'min' },
+    assessmentScope:
+      'Only the current upper limit is assessed here. Temperature and pressure have no supplied acceptance limits; do not declare their tests passed. / 本结果只评估电流上限；未提供温度和真空度验收限值，不能判定其试验通过。',
+    changeMeaning:
+      'thermallyCycled is a design environmental exposure flag, not proof that a test was performed or passed. / thermallyCycled 是设计环境属性，不是试验已完成或通过的证据。',
+    zeroingSummary: s.zeroing.map((item) => ({
+      id: item.id,
+      status: item.status,
+      accepted: item.criteria.filter((criterion) => criterion.accepted).map((criterion) => criterion.id),
+      missing: item.criteria.filter((criterion) => !criterion.accepted).map((criterion) => criterion.id),
+    })),
     exceedances,
     relatedNcrs: s.ncrs
       .filter((r) => r.lot === campaign.lot)

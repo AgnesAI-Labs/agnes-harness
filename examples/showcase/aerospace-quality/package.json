@@ -96,7 +96,7 @@
         }
       },
       {
-        "id": "policy:aero-human-review",
+        "id": "ext:@agnes-showcase/aerospace-quality/review-policy",
         "export": "reviewPolicyPlugin",
         "apiRange": "^4.0.0",
         "inject": [

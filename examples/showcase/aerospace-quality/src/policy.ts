@@ -18,6 +18,12 @@ export const humanReviewPolicy: ToolPolicy = {
   version: '1.0.0',
   decide(input, signal, ports) {
     signal.throwIfAborted()
+    if (input.call.name === 'aero_report')
+      return {
+        effect: 'allow',
+        reason:
+          'Bounded evidence export under aero-output; no hardware or configuration mutation / 有界证据导出，不改变硬件或技术状态',
+      }
     if (input.call.name !== 'aero_decide') return defaultToolPolicy.decide(input, signal, ports)
     const value = input.call.args
     if (

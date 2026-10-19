@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
-import { readApplicationAsset, readDevelopmentPlugin } from '@agnes/package-manager'
+import { developmentPluginRows, readApplicationAsset, readDevelopmentPlugin } from '@agnes/package-manager'
 import { type Context, defineAgnesPlugin, toolPolicyKind } from '@agnes/plugin-runtime'
+import { assertPublishableRows } from '@agnes/plugin-runtime/host'
 import { DSH_SLOT_CATALOG_VERSION } from '@agnes/web-client'
 import { expect, it } from 'vitest'
 import { tools } from '../src/index.js'
@@ -17,6 +18,7 @@ it('public package inspection resolves the third-party application, six profile 
   let inspected: Awaited<ReturnType<typeof readDevelopmentPlugin>>
   try {
     inspected = await readDevelopmentPlugin(clean, 'local-dev')
+    expect(() => assertPublishableRows(developmentPluginRows(inspected, []))).not.toThrow()
   } finally {
     await rm(clean, { recursive: true, force: true })
   }

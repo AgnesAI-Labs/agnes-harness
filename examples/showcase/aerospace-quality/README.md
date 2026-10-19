@@ -115,3 +115,5 @@ and automation on an isolated home; it is opt-in, not part of the fast suite. Fo
 running paid mode. Never print or store API keys. See [domain notes](DOMAIN-NOTES.md) for standards
 references and modelling limits. Open `/?admin` or use `agh app clear` to recover host presentation;
 only stop this trial's daemon. No customer data, private traces or credentials belong in the package.
+
+The selected domain policy permits `aero_report` as a bounded evidence export: only allowlisted report kinds/locales and new files under `aero-output/`, followed by `present`. This allows scheduled, source-tainted prompts to produce deliverables without unattended hardware/configuration approval. MRB, configuration, rule activation and closure still require an exact human decision.

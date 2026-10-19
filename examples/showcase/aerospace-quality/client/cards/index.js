@@ -17,6 +17,19 @@ export function apply(ctx) {
           const locale = React.useSyncExternalStore(ctx.locale.subscribe, () => ctx.locale.locale)
           const zh = locale === 'zh-CN',
             block = owner?.block
+          const labels = {
+            awaiting_approval: ['等待人工审批', 'Awaiting human approval'],
+            pending: ['待执行', 'Pending'],
+            planned: ['待执行', 'Planned'],
+            running: ['执行中', 'Running'],
+            success: ['已完成', 'Completed'],
+            completed: ['已完成', 'Completed'],
+            error: ['未成功', 'Failed'],
+            failed: ['未成功', 'Failed'],
+            refused: ['已拒绝', 'Refused'],
+            cancelled: ['已取消', 'Cancelled'],
+          }
+          const state = labels[block?.status]
           return h(
             'section',
             {
@@ -29,8 +42,14 @@ export function apply(ctx) {
               h('strong', null, name),
               h(
                 Tag,
-                { tone: block?.status === 'error' ? 'bad' : 'info' },
-                block?.status ?? (zh ? '待执行' : 'Pending'),
+                {
+                  tone: ['error', 'failed'].includes(block?.status)
+                    ? 'bad'
+                    : block?.status === 'awaiting_approval'
+                      ? 'warn'
+                      : 'info',
+                },
+                state ? state[zh ? 0 : 1] : zh ? '待执行' : 'Pending',
               ),
             ),
             h(

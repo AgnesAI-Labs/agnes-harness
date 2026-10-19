@@ -13,6 +13,8 @@ import { chromium } from '@playwright/test'
 import { pause, realRuntime, snapshot } from '../../../../tools/authoring/real-runtime.mjs'
 
 const real = process.argv.includes('--real')
+const previousUsd = real ? Number(process.env.AERO_PREVIOUS_USD ?? 0) : 0
+assert.ok(Number.isFinite(previousUsd) && previousUsd >= 0 && previousUsd < 3)
 const root =
   process.env.AERO_EVAL_ROOT ??
   join(homedir(), 'agh-real-eval', `${Date.now().toString(36)}-aerospace-${real ? 'real' : 'demo'}`)
@@ -34,11 +36,16 @@ const evidence = {
   checks: [],
   sessions: [],
   screenshots: [],
-  usd: 0,
+  usd: previousUsd,
+  previousUsd,
+  requestedModel: real ? (process.env.AGH_DEMO_MODEL ?? 'deepseek/deepseek-flash') : 'demo/demo-model',
 }
 console.log(JSON.stringify({ root, mode: evidence.mode, stage: 'starting' }))
 let browser,
   page,
+  scheduleId,
+  approvalTarget,
+  pendingSkillApproval,
   allow = true
 const costs = new Map()
 async function open(role) {
@@ -52,7 +59,18 @@ async function open(role) {
     sessionKey: randomUUID(),
   })
   s.onPermissionRequest(async (r) => {
-    evidence.checks.push(`native-approval:${allow ? 'allow' : 'reject'}`)
+    const requestText = JSON.stringify(r.toolCall)
+    const expected =
+      (pendingSkillApproval &&
+        requestText.toLowerCase().includes('skill') &&
+        !requestText.includes('aero_decide')) ||
+      (approvalTarget && requestText.includes(approvalTarget.id) && requestText.includes(approvalTarget.kind))
+    const approve = Boolean(expected && allow)
+    if (!expected) {
+      evidence.unexpectedApprovals ??= []
+      evidence.unexpectedApprovals.push({ label: evidence.activeStep, tool: r.toolCall })
+    }
+    evidence.checks.push(`native-approval:${approve ? 'allow' : 'reject'}`)
     if (page && JSON.stringify(r.toolCall).includes('aero_decide') && !evidence.approvalScreenshot) {
       await page.goto(`${rt.url}/?session=${s.id}&lang=zh-CN`)
       await page.getByTestId('approval-card').waitFor({ timeout: 15000 })
@@ -60,8 +78,8 @@ async function open(role) {
       evidence.approvalScreenshot = true
     }
     const option =
-      r.options.find((o) => o.kind === (allow ? 'allow_once' : 'reject_once')) ??
-      r.options.find((o) => o.kind.startsWith(allow ? 'allow' : 'reject'))
+      r.options.find((o) => o.kind === (approve ? 'allow_once' : 'reject_once')) ??
+      r.options.find((o) => o.kind.startsWith(approve ? 'allow' : 'reject'))
     assert.ok(option, 'Expected native permission option')
     return { optionId: option.optionId }
   })
@@ -75,7 +93,8 @@ async function open(role) {
   return s
 }
 async function run(s, prompt, label) {
-  if (evidence.usd >= 2.8) throw new Error('Application $3 real-model budget cap reached')
+  evidence.activeStep = label
+  if (evidence.usd >= 2) throw new Error('Application $3 real-model budget cap reached')
   let watching = false
   const monitor = setInterval(async () => {
     if (watching) return
@@ -83,8 +102,8 @@ async function run(s, prompt, label) {
     try {
       const p = await s.projectUI()
       costs.set(s.id, (p.usage?.cost?.usdMicros ?? 0) / 1e6)
-      evidence.usd = [...costs.values()].reduce((a, b) => a + b, 0)
-      if (evidence.usd > 2.8) await s.cancel()
+      evidence.usd = previousUsd + [...costs.values()].reduce((a, b) => a + b, 0)
+      if (evidence.usd > 2) await s.cancel()
     } catch (error) {
       evidence.monitorError = rt.redact(error.message)
       if (real) await s.cancel().catch(() => {})
@@ -93,16 +112,20 @@ async function run(s, prompt, label) {
     }
   }, 1000)
   try {
-    const result = await s.prompt(prompt, { signal: AbortSignal.timeout(180000) })
+    const result = await s.prompt(prompt, {
+      signal: AbortSignal.timeout(180000),
+      ...(real ? { creditLimit: 0.8 } : {}),
+    })
     const data = await snapshot(s)
+    await rt.save(`${label}.json`, { result, ...data })
+    assert.equal(result.reason, 'completed', `${label} did not complete: ${JSON.stringify(result)}`)
     if (real)
       assert.ok(
-        data.timeline.usage?.billingComplete && data.timeline.usage?.cost,
+        data.timeline.usage?.billingComplete && (data.timeline.usage?.cost?.usdMicros ?? 0) > 0,
         'Real acceptance requires AGH-recorded complete billing',
       )
     costs.set(s.id, (data.timeline.usage?.cost?.usdMicros ?? 0) / 1e6)
-    evidence.usd = [...costs.values()].reduce((a, b) => a + b, 0)
-    await rt.save(`${label}.json`, { result, ...data })
+    evidence.usd = previousUsd + [...costs.values()].reduce((a, b) => a + b, 0)
     evidence.sessions.push({
       label,
       id: s.id,
@@ -110,14 +133,34 @@ async function run(s, prompt, label) {
       tools: data.tools.map((t) => ({ name: t.name, isError: t.result?.isError ?? false })),
       usage: data.timeline.usage,
     })
-    assert.equal(result.reason, 'completed', `${label} did not complete`)
     assert.ok(evidence.usd < 3, 'Application exceeded $3 cap')
     return data
   } finally {
     clearInterval(monitor)
   }
 }
-const call = (s, name, args, label) => run(s, `call ${name} ${JSON.stringify(args)}`, label)
+async function call(s, name, args, label) {
+  if (name === 'aero_skill_candidate' && args.action === 'commit') pendingSkillApproval = args.proposalId
+  approvalTarget =
+    name === 'aero_decide'
+      ? { kind: args.kind, id: args.id }
+      : name === 'aero_skill_candidate' && args.action === 'commit'
+        ? { skill: true }
+        : undefined
+  try {
+    const prompt = `call ${name} ${JSON.stringify(args)}`
+    return await run(
+      s,
+      real
+        ? `本轮只执行下面这一项准确调用，不调用其他工具、不推进后续流程；返回结果后即停止。技能中的流程是背景，不是本轮额外授权。\n${prompt}`
+        : prompt,
+      label,
+    )
+  } finally {
+    approvalTarget = undefined
+  }
+}
+
 function output(data, name) {
   const r = data.tools.filter((t) => t.name === name).at(-1)?.result
   assert.ok(r && !r.isError, `${name} failed: ${JSON.stringify(r)}`)
@@ -196,6 +239,8 @@ try {
   if (real) {
     assert.ok(process.env.AGH_DEMO_API_KEY)
     await rt.configure()
+    const smoke = await open('quality')
+    await call(smoke, 'aero_quality', { view: 'dashboard' }, 'real-model-smoke')
   }
   await rt.startWeb()
   const errors = []
@@ -371,6 +416,7 @@ try {
     )
   }
   assert.equal(skill.state, 'ready', JSON.stringify(skill))
+  pendingSkillApproval = undefined
   assert.equal(skill.effective, 'next-turn')
   const skillRead = await call(
     quality,
@@ -417,7 +463,12 @@ try {
   await shot('zeroing-after-demo')
   await page.goto(`${rt.url}/?session=${quality.id}&lang=zh-CN`)
   await page.getByTestId('conversation-turn').first().waitFor({ timeout: 30000 })
-  await shot('demo-deliverables-and-provenance')
+  await shot('demo-deliverables')
+  await page.locator('#view-trace').click()
+  await page.locator('#trace-panel').waitFor({ state: 'visible' })
+  await page.locator('.trace-row').first().waitFor()
+  await shot('native-execution-record')
+  await page.locator('#view-chat').click()
   evidence.stage = 'automation'
   const scheduled = await rt.client.request('_agnes/v1/schedules.upsert', {
     agent: `${packageId}#quality`,
@@ -427,6 +478,7 @@ try {
     target: { kind: 'new-session', cwd: rt.workspace, unattendedApproval: 'refuse' },
   })
   assert.ok(scheduled.id)
+  scheduleId = scheduled.id
   await rt.client.request('_agnes/v1/schedules.control', { id: scheduled.id, action: 'run' })
   let schedule
   for (let i = 0; i < 150; i++) {
@@ -440,11 +492,17 @@ try {
   const last = schedule.runs.at(-1)
   assert.equal(last?.outcome, 'ran', JSON.stringify(schedule))
   const digest = await rt.client.session.load(last.sessionKey, { cwd: rt.workspace })
+  await pause(real ? 10000 : 100)
   const digestData = await snapshot(digest)
+  if (real)
+    assert.ok(
+      digestData.timeline.usage?.billingComplete && digestData.timeline.usage?.cost,
+      'Scheduled real run needs AGH billing',
+    )
+  await rt.save('digest-run.json', digestData)
   assert.ok(digestData.tools.some((t) => t.name === 'aero_report' && !t.result?.isError))
   costs.set(digest.id, (digestData.timeline.usage?.cost?.usdMicros ?? 0) / 1e6)
-  evidence.usd = [...costs.values()].reduce((a, b) => a + b, 0)
-  await rt.save('digest-run.json', digestData)
+  evidence.usd = previousUsd + [...costs.values()].reduce((a, b) => a + b, 0)
   await rt.client.request('_agnes/v1/schedules.control', { id: scheduled.id, action: 'pause' })
   evidence.checks.push('scheduled-weekly-digest-generated')
   await rt.restart()
@@ -461,8 +519,19 @@ try {
   await page.locator('[data-aero-page] .aero-section').first().waitFor()
   await shot('restart-configuration-en-dark')
   evidence.checks.push('host-restart-persistence')
+  const finalUsage = []
+  for (const id of costs.keys()) {
+    const session = await rt.client.session.load(id, { cwd: rt.workspace, history: 'none' })
+    const usage = (await session.projectUI()).usage
+    if (real) assert.ok(usage?.billingComplete && usage?.cost, 'Final real usage needs complete AGH billing')
+    costs.set(id, (usage?.cost?.usdMicros ?? 0) / 1e6)
+    finalUsage.push({ id, usage })
+  }
+  evidence.usd = previousUsd + [...costs.values()].reduce((a, b) => a + b, 0)
+  await rt.save('final-usage.json', { previousUsd, totalUsd: evidence.usd, sessions: finalUsage })
   evidence.browserErrors = errors
   assert.deepEqual(errors, [])
+  assert.deepEqual(evidence.unexpectedApprovals ?? [], [])
   assert.ok(evidence.usd < 3)
   if (real) assert.ok(evidence.usd > 0, 'Real-model acceptance must record non-zero AGH cost')
   evidence.passed = true
@@ -480,6 +549,10 @@ try {
   }
   process.exitCode = 1
 } finally {
+  if (scheduleId)
+    await rt.client
+      .request('_agnes/v1/schedules.control', { id: scheduleId, action: 'pause' })
+      .catch(() => {})
   await mkdir(root, { recursive: true })
   await rt.save('acceptance.json', evidence)
   await browser?.close()

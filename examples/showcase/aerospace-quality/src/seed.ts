@@ -146,26 +146,35 @@ export function seed(): State {
     title:
       i === 17
         ? text('AN-027 冷平台电流尖峰', 'AN-027 cold plateau current spike')
-        : text(
-            ['来料标识偏差', '焊点间歇高阻', '尺寸检验偏差'][i % 3]!,
-            [
-              'Incoming marking discrepancy',
-              'Intermittent high-resistance solder joint',
-              'Dimensional inspection deviation',
-            ][i % 3]!,
-          ),
+        : i === 15
+          ? text('冷循环连续性间歇', 'Intermittent continuity during cold cycling')
+          : i === 16
+            ? text('冷平台重复电流越限', 'Repeated cold-plateau overcurrent')
+            : text(
+                ['来料标识偏差', '焊点间歇高阻', '尺寸检验偏差'][i % 3]!,
+                [
+                  'Incoming marking discrepancy',
+                  'Intermittent high-resistance solder joint',
+                  'Dimensional inspection deviation',
+                ][i % 3]!,
+              ),
     severity: i > 14 ? 'major' : i % 4 === 0 ? 'critical' : 'minor',
     status: i > 14 ? 'open' : i % 4 === 0 ? 'review' : 'closed',
     opened: `2026-10-${n(1 + i).slice(-2)}T04:00:00Z`,
     lot: i > 14 ? 'L2609-B' : 'L2607-A',
     unit: `PVD-${n(i > 14 ? 11 : i + 1)}`,
     signature:
-      i > 14
+      i === 15
         ? text(
-            '冷平台热循环后间歇高阻；电流反馈补偿尖峰',
-            'Intermittent resistance after cold cycling; current-feedback compensation spike',
+            '冷循环后连续性测量出现间歇电阻升高；尚未完成切片分析',
+            'Intermittent measured resistance after cold cycling; cross-section analysis pending',
           )
-        : text('检验记录与受控图样存在差异', 'Inspection record differs from controlled drawing'),
+        : i > 15
+          ? text(
+              '冷平台驱动电流越过 1.80 A 限值；失效机理尚未证实',
+              'Cold-plateau drive current exceeded the 1.80 A limit; failure mechanism unconfirmed',
+            )
+          : text('检验记录与受控图样存在差异', 'Inspection record differs from controlled drawing'),
     disposition: i > 14 ? null : ('use-as-is' as const),
     rationale: '',
     approvals: i > 14 ? [] : ['MRB-DEMO-ARCHIVE'],

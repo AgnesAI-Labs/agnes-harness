@@ -142,6 +142,9 @@ it('traceability exposes orphan/design/untested gaps and reports preserve uncert
   expect(rows.find((r) => r.id === 'CMP-030')!.gap).toBe('untested')
   expect(rows.find((r) => r.id === 'CMP-031')!.gap).toBe('missing-design')
   expect(investigate(s).hypothesis.en).toContain('Hypothesis only')
+  expect(investigate(s).units.pressure).toBe('Pa')
+  expect(investigate(s).zeroingSummary[0]?.accepted).toEqual(expect.arrayContaining(['T1', 'M1', 'M2']))
+  expect(investigate(s).zeroingSummary[0]?.accepted).toHaveLength(3)
   s.ncrs[17]!.rationale = '<script>alert(1)</script>'
   for (const locale of ['zh-CN', 'en'] as const) {
     const surface = briefing(s, locale)
