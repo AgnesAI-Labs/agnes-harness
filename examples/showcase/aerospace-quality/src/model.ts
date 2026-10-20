@@ -124,3 +124,16 @@ export type State = {
   }
   audit: Audit[]
 }
+
+/** Format only the recorded mode; absent or unknown proof is never labelled manual. */
+export function confirmationLabel(mode: string | undefined, principal: string, locale: 'zh-CN' | 'en') {
+  const zh = locale === 'zh-CN'
+  if (mode === 'auto-confirmed under full access')
+    return zh
+      ? `完全访问下自动确认（主体 ${principal}）`
+      : `Auto-confirmed under full access (principal ${principal})`
+  if (mode === 'manual') return zh ? `已由真人签署: ${principal}` : `Signed by ${principal}`
+  return zh
+    ? `确认方式未记录（主体 ${principal}）`
+    : `Confirmation mode not recorded (principal ${principal})`
+}

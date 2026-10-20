@@ -1,9 +1,14 @@
 import { health, investigate } from './domain.js'
-import type { State } from './model.js'
+import { confirmationLabel, type State } from './model.js'
 export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | 'en') {
   const zh = locale === 'zh-CN',
     h = health(s),
     a = investigate(s)
+  const approvalRecords = (ids: string[]) =>
+    ids.map((id) => {
+      const proof = s.audit.find((entry) => entry.approval === id)
+      return `- ${confirmationLabel(proof?.confirmationMode, proof?.signer ?? '—', locale)} · ${id}`
+    })
   const title =
     kind === 'zeroing'
       ? zh
@@ -32,10 +37,13 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
     `## ${zh ? '处置与复验' : 'Disposition and re-verification'}`,
     ...s.ncrs
       .filter((r) => r.lot === 'L2609-B')
-      .map(
-        (r) =>
-          `- ${r.id}: ${r.status} / ${r.disposition ?? (zh ? '未定' : 'undecided')} · ${r.rationale || (zh ? '待 MRB 审理' : 'MRB review pending')}`,
-      ),
+      .flatMap((r) => [
+        `- ${r.id}: ${r.status} / ${r.disposition ?? (zh ? '未定' : 'undecided')} · ${r.rationale || (zh ? '待 MRB 审理' : 'MRB review pending')}`,
+        ...approvalRecords(r.approvals),
+      ]),
+    ...s.ecrs
+      .filter((r) => r.approvals.length)
+      .flatMap((r) => [`- ${r.id}: ${r.from} → ${r.to}`, ...approvalRecords(r.approvals)]),
     `- VT-001, VT-004, VT-008; ${zh ? '新旧批次对照、四线连续性、校准探头与切片分析' : 'A/B lots, four-wire continuity, calibrated probe and cross-section analysis'}`,
     '',
     `## ${zh ? '双五条证据' : 'Double-five evidence'}`,
@@ -46,15 +54,22 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
         `| ${c.id} | ${c.title[locale]} | ${c.evidence.join(', ') || '—'} | ${c.accepted ? (zh ? '已审阅' : 'Reviewed') : zh ? '待补证' : 'Open'} |`,
     ),
     '',
+    ...s.zeroing
+      .filter((z) => z.closure)
+      .map(
+        (z) =>
+          `- ${z.id}: ${confirmationLabel(z.closure!.confirmationMode, z.closure!.signer, locale)} · ${z.closure!.decisionId}`,
+      ),
     `## ${zh ? '受审规则候选' : 'Reviewed rule candidate'}`,
     `${s.rule.status} · v${s.rule.version} · ${s.rule.body}`,
+    ...approvalRecords(s.rule.approval ? [s.rule.approval] : []),
     '',
     `## ${zh ? '审计与责任' : 'Audit and accountability'}`,
     ...s.audit
       .slice(-12)
       .map(
         (e) =>
-          `- r${e.revision} ${e.at} ${e.action} ${e.subject}; Host approval: ${e.approval ?? '—'}; ${e.signer ?? '—'}; ${e.confirmationMode === 'auto-confirmed under full access' ? (zh ? '完全访问下自动确认' : 'auto-confirmed under full access') : e.confirmationMode === 'manual' ? (zh ? '人工签署' : 'Manual signature') : '—'}`,
+          `- r${e.revision} ${e.at} ${e.action} ${e.subject}; Host approval: ${e.approval ?? '—'}; ${e.approval ? confirmationLabel(e.confirmationMode, e.signer ?? '—', locale) : '—'}`,
       ),
     '',
     'ECSS-Q-ST-10/20 series; ECSS-Q-ST-10-09C; AS9100D §8.3.6 / §8.5.2 / §8.7 / §10.2; NASA-STD-8739 workmanship concepts; NPR 7120.5 lifecycle reviews; GJB 9001C; 双五条归零. Conceptual demonstration, no certification claim.',

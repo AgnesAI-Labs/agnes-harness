@@ -1,4 +1,4 @@
-import type { Plant } from './model.js'
+import { confirmationLabel, type Plant } from './model.js'
 import { escapeHtml, printReport } from './print-report.js'
 import { dashboard, dossier, emStatus } from './quality.js'
 import { dossierSections, reviewSections } from './report-sections.js'
@@ -41,10 +41,11 @@ export function report(
             ...Object.entries({
               [t('证书编号', 'Certificate')]: check.certificate.id,
               [t('签署人', 'Signer')]: check.certificate.signer,
-              [t('确认方式', 'Confirmation mode')]:
-                check.certificate.confirmationMode === 'auto-confirmed under full access'
-                  ? t('完全访问下自动确认', 'auto-confirmed under full access')
-                  : t('人工签署', 'Manual signature'),
+              [t('确认方式', 'Confirmation mode')]: confirmationLabel(
+                check.certificate.confirmationMode,
+                check.certificate.signer,
+                locale,
+              ),
               [t('签名时间', 'Signed at')]: check.certificate.at,
               [t('签名含义', 'Signature meaning')]: check.certificate.meaning,
               [t('审阅版本', 'Reviewed revision')]: check.certificate.dossierRevision,

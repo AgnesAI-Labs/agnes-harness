@@ -117,3 +117,16 @@ export const SIGNATURE_MEANINGS = {
   'zh-CN': '我已审核完整质量档案，批准本批放行。',
 }
 export const SIGNATURE_MEANING = `${SIGNATURE_MEANINGS.en} / ${SIGNATURE_MEANINGS['zh-CN']}`
+
+/** Format only the recorded mode; absent or unknown proof is never labelled manual. */
+export function confirmationLabel(mode: string | undefined, principal: string, locale: 'zh-CN' | 'en') {
+  const zh = locale === 'zh-CN'
+  if (mode === 'auto-confirmed under full access')
+    return zh
+      ? `完全访问下自动确认（主体 ${principal}）`
+      : `Auto-confirmed under full access (principal ${principal})`
+  if (mode === 'manual') return zh ? `已由真人签署: ${principal}` : `Signed by ${principal}`
+  return zh
+    ? `确认方式未记录（主体 ${principal}）`
+    : `Confirmation mode not recorded (principal ${principal})`
+}

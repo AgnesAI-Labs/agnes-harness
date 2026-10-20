@@ -1,5 +1,6 @@
 import { Tag } from '@agnes/web-ui'
 import React from 'react'
+import { confirmationLabel } from '../locale.js'
 
 const h = React.createElement
 
@@ -61,16 +62,26 @@ export function apply(ctx) {
             block = owner?.block
           const output = useOutput(ctx, block)
           const check = output?.dossier ?? output
+          const proofs = output?.signature
+            ? [output.signature]
+            : [
+                ...(check?.evidence?.recordApprovals ?? []).map((entry) => ({
+                  ...entry,
+                  signer: entry.recordedBy,
+                })),
+                ...(check?.certificate ? [check.certificate] : []),
+              ]
           return h(
             'section',
             { className: 'ph-evidence-card', 'aria-label': zh ? '质量证据' : 'Quality evidence' },
             h('strong', null, output?.batch ?? name),
-            output?.signature &&
+            ...proofs.map((proof, i) =>
               h(
                 'p',
-                null,
-                `${zh ? '已由真人签署' : 'Signed by a human'}: ${output.signature.signer} · r${output.signature.reviewedRevision}`,
+                { key: i, 'data-business-confirmation': true },
+                `${confirmationLabel(proof.confirmationMode, proof.signer, locale)} · r${proof.reviewedRevision ?? proof.dossierRevision}`,
               ),
+            ),
             check?.rows
               ? h(
                   'ul',

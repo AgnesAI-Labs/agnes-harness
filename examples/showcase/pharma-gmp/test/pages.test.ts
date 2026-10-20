@@ -72,6 +72,45 @@ it.each(['zh-CN', 'en'] as const)(
         b.textContent?.includes(locale === 'en' ? 'sign release' : '签署放行'),
       )!
       expect(release.disabled).toBe(true)
+      const certificate = plant.batches.find((row) => row.certificate)?.certificate
+      if (!certificate) throw new Error('Missing synthetic certificate')
+      const signedBatch = plant.batches.find((row) => row.id === 'B-2410-017')!
+      for (const mode of ['manual', 'auto-confirmed under full access', undefined, 'unknown']) {
+        signedBatch.certificate = { ...certificate, signer: 'qa.recorded' }
+        if (mode === undefined) delete signedBatch.certificate.confirmationMode
+        else signedBatch.certificate.confirmationMode = mode
+        data.dossiers = plant.batches.map((b) => dossier(plant, b.id))
+        plant.audit.push({
+          ...plant.audit[0]!,
+          actor: 'qa.recorded',
+          approval: 'recorded-proof',
+          ...(mode === undefined ? {} : { confirmationMode: mode }),
+        })
+        const expected =
+          mode === 'manual'
+            ? locale === 'en'
+              ? 'Signed by qa.recorded'
+              : '已由真人签署: qa.recorded'
+            : mode === 'auto-confirmed under full access'
+              ? locale === 'en'
+                ? 'Auto-confirmed under full access (principal qa.recorded)'
+                : '完全访问下自动确认（主体 qa.recorded）'
+              : locale === 'en'
+                ? 'Confirmation mode not recorded (principal qa.recorded)'
+                : '确认方式未记录（主体 qa.recorded）'
+        for (const page of ['release', 'audit']) {
+          await host.render('pharma-home')
+          await host.render(`pharma-${page}`)
+          expect(host.container.textContent).toContain(expected)
+          if (mode !== 'manual')
+            expect(host.container.textContent).not.toContain(
+              locale === 'en' ? 'Signed by qa.recorded' : '已由真人签署: qa.recorded',
+            )
+        }
+        plant.audit.pop()
+      }
+      signedBatch.certificate = null
+      data.dossiers = plant.batches.map((b) => dossier(plant, b.id))
       await host.render('pharma-deviations')
       const investigate = Array.from(host.container.querySelectorAll('button')).find((b) =>
         b.textContent?.includes(locale === 'en' ? 'Request investigation' : '申请启动调查'),

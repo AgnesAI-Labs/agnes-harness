@@ -220,10 +220,26 @@ it('approved domain decisions hold hardware, invalidate verification, enforce do
       reviewedRevision: 4,
     },
   })
-  for (const locale of ['en', 'zh-CN'] as const)
-    expect(report(read(store), 'zeroing', locale).markdown).toContain(
-      locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认',
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const rendered = report(read(store), 'zeroing', locale)
+    const auto =
+      locale === 'en'
+        ? 'Auto-confirmed under full access (principal human)'
+        : '完全访问下自动确认（主体 human）'
+    const manual = locale === 'en' ? 'Signed by human' : '已由真人签署: human'
+    expect(rendered.markdown).toContain(auto)
+    expect(rendered.html).toContain(auto)
+    expect(rendered.markdown).toContain(manual) // MRB/configuration retain their own manual proofs.
+    const unknown = read(store)
+    for (const entry of unknown.audit) delete entry.confirmationMode
+    unknown.zeroing[0]!.closure!.confirmationMode = 'unknown'
+    const missing = report(unknown, 'zeroing', locale)
+    expect(missing.markdown).toContain(
+      locale === 'en' ? 'Confirmation mode not recorded (principal human)' : '确认方式未记录（主体 human）',
     )
+    expect(missing.markdown).not.toContain(auto)
+    expect(missing.markdown).not.toContain(manual)
+  }
 })
 it('traceability exposes orphan/design/untested gaps and reports preserve uncertainty, evidence and safe HTML', () => {
   const s = seed(),

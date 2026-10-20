@@ -1,9 +1,20 @@
 import { Banner, Button, Drawer, Field, Select, Tag } from '@agnes/web-ui'
 import React from 'react'
+import { confirmationLabel } from './i18n.js'
 import { col, section, status, table } from './views.js'
 import { WorkButton } from './workbench.js'
 
 const h = React.createElement
+function approvalRecords(data, ids, t) {
+  return ids.map((id) => {
+    const proof = data.audit.find((entry) => entry.approval === id)
+    return h(
+      'p',
+      { key: id, 'data-business-confirmation': true },
+      `${confirmationLabel(proof?.confirmationMode, proof?.signer ?? '—', t.zh ? 'zh-CN' : 'en')} · ${id}`,
+    )
+  })
+}
 export function Mrb({ data, t, op }) {
   const [selected, setSelected] = React.useState(null),
     [disposition, setDisposition] = React.useState('rework'),
@@ -29,6 +40,7 @@ export function Mrb({ data, t, op }) {
                   { key: r.id, className: 'aero-ncr' },
                   h('div', { className: 'aero-row' }, h('code', null, r.id), status(t, r.severity)),
                   h('h3', null, t.value(r.title)),
+                  ...approvalRecords(data, r.approvals, t),
                   h(
                     'p',
                     null,
@@ -66,6 +78,7 @@ export function Mrb({ data, t, op }) {
           React.Fragment,
           null,
           h('p', null, t.value(r.signature)),
+          ...approvalRecords(data, r.approvals, t),
           h('p', null, `${t.evidence}: ${r.evidence.join(', ')}`),
           h(
             Banner,
@@ -199,6 +212,10 @@ export function Configuration({ data, t, op, ctx }) {
           col(t.choose('变更', 'Change'), 'title', { render: t.value, width: 330 }),
           col(t.choose('基线', 'Baseline'), 'from', { render: (_, r) => `${r.from} → ${r.to}` }),
           col(t.choose('状态', 'Status'), 'status', { render: (v) => status(t, v) }),
+          col(t.choose('确认方式', 'Confirmation mode'), 'approvals', {
+            render: (ids) => approvalRecords(data, ids, t),
+            width: 330,
+          }),
         ],
         data.ecrs,
         t,
@@ -214,6 +231,7 @@ export function Configuration({ data, t, op, ctx }) {
           ? h(
               React.Fragment,
               null,
+              ...approvalRecords(data, analysis.ecr.approvals, t),
               h(
                 'div',
                 {
@@ -350,6 +368,7 @@ export function Zeroing({ data, t, op }) {
         null,
         status(t, data.rule.status),
         h('p', null, data.rule.body.split(' / ')[t.zh ? 1 : 0]),
+        ...approvalRecords(data, data.rule.approval ? [data.rule.approval] : [], t),
         h(
           'div',
           { className: 'aero-actions' },
@@ -408,12 +427,9 @@ export function Zeroing({ data, t, op }) {
             col(t.choose('对象', 'Subject'), 'subject'),
             col(t.choose('签署人', 'Signer'), 'signer', { render: (v) => v || '—' }),
             col(t.choose('确认方式', 'Confirmation mode'), 'confirmationMode', {
-              render: (v) =>
-                v === 'auto-confirmed under full access'
-                  ? t.choose('完全访问下自动确认', 'auto-confirmed under full access')
-                  : v === 'manual'
-                    ? t.choose('人工签署', 'Manual signature')
-                    : '—',
+              render: (mode, entry) =>
+                entry.approval ? confirmationLabel(mode, entry.signer ?? '—', t.zh ? 'zh-CN' : 'en') : '—',
+              width: 330,
             }),
             col(t.choose('宿主审批', 'Host approval'), 'approval', { render: (v) => v || '—' }),
           ],
@@ -426,7 +442,7 @@ export function Zeroing({ data, t, op }) {
       h(
         'p',
         null,
-        `${z.closure.signer} · ${z.closure.confirmationMode === 'auto-confirmed under full access' ? t.choose('完全访问下自动确认', 'auto-confirmed under full access') : t.choose('人工签署', 'Manual signature')} · ${z.closure.decisionId}`,
+        `${confirmationLabel(z.closure.confirmationMode, z.closure.signer, t.zh ? 'zh-CN' : 'en')} · ${z.closure.decisionId}`,
       ),
     h(
       Button,

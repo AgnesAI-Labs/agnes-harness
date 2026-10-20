@@ -110,6 +110,40 @@ it('models original OOS, independent signatures, alert-vs-action and retrospecti
   const safe = report(p, 'dossier', batch, 'zh-CN').html
   expect(safe).not.toContain('<script>')
   expect(safe).toContain('&lt;script&gt;unsafe()&lt;/script&gt;')
+  const certificate = p.batches.find((row) => row.certificate)?.certificate
+  if (!certificate) throw new Error('Missing synthetic certificate')
+  b.certificate = { ...certificate, signer: 'release.principal' }
+  p.audit.push({ ...p.audit[0]!, record: batch, actor: 'record.principal', approval: 'record-proof' })
+  for (const mode of ['manual', 'auto-confirmed under full access', undefined, 'unknown']) {
+    if (mode === undefined) {
+      delete b.certificate.confirmationMode
+      delete p.audit.at(-1)!.confirmationMode
+    } else {
+      b.certificate.confirmationMode = mode
+      p.audit.at(-1)!.confirmationMode = mode
+    }
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const document = report(p, 'dossier', batch, locale)
+      for (const principal of ['release.principal', 'record.principal']) {
+        const label =
+          mode === 'manual'
+            ? locale === 'en'
+              ? `Signed by ${principal}`
+              : `已由真人签署: ${principal}`
+            : mode === 'auto-confirmed under full access'
+              ? locale === 'en'
+                ? `Auto-confirmed under full access (principal ${principal})`
+                : `完全访问下自动确认（主体 ${principal}）`
+              : locale === 'en'
+                ? `Confirmation mode not recorded (principal ${principal})`
+                : `确认方式未记录（主体 ${principal}）`
+        expect(document.markdown).toContain(label)
+        expect(document.html).toContain(label)
+        if (mode !== 'manual') expect(document.markdown).not.toContain(`Signed by ${principal}`)
+        if (mode !== 'manual') expect(document.markdown).not.toContain(`已由真人签署: ${principal}`)
+      }
+    }
+  }
 })
 it('shares service/tool state, persists across Host restart, and refuses missing proof, stale writes and cancellation', async () => {
   const storeDir = await mkdtemp(join(tmpdir(), 'agh-pharma-store-'))
@@ -315,7 +349,12 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           signatureMeaning: SIGNATURE_MEANING,
           evidence: {
             recordApprovals: expect.arrayContaining([
-              expect.objectContaining({ action: 'review', reviewedRevision: 4 }),
+              expect.objectContaining({
+                action: 'review',
+                reviewedRevision: 4,
+                recordedBy: base === 'full-access' ? 'u' : 'human.qa',
+                confirmationMode: base === 'full-access' ? 'auto-confirmed under full access' : 'manual',
+              }),
             ]),
             deviations: expect.arrayContaining([
               expect.objectContaining({

@@ -107,6 +107,15 @@ test('showcase full access business signature records the human principal withou
           .getByTestId('approval-step')
           .filter({ hasText: locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认' }),
       ).toContainText(signature.result.answeredBy.id)
+      const recordedLabel =
+        locale === 'en'
+          ? `Auto-confirmed under full access (principal ${signature.result.answeredBy.id})`
+          : `完全访问下自动确认（主体 ${signature.result.answeredBy.id}）`
+      const evidence = localized.locator('.ph-evidence-card [data-business-confirmation]')
+      await expect(evidence).toHaveText(`${recordedLabel} · r0`)
+      await expect(localized.locator('.ph-evidence-card')).not.toContainText(
+        locale === 'en' ? 'Signed by' : '已由真人签署',
+      )
       await expect(localized.getByTestId('approval-card')).toHaveCount(0)
       await localized.screenshot({
         path: info.outputPath(`business-full-access-${locale}.png`),
@@ -116,14 +125,28 @@ test('showcase full access business signature records the human principal withou
       await localized.goto(
         `${runtime.url}/?page=pharma-audit&pagePackage=${encodeURIComponent('@agnes-showcase/pharma-gmp')}`,
       )
-      await expect(localized.locator('[data-pharma-page="audit"]')).toContainText(
-        locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认',
+      await expect(localized.locator('[data-pharma-page="audit"]')).toContainText(recordedLabel)
+      await expect(localized.locator('[data-pharma-page="audit"]')).not.toContainText(
+        locale === 'en'
+          ? `Signed by ${signature.result.answeredBy.id}`
+          : `已由真人签署: ${signature.result.answeredBy.id}`,
       )
       await expect(localized.locator('[data-pharma-page="audit"]')).toContainText(
         signature.result.answeredBy.id,
       )
       await localized.screenshot({
         path: info.outputPath(`business-audit-${locale}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      })
+      await localized.goto(
+        `${runtime.url}/?page=pharma-release&pagePackage=${encodeURIComponent('@agnes-showcase/pharma-gmp')}`,
+      )
+      await expect(localized.locator('[data-pharma-page="release"] [data-business-confirmation]')).toHaveText(
+        recordedLabel,
+      )
+      await localized.screenshot({
+        path: info.outputPath(`business-release-${locale}.png`),
         fullPage: true,
         animations: 'disabled',
       })

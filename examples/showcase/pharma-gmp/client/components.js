@@ -1,5 +1,6 @@
 import { Button, Chart, Drawer, Table, Tag } from '@agnes/web-ui'
 import React from 'react'
+import { confirmationLabel } from './locale.js'
 export const h = React.createElement
 export const card = (title, children, key) =>
   h('section', { className: 'ph-card', key }, h('h2', null, title), children)
@@ -68,6 +69,19 @@ export function BatchDrawer({ batch, dossier, deviations, t, locale, close, muta
       size: 'min(760px, 100vw)',
     },
     h('p', { className: 'ph-note' }, t.original),
+    ...(dossier.evidence.recordApprovals ?? []).map((entry) =>
+      h(
+        'p',
+        { key: entry.approvalId, 'data-business-confirmation': true },
+        confirmationLabel(entry.confirmationMode, entry.recordedBy, locale),
+      ),
+    ),
+    dossier.certificate &&
+      h(
+        'p',
+        { 'data-business-confirmation': true },
+        confirmationLabel(dossier.certificate.confirmationMode, dossier.certificate.signer, locale),
+      ),
     card(
       t.step,
       h(

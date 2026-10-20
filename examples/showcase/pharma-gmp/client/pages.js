@@ -1,7 +1,7 @@
 import { Field, Select, SettingsTextArea } from '@agnes/web-ui'
 import React from 'react'
 import { badge, button, card, chart, column, h, table, text } from './components.js'
-import { meaning } from './locale.js'
+import { confirmationLabel, meaning } from './locale.js'
 
 const age = (opened) =>
   Math.max(0, Math.floor((Date.parse('2024-10-20T23:59:59Z') - Date.parse(opened)) / 86400000))
@@ -316,6 +316,13 @@ export function Release({ data, t, locale, mutate, busy }) {
           h('p', null, text(b.product, locale)),
           badge(certificate ? 'released' : check.ready ? 'ready' : 'blocked', t),
           h('p', { className: 'ph-note' }, `${t.revision}: ${check.revision}`),
+          ...check.evidence.recordApprovals.map((entry) =>
+            h(
+              'p',
+              { key: entry.approvalId, 'data-business-confirmation': true },
+              confirmationLabel(entry.confirmationMode, entry.recordedBy, locale),
+            ),
+          ),
           h('h3', null, t.signature),
           h('p', { className: 'ph-meaning' }, t.localizedMeaning),
           !certificate &&
@@ -354,11 +361,10 @@ export function Release({ data, t, locale, mutate, busy }) {
           { className: 'ph-certificate' },
           h('p', { className: 'ph-eyebrow' }, 'SABLELEAF / GMP'),
           h('h2', null, certificate.id),
-          h('p', null, `${t.signer}: ${certificate.signer}`),
           h(
             'p',
-            null,
-            `${t.confirmationMode}: ${certificate.confirmationMode === 'auto-confirmed under full access' ? t.autoConfirmed : t.manualSignature}`,
+            { 'data-business-confirmation': true },
+            confirmationLabel(certificate.confirmationMode, certificate.signer, locale),
           ),
           h('p', null, `${t.when}: ${certificate.at}`),
           h('p', null, certificate.meaning),
@@ -369,7 +375,7 @@ export function Release({ data, t, locale, mutate, busy }) {
     card(t.reports, h('p', null, t.reportsText)),
   )
 }
-export function Audit({ data, t }) {
+export function Audit({ data, t, locale }) {
   return h(
     React.Fragment,
     null,
@@ -381,12 +387,11 @@ export function Audit({ data, t }) {
         [
           column(t.when, 'at', undefined, 200),
           column(t.actor, 'actor'),
-          column(t.confirmationMode, 'confirmationMode', (mode) =>
-            mode === 'auto-confirmed under full access'
-              ? t.autoConfirmed
-              : mode === 'manual'
-                ? t.manualSignature
-                : '—',
+          column(
+            t.confirmationMode,
+            'confirmationMode',
+            (mode, entry) => (entry.approval ? confirmationLabel(mode, entry.actor, locale) : '—'),
+            330,
           ),
           column(t.actionName, 'action'),
           column(t.record, 'record'),

@@ -1,5 +1,6 @@
 import { Tag } from '@agnes/web-ui'
 import React from 'react'
+import { confirmationLabel } from '../i18n.js'
 
 const h = React.createElement
 const titles = {
@@ -109,6 +110,12 @@ export function apply(ctx) {
                 state ? state[zh ? 0 : 1] : zh ? '待执行' : 'Pending',
               ),
             ),
+            data?.signature &&
+              h(
+                'p',
+                { 'data-business-confirmation': true },
+                confirmationLabel(data.signature.confirmationMode, data.signature.signer, locale),
+              ),
             data?.peakA !== undefined
               ? h(
                   React.Fragment,

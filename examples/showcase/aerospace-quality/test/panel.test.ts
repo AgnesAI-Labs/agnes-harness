@@ -150,6 +150,51 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
       expect(host.container.querySelector('[role=alert]')?.textContent).toContain(
         'Synthetic service unavailable',
       )
+      fail = false
+      state.ncrs.find((row) => row.id === 'NCR-018')!.approvals = ['mrb-proof']
+      state.ecrs.find((row) => row.id === 'ECR-016')!.approvals = ['config-proof']
+      state.rule.approval = 'rule-proof'
+      for (const mode of ['manual', 'auto-confirmed under full access', undefined, 'unknown']) {
+        state.audit = ['mrb-proof', 'config-proof', 'rule-proof'].map((approval) => ({
+          id: approval,
+          at: '2026-10-20',
+          action: 'approve',
+          subject: approval,
+          revision: 2,
+          approval,
+          signer: 'recorded.principal',
+          ...(mode === undefined ? {} : { confirmationMode: mode }),
+        }))
+        state.zeroing[0]!.closure = {
+          decisionId: 'closure-proof',
+          signer: 'recorded.principal',
+          confirmationMode: mode ?? '',
+          reviewedRevision: 2,
+          subjectRevision: 'digest',
+        }
+        const expected =
+          mode === 'manual'
+            ? locale === 'en'
+              ? 'Signed by recorded.principal'
+              : '已由真人签署: recorded.principal'
+            : mode === 'auto-confirmed under full access'
+              ? locale === 'en'
+                ? 'Auto-confirmed under full access (principal recorded.principal)'
+                : '完全访问下自动确认（主体 recorded.principal）'
+              : locale === 'en'
+                ? 'Confirmation mode not recorded (principal recorded.principal)'
+                : '确认方式未记录（主体 recorded.principal）'
+        for (const page of ['mrb', 'configuration', 'zeroing']) {
+          await host.render('aero-home')
+          await host.render(`aero-${page}`)
+          await host.act(async () => {})
+          expect(host.container.textContent).toContain(expected)
+          if (mode !== 'manual')
+            expect(host.container.textContent).not.toContain(
+              locale === 'en' ? 'Signed by recorded.principal' : '已由真人签署: recorded.principal',
+            )
+        }
+      }
     } finally {
       await host.dispose()
     }

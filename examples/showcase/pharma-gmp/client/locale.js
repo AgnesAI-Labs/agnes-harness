@@ -89,8 +89,6 @@ export const words = {
     certificate: '批次放行证书',
     signer: '批准人',
     confirmationMode: '确认方式',
-    autoConfirmed: '完全访问下自动确认',
-    manualSignature: '人工签署',
     approval: '批准凭证',
     revision: '档案版本',
     operationPending: '操作等待中；请在宿主审批界面审阅原始请求，再查询该操作。',
@@ -212,8 +210,6 @@ export const words = {
     certificate: 'Batch release certificate',
     signer: 'Approved by',
     confirmationMode: 'Confirmation mode',
-    autoConfirmed: 'auto-confirmed under full access',
-    manualSignature: 'Manual signature',
     approval: 'Approval receipt',
     revision: 'Dossier revision',
     operationPending:
@@ -248,3 +244,16 @@ export const words = {
 }
 export const meaning =
   'I approve this batch for release after reviewing the complete quality dossier. / 我已审核完整质量档案，批准本批放行。'
+
+/** Format only the recorded mode; absent or unknown proof is never labelled manual. */
+export function confirmationLabel(mode, principal, locale) {
+  const zh = locale === 'zh-CN'
+  if (mode === 'auto-confirmed under full access')
+    return zh
+      ? `完全访问下自动确认（主体 ${principal}）`
+      : `Auto-confirmed under full access (principal ${principal})`
+  if (mode === 'manual') return zh ? `已由真人签署: ${principal}` : `Signed by ${principal}`
+  return zh
+    ? `确认方式未记录（主体 ${principal}）`
+    : `Confirmation mode not recorded (principal ${principal})`
+}
