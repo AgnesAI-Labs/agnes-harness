@@ -404,11 +404,7 @@
         "navigation": {
           "entries": [
             "@agnes-showcase/aerospace-quality#aero-home",
-            "@agnes-showcase/aerospace-quality#aero-requirements",
-            "@agnes-showcase/aerospace-quality#aero-tests",
-            "@agnes-showcase/aerospace-quality#aero-mrb",
-            "@agnes-showcase/aerospace-quality#aero-configuration",
-            "@agnes-showcase/aerospace-quality#aero-zeroing"
+            "@agnes-showcase/aerospace-quality#aero-tasks"
           ],
           "hideBuiltin": []
         }
@@ -420,7 +416,136 @@
         "@agnes-showcase/aerospace-quality#investigator",
         "@agnes-showcase/aerospace-quality#mrb",
         "@agnes-showcase/aerospace-quality#configuration"
-      ]
+      ],
+      "workbench": {
+        "tabs": [
+          {
+            "id": "current-object",
+            "title": {
+              "en": "Current object",
+              "zh-CN": "当前对象"
+            },
+            "icon": "file",
+            "order": -30,
+            "slot": "workbench.panel",
+            "view": "page",
+            "page": "@agnes-showcase/aerospace-quality#aero-object",
+            "when": "session"
+          },
+          {
+            "id": "signatures",
+            "title": {
+              "en": "Pending signatures",
+              "zh-CN": "待签署"
+            },
+            "icon": "check",
+            "order": -20,
+            "slot": "workbench.panel",
+            "view": "signatures"
+          },
+          {
+            "id": "evidence",
+            "title": {
+              "en": "Evidence & reports",
+              "zh-CN": "证据与报告"
+            },
+            "icon": "list",
+            "order": -10,
+            "slot": "workbench.panel",
+            "view": "evidence"
+          }
+        ],
+        "actions": [
+          {
+            "id": "investigate",
+            "title": {
+              "en": "Investigate anomaly",
+              "zh-CN": "调查异常"
+            },
+            "agent": "@agnes-showcase/aerospace-quality#investigator",
+            "prompt": {
+              "en": "Investigate the selected anomaly using measured evidence; separate hypotheses from confirmed causes.",
+              "zh-CN": "调查所选异常，读取实测证据并区分假设与已证实原因。"
+            },
+            "focusTab": "current-object",
+            "object": {
+              "type": "anomaly",
+              "id": "AN-027"
+            }
+          },
+          {
+            "id": "mrb",
+            "title": {
+              "en": "Draft MRB disposition",
+              "zh-CN": "起草 MRB 处置"
+            },
+            "agent": "@agnes-showcase/aerospace-quality#mrb",
+            "prompt": {
+              "en": "Draft an evidence-based rework disposition for the selected NCR; keep hardware on hold and submit Host confirmation under the current permission level.",
+              "zh-CN": "为所选 NCR 起草有证据依据的返工处置，保留隔离，并按当前权限级别提交宿主签署流程。"
+            },
+            "focusTab": "current-object",
+            "object": {
+              "type": "ncr",
+              "id": "NCR-018"
+            }
+          },
+          {
+            "id": "configuration",
+            "title": {
+              "en": "Review configuration change",
+              "zh-CN": "评审技术状态更改"
+            },
+            "agent": "@agnes-showcase/aerospace-quality#configuration",
+            "prompt": {
+              "en": "Review requirement, interface and re-verification impacts of the selected ECR; submit the change through Host confirmation.",
+              "zh-CN": "评审所选 ECR 的需求、接口与复验影响，正式更改提交宿主签署流程。"
+            },
+            "focusTab": "current-object",
+            "object": {
+              "type": "ecr",
+              "id": "ECR-016"
+            }
+          },
+          {
+            "id": "report",
+            "title": {
+              "en": "Generate closure report",
+              "zh-CN": "生成归零报告"
+            },
+            "agent": "@agnes-showcase/aerospace-quality#quality",
+            "prompt": {
+              "en": "Generate the current closure evidence report without claiming missing verification has passed.",
+              "zh-CN": "生成当前归零项的证据报告，不将缺失验证描述为已通过。"
+            },
+            "focusTab": "current-object",
+            "object": {
+              "type": "zeroing",
+              "id": "ZR-001"
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "en": "Cold plateau current limit → investigate → MRB → signed closure",
+            "zh-CN": "冷平台电流越限 → 调查 → MRB 处置 → 签署归零"
+          },
+          {
+            "en": "Lot substitution → configuration review → re-verification plan",
+            "zh-CN": "批次替换 → 评审技术状态 → 复验计划"
+          },
+          {
+            "en": "Evidence gaps → double-five closure → automated report",
+            "zh-CN": "证据缺口 → 双五条归零 → 自动质量报告"
+          }
+        ],
+        "includes": [
+          "pages",
+          "tools",
+          "signatures",
+          "reports"
+        ]
+      }
     },
     "metadata": {
       "displayName": "Aerospace programme quality",

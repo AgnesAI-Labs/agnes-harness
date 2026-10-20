@@ -1,6 +1,7 @@
 import { Banner, Button, Drawer, Field, Select, Tag } from '@agnes/web-ui'
 import React from 'react'
 import { col, section, status, table } from './views.js'
+import { WorkButton } from './workbench.js'
 
 const h = React.createElement
 export function Mrb({ data, t, op }) {
@@ -28,6 +29,7 @@ export function Mrb({ data, t, op }) {
                   { key: r.id, className: 'aero-ncr' },
                   h('div', { className: 'aero-row' }, h('code', null, r.id), status(t, r.severity)),
                   h('h3', null, t.value(r.title)),
+                  h(WorkButton, { action: 'mrb', object: { type: 'ncr', id: r.id }, t }),
                   h(
                     'p',
                     null,
@@ -190,6 +192,10 @@ export function Configuration({ data, t, op, ctx }) {
           col('ID', 'id', {
             render: (v) => h(Button, { onClick: () => setEcrId(v), 'aria-pressed': ecrId === v }, v),
           }),
+          col(t.choose('操作', 'Work'), 'id', {
+            key: 'work',
+            render: (id) => h(WorkButton, { action: 'configuration', object: { type: 'ecr', id }, t }),
+          }),
           col(t.choose('变更', 'Change'), 'title', { render: t.value, width: 330 }),
           col(t.choose('基线', 'Baseline'), 'from', { render: (_, r) => `${r.from} → ${r.to}` }),
           col(t.choose('状态', 'Status'), 'status', { render: (v) => status(t, v) }),
@@ -291,6 +297,9 @@ export function Zeroing({ data, t, op }) {
   return h(
     React.Fragment,
     null,
+    ...data.zeroing.map((item) =>
+      h(WorkButton, { key: item.id, action: 'report', object: { type: 'zeroing', id: item.id }, t }),
+    ),
     h(
       Banner,
       { tone: 'warning' },

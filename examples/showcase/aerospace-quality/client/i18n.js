@@ -1,4 +1,6 @@
 export const titles = {
+  'aero-object': ['当前对象', 'Current object'],
+  'aero-tasks': ['待办与签署', 'Tasks & signatures'],
   'aero-home': ['项目总览', 'Programme overview'],
   'aero-requirements': ['需求追溯', 'Requirements'],
   'aero-tests': ['试验与异常', 'Tests & anomalies'],

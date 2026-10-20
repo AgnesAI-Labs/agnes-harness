@@ -80,6 +80,30 @@
           "icon": "check",
           "order": 15
         }
+      },
+      {
+        "id": "aero-object",
+        "placement": "secondary",
+        "navigation": {
+          "title": "Current object",
+          "titles": {
+            "zh-CN": "当前对象"
+          },
+          "icon": "file",
+          "order": 20
+        }
+      },
+      {
+        "id": "aero-tasks",
+        "placement": "primary",
+        "navigation": {
+          "title": "Tasks & signatures",
+          "titles": {
+            "zh-CN": "待办与签署"
+          },
+          "icon": "check",
+          "order": 11
+        }
       }
     ]
   },

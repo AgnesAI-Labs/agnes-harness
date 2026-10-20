@@ -12,7 +12,7 @@ import { tools } from '../src/index.js'
 import { humanReviewPolicy } from '../src/policy.js'
 
 const directory = fileURLToPath(new URL('../', import.meta.url))
-it('public package inspection resolves the third-party application, six profile pages, five agents and bounded raster identity', async () => {
+it('public package inspection resolves the third-party application, eight profile pages, five agents and bounded raster identity', async () => {
   const clean = await mkdtemp(join(tmpdir(), 'agh-aero-inspect-'))
   await cp(directory, clean, { recursive: true, filter: (path) => !path.split('/').includes('node_modules') })
   let inspected: Awaited<ReturnType<typeof readDevelopmentPlugin>>
@@ -25,11 +25,13 @@ it('public package inspection resolves the third-party application, six profile 
   expect(inspected.snapshot.packageId).toBe('@agnes-showcase/aerospace-quality')
   expect(inspected.snapshot.application?.id).toBe('qiongxu-aerospace-quality')
   expect(inspected.snapshot.application?.agents).toHaveLength(5)
-  expect(inspected.snapshot.application?.presentation?.navigation?.entries).toHaveLength(6)
+  expect(inspected.snapshot.application?.presentation?.navigation?.entries).toHaveLength(2)
   const pageIcons = inspected.snapshot.contributions.flatMap((row) =>
     'client' in row ? (row.client?.homeEntries ?? []).map((page) => page.navigation?.icon) : [],
   )
-  expect(new Set(pageIcons).size).toBe(6)
+  expect(new Set(pageIcons).size).toBe(7)
+  expect(inspected.snapshot.application?.workbench?.tabs).toHaveLength(3)
+  expect(inspected.snapshot.application?.workbench?.actions).toHaveLength(4)
   expect(pageIcons).not.toContain('plugin')
   const card = inspected.snapshot.contributions.find(
     (contribution) => 'client' in contribution && contribution.client?.slots?.includes('tool.call.toolview'),

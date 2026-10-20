@@ -125,3 +125,24 @@ MRB disposition, configuration changes, rule enablement and zeroing closure are 
 For the real-model investor demo, run `exec node --import tsx examples/showcase/scripts/presentation.mjs aerospace-quality --real` through the repository toolchain entry under heavy-lock and web-gate-lock, injecting the key per command from the designated keychain item. The runner saves screenshots/costs under the isolated run directory; `AGH_SHOWCASE_SHOTS` selects an external report directory and `AGH_SHOWCASE_PRIOR_USD` includes prior attempts in the $3 application cap. The older acceptance script's `--real` also delegates to this natural conversation flow.
 
 The signature card shows the object, reviewed revision, exact meaning and evidence in the current UI language. The human answer must return that view’s bound meaning unchanged; receipts and audit records preserve it. A legacy null answer cannot complete these new signatures.
+
+## One business workbench
+
+After adoption, **Programme overview** and **Tasks & signatures** are the primary navigation.
+The overview links to every original module. Choose Investigate on AN-027, Draft disposition on an
+NCR, Start review on an ECR or Generate report on a closure item. The host reviews the existing agent
+launch, then opens an editable request and focuses **Current object**. Composer chips route work to
+the existing roles; this is launch-time routing, without new delegation behavior. The transcript
+attributes the reviewed launch. Optional browser session memory restores that display context; the
+submitted JSON request and business records retain their normal backend ownership.
+
+**Current object** refreshes from the profile service on session projection invalidation.
+**Pending signatures** shares the host decision actions with the conversation card. Standard and
+workspace-write levels ask the human; full access auto-confirms through the Host and records that mode
+without a pending card.
+**Evidence & reports** shows session receipts with provenance and report-file links. Approval still
+means implementing a disposition with hardware held for verification; it does not claim a passing test.
+
+Scripted browser acceptance: `pnpm exec node examples/showcase/scripts/workbench.mjs` from the repository
+root, through the documented toolchain and browser locks. It creates fresh isolated homes and invokes
+no paid model.

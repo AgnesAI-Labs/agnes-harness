@@ -1,5 +1,7 @@
+import { homeNavigation, openApplicationWork } from '@agnes/web-client'
 import { Banner, Button, Chart, Drawer, SearchBar, Segmented, Table, Tag } from '@agnes/web-ui'
 import React from 'react'
+import { WorkButton } from './workbench.js'
 
 const h = React.createElement
 export const section = (title, children, className = '') =>
@@ -145,8 +147,18 @@ export function Home({ data, t, navigate }) {
       ),
       h(
         Button,
-        { appearance: 'primary', onClick: () => navigate('aero-tests') },
+        {
+          appearance: 'primary',
+          onClick: () => openApplicationWork('investigate', { type: 'anomaly', id: 'AN-027' }),
+        },
         t.choose('调查异常', 'Investigate anomaly'),
+      ),
+    ),
+    h(
+      'nav',
+      { className: 'aero-actions', 'aria-label': t.choose('业务模块', 'Business modules') },
+      ...['aero-requirements', 'aero-tests', 'aero-mrb', 'aero-configuration', 'aero-zeroing'].map((id) =>
+        h(Button, { key: id, onClick: () => homeNavigation.open(id) }, t.title(id)),
       ),
     ),
     h(
@@ -274,6 +286,7 @@ export function Tests({ data, t }) {
             ].map(([k, v]) => h('div', { key: k }, h('dt', null, k), h('dd', null, v))),
           ),
           h(Button, { appearance: 'primary', onClick: () => setDetail(true) }, t.detail),
+          h(WorkButton, { action: 'investigate', object: { type: 'anomaly', id: 'AN-027' }, t }),
         ),
       ),
     ),

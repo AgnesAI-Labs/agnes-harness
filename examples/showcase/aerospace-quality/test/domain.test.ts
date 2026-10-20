@@ -56,7 +56,15 @@ it('Host tools and profile services share durable state; restart preserves draft
     expect(proposed.isError, JSON.stringify(proposed)).not.toBe(true)
     const snapshot = (await host.invokeProfileService('aero.snapshot', {})) as any
     expect(snapshot.revision).toBe(2)
-    expect(snapshot.ncrs[17]).toMatchObject({ status: 'review', disposition: 'rework', approvals: [] })
+    expect(snapshot.ncrs.find((row: any) => row.id === 'NCR-018')).toMatchObject({
+      status: 'review',
+      disposition: 'rework',
+      approvals: [],
+      rationale:
+        'Reject L2609-B pending failure analysis; rework PVD-011/012/013 to the controlled drawing and re-verify.',
+    })
+    expect(snapshot.anomaly.anomalyId).toBe('AN-027')
+    expect(snapshot.anomaly.peakA).toBe(initial.anomaly.peakA)
     expect(
       (
         await host.invoke('aero_mrb_draft', {

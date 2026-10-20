@@ -5,9 +5,12 @@ import { Configuration, Mrb, Zeroing } from './governance.js'
 import { language, titles } from './i18n.js'
 import { useProgramme } from './operations.js'
 import { Home, Requirements, Tests } from './views.js'
+import { ObjectDossier, Tasks } from './workbench.js'
 
 const h = React.createElement
 const views = {
+  'aero-object': ObjectDossier,
+  'aero-tasks': Tasks,
   'aero-home': Home,
   'aero-requirements': Requirements,
   'aero-tests': Tests,
@@ -21,7 +24,7 @@ export function apply(ctx, config) {
     'zh-CN': Object.fromEntries(Object.entries(titles).map(([id, values]) => [`aero.nav.${id}`, values[0]])),
   })
   for (const id of Object.keys(titles)) {
-    function ProgrammePage() {
+    function ProgrammePage({ context }) {
       const locale = React.useSyncExternalStore(ctx.locale.subscribe, () => ctx.locale.locale)
       const t = language(locale)
       const op = useProgramme(ctx, config, t)
@@ -57,7 +60,14 @@ export function apply(ctx, config) {
                 ? t.loading
                 : t.choose('数据未加载，请刷新重试。', 'Data unavailable; refresh to retry.'),
             )
-          : h(views[id], { data: op.data, t, op, ctx, navigate: (next) => homeNavigation.open(next) }),
+          : h(views[id], {
+              data: op.data,
+              t,
+              op,
+              ctx,
+              context,
+              navigate: (next) => homeNavigation.open(next),
+            }),
         h(
           'footer',
           { className: 'aero-footer' },
@@ -71,9 +81,18 @@ export function apply(ctx, config) {
     ctx.homeEntries.register({
       id,
       titleKey: `aero.nav.${id}`,
-      icon: ['activity', 'list', 'monitor', 'shield', 'settings', 'check'][Object.keys(titles).indexOf(id)],
+      icon: {
+        'aero-home': 'activity',
+        'aero-requirements': 'list',
+        'aero-tests': 'monitor',
+        'aero-mrb': 'shield',
+        'aero-configuration': 'settings',
+        'aero-zeroing': 'check',
+        'aero-object': 'file',
+        'aero-tasks': 'check',
+      }[id],
       order: Object.keys(titles).indexOf(id) + 10,
-      placement: 'primary',
+      placement: id === 'aero-object' ? 'secondary' : 'primary',
       component: ProgrammePage,
     })
   }

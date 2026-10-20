@@ -57,6 +57,8 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
     try {
       for (const id of [
         'aero-home',
+        'aero-object',
+        'aero-tasks',
         'aero-requirements',
         'aero-tests',
         'aero-mrb',

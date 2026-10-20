@@ -34,3 +34,17 @@ The agent chooses tools. The operator signs the exact target/revision in Host. `
 真实模型演示使用 `../scripts/presentation.mjs aerospace-quality --real`，在隔离 home 通过图库安装采用，再执行自然业务阶段，保存截图与 AGH 用量；总费用上限 $3。原确定性验收脚本仅用于机制回归。`/?admin` 与设置→应用保留宿主恢复。
 
 Use `../scripts/presentation.mjs aerospace-quality --real` for isolated gallery installation/adoption and natural business stages, screenshots and AGH usage; cap total spend at $3. The deterministic runner covers mechanism regression. Settings → Application and `/?admin` retain host recovery.
+
+## Conversation workbench / 会话业务工作台
+
+At standard/workspace-write permission levels, from the overview choose **Investigate anomaly** on AN-027 → review the role launch → edit the request.
+The Current object tab focuses AN-027. Choose **Draft MRB disposition** in the composer to open the NCR
+role and NCR-018 context; tool writes update that dossier. Sign in **Pending signatures**, then use
+**Generate closure report** and **Evidence & reports** to inspect the report and its provenance.
+All previous modules remain reachable from the overview; the sidebar keeps overview and tasks/signatures.
+
+在标准/工作区写入权限下，从总览 AN-027 点击“调查异常”→ 审阅角色启动 → 编辑请求，右侧“当前对象”聚焦 AN-027。
+点击输入区“起草 MRB 处置”打开 NCR 角色及 NCR-018 上下文，工具写入后档案实时更新。
+在“待签署”确认，再通过“生成归零报告”和“证据与报告”检查报告及来源。总览保留全部模块，侧栏只保留总览与待办/签署。
+
+Full access uses the same Host path without a pending card and records automatic confirmation; it is never described as a manual click. / 完全访问沿同一宿主流程自动确认，不显示待签卡，并如实记录自动确认方式。

@@ -67,6 +67,48 @@ export function useProgramme(ctx, config, t) {
       alive.current = false
     }
   }, [saved, request, receipt, services, load])
+  React.useEffect(() => {
+    let live = true,
+      version = 0,
+      running = false,
+      pending = false
+    const refresh = async () => {
+      version++
+      pending = true
+      if (running) return
+      running = true
+      try {
+        while (live && pending) {
+          pending = false
+          const request = version
+          const readiness = ctx.session.readiness.getSnapshot()
+          if (!['ready', 'history-only'].includes(readiness.status)) continue
+          try {
+            const next = await services.query('aero.snapshot', {})
+            if (live && request === version && ctx.session.readiness.getSnapshot() === readiness) {
+              setData(next)
+              setError('')
+            }
+          } catch (error) {
+            if (live && request === version) setError(error instanceof Error ? error.message : t.error)
+          }
+        }
+      } finally {
+        running = false
+      }
+    }
+    const stopProjection = ctx.session.projection.subscribe(refresh)
+    const stopReadiness = ctx.session.readiness.subscribe(() => {
+      setData(null)
+      void refresh()
+    })
+    return () => {
+      live = false
+      version++
+      stopProjection()
+      stopReadiness()
+    }
+  }, [ctx.session, services, t.error])
   const change = (service, input) =>
     request(async () => {
       if (saved() || pending) return
