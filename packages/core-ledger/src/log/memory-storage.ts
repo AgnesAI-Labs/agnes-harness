@@ -24,6 +24,7 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
+import { MemoryStorageBase } from './memory-storage-base.js'
 import {
   type CommitReceipt,
   type CommitTx,
@@ -62,10 +63,8 @@ type Book = {
  * In-process reference implementation of the storage contract: the durable adapters are expected to
  * reproduce exactly these semantics (lease fencing, register CAS, read-only parent prefix).
  */
-export class MemoryStorage implements StorageAdapter, ChildControlStore {
+export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, ChildControlStore {
   private readonly books = new Map<SessionKey, Book>()
-  private readonly clock: Clock
-  private controlFormat: number
   private readonly childTasks = new Map<SessionKey, ChildTaskRecord>()
   private readonly creationIndex = new Map<string, SessionKey>()
   private readonly scopes = new Map<string, BudgetScopeRecord>()
@@ -76,9 +75,9 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   private readonly writerGens = new Map<SessionKey, number>()
   private permitSeq = 0
 
-  constructor(opts: { clock?: Clock; childControlFormat?: number } = {}) {
-    this.clock = opts.clock ?? (() => Date.now())
-    this.controlFormat = opts.childControlFormat ?? 1
+  protected integrityRowsOf(key: SessionKey): IntegrityRow[] | undefined {
+    const b = this.books.get(key)
+    return b && this.prefixedIntegrity(key, b)
   }
 
   private book(key: SessionKey): Book {
@@ -350,6 +349,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     const b = this.book(key)
     this.holdLease(b, runId, claim)
     this.books.delete(key)
+    this.dropVerifiedHead(key)
   }
 
   async close(): Promise<void> {

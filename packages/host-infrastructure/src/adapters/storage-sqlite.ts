@@ -21,6 +21,7 @@ import {
   scanTruncated,
 } from '@agnes/core'
 import { leanEvents } from '@agnes/core-ledger'
+import type { VerifiedHead } from '@agnes/core-ledger/log/verified-head'
 import type { PersistenceSqliteSchemaObject } from '@agnes/extension-api'
 import { assertSessionTreeTableName } from '@agnes/host-common/session-tree-schema'
 import { sqliteChildControl } from './child-control-sqlite.js'
@@ -29,6 +30,7 @@ import { preparedStatement } from './prepared-statements.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
+import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -75,6 +77,11 @@ export type CrashReclaimStore = {
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
   scanLean: NonNullable<StorageAdapter['scanLean']>
+  /** Always kept here, in `ledger_verified_head_v1`. */
+  readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined>
+  writeVerifiedHead(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead(key: SessionKey): Promise<void>
+  integrityDigestAt(key: SessionKey, seq: number): Promise<string | null | undefined>
   readonly file: string
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
@@ -358,6 +365,9 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
     ),
     lastSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE session_key = ?'),
+    ledgerStats: db.prepare(
+      'SELECT COALESCE(SUM(octet_length(data)), 0) AS total, COALESCE(MAX(octet_length(data)), 0) AS max FROM events WHERE session_key = ?',
+    ),
     insertEvent: db.prepare(
       'INSERT INTO events (session_key, seq, ts, id, type, lane, v, actor, origin, trust, register, ignorable, surface_op, source_event_seqs, data, integrity_mode, integrity_prev, integrity_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ),
@@ -382,6 +392,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     deleteRegisters: db.prepare('DELETE FROM registers WHERE session_key = ?'),
     deleteLease: db.prepare('DELETE FROM writer_claims WHERE session_key = ? AND run_id = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE session_key = ?'),
+    deleteVerifiedHead: db.prepare('DELETE FROM ledger_verified_head_v1 WHERE session_key = ?'),
   }
   const tx = <T>(fn: () => T): T => {
     db.exec('BEGIN IMMEDIATE')
@@ -518,6 +529,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   return {
     file: opts.file,
     ...childControl,
+    ...verifiedHeadStore(db, parentOf),
     async clearWriterLease(key) {
       tx(() => {
         db.prepare('DELETE FROM writer_claims WHERE session_key = ?').run(key)
@@ -635,6 +647,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
         db.prepare('DELETE FROM ledger_heads WHERE session_key = ?').run(key)
+        q.deleteVerifiedHead.run(key)
       })
     },
     async scan(key, qy) {
@@ -668,6 +681,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           data: string
         }>
       ).map((r) => ({ register: r.register, key: keyText(r.key), seq: r.seq, data: JSON.parse(r.data) }))
+    },
+    async ledgerStats(key) {
+      const row = q.ledgerStats.get(key) as { total: number; max: number }
+      return { storedBytes: row.total, maxRowBytes: row.max }
     },
     async createChild(parentKey, boundarySeq, childKey) {
       tx(() => {
