@@ -16,7 +16,13 @@ import { toolArgumentError } from './tool-args.js'
  * below is projected from the ledger — an invented one would read as a real check result.
  */
 export type CoreVerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly: boolean }>
+  toolCalls: Array<{
+    name: string
+    args: unknown
+    schemaOk: boolean
+    isReadOnly: boolean
+    rejected?: boolean
+  }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
@@ -36,21 +42,29 @@ type Window = {
   deviations: number
   messages: Event[]
   results: Event[]
+  refusals: Event[]
 }
 
-/** The four row kinds a verify input reads, over [fromSeq, lastSeq] on this lane. */
+/** The row kinds a verify input reads, over [fromSeq, lastSeq] on this lane. */
 async function scanWindow(s: SessionImpl, fromSeq: Seq): Promise<Window> {
   const rows = await scanAll((q) => s.d.log.scan(q), {
     fromSeq,
     toSeq: s.lastSeq,
-    type: ['tool/call', 'format/deviation', 'assistant/message', 'tool/result'],
+    type: [
+      'tool/call',
+      'format/deviation',
+      'assistant/message',
+      'tool/result',
+      'x/core/tool-argument-recovery',
+    ],
     lane: s.lane,
   })
-  const w: Window = { calls: [], deviations: 0, messages: [], results: [] }
+  const w: Window = { calls: [], deviations: 0, messages: [], results: [], refusals: [] }
   for (const e of rows) {
     if (e.type === 'tool/call') w.calls.push(e)
     else if (e.type === 'format/deviation') w.deviations++
     else if (e.type === 'assistant/message') w.messages.push(e)
+    else if (e.type === 'x/core/tool-argument-recovery') w.refusals.push(e)
     else w.results.push(e)
   }
   return w
@@ -96,13 +110,30 @@ function newToolResults(w: Window, hashes: string[]): number {
 }
 
 function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
+  const rejected = new Set(
+    w.refusals
+      .filter(
+        (e) =>
+          e.origin === 'system' &&
+          e.trust === 'trusted' &&
+          Number((e.data as { failures?: number }).failures) > 0 &&
+          typeof (e.data as { toolUseId?: string }).toolUseId === 'string',
+      )
+      .map((e) => (e.data as { toolUseId: string }).toolUseId),
+  )
   const toolCalls = w.calls.map((e) => {
     const d = e.data as { name?: unknown; args?: unknown }
     const name = String(d.name)
     const def = s.turn?.snapshot.byName.get(name)
     // An unknown tool has no schema to violate; malformed registered schemas fail closed.
     const schemaOk = !def || toolArgumentError(def.parameters, d.args) === undefined
-    return { name, args: d.args, schemaOk, isReadOnly: readOnlyCall(e) }
+    return {
+      name,
+      args: d.args,
+      schemaOk,
+      isReadOnly: readOnlyCall(e),
+      ...(rejected.has((e.data as { toolUseId: string }).toolUseId) ? { rejected: true } : {}),
+    }
   })
   const hashes = w.messages.map((e) => sha256Hex(messageText(e)))
   const last = w.messages[w.messages.length - 1]

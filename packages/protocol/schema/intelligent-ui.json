@@ -31,6 +31,9 @@
     "sourceParamDepth": 8,
     "textFallbackRows": 20
   },
+  "x-agnes-ui-tool-guidance": {
+    "UiRenderParams": "ONLY top-level field is surface; no locale. Minimal valid example: {\"surface\":{\"id\":\"view\",\"revision\":1,\"title\":\"Summary\",\"placement\":{\"inline\":true,\"workbench\":false},\"components\":[{\"id\":\"t\",\"kind\":\"text\",\"dataKey\":\"t\"}],\"data\":{\"t\":\"Summary\"},\"actions\":[]}}. Use exactly the fields of the chosen component kind."
+  },
   "x-agnes-ui-methods": {
     "_agnes/v1/ui.action": {
       "params": "UiActionParams",

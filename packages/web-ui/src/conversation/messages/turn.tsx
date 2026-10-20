@@ -79,7 +79,18 @@ function TurnView({
 
   const t = props.t
   const users = members.filter((node) => node.kind === 'user')
-  const others = members.filter((node) => node.kind !== 'user' && node.kind !== 'cost')
+  const argumentFailures = members.filter(
+    (node): node is ToolNode => node.kind === 'tool' && !!node.argumentRecovery,
+  )
+  const unboundFailures = turn.argumentRecovery ?? []
+  const recoveryFacts = [
+    ...argumentFailures.flatMap((node) => (node.argumentRecovery ? [node.argumentRecovery] : [])),
+    ...unboundFailures,
+  ]
+  const others = members.filter(
+    (node) =>
+      node.kind !== 'user' && node.kind !== 'cost' && !(node.kind === 'tool' && node.argumentRecovery),
+  )
   const attention = (node: UINode) =>
     (node.kind === 'approval' && node.state === 'pending') || attentionIds.includes(node.id)
   const pendingApproval = others.findLast(
@@ -289,6 +300,34 @@ function TurnView({
                 reason: turn.reason ?? t('turn.error.unknownReason'),
               })}
         </p>
+      )}
+      {recoveryFacts.length > 0 && (
+        <Disclosure
+          className="turn-recovery"
+          data-testid="tool-argument-recovery"
+          summary={t(
+            recoveryFacts.some((fact) => fact.disabled)
+              ? recoveryFacts.every((fact) => fact.presentational)
+                ? 'turn.recovery.visual'
+                : 'turn.recovery.tool'
+              : processActive
+                ? 'turn.recovery.retrying'
+                : 'turn.recovery.continued',
+          )}
+        >
+          {unboundFailures.map((fact) => (
+            <div key={fact.seq}>
+              <p>{fact.name}</p>
+              <pre>{fact.hint}</pre>
+            </div>
+          ))}
+          {argumentFailures.map((node) => (
+            <div key={node.id}>
+              <p>{node.name}</p>
+              <Message node={node} props={props} turnStatus={turn.status} />
+            </div>
+          ))}
+        </Disclosure>
       )}
       <div className="turn-node-flow">
         {flow.map((entry) => {

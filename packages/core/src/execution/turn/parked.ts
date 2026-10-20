@@ -114,9 +114,8 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
       return 'waiting'
     const snapshot = await s.decisions.get(value.handle)
-    if (!snapshot.result && !snapshot.invalidation) return 'waiting'
     const continuation = await continueVerifier(s, snapshot)
-    if (continuation === 'opened' || continuation === 'blocked') return continuation
+    if (continuation === 'blocked') return continuation
   }
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (

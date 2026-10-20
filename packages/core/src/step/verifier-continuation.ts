@@ -1,7 +1,5 @@
-import { newOpState } from '@agnes/core-common/step/op-state'
 import { CoreError, type Seq } from '@agnes/core-common/types'
 import type { DecisionSnapshot, LoopStepOutcome } from '@agnes/extension-api'
-import { domainDecisionEvents, domainDecisionSource } from './domain-decision.js'
 import type { SessionImpl } from './session.js'
 
 type GateSubject = {
@@ -10,8 +8,26 @@ type GateSubject = {
   triggerSeq: Seq
   round: number
   verdict: string
-  /** Set when the loop asked to complete: an approval then ends the turn instead of continuing it. */
+  /** Historical marker: the loop had already asked to complete when verification parked. */
   completes?: boolean
+}
+
+/** Only Core may retire its own historical verifier question, including across a version upgrade. */
+export async function retireVerifierDecision(s: SessionImpl, snapshot: DecisionSnapshot): Promise<void> {
+  const request = snapshot.request
+  if (request.owner !== 'core/gate' || request.sourcePackage !== '@agnes/core' || request.lane !== s.lane)
+    throw new CoreError('E_RELATION', 'not a legacy verifier decision of this lane')
+  const source = s.decisions.bindSource({
+    permission: true,
+    owner: 'core/gate',
+    operationId: request.operationId,
+    sourcePackage: '@agnes/core',
+    packageVersion: request.packageVersion,
+    alive() {
+      s.ac.signal.throwIfAborted()
+    },
+  })
+  await s.decisions.withdraw(snapshot.handle, source, 'verifier-system-error')
 }
 
 /** The stop-gate decisions of this lane that no continuation has read yet. */
@@ -32,8 +48,8 @@ export function* parkedGates(s: SessionImpl, completes: boolean) {
 
 /**
  * A completion that parked at the stop gate is Core's to finish: the loop has no step left to take.
- * Nothing runs until the person answers; an approval then completes the turn and anything else
- * blocks it, and the driver is not asked to do its work again.
+ * Retire its obsolete question automatically and block the unverified completion. The driver is
+ * not asked to repeat its business work.
  */
 export async function settleParkedCompletion(s: SessionImpl): Promise<LoopStepOutcome | undefined> {
   for (const value of parkedGates(s, true)) {
@@ -41,25 +57,19 @@ export async function settleParkedCompletion(s: SessionImpl): Promise<LoopStepOu
     if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
       return parked
     const snapshot = await s.decisions.get(value.handle)
-    if (!snapshot.result && !snapshot.invalidation) return parked
     const reason = await continueVerifier(s, snapshot)
-    if (reason === 'completed' || reason === 'blocked')
-      return { outcome: 'turn-ended', phase: 'terminal', reason }
+    if (reason === 'blocked') return { outcome: 'turn-ended', phase: 'terminal', reason }
   }
   return undefined
 }
 
-/** A verifier pause asks permission to continue, not whether a side effect happened. */
+/** Retire legacy verification questions without treating any answer as authorization. */
 export async function continueVerifier(
   s: SessionImpl,
   snapshot: DecisionSnapshot,
-): Promise<'opened' | 'blocked' | 'completed' | false> {
+): Promise<'blocked' | false> {
   const subject = snapshot.request.spec.subject as GateSubject
   const requestId = snapshot.handle.id
-  const allowed =
-    !snapshot.invalidation &&
-    snapshot.result?.reason === 'answered' &&
-    snapshot.result.response.option.startsWith('allowed')
   const start = (
     await s.d.log.scan({
       fromSeq: subject.triggerSeq,
@@ -133,36 +143,23 @@ export async function continueVerifier(
     trigger: 'approval-resume',
     continues: { turn: originalTurn, step: originalStep.step, requestId },
   })
-  const consumed = () =>
-    domainDecisionEvents(s, snapshot, domainDecisionSource(s, 'gate', snapshot.request.operationId))
-  if (!allowed) {
-    // Start, consumption, terminal row and tombstone must commit together: no crash can turn
-    // a refusal into a ready checkpoint that sends a request on reopen.
-    await s.endTurn('blocked', { events: () => [event, ...consumed()] })
-    return 'blocked'
-  }
-  if (subject.completes) {
-    // The approval accepts the verdict the person was shown; the same commit closes the turn.
-    await s.endTurn('completed', { events: () => [event, ...consumed()] })
-    return 'completed'
-  }
-  await s.transition(
-    () => [event, ...consumed()],
-    (cur, seq) => {
-      if (cur) throw new CoreError('E_LANE_BUSY', 'continuation lane occupied')
-      return newOpState(
-        {
-          turn,
-          lane: s.lane,
-          acceptedAt: new Date(s.d.clock()).toISOString(),
-          triggerSeq: seq,
-          presetName: s.preset.name,
-          profileHash: s.d.resolvedProfileHash,
-          depthLimit: s.preset.depthLimit,
-        },
-        seq,
-      )
-    },
-  )
-  return 'opened'
+  // Old releases asked humans to approve verification failures. Retire that question as a
+  // system withdrawal, even if somebody answered it; permission cannot establish valid output.
+  await retireVerifierDecision(s, snapshot)
+  await s.endTurn('blocked', {
+    events: () => [
+      event,
+      s.ev(
+        'x/core/verifier-recovery',
+        { handling: 'blocked', legacyDecisionId: requestId, verdict: subject.verdict },
+        { ignorable: true },
+      ),
+      s.ev(
+        'x/core/decision-checkpoint',
+        { handle: snapshot.handle, operationId: snapshot.request.operationId },
+        { ignorable: true },
+      ),
+    ],
+  })
+  return 'blocked'
 }

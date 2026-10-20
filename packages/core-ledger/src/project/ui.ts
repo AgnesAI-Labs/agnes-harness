@@ -16,7 +16,6 @@ import {
   type SlotFillView,
   type ThinkingLevel,
   type ToolCall,
-  type ToolResult,
   ToolReviewFact,
   UI_SLOT_MAX_BYTES,
   UI_SLOT_TABLE,
@@ -56,6 +55,7 @@ import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
 import { noticeNode } from './ui-notices.js'
+import { applyToolResultEvent } from './ui-tool-results.js'
 
 /** Generation belongs to the daemon's writer ownership, not to a core ledger projection. */
 export type CoreUITimeline = Omit<UITimeline, 'generation'>
@@ -807,22 +807,9 @@ export class UIProjectionCell {
         changed.add(id)
         break
       }
+      case 'x/core/tool-argument-recovery':
       case 'tool/result': {
-        const result = data as ToolResult
-        const node = this.tools.get(result.toolUseId)
-        if (node) {
-          node.status =
-            result.code === 'CANCELLED' || result.code === 'ABORTED' || result.cancelledBy
-              ? 'cancelled'
-              : result.isError
-                ? 'failed'
-                : 'completed'
-          node.resultPreview = clip(text(result.content), 4096)
-          node.resultSeq = seq
-          node.enforcement = structuredClone(result.enforcement)
-          this.completedResults.push({ seq, toolUseId: node.toolUseId })
-          changed.add(node.id)
-        }
+        applyToolResultEvent(event, this.tools, this.completedResults, changed)
         break
       }
       case 'x/approval/review': {
@@ -874,6 +861,8 @@ export class UIProjectionCell {
       }
       case 'decision/state': {
         const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
+        // Historical verifier gates are system failures, including before Core retires them.
+        if (value.request.owner === 'core/gate' && value.request.sourcePackage === '@agnes/core') break
         if (
           !value.request.spec.options.every((option) =>
             ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option),

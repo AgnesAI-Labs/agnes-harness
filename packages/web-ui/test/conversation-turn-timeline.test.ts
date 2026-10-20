@@ -172,6 +172,64 @@ describe('turn timeline', () => {
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
 
+  it.each([true, false])(
+    'shows one collapsed recovery note and retains raw attempts (visual=%s)',
+    async (visual) => {
+      const attempts = [false, true].map((disabled, i) =>
+        tool(
+          `invalid-${i}`,
+          visual ? 'ui_render' : 'fixture_lookup',
+          {},
+          {
+            status: 'failed',
+            resultPreview: 'TOOL_ARGS_INVALID: /surface/revision minimum=1',
+            argumentRecovery: { disabled, presentational: visual },
+          },
+        ),
+      )
+      const nodes = [user, ...attempts, say('answer', '调查结论：继续检查试验数据。')]
+      await render(
+        nodes,
+        turn(nodes, { status: 'completed', finalAssistantId: 'answer', endedAt: '2026-10-01T00:00:01.000Z' }),
+      )
+      const notes = host.querySelectorAll('[data-testid="tool-argument-recovery"]')
+      expect(notes).toHaveLength(1)
+      const note = notes[0]!
+      expect(note.textContent).toContain(visual ? '界面组件生成失败，已改用文字回答' : '一项操作暂未完成')
+      expect(note.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false')
+      expect(host.querySelector('.turn-final')?.textContent).toContain('调查结论')
+      expect(host.querySelector('.turn-final')?.textContent).not.toContain('TOOL_ARGS_INVALID')
+      await click(note.querySelector('button[aria-expanded]'))
+      expect(note.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+      expect(note.textContent).toContain('TOOL_ARGS_INVALID')
+      expect(note.textContent).toContain(visual ? 'ui_render' : 'fixture_lookup')
+    },
+  )
+
+  it('includes nested validation failures in the same collapsed technical record', async () => {
+    const nodes = [user, say('answer', '文字结论')]
+    await render(
+      nodes,
+      turn(nodes, {
+        status: 'completed',
+        finalAssistantId: 'answer',
+        argumentRecovery: [
+          {
+            name: 'recovery_probe',
+            seq: 2,
+            disabled: true,
+            presentational: false,
+            hint: 'Disabled for the rest of this turn',
+          },
+        ],
+      }),
+    )
+    const note = host.querySelector('[data-testid="tool-argument-recovery"]')
+    expect(note?.textContent).toContain('一项操作暂未完成')
+    expect(note?.textContent).toContain('recovery_probe')
+    expect(note?.getAttribute('data-open')).toBe('false')
+  })
+
   it.each([false, true])(
     'shows workflow prose and tool results without a final assistant reference (live=%s)',
     async (live) => {

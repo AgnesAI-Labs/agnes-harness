@@ -54,7 +54,7 @@ export default defineAgnesPlugin({
           name: 'ui_render',
           description:
             'For "show/display in the UI", use this instead of HTML files: tables/charts/forms/dashboards/actionable cards; plain text/outlines/summaries stay in the reply. Files: present; questions/choices: ask_user_question. Only presets/pinned kinds and declared tool actions; no HTML/code. Titles: conversation language; never a bilingual "A / B" title; never imitate system ids (card-<hash>).' +
-            '\n' +
+            '\nOnly {surface}; no locale.\n' +
             UI_DATA_DESCRIPTION,
           parameters: reachableParameters(UiRenderParams),
           meta: presentational,

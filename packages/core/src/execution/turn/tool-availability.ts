@@ -2,6 +2,7 @@ import type { ToolDef, ToolRequestAvailability } from '@agnes/extension-api'
 import type { RequestBody } from '@agnes/protocol'
 import { modelAllowsTool } from '../../step/model-tools.js'
 import type { SessionImpl, TurnMemory } from '../../step/session.js'
+import { argumentFallback, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
 import { loadedToolNames } from './tool-disclosure.js'
 
 type SelectionFacts = Readonly<{ imageInput: boolean; defaultSelection: boolean }>
@@ -39,6 +40,7 @@ export function disclosureRestriction(
   s: SessionImpl,
   tool: Pick<ToolDef, 'name'>,
 ): ToolRequestAvailability | undefined {
+  if (toolArgumentsDisabled(s, tool.name)) return unavailable('policy', argumentFallback)
   if (
     (s.preset.disclosure === 'code' && tool.name !== 'run_code') ||
     (s.preset.disclosure !== 'code' && s.preset.disclosure !== 'hybrid' && tool.name === 'run_code')

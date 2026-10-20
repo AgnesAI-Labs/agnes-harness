@@ -138,6 +138,7 @@ describe('tool types', () => {
       | 'isPresentational'
       | 'modelVisible'
       | 'requiresImageInput'
+      | 'invalidArgumentLimit'
     >()
     expectTypeOf<ToolMeta['presentation']>().toEqualTypeOf<ToolPresentation | undefined>()
     const m: ToolMeta = {

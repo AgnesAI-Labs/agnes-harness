@@ -7,11 +7,12 @@ export async function startProviderFixture(
   initialTool?: { name: string; args: Record<string, unknown> },
   model = 'deepseek-v4-flash',
   stream?: () => AsyncIterable<string>,
+  captureSchemas = false,
 ) {
   let apiKey = randomBytes(24).toString('hex')
   let rejectedInferenceRequests = 0
   const queuedTools = initialTool ? [initialTool] : []
-  const requests: Array<{ model: string; messages: unknown[]; tools: string[] }> = []
+  const requests: Array<{ model: string; messages: unknown[]; tools: string[]; schemas?: unknown[] }> = []
   const server = createServer(async (request, response) => {
     if (request.headers.authorization !== `Bearer ${apiKey}`) {
       if (request.method === 'POST') {
@@ -50,6 +51,7 @@ export async function startProviderFixture(
       requests.push({
         model: body.model,
         messages: body.messages,
+        ...(captureSchemas ? { schemas: available } : {}),
         tools: available.flatMap((entry) =>
           typeof entry?.function?.name === 'string' ? [entry.function.name] : [],
         ),

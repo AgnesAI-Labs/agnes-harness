@@ -235,6 +235,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     isReadOnly: meta.isReadOnly,
     isDestructive: meta.isDestructive,
     ...(meta.isPresentational === true ? { isPresentational: true } : {}),
+    ...(meta.invalidArgumentLimit === undefined ? {} : { invalidArgumentLimit: meta.invalidArgumentLimit }),
     isConcurrencySafe: meta.isConcurrencySafe,
     isOpenWorld: meta.isOpenWorld,
     replay: meta.replay,

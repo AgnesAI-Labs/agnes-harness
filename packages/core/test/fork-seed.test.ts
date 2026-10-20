@@ -185,44 +185,26 @@ describe('the parent keeps a fork point', () => {
     await h.session.close()
   })
 
-  it('at the trigger of a verifier continuation', async () => {
+  it('keeps the original trigger through automatic verifier repair', async () => {
     let checks = 0
     const seams = fakeSeams({
       verifier: {
         verify: async () =>
-          ++checks === 1 ? { verdict: 'fail', reasons: ['needs review'] } : { verdict: 'pass', reasons: [] },
+          ++checks === 1
+            ? { verdict: 'fail', reasons: ['schema_invalid'] }
+            : { verdict: 'pass', reasons: [] },
       },
       repair: { decide: async () => 'park' },
-      approval: {
-        ask: async (req) => ({ ticket: 'review', expiresAt: req.deadline }),
-      },
     })
     const h = await openSession({ seams, provider: fakeProvider([textTurn('first'), textTurn('second')]) })
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
-    const signal = new AbortController().signal
-    expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
-    const [decision] = (await h.session.decisions.list()).filter(
-      (value) => value.request.owner === 'core/gate',
-    )
-    if (!decision) throw new Error('missing verifier decision')
-    await h.session.decideApproval({
-      command: {
-        handle: decision.handle,
-        revision: decision.revision,
-        commandId: 'review',
-        response: { option: 'allowed-once', value: null },
-      },
-      context: { actor: { ...actor, id: 'reviewer' }, category: 'human', authorize() {} },
-    })
-    await h.session.step()
-    // Consumption commits beside turn/start; the fork point stays at the continuation's trigger.
+    for (let i = 0; i < 20; i++) {
+      await h.session.step()
+      if ((await h.log.scan({ type: 'x/core/verifier-recovery', limit: 1 })).length) break
+    }
     const c = triggerOf(h)
-    expect((await h.log.scan({ fromSeq: c, toSeq: c }))[0]).toMatchObject({
-      type: 'turn/start',
-      data: { trigger: 'approval-resume', continues: { requestId: decision.handle.id } },
-    })
-    expect(h.log.lastSeq).toBeGreaterThan(c)
     await expectTriggerAt(h, c)
+    expect(await h.session.decisions.list()).toEqual([])
     await h.session.diag('contribute-conflict', {})
     expect(triggerOf(h)).toBe(c)
     await expectTriggerAt(h, c)

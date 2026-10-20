@@ -370,7 +370,7 @@ describe('run loop', () => {
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
   })
 
-  it('StopGate: a failed verifier plus repair buys one more step; a park verdict parks', async () => {
+  it('StopGate: a failed verifier plus repair buys one more step; a park verdict repairs then blocks', async () => {
     let verifies = 0
     const seams = fakeSeams({
       verifier: {
@@ -401,13 +401,11 @@ describe('run loop', () => {
     })
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams: parkSeams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('parked')
-    expect((await p.log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
-      request: { spec: { purpose: 'gate' } },
-    })
+    expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+    expect(await p.session.decisions.list()).toEqual([])
   })
 
-  it('StopGate: a park question nobody could be asked is recorded as unavailable and blocks the turn', async () => {
+  it('StopGate: verifier failures block automatically even when no approver is available', async () => {
     const seams = fakeSeams({
       verifier: {
         verify: async (scope) =>
@@ -419,10 +417,7 @@ describe('run loop', () => {
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
-    expect((await p.session.decisions.list())[0]?.result).toMatchObject({
-      reason: 'unavailable',
-      code: 'no-approver',
-    })
+    expect(await p.session.decisions.list()).toEqual([])
   })
 
   it('StopGate: repair rounds are numbered from the decisions already on the ledger', async () => {
@@ -441,14 +436,14 @@ describe('run loop', () => {
       seams,
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
     const rounds = (await log.scan({ type: 'repair/decision', limit: 10 })).map(
       (e) => (e.data as { round: number }).round,
     )
     expect(rounds).toEqual([1, 2])
   })
 
-  it('StopGate: a repair verdict of complete finishes despite the failed check', async () => {
+  it('StopGate: a repair verdict of complete cannot waive a failed check', async () => {
     const seams = fakeSeams({
       verifier: {
         verify: async (scope) =>
@@ -458,10 +453,10 @@ describe('run loop', () => {
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(1)
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+    expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(2)
     expect((await log.scan({ type: 'repair/decision', limit: 5 }))[0]?.data).toMatchObject({
-      decision: 'complete',
+      decision: 'repair',
       round: 1,
     })
   })

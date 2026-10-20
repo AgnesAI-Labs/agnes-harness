@@ -12,6 +12,7 @@ import {
   deriveRequest,
   headerEquals,
   sanitize,
+  TOOL_RECOVERY_SECTION,
   UNTRUSTED_RULE_SECTION,
   wrapUntrusted,
 } from '../src/request/derive.js'
@@ -116,7 +117,11 @@ describe('deriveRequest', () => {
     const out = deriveRequest({ ...base(), surface })
     expect(isLedgerRequest(out.request)).toBe(true)
     expect(Object.isFrozen(out.request)).toBe(true)
-    expect(out.request.sections.map((s) => s.id)).toEqual(['core:untrusted-envelope', 'persona'])
+    expect(out.request.sections.map((s) => s.id)).toEqual([
+      'core:untrusted-envelope',
+      'core:tool-recovery',
+      'persona',
+    ])
     expect(out.request.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
     expect(out.request.tools).toEqual([
       { name: 'read', description: 'read a file', parameters: { type: 'object' } },
@@ -644,9 +649,8 @@ describe('deriveRequest', () => {
       const surface = computeSurface([...rows, summaryOf(1, 2, [1, 2])], {})
       const out = deriveRequest({ ...base(), surface, ...NO_RC })
       expect(out.request.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant'])
-      // Byte-identical to what this shape derived before the bridge existed, so upgrading does not
-      // break the cache prefix of an already-compacted session.
-      expect(out.header.derived_hash).toBe('5c683baa0c329d1e4ddd7cdfce7b800b21cb25ca5960855b582e37f204303a88')
+      // The recovery guidance deliberately revises the fixed prefix; this shape still adds no bridge.
+      expect(out.header.derived_hash).toBe('7a87b50fae49fabc89b9f39195e5842cbd5f0626b3ec423e2f8fb494dc82aac3')
     })
   })
 
@@ -711,6 +715,7 @@ describe('deriveRequest', () => {
     const out = deriveRequest(input)
     expect(out.request.sections.map((s) => s.id)).toEqual([
       'core:untrusted-envelope',
+      'core:tool-recovery',
       'persona',
       'harness:memory',
       'late',
@@ -736,6 +741,7 @@ describe('deriveRequest', () => {
     })
     expect(replacement.request.sections.map((section) => section.id)).toEqual([
       'core:untrusted-envelope',
+      'core:tool-recovery',
       'deployment:full-override',
       'harness:memory',
     ])
@@ -813,15 +819,17 @@ describe('deriveRequest', () => {
     expect(out.header.prompt_prefix_hash).not.toBe(
       'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     )
-    // With no contributed sections at all the prefix is the envelope rule alone — still real text,
+    // With no contributed sections the prefix still contains the envelope and recovery guidance,
     // still not the hash of nothing.
     const empty = deriveRequest({
       ...base(),
       merged: { ...base().merged, runtimeContext: {}, sections: [] },
       surface: [],
     })
-    expect(empty.request.sections.map((s) => s.id)).toEqual(['core:untrusted-envelope'])
-    expect(empty.header.prompt_prefix_hash).toBe(sha256Hex(`turn\n${UNTRUSTED_RULE_SECTION.text}`))
+    expect(empty.request.sections.map((s) => s.id)).toEqual(['core:untrusted-envelope', 'core:tool-recovery'])
+    expect(empty.header.prompt_prefix_hash).toBe(
+      sha256Hex(`turn\n${UNTRUSTED_RULE_SECTION.text}\n\n${TOOL_RECOVERY_SECTION.text}`),
+    )
   })
 })
 
@@ -1188,7 +1196,12 @@ describe('the untrusted envelope under attack', () => {
         ],
       },
     })
-    expect(out.request.sections.map((s) => s.id)).toEqual(['core:untrusted-envelope', 'sneaky', 'persona'])
+    expect(out.request.sections.map((s) => s.id)).toEqual([
+      'core:untrusted-envelope',
+      'core:tool-recovery',
+      'sneaky',
+      'persona',
+    ])
   })
 })
 
