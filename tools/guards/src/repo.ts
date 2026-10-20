@@ -30,14 +30,11 @@ export function listPackages(root: string): Package[] {
   return out
 }
 
-// Only `.ts` used to be recognised, which made `.mts` / `.cts` / `.tsx` invisible to all three guards
-// at once (the line-count ratchet, the single-construction-site check, and the platform scan): a source
-// file written as `.mts` could violate any of those three constraints and none of them would see it.
-// Widened to a set of source extensions.
+// Shared TS source selection for the scope report and the existing repository guards.
 export const SOURCE_EXTENSIONS = ['.ts', '.mts', '.cts', '.tsx']
 
 // An older comment here claimed the four excludeDirs lists were aligned; in reality there were three
-// different lists (this default, plus 'test' added by the ratchet, plus 'fixtures' added by the
+// different lists (this default, plus 'test' added by the scope report, plus 'fixtures' added by the
 // platform and single-construction-site guards). There are now only the two named constants below, all
 // three guards take their list from here, and the comment matches the facts.
 //
@@ -48,13 +45,12 @@ export const DEFAULT_EXCLUDE_DIRS = ['node_modules', 'dist', 'gen', 'generated']
 // those two guards exclude it on top of DEFAULT.
 // (This comment is itself scanned by those two guards, so it deliberately does not restate the literals
 // they look for — writing them out here would trip the guards on this very file.)
-// **The line-count ratchet does not use this list**: an excluded directory is an escape hatch from the
-// line budget. Measured: 5000 lines of real source in `packages/protocol/src/test/x.ts` left the
-// ratchet green with 14 passed.
+// The scope report includes production code in fixtures/test directories; scope totals are
+// informational. Hard file/function gates define their own source coverage.
 export const LITERAL_SCAN_EXCLUDE_DIRS = [...DEFAULT_EXCLUDE_DIRS, 'fixtures']
 
 // "Is this a test file" used to be written out separately in each place, and recognised only
-// `.test.ts` — so `.test.mts` was counted as source by the ratchet and flagged as source by the other
+// `.test.ts` — so `.test.mts` was counted as source by the scope report and flagged as source by the other
 // two guards, asymmetric with SOURCE_EXTENSIONS. Unified into one function: every source extension has
 // a corresponding `.test.<ext>`.
 export function isTestFile(file: string): boolean {

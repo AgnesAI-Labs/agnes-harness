@@ -39,7 +39,7 @@ Links point to source at the same revision as this document. See [verification](
 | Resource governance | [resource-control-store](../../packages/resource-control-store/src), [resource-control-runtime](../../packages/resource-control-runtime/src), [resource-control-worker](../../packages/resource-control-worker/src) | [Skills Cordis](../../packages/resource-control-runtime/test/skills-cordis.test.ts) |
 | Resource CLI/Web | [resource-control-cli](../../packages/resource-control-cli/src), [resource-control-web](../../packages/resource-control-web/src) | [Resource CLI tests](../../packages/resource-control-cli/test) |
 | External channels / format conversion | [channels](../../packages/channels/src), [bridges](../../packages/bridges/src) | [Channels tests](../../packages/channels/test), [bridges tests](../../packages/bridges/test) |
-| Engineering constraints | [guards](../../tools/guards) | [Ratchet](../../tools/guards/ratchet.json) |
+| Engineering constraints | [guards](../../tools/guards) | [Scope LOC report (report-only)](../../tools/guards/scope-line-count.json) |
 
 A package's `package.json` `exports` defines its public entry points. These source links help explain the implementation; applications and plugins should not deep-import another package's private src. Python runtime and the Python thin client are not currently usable public integration paths.
 

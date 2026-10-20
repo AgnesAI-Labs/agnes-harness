@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { matchesRatchetKey } from './ratchet-key.js'
 import { isTestFile, LITERAL_SCAN_EXCLUDE_DIRS, listSourceFiles, repoRoot } from './repo.js'
+import { matchesScopeKey } from './scope-key.js'
 
 const root = repoRoot()
 
@@ -162,25 +162,8 @@ const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
     reason:
       "join(home, 'cache') here computes byte-for-byte the value importing and calling cacheDir(home) " +
       'from @agnes/host would -- read both implementations side by side to confirm this, not assumed. ' +
-      "PATH-01's own report named this exact line as a deliberate non-migration: the value is already " +
-      "correct (unlike dataDir's two call sites, which actively disagreed), so this is a DRY gap, not " +
-      'a live bug. This session tried to close it anyway. Migrating costs exactly one line: adding ' +
-      "cacheDir to this file's existing @agnes/host import forces one new line, because that import " +
-      "is already multi-line and biome's formatter always places one named import per line once a " +
-      'block is multi-line (verified by attempting the one-line form and reading the exact diagnostic ' +
-      "biome check produced). This file's own line-count ratchet has zero spare for that line: as " +
-      'committed on main, tools/guards/ratchet.json caps this file at 215 and the file itself measures ' +
-      '214, but a *different*, already in-flight, uncommitted change elsewhere in this working tree ' +
-      'has independently tightened both the ratchet.json entry and its INITIAL_CEILING pin in ' +
-      "tools/guards/src/ratchet.test.ts to 214 -- and INITIAL_CEILING's entire purpose is refusing to " +
-      "let a ratchet.json entry rise again once recorded, which is exactly the 'raise the ceiling to " +
-      "fit' move this migration would otherwise reach for. Raising either file here would both fight " +
-      'a guard built to prevent that and risk colliding with a concurrent, uncommitted change this ' +
-      'task was told to stay out of. No line elsewhere in the file could be freed without cosmetically ' +
-      'restructuring already-reviewed code; comments do not even count toward the ratchet (see ' +
-      'count-lines.ts), so trimming one would not have helped either. Left exactly as PATH-01 left ' +
-      'it. Recommended follow-up: once the in-flight ratchet change lands, re-attempt this migration ' +
-      'against whatever ceiling it leaves behind.',
+      'The value matches the canonical helper; this allowance documents the remaining duplicate ' +
+      'layout calculation. Scope line counts are report-only; file and function ceilings are separate gates.',
   },
 ]
 
@@ -196,7 +179,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
       for (const f of listSourceFiles(scanDir, { excludeDirs: EXCLUDE_DIRS })) {
         const rel = relative(root, f).split(sep).join('/')
         if (isTestFile(rel)) continue
-        if (matchesRatchetKey(f, PATHS_MODULE_ABS)) continue
+        if (matchesScopeKey(f, PATHS_MODULE_ABS)) continue
         const text = readFileSync(f, 'utf8')
         const lines = text.split('\n')
         for (const m of text.matchAll(JOIN_DATA_CACHE_RE)) {
@@ -236,7 +219,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
       for (const f of listSourceFiles(scanDir, { excludeDirs: EXCLUDE_DIRS })) {
         const rel = relative(root, f).split(sep).join('/')
         if (isTestFile(rel)) continue
-        if (matchesRatchetKey(f, NAMESPACE_MODULE_ABS)) continue
+        if (matchesScopeKey(f, NAMESPACE_MODULE_ABS)) continue
         const text = readFileSync(f, 'utf8')
         const lines = text.split('\n')
         for (const m of text.matchAll(HARNESS_DIR_LITERAL_RE)) {

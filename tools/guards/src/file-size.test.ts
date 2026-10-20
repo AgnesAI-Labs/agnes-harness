@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { countLines } from './count-lines.js'
+import { assertBudgetNonIncrease } from './protected-allowances.js'
 import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './repo.js'
 
 const MAX_FILE_LINES = 800
@@ -32,6 +33,10 @@ describe(`source files stay within ${MAX_FILE_LINES} lines`, () => {
       .filter(([file, lines]) => lines > (allowlist[file] ?? MAX_FILE_LINES))
       .map(([file, lines]) => `${file}: ${lines} > ${allowlist[file] ?? MAX_FILE_LINES}`)
     expect(violations).toEqual([])
+  })
+
+  it('allowlist never increases against the protected merge-base', () => {
+    expect(assertBudgetNonIncrease(root, 'tools/guards/file-size-allowlist.json')).toEqual([])
   })
 
   it('allowlist has no stale entries', () => {

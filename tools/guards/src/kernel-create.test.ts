@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { matchesRatchetKey } from './ratchet-key.js'
 import { isTestFile, LITERAL_SCAN_EXCLUDE_DIRS, listSourceFiles, repoRoot } from './repo.js'
+import { matchesScopeKey } from './scope-key.js'
 
 const root = repoRoot()
 // The only legitimate call site is the single file packages/host/src/runtime/assemble/assemble.ts, or any file under
 // the packages/host/src/runtime/assemble/ directory. The old spelling hard-coded one file path, so the moment
 // host split the assembly layer into assemble/index.ts it would have flagged that as a violation.
-// Now uses the same boundary matcher as ratchet.test.ts (tools/guards/src/ratchet-key.ts), shared
+// Now uses the same boundary matcher as scope-line-count.test.ts (tools/guards/src/scope-key.ts), shared
 // between the two so they cannot drift apart.
 const ALLOWED_ABS = join(root, 'packages/host/src/runtime/assemble')
 // Public author contract tests construct synthetic Core runtimes, never production Hosts.
@@ -50,7 +50,7 @@ describe('Kernel construction boundaries', () => {
           continue
         }
         totalOccurrences += matches.length
-        if (!matchesRatchetKey(f, ALLOWED_ABS)) offenders.push(`${rel} (${matches.length}x)`)
+        if (!matchesScopeKey(f, ALLOWED_ABS)) offenders.push(`${rel} (${matches.length}x)`)
       }
     }
     expect(testkitOccurrences, 'one synthetic author contract runtime factory').toBe(1)

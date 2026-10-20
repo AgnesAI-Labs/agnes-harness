@@ -32,6 +32,14 @@ pnpm gen:check
 pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
+The [repository guard guide](../../tools/guards/README.md) distinguishes the report-only scope
+line-count report from hard file ceilings, the AST function effective-LOC ceiling in turn/generation/
+supervisor, and the Host official-business semantic fence. File/function budgets and exact Host
+exceptions cannot grow against the protected merge-base; ordinary remeasurement only tightens.
+Existing assemble/CU gates remain in force. Guard fixtures cover refusal paths; they do not verify
+runtime capability admission or state-machine migrations. See the guide for counting rules, retained
+contracts, first-introduction seeds and separate maintainer budget changes.
+
 `pnpm test:all` runs the complete suite; `pnpm test` runs only the fast tier and `pnpm test:heavy` only the real-process and large-data tier (`*.e2e.test.ts`, `*.slow.test.ts`). Retain skips, platform prerequisites, and failures in the results for that revision. A total pass count must not hide unverified areas.
 
 The CLI startup test still gates successful boot and session creation. On shared CI runners, its elapsed time is reported in the job summary rather than used as a pass/fail threshold. To enforce the 300 ms target on a controlled performance machine, set `AGH_ENFORCE_BOOT_BUDGET=1` and run `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`.

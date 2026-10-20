@@ -26,6 +26,12 @@ pnpm gen:check
 pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
+[仓库门禁指南](../../tools/guards/README.zh-CN.md) 区分只报告的 scope 行数、硬性文件上限、
+turn/generation/supervisor 的 AST 函数有效行上限，以及 Host 官方业务语义 fence。
+file/function 预算与精确 Host 例外不得相对受保护 merge-base 增长，普通 remeasure 只能收紧；原 assemble/CU 门继续保留。
+正反夹具验证门禁拒绝路径，不代表运行时 capability 准入或状态机迁移通过。
+计数规则、保留合同、首次 seed 和独立维护者预算变更见该指南。
+
 `pnpm test:all` 运行完整测试集；`pnpm test` 只运行快速层，`pnpm test:heavy` 只运行真实进程与大数据层（`*.e2e.test.ts`、`*.slow.test.ts`）。测试中的跳过项、平台前提与失败应保留在该版本结果中，不能用总通过数量掩盖未验证范围。
 
 CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗时会写入任务摘要，不作为通过门槛。在稳定的性能测试机器上设置 `AGH_ENFORCE_BOOT_BUDGET=1`，再运行 `pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1`，即可执行 300 ms 门槛检查。

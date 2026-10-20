@@ -1,54 +1,78 @@
-// Refreshes the report-only baseline (ratchet.json) and tightens the per-file size allowlist.
-//   pnpm guards:remeasure            rewrite both files from the current tree
-//   pnpm guards:remeasure --check    write nothing; exit 1 only on a hard failure (a listed file grew,
-//                                    an unlisted file is over the limit, or an entry is stale)
-// --keys is accepted for older callers and ignored (the baseline is always refreshed whole).
-// --allow-increase re-baselines the allowlist after a reviewed merge: it may raise a ceiling or list
-// a file; the increase needs a justification in the review, not here.
+// Refresh report-only scope LOC and tighten hard file/function ceilings. Host exceptions are
+// manually reviewed identities, never generated here. --allow-increase is budget-only preparation;
+// protected-base checks still apply in CI and require a separate maintainer policy review.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { countLines } from './src/count-lines.js'
-import { matchesRatchetKey } from './src/ratchet-key.js'
-import { isTestFile, listSourceFiles, repoRoot } from './src/repo.js'
+import { FUNCTION_LIMIT, functionKey, functionMeasurements } from './src/function-size.js'
+import { assertBudgetNonIncrease, assertMaintainerBudgetChange } from './src/protected-allowances.js'
+import { isTestFile, listSourceFiles, presentationSourceFiles, repoRoot } from './src/repo.js'
+import { matchesScopeKey } from './src/scope-key.js'
 
 const MAX_FILE_LINES = 800
 const root = repoRoot()
 const check = process.argv.includes('--check')
 const allowIncrease = process.argv.includes('--allow-increase')
-const read = (rel: string) => JSON.parse(readFileSync(join(root, rel), 'utf8')) as Record<string, number>
-const write = (rel: string, value: unknown) =>
-  writeFileSync(join(root, rel), `${JSON.stringify(value, null, 2)}\n`)
+if (allowIncrease) assertMaintainerBudgetChange(root)
+const read = (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8')) as Record<string, number>
+const write = (path: string, value: unknown) =>
+  writeFileSync(join(root, path), `${JSON.stringify(value, null, 2)}\n`)
 
-const baseline = read('tools/guards/ratchet.json')
-const next: Record<string, number> = {}
-for (const key of Object.keys(baseline)) {
+const report = read('tools/guards/scope-line-count.json')
+const nextReport: Record<string, number> = {}
+for (const key of Object.keys(report)) {
   const abs = join(root, key)
-  const files = listSourceFiles(dirname(abs)).filter((f) => matchesRatchetKey(f, abs) && !isTestFile(f))
-  next[key] = files.reduce((n, f) => n + countLines(readFileSync(f, 'utf8')), 0)
-  if (next[key] !== baseline[key]) console.log(`${key}: ${baseline[key]} -> ${next[key]}`)
+  const files = listSourceFiles(dirname(abs)).filter(
+    (file) => matchesScopeKey(file, abs) && !isTestFile(file),
+  )
+  nextReport[key] = files.reduce((n, file) => n + countLines(readFileSync(file, 'utf8')), 0)
+  if (nextReport[key] !== report[key])
+    console.log(`${key}: ${report[key]} -> ${nextReport[key]} (report only)`)
 }
 
-const allowlist = read('tools/guards/file-size-allowlist.json')
-const measured = new Map<string, number>()
-for (const file of [...listSourceFiles(join(root, 'packages')), ...listSourceFiles(join(root, 'tools'))])
-  if (!isTestFile(file)) measured.set(relative(root, file), countLines(readFileSync(file, 'utf8')))
-const nextAllow: Record<string, number> = {}
+const measuredFiles = Object.fromEntries(
+  [
+    ...listSourceFiles(join(root, 'packages')),
+    ...listSourceFiles(join(root, 'tools')),
+    ...presentationSourceFiles(root),
+  ]
+    .filter((file) => !isTestFile(file))
+    .map((file) => [relative(root, file).replaceAll('\\', '/'), countLines(readFileSync(file, 'utf8'))]),
+)
+const measuredFunctions = Object.fromEntries(
+  functionMeasurements(root).functions.map((fn) => [functionKey(fn), fn.lines]),
+)
 let failed = false
-for (const [file, lines] of measured) {
-  if (lines <= MAX_FILE_LINES) continue
-  const ceiling = allowlist[file]
-  if (!allowIncrease && (ceiling === undefined || lines > ceiling)) {
-    console.error(`${file}: ${lines} lines exceeds ${ceiling ?? MAX_FILE_LINES}; split the file`)
-    failed = true
+const updates: [string, Record<string, number>][] = []
+for (const [path, measured, limit] of [
+  ['tools/guards/file-size-allowlist.json', measuredFiles, MAX_FILE_LINES],
+  ['tools/guards/function-size-allowlist.json', measuredFunctions, FUNCTION_LIMIT],
+] as const) {
+  const previous = read(path)
+  const next: Record<string, number> = {}
+  if (!allowIncrease) {
+    const growth = assertBudgetNonIncrease(root, path)
+    for (const error of growth) console.error(error)
+    failed ||= growth.length > 0
   }
-  nextAllow[file] = allowIncrease ? lines : Math.min(lines, ceiling ?? lines)
+  for (const [key, lines] of Object.entries(measured)) {
+    if (lines <= limit) continue
+    const ceiling = previous[key]
+    if (!allowIncrease && (ceiling === undefined || lines > ceiling)) {
+      console.error(`${key}: ${lines} effective LOC exceeds ${ceiling ?? limit}; split the source`)
+      failed = true
+    }
+    next[key] = lines
+  }
+  if (check) {
+    const stale = Object.keys(previous).filter((key) => !(key in next))
+    for (const key of stale) console.error(`Remove stale allowance: ${key}`)
+    failed ||= stale.length > 0
+  }
+  updates.push([path, next])
 }
-for (const file of Object.keys(allowlist))
-  if (!(file in nextAllow)) console.log(`${file}: within the limit, entry removed`)
-
-if (check) failed ||= Object.keys(nextAllow).length !== Object.keys(allowlist).length
-else if (!failed) {
-  write('tools/guards/ratchet.json', next)
-  write('tools/guards/file-size-allowlist.json', nextAllow)
+if (!check && !failed) {
+  write('tools/guards/scope-line-count.json', nextReport)
+  for (const [path, next] of updates) write(path, next)
 }
 if (failed) process.exitCode = 1

@@ -37,7 +37,7 @@
 | 资源治理 | [resource-control-store](../../packages/resource-control-store/src)、[resource-control-runtime](../../packages/resource-control-runtime/src)、[resource-control-worker](../../packages/resource-control-worker/src) | [Skills Cordis](../../packages/resource-control-runtime/test/skills-cordis.test.ts) |
 | 资源 CLI/Web | [resource-control-cli](../../packages/resource-control-cli/src)、[resource-control-web](../../packages/resource-control-web/src) | [资源 CLI 测试](../../packages/resource-control-cli/test) |
 | 外部渠道/格式转换 | [channels](../../packages/channels/src)、[bridges](../../packages/bridges/src) | [channels tests](../../packages/channels/test)、[bridges tests](../../packages/bridges/test) |
-| 工程约束 | [guards](../../tools/guards) | [ratchet](../../tools/guards/ratchet.json) |
+| 工程约束 | [guards](../../tools/guards) | [scope 有效行报告（不阻断增长）](../../tools/guards/scope-line-count.json) |
 
 包公开出口以各自 package.json 的 `exports` 为准。上表深链接用于读代码，应用和插件不应据此深导入其他包私有 src。Python runtime 与 Python thin client 尚不作为可用公开路线。
 
