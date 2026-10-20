@@ -2,6 +2,7 @@
 import type { SkillRootStatus } from '@agnes/protocol'
 import { createElement, type ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { UiLocaleSource } from '../src/index.js'
 
 type UiModule = {
   Dialog: (props: { open: boolean; title: string; onCancel(event: MouseEvent): void }) => ReactElement
@@ -111,49 +112,65 @@ describe('web-ui public component layer', () => {
   })
 })
 
-it('lists only reported skill roots and explains optional user-agent imports', async () => {
+it.each(['en', 'zh-CN'] as const)('lists reported skill roots and explains imports in %s', async (locale) => {
+  document.documentElement.lang = locale
   const ui = await import('../src/index.js')
+  const source: UiLocaleSource = {
+    getSnapshot: () => locale,
+    getVersion: () => 0,
+    subscribe: () => () => undefined,
+    t: (key) => key,
+    bind: () => (key) => key,
+  }
+  const localized = (child: ReactElement) => createElement(ui.UiLocaleProvider, { source }, child)
   const host = document.createElement('div')
   document.body.append(host)
   const dispose = ui.mountRegion(
     host,
-    createElement(ui.ResourceListContent, {
-      tab: 'skills',
-      loadState: 'empty',
-      items: [],
-      skillRoots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }] as SkillRootStatus[],
-      selectedId: undefined,
-      nextCursor: undefined,
-      loadingMore: false,
-      emptyTitle: 'Legacy title',
-      emptyDescription: 'Legacy hints',
-      emptyHints: ['~/.claude/skills', '~/.codex/skills', '~/.agents/skills'],
-      switchDisabled: false,
-      itemNameOf: () => '',
-      onOpen: () => {},
-      onToggleDesired: () => {},
-      onLoadMore: () => {},
-      onRetry: () => {},
-    }),
+    localized(
+      createElement(ui.ResourceListContent, {
+        tab: 'skills',
+        loadState: 'empty',
+        items: [],
+        skillRoots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }] as SkillRootStatus[],
+        selectedId: undefined,
+        nextCursor: undefined,
+        loadingMore: false,
+        emptyTitle: 'Legacy title',
+        emptyDescription: 'Legacy hints',
+        emptyHints: ['~/.claude/skills', '~/.codex/skills', '~/.agents/skills'],
+        switchDisabled: false,
+        itemNameOf: () => '',
+        onOpen: () => {},
+        onToggleDesired: () => {},
+        onLoadMore: () => {},
+        onRetry: () => {},
+      }),
+    ),
   )
   expect(host.querySelector('.admin-empty-state-hints')).toBeNull()
-  expect(host.querySelector('.resource-empty h3')?.textContent).toBe('No skills yet')
+  expect(host.querySelector('.resource-empty h3')?.textContent).toBe(
+    locale === 'en' ? 'No skills yet' : '还没有技能',
+  )
   expect(host.textContent).not.toContain('AGNES_SKILLS_IMPORT_USER')
   expect(host.textContent).not.toContain('Legacy')
   const help = document.createElement('div')
   const closeHelp = ui.mountRegion(
     help,
-    createElement(ui.ResourceRoots, {
-      roots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }],
-    }),
+    localized(
+      createElement(ui.ResourceRoots, {
+        roots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }],
+      }),
+    ),
   )
   expect(help.querySelector('.resource-roots > .agh-disclosure-summary')?.textContent).toBe(
-    'Checked 1 skill directory and found no skills.',
+    locale === 'en' ? 'Checked 1 skill directory and found no skills.' : '已检查 1 个技能目录，未找到技能。',
   )
-  expect(help.textContent).toContain('Workspace skill folders')
+  expect(help.textContent).toContain(locale === 'en' ? 'Workspace skill folders' : '工作区技能文件夹')
   expect(help.textContent).not.toContain('~/.codex')
   closeHelp()
   dispose()
+  document.documentElement.lang = 'en'
 })
 
 it.each([
