@@ -228,9 +228,20 @@ try {
     await shot(page, '05-object-conversation', locale, theme)
     await page.locator('#send').click()
     await until(
-      async () => (await investigation.projectUI(undefined, { surface: 'web' })).opState,
-      (value) => value === null,
-      'submitted request',
+      async () => {
+        const timeline = await investigation.projectUI(undefined, { surface: 'web' })
+        return (
+          timeline.opState === null &&
+          timeline.turns.some((turn) => turn.status === 'completed') &&
+          timeline.nodes.some(
+            (node) =>
+              node.kind === 'user' &&
+              node.content.some((block) => block.type === 'text' && block.text.includes('DEV-2410-017')),
+          )
+        )
+      },
+      Boolean,
+      'submitted work request completed',
     )
     await page
       .locator('.process-identity [data-testid=application-attribution]')
