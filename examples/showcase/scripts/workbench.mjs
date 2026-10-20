@@ -46,7 +46,8 @@ async function shot(page, label, locale, theme) {
       { timeout: 45000 },
     )
   await page.evaluate(() => document.fonts.ready)
-  if (await page.locator('.task-heading').isVisible()) assert.ok(!(await page.locator('.task-heading').innerText()).includes('applicationId'))
+  if (await page.locator('.task-heading').isVisible())
+    assert.ok(!(await page.locator('.task-heading').innerText()).includes('applicationId'))
   const file = `${label}-${locale}-${theme}.png`
   await page.mouse.move(1598, 1098)
   await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
@@ -228,9 +229,9 @@ try {
     await checkAlignment(page)
     await shot(page, '06c-mobile-actions', locale, theme)
     await page.setViewportSize({ width: 1600, height: 1100 })
+    const initial = await call(mrb, 'aero_quality', { view: 'dashboard' })
     await page.getByTestId('workbench-right-toggle').click()
     await selectTab(page, 'current-object', zh ? '当前对象' : 'Current object', zh)
-    const initial = await call(mrb, 'aero_quality', { view: 'dashboard' })
     const revision = initial.revision
     const rationale = zh
       ? '受控返工：隔离 L2609-B，恢复图纸要求，复验 PVD-011/012/013。'

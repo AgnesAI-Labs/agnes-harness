@@ -47,7 +47,8 @@ async function shot(page, label, locale, theme) {
       { timeout: 45000 },
     )
   await page.evaluate(() => document.fonts.ready)
-  if (await page.locator('.task-heading').isVisible()) assert.ok(!(await page.locator('.task-heading').innerText()).includes('applicationId'))
+  if (await page.locator('.task-heading').isVisible())
+    assert.ok(!(await page.locator('.task-heading').innerText()).includes('applicationId'))
   const file = `${label}-${locale}-${theme}.png`
   await page.mouse.move(1598, 1098)
   await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
@@ -237,8 +238,6 @@ try {
     await checkAlignment(page)
     await shot(page, '06c-mobile-actions', locale, theme)
     await page.setViewportSize({ width: 1600, height: 1100 })
-    await page.getByTestId('workbench-right-toggle').click()
-    await selectTab(page, 'current-object', zh ? '当前对象' : 'Current object', zh)
     const advanceSigner = testOperatorSignatures(rt.client, capa, { locale })
     try {
       for (const [i, detail] of [
@@ -308,7 +307,10 @@ try {
       .getByTestId('pharma-object-dossier')
       .getByText(signed.dossier.certificate.id, { exact: true })
       .waitFor({ timeout: 45000 })
-    await page.getByTestId('pharma-object-dossier').getByText(signed.dossier.certificate.id, { exact: true }).scrollIntoViewIfNeeded()
+    await page
+      .getByTestId('pharma-object-dossier')
+      .getByText(signed.dossier.certificate.id, { exact: true })
+      .scrollIntoViewIfNeeded()
     await shot(page, '08b-release-certificate', locale, theme)
     await call(qa, 'pharma_report', { kind: 'dossier', batch: 'B-2410-017', locale })
     await selectTab(page, 'evidence', zh ? '证据与报告' : 'Evidence & reports', zh)

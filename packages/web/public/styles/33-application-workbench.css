@@ -5,8 +5,6 @@
     overflow-x: auto;
     gap: 6px;
     padding: 4px 0 8px;
-    width: min(calc(100% - 2rem), var(--composer-card-max-width));
-    margin-inline: auto;
     box-sizing: border-box;
   }
   .application-panel {

@@ -101,6 +101,7 @@
       max-width: 92%;
     }
     #composer,
+    .application-work-actions,
     .composer-meta {
       width: calc(100% - 1rem);
     }

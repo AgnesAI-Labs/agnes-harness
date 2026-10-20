@@ -62,9 +62,12 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
-  #composer {
+  #composer,
+  .application-work-actions {
     width: min(calc(100% - 2rem), var(--composer-card-max-width));
     margin: 0 auto;
+  }
+  #composer {
     display: flex;
     flex-direction: column;
     padding: 0;

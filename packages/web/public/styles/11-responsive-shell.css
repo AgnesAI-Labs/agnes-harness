@@ -146,6 +146,7 @@
     #notice,
     #approval,
     #composer,
+    .application-work-actions,
     .composer-meta,
     #empty-state {
       width: calc(100% - 2rem);
@@ -195,6 +196,7 @@
     #notice,
     #approval,
     #composer,
+    .application-work-actions,
     .composer-meta,
     #empty-state {
       width: calc(100% - 1.5rem);
