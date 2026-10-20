@@ -121,6 +121,13 @@ export function transportCapabilityProblems(
     const checked = validateStreamDeclaration(stream)
     if (!checked.ok) problems.push(...checked.errors.map((e) => e.message))
     if (
+      stream.readService &&
+      !value.services?.some(
+        (s) => s.name === stream.readService && s.kind === 'query' && (s.scope ?? 'session') === 'session',
+      )
+    )
+      problems.push('stream readService must name an own session query service')
+    if (
       stream.controlService &&
       !value.services?.some((s) => s.name === stream.controlService && s.kind === 'effect')
     )

@@ -982,6 +982,7 @@ it('binds profile streams to the accepted roster and aborts pending opens on imm
   const { revokeContributionOwner } = await import('../src/contribution-scope.js')
   const { ctx } = await makeRegistry()
   let streams: ClientContext['profile']['streams'] | undefined
+  let sessionStreams: ClientContext['sessionStreams'] | undefined
   const binding = {
     lifetime: 'profile' as const,
     owner: 'web:sample-stream',
@@ -995,6 +996,7 @@ it('binds profile streams to the accepted roster and aborts pending opens on imm
     clientModule({
       apply(cctx) {
         streams = cctx.profile.streams
+        sessionStreams = cctx.sessionStreams
       },
     }),
     {
@@ -1019,6 +1021,20 @@ it('binds profile streams to the accepted roster and aborts pending opens on imm
   vi.stubGlobal('fetch', network)
   try {
     if (!streams) throw new Error('streams not bound')
+    if (!sessionStreams) throw new Error('session streams not bound')
+    const session = (ctx as unknown as { session: SessionService }).session
+    await expect(sessionStreams.open('sample.events', {})).rejects.toThrow('ready session')
+    session.setSession('session-one')
+    session.setReadiness('ready')
+    const pendingSession = sessionStreams.open('sample.events', {})
+    expect(requestBody).toMatchObject({
+      scope: { kind: 'session', sessionId: 'session-one', laneId: 'main' },
+    })
+    const sessionRefused = expect(pendingSession).rejects.toThrow('aborted')
+    session.setSession('session-two')
+    expect(requestSignal?.aborted).toBe(true)
+    await sessionRefused
+    network.mockClear()
     await expect(streams.open('undeclared', {})).rejects.toThrow('unavailable')
     expect(network).not.toHaveBeenCalled()
     const pending = streams.open('sample.events', {})

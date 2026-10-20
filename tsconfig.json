@@ -336,6 +336,9 @@
     },
     {
       "path": "examples/showcase/pharma-gmp/tsconfig.test.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/browser/tsconfig.sources.json"
     }
   ]
 }

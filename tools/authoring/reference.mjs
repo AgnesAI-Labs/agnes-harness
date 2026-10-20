@@ -56,7 +56,7 @@ export function generateReference() {
   const store = declarations(iface('profile-services', 'OwnedStore'))
   const browserContext = declarations(
     iface('client-module', 'ClientContext', 'web-client').filter((m) =>
-      ['homeEntries', 'profile'].includes(m.name),
+      ['homeEntries', 'profile', 'sessionStreams'].includes(m.name),
     ),
   )
   const browserServices = declarations(iface('service-contracts', 'ClientProfileServices', 'web-client'))
@@ -108,7 +108,7 @@ ${code(browserContext.join('\n'))}
 ctx.homeEntries.register(entry) registers a declared homeEntries id and matching placement on an active profile-lifetime client. Returns a disposer; the Host also cleans it up on unload. entry.component is a React component receiving {context: {t, data?, selection?, ...}}; capture ClientContext from apply(ctx, config) for service access. No session is required. / 注册活动 profile 页面须匹配描述符的 id 和 placement；卸载自动清理。页面组件收到 context 呈现属性，服务上下文从 apply 闭包取得。
 ${code(browserServices.join('\n'))}
 Declare exact backend names in client.services (agnes.client.json) and register scope: 'profile' services through backend ctx.services.register (inject services). Service names use lowercase alphanumeric dot segments, not npm hyphens. Service metadata/schemas must be plain JSON; strip TypeBox Kind symbols when reusing a tool schema. query resolves the output itself. effect returns a receipt with state and requires a stable operationId; readOperation reads that same id. Completed receipts are replayed; running/unknown outcomes must be inspected/reconciled, never blindly retried with a new id. Approval-required effects need the Host Approvals UI, then resubmission with the SAME id/input. Current activation, service allowlist and server authorization remain authoritative. / 服务名用小写字母数字点分段，不能含 npm 名称中的连字符；服务元数据须为纯 JSON，复用工具 schema 时先去除 TypeBox Kind 符号；query 直接返回 output，effect 返回含 state 的回执；保留 operationId，未知结果先查询核对，不盲目新建操作，审批由宿主完成。
-There is no ctx.tools.invoke from the browser; call your own declared profile service. ctx.agnes.services.call is session-bound and is not a substitute for a profile page. / 浏览器没有 ctx.tools.invoke；调用自己声明的 profile service。不要把需要当前会话的 call 当作 profile 页面接口。
+There is no ctx.tools.invoke from the browser; call your own declared profile service. ctx.agnes.services.call is session-bound and is not a substitute for a profile page. ctx.agnes.services.effect(name, input, { operationId }) uses native session admission; retry uncertain work with the same id and input. ctx.sessionStreams.open binds the ready active session and aborts on session change; it needs declared stream and readService allowlists. / 浏览器没有 ctx.tools.invoke；调用自己声明的 profile service。不要把需要当前会话的 call 当作 profile 页面接口。session effect 沿用原生授权，结果不明时沿用原编号和参数核对。sessionStreams 绑定当前就绪会话，切换会话会中止，必须声明流与 readService 白名单。
 Use public author APIs, the tool-with-panel template and this version-matched reference before editing. Never search Host/installed source, other workspaces, environment variables or credentials; use authorized workspace files and artifact references only. Keep queries/effects, loading/error states, owner-store and inherited interaction/restart tests together. / 先用本版本作者参考与模板；禁止翻查宿主或安装源码、其他工作区、环境变量与凭据；只用授权工作区文件及 artifact 引用；保留交互、持久化与错误测试。
 
 Application workbench / 应用业务工作台:

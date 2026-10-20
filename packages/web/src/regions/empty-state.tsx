@@ -10,8 +10,7 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { AnimatedTagline, createRegionRenderer } from '@agnes/web-ui'
 import { Welcome, XProvider } from '@agnes/web-ui/x'
-import { type ReactElement, useEffect, useSyncExternalStore } from 'react'
-import { businessAgentSuggestions } from '../pages/business-agents.js'
+import { type ReactElement, useSyncExternalStore } from 'react'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
 type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | number>>) => string
@@ -19,9 +18,6 @@ type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | numb
 export function EmptyStateBuiltin({ t = (key) => key }: { t?: EmptyStateText }): ReactElement {
   const identity = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const brand = applicationBrand(document.documentElement.lang)
-  useEffect(() => {
-    void businessAgentSuggestions.refresh()
-  }, [])
   return (
     <div data-agnes-region-owner="builtin" data-agnes-region-unit="empty-state">
       <div className="conversation-hero-dsh" data-agnes-conversation-hero={true}>

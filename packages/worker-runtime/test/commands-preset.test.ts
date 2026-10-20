@@ -64,6 +64,32 @@ it('exposes publication status and migration only through an assembled Host', as
   ).resolves.toEqual({ publication: null })
 })
 
+it('reads generation status cooperatively when supported and preserves older Host fallback', async () => {
+  const status = { generations: [], plugins: [] }
+  const frame = {
+    kind: 'command' as const,
+    requestId: 'status',
+    method: 'pluginGenerations.status' as const,
+    params: {},
+  }
+  await expect(
+    handleServiceCommand(
+      {
+        pluginGenerationStatusAsync: async () => status,
+        pluginGenerationStatus: () => {
+          throw new Error('synchronous status must not run')
+        },
+      } as unknown as Host,
+      frame,
+      new Map(),
+    ),
+  ).resolves.toEqual(status)
+  await expect(
+    handleServiceCommand({ pluginGenerationStatus: () => status } as unknown as Host, frame, new Map()),
+  ).resolves.toEqual(status)
+  await expect(handleServiceCommand({} as Host, frame, new Map())).rejects.toThrow('unavailable')
+})
+
 it('returns the Host capability set with the tool catalog and accepts older Hosts', async () => {
   const catalog = { sessionId: 'inspect', tools: [], resources: [] }
   const session = { key: 'inspect', toolCatalog: () => catalog } as unknown as HostSession
@@ -274,6 +300,22 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
       new Map(),
     ),
   ).resolves.toMatchObject({ modelAdapters: catalog.modelAdapters, sources: [] })
+  await expect(
+    handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'selection-only',
+        method: 'session.catalog',
+        params: { selectionOnly: true },
+      },
+      new Map(),
+    ),
+  ).resolves.toMatchObject({
+    modelAdapters: catalog.modelAdapters,
+    loops: [],
+    presets: [{ id: 'standard', isDefault: true }],
+  })
   forbidAdmission = false
   currentBundles = { 'hot#work': { id: 'hot#work', sourcePackage: 'hot' } }
   const frame = { kind: 'command' as const, requestId: 'hot', method: 'session.catalog' as const, params: {} }

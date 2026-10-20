@@ -58,5 +58,7 @@ export function sessionHostRoutes(
     resolveService: (key, names) => owner(key).resolveService(key, names),
     callService: (params, ...rest) => owner(params.sessionId).callService(params, ...rest),
     inspectService: (params, ...rest) => owner(params.sessionId).inspectService(params, ...rest),
+    authorizeServiceControl: (params, ...rest) =>
+      owner(params.sessionId).authorizeServiceControl(params, ...rest),
   }
 }

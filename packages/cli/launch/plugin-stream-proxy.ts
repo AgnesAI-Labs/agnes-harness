@@ -30,7 +30,7 @@ export function pluginStreamProxy(input: {
       if (req.url !== PLUGIN_STREAM_OPEN_PATH) return false
       const refuse = () => {
         req.resume()
-        if (!res.writableEnded)
+        if (!res.destroyed && !res.writableEnded)
           res
             .writeHead(403, { 'cache-control': 'no-store', 'content-type': 'application/json' })
             .end('{"error":"REFUSED"}')
@@ -50,9 +50,20 @@ export function pluginStreamProxy(input: {
         if (!parsed.ok || !parsed.value.client) throw new Error('invalid-stream-open')
         const call = parsed.value
         await input.initialize()
-        const row = (await input.client.clientModules.list(input.profile)).rows.find(
-          (r) => r.rowId === call.client?.rowId,
-        )
+        if (closed || res.destroyed) {
+          refuse()
+          return true
+        }
+        const row = (
+          await input.client.clientModules.list(
+            input.profile,
+            call.scope.kind === 'session' ? call.scope.sessionId : undefined,
+          )
+        ).rows.find((r) => r.rowId === call.client?.rowId)
+        if (closed || res.destroyed) {
+          refuse()
+          return true
+        }
         if (
           !row?.enabled ||
           row.phase !== 'ready' ||
@@ -65,6 +76,10 @@ export function pluginStreamProxy(input: {
         )
           throw new Error('stream-row-refused')
         const target = await endpoint()
+        if (closed || res.destroyed) {
+          refuse()
+          return true
+        }
         const upstream = httpRequest(
           {
             host: target.host,
@@ -108,6 +123,10 @@ export function pluginStreamProxy(input: {
       }
       try {
         const target = await endpoint()
+        if (closed || socket.destroyed) {
+          refuse()
+          return true
+        }
         const upstream = httpRequest({
           host: target.host,
           port: target.port,

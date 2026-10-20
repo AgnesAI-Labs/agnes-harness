@@ -1,4 +1,4 @@
-import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageListResult } from '@agnes/protocol'
 import {
   Button,
   EmptyState,
@@ -40,12 +40,12 @@ type Loaded = {
 }
 export type BusinessAgentsSource = {
   /** Injected by tests and by hosts that already hold an admin session. */
-  connect?: () => Promise<{ api: PluginAdminApi; context: AdminContext }>
+  connect?: () => Promise<{ api: PluginAdminApi; context: AdminContext; inventory?: PackageListResult }>
 }
 
 const connectAdmin = async () => {
-  const context = await PluginAdminApi.context()
-  return { api: new PluginAdminApi(context), context }
+  const { context, inventory } = await PluginAdminApi.overview()
+  return { api: new PluginAdminApi(context), context, inventory }
 }
 
 /**
@@ -75,19 +75,22 @@ function readyAgentRefs(
   })
 }
 
-export function useBusinessAgents(source: BusinessAgentsSource = {}) {
+export function useBusinessAgents(
+  source: BusinessAgentsSource = {},
+  options: Readonly<{ enabled?: boolean }> = {},
+) {
   const { locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const connect = useRef(source.connect ?? connectAdmin)
-  const key = catalogKey(connect.current)
+  const key = options.enabled === false ? undefined : catalogKey(connect.current)
   // One cached read: a return visit shows the cards at once and refreshes them behind.
   const read = useResource<Loaded>(key, async () => {
-    const { api, context } = await connect.current()
+    const { api, context, inventory } = await connect.current()
     const [catalog, list] = await Promise.all([
       readBusinessAgents(api).then(
         (rows) => ({ rows, error: undefined as unknown }),
         (error: unknown) => ({ rows: [], error }),
       ),
-      api.list(),
+      inventory ?? api.list(),
     ])
     return {
       api,
@@ -102,7 +105,7 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
   /** Re-reads only what a start changes; the catalog itself stays as loaded. */
   const refreshInstalled = useCallback(() => {
     const current = loaded
-    if (!current) return
+    if (!current || !key) return
     void current.api
       .list()
       .then((list) =>

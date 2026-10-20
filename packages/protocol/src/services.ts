@@ -14,8 +14,29 @@ function check<T>(schema: TSchema, value: unknown): ValidationResult<T> {
     return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected strict JSON data' }] }
   }
 }
-export const validateServiceCapability = (value: unknown): ValidationResult<ServiceCapability> =>
-  check(ServiceCapability, value)
+export const validateServiceCapability = (value: unknown): ValidationResult<ServiceCapability> => {
+  const result = check<ServiceCapability>(ServiceCapability, value)
+  if (
+    result.ok &&
+    'controlSessionMs' in result.value &&
+    result.value.controlSessionMs !== undefined &&
+    (result.value.kind !== 'effect' ||
+      (result.value.scope ?? 'session') !== 'session' ||
+      !result.value.controlLeaseMs ||
+      result.value.controlSessionMs < result.value.controlLeaseMs)
+  )
+    return {
+      ok: false,
+      errors: [
+        {
+          path: '/controlSessionMs',
+          code: 'RANGE',
+          message: 'controlSessionMs requires a session effect and a shorter controlLeaseMs',
+        },
+      ],
+    }
+  return result
+}
 export const validateExtensionCallError = (value: unknown): ValidationResult<ExtensionCallError> =>
   check(ExtensionCallError, value)
 export function validateExtensionCall(

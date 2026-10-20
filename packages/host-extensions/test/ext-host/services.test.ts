@@ -3,6 +3,7 @@ import type { ExtensionManifest, ServiceContext, ServiceDef } from '@agnes/exten
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import type { Actor, ExtensionCallParams, JsonValue } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { compileExtensionSchema } from '../../src/ext-host/json-schema.js'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import {
   isServicePreDispatchFailure,
@@ -122,10 +123,95 @@ function setup(over: Partial<SessionServiceDef> = {}, budget = Infinity, version
       workspace,
       signal,
     )
-  return { def, manifest, registry, lease, deps, ac, audit, dispose, call, inspect, saved: () => saved }
+  return {
+    def,
+    manifest,
+    registry,
+    lease,
+    deps,
+    ac,
+    audit,
+    dispose,
+    call,
+    inspect,
+    invoker,
+    saved: () => saved,
+  }
 }
 
 describe('S3 Service registration and invocation', () => {
+  it('issues renewable, target-bound control only after native effect admission and audit', async () => {
+    let now = 100_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      const h = setup({ kind: 'effect', controlLeaseMs: 30_000, controlSessionMs: 300_000 })
+      const params = {
+        sessionId: 'session-1',
+        extension: h.manifest.id,
+        service: h.def.name,
+        input: { value: 1 },
+      }
+      const authorize = (extra: Partial<ExtensionCallParams> = {}) =>
+        h.invoker.authorizeControl({ ...params, ...extra }, 'control-one', 'opaque', workspace)
+      await expect(authorize()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+      await expect(h.call({ value: 1 }, { commandId: 'control-one' })).rejects.toBeDefined()
+      await expect(
+        h.call({ value: 1 }, { commandId: 'control-one' }, undefined, { commandId: 'control-one' }),
+      ).resolves.toEqual({ output: { value: 1 } })
+      const grant = await authorize().catch((error) => {
+        throw new Error('authorize after admission failed', { cause: error })
+      })
+      expect(grant.grantId).toBe(h.saved()?.controlGrant?.grantId)
+      expect(grant.expiresAt).toBe(now + 30_000)
+      await expect(authorize({ sessionId: 'session-2' })).rejects.toBeDefined()
+      await expect(authorize({ input: { value: 2 } })).rejects.toBeDefined()
+      now += 29_000
+      expect((await authorize()).expiresAt).toBe(now + 30_000)
+      vi.mocked(h.deps.principals.resolve).mockResolvedValueOnce({ ...actor, id: 'other-user' })
+      await expect(authorize()).rejects.toBeDefined()
+      now += 300_000
+      await expect(authorize()).rejects.toBeDefined()
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it.each(['handler', 'audit', 'revocation'])('refuses control after %s failure', async (kind) => {
+    const h = setup({
+      kind: 'effect',
+      controlLeaseMs: 30_000,
+      ...(kind === 'handler'
+        ? {
+            handler: async () => {
+              throw new Error('failed')
+            },
+          }
+        : {}),
+    })
+    if (kind === 'audit')
+      h.deps.audit.write = () => {
+        throw new Error('audit failed')
+      }
+    const call = h.call({ value: 1 }, { commandId: 'control-one' }, undefined, { commandId: 'control-one' })
+    if (kind === 'revocation') {
+      await expect(call).resolves.toEqual({ output: { value: 1 } })
+      h.dispose()
+    } else await expect(call).rejects.toBeDefined()
+    await expect(
+      h.invoker.authorizeControl(
+        {
+          sessionId: 'session-1',
+          extension: h.manifest.id,
+          service: h.def.name,
+          input: { value: 1 },
+        },
+        'control-one',
+        'opaque',
+        workspace,
+      ),
+    ).rejects.toBeDefined()
+  })
+
   it.each([
     { version: '1.0.0', range: '^1.0' },
     { version: '0.1.0-alpha.0', range: '*' },
@@ -225,6 +311,24 @@ describe('S3 Service registration and invocation', () => {
     ]) {
       expect(() => setup({ outputSchema })).toThrow(/schema/)
     }
+    const schema = { $id: 'urn:test:isolated-validator', type: 'string' }
+    const first = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    const same = compileExtensionSchema(structuredClone(schema), 'E_PROJECTION_DEF')
+    expect(first('valid')).toBe(true)
+    expect(same(1)).toBe(false)
+    schema.type = 'number'
+    const changed = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    expect(changed(1)).toBe(true)
+    expect(changed('invalid')).toBe(false)
+    expect(first(1)).toBe(false)
+    expect(same('valid')).toBe(true)
+    expect(() => compileExtensionSchema({ $ref: schema.$id }, 'E_PROJECTION_DEF')).toThrow(
+      expect.objectContaining({ code: 'E_PROJECTION_DEF' }),
+    )
+    Object.defineProperty(schema, 'type', { get: () => 'number' })
+    expect(() => compileExtensionSchema(schema, 'E_SERVICE_DEF')).toThrow(
+      expect.objectContaining({ code: 'E_SERVICE_DEF' }),
+    )
   })
 
   it('injects authenticated identity, authorizes first and returns a copied result', async () => {

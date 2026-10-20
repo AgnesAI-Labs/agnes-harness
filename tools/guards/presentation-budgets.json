@@ -18,5 +18,9 @@
   "deliverables-ui": {
     "bytes": 12288,
     "inputs": 1
+  },
+  "browser": {
+    "bytes": 22528,
+    "inputs": 4
   }
 }

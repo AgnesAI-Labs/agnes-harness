@@ -19,6 +19,8 @@ export function createRosterStreamAuthorizer(options: {
     /** A separate Host runtime epoch when the contribution catalog has its own UI lifetime.
      * Must be read from current backend authority, never from browser input. */
     backendActivationId?(): string
+    /** Trusted resolver may bind a current profile UI to a separately authorized session resource. */
+    consumerLifetime?: 'profile' | 'session'
     signal: AbortSignal
     assertScope(): void
     control?: StreamAdmission['control']
@@ -59,7 +61,7 @@ export function createRosterStreamAuthorizer(options: {
         binding.packageId !== row.packageId ||
         !binding.activationId ||
         (selected.backendActivationId?.() ?? binding.activationId) !== registration.activationId ||
-        binding.lifetime !== request.scope.kind ||
+        binding.lifetime !== (selected.consumerLifetime ?? request.scope.kind) ||
         (registration.declaration.directions.includes('inbound') &&
           !registration.declaration.producer &&
           (!request.controlOperationId || !selected.control?.grantId))

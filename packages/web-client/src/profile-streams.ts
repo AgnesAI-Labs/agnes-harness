@@ -9,6 +9,7 @@ export function scopedProfileStreams(
   module: ModuleIdentity,
   availability: ContributionAvailability,
   effect: (off: () => void) => void,
+  session?: import('./services-session.js').SessionService,
 ) {
   const lifetime = new AbortController()
   const binding = module.binding
@@ -21,6 +22,9 @@ export function scopedProfileStreams(
       options: { signal?: AbortSignal; controlOperationId?: string } = {},
     ) {
       const current = availability.getSnapshot()
+      const selected = session?.readiness.getSnapshot()
+      if (session && (selected?.status !== 'ready' || !selected.sessionId))
+        throw new Error('session stream requires a ready session')
       if (
         lifetime.signal.aborted ||
         !binding ||
@@ -33,14 +37,32 @@ export function scopedProfileStreams(
         !names.includes(name)
       )
         throw new Error('profile stream is unavailable')
-      return createPluginStreamsClient({
-        origin: globalThis.location.origin,
-        owner: module.backendOwner,
-        client: { rowId: module.rowId, revision: module.revision, contentDigest: module.contentDigest },
-        scope: { kind: 'profile', profileId: binding.profileId },
-        names,
-        signal: lifetime.signal,
-      }).open(name, input, options)
+      const connection = new AbortController()
+      const off = session?.readiness.subscribe(() => {
+        if (session.readiness.getSnapshot().epoch !== selected?.epoch) connection.abort()
+      })
+      const signal = AbortSignal.any([
+        lifetime.signal,
+        connection.signal,
+        ...(options.signal ? [options.signal] : []),
+      ])
+      try {
+        const stream = await createPluginStreamsClient({
+          origin: globalThis.location.origin,
+          owner: module.backendOwner,
+          client: { rowId: module.rowId, revision: module.revision, contentDigest: module.contentDigest },
+          scope: selected?.sessionId
+            ? { kind: 'session', profileId: binding.profileId, sessionId: selected.sessionId, laneId: 'main' }
+            : { kind: 'profile', profileId: binding.profileId },
+          names,
+          signal,
+        }).open(name, input, options)
+        stream.onDisconnect(() => off?.())
+        return stream
+      } catch (error) {
+        off?.()
+        throw error
+      }
     },
   })
 }

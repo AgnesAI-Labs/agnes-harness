@@ -488,7 +488,7 @@ export class WorkerPool {
               return
             }
             bootOffer = undefined
-            const desired = this.o.runtimeDelivery.desired()
+            const desired = this.o.runtimeDelivery.desiredAfterBoot(boot)
             if (desired) link.offerRuntimeTarget(desired)
           }
           // `.end()` right after the write, not left open: worker/main.ts's gate is an

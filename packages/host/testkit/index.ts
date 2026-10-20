@@ -209,6 +209,7 @@ export type TestHostOptions = {
   runtimePluginSnapshots?: HostOptions['runtimePluginSnapshots']
   // Installed snapshots re-read before every target, the way a worker supplies them in production.
   runtimePluginSources?: HostOptions['runtimePluginSources']
+  deferInitialGeneration?: HostOptions['deferInitialGeneration']
   restoreGenerationExtension?: HostOptions['restoreGenerationExtension']
   ordinaryStartTimeoutMs?: HostOptions['ordinaryStartTimeoutMs']
   extensionLoader?: HostOptions['extensionLoader']
@@ -429,6 +430,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
     ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
+    ...(o.deferInitialGeneration ? { deferInitialGeneration: true } : {}),
     // A lockless host trusts a package only when the live source re-read returns that same snapshot.
     // The catalogue is that re-read unless the test supplies its own.
     ...(o.runtimePluginSources

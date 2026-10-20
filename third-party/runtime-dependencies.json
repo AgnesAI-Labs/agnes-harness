@@ -54,11 +54,12 @@
       "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
-        "examples/showcase/pharma-gmp",
         "examples/community/deliverables-gallery",
         "examples/showcase/aerospace-quality",
+        "examples/showcase/pharma-gmp",
         "examples/ui/interaction-renderer",
         "examples/ui/tool-result-card",
+        "packages/package-manager/bundled-plugins/browser",
         "packages/package-manager/bundled-plugins/conversation-ui",
         "packages/package-manager/bundled-plugins/deliverables-ui",
         "packages/package-manager/bundled-plugins/goal-ui",

@@ -6,7 +6,7 @@ import { dataDir as defaultDataDir } from '@agnes/host-common/paths'
 import { demoProvider } from '@agnes/host-common/profile/demo'
 import { mergeIsolation } from '@agnes/host-common/profile/isolation'
 import type { LockState, ProfileInputs, RuntimeProfileManifest } from '@agnes/host-common/profile/types'
-import { readInstalledBundles } from '@agnes/host-providers/profile/bundles-reader'
+import { readInstalledBundlesAsync } from '@agnes/host-providers/profile/bundles-reader'
 import { AGH_DIR } from '@agnes/protocol'
 import { parse as parseYaml } from 'yaml'
 import { readBundleSelection } from './bundle-selection.js'
@@ -132,7 +132,9 @@ export async function readConfigurationProfileInputs(
       : configuredDataDir.startsWith('~/')
         ? join(options.home, configuredDataDir.slice(2))
         : configuredDataDir
-  const bundleCatalog = installedLock ? readInstalledBundles(installedLock, dataDir, profile) : undefined
+  const bundleCatalog = installedLock
+    ? await readInstalledBundlesAsync(installedLock, dataDir, profile)
+    : undefined
 
   return {
     builtin: profile,

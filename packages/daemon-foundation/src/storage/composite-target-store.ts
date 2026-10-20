@@ -1,5 +1,5 @@
 import { types as utilTypes } from 'node:util'
-import type { RuntimeTargetArtifact, RuntimeTargetIdentity } from '@agnes/plugin-runtime/host'
+import type { RuntimeTarget, RuntimeTargetArtifact, RuntimeTargetIdentity } from '@agnes/plugin-runtime/host'
 import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { withoutPackageRows } from '../composite-desired.js'
 import { PluginConfigAuditStore } from './plugin-config-audit.js'
@@ -89,6 +89,8 @@ type StoreRow = Record<(typeof ARTIFACT_COLUMNS)[number], unknown>
 export class CompositeTargetStore {
   readonly #table: TableHandle
   readonly #profile: string
+  readonly #artifacts = new Map<string, RuntimeTargetArtifact>()
+  readonly #targets = new WeakMap<RuntimeTargetArtifact, RuntimeTarget>()
   readonly configAudit: PluginConfigAuditStore
   readonly #desiredListeners = new Set<(artifact: RuntimeTargetArtifact) => void>()
   readonly #reportListeners = new Set<(report: CompositeTargetReport) => void>()
@@ -273,15 +275,15 @@ export class CompositeTargetStore {
   }
 
   desired(): RuntimeTargetArtifact | undefined {
-    return parseArtifact(this.#row().desired_json)
+    return this.#artifact(this.#row().desired_json)
   }
 
   previous(): RuntimeTargetArtifact | undefined {
-    return parseArtifact(this.#row().previous_json)
+    return this.#artifact(this.#row().previous_json)
   }
 
   lastGood(): RuntimeTargetArtifact | undefined {
-    return parseArtifact(this.#row().last_good_json)
+    return this.#artifact(this.#row().last_good_json)
   }
 
   report(): CompositeTargetReport | undefined {
@@ -294,6 +296,28 @@ export class CompositeTargetStore {
 
   acknowledged(): CompositeTargetAck | undefined {
     return parseJson<CompositeTargetAck>(this.#row().acknowledged_json)
+  }
+
+  /** Always read SQLite first. Only identical bytes reuse a bounded, deeply immutable validation. */
+  #artifact(raw: unknown): RuntimeTargetArtifact | undefined {
+    if (typeof raw !== 'string' || !raw) return undefined
+    const prior = this.#artifacts.get(raw)
+    if (prior) return prior
+    const artifact = parseArtifact(raw)
+    if (artifact) {
+      if (this.#artifacts.size >= 3) this.#artifacts.clear()
+      this.#artifacts.set(raw, artifact)
+    }
+    return artifact
+  }
+
+  /** Only immutable artifacts issued by this store may reuse their decoded projection. */
+  target(artifact: RuntimeTargetArtifact): RuntimeTarget {
+    const prior = this.#targets.get(artifact)
+    if (prior) return prior
+    const target = decodeRuntimeTargetArtifact(artifact)
+    if ([...this.#artifacts.values()].includes(artifact)) this.#targets.set(artifact, target)
+    return target
   }
 
   pending(workerGeneration?: number): boolean {

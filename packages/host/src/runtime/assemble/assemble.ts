@@ -240,6 +240,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,
+    authorizeServiceControl: servicesInvocation.authorizeControl,
     prepareService: servicesInvocation.prepare,
     callPreparedService: servicesInvocation.callPrepared,
     inspectPreparedService: servicesInvocation.inspectPrepared,

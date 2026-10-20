@@ -200,6 +200,24 @@ const click = (selector: string) =>
     node.click()
   })
 
+it('does not read the agent catalog until an enabled picker asks for it', async () => {
+  const connect = vi.fn(setup({ ready: true }).source.connect)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  function Probe({ enabled }: { enabled: boolean }) {
+    const agents = useBusinessAgents({ connect }, { enabled })
+    return createElement('span', null, agents.agents.length)
+  }
+  await act(async () => root.render(createElement(Probe, { enabled: false })))
+  expect(connect).not.toHaveBeenCalled()
+  expect(host.textContent).toBe('0')
+  await act(async () => root.render(createElement(Probe, { enabled: true })))
+  await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce())
+  await vi.waitFor(() => expect(host.textContent).toBe('2'))
+})
+
 it('shows a card per business agent, with a sample line only where the package has one', async () => {
   const host = await mount(setup().source, () => {})
   expect(host.querySelectorAll('.agent-card')).toHaveLength(2)

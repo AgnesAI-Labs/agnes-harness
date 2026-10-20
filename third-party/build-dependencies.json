@@ -82,6 +82,7 @@
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
         "examples/showcase/aerospace-quality",
+        "packages/package-manager/bundled-plugins/browser",
         "examples/showcase/pharma-gmp",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",
@@ -216,6 +217,15 @@
       "purpose": "Accessible DOM queries and user interaction events for frontend component tests.",
       "rationale": "Verifies the run-status capsule through rendered labels, focus and controls in the existing DOM test environment.",
       "consumers": ["."]
+    },
+    {
+      "name": "playwright-core",
+      "version": "1.63.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/microsoft/playwright",
+      "purpose": "Build-time source of the complete Playwright runtime copied into the browser plugin distribution, where it operates session-isolated pages shared by AGH tools and the workbench.",
+      "rationale": "Declared as a development dependency for packaging; the copied runtime and its licenses ship with the plugin and retain the pinned engine and CDP support.",
+      "consumers": ["packages/package-manager/bundled-plugins/browser"]
     }
   ]
 }

@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   linkSync,
-  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -25,6 +24,7 @@ import {
   syncDirectorySync,
   syncTreeSync,
 } from '@agnes/system-node'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
@@ -41,10 +41,11 @@ import {
   type RuntimeGenerationResourceInput,
   type RuntimeGenerationResourceSnapshot,
   readGenerationResources,
+  readGenerationResourcesSteps,
   writeGenerationResources,
 } from './runtime-snapshots-resources.js'
 import { hashDirectory } from './sources.js'
-import { verifiedDirectoryDigest, withoutPackageVerification } from './verification-operation.js'
+import { withoutPackageVerification } from './verification-operation.js'
 
 // Durable record publication is shared by every module that keeps recoverable state beside generations.
 export { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
@@ -266,6 +267,15 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   read(id: string): PluginGenerationSnapshot {
+    return collectRead(this.readSteps(id))
+  }
+
+  /** Same integrity checks as read(), with cooperative file hashing for read-only status. */
+  readAsync(id: string): Promise<PluginGenerationSnapshot> {
+    return collectReadAsync(this.readSteps(id))
+  }
+
+  private *readSteps(id: string): ReadSteps<PluginGenerationSnapshot> {
     const directory = this.directory(id),
       file = join(directory, 'generation.json')
     let text: string
@@ -275,17 +285,19 @@ export class RuntimeGenerationSnapshotStore {
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${id} cannot be resumed`)
     }
     const record = decodeGenerationRecord(parseRecord(text, file), id, file, GENERATION_SNAPSHOT_VERSION)
-    const sources = record.sources.map((source, index) => {
+    const sources: RuntimePluginSnapshot[] = []
+    for (const [index, source] of record.sources.entries()) {
       const snapshot = { ...source.snapshot, directory: join(directory, String(index)) }
-      if (verifiedDirectoryDigest(snapshot.directory, snapshot) !== snapshot.treeIntegrity)
+      if ((yield* directoryDigestSteps(snapshot.directory, snapshot)) !== snapshot.treeIntegrity)
         throw corrupt(file, `package snapshot ${index} is unavailable or changed`)
-      return Object.freeze({ ...source, snapshot: Object.freeze(snapshot) })
-    })
+      sources.push(Object.freeze({ ...source, snapshot: Object.freeze(snapshot) }))
+    }
+    const resources = record.resourcesDigest
+      ? yield* readGenerationResourcesSteps(join(directory, 'resources'), record.resourcesDigest)
+      : undefined
     return Object.freeze({
       ...record,
-      ...(record.resourcesDigest
-        ? { resources: readGenerationResources(join(directory, 'resources'), record.resourcesDigest) }
-        : {}),
+      ...(resources ? { resources } : {}),
       sources: Object.freeze(sources),
       packages: Object.freeze(record.packages.map((pkg) => Object.freeze(pkg))),
     })

@@ -21,6 +21,23 @@ import { prepareDocumentStyles } from './reconcile/styles.js'
 
 const DEFAULT_TIMEOUTS = { import: 15_000, styles: 15_000, apply: 15_000, dispose: 5_000 }
 
+/** Reuse immutable module URLs across roster rebinding; only explicit code changes bust ESM. */
+export function createModuleImportUrls() {
+  const versions = new Map<string, number>()
+  let generation = 0
+  return {
+    resolve(url: string): string {
+      const version = versions.get(url)
+      if (version === undefined) return url
+      const separator = url.includes('?') ? '&' : '?'
+      return `${url}${separator}agnes_hmr=${version}`
+    },
+    invalidate(url: string): void {
+      versions.set(url, ++generation)
+    },
+  }
+}
+
 export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   const { ctx, source, locale } = options
   const removeRegistrations =
@@ -33,16 +50,13 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     revokeContributionOwner(owner)
     removeRegistrations(owner)
   }
-  let importGeneration = 0
+  const importUrls = createModuleImportUrls()
   const importer =
     options.importer ??
     ((url: string) => {
-      // Native ESM namespaces are cached by the complete URL.  Development builds deliberately
-      // keep the roster revision stable, so importing the bare entryUrl would return the old
-      // namespace forever.  A fresh query is only the browser-native cache boundary; the server
-      // still serves the same immutable path and the roster remains the identity authority.
-      const separator = url.includes('?') ? '&' : '?'
-      return import(/* @vite-ignore */ `${url}${separator}agnes_hmr=${++importGeneration}`)
+      // A repeated session binding may use the same reviewed code. Explicit hot reload and
+      // same-URL revisions advance the query token; normal rebinding reuses the ESM namespace.
+      return import(/* @vite-ignore */ importUrls.resolve(url))
     })
   const prepareStyles = options.prepareStyles ?? prepareDocumentStyles
   const moduleCache = options.moduleCache ?? { delete: () => undefined }
@@ -336,6 +350,9 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         (state.phase === 'loading' || state.phase === 'active')
       const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
       if (!forced && (unchanged || pending)) continue
+      const previous = [state.active, state.target].find((item) => item?.entryUrl === mod.entryUrl)
+      if (forced || (previous?.entryUrl === mod.entryUrl && previous.revision !== mod.revision))
+        importUrls.invalidate(mod.entryUrl)
       const declaration = navigation.describe(mod)
       if (
         mod.binding &&

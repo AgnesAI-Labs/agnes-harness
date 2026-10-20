@@ -84,9 +84,9 @@ function packageStopped(
 ): boolean {
   const desired = store.desired()
   if (!desired) return true
-  const wantsOff = decodeRuntimeTargetArtifact(desired).tree.rows.every(
-    (row) => !ownsRow(row.plugin, packageId) || row.disabled,
-  )
+  const wantsOff = store
+    .target(desired)
+    .tree.rows.every((row) => !ownsRow(row.plugin, packageId) || row.disabled)
   if (!wantsOff) return false
   if (workerGeneration === undefined) return true
   const report = store.report()
@@ -112,9 +112,7 @@ function confirmedRunning(
     store.acknowledged()?.generation !== workerGeneration
   )
     return false
-  return decodeRuntimeTargetArtifact(desired).tree.rows.some(
-    (row) => ownsRow(row.plugin, packageId) && !row.disabled,
-  )
+  return store.target(desired).tree.rows.some((row) => ownsRow(row.plugin, packageId) && !row.disabled)
 }
 
 /**
@@ -125,7 +123,7 @@ function packageRowIds(store: CompositeTargetStore, packageId: string): Readonly
   const ids = new Set<string>()
   for (const artifact of [store.desired(), store.lastGood()]) {
     if (!artifact) continue
-    for (const row of decodeRuntimeTargetArtifact(artifact).tree.rows) {
+    for (const row of store.target(artifact).tree.rows) {
       if (ownsRow(row.plugin, packageId)) ids.add(row.id)
     }
   }

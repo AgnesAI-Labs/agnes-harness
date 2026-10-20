@@ -237,9 +237,13 @@ export function createMcpRowRuntime(
       )
       // A composition may apply only part of this desired set. Retain ownership of attempted ids
       // too, so retry/replacement cannot mistake partially published MCP rows for unrelated code.
-      owned = new Set([...owned, ...prepared.map((row) => row.id)])
-      const report = await deps.host.extensionRows.apply([...others, ...prepared])
-      assertHostPublication(report.publication)
+      // A fresh empty MCP set owns nothing to publish. Keep policy/status synchronization, but
+      // do not re-verify and republish the entire ordinary Host tree just to add zero rows.
+      if (owned.size || prepared.length) {
+        owned = new Set([...owned, ...prepared.map((row) => row.id)])
+        const report = await deps.host.extensionRows.apply([...others, ...prepared])
+        assertHostPublication(report.publication)
+      }
       const rowIds = Object.freeze(prepared.map((row) => row.id))
       owned = new Set(rowIds)
       await settledWithin(started, cap)

@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ProfileFragment } from '@agnes/protocol'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { capabilityHash } from './integrity.js'
 import type { LockState, PolicySnapshotInput } from './inventory-types.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { packageDir } from './sources.js'
-import { verifiedDirectoryDigest } from './verification-operation.js'
 import { readDeployManifest, readProfileFragment, verifyWorkspace } from './workspace.js'
 
 export type LockAudit = {
@@ -25,46 +25,61 @@ export function defaultVerifyIntegrity(
   dataDir: string,
   profile: string,
 ): (id: string, entry: LockEntry) => void {
-  return (id, entry) => {
-    if (entry.trust === 'builtin' || entry.source.type === 'workspace') return
-    const dir = packageDir(dataDir, profile, id)
-    try {
-      if (!existsSync(dir)) throw new Error('package directory missing')
+  return (id, entry) => collectRead(verifyIntegritySteps(dataDir, profile, id, entry))
+}
+
+/** Identical refusal rules, with cooperative hashing for interactive profile reads. */
+export function defaultVerifyIntegrityAsync(
+  dataDir: string,
+  profile: string,
+): (id: string, entry: LockEntry) => Promise<void> {
+  return (id, entry) => collectReadAsync(verifyIntegritySteps(dataDir, profile, id, entry))
+}
+
+function* verifyIntegritySteps(
+  dataDir: string,
+  profile: string,
+  id: string,
+  entry: LockEntry,
+): ReadSteps<void> {
+  if (entry.trust === 'builtin' || entry.source.type === 'workspace') return
+  const dir = packageDir(dataDir, profile, id)
+  try {
+    if (!existsSync(dir)) throw new Error('package directory missing')
+    if (
+      entry.treeIntegrity !== undefined &&
+      (yield* directoryDigestSteps(dir, {
+        version: entry.version,
+        integrity: entry.integrity,
+        treeIntegrity: entry.treeIntegrity,
+        capabilityHash: capabilityHash(entry),
+      })) !== entry.treeIntegrity
+    )
+      throw new Error('package tree changed')
+    if (entry.source.type === 'npm' || entry.source.type === 'market') {
+      const value: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
       if (
-        entry.treeIntegrity !== undefined &&
-        verifiedDirectoryDigest(dir, {
-          version: entry.version,
-          integrity: entry.integrity,
-          treeIntegrity: entry.treeIntegrity,
-          capabilityHash: capabilityHash(entry),
-        }) !== entry.treeIntegrity
+        value === null ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        (value as { name?: unknown }).name !== id ||
+        (value as { version?: unknown }).version !== entry.version
       )
-        throw new Error('package tree changed')
-      if (entry.source.type === 'npm' || entry.source.type === 'market') {
-        const value: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-        if (
-          value === null ||
-          typeof value !== 'object' ||
-          Array.isArray(value) ||
-          (value as { name?: unknown }).name !== id ||
-          (value as { version?: unknown }).version !== entry.version
-        )
-          throw new Error('package identity changed')
-        return
-      }
-      if (
-        verifiedDirectoryDigest(
-          dir,
-          { version: entry.version, integrity: entry.integrity, capabilityHash: '' },
-          true,
-        ) !== entry.integrity
-      )
-        throw new Error('package tree changed')
-    } catch {
-      throw new PackageError('E_LOCK_MISMATCH', `${id} installed package differs from agnes-lock.json`, {
-        detail: { id, reason: 'integrity' },
-      })
+        throw new Error('package identity changed')
+      return
     }
+    if (
+      (yield* directoryDigestSteps(
+        dir,
+        { version: entry.version, integrity: entry.integrity, capabilityHash: '' },
+        true,
+      )) !== entry.integrity
+    )
+      throw new Error('package tree changed')
+  } catch {
+    throw new PackageError('E_LOCK_MISMATCH', `${id} installed package differs from agnes-lock.json`, {
+      detail: { id, reason: 'integrity' },
+    })
   }
 }
 

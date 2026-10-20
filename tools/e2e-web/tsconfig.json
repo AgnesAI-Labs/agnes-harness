@@ -7,6 +7,7 @@
     "outDir": "../../outputs/e2e-types"
   },
   "include": [
+    "browser.spec.ts",
     "diagnostics.spec.ts",
     "credentials.spec.ts",
     "large-upload.spec.ts",

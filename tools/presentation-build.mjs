@@ -8,6 +8,7 @@ import { assertClientExternals, clientPlatformExternals } from './web-client-ext
 
 export const presentationRoot = fileURLToPath(new URL('../', import.meta.url))
 export const presentationEntries = {
+  browser: 'packages/package-manager/bundled-plugins/browser/src/browser.tsx',
   'goal-ui': 'packages/package-manager/bundled-plugins/goal-ui/src/presentation.tsx',
   'interaction-ui': 'packages/package-manager/bundled-plugins/interaction-ui/src/presentation.ts',
   'navigation-ui': 'packages/package-manager/bundled-plugins/navigation-ui/src/presentation.ts',

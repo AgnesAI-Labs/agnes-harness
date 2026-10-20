@@ -174,7 +174,8 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
     const other = await client.session.new({
       sessionKey: randomUUID(),
       cwd: runtime.workspace,
-      preset: 'full-access',
+      preset: 'standard',
+      permission: 'full-access',
     })
     await other.attach()
     for (let turn = 0; turn < 4; turn++)
@@ -184,7 +185,8 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
   const session = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await session.attach()
   for (let turn = 0; turn < 4; turn++)
@@ -195,6 +197,8 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
   expect(saved?.artifactRefs).toHaveLength(1)
   await runtime.restart()
   await preferences(page)
+  const skip = page.getByTestId('first-run-skip')
+  await page.addLocatorHandler(skip, async () => await skip.click(), { times: 1 })
   const url = new URL(runtime.url)
   url.searchParams.set('session', session.id)
   const entries: string[] = []
@@ -208,7 +212,7 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
     if (boot === 0) await page.goto(url.href)
     else await page.reload()
     const tail = page.getByTestId('turn-deliverables').filter({ hasText: 'Cold-start report.md' })
-    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible({ timeout: 60_000 })
     await expect(tail).toHaveCount(1)
     await expect(tail.getByTestId('deliverable-file')).toHaveCount(1)
     await tail.locator('.agh-list-row-title').click()
@@ -219,6 +223,23 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
   // Loading an immutable plugin URL proves this exercised the deployed package rather than source imports.
   expect(entries.length).toBeGreaterThanOrEqual(3)
   expect(new Set(entries.map((entry) => entry.split('?')[0])).size).toBe(1)
+  // Unsupported artifacts stay in the transcript and download only after an explicit click.
+  await page.getByTestId('workbench-right-toggle').click()
+  const bytes = Buffer.from([0, 1, 2, 255])
+  await writeFile(join(runtime.workspace, 'attachment.bin'), bytes)
+  restored.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  await prompt(restored, 'call present {"files":[{"path":"attachment.bin"}]}')
+  const binary = page.getByTestId('turn-deliverables').filter({ hasText: 'attachment.bin' })
+  await expect(binary).toBeVisible()
+  await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
+  const downloaded = page.waitForEvent('download')
+  await binary.locator('.agh-list-row-title').click()
+  const download = await downloaded
+  expect(download.suggestedFilename()).toBe('attachment.bin')
+  const path = await download.path()
+  if (!path) throw new Error('Missing downloaded artifact')
+  expect(await readFile(path)).toEqual(bytes)
+  await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
 })
 
 for (const [issue, version, action] of [

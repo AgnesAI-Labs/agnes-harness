@@ -344,7 +344,10 @@ export async function traceSequence(page: Page) {
 }
 
 /** Open a dock panel through its tab or the real overflow menu when the strip folds it. */
-export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal' | 'changed-files') {
+export async function workbenchTab(
+  page: Page,
+  id: 'files' | 'terminal' | 'goal' | 'changed-files' | 'browser',
+) {
   const toggle = page.getByTestId('workbench-right-toggle')
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
   const tab = page.getByTestId(`workbench-tab-${id}`)
@@ -363,6 +366,7 @@ export async function workbenchTab(page: Page, id: 'files' | 'terminal' | 'goal'
       terminal: ['Terminal', '终端'],
       goal: ['Goal', '目标'],
       'changed-files': ['Changes', '更改'],
+      browser: ['Browser', '浏览器'],
     } as const
     await page
       .locator('#workbench-right .workbench-dock-heading')

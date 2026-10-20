@@ -49,6 +49,14 @@ export const BUNDLED_HELPERS = Object.freeze([
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/document-reader',
   },
+  {
+    name: 'browser',
+    id: '@agnes/browser',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/browser',
+    optionalUnderCeiling: true,
+  },
 ])
 
 /** Shipped discovery choices; never auto-installed or enabled in profiles. */

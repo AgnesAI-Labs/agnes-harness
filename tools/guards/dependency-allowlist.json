@@ -1,4 +1,5 @@
 {
+  "@agnes/browser": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/authoring-eval": ["@agnes/ai", "@agnes/sdk"],
   "@agnes/e2e-web": ["@agnes/sdk", "@agnes/protocol", "@agnes/observability"],
   "@agnes/cosmokit": [],

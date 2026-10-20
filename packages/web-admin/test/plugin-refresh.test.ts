@@ -17,13 +17,15 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
   vi.useFakeTimers()
   let hidden = false
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
-  vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
-    profile: 'test',
-    clientId: 'web',
-    permissions: ['packages.read'],
-    readOnly: false,
+  const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
+    context: {
+      profile: 'test',
+      clientId: 'web',
+      permissions: ['packages.read'],
+      readOnly: false,
+    },
+    inventory: { packages: [] },
   })
-  vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
   const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
@@ -85,18 +87,18 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
     await vi.advanceTimersByTimeAsync(0)
     expect(operation).toHaveBeenCalledTimes(3)
     expect(tree).toHaveBeenCalledTimes(5)
-    vi.mocked(PluginAdminApi.prototype.list).mockRejectedValueOnce(new Error('temporary outage'))
+    overview.mockRejectedValueOnce(new Error('temporary outage'))
     await page.refresh()
     expect(page.viewContext().state.connection).toBe('offline')
     expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
     window.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(0)
     expect(page.viewContext().state.connection).toBe('connected')
-    expect(tree).toHaveBeenCalledTimes(7)
+    expect(tree).toHaveBeenCalledTimes(6)
     page.dispose()
     window.dispatchEvent(new Event('agnes:plugins-invalidated'))
     await vi.advanceTimersByTimeAsync(120_000)
-    expect(tree).toHaveBeenCalledTimes(7)
+    expect(tree).toHaveBeenCalledTimes(6)
   } finally {
     page.dispose()
   }
@@ -132,16 +134,14 @@ it('coalesces changes during a read into one follow-up and ignores completion af
   }
 })
 
-it('reuses recent inventory only after checking context, while changes and expiry force reads', async () => {
+it('reuses optional feeds while every refresh obtains a fresh verified overview', async () => {
   vi.useFakeTimers()
-  const context = vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({
-    profile: 'fresh',
-    clientId: 'web',
-    permissions: ['packages.read'],
-    readOnly: false,
+  const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
+    context: { profile: 'fresh', clientId: 'web', permissions: ['packages.read'], readOnly: false },
+    inventory: { packages: [] },
   })
   const list = vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
-  vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockResolvedValue({ providers: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'composition').mockResolvedValue({} as never)
@@ -159,41 +159,49 @@ it('reuses recent inventory only after checking context, while changes and expir
   let page = create()
   try {
     await page.start()
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(overview).toHaveBeenCalledTimes(1)
+    expect(tree).toHaveBeenCalledTimes(1)
+    expect(list).not.toHaveBeenCalled()
     window.dispatchEvent(new Event('focus'))
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(0)
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(overview).toHaveBeenCalledTimes(1)
     page.dispose()
     page = create()
     await page.start()
-    expect(context).toHaveBeenCalledTimes(2)
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(overview).toHaveBeenCalledTimes(2)
+    expect(tree).toHaveBeenCalledTimes(1)
     expect(page.viewContext().state.connection).toBe('connected')
     expect(pins).not.toHaveBeenCalled()
     await page.refresh()
-    expect(list).toHaveBeenCalledTimes(2)
+    expect(overview).toHaveBeenCalledTimes(3)
+    expect(tree).toHaveBeenCalledTimes(2)
     page.dispose()
     window.dispatchEvent(new Event('agnes:plugins-invalidated'))
     page = create()
     await page.start()
-    expect(list).toHaveBeenCalledTimes(3)
+    expect(overview).toHaveBeenCalledTimes(4)
+    expect(tree).toHaveBeenCalledTimes(3)
     await vi.advanceTimersByTimeAsync(30_001)
     window.dispatchEvent(new Event('focus'))
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(0)
-    expect(list).toHaveBeenCalledTimes(4)
+    expect(overview).toHaveBeenCalledTimes(5)
+    expect(tree).toHaveBeenCalledTimes(4)
     page.dispose()
-    context.mockResolvedValue({ profile: 'other', clientId: 'web', permissions: [], readOnly: true })
+    overview.mockResolvedValue({
+      context: { profile: 'other', clientId: 'web', permissions: [], readOnly: true },
+    })
     page = create()
     await page.start()
-    expect(list).toHaveBeenCalledTimes(5)
+    expect(overview).toHaveBeenCalledTimes(6)
     expect(page.viewContext().canEffect('packages.install')).toBe(false)
     page.dispose()
-    context.mockRejectedValueOnce(new Error('offline'))
+    overview.mockRejectedValueOnce(new Error('offline'))
     page = create()
     await page.start()
-    expect(list).toHaveBeenCalledTimes(5)
+    expect(overview).toHaveBeenCalledTimes(7)
+    expect(list).not.toHaveBeenCalled()
     expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
     expect(page.viewContext().state.connection).toBe('offline')
   } finally {

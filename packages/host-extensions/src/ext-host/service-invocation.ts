@@ -12,6 +12,7 @@ import {
 } from '@agnes/protocol'
 import { Actor } from '@agnes/protocol/gen/authz'
 import { frozenJson } from './frozen-json.js'
+import { serviceControls } from './service-controls.js'
 import type { ServiceRegistration, ServiceRegistry } from './services.js'
 
 /** Supplied by the trusted embedding at assembly, never by a wire request or author. */
@@ -49,7 +50,10 @@ export type ServiceInvocationDeps = {
   ) => Promise<void>
   context(
     entry: ServiceRegistration,
-    identity: Pick<ServiceContext, 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs' | 'session'>,
+    identity: Pick<
+      ServiceContext,
+      'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs' | 'session' | 'controlGrant'
+    >,
     alive: () => void,
     workspace: WorkspaceInvocationView,
   ): ServiceContext
@@ -70,6 +74,7 @@ export function markServicePreDispatchFailure<T extends object>(error: T): T {
 }
 
 export function serviceInvoker(deps: ServiceInvocationDeps) {
+  const controls = serviceControls()
   const prepare = (input: ExtensionCallParams): PreparedServiceInvocation => {
     if (!validateMethod('_agnes/v1/extension.call', 'params', input).ok) throw rpcError('INVALID_PARAMS')
     const request = inspectJsonData(input, 1049600)
@@ -84,10 +89,13 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
     credential: unknown,
     workspace: WorkspaceInvocationView,
     signal?: AbortSignal,
-    mode: Readonly<{ kind: 'inspect' }> | Readonly<{ kind: 'call'; admission?: ServiceEffectAdmission }> = {
+    mode:
+      | Readonly<{ kind: 'inspect' }>
+      | Readonly<{ kind: 'control'; operationId: string }>
+      | Readonly<{ kind: 'call'; admission?: ServiceEffectAdmission }> = {
       kind: 'call',
     },
-  ): Promise<ExtensionCallResult | ServiceInspection> => {
+  ): Promise<ExtensionCallResult | ServiceInspection | ReturnType<typeof controls.authorize>> => {
     const { params, entry } = prepared
     const cap = entry.capability,
       requestId = randomUUID(),
@@ -97,6 +105,7 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       admitted = false,
       outcome = 'INTERNAL_ERROR'
     let sourceId: string | undefined, actorId: string | undefined
+    let commitControl: (() => void) | undefined
     const failures = new WeakMap<
       object,
       'CAPABILITY_DENIED' | 'INVALID_PARAMS' | 'REQUEST_TIMEOUT' | 'INTERNAL_ERROR'
@@ -115,7 +124,9 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
         throw fail('CAPABILITY_DENIED')
       }
     }
-    const run = async (): Promise<ExtensionCallResult | ServiceInspection> => {
+    const run = async (): Promise<
+      ExtensionCallResult | ServiceInspection | ReturnType<typeof controls.authorize>
+    > => {
       alive()
       if (!deps.authority) throw fail('CAPABILITY_DENIED')
       let source: Awaited<ReturnType<ServiceAuthority['resolve']>>
@@ -168,10 +179,18 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       }
       alive()
       if (mode.kind === 'inspect') return { kind: cap.kind }
+      if (mode.kind === 'control') {
+        try {
+          return controls.authorize(entry, params, mode.operationId, actor, sourceId!)
+        } catch {
+          throw fail('CAPABILITY_DENIED')
+        }
+      }
       if (cap.kind === 'effect') {
         if (!params.commandId) throw fail('INVALID_PARAMS')
         if (mode.admission?.commandId !== params.commandId) throw fail('CAPABILITY_DENIED')
       } else if (mode.admission) throw fail('CAPABILITY_DENIED')
+      const control = cap.kind === 'effect' ? controls.prepare(entry, params, actor, sourceId!) : undefined
       const context = deps.context(
         entry,
         {
@@ -181,6 +200,7 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
           signal: combined,
           timeoutMs: cap.timeoutMs,
           session: { key: params.sessionId, lane: 'main', workspaceRoot: workspace.root, turn: 0, step: 0 },
+          ...(control ? { controlGrant: control.grant } : {}),
         },
         alive,
         workspace,
@@ -192,9 +212,10 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       alive()
       const output = inspectJsonData(value, cap.maxResultBytes)
       if (!output.ok || !entry.output(output.value)) throw fail('INTERNAL_ERROR')
+      commitControl = control?.commit
       return { output: output.value }
     }
-    let result: ExtensionCallResult | ServiceInspection | undefined,
+    let result: ExtensionCallResult | ServiceInspection | ReturnType<typeof controls.authorize> | undefined,
       failure: ReturnType<typeof rpcError> | undefined
     try {
       result = await withTimeout(run(), cap.timeoutMs, 'service', combined)
@@ -231,10 +252,21 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
     }
     if (failure) throw failure
     if (!result) throw rpcError('INTERNAL_ERROR')
+    commitControl?.()
     return result
   }
   return {
     prepare,
+    authorizeControl: async (
+      params: ExtensionCallParams,
+      operationId: string,
+      credential: unknown,
+      workspace: WorkspaceInvocationView,
+      signal?: AbortSignal,
+    ) =>
+      invoke(prepare(params), credential, workspace, signal, { kind: 'control', operationId }) as Promise<
+        ReturnType<typeof controls.authorize>
+      >,
     callPrepared: (
       prepared: PreparedServiceInvocation,
       credential: unknown,

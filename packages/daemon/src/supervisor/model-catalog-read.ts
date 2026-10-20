@@ -16,7 +16,7 @@ export type ModelCatalogWorker = {
  * community owners to the exact currently verified active code rows. No composition or admission. */
 export async function readRunningModelCatalog(
   worker: ModelCatalogWorker | undefined,
-  sources: readonly RuntimePluginSnapshot[],
+  readSources: readonly RuntimePluginSnapshot[] | (() => Promise<readonly RuntimePluginSnapshot[]>),
   builtin: readonly Pick<AdminModelAdapter, 'id' | 'version' | 'sourcePackage'>[],
 ): Promise<readonly AdminModelAdapter[] | undefined> {
   if (!worker?.alive) return undefined
@@ -35,17 +35,21 @@ export async function readRunningModelCatalog(
     )
       return undefined
     const rows = value.sources
-    return value.modelAdapters.filter((adapter) => {
-      if (
-        builtin.some(
-          (entry) =>
-            entry.sourcePackage === '@agnes/ai' &&
-            entry.id === adapter.id &&
-            entry.version === adapter.version &&
-            entry.sourcePackage === adapter.sourcePackage,
-        )
+    const intrinsic = (adapter: AdminModelAdapter) =>
+      builtin.some(
+        (entry) =>
+          entry.sourcePackage === '@agnes/ai' &&
+          entry.id === adapter.id &&
+          entry.version === adapter.version &&
+          entry.sourcePackage === adapter.sourcePackage,
       )
-        return true
+    const sources = value.modelAdapters.some((adapter) => !intrinsic(adapter))
+      ? typeof readSources === 'function'
+        ? await readSources()
+        : readSources
+      : []
+    return value.modelAdapters.filter((adapter) => {
+      if (intrinsic(adapter)) return true
       return sources.some(
         ({ snapshot, trusted, enabled }) =>
           trusted &&

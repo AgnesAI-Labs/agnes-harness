@@ -24,7 +24,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
-import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
+import { mergeGenerationStatus, projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
@@ -82,6 +82,7 @@ export async function createCompositionHost(
   const containers = new Map<string, Container>()
   const builtinRows = new WeakMap<Host, readonly PluginRow[]>()
   const opening = new Map<string, Promise<Container>>()
+  const openingFailures = new Map<string, string>()
   const idleSince = new Map<Container, number>()
   const idleMs = generationIdleMs(profile.limits)
   const sessionOwners = new Map<string, Container>()
@@ -178,14 +179,16 @@ export async function createCompositionHost(
     }
     const pending = opening.get(identity)
     if (pending) return pending
+    let attemptedGeneration: string | undefined
     const started = (async () => {
       const target = latestTarget ?? bootTarget?.()
       const pinned = generations.session(binding.sessionKey)
+      attemptedGeneration = pinned?.generationId
       const skills = currentSkills
       // A newly opened composition must not import boot-time pins retired by a later update.
       // Existing sessions bootstrap from their own durable code snapshot instead.
       const sources = pinned
-        ? generations.read(pinned.generationId).sources
+        ? (await generations.readAsync(pinned.generationId)).sources
         : target
           ? new RuntimePluginCatalogue(
               (await options.runtimePluginSources?.()) ??
@@ -266,6 +269,7 @@ export async function createCompositionHost(
               generationOptions.onGenerationSessionBinding?.(key)
             },
           }),
+        pinned?.generationId,
       )
       builtinRows.set(
         host,
@@ -301,6 +305,7 @@ export async function createCompositionHost(
           draining: target ? draining(target.tree.rows, binding.tree, host) : false,
         }
         containers.set(identity, container)
+        if (attemptedGeneration) openingFailures.delete(attemptedGeneration)
         return container
       } catch (error) {
         await host.close()
@@ -310,6 +315,15 @@ export async function createCompositionHost(
     opening.set(identity, started)
     try {
       return await started
+    } catch (error) {
+      // Direct cold bootstrap can fail before a generation Host exists to record its refusal.
+      // Keep that failure visible without creating a throwaway container just for diagnostics.
+      if (attemptedGeneration)
+        openingFailures.set(
+          attemptedGeneration,
+          String(error).match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.',
+        )
+      throw error
     } finally {
       opening.delete(identity)
     }
@@ -320,9 +334,13 @@ export async function createCompositionHost(
     { ...options, runtimePluginSources: async () => options.runtimePluginSnapshots ?? [] },
     undefined,
   )
-  const initialTree = resolveComposition(bootProfile, {
-    preset: resolvePreset(profile.presets.default, presets, { limits: profile.limits }).doc,
-  })
+  const initialTree = resolveComposition(
+    { ...profile, bundleCatalog: bootProfile.bundleCatalog },
+    {
+      preset: resolvePreset(profile.presets.default, presets, { limits: profile.limits }).doc,
+      packageCatalog: bootProfile.packages,
+    },
+  )
   const initial = await open({
     sessionKey: '',
     tree: initialTree,
@@ -455,9 +473,72 @@ export async function createCompositionHost(
     adminLoop: () => readAdminLoopDefault(configuration),
     open,
   })
+  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]): PluginGenerationStatus => {
+    const first = statuses[0]
+    if (!first) throw new Error('Plugin generation status is unavailable')
+    const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
+    const all = new Map<string, PluginGenerationStatus['generations'][number]>()
+    for (const status of statuses)
+      for (const item of status.generations) {
+        const previous = all.get(item.id)
+        all.set(item.id, previous ? mergeGenerationStatus(previous, item, opened.values()) : item)
+      }
+    for (const [id, error] of openingFailures) {
+      const generation = all.get(id)
+      if (generation) all.set(id, { ...generation, state: 'failed', error })
+    }
+    const blocked = [
+      ...new Map(
+        statuses.flatMap((status) => status.blocked ?? []).map((item) => [item.file, item]),
+      ).values(),
+    ]
+    return {
+      ...first,
+      ...(blocked.length ? { blocked } : {}),
+      generations: [...all.values()],
+      plugins: [
+        ...new Map(
+          statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
+        ).values(),
+      ].map((plugin) => {
+        if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
+        const relevant = [...all.values()].filter((generation) =>
+          generation.packages.some((pkg) => pkg.id === plugin.id),
+        )
+        const failed = relevant.find((generation) => generation.state === 'failed')
+        return {
+          ...plugin,
+          ...(failed?.error ? { error: failed.error } : {}),
+          state: failed
+            ? ('failed' as const)
+            : relevant.some((generation) => generation.state === 'active')
+              ? ('active' as const)
+              : relevant.some((generation) => generation.openSessions > 0)
+                ? ('draining' as const)
+                : ('historical' as const),
+          boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
+          historicalSessions: relevant.reduce(
+            (count, generation) =>
+              count +
+              (generation.state === 'active'
+                ? 0
+                : Math.max(0, generation.boundSessions - generation.openSessions)),
+            0,
+          ),
+          drainingSessions: relevant.reduce(
+            (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
+            0,
+          ),
+        }
+      }),
+    }
+  }
   const overrides: HostFacadeOverrides = {
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
-    sessionBundleCatalog: () => calls.enqueue(async () => (await admission()).current.bundleCatalog),
+    // Display-only metadata captures an immutable profile/target view; actual session admission
+    // remains serialized and freshly verified. A directory scan must not occupy the mutation queue.
+    sessionBundleCatalog: () =>
+      withPackageVerification(async () => (await admission()).current.bundleCatalog),
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -549,6 +630,7 @@ export async function createCompositionHost(
               })
               if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
               sessionOwners.set(key, container)
+              if (session.pluginGenerationId) openingFailures.delete(session.pluginGenerationId)
               const close = session.close.bind(session)
               session.close = async () => {
                 try {
@@ -599,95 +681,23 @@ export async function createCompositionHost(
         for (const { host } of containers.values()) await host.collectPluginGenerations?.()
         await collectIdle()
       }),
-    pluginGenerationStatus: () => {
-      const statuses = [...containers.values()].map(({ host, draining }) => {
-        const status = host.pluginGenerationStatus!()
-        return !draining
-          ? status
-          : {
-              ...status,
-              generations: status.generations.map((item) => ({
-                ...item,
-                state:
-                  item.state === 'active'
-                    ? item.openSessions > 0
-                      ? ('draining' as const)
-                      : ('historical' as const)
-                    : item.state,
-              })),
-              plugins: status.plugins.map((item) => ({
-                ...item,
-                state:
-                  item.state === 'active'
-                    ? status.generations.some(
-                        (generation) =>
-                          generation.openSessions > 0 &&
-                          generation.packages.some((pkg) => pkg.id === item.id),
-                      )
-                      ? ('draining' as const)
-                      : ('historical' as const)
-                    : item.state,
-                drainingSessions: item.boundSessions,
-                historicalSessions: status.generations
-                  .filter((generation) => generation.packages.some((pkg) => pkg.id === item.id))
-                  .reduce(
-                    (count, generation) =>
-                      count + Math.max(0, generation.boundSessions - generation.openSessions),
-                    0,
-                  ),
-              })),
-            }
-      })
-      const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-      const all = new Map<string, PluginGenerationStatus['generations'][number]>()
-      for (const status of statuses)
-        for (const item of status.generations) {
-          const previous = all.get(item.id)
-          if (!previous) {
-            all.set(item.id, item)
-            continue
-          }
-          all.set(item.id, mergeGenerationStatus(previous, item, opened.values()))
-        }
-      const blocked = [
-        ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((i) => [i.file, i])).values(),
-      ]
-      return {
-        ...statuses[0]!,
-        ...(blocked.length ? { blocked } : {}),
-        generations: [...all.values()],
-        plugins: [
-          ...new Map(
-            statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
-          ).values(),
-        ].map((plugin) => {
-          if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
-          const relevant = [...all.values()].filter((generation) =>
-            generation.packages.some((pkg) => pkg.id === plugin.id),
-          )
-          return {
-            ...plugin,
-            state: relevant.some((generation) => generation.state === 'active')
-              ? ('active' as const)
-              : relevant.some((generation) => generation.openSessions > 0)
-                ? ('draining' as const)
-                : ('historical' as const),
-            boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
-            historicalSessions: relevant.reduce(
-              (count, generation) =>
-                count +
-                (generation.state === 'active'
-                  ? 0
-                  : Math.max(0, generation.boundSessions - generation.openSessions)),
-              0,
-            ),
-            drainingSessions: relevant.reduce(
-              (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
-              0,
-            ),
-          }
-        }),
+    pluginGenerationStatus: () =>
+      mergeGenerationStatuses(
+        [...containers.values()].map((container) =>
+          projectGenerationStatus(container.host.pluginGenerationStatus!(), container.draining),
+        ),
+      ),
+    pluginGenerationStatusAsync: async () => {
+      const statuses: PluginGenerationStatus[] = []
+      // Bound each Host's historical reads before combining compositions.
+      for (const container of containers.values()) {
+        const status = container.host.pluginGenerationStatusAsync
+          ? await container.host.pluginGenerationStatusAsync()
+          : container.host.pluginGenerationStatus?.()
+        if (!status) throw new Error('Plugin generation status is unavailable')
+        statuses.push(projectGenerationStatus(status, container.draining))
       }
+      return mergeGenerationStatuses(statuses)
     },
     setSessionPreset: (key, name) =>
       calls.enqueue(async () => {

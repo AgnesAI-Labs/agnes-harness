@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -20,8 +20,9 @@ import {
 } from '@agnes/host-providers/assemble/model-adapters'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { assemble } from '../../src/runtime/assemble/assemble.js'
+import { modelCatalogPublisher } from '../../src/runtime/profile/model-catalog-publication.js'
 import { attachTestSeamPlugins, seamFactories } from '../../testkit/cordis-seams.js'
 
 const dirs: string[] = []
@@ -453,4 +454,54 @@ it('reads release adapter identities and capabilities without assembling a Host'
   for (const id of ['scripted', 'replay', 'local-openai'])
     expect(data.adapters.find((a) => a.id === id)).toBeUndefined()
   expect(builtinModelAdapterCatalog().find((a) => a.id === 'scripted')?.sourcePackage).toBe('@agnes/ai')
+  const directory = mkdtempSync(join(tmpdir(), 'agh-model-display-'))
+  dirs.push(directory)
+  const file = join(directory, '.agnes-published-model-adapters.json')
+  writeFileSync(file, 'stale community projection')
+  const sources = vi.fn(async (): Promise<RuntimePluginSnapshot[]> => {
+    throw new Error('unrelated package scan must not run')
+  })
+  const warn = vi.fn()
+  await modelCatalogPublisher(
+    { modelAdapterCatalog: builtinModelAdapterCatalog, provider: { models: () => [] } } as never,
+    { profileDir: directory, runtimePluginSources: sources, log: { warn } } as never,
+    () => profile,
+  )()
+  expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+    version: 1,
+    profileHash: profile.hash,
+    entries: [],
+  })
+  expect(sources).not.toHaveBeenCalled()
+  expect(warn).not.toHaveBeenCalled()
+  const adapter = { ...builtinModelAdapterCatalog()[0]!, sourcePackage: 'acme/models' }
+  const source: RuntimePluginSnapshot = {
+    generation: 1,
+    trusted: true,
+    snapshot: {
+      profile: profile.name,
+      packageId: 'acme/models',
+      snapshotId: `sha256-${'1'.repeat(64)}`,
+      version: '1.0.0',
+      integrity: `sha256-${'2'.repeat(64)}`,
+      treeIntegrity: `sha256-${'3'.repeat(64)}`,
+      capabilityHash: '4'.repeat(64),
+      directory,
+      contributions: [],
+    },
+  }
+  const publish = modelCatalogPublisher(
+    { modelAdapterCatalog: () => [adapter], provider: { models: () => [] } } as never,
+    { profileDir: directory, runtimePluginSources: sources, log: { warn } } as never,
+    () => profile,
+  )
+  sources.mockResolvedValueOnce([source])
+  await publish()
+  expect(JSON.parse(readFileSync(file, 'utf8')).entries).toMatchObject([
+    { adapter: { sourcePackage: 'acme/models' }, source: { snapshotId: source.snapshot.snapshotId } },
+  ])
+  sources.mockResolvedValueOnce([{ ...source, trusted: false }])
+  await publish()
+  expect(JSON.parse(readFileSync(file, 'utf8')).entries).toEqual([])
+  expect(warn).not.toHaveBeenCalled()
 })

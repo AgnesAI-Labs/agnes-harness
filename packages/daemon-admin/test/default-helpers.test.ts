@@ -155,6 +155,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
       !!p.entry.state.trusted,
     ]),
   ).toEqual([
+    ['@agnes/browser', true, true],
     ['@agnes/conversation-ui', true, true],
     ['@agnes/deliverables-ui', true, true],
     ['@agnes/document-reader', true, true],
@@ -251,6 +252,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
   expect(
     (await s.manager.inventory(s.profileDir)).packages.map((p) => [p.id, p.entry.state.enabled]),
   ).toEqual([
+    ['@agnes/browser', true],
     ['@agnes/conversation-ui', true],
     ['@agnes/deliverables-ui', true],
     ['@agnes/document-reader', true],
@@ -299,8 +301,9 @@ it.each([
     }
     await initializeDefaultHelpers(s)
     const packages = (await s.manager.inventory(s.profileDir)).packages
-    expect(packages).toHaveLength(restricted ? 4 : 9)
+    expect(packages).toHaveLength(restricted ? 4 : 10)
     for (const id of [
+      '@agnes/browser',
       '@agnes/conversation-ui',
       '@agnes/deliverables-ui',
       '@agnes/goal-ui',
@@ -488,12 +491,13 @@ it('migrates the earlier existing marker without enabling or replacing an instal
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
   await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(8)
+  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(9)
 })
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
   await s.initializePolicy()
   for (const name of [
+    'browser',
     'skill-helper',
     'mcp-helper',
     'plugin-helper',
@@ -566,7 +570,7 @@ it.each([1, 2, 3, 4])(
     )
     await initializeDefaultHelpers(s)
     const inventory = await s.manager.inventory(s.profileDir)
-    expect(inventory.packages).toHaveLength(version === 3 ? 9 : 8)
+    expect(inventory.packages).toHaveLength(version === 3 ? 10 : 9)
     expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
     expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
       version === 3 ? [] : ['@agnes/skill-helper'],
@@ -604,7 +608,7 @@ it.each([1, 2, 3, 4])(
       phase: 'complete',
       offered: expect.arrayContaining(inventory.packages.map((pkg) => pkg.id)),
     })
-    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(9)
+    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(10)
     await s.manager.setEnabled(s.profileDir, '@agnes/goal-ui', false)
     await s.manager.remove(s.profileDir, '@agnes/goal-ui')
     await s.manager.setEnabled(s.profileDir, '@agnes/interaction-ui', false)
@@ -628,7 +632,11 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
     const s = setup()
     const source = bundledPluginSource(helper.ref)!
     const payload = join(s.root, 'release', helper.name)
-    cpSync(join(source.root, source.path), payload, { recursive: true })
+    // Release fixtures contain runtime files, matching the package copier's node_modules exclusion.
+    cpSync(join(source.root, source.path), payload, {
+      recursive: true,
+      filter: (path) => !path.split(sep).includes('node_modules'),
+    })
     payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
     const file = join(payload, 'package.json')
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
@@ -844,7 +852,7 @@ it('retains a changed-capability release for explicit review, and preserves a di
     previous: target,
     publish,
   })
-  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES[0]!
+  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === '@agnes/skill-helper')!
   const source = bundledPluginSource(helper.ref)!
   const payload = join(s.root, 'release')
   cpSync(join(source.root, source.path), payload, { recursive: true })
@@ -874,7 +882,7 @@ it('retains a changed-capability release for explicit review, and preserves a di
   expect(
     (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id),
   ).toMatchObject({ trusted: true, enabled: true, capabilityHash: preview.capabilityHash })
-  const other = DEFAULT_ENABLED_BUNDLED_PACKAGES[1]!
+  const other = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === '@agnes/mcp-helper')!
   const otherBefore = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === other.id)!
   await s.manager.untrust(s.profileDir, other.id, {
     integrity: otherBefore.entry.integrity,

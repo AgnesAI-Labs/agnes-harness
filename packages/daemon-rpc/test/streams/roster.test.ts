@@ -100,6 +100,31 @@ it('uses the real contribution binding and exact row allowlist, revoking stale p
   backendEpoch = 'revoked'
   expect(() => bridged.assertCurrent()).toThrow()
   current = row
+  const sessionRequest: PluginStreamOpen = {
+    ...request,
+    scope: { kind: 'session', profileId: 'one', sessionId: 'session-one', laneId: 'main' },
+  }
+  const sessionRegistration = {
+    ...registration,
+    declaration: { ...registration.declaration, scope: 'session' as const },
+  }
+  await expect(authorize(principal, sessionRequest, sessionRegistration)).rejects.toThrow()
+  const sessionBridge = createRosterStreamAuthorizer({
+    async resolve() {
+      return {
+        current: () => current,
+        consumerLifetime: 'profile',
+        signal,
+        assertScope() {
+          if (!inScope) throw new Error('session scope refused')
+        },
+      }
+    },
+  })
+  const scoped = await sessionBridge(principal, sessionRequest, sessionRegistration)
+  scoped.assertCurrent()
+  inScope = false
+  expect(() => scoped.assertCurrent()).toThrow('session scope refused')
   inScope = false
   expect(() => admission.assertCurrent()).toThrow('scope refused')
   inScope = true

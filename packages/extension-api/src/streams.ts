@@ -11,6 +11,8 @@ export interface PluginStream {
   close(reason: string): void
 }
 export interface StreamContext {
+  /** Authenticated same-origin Web ingress, when present. Never supplied in plugin input. */
+  readonly origin?: string
   readonly scope: StreamScope
   readonly actor: Actor
   readonly source: string

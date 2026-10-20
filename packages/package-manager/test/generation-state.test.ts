@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -21,6 +22,7 @@ import {
   type ProcessLiveness,
   RuntimeGenerationSnapshotStore,
 } from '../src/runtime-snapshots-generations.js'
+import { withoutPackageVerification, withPackageVerification } from '../src/verification-operation.js'
 
 const homes: string[] = []
 afterEach(() => {
@@ -54,7 +56,7 @@ function fixture(options: { liveness?: ProcessLiveness } = {}) {
   })
   const generation = () => store.create(target, [], 'compat', [], undefined, SEAMS)
   const pinFile = (key: string) => join(store.root, 'sessions', `${digest(key)}.json`)
-  return { home, store, generation, pinFile }
+  return { home, store, target, generation, pinFile }
 }
 
 const messageOf = (action: () => unknown): string => {
@@ -175,6 +177,40 @@ describe('session pin shape gate', () => {
 })
 
 describe('generation record shape gate', () => {
+  it('keeps synchronous and cooperative reads equally strict for private resources', async () => {
+    const { home, store, target } = fixture()
+    const resources = join(home, 'resource-source')
+    mkdirSync(resources)
+    writeFileSync(join(resources, 'content.txt'), 'original')
+    const snapshot = store.create(
+      target,
+      [],
+      'compat',
+      [],
+      { data: { name: 'fixture' }, directories: [resources] },
+      SEAMS,
+    )
+    await withPackageVerification(async () => {
+      expect(await store.readAsync(snapshot.id)).toEqual(store.read(snapshot.id))
+    })
+    const file = join(store.root, snapshot.id, 'resources', '0', 'content.txt')
+    const before = statSync(file)
+    writeFileSync(file, 'modified')
+    utimesSync(file, before.atime, before.mtime)
+    await withPackageVerification(async () => {
+      expect(() => store.read(snapshot.id)).toThrow('E_GENERATION_RESOURCE_MISSING')
+      await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
+    })
+    writeFileSync(file, 'original')
+    await withPackageVerification(async () => {
+      expect(await store.readAsync(snapshot.id)).toEqual(snapshot)
+      await withoutPackageVerification(async () => {
+        writeFileSync(file, 'modified')
+      })
+      await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
+    })
+  })
+
   const corrupted = (mutate: (record: Record<string, unknown>) => unknown) => {
     const { store, generation } = fixture()
     const snapshot = generation()

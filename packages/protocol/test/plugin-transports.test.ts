@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   decodePluginStreamBinary,
   encodePluginStreamBinary,
+  transportCapabilityProblems,
   validateManagedServiceDescriptor,
   validateManagedServiceReady,
   validatePluginStreamOpen,
@@ -11,9 +12,9 @@ import {
 const declaration = {
   name: 'sample.frames',
   scope: 'profile',
-  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-  directions: ['outbound'],
-  lane: 'media',
+  inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false as const },
+  directions: ['outbound' as const],
+  lane: 'media' as const,
   maxFrameBytes: 1048576,
   maxBufferedBytes: 2097152,
   maxBytesPerSecond: 4194304,
@@ -21,6 +22,23 @@ const declaration = {
 describe('plugin transport contracts', () => {
   it('admits bounded declarations and refuses inbound paths without effect authority', () => {
     expect(validateStreamDeclaration(declaration).ok).toBe(true)
+    const session = { ...declaration, scope: 'session' as const, readService: 'sample.read' }
+    const query = {
+      name: 'sample.read',
+      kind: 'query' as const,
+      scope: 'session' as const,
+      inputSchema: declaration.inputSchema,
+      outputSchema: {},
+      timeoutMs: 1000,
+      maxResultBytes: 4096,
+    }
+    expect(transportCapabilityProblems({ streams: [session], services: [query] })).toEqual([])
+    expect(transportCapabilityProblems({ streams: [session] })).toContain(
+      'stream readService must name an own session query service',
+    )
+    expect(
+      transportCapabilityProblems({ streams: [session], services: [{ ...query, scope: 'profile' }] }),
+    ).toContain('stream readService must name an own session query service')
     expect(
       validateStreamDeclaration({ ...declaration, producer: true, directions: ['inbound', 'outbound'] }).ok,
     ).toBe(true)

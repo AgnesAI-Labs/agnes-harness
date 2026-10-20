@@ -37,6 +37,9 @@ import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.
 export const ADMIN_API_ROOT = '/admin/plugins/api'
 
 type FetchLike = typeof fetch
+const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
+type AdminOverview = { context: AdminContext; inventory?: PackageListResult }
+const pendingOverviews = new WeakMap<FetchLike, Promise<AdminOverview>>()
 const METHOD_BY_PATH = {
   'candidates/list': '_agnes/v1/plugins.candidates.list',
   'candidates/show': '_agnes/v1/plugins.candidates.show',
@@ -189,6 +192,16 @@ export class PluginAdminApi {
   }
 
   static async context(fetcher: FetchLike = fetch): Promise<AdminContext> {
+    let pending = pendingContexts.get(fetcher)
+    if (!pending) {
+      pending = PluginAdminApi.readContext(fetcher).finally(() => pendingContexts.delete(fetcher))
+      pendingContexts.set(fetcher, pending)
+    }
+    // Share only in-flight I/O; never cache authority or one caller's mutable object.
+    return structuredClone(await pending)
+  }
+
+  private static async readContext(fetcher: FetchLike): Promise<AdminContext> {
     const response = await fetcher(`${ADMIN_API_ROOT}/context`, {
       method: 'GET',
       credentials: 'same-origin',
@@ -205,6 +218,41 @@ export class PluginAdminApi {
         message: 'The admin context is invalid; reopen the page.',
       })
     return body
+  }
+
+  /** A fresh backend verification supplies matching authority and inventory in one read. */
+  static async overview(fetcher: FetchLike = fetch): Promise<AdminOverview> {
+    let pending = pendingOverviews.get(fetcher)
+    if (!pending) {
+      pending = (async () => {
+        const response = await fetcher(`${ADMIN_API_ROOT}/overview`, {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        })
+        const body = await json(response)
+        if (!response.ok) throw new AdminApiError(safeError(body))
+        const value = body as AdminOverview | undefined
+        if (!value || !isContext(value.context))
+          throw new AdminApiError({
+            code: 'ADMIN_CONTEXT_INVALID',
+            message: 'The admin context is invalid; reopen the page.',
+          })
+        if (
+          Object.keys(value).some((key) => key !== 'context' && key !== 'inventory') ||
+          (value.inventory !== undefined &&
+            !validatePackageAdminCall('_agnes/v1/packages.list', 'result', value.inventory).ok) ||
+          (!value.context.readOnly && value.inventory === undefined)
+        )
+          throw new AdminApiError({
+            code: 'ADMIN_RESPONSE_INVALID',
+            message: 'The backend returned data that cannot be verified.',
+          })
+        return value
+      })().finally(() => pendingOverviews.delete(fetcher))
+      pendingOverviews.set(fetcher, pending)
+    }
+    return structuredClone(await pending)
   }
 
   application(): Promise<import('@agnes/protocol').ApplicationState> {

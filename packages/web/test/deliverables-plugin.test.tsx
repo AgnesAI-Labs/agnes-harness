@@ -12,6 +12,7 @@ import {
   SlotOutlet,
   SlotRegistry,
   SlotsProvider,
+  workbenchNavigation,
   workbenchPanels,
 } from '@agnes/web-client'
 import { act, createElement } from 'react'
@@ -24,6 +25,61 @@ import * as official from '../../package-manager/bundled-plugins/deliverables-ui
 import { expectLocalizedDom } from './helpers/localized-dom.js'
 
 const artifact = { sha256: 'a'.repeat(64), size: 6, mime: 'text/plain' }
+
+it.each([
+  ['text/html', 6, true],
+  ['text/markdown', 6, true],
+  ['application/pdf', 6, true],
+  ['image/png', 6, true],
+  ['application/json', 6, true],
+  ['application/javascript', 6, true],
+  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 6, false],
+  ['text/html', 1024 * 1024 + 1, false],
+])('opens only a clicked previewable artifact (%s, %i bytes)', async (mime, size, previewable) => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const requestPreview = vi.fn()
+  const documents = vi.fn()
+  const files = vi.fn(async () => ({ url: 'blob:download', release: vi.fn() }))
+  const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const ctx = {
+    locale: { locale: 'en', t: (key: string) => key },
+    resources: { documents: { load: documents }, files: { load: files } },
+    requestPreview,
+  }
+  const file = {
+    id: 'clicked-file',
+    name: 'result',
+    artifact: { ...artifact, mime, size },
+    laneId: 'main',
+    workbench: true,
+  }
+  try {
+    await act(async () => root.render(createElement(official.FileCard, { file, ctx, inline: true })))
+    expect(requestPreview).not.toHaveBeenCalled()
+    expect(documents).not.toHaveBeenCalled()
+    expect(files).not.toHaveBeenCalled()
+    await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
+    if (previewable) {
+      expect(requestPreview).toHaveBeenCalledWith(file.id)
+      expect(files).not.toHaveBeenCalled()
+    } else {
+      expect(requestPreview).not.toHaveBeenCalled()
+      expect(files).toHaveBeenCalledWith({ laneId: 'main', artifact: file.artifact })
+      expect(anchor).toHaveBeenCalled()
+      files.mockClear()
+      await act(async () =>
+        root.render(createElement(official.FileCard, { file, ctx: { ...ctx, selection: { id: file.id } } })),
+      )
+      expect(files).not.toHaveBeenCalled()
+    }
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    anchor.mockRestore()
+  }
+})
 
 it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => ({ locale, parent }))))(
   'switches authorized deliverables ($locale, parent $parent)',
@@ -70,6 +126,8 @@ it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => 
       files: { load: vi.fn(async () => ({ url: 'blob:snapshot', release })) },
     }
     const events = new Set<() => void>()
+    const navigation = vi.fn(() => true)
+    const stopNavigation = workbenchNavigation.register(navigation)
     const client = {
       sessions: { get: () => handle },
       on: (_name: string, listener: () => void) => {
@@ -154,6 +212,7 @@ it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => 
       expect(listeners.size).toBe(1)
       expect(events.size).toBe(3)
       await renderTail()
+      expect(navigation).not.toHaveBeenCalled()
       expectLocalizedDom(host)
       await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
       await renderPanel('deliverables')
@@ -252,6 +311,7 @@ it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => 
         stopParent()
       })
       host.remove()
+      stopNavigation()
       anchor.mockRestore()
     }
     expect(workbenchPanels.get('deliverables')).toBeUndefined()

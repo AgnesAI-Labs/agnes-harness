@@ -25,13 +25,32 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
     }
   }, [owner])
   const zh = ctx.locale.locale === 'zh-CN'
+  const mime = file.artifact.mime
+  const kind =
+    mime === 'text/html'
+      ? 'html'
+      : mime === 'text/markdown'
+        ? 'markdown'
+        : mime === 'application/pdf'
+          ? 'pdf'
+          : ['image/png', 'image/jpeg'].includes(mime)
+            ? 'image'
+            : mime.startsWith('text/') || ['application/json', 'application/javascript'].includes(mime)
+              ? 'text'
+              : undefined
+  const previewable = Boolean(kind) && file.artifact.size <= 1024 * 1024
   async function open(ensure = false) {
+    if (busy) return
+    if (!previewable) {
+      // Only a user's click may download; replayed panel selection is not a download request.
+      if (!ensure) await download()
+      return
+    }
     if (inline && file.workbench) {
       if (ctx.requestPreview) ctx.requestPreview(file.id)
       else workbenchNavigation.open('deliverables')
       return
     }
-    if (busy) return
     if (preview) {
       if (ensure) return
       preview.release()
@@ -41,22 +60,7 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
     }
     setBusy(true)
     setError(undefined)
-    const mime = file.artifact.mime
-    const kind =
-      mime === 'text/html'
-        ? 'html'
-        : mime === 'text/markdown'
-          ? 'markdown'
-          : mime === 'application/pdf'
-            ? 'pdf'
-            : ['image/png', 'image/jpeg'].includes(mime)
-              ? 'image'
-              : mime.startsWith('text/') || mime === 'application/json'
-                ? 'text'
-                : undefined
     try {
-      if (!kind || file.artifact.size > 1024 * 1024)
-        throw new Error(zh ? '请下载此文件查看。' : 'Download this file to view it.')
       const resource = await ctx.resources.documents.load({
         laneId: file.laneId,
         artifact: file.artifact,
@@ -115,7 +119,6 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
     if (!inline && (typeof ctx.selection === 'string' ? ctx.selection : ctx.selection?.id) === file.id)
       void open(true)
   }, [ctx.selection, file.id, inline])
-  const mime = file.artifact.mime
   const type =
     mime === 'text/html'
       ? 'html'
@@ -147,7 +150,7 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
       variant: 'file',
       title: file.name,
       titleClassName: 'deliverable-target',
-      titleLabel: `${zh ? '打开' : 'Open'}: ${file.name}`,
+      titleLabel: `${previewable ? (zh ? '打开' : 'Open') : zh ? '下载' : 'Download'}: ${file.name}`,
       description: subtitle ?? [file.description, formatted].filter(Boolean).join(' · '),
       icon: h('span', { className: 'deliverable-tile', 'data-type': type }, h(Icon, { name: icon })),
       // Workbench titles are labels; the explicit Open action owns preview activation.
@@ -167,12 +170,22 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
               className: 'deliverable-open',
               'data-testid': 'deliverable-open',
               disabled: busy,
-              'aria-expanded': !!preview,
+              'aria-expanded': previewable ? !!preview : undefined,
               onClick: () => {
                 void open()
               },
             },
-            zh ? (preview ? '关闭' : '打开') : preview ? 'Close' : 'Open',
+            !previewable
+              ? zh
+                ? '下载'
+                : 'Download'
+              : zh
+                ? preview
+                  ? '关闭'
+                  : '打开'
+                : preview
+                  ? 'Close'
+                  : 'Open',
           ),
         h(Menu, {
           label: zh ? '打开方式' : 'Open with',
@@ -184,14 +197,18 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
             disabled: busy,
           }),
           items: [
-            {
-              id: 'open',
-              label: zh ? '在工作台中预览' : 'Preview in workbench',
-              testId: 'deliverable-in-workbench',
-              onSelect: () => {
-                void open()
-              },
-            },
+            ...(previewable
+              ? [
+                  {
+                    id: 'open',
+                    label: zh ? '在工作台中预览' : 'Preview in workbench',
+                    testId: 'deliverable-in-workbench',
+                    onSelect: () => {
+                      void open()
+                    },
+                  },
+                ]
+              : []),
             {
               id: 'download',
               label: zh ? '下载' : 'Download',

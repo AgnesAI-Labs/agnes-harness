@@ -120,7 +120,11 @@ function SideModels({
     !!draft && !draft.isNew && saved?.baseUrl.replace(/\/$/, '') !== draft.baseUrl.replace(/\/$/, '')
   const [testState, setTestState] = useState('')
   const [options, setOptions] = useState<readonly { id: string; label: string }[]>([])
+  const editorOpen = draft !== undefined
   useEffect(() => {
+    // Credentials are needed only by the editor; reading the store while the hidden settings
+    // panel mounts adds a slow control-plane request to every conversation startup.
+    if (!editorOpen) return
     let cancelled = false
     void credentials.list().then(
       (items) => {
@@ -131,7 +135,7 @@ function SideModels({
     return () => {
       cancelled = true
     }
-  }, [credentials])
+  }, [credentials, editorOpen])
 
   const revision = configuration?.revision ?? 0
   const takenIds = new Set(accounts.map((row) => row.accountId))

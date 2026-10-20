@@ -6,6 +6,11 @@ type PluginConfigSchema = boolean | Readonly<Record<string, unknown>>
 type PluginConfigIssue = Readonly<{ path: string; code: string }>
 export const PLUGIN_SECRET_REF_PATTERN = '^secret://[a-z0-9-]+/[a-z0-9._-]+$'
 
+// Cache only pure compiled schemas, not configuration values, validation verdicts or authority.
+// Each entry owns its Ajv namespace; identical $id values in different schemas stay isolated.
+const compiledSchemas = new Map<string, (value: unknown) => readonly PluginConfigIssue[]>()
+let compiledSchemaBytes = 0
+
 const schemaMaps = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'])
 const schemaLists = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems'])
 const schemaFields = new Set([
@@ -64,6 +69,9 @@ export function compilePluginConfig(
   try {
     const json = inspectJsonData(schema, 1_048_576)
     if (!json.ok) throw new Error('schema')
+    const key = JSON.stringify(json.value)
+    const cached = compiledSchemas.get(key)
+    if (cached) return cached
     const ajv = new Ajv2020({
       strictSchema: true,
       strictTypes: false,
@@ -112,7 +120,7 @@ export function compilePluginConfig(
       }
     }
     defaults(secured, '')
-    return (value) => {
+    const check = (value: unknown): readonly PluginConfigIssue[] => {
       const json = inspectJsonData(value, 1_048_576)
       if (!json.ok) return [{ path: '', code: 'json' }]
       try {
@@ -131,6 +139,15 @@ export function compilePluginConfig(
         return [{ path: '', code: 'validation' }]
       }
     }
+    while (compiledSchemas.size >= 64 || compiledSchemaBytes + key.length * 2 > 4 * 1024 * 1024) {
+      const oldest = compiledSchemas.keys().next().value
+      if (oldest === undefined) break
+      compiledSchemas.delete(oldest)
+      compiledSchemaBytes -= oldest.length * 2
+    }
+    compiledSchemas.set(key, check)
+    compiledSchemaBytes += key.length * 2
+    return check
   } catch {
     throw new TypeError('Invalid synchronous local JSON Schema 2020-12 for plugin configuration')
   }

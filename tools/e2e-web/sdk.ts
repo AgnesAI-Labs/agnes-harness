@@ -4,8 +4,8 @@ import type { NodeClient, Session } from '@agnes/sdk'
 import { expect } from './fixtures.js'
 
 type Receipt = Awaited<ReturnType<NodeClient['packages']['install']>>
-export async function complete(client: NodeClient, receipt: Receipt) {
-  const deadline = Date.now() + 20_000
+export async function complete(client: NodeClient, receipt: Receipt, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const result = await client.packages.operation.get({
       profile: 'local-dev',

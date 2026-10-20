@@ -1,0 +1,26 @@
+{
+  "win32-x64": {
+    "revision": "1243",
+    "version": "153.0.8010.12",
+    "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/win64/chrome-win64.zip",
+    "sha256": "415968b02065d4a9e2c10b85f0ae9f489b8fba500e94d9d0a7b7c4852a7234c1",
+    "size": 205123748,
+    "executable": "chrome-win64/chrome.exe"
+  },
+  "darwin-arm64": {
+    "revision": "1243",
+    "version": "153.0.8010.12",
+    "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-mac-arm64.zip",
+    "sha256": "930e2a2c15addbaca1fe9b07bfa520667bced556d7988707186819cb4279ef3b",
+    "size": 190970181,
+    "executable": "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+  },
+  "darwin-x64": {
+    "revision": "1243",
+    "version": "153.0.8010.12",
+    "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-x64/chrome-mac-x64.zip",
+    "sha256": "4e12e2b8a297a2eb79c16258e46961c73f8aa2fa6be6b1d3cdbb553fb5d4ef1c",
+    "size": 201663099,
+    "executable": "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+  }
+}

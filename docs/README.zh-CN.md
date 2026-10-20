@@ -47,6 +47,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 | [学习记忆](guide/memory.zh-CN.md) | 管理文件偏好、审批与隐私 |
 | [官方默认工具](reference/default-tools.zh-CN.md) | 搜索、问答、交付文件、管理后台任务及修改已读取文件 |
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
+| [内置浏览器](guide/browser.zh-CN.md) | 与 AGH 共用网页、测试本地项目和人工接管 |
 | [程序化工具与工作流](guide/code-workflows.zh-CN.md) | TypeScript cell 与持久并行子任务工作流 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |

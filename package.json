@@ -22,7 +22,7 @@
     "typecheck": "node tools/toolchain/check.mjs && tsc -b",
     "guards:remeasure": "node tools/toolchain/check.mjs && tsx tools/guards/remeasure.ts",
     "lint": "node tools/toolchain/check.mjs && biome check .",
-    "gen:check": "node tools/toolchain/check.mjs && node tools/authoring/reference.mjs --check && node packages/base/extensions/plugin-creator/gen-assets.mjs --check && node tools/toolchain/run.mjs -r --if-present run gen:check && node tools/build-feature-clients.mjs --check",
+    "gen:check": "node tools/toolchain/check.mjs && node tools/browser-manifest.mjs --check && node tools/authoring/reference.mjs --check && node packages/base/extensions/plugin-creator/gen-assets.mjs --check && node tools/toolchain/run.mjs -r --if-present run gen:check && node tools/build-feature-clients.mjs --check",
     "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
     "bench:ledger-integrity": "tsx tools/bench-ledger-integrity.ts",
     "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts",

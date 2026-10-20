@@ -55,6 +55,7 @@ export interface ClientContext extends Context {
     examples: ExamplePackages
     launch: ExampleLaunches & { openPage(exampleId: string): void }
   }>
+  sessionStreams: ReturnType<typeof scopedProfileStreams>
   examplePages: ReturnType<typeof scopedExamplePages>
   availability: ContributionAvailability
   homeEntries: ReturnType<typeof scopedHomeEntries>
@@ -111,6 +112,14 @@ export function clientModule(mod: ClientModule): {
           ? (getService?.('resources', false) as ClientResourceService)
           : new ClientResourceService(ctx, agnes.client, session)
       const serviceApi = Object.freeze({
+        effect: async (name: string, input: Record<string, unknown>, options: { operationId: string }) => {
+          if (!agnes.effectCaller || !config.services?.includes(name) || !options.operationId)
+            throw new Error('client effect is unavailable')
+          const selected = session.readiness.getSnapshot()
+          if (!selected.sessionId || selected.status !== 'ready')
+            throw new Error('client effect requires a ready session')
+          return agnes.effectCaller(config, selected.sessionId, name, options.operationId, input)
+        },
         call: async (name: string, input: Record<string, unknown>) => {
           if (!agnes.serviceCaller || !config.services?.includes(name))
             throw new Error(`client service is unavailable: ${name}`)
@@ -213,6 +222,10 @@ export function clientModule(mod: ClientModule): {
       })
       const availability = contributionAvailability(config, (off) => {
         ctx.effect(() => off)
+      })
+      Object.defineProperty(ctx, 'sessionStreams', {
+        value: scopedProfileStreams(config, availability, (off) => ctx.effect(() => off), session),
+        configurable: true,
       })
       const presentation = getService?.('presentation', false)
       Object.defineProperty(ctx, 'presentation', {

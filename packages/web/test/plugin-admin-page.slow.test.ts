@@ -174,14 +174,17 @@ it.each([
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'restore-test',
-        permissions: ['packages.read', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.restore',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'restore-test',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.restore',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [installed] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [installed] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -227,20 +230,23 @@ it('groups real catalog releases and carries the selected version source through
     const url = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'admin-page-test',
-        permissions: [
-          'packages.read',
-          'packages.install',
-          'packages.trust',
-          'packages.activate',
-          'packages.remove',
-        ],
-        readOnly: false,
-        authScope: 'auth.admin-page-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'admin-page-test',
+          permissions: [
+            'packages.read',
+            'packages.install',
+            'packages.trust',
+            'packages.activate',
+            'packages.remove',
+          ],
+          readOnly: false,
+          authScope: 'auth.admin-page-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: installed },
       })
     if (url.endsWith('/catalog/list')) return Response.json({ items: entries, nextCursor: null })
     if (url.endsWith('/list')) return Response.json({ packages: installed })
@@ -476,14 +482,17 @@ it('links a live Surface mount without treating the link as qualified actual', a
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'admin-page-surface-test',
-        permissions: ['packages.read'],
-        readOnly: false,
-        authScope: 'auth.admin-page-surface-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'admin-page-surface-test',
+          permissions: ['packages.read'],
+          readOnly: false,
+          authScope: 'auth.admin-page-surface-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [surfacePackage] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [surfacePackage] })
     if (url.endsWith('/surfaces'))
@@ -535,14 +544,17 @@ it('does not enable a plugin when its hidden approval step fails', async () => {
     const url = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'approval-failure-test',
-        permissions: ['packages.read', 'packages.trust', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.approval-failure-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'approval-failure-test',
+          permissions: ['packages.read', 'packages.trust', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.approval-failure-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [installed] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [installed] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -609,14 +621,17 @@ it.each(['failed', 'unavailable'] as const)(
     const fetcher = vi.fn<typeof fetch>(async (input) => {
       const url = String(input)
       if (url.endsWith('/session')) return Response.json({ authenticated: true })
-      if (url.endsWith('/context'))
+      if (url.endsWith('/overview'))
         return Response.json({
-          profile: 'local-dev',
-          clientId: 'actual-switch-test',
-          permissions: ['packages.read', 'packages.activate'],
-          readOnly: false,
-          authScope: 'auth.actual-switch-test',
-          features: Object.values(ADMIN_FEATURES),
+          context: {
+            profile: 'local-dev',
+            clientId: 'actual-switch-test',
+            permissions: ['packages.read', 'packages.activate'],
+            readOnly: false,
+            authScope: 'auth.actual-switch-test',
+            features: Object.values(ADMIN_FEATURES),
+          },
+          inventory: { packages: [installed] },
         })
       if (url.endsWith('/list')) return Response.json({ packages: [installed] })
       if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -714,14 +729,17 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'runtime-status-test',
-        permissions: ['packages.read', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.runtime-status-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'runtime-status-test',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.runtime-status-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [installed] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [installed] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -799,14 +817,17 @@ it('does not confirm enable while the browser runtime is still running the old r
     const url = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'stale-runtime-test',
-        permissions: ['packages.read', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.stale-runtime-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'stale-runtime-test',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.stale-runtime-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [currentInstalled] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [currentInstalled] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -894,14 +915,17 @@ it('allows a checked enable for an inactive client-only package while backend ac
     const url = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
     if (url.endsWith('/session')) return Response.json({ authenticated: true })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'client-only-enable-test',
-        permissions: ['packages.read', 'packages.activate'],
-        readOnly: false,
-        authScope: 'auth.client-only-enable-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'client-only-enable-test',
+          permissions: ['packages.read', 'packages.activate'],
+          readOnly: false,
+          authScope: 'auth.client-only-enable-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [currentInstalled] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [currentInstalled] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -1030,7 +1054,8 @@ it('hides the orphan pins section when packages.pins.inspect reports no orphans'
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
@@ -1056,10 +1081,11 @@ it.each([
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
-      return failedRoute === 'context'
-        ? Response.json({ profile: 'local-dev' })
-        : Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({
+        context: failedRoute === 'context' ? { profile: 'local-dev' } : pinsContext(),
+        inventory: failedRoute === 'list' ? {} : { packages: [] },
+      })
     if (url.endsWith('/list'))
       return failedRoute === 'list' ? Response.json({}) : Response.json({ packages: [] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
@@ -1095,7 +1121,28 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({
+        context: pinsContext(),
+        inventory: {
+          packages: [
+            {
+              id: 'acme/inventory',
+              source: { type: 'file', ref: 'file:./inventory' },
+              integrity: `sha256-${'9'.repeat(64)}`,
+              contributions: [],
+              capabilityHash,
+              version: inventoryVersion,
+              trusted: true,
+              desired: 'enabled',
+              actual: 'running',
+              cleanupPending: false,
+              rollbackTarget: null,
+              blockers: [],
+            },
+          ],
+        },
+      })
     if (url.endsWith('/list'))
       return Response.json({
         packages: [
@@ -1159,7 +1206,8 @@ it('localizes an orphan-pin transport failure when rendered', async () => {
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })
     if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
@@ -1190,7 +1238,8 @@ it('shows orphaned pins and removes a released one after confirming', async () =
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [pin] })
     if (url.endsWith('/pins/release')) {
@@ -1224,7 +1273,8 @@ it('keeps a failed release in the list and shows its error message', async () =>
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [pin] })
     if (url.endsWith('/pins/release'))
@@ -1274,7 +1324,8 @@ it('release-all batches more than 64 orphaned pins into multiple pins/release ca
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans })
     if (url.endsWith('/pins/release')) {
@@ -1324,7 +1375,8 @@ it('keeps an earlier successfully-released batch reflected in the UI when a late
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans })
     if (url.endsWith('/pins/release')) {
@@ -1380,7 +1432,8 @@ it('removes nothing and surfaces the error when the first batch call fails outri
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans })
     if (url.endsWith('/pins/release')) {
@@ -1428,7 +1481,8 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context')) return Response.json(pinsContext())
+    if (url.endsWith('/overview'))
+      return Response.json({ context: pinsContext(), inventory: { packages: [] } })
     if (url.endsWith('/list')) return Response.json({ packages: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans })
     if (url.endsWith('/pins/release')) {
@@ -1479,14 +1533,17 @@ it('shows a plain pending tree status and hides aligned internal digests', async
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'tree-page-test',
-        permissions: ['packages.read'],
-        readOnly: false,
-        authScope: 'auth.tree-page-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'tree-page-test',
+          permissions: ['packages.read'],
+          readOnly: false,
+          authScope: 'auth.tree-page-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [] },
       })
     if (url.endsWith('/tree/list'))
       return Response.json({
@@ -1533,14 +1590,17 @@ it('recovers a dropped tree_changed notice when the page regains focus without r
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'tree-poll-test',
-        permissions: ['packages.read'],
-        readOnly: false,
-        authScope: 'auth.tree-poll-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'tree-poll-test',
+          permissions: ['packages.read'],
+          readOnly: false,
+          authScope: 'auth.tree-poll-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [] },
       })
     if (url.endsWith('/tree/list')) {
       treeCalls += 1
@@ -1601,20 +1661,23 @@ it('closes an open detail dialog so disable and rollback confirms can show', asy
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
-    if (url.endsWith('/context'))
+    if (url.endsWith('/overview'))
       return Response.json({
-        profile: 'local-dev',
-        clientId: 'disable-confirm-test',
-        permissions: [
-          'packages.read',
-          'packages.install',
-          'packages.trust',
-          'packages.activate',
-          'packages.remove',
-        ],
-        readOnly: false,
-        authScope: 'auth.disable-confirm-test',
-        features: Object.values(ADMIN_FEATURES),
+        context: {
+          profile: 'local-dev',
+          clientId: 'disable-confirm-test',
+          permissions: [
+            'packages.read',
+            'packages.install',
+            'packages.trust',
+            'packages.activate',
+            'packages.remove',
+          ],
+          readOnly: false,
+          authScope: 'auth.disable-confirm-test',
+          features: Object.values(ADMIN_FEATURES),
+        },
+        inventory: { packages: [installed] },
       })
     if (url.endsWith('/list')) return Response.json({ packages: [installed] })
     if (url.endsWith('/tree/list')) return Response.json({ actual: true, pending: false })

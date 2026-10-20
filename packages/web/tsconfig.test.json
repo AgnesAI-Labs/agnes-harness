@@ -14,10 +14,7 @@
     "tools/**/*.ts",
     "vitest.config.ts"
   ],
-  "exclude": [
-    "dist",
-    "node_modules"
-  ],
+  "exclude": ["dist", "node_modules"],
   "references": [
     {
       "path": "."
@@ -69,6 +66,9 @@
     },
     {
       "path": "../package-manager/bundled-plugins/navigation-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/browser/tsconfig.sources.json"
     }
   ]
 }

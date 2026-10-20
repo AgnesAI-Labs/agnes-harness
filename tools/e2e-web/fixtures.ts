@@ -15,6 +15,10 @@ export const test = base.extend<{
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
       {
         localExamples: info.file.endsWith('/ui-gate.spec.ts'),
+        ...(info.file.replaceAll('\\', '/').endsWith('/browser.spec.ts') &&
+        process.env.AGH_BROWSER_TEST_ARCHIVE
+          ? { browserArchive: process.env.AGH_BROWSER_TEST_ARCHIVE }
+          : {}),
         realModel:
           info.title.startsWith('application permission switch') ||
           (info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1'),

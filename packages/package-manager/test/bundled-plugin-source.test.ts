@@ -86,7 +86,10 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
           { provider: 'local' },
         ]),
       ),
-      policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
+      policySnapshot: {
+        capabilityCeiling: ['tools', 'ui', 'hooks', 'managedServices', 'services', 'store', 'streams'],
+        workspacePackages: 'require-project-trust',
+      },
     })
     const exec = vi.fn(async () => {
       throw new Error('Network forbidden')

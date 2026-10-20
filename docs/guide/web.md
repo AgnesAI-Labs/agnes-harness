@@ -8,6 +8,8 @@ English | [简体中文](web.zh-CN.md)
 
 The Web workbench brings tasks, history, and administration into one local interface. Configure a model using the [quickstart](quickstart.md), then use this guide to understand task state, everyday management, and connections.
 
+The [built-in browser](browser.md) plugin adds a switchable live Browser panel for web tasks and local-project testing. AGH and the panel operate the same backend page, with session isolation and explicit human takeover.
+
 <a id="启动与连接"></a>
 
 Transient errors appear in the top-right notification stack. Each expires after six seconds or can be dismissed with its labelled close button. Recovery, approval and account-repair actions remain visible until resolved. Stored artifact attachments retain their file labels in history; their internal URIs are not direct download links. Attachment hints use the shared tooltip on hover and keyboard focus; attachment failures distinguish size, pixels, file type and invalid data in the current language.

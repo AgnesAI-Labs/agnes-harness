@@ -193,6 +193,15 @@ describe('Task 8 runtime target builder', () => {
     expect(target.resource.resources.mcp).toEqual([{ enabled: true, id: 'one' }])
     expect(target.resource.resources.skills).toEqual({ roots: [{ names: ['alpha'] }] })
     expect(Object.isFrozen((target.resource.resources.mcp as object[])[0])).toBe(true)
+    const artifact = encodeRuntimeTargetArtifact(target)
+    expect(encodeRuntimeTargetArtifact(target)).toEqual(artifact)
+    const copied = structuredClone(target)
+    const tree = { ...copied.tree }
+    const shallow = Object.freeze({ ...copied, tree })
+    expect(encodeRuntimeTargetArtifact(shallow)).toEqual(artifact)
+    tree.hash = '0'.repeat(64)
+    expect(() => encodeRuntimeTargetArtifact(shallow)).toThrow(/E_TREE_HASH/)
+    expect(encodeRuntimeTargetArtifact(target)).toEqual(artifact)
   })
 
   it('canonicalizes inject and provides as Unicode code-point string sets', () => {

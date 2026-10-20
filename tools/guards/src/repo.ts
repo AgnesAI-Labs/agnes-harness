@@ -85,6 +85,7 @@ export function listSourceFiles(
 
 /** Handwritten presentation sources use the same fences as TS. Generated clients are byte-budgeted. */
 export const PRESENTATION_NAMES = [
+  'browser',
   'conversation-ui',
   'navigation-ui',
   'interaction-ui',

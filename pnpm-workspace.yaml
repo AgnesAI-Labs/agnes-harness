@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
+  - packages/package-manager/bundled-plugins/browser
   - packages/package-manager/bundled-plugins/deliverables-ui
   - packages/package-manager/bundled-plugins/goal-ui
   - packages/package-manager/bundled-plugins/navigation-ui

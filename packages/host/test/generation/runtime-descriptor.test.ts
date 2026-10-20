@@ -7,6 +7,8 @@ import {
   describeSessionRuntime,
   generationSessions,
   mergeGenerationStatus,
+  projectGenerationStatus,
+  readGenerationStatusAsync,
   type SessionRuntimeInput,
 } from '../../src/runtime/generation/runtime-descriptor.js'
 
@@ -61,6 +63,68 @@ const entry = (
   scope,
   active,
   selectedFor: active ? ['default'] : [],
+})
+
+it('projects a draining composition without mutating its durable generation facts', () => {
+  const active = {
+    generations: [
+      {
+        id: 'g',
+        state: 'active' as const,
+        boundSessions: 2,
+        openSessions: 1,
+        live: true,
+        packages: [{ id: 'p', version: '1' }],
+      },
+    ],
+    plugins: [
+      { id: 'p', state: 'active' as const, boundSessions: 2, drainingSessions: 0, historicalSessions: 0 },
+    ],
+  }
+  expect(projectGenerationStatus(active, false)).toBe(active)
+  expect(projectGenerationStatus(active, true)).toMatchObject({
+    generations: [{ state: 'draining' }],
+    plugins: [{ state: 'draining', drainingSessions: 2, historicalSessions: 1 }],
+  })
+  expect(active.generations[0]?.state).toBe('active')
+})
+
+it('uses cooperative reads for cold generations and propagates damage', async () => {
+  const store = {
+    sessions: () => [{ sessionKey: 's', generationId: 'g' }],
+    readAsync: async () => ({ packages: [{ id: 'p', version: '1' }] }),
+  }
+  const describe = (
+    _pins: unknown,
+    read: (id: string) => { packages: { id: string; version: string }[] },
+  ) => ({
+    generations: [
+      {
+        id: 'g',
+        state: 'historical' as const,
+        boundSessions: 1,
+        openSessions: 0,
+        live: false,
+        packages: read('g').packages,
+      },
+    ],
+    plugins: [],
+  })
+  await expect(readGenerationStatusAsync(store as never, describe as never, [])).resolves.toMatchObject({
+    generations: [{ packages: [{ id: 'p' }] }],
+  })
+  await expect(
+    readGenerationStatusAsync(
+      {
+        ...store,
+        readAsync: async () => {
+          throw new Error('snapshot damaged')
+        },
+      } as never,
+      describe as never,
+      [],
+    ),
+  ).rejects.toThrow('snapshot damaged')
 })
 const oldCatalog = [
   entry('loop', 'default', '1.0.0'),

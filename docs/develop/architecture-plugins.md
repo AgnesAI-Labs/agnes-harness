@@ -108,7 +108,47 @@ Model routes, catalogues and credential-store configuration are live too: `Host.
 
 Disabling a package that supplies a session composition’s selected Loop drains that composition. It keeps its original code container and publishes only live resources until the Loop is enabled again; new sessions cannot bind the disabled bundle. Its retained code is reported as draining, and explicit migration is refused while that Loop is unavailable. Resumed work retains its existing Loop pin.
 
+Interactive profile reads and Bundle presentation use cooperative installed-tree verification. A
+configuration service retains a bounded byte-keyed static-inspection cache, but every request still
+hashes current files and rechecks trust. Overlapping runtime-source reads share only unfinished work
+at the same policy/lock/runtime boundary. Bundle metadata reads do not occupy the session mutation
+queue; executable session admission remains serialized and independently verified.
+
+Composite-target readers reread SQLite on every access and may reuse validation only for identical
+stored bytes. Decoded targets are reused only for immutable artifacts issued by that store. Historical
+client assets keep per-generation publication queues; overlapping archive verification is keyed by
+the exact generation record and discarded on completion or failure. Unchanged client-roster state
+is not rewritten; byte verification, revocation and expiry checks still run on every read.
+
+Cold composition/generation restoration uses cooperative archive reads rather than synchronous tree
+walks. Extension and plugin-configuration schema compilers retain at most 64 successful validators
+and 4 MiB of schema keys each, keyed by the complete inspected JSON snapshot. Every call still
+inspects author input, validates current values and checks authority independently. Compilers keep
+isolated reference namespaces; changed schemas, invalid defaults, async or remote schemas never
+inherit an earlier verdict. These caches are populated by normal use, not startup prewarming.
+Resource archives share successful tree digests only within that admission's verification operation;
+the next operation and mutation gates discard those observations. Canonical rows and target encodings
+may reuse only deeply immutable objects issued by their own builders, with weak ownership tracking.
+Foreign objects (including shallow-frozen ones) and all wire artifacts retain complete validation;
+decoding still returns fresh values and canonical bytes/digests do not change.
+Runtime-state readers reread disk and may reuse pure metadata decoding for the same complete JSON
+content (at most four cached states and 4 MiB of keys), returning independent working copies. File-tree
+verification and current trust/activation decisions remain outside this metadata cache.
+
 ### Publication and recovery
+
+Cold composition admission restores its durable generation directly, without first assembling or
+archiving a temporary default generation. Current desired code can still fork a separate container;
+historical pins, seam selections and current trust checks remain authoritative. Boot and session
+compositions use the same declared package-source vocabulary. Distinct durable
+generation ids may share a Host only after archive validation and exact code, resources, seam and
+source-metadata equality; their pins are not rewritten, and children inherit the parent's generation.
+Package verification overlaps at most four file reads, preserves digest order, drains all handles on failure and performs
+the final full-file mutation sweep. Builtin manifest locations are indexed per assembly, while
+PowerShell facts are process-local and re-probed when executable candidates or configuration change.
+Supervisor-gated workers with no initial MCP rows archive their first accepted complete target instead
+of the temporary assembly tree. `boot_ready` still waits for durable archival; an archival failure
+refuses startup and can be retried. Ordinary Host creation keeps its immediate generation contract.
 
 Composition publication uses independent convergence, rather than a global atomic transaction. `applyRuntimeTarget` and `extensionRows.apply` return a convergence report with `publication`; `refreshSkillRow` and `applyModelProfile` return a `HostPublicationReport` on composition Hosts (ordinary Hosts retain their void result). Each report identifies the operation, every `compositionHash`, its `applied`/`failed` result and error, and `recovery: 'retry-same-input'`. All existing containers are attempted, including those after a failure. Successfully applied containers keep their new state; failed containers may retain prior state or partially converge, and new containers receive the latest desired input. Repeat the same complete input to converge failed containers. `compositionPublicationStatus()` exposes the last report. Callers must inspect `ok`; `assertHostPublication` raises `HostPublicationError` carrying the report for compatibility callers, including worker resource/config commands. Failure does not mean an atomic rollback occurred.
 

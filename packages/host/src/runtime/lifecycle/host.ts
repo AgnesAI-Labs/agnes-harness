@@ -115,6 +115,8 @@ export interface Host {
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
+  /** Read-only status with cooperative integrity verification of historical snapshots. */
+  pluginGenerationStatusAsync?(): Promise<PluginGenerationStatus>
   sessionGeneration?(sessionKey: string): string | undefined
   /** The outcome of the most recent publish, including a refusal and whether the previous state held. */
   lastChange?(): import('../generation/change-result.js').ChangeResult | undefined
@@ -190,6 +192,12 @@ export interface Host {
     credential: unknown,
     signal?: AbortSignal,
   ): Promise<ServiceInspection>
+  authorizeServiceControl(
+    params: ExtensionCallParams,
+    operationId: string,
+    credential: unknown,
+    signal?: AbortSignal,
+  ): ReturnType<Assembled['authorizeServiceControl']>
   applyModelProfile(next: ResolvedProfile): Promise<void | HostPublicationReport>
   readonly profile: ResolvedProfile
   readonly kernel: Kernel
@@ -376,6 +384,13 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           },
         }
       })
+    },
+    authorizeServiceControl: (params, operationId, credential, signal) => {
+      if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+      return a.publicationDispatch.workspace(() => ({
+        port: workspaceRuntimes.invocation(params.sessionId),
+        handler: (view) => a.authorizeServiceControl(params, operationId, credential, view, signal),
+      }))
     },
     get profile() {
       return profile

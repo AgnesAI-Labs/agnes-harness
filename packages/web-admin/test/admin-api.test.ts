@@ -21,16 +21,23 @@ it('shows newly installed bundles from the admin catalog while the shared worker
     localPluginFolders: { home: '/fixture/home-plugins', workspace: '/workspace/plugins' },
   }
   const catalog = [{ id: '@agnes-fde/knowledge-qa#knowledge-qa', sourcePackage: '@agnes-fde/knowledge-qa' }]
-  const fetcher = vi.fn<typeof fetch>(
-    async (url) =>
-      new Response(
-        JSON.stringify(
-          url === '/admin/api/runtime'
-            ? runtime
-            : { revision: 0, bundles: [], effect: 'restart-required', catalog },
-        ),
+  let release: () => void = () => {}
+  const together = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const requested = new Set<string>()
+  const fetcher = vi.fn<typeof fetch>(async (url) => {
+    requested.add(String(url))
+    if (requested.size === 2) release()
+    await together
+    return new Response(
+      JSON.stringify(
+        url === '/admin/api/runtime'
+          ? runtime
+          : { revision: 0, bundles: [], effect: 'restart-required', catalog },
       ),
-  )
+    )
+  })
   expect(await loadRuntimeCatalog(fetcher)).toEqual({ ...runtime, bundles: catalog })
   for (const invalid of [{ catalog: 'unknown' }, { catalog: [{ id: 1 }] }, null]) {
     fetcher.mockImplementation(
@@ -183,6 +190,42 @@ it('keeps a read-only recovery context available when inventory reads need separ
     method: 'GET',
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
+  })
+})
+
+it('joins concurrent context probes but checks authority again on the next request', async () => {
+  const validContext = { ...context, authScope: `auth.${'a'.repeat(32)}` }
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(validContext))
+  const [first, second] = await Promise.all([
+    PluginAdminApi.context(fetcher),
+    PluginAdminApi.context(fetcher),
+  ])
+  expect(first).toEqual(second)
+  expect(first).not.toBe(second)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  await PluginAdminApi.context(fetcher)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it('coalesces overlapping overview reads without caching authority and rejects invalid inventory', async () => {
+  const validContext = { ...context, authScope: `auth.${'a'.repeat(32)}` }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async () => Response.json({ context: validContext, inventory: { packages: [] } }))
+  const [first, second] = await Promise.all([
+    PluginAdminApi.overview(fetcher),
+    PluginAdminApi.overview(fetcher),
+  ])
+  expect(first).toEqual(second)
+  expect(first).not.toBe(second)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  await PluginAdminApi.overview(fetcher)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  fetcher.mockImplementation(async () =>
+    Response.json({ context: validContext, inventory: { packages: [], secret: 'leak' } }),
+  )
+  await expect(PluginAdminApi.overview(fetcher)).rejects.toMatchObject({
+    details: { code: 'ADMIN_RESPONSE_INVALID' },
   })
 })
 

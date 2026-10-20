@@ -238,6 +238,38 @@ describe('hashDirectory', () => {
     await expect(hashDirectoryAsync(root, { signal: abort.signal })).rejects.toMatchObject({
       code: 'E_PACKAGE_CANCELLED',
     })
+    for (let index = 0; index < 3; index++)
+      writeFileSync(join(root, `parallel-${index}`), Buffer.alloc(256 * 1024, index))
+    const duringRead = new AbortController()
+    const handles = new Set<object>()
+    const open = asyncFs.open
+    const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args)
+      handles.add(handle)
+      const read = handle.read.bind(handle)
+      vi.spyOn(handle, 'read').mockImplementationOnce(async (...args) => {
+        const result = await read(...args)
+        duringRead.abort()
+        return result
+      })
+      const close = handle.close.bind(handle)
+      vi.spyOn(handle, 'close').mockImplementation(async () => {
+        try {
+          await close()
+        } finally {
+          handles.delete(handle)
+        }
+      })
+      return handle
+    })
+    try {
+      await expect(hashDirectoryAsync(root, { signal: duringRead.signal })).rejects.toMatchObject({
+        code: 'E_PACKAGE_CANCELLED',
+      })
+      expect(handles.size).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

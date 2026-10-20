@@ -819,6 +819,21 @@ export async function handleServiceCommand(
             .filter((row) => !row.disabled)
             .map(({ plugin, entryRevision }) => ({ plugin, entryRevision })),
         }
+      const selection = {
+        presets: host.profile.presets.allowed.map((id) => ({
+          id,
+          isDefault: id === host.profile.presets.default,
+        })),
+        permissions: sessionPermissionCatalog(host.profile),
+        loops: host.kernel.loops.catalog(),
+        modelAdapters: conversationModelAdapters(
+          host.modelAdapterCatalog(),
+          host.provider.models(),
+          host.profile.provider.routes ?? [],
+        ),
+      }
+      // Loop/default pickers need descriptions, not bundle admission or deployment security scans.
+      if (p.selectionOnly === true) return selection
       const publication = host.compositionPublicationStatus?.()
       return {
         ...(publication
@@ -842,17 +857,7 @@ export async function handleServiceCommand(
             sourcePackage,
           }),
         ),
-        presets: host.profile.presets.allowed.map((id) => ({
-          id,
-          isDefault: id === host.profile.presets.default,
-        })),
-        permissions: sessionPermissionCatalog(host.profile),
-        loops: host.kernel.loops.catalog(),
-        modelAdapters: conversationModelAdapters(
-          host.modelAdapterCatalog(),
-          host.provider.models(),
-          host.profile.provider.routes ?? [],
-        ),
+        ...selection,
       }
     }
     case 'agents.resolve': {
@@ -907,9 +912,13 @@ export async function handleServiceCommand(
       return {}
     case 'observability.health':
       return exporterHealth()
-    case 'pluginGenerations.status':
-      if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
-      return withPackageVerification(async () => host.pluginGenerationStatus!())
+    case 'pluginGenerations.status': {
+      if (host?.pluginGenerationStatusAsync)
+        return withPackageVerification(async () => host.pluginGenerationStatusAsync!())
+      if (host?.pluginGenerationStatus)
+        return withPackageVerification(async () => host.pluginGenerationStatus!())
+      throw new Error('Plugin generation status is unavailable')
+    }
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

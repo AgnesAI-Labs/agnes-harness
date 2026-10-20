@@ -17,6 +17,7 @@ describe('service context surface', () => {
       | 'sandbox'
       | 'scope'
       | 'admission'
+      | 'controlGrant'
       | 'store'
       | 'wake'
       | 'actor'

@@ -5,6 +5,8 @@ export type HostAgnesClient = import('@agnes/sdk/browser').Client
 /** The only backend-service entry point available to a browser module. */
 export type ClientServiceApi = Readonly<{
   call(name: string, input: Record<string, unknown>): Promise<unknown>
+  /** Stable ID retries reconcile the native session effect; never mint a new ID for uncertain work. */
+  effect(name: string, input: Record<string, unknown>, options: { operationId: string }): Promise<unknown>
 }>
 
 export type AgnesClient = HostAgnesClient & Readonly<{ services: ClientServiceApi }>

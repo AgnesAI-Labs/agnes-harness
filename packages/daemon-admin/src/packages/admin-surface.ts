@@ -853,8 +853,18 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         return true
       }
       const action = url.pathname.slice(PREFIX.length)
-      if (action === 'context' && request.method === 'GET') {
-        readOnly = await configurationReadOnly(() => options.invoke('list', { profile: options.profile }))
+      if ((action === 'context' || action === 'overview') && request.method === 'GET') {
+        if (action === 'overview' && !configuredPermissions.includes('packages.read')) {
+          error(response, 403, 'E_ADMIN_PERMISSION', 'The admin permission does not allow this operation.')
+          return true
+        }
+        // One verified inventory provides both the live health decision and the page's data.
+        // Do not cache a completed authorization decision across requests.
+        let inventory: unknown
+        readOnly = await configurationReadOnly(async () => {
+          inventory = await options.invoke('list', { profile: options.profile })
+          return inventory
+        })
         const context: PackageAdminContext = {
           ...configuredContext,
           permissions: readOnly
@@ -868,7 +878,11 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
           return true
         }
-        reply(response, 200, context)
+        reply(
+          response,
+          200,
+          action === 'context' ? context : { context, ...(!readOnly ? { inventory } : {}) },
+        )
         return true
       }
       if (action === 'surfaces' && request.method === 'GET') {

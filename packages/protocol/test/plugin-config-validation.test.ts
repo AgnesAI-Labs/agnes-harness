@@ -47,11 +47,15 @@ describe('plugin configuration JSON Schema', () => {
     [{ type: 'array', prefixItems: [{ type: 'string' }], items: false }, ['hello'], ['hello', 1]],
   ])('validates all constructs without mutating values or exposing them (%j)', (schema, good, bad) => {
     const validate = compilePluginConfig(schema)
+    const copied = compilePluginConfig(structuredClone(schema))
     const before = JSON.stringify(good)
     expect(validate(good)).toEqual([])
     expect(validate(bad).length).toBeGreaterThan(0)
     expect(JSON.stringify(good)).toBe(before)
     expect(validate(bad).every((issue) => Object.keys(issue).sort().join(',') === 'code,path')).toBe(true)
+    expect(copied(good)).toEqual([])
+    expect(copied(bad)).toEqual(validate(bad))
+    expect(copied(good)).toEqual([])
   })
 
   it('refuses plaintext in nested, variant, reference and map secret fields and redacts their audit', () => {
@@ -88,5 +92,15 @@ describe('plugin configuration JSON Schema', () => {
       },
     ])
       expect(() => compilePluginConfig(schema)).toThrow('Invalid synchronous')
+    const mutable = { $id: 'urn:test:config-namespace', type: 'string' }
+    const original = compilePluginConfig(mutable)
+    mutable.type = 'number'
+    const changed = compilePluginConfig(mutable)
+    expect(original('valid')).toEqual([])
+    expect(original(2).length).toBeGreaterThan(0)
+    expect(changed(2)).toEqual([])
+    expect(changed('invalid').length).toBeGreaterThan(0)
+    Object.defineProperty(mutable, 'type', { get: () => 'number' })
+    expect(() => compilePluginConfig(mutable)).toThrow('Invalid synchronous')
   })
 })

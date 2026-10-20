@@ -63,9 +63,20 @@ export function namedLoops(
 
 /** Read only same-origin public descriptions through the authenticated launcher BFF. */
 export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Promise<NewSessionCatalog> {
-  const response = await fetcher('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store' })
-  if (!response.ok) throw new Error('session catalog unavailable')
-  const value = (await response.json()) as Record<string, unknown>
+  const request = async (path: string, message: string) => {
+    const response = await fetcher(path, { credentials: 'same-origin', cache: 'no-store' })
+    if (!response.ok) throw new Error(message)
+    return response.json()
+  }
+  const [value, adapters, composition] = await Promise.all([
+    request('/admin/api/loops', 'session catalog unavailable') as Promise<Record<string, unknown>>,
+    request('/admin/api/model-adapters', 'adapter catalog unavailable') as Promise<{
+      modelAdapters?: unknown
+    }>,
+    request('/admin/api/composition', 'composition unavailable')
+      .then(readComposition)
+      .catch(() => undefined),
+  ])
   const snapshot = { revision: value?.revision, defaults: value?.defaults }
   if (
     !value ||
@@ -76,12 +87,6 @@ export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Prom
     !isSessionDefaultsSnapshot(snapshot)
   )
     throw new Error('invalid session catalog')
-  const adaptersResponse = await fetcher('/admin/api/model-adapters', {
-    credentials: 'same-origin',
-    cache: 'no-store',
-  })
-  if (!adaptersResponse.ok) throw new Error('adapter catalog unavailable')
-  const adapters = (await adaptersResponse.json()) as { modelAdapters?: unknown }
   if (
     !adapters ||
     !Array.isArray(adapters.modelAdapters) ||
@@ -89,13 +94,6 @@ export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Prom
     !adapters.modelAdapters.every(isAdminModelAdapter)
   )
     throw new Error('invalid adapter catalog')
-  let composition: ResolvedComposition | undefined
-  try {
-    const result = await fetcher('/admin/api/composition', { credentials: 'same-origin', cache: 'no-store' })
-    if (result.ok) composition = readComposition(await result.json())
-  } catch {
-    /* Catalogs remain usable when provenance is unavailable. */
-  }
   return {
     ...snapshot,
     loops: value.loops,
@@ -179,28 +177,33 @@ export function LoopPicker() {
     return value === key ? fallback(key) : value
   }
   const published = useSyncExternalStore(subscribe, () => view)
-  const agents = useBusinessAgents()
+  const [open, setOpen] = useState(false)
+  const selected = published.selected ? loopIdentity(published.selected) : ''
+  const stale = !!published.selected && !published.loops.some((entry) => loopIdentity(entry) === selected)
+  const composition =
+    advancedSettingsShown() || !!published.selectedBundles?.length || published.preset !== undefined
+  const recipes = recipePresets(published.presets)
+  // When other advanced controls already expose this picker, the agent gallery is needed only
+  // after opening it. Agent-only profiles still read eagerly to decide whether the chip exists.
+  const staticAvailable =
+    published.loops.length >= 2 ||
+    stale ||
+    !!published.error ||
+    (composition && (!!published.bundles?.length || recipes.length > 0))
+  const agents = useBusinessAgents(
+    {},
+    { enabled: published.visible && (open || (!staticAvailable && !published.disabled)) },
+  )
   const state = { ...published, loops: namedLoops(published.loops, agents.installed, locale, tr) }
   const launchable = agents.agents.filter((agent) => agents.readyAgents.includes(agent.ref))
-  const selected = state.selected ? loopIdentity(state.selected) : ''
-  const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
-  // A bundle or preset already chosen for this draft stays visible: it changes what the session does.
-  const composition = advancedSettingsShown() || !!state.selectedBundles?.length || state.preset !== undefined
   // The recipes a draft may choose. The default one is the 「默认」 entry, never listed twice.
-  const recipes = recipePresets(state.presets)
   const choices = recipes.filter((entry) => entry.id !== state.inheritedPreset)
   const presetValue = state.preset === state.inheritedPreset ? '' : (state.preset ?? '')
   const presetDescription = (id: string) => {
     const key = PRESET_DESCRIPTIONS[id]
     return key ? { title: tr(key) } : {}
   }
-  const advancedAvailable =
-    launchable.length > 0 ||
-    state.loops.length >= 2 ||
-    stale ||
-    !!state.error ||
-    (composition && (!!state.bundles?.length || recipes.length > 0))
-  const [open, setOpen] = useState(false)
+  const advancedAvailable = launchable.length > 0 || staticAvailable
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!state.visible || state.disabled || !advancedAvailable) setOpen(false)

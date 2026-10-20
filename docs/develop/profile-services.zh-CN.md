@@ -6,6 +6,12 @@
 
 Profile 服务不依赖聊天会话。后端服务声明 `scope: 'profile'`，所属客户端模块的 `services` 列表声明准确服务名。既有服务默认属于 session，原来的调用接口仍必须传入 `sessionId`。
 
+Profile 客户端可通过 `ctx.sessionStreams.open(name, input, options)` 绑定当前就绪会话的画面。切换会话会取消待建立和已建立的流。Session 流声明 `readService`，指向本插件检查资源归属的 session 查询，并将流名和服务名加入客户端白名单；网关先按已认证的会话权限调用该查询。客户端不能借此访问任意会话。
+
+使用 `ctx.agnes.services.effect(name, input, { operationId })` 调用 session effect。连接失败、结果不明时，沿用原编号和完全相同的参数核对；原生授权、审批、记录和拒绝规则保持有效，必须存在当前就绪会话和准确服务白名单。
+
+Session effect 声明 `controlLeaseMs` 后，可声明不短于租约且最多 300,000 毫秒的 `controlSessionMs`。处理器通过 `context.controlGrant` 获得本次授权；只有处理器、输出校验和审计成功后，原生临时权限才可使用。可信网关通过 `Host.authorizeServiceControl` 续发短租约，绑定原请求、完整操作者、来源、参数、会话和后端登记版本，不能超过原控制时限。重启、撤销、过期后必须重新授权；恢复历史回执不会恢复控制权限。
+
 ```ts
 ctx.services.register({
   name: 'reports.publish', scope: 'profile', kind: 'effect',

@@ -54,3 +54,6 @@ packages/package-manager/bundled-plugins/goal-ui/src/client.js
 packages/package-manager/bundled-plugins/goal-ui/NOTICE
 packages/package-manager/bundled-plugins/deliverables-ui/src/client.js
 packages/package-manager/bundled-plugins/deliverables-ui/NOTICE
+
+packages/package-manager/bundled-plugins/browser/src/client.js
+packages/package-manager/bundled-plugins/browser/NOTICE

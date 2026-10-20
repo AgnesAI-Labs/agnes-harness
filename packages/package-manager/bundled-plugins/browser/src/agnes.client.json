@@ -1,0 +1,27 @@
+{
+  "client": {
+    "id": "browser",
+    "entry": "./client.js",
+    "styles": [
+      "./browser.css"
+    ],
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "services": [
+      "browser.status",
+      "browser.pages",
+      "browser.events",
+      "browser.stream",
+      "browser.view",
+      "browser.open",
+      "browser.control"
+    ],
+    "streams": [
+      "browser.state",
+      "browser.pages",
+      "browser.frames",
+      "browser.input"
+    ]
+  }
+}

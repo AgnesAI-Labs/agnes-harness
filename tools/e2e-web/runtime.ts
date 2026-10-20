@@ -1,4 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { createReadStream } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
@@ -13,10 +14,11 @@ import {
   wsTransport,
 } from '@agnes/sdk'
 
-const entry = resolve('packages/cli/dist/local/agnes.mjs')
+const requestedEntry = process.env.AGH_WEB_TEST_ENTRY
+const entry = resolve(requestedEntry ?? 'packages/cli/dist/local/agnes.mjs')
 export async function isolatedRuntime(
   launcher: 'root' | 'installed' = 'root',
-  options: { localExamples?: boolean; realModel?: boolean } = {},
+  options: { localExamples?: boolean; realModel?: boolean; browserArchive?: string } = {},
 ) {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
@@ -60,6 +62,35 @@ export async function isolatedRuntime(
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,
+  }
+  // Seed the reviewed test archive before enabling the default plugin; no startup network race.
+  if (options.browserArchive) {
+    const { createLauncher } = await import(
+      new URL('../../packages/package-manager/bundled-plugins/browser/src/launcher.mjs', import.meta.url).href
+    )
+    const cacheRoot =
+      sep === '\\' ? join(root, 'localappdata/Agnes/browser') : join(root, 'Library/Caches/Agnes/browser')
+    const installer = createLauncher({
+      cacheRoot,
+      fetchArchive: async () => ({ ok: true, body: createReadStream(options.browserArchive!) }),
+    })
+    const state = {
+      enabled: true,
+      epoch: 0,
+      state: 'stopped',
+      error: undefined as string | undefined,
+      guard() {},
+      notify() {},
+    }
+    try {
+      installer.prepare(state)
+      const deadline = Date.now() + 30_000
+      while (state.state !== 'ready' && !state.error && Date.now() < deadline)
+        await new Promise((done) => setTimeout(done, 100))
+      if (state.state !== 'ready') throw new Error(state.error ?? 'Test browser cache preparation timed out')
+    } finally {
+      installer.cancel()
+    }
   }
   let web: ChildProcess | undefined
   let log = ''
@@ -145,9 +176,10 @@ export async function isolatedRuntime(
     if (failures.length) throw new AggregateError(failures, 'SDK cleanup failed after stopping the runtime')
   }
   const start = async () => {
-    const command = launcher === 'installed' ? resolve('packages/cli/bin/agh') : process.execPath
+    const command =
+      launcher === 'installed' && !requestedEntry ? resolve('packages/cli/bin/agh') : process.execPath
     const args = [
-      ...(launcher === 'root' ? [resolve('agnes.mjs')] : []),
+      ...(requestedEntry ? [entry] : launcher === 'root' ? [resolve('agnes.mjs')] : []),
       'serve',
       '--port',
       String(address.port),
@@ -167,8 +199,10 @@ export async function isolatedRuntime(
       log += error.message
     })
     const deadline = Date.now() + (sep === '\\' ? 120_000 : 25_000)
+    const child = web
     while (Date.now() < deadline) {
-      if (web.exitCode !== null) throw new Error(`serve exited: ${log}`)
+      if (web !== child) throw new Error('serve startup was cancelled')
+      if (child.exitCode !== null) throw new Error(`serve exited: ${log}`)
       try {
         if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return
       } catch {

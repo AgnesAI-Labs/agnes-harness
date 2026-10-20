@@ -28,6 +28,7 @@ import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
+import { prepareBrowser } from './browser.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
 import { checkPackagedClientModules } from './client-module-check.js'
@@ -88,6 +89,7 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
       await verifyPresentation(destination)
     }
     if (helper === 'document-reader') await prepareDocumentReader(destination)
+    if (helper === 'browser') await prepareBrowser(destination)
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)
   }

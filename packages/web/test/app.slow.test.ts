@@ -14,6 +14,7 @@ import type {
 import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
+import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
@@ -180,6 +181,7 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
+  rememberWorkspace: ReturnType<typeof vi.fn>
   controls: ReturnType<typeof vi.fn>
   control: ReturnType<typeof vi.fn>
   editQueued: ReturnType<typeof vi.fn>
@@ -287,6 +289,7 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
       throw new Error('no history in this double')
     }),
     id,
+    rememberWorkspace: vi.fn(),
     controls: vi.fn(async () => ({
       controls: { steer: true, interrupt: true, pause: true, cancel: true },
       paused: false,
@@ -348,9 +351,16 @@ function installPublicFixture(): void {
   )
 }
 
-function submit(text: string): void {
+function editPrompt(text: string): void {
   const composer = document.getElementById('prompt') as HTMLTextAreaElement
-  composer.value = text
+  flushSync(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(composer, text)
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+function submit(text: string): void {
+  editPrompt(text)
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
@@ -741,64 +751,90 @@ describe('web permission synchronization', () => {
     })
   })
 
-  it.each(['slow-models', 'failed-models', 'failed-workspaces'])(
-    'keeps the session list usable during startup with %s',
-    async (kind) => {
-      installPublicFixture()
-      const models = deferred<void>()
-      const old = session('old', async () => idleTimeline('old'))
-      const client = {
-        initialize: vi.fn(initialized),
-        on: vi.fn(),
-        close: vi.fn(async () => undefined),
-        apis: vi.fn(async () => {
-          await models.promise
-          if (kind === 'failed-models') throw new Error('models unavailable')
-          return { profile: { models: [{ route: 'local', id: 'model-a' }] } }
+  it.each([
+    'slow-models',
+    'slow-models-start-link',
+    'slow-models-empty',
+    'failed-models',
+    'failed-workspaces',
+  ])('keeps the session list usable during startup with %s', async (kind) => {
+    installPublicFixture()
+    if (kind === 'slow-models-start-link') history.replaceState(null, '', '/?new=1#test-launcher-token')
+    if (kind === 'slow-models-empty') history.replaceState(null, '', '/#test-launcher-token')
+    const models = deferred<void>()
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const sessionList = vi.fn(async () => ({
+      items: kind === 'slow-models-empty' ? [] : [{ sessionId: 'old' }],
+    }))
+    const client = {
+      initialize: vi.fn(initialized),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => {
+        await models.promise
+        if (kind === 'failed-models') throw new Error('models unavailable')
+        return { profile: { models: [{ route: 'local', id: 'model-a' }] } }
+      }),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: {
+        list: vi.fn(async () => {
+          if (kind === 'failed-workspaces') throw new Error('workspaces unavailable')
+          return { items: [] }
         }),
-        config: {
-          get: vi.fn(async () => ({ configured: true })),
-          providers: vi.fn(async () => ({ providers: [] })),
-        },
-        workspace: {
-          list: vi.fn(async () => {
-            if (kind === 'failed-workspaces') throw new Error('workspaces unavailable')
-            return { items: [] }
-          }),
-        },
-        session: {
-          list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })),
-          load: vi.fn(async () => old),
-        },
-      }
-      sdk.createClient.mockReturnValue(client)
-      binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
-      await bootApp()
-      await vi.waitFor(() => expect(document.querySelector('[data-session="old"]')).not.toBeNull())
-      expect(client.workspace.list).toHaveBeenCalled()
-      expect(binding.loadWebSession).not.toHaveBeenCalled()
-      if (kind === 'slow-models') {
-        document.getElementById('new')?.click()
-        await vi.waitFor(() =>
-          expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true),
-        )
-      }
-      models.resolve()
-      if (kind === 'slow-models') {
-        await vi.waitFor(() =>
-          expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
-        )
-        expect(binding.loadWebSession).not.toHaveBeenCalled()
-        expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true)
-      } else {
-        await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
-        expect(document.querySelector('[data-session="old"]')).not.toBeNull()
+      },
+      session: {
+        list: sessionList,
+        load: vi.fn(async () => old),
+      },
+    }
+    sdk.createClient.mockReturnValue(client)
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await bootApp()
+    if (kind === 'slow-models-empty') await vi.waitFor(() => expect(sessionList).toHaveBeenCalled())
+    else await vi.waitFor(() => expect(document.querySelector('[data-session="old"]')).not.toBeNull())
+    expect(client.workspace.list).toHaveBeenCalled()
+    if (kind === 'slow-models-start-link' || kind === 'slow-models-empty') {
+      await selectionController.open?.('old')
+      await vi.waitFor(() => expect(new URL(location.href).searchParams.get('session')).toBe('old'))
+      await act(async () => {
+        models.resolve()
+        await models.promise
+      })
+      expect(new URL(location.href).searchParams.get('session')).toBe('old')
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false)
+      return
+    }
+    // Existing conversations open before the model catalog resolves.
+    await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
+    if (kind === 'slow-models') {
+      await vi.waitFor(() =>
+        expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false),
+      )
+      document.getElementById('new')?.click()
+      await vi.waitFor(() =>
+        expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true),
+      )
+    }
+    models.resolve()
+    if (kind === 'slow-models') {
+      await vi.waitFor(() =>
+        expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+      )
+      expect(new URL(location.href).searchParams.get('session')).toBeNull()
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true)
+    } else {
+      await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
+      expect(document.querySelector('[data-session="old"]')).not.toBeNull()
+      await vi.waitFor(() =>
         expect(document.querySelector('.agh-notifications')?.textContent).toContain(
           kind === 'failed-models' ? 'models unavailable' : '工作区列表',
-        )
-      }
-    },
-  )
+        ),
+      )
+    }
+  })
 
   it('restores full access on reopening, applies workspace selections, and follows remote patches', async () => {
     const { old, publish } = await boot(false)
@@ -977,7 +1013,7 @@ describe('web permission synchronization', () => {
       expect(region.querySelector('.approval-warning')).toBeNull()
       expect(buttons().map((b) => b.textContent)).toEqual([
         '仅允许这次',
-        '本会话内允许所有 shell 调用',
+        '本会话内允许此工具的所有调用',
         '拒绝',
       ])
       buttons()[0]?.click()
@@ -1127,7 +1163,12 @@ describe('web session selection', () => {
         'agnes-web-composer-selection',
         JSON.stringify({ model: { route: 'local', id: 'model-b' }, permission: 'full' }),
       )
-      const fresh = session('fresh', async () => idleTimeline('fresh'))
+      const timeline = idleTimeline('fresh')
+      const fresh = session('fresh', async () => timeline)
+      fresh.setYolo.mockImplementation(async (enabled: boolean) => {
+        timeline.yolo = enabled
+        return { effectiveFromSeq: ++timeline.upto }
+      })
       const applied = deferred<{ effectiveFromSeq: number }>()
       if (reconnectDuring === 'model') fresh.setModel.mockImplementationOnce(() => applied.promise)
       if (reconnectDuring === 'permission') fresh.setYolo.mockImplementationOnce(() => applied.promise)
@@ -1256,8 +1297,7 @@ describe('web session selection', () => {
         expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
       )
       const prompt = document.getElementById('prompt') as HTMLTextAreaElement
-      prompt.value = 'use the remembered selection'
-      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      editPrompt('use the remembered selection')
       document
         .getElementById('composer')
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -1408,6 +1448,10 @@ describe('web session selection', () => {
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
     )
 
+    editPrompt('create in beta')
+    await vi.waitFor(() =>
+      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+    )
     submit('create in beta')
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
     expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
@@ -1711,7 +1755,7 @@ describe('web session selection', () => {
       await vi.waitFor(() =>
         expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
       )
-      expect(notice.textContent).toBe('')
+      await vi.waitFor(() => expect(notice.textContent).toBe(''))
       expect(create).not.toHaveBeenCalled()
       await leaveCurrentSession()
       binding.loadWebSession.mockRejectedValueOnce(error)
@@ -1880,7 +1924,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))
     expect(document.querySelector('.agh-notifications')?.textContent).toContain('无法读取工作区列表')
     expect(send.disabled).toBe(true)
-    expect(send.dataset.mode).toBe('idle')
+    await vi.waitFor(() => expect(send.dataset.mode).toBe('idle'))
     expect(send.getAttribute('aria-label')).toBe('发送')
     // The send button's tooltip carries the shortcut hint while the composer is idle.
     expect(send.title).toBe('Enter 发送，Shift+Enter 换行')
@@ -2450,7 +2494,7 @@ describe('web session selection', () => {
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain(
-        '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
+        '提供方拒绝了所选模型或凭据。 请选择其他模型或重新登录。',
       ),
     )
     expect(fresh.setModel).toHaveBeenCalledTimes(2)
@@ -2468,8 +2512,7 @@ describe('web session selection', () => {
     if (!locale) throw new Error('locale control missing')
     locale.value = 'en'
     locale.dispatchEvent(new Event('change', { bubbles: true }))
-    composer.value = '成功后的第二条消息'
-    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    editPrompt('成功后的第二条消息')
     await vi.waitFor(() =>
       expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
     )
@@ -2802,20 +2845,30 @@ describe('composer draft persistence', () => {
     }))
     await bootApp()
     const composer = document.getElementById('prompt') as HTMLTextAreaElement
-    const draftKey = 'agnes-web-composer-draft'
     const type = (text: string) => {
-      composer.value = text
-      composer.dispatchEvent(new Event('input', { bubbles: true }))
+      editPrompt(text)
     }
     await vi.waitFor(() => expect(composer.disabled).toBe(false))
+    await vi.waitFor(() => expect(old.projectUIOpening).toHaveBeenCalled())
+    await vi.waitFor(() =>
+      expect((document.getElementById('send') as HTMLButtonElement).dataset.mode).toBe('idle'),
+    )
 
     // A rejected send is a failure the user can retry: the draft comes back and stays stored.
     type('一段较长的任务提示词')
+    await vi.waitFor(() =>
+      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+    )
     document
       .getElementById('composer')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词'))
+    // Draft storage is scoped to the selected conversation; follow its persisted entry.
+    const draftKey = Array.from({ length: sessionStorage.length }, (_, index) =>
+      sessionStorage.key(index),
+    ).find((key) => key && sessionStorage.getItem(key) === '一段较长的任务提示词')
+    if (!draftKey) throw new Error('Failed prompt draft was not persisted')
     expect(sessionStorage.getItem(draftKey)).toBe('一段较长的任务提示词')
 
     // Preserve a later draft if the in-flight message is rejected.
@@ -2824,7 +2877,7 @@ describe('composer draft persistence', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(2))
     expect(composer.value).toBe('')
-    expect(sessionStorage.getItem(draftKey)).toBeNull()
+    expect(sessionStorage.getItem(draftKey)).toBeFalsy()
     type('下一条草稿')
     inFlight.reject(new Error('provider rejected image input'))
     await vi.waitFor(() => expect(composer.value).toBe('一段较长的任务提示词\n下一条草稿'))
@@ -2837,12 +2890,12 @@ describe('composer draft persistence', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalledTimes(3))
     expect(composer.value).toBe('')
-    expect(sessionStorage.getItem(draftKey)).toBeNull()
+    expect(sessionStorage.getItem(draftKey)).toBeFalsy()
     window.dispatchEvent(new Event('pagehide'))
     unloading.reject(new Error('transport closed'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(composer.value).toBe('')
-    expect(sessionStorage.getItem(draftKey)).toBeNull()
+    expect(sessionStorage.getItem(draftKey)).toBeFalsy()
   })
 })
 
@@ -2957,7 +3010,11 @@ describe('image composer submissions', () => {
     await vi.waitFor(() =>
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
     )
-    if (busy) await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
+    await vi.waitFor(() => expect(send.dataset.mode).toBe(busy ? 'busy' : 'idle'))
+    await vi.waitFor(() => expect(sessionValue.projectUIOpening).toHaveBeenCalled())
+    await vi.waitFor(() =>
+      expect(document.querySelector('#model [data-model-label]')?.textContent).toBe('model-a'),
+    )
   }
 
   async function attachPng(
@@ -2977,7 +3034,12 @@ describe('image composer submissions', () => {
     })
     prompt.dispatchEvent(event)
     if (accepted) {
-      await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('.composer-file-preview'),
+          document.querySelector('#composer')?.textContent ?? '',
+        ).not.toBeNull(),
+      )
       await vi.waitFor(() =>
         expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
       )
@@ -3089,9 +3151,11 @@ describe('image composer submissions', () => {
     submit('保留文字和图片')
     expect(active.prompt).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('保留文字和图片')
-    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('aggregate byte limit'),
+    )
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png'),
     )
     validation.mockRestore()
     submit('保留文字和图片')
@@ -3248,6 +3312,7 @@ describe('session action review regressions', () => {
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
         rename,
+        open: vi.fn(async () => old),
         load: vi.fn(async () => old),
         list: vi.fn(async (query: { q?: unknown }) =>
           paged.value && !query.q
@@ -3708,8 +3773,14 @@ it('renders Computer Use in the application and retires its late operation reply
     session: { list: vi.fn(async () => ({ items: [] })) },
   })
   await bootApp()
-  await vi.waitFor(() =>
-    expect(document.querySelector('[data-testid=computer-use-capability]')).not.toBeNull(),
+  // This page is lazy-loaded; cold module loading can outlast waitFor's one-second default.
+  await vi.waitFor(
+    () =>
+      expect(
+        document.querySelector('[data-testid=computer-use-capability]'),
+        `${location.href}\n${document.body.textContent?.slice(-3500)}`,
+      ).not.toBeNull(),
+    { timeout: 10_000 },
   )
   document.querySelector<HTMLButtonElement>('[data-testid=computer-use-more-toggle]')?.click()
   await vi.waitFor(() =>
@@ -4000,10 +4071,17 @@ describe('session that cannot continue on this build', () => {
         expect(found).toBeTruthy()
         return found as HTMLElement
       })
-      expect(view).toHaveBeenCalledWith('old', expect.objectContaining({ maxNodes: expect.any(Number) }))
+      expect(view).toHaveBeenCalledWith(
+        'old',
+        expect.objectContaining({ maxNodes: expect.any(Number) }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
       expect(banner.textContent).toContain('只读')
       expect(banner.textContent).toContain(text)
-      expect([...banner.querySelectorAll('button')].map((button) => button.textContent)).toEqual(buttons)
+      expect([...banner.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+        '会话详情',
+        ...buttons,
+      ])
       // The conversation is rendered from the record, and nothing can be sent into it.
       expect(document.getElementById('transcript')?.textContent).toContain('历史问题')
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)

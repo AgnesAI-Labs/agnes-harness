@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
 import {
@@ -20,6 +21,157 @@ import { createTestHost } from '../../testkit/index.js'
 import { packageDirs, scratch } from './plugin-extension-fixture.js'
 
 afterEach(() => vi.restoreAllMocks())
+
+it('binds the actual browser package to one current resource across plugin activation and pinned sessions', async () => {
+  const directory = join(scratch(), 'browser')
+  cpSync(
+    fileURLToPath(new URL('../../../package-manager/bundled-plugins/browser/', import.meta.url)),
+    directory,
+    {
+      recursive: true,
+      filter: (path) => !path.split(/[\\/]/).includes('node_modules'),
+    },
+  )
+  // Only the third-party launch/download adapter is replaced; all package registrations,
+  // feature state, native services, session bindings and managed resource lookup are real.
+  writeFileSync(
+    join(directory, 'src/launcher.mjs'),
+    [
+      'export function createLauncher() { return {',
+      'async check() {}, cancel() {},',
+      "prepare(runtime) { runtime.state = 'ready'; runtime.notify() },",
+      "async launch() { throw new Error('The contract fixture never launches processes') }",
+      '} }',
+    ].join('\n'),
+  )
+  const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+  const declaration = manifest.agnes.plugins[0]
+  const packageId = manifest.name,
+    snapshotId = 'sha256-' + 'b'.repeat(64)
+  const owner = pluginRowSource(declaration.id)
+  const source: RuntimePluginSnapshot = {
+    snapshot: {
+      snapshotId,
+      profile: 'local-dev',
+      packageId,
+      version: manifest.version,
+      integrity: snapshotId,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'fixture',
+      directory,
+      contributions: [],
+    },
+    generation: 1,
+    trusted: true,
+  }
+  const row = createPluginRow({
+    id: declaration.id,
+    plugin: packageId + '@' + snapshotId + '/main',
+    snapshotDigest: snapshotId,
+    exportName: 'main',
+    entryRevision: snapshotId,
+    extrasRevision: 'none',
+    mountRevision: 'host-ordinary-row:v1',
+    inject: declaration.inject,
+    runtime: 'in-process',
+  })
+  const target = (disabled: boolean) =>
+    buildRuntimeTarget({
+      rows: [{ ...row, disabled }],
+      resources: { mcp: [], skills: {} },
+      resourceRevision: '0'.repeat(64),
+      compositeRevision: '0'.repeat(64),
+    })
+  const dataDir = scratch()
+  const { host } = await createTestHost({
+    dataDir,
+    runtimePluginCatalogue: [source],
+    extensionLoader: createLoader({
+      cacheDir: join(dataDir, 'cache'),
+      hostRoot: directory,
+      agnesVersion: '0.0.0',
+    }),
+    serviceAuthority: {
+      resolve: async () => ({
+        source: 'client-web',
+        subjectCredential: { kind: 'local' },
+        grants: declaration.capabilities.services.map((service: { name: string }) => ({
+          extension: owner,
+          name: service.name,
+          range: '*',
+        })),
+      }),
+    },
+  })
+  try {
+    await host.applyRuntimeTarget(target(false))
+    const runtime = host.profileServices!
+    const status = { extension: owner, service: 'browser.status', input: {} }
+    await expect(runtime.call(status, { kind: 'local' })).resolves.toMatchObject({
+      output: { enabled: true, state: 'ready' },
+    })
+    const session = await host.createSession({ key: 'browser-session', cwd: dataDir })
+    const generation = host.sessionGeneration?.(session.key)
+    await expect(
+      runtime.call(
+        {
+          extension: owner,
+          service: 'browser.enable',
+          input: { enabled: true },
+          operationId: 'enable-browser',
+        },
+        { kind: 'local' },
+      ),
+    ).rejects.toBeDefined()
+    const pages = { sessionId: session.key, extension: owner, service: 'browser.pages', input: {} }
+    await expect(host.callService(pages, { kind: 'local' })).resolves.toMatchObject({ output: { pages: [] } })
+    await expect(
+      host.callService(
+        {
+          ...pages,
+          service: 'browser.open',
+          input: { url: 'http://metadata.google.internal/' },
+          commandId: 'protected-open',
+        },
+        { kind: 'local' },
+        undefined,
+        { commandId: 'protected-open' },
+      ),
+    ).resolves.toMatchObject({ output: { status: 'refused', code: 'PROTECTED_TARGET' } })
+    await expect(
+      host.callService(
+        {
+          ...pages,
+          service: 'browser.control',
+          input: { pageId: 'closed-page', mode: 'human' },
+          commandId: 'closed-page-control',
+        },
+        { kind: 'local' },
+        undefined,
+        { commandId: 'closed-page-control' },
+      ),
+    ).resolves.toMatchObject({ output: { status: 'refused', code: 'PAGE_UNAVAILABLE' } })
+    expect(host.sessionGeneration?.(session.key)).toBe(generation)
+    await expect(
+      host.callService({ ...pages, input: { sessionId: 'another-session' } }, { kind: 'local' }),
+    ).rejects.toBeDefined()
+    await expect(
+      host.callService(
+        { ...pages, service: 'browser.events', input: { pageId: 'closed-page' } },
+        { kind: 'local' },
+      ),
+    ).rejects.toBeDefined()
+    await host.applyRuntimeTarget(target(true))
+    await expect(host.callService(pages, { kind: 'local' })).rejects.toBeDefined()
+    await expect(runtime.call(status, { kind: 'local' })).rejects.toBeDefined()
+    await host.applyRuntimeTarget(target(false))
+    await expect(host.profileServices!.call(status, { kind: 'local' })).resolves.toMatchObject({
+      output: { enabled: true, state: 'ready' },
+    })
+  } finally {
+    await host.close()
+  }
+})
 
 it.each(['settled', 'unknown'] as const)('restarts resources after %s shutdown', async (shutdown) => {
   // The unknown row simulates the previous worker exiting; the clean row retains the disposal-order gate.

@@ -72,6 +72,27 @@ describe('S1 Extension Service contract', () => {
   it('requires reviewed profile effect policy and refuses caller authority fields', () => {
     const effect = { ...capability, scope: 'profile', kind: 'effect' }
     expect(validateServiceCapability(effect).ok).toBe(false)
+    const control = {
+      ...effect,
+      scope: 'session',
+      controlLeaseMs: 30_000,
+      controlSessionMs: 300_000,
+      effectPolicy: {
+        isDestructive: false,
+        isOpenWorld: false,
+        replay: 'never',
+        requiresApproval: 'never',
+        approvalScopes: [],
+      },
+    }
+    expect(validateServiceCapability(control).ok).toBe(true)
+    for (const patch of [
+      { scope: 'profile' },
+      { controlSessionMs: 29_999 },
+      { controlSessionMs: 300_001 },
+      { controlLeaseMs: undefined },
+    ])
+      expect(validateServiceCapability({ ...control, ...patch }).ok).toBe(false)
     expect(
       validateServiceCapability({
         ...effect,

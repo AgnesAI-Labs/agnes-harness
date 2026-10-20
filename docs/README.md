@@ -53,6 +53,7 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 | [Learned memory](guide/memory.md) | Control learned file preferences, approvals and privacy |
 | [Official default tools](reference/default-tools.md) | Search, ask questions, present files, manage background jobs, and edit observed files |
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
+| [Built-in browser](guide/browser.md) | Share a web page with AGH, test local projects and take control |
 | [Programmatic tools and workflows](guide/code-workflows.md) | Run TypeScript cells and durable parallel child workflows |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |

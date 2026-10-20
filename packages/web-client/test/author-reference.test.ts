@@ -13,7 +13,13 @@ function documentedBrowserCalls(ctx: ClientContext, entry: HomeEntry) {
     { operationId: 'one' },
   )
   const receipt: Promise<unknown> = ctx.profile.services.readOperation('todo.change', 'one')
-  return { off, query, effect, receipt }
+  const sessionEffect: Promise<unknown> = ctx.agnes.services.effect(
+    'page.control',
+    {},
+    { operationId: 'session-one' },
+  )
+  const sessionStream = ctx.sessionStreams.open('page.frames', { pageId: 'one' })
+  return { off, query, effect, receipt, sessionEffect, sessionStream }
 }
 
 it('agrees with the generated browser API reference and Host import map', async () => {

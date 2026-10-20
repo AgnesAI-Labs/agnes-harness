@@ -10,6 +10,8 @@ export interface SessionChildJobs {
   cancel?(id: string): Promise<void>
 }
 export interface ServiceContext {
+  /** Host-generated only for a journal-admitted session effect declaring controlLeaseMs. */
+  readonly controlGrant?: Readonly<{ grantId: string; expiresAt: number }>
   readonly scope?: Readonly<{ kind: 'profile'; profileId: string; activationId: string }>
   readonly admission?: Readonly<{
     operationId: string

@@ -7,8 +7,8 @@ import {
   createRosterStreamAuthorizer,
   type StreamPrincipal,
 } from '@agnes/plugin-streams'
-import type { ClientModuleRosterRow } from '@agnes/protocol'
-import { validateActor } from '@agnes/protocol'
+import type { ClientModuleRosterRow, ExtensionCallParams } from '@agnes/protocol'
+import { jcs, validateActor } from '@agnes/protocol'
 
 const endpoints = new WeakMap<Host, Map<string, Promise<{ host: string; port: number; proof: string }>>>()
 /** Private loopback transport for the launcher. Neither its proof nor endpoint goes to the browser. */
@@ -54,6 +54,7 @@ async function start(host: Host, origin: string) {
       const abort = new AbortController()
       const release = broker.register({
         ...entry,
+        handler: (input, context) => entry.handler(input, { ...context, origin }),
         signal: AbortSignal.any([entry.signal, abort.signal, lifetime.signal]),
       })
       registrations.set(key, {
@@ -68,30 +69,90 @@ async function start(host: Host, origin: string) {
         const row = rows.get(principal)
         const entry = runtime().streams.describe(request.owner, request.name)
         const controlService = registration.declaration.controlService
-        const admitted = controlService
-          ? await runtime().authorizeControl(
-              {
-                extension: request.owner,
-                service: controlService,
-                operationId: request.controlOperationId ?? '',
-              },
-              {
-                kind: 'surface-service',
-                source: 'client-web',
-                subjectCredential: { kind: 'local' },
-                grants: [{ extension: request.owner, name: controlService, range: '*' }],
-              },
-            )
-          : undefined
-        if (admitted && JSON.stringify(admitted.actor) !== JSON.stringify(principal.actor))
+        const sessionScope = request.scope.kind === 'session' ? request.scope : undefined
+        if (
+          sessionScope &&
+          (!request.input || typeof request.input !== 'object' || Array.isArray(request.input))
+        )
+          throw new Error('session-input-required')
+        const sessionInput = request.input as ExtensionCallParams['input']
+        const credential = (service: string) => ({
+          kind: 'surface-service',
+          source: 'client-web',
+          subjectCredential: { kind: 'local' },
+          grants: [{ extension: request.owner, name: service, range: '*' }],
+        })
+        const session = sessionScope ? host.kernel.get(sessionScope.sessionId) : undefined
+        if (sessionScope) {
+          const readService = registration.declaration.readService
+          if (
+            !session ||
+            session.closingOrClosed ||
+            sessionScope.laneId !== 'main' ||
+            !readService ||
+            !row?.services?.includes(readService)
+          )
+            throw new Error('session-stream-refused')
+          const params = {
+            sessionId: sessionScope.sessionId,
+            extension: request.owner,
+            service: readService,
+            input: sessionInput,
+          }
+          if ((await host.inspectService(params, credential(readService))).kind !== 'query')
+            throw new Error('read-service-required')
+          await host.callService(params, credential(readService))
+        }
+        const admitted =
+          sessionScope && controlService
+            ? await host.authorizeServiceControl(
+                {
+                  sessionId: sessionScope.sessionId,
+                  extension: request.owner,
+                  service: controlService,
+                  input: sessionInput,
+                },
+                request.controlOperationId ?? '',
+                credential(controlService),
+              )
+            : controlService
+              ? await runtime().authorizeControl(
+                  {
+                    extension: request.owner,
+                    service: controlService,
+                    operationId: request.controlOperationId ?? '',
+                  },
+                  {
+                    kind: 'surface-service',
+                    source: 'client-web',
+                    subjectCredential: { kind: 'local' },
+                    grants: [{ extension: request.owner, name: controlService, range: '*' }],
+                  },
+                )
+              : undefined
+        if (
+          admitted &&
+          (jcs(admitted.actor) !== jcs(principal.actor) || admitted.source !== principal.source)
+        )
           throw new Error('actor-mismatch')
+        if (
+          sessionScope &&
+          admitted &&
+          'integrity' in admitted &&
+          (admitted.integrity !== entry.integrity || admitted.revision !== entry.revision)
+        )
+          throw new Error('backend-version-mismatch')
         return {
           current: () => row,
           backendActivationId: () => runtime().streams.describe(request.owner, request.name).activationId,
+          ...(sessionScope ? { consumerLifetime: 'profile' as const } : {}),
           signal: entry.signal,
           assertScope() {
             entry.assertCurrent()
-            if (request.scope.kind !== 'profile') throw new Error('scope-refused')
+            if (sessionScope) {
+              if (host.kernel.get(sessionScope.sessionId) !== session || session?.closingOrClosed)
+                throw new Error('session-closed')
+            } else if (request.scope.kind !== 'profile') throw new Error('scope-refused')
           },
           ...(admitted ? { control: { grantId: admitted.grantId, expiresAt: admitted.expiresAt } } : {}),
         }

@@ -48,6 +48,7 @@ export type Assembled = {
   serviceBinding: (names: readonly string[]) => { extension: string; packageId: string } | undefined
   callService: ReturnType<typeof serviceInvoker>['call']
   inspectService: ReturnType<typeof serviceInvoker>['inspect']
+  authorizeServiceControl: ReturnType<typeof serviceInvoker>['authorizeControl']
   prepareService: ReturnType<typeof serviceInvoker>['prepare']
   callPreparedService: ReturnType<typeof serviceInvoker>['callPrepared']
   inspectPreparedService: ReturnType<typeof serviceInvoker>['inspectPrepared']

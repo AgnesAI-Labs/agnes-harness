@@ -23,6 +23,7 @@ import {
 } from '@agnes/protocol'
 import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { cleanRelative, collectSnapshotFiles, SERVABLE } from './client-asset-references.js'
+import { createClientGenerations } from './client-generations.js'
 import { createPublicationChecks } from './client-publication-checks.js'
 import { runtimeClientTruth } from './client-runtime-truth.js'
 import {
@@ -570,14 +571,14 @@ async function writeAtomic(path: string, value: unknown): Promise<void> {
   await rename(temporary, path)
 }
 
-async function readState(root: string, profile: string): Promise<ProfileState> {
+async function readState(root: string, profile: string): Promise<ProfileState | undefined> {
   try {
     const path = join(root, STATE_FILE)
-    if ((await stat(path)).size > MAX_METADATA_BYTES) return emptyState(profile)
+    if ((await stat(path)).size > MAX_METADATA_BYTES) return undefined
     const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
-    return isState(parsed, profile) ? parsed : emptyState(profile)
+    return isState(parsed, profile) ? parsed : undefined
   } catch {
-    return emptyState(profile)
+    return undefined
   }
 }
 
@@ -812,76 +813,13 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const selected = { ...roster, rows, modules, statuses }
     return { ...selected, revision: rosterRevision(selected) }
   }
-  const generationRegistries = new Map<string, ClientModuleRegistry>()
-  const pruneGenerationAssets = async (input: Parameters<ClientModuleRegistry['list']>[0]) => {
-    const referenced = new Set(
-      new RuntimeGenerationSnapshotStore(input.profileDirectory).sessions().map((pin) => pin.generationId),
-    )
-    const root = join(options.snapshotDirectory(input.profile, input.profileDirectory), 'generations')
-    const directories = await readdir(root).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return [] as string[]
-      throw error
-    })
-    for (const id of directories) {
-      if (!GENERATION_ID.test(id) || referenced.has(id)) continue
-      const key = `${input.profile}:${id}`
-      generationRegistries.get(key)?.close()
-      generationRegistries.delete(key)
-      await rm(join(root, id), { recursive: true, force: true })
-    }
-  }
-  const generationInput = (input: Parameters<ClientModuleRegistry['list']>[0], id: string) => {
-    const store = new RuntimeGenerationSnapshotStore(input.profileDirectory)
-    const snapshot = store.read(id)
-    const packages = snapshot.sources.map((source) => ({
-      id: source.snapshot.packageId,
-      directory: source.snapshot.directory,
-      entry: {
-        version: source.snapshot.version,
-        integrity: source.snapshot.integrity,
-        treeIntegrity: source.snapshot.treeIntegrity,
-        enabled: true,
-      },
-      contributions: source.snapshot.contributions,
-      capabilityHash: source.snapshot.capabilityHash,
-      trusted: true,
-      enabled: true,
-      blockers: [],
-    })) as unknown as InstalledPackage[]
-    const inventory = { ...input.inventory, packages }
-    let registry = generationRegistries.get(`${input.profile}:${id}`)
-    if (!registry) {
-      registry = createClientModuleRegistry({
-        ...options,
-        snapshotDirectory: (profile, directory) =>
-          join(options.snapshotDirectory(profile, directory), 'generations', id),
-        runtimeArtifacts: () => ({ desired: snapshot.artifact, lastGood: snapshot.artifact }),
-        composition: () => undefined,
-        changed: () => undefined,
-      })
-      generationRegistries.set(`${input.profile}:${id}`, registry)
-    }
-    return {
-      registry,
-      input: {
-        profile: input.profile,
-        profileDirectory: input.profileDirectory,
-        inventory,
-        refreshInventory: async () => inventory,
-        actual: async (packageId: string) => {
-          const source = snapshot.sources.find((item) => item.snapshot.packageId === packageId)
-          return source
-            ? { actual: 'running' as const, actualIntegrity: source.snapshot.integrity }
-            : undefined
-        },
-      },
-    }
-  }
+  const generations = createClientGenerations(options, createClientModuleRegistry)
+  const { prune: pruneGenerationAssets, input: generationInput } = generations
   const generationRoster = async (
     input: Parameters<ClientModuleRegistry['list']>[0],
     id: string,
   ): Promise<ClientModuleListResult> => {
-    const selected = generationInput(input, id)
+    const selected = await generationInput(input, id)
     const result = await selected.registry.list(selected.input)
     const route = (url: string) => url.replace('/plugins/', `/plugins/generations/${id}/`)
     const roster = {
@@ -988,7 +926,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     await mkdir(root, { recursive: true, mode: 0o700 })
     const now = clock()
     const nowMs = now.getTime()
-    let state = await readState(root, input.profile)
+    const savedState = await readState(root, input.profile)
+    const beforeState = savedState ? jcs(savedState) : undefined
+    let state = savedState ?? emptyState(input.profile)
     state = {
       ...state,
       activations: reconcileContributionActivations(state.activations, input.inventory.packages),
@@ -1363,7 +1303,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     state = { ...state, packages: Object.fromEntries(bounded) }
     // An unreadable state reads back as empty and prunes every snapshot, so refuse to persist it.
     if (!isState(state, input.profile)) throw new Error('client-module state exceeds its persisted bounds')
-    await writeAtomic(join(root, STATE_FILE), state)
+    if (beforeState !== jcs(state)) await writeAtomic(join(root, STATE_FILE), state)
     resourceFailures.set(input.profile, resourceFailure)
     scheduleExpiry(input.profile, state)
     const result: ClientModuleListResult = {
@@ -1427,19 +1367,19 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         emitResourceFailure(input)
         throw error
       }),
-    read: (input) =>
-      serialize(input.profile, async () => {
+    read: async (input) => {
+      const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
+      if (generationPath) {
+        await serialize(input.profile, () => pruneGenerationAssets(input))
+        const selected = await generationInput(input, generationPath[1] as string)
+        return selected.registry.read({ ...selected.input, path: `/plugins/${generationPath[2]}` })
+      }
+      return serialize(input.profile, async () => {
         await pruneGenerationAssets(input)
-        const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
-        if (generationPath) {
-          const id = generationPath[1] as string
-          const selected = generationInput(input, id)
-          return selected.registry.read({ ...selected.input, path: `/plugins/${generationPath[2]}` })
-        }
         inputs.set(input.profile, input)
         await reconcile(input, true)
         const root = options.snapshotDirectory(input.profile, input.profileDirectory)
-        const state = await readState(root, input.profile)
+        const state = (await readState(root, input.profile)) ?? emptyState(input.profile)
         let declaredFile: SnapshotManifest['files'][number] | undefined
         for (const [packageId, item] of Object.entries(state.packages)) {
           for (const revision of [
@@ -1472,14 +1412,14 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         } catch {
           return { found: false }
         }
-      }),
+      })
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
     close() {
-      for (const registry of generationRegistries.values()) registry.close()
-      generationRegistries.clear()
+      generations.close()
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       inputs.clear()
