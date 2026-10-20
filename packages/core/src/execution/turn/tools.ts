@@ -44,7 +44,8 @@ import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
-import { failureNotes, nestedOutcomeNote, nestedParentName, resultPreview } from './nested-note.js'
+import { callFailureNotes, executedNotes } from './nested-note.js'
+import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { preflightError } from './preflight-error.js'
@@ -79,7 +80,7 @@ export type ExecOpts = {
    * does. No running code reads that result, so it commits with a `[nested result]` note naming the
    * tool the call was made inside.
    */
-  unconsumed?: { parentEffectId?: string }
+  unconsumed?: { parentEffectId?: string | undefined }
 }
 export type PlannedCall = {
   toolUseId: string
@@ -326,81 +327,6 @@ export async function refuse(
     (cur) => updateCall(cur, toolUseId, { status: 'completed' }),
   )
   return result
-}
-
-/** A nested call that parked, at any depth below this one, and the question it left open. */
-type NestedPark = { event: EventInput; toolUseId: string }
-
-const APPROVAL_PENDING_TEXT =
-  'approval is pending for another call from the same tool; call this again after that approval is settled'
-
-/**
- * The park a tool's nested calls leave the turn on. A turn waits on one approval, so when several
- * nested calls parked at once the first is kept and every later one still awaiting approval is
- * closed here: an `APPROVAL_PENDING` result, its question withdrawn and its batch entry completed,
- * in one commit. An uncertain call already has its result and is left alone.
- */
-async function parkOutcome(
-  s: SessionImpl,
-  nestedParks: readonly NestedPark[],
-): Promise<{ park?: EventInput; parkedToolUseId?: string }> {
-  const [kept, ...later] = nestedParks
-  if (!kept) return {}
-  // Only the call that asked is closed, and never one that already has its result.
-  const callSeqs = later.flatMap((p) => s.state.toolCalls.get(p.toolUseId)?.seq ?? [])
-  const answered = new Set(
-    callSeqs.length
-      ? (
-          await scanAll((q) => s.d.log.scan(q), {
-            fromSeq: Math.min(...callSeqs) + 1,
-            toSeq: s.lastSeq,
-            type: 'tool/result',
-            lane: s.lane,
-          })
-        ).map((row) => (row.data as { toolUseId: string }).toolUseId)
-      : [],
-  )
-  const awaiting = (p: NestedPark) => {
-    const op = s.op()
-    return (
-      !answered.has(p.toolUseId) &&
-      op?.phase.kind === 'tools' &&
-      op.phase.batch.calls.some((c) => c.toolUseId === p.toolUseId && c.status === 'awaiting_approval')
-    )
-  }
-  if (later.some(awaiting)) {
-    let closing: NestedPark[] = []
-    await s.transition(
-      () => {
-        closing = later.filter(awaiting)
-        const handles = closing.flatMap((p) =>
-          p.event.type === 'x/core/decision-delivery'
-            ? [(p.event.data as { handle: DecisionHandle }).handle]
-            : [],
-        )
-        return [
-          ...closing.map((p) => {
-            const callSeq = s.state.toolCalls.get(p.toolUseId)?.seq
-            return s.ev(
-              'tool/result',
-              {
-                toolUseId: p.toolUseId,
-                content: [{ type: 'text', text: APPROVAL_PENDING_TEXT }],
-                isError: true,
-                code: 'APPROVAL_PENDING',
-                enforcement: s.d.runtime.enforcement(),
-                authz: { decisionId: 'n/a' },
-              },
-              callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
-            )
-          }),
-          ...s.decisions.withdrawnEvents(handles, 'approval-pending'),
-        ]
-      },
-      (cur) => closing.reduce((op, p) => updateCall(op, p.toolUseId, { status: 'completed' }), cur),
-    )
-  }
-  return { park: kept.event, parkedToolUseId: kept.toolUseId }
 }
 
 export async function approveAndExecute(
@@ -1214,19 +1140,6 @@ export async function approveAndExecute(
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
   const nestedParks: NestedPark[] = []
-  // A synthesized failure no running code reads: for a nested call, its own outcome; for an outer
-  // call, the nested calls that had already written under it.
-  const notesFor = (code: string) =>
-    failureNotes(
-      s,
-      {
-        name: call.name,
-        effectId: effect.effectId,
-        nested: o.depth > 0,
-        parentEffectId: o.parentEffectId ?? o.unconsumed?.parentEffectId,
-      },
-      code,
-    )
   const onAbort = () => ac.abort()
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
@@ -1507,12 +1420,12 @@ export async function approveAndExecute(
               outcome: 'aborted',
               partial: true,
               cancelledBy: stoppedBy,
-              notes: await notesFor('CANCELLED'),
+              notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
             },
           )
           return {
             result,
-            ...(await parkOutcome(s, nestedParks)),
+            ...(await parkOutcome(s, nestedParks, updateCall)),
           }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
@@ -1527,7 +1440,7 @@ export async function approveAndExecute(
               timeoutMs,
             ) + reconciledMessage(reconciliation.answer),
           outcome: 'unknown',
-          notes: await notesFor('TOOL_OUTCOME_UNKNOWN'),
+          notes: await callFailureNotes(s, call.name, effect.effectId, o, 'TOOL_OUTCOME_UNKNOWN'),
         })
         return {
           result,
@@ -1541,11 +1454,11 @@ export async function approveAndExecute(
           outcome: 'aborted',
           partial: true,
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
-          notes: await notesFor('CANCELLED'),
+          notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
         })
         return {
           result,
-          ...(await parkOutcome(s, nestedParks)),
+          ...(await parkOutcome(s, nestedParks, updateCall)),
         }
       }
       result = errorResult(
@@ -1664,20 +1577,7 @@ export async function approveAndExecute(
               ]
             : []),
         ]
-    const resultRow = resultRows[0]
-    if (o.unconsumed && !deferred && resultRow) {
-      const data = resultRow.data as { content: unknown; isError: boolean }
-      resultRows.push(
-        nestedOutcomeNote(s, {
-          name: call.name,
-          parent: await nestedParentName(s, o.unconsumed.parentEffectId),
-          outcome: 'executed',
-          isError: data.isError,
-          preview: resultPreview(data.content),
-          trust: resultRow.trust,
-        }),
-      )
-    }
+    resultRows.push(...(await executedNotes(s, call.name, o, deferred ? undefined : resultRows[0])))
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
       tier: s.preset.verifier.defaultTier,
@@ -1738,7 +1638,7 @@ export async function approveAndExecute(
     }
     return {
       result: recordedResult,
-      ...(await parkOutcome(s, nestedParks)),
+      ...(await parkOutcome(s, nestedParks, updateCall)),
       ...(deferred ? { deferred: { jobId: deferred, toolUseId: call.toolUseId } } : {}),
     }
   } finally {
@@ -1856,9 +1756,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
                 ...(c.toolUseId !== continuation?.toolUseId && c.parentEffectId
                   ? { parentEffectId: c.parentEffectId }
                   : {}),
-                ...((c.depth ?? 0) > 0
-                  ? { unconsumed: c.parentEffectId ? { parentEffectId: c.parentEffectId } : {} }
-                  : {}),
+                ...((c.depth ?? 0) > 0 ? { unconsumed: { parentEffectId: c.parentEffectId } } : {}),
                 ...(recovered
                   ? {
                       resumeDispatch: {

@@ -179,6 +179,45 @@ export async function failureNotes(
   return calls.length > 0 ? [outerFailureNote(s, { parent: call.name, code, calls })] : []
 }
 
+/**
+ * `failureNotes` for a call being executed: a synthesized failure no running code reads. A nested call is one at depth > 0; an approval
+ * continuation has no `parentEffectId` of its own, so it reads the one the batch runner passed.
+ */
+export function callFailureNotes(
+  s: SessionImpl,
+  name: string,
+  effectId: string,
+  o: { depth: number; parentEffectId?: string; unconsumed?: { parentEffectId?: string | undefined } },
+  code: string,
+): Promise<EventInput[]> {
+  const parentEffectId = o.parentEffectId ?? o.unconsumed?.parentEffectId
+  return failureNotes(s, { name, effectId, nested: o.depth > 0, parentEffectId }, code)
+}
+
+/**
+ * The note for a nested call that ran after approval, built from the `tool/result` row it committed.
+ * Only a call the batch runner marked `unconsumed` that did not defer has one.
+ */
+export async function executedNotes(
+  s: SessionImpl,
+  name: string,
+  o: { unconsumed?: { parentEffectId?: string | undefined } },
+  resultRow: EventInput | undefined,
+): Promise<EventInput[]> {
+  if (!o.unconsumed || !resultRow) return []
+  const data = resultRow.data as { content: unknown; isError: boolean }
+  return [
+    nestedOutcomeNote(s, {
+      name,
+      parent: await nestedParentName(s, o.unconsumed.parentEffectId),
+      outcome: 'executed',
+      isError: data.isError,
+      preview: resultPreview(data.content),
+      trust: resultRow.trust,
+    }),
+  ]
+}
+
 /** The note for a deferred job's result, when the call that started the job was nested. */
 export async function deferredNestedNote(
   s: SessionImpl,
