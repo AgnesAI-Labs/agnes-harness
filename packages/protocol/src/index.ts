@@ -665,7 +665,7 @@ export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelo
 export * from './errors.js'
 export * from './file-upload.js'
 export * from './hooks.js'
-export { JcsByteLimitError, jcs } from './jcs.js'
+export { JcsByteLimitError, jcs, jcsWrite } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
 export * from './loop-selection.js'
 export * from './meta.js'

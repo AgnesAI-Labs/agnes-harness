@@ -8,6 +8,8 @@
     "./command-table/rules": "./src/command-table/rules.ts",
     "./context-diagnostics": "./src/context-diagnostics.ts",
     "./ids": "./src/ids.ts",
+    "./request/sha256-node": "./src/request/sha256-node.ts",
+    "./request/sha256-portable": "./src/request/sha256-portable.ts",
     "./jcs": "./src/jcs.ts",
     "./loop/registry": "./src/loop/registry.ts",
     "./request/hash": "./src/request/hash.ts",
@@ -15,6 +17,13 @@
     "./step/preset": "./src/step/preset.ts",
     "./types": "./src/types.ts",
     "./workspace-path": "./src/workspace-path.ts"
+  },
+  "imports": {
+    "#sha256": {
+      "agnes-portable-sha256": "./src/request/sha256-portable.ts",
+      "node": "./src/request/sha256-node.ts",
+      "default": "./src/request/sha256-portable.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc -b",

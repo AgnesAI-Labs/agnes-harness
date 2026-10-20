@@ -1,6 +1,6 @@
-import { sha256Hex, utf8 } from '@agnes/core-common/request/hash'
+import { createSha256, type Sha256Stream } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
-import { jcs } from '@agnes/protocol'
+import { jcsWrite } from '@agnes/protocol'
 import type { IntegrityCommit, IntegrityMetadata, IntegrityRow, StorageAdapter } from './storage.js'
 
 export const LEDGER_INTEGRITY_ALGORITHM = 'agnes-ledger-jcs-sha256-v1' as const
@@ -29,9 +29,40 @@ function sameDigest(a: string, b: string): boolean {
   return different === 0
 }
 
+/** Small tokens are coalesced so the hash sees few large updates; large strings go through in slices. */
+const FLUSH_CHARS = 64 * 1024
+/** A large string is fed in slices of at most this many code units, cut between code points, so the
+ * hash never converts a whole multi-megabyte token to UTF-8 at once. */
+const SLICE_CHARS = 1024 * 1024
+
+function updateSliced(hash: Sha256Stream, text: string): void {
+  for (let at = 0; at < text.length; ) {
+    let end = Math.min(at + SLICE_CHARS, text.length)
+    const last = text.charCodeAt(end - 1)
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--
+    hash.update(text.slice(at, end))
+    at = end
+  }
+}
+
 function digestCanonical(value: unknown): { digest: string; bytes: number } {
-  const canonical = jcs(value)
-  return { digest: sha256Hex(canonical), bytes: utf8(canonical).byteLength }
+  const hash = createSha256()
+  let pending = ''
+  jcsWrite(value, (chunk) => {
+    if (chunk.length >= FLUSH_CHARS) {
+      if (pending) hash.update(pending)
+      pending = ''
+      updateSliced(hash, chunk)
+      return
+    }
+    pending += chunk
+    if (pending.length >= FLUSH_CHARS) {
+      hash.update(pending)
+      pending = ''
+    }
+  })
+  if (pending) hash.update(pending)
+  return { digest: hash.digestHex(), bytes: hash.bytes }
 }
 
 function anchorDigest(
