@@ -7,6 +7,7 @@ import {
   type PluginSchema,
   pluginFormKind,
   pluginSchemaDefault,
+  pluginSchemaText,
   pluginVariantIndex,
   resolvePluginSchema,
 } from './plugin-schema-model.js'
@@ -43,9 +44,11 @@ function dateCommitValue(format: unknown, value: string): string {
 
 export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   const { root, value, path, issues, onChange, onInvalid, disabled = false, depth = 0 } = props
-  const { t } = useUiText(PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog)
+  const { t, locale } = useUiText(PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog)
   const schema = resolvePluginSchema(root, props.schema)
   const node = isSchemaObject(schema) ? schema : {}
+  const title = pluginSchemaText(node, 'title', locale)
+  const description = pluginSchemaText(node, 'description', locale)
   const kind = pluginFormKind(schema, depth)
   const [branch, setBranch] = useState<number | undefined>()
   const [newKey, setNewKey] = useState('')
@@ -54,7 +57,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   const common = {
     id,
     disabled: disabled || node.readOnly === true,
-    'aria-label': String(node.title ?? (path || t('title'))),
+    'aria-label': title ?? (path || t('title')),
     'aria-invalid': fieldIssues.length > 0,
     'aria-describedby': `${id}-help`,
     'data-testid': `plugin-config-field${path || '/'}`,
@@ -361,10 +364,10 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   }
   return (
     <div className="config-field" data-testid={`plugin-config-node${path || '/'}@${depth}`}>
-      {typeof node.title === 'string' && <label htmlFor={id}>{node.title}</label>}
+      {title !== undefined && <label htmlFor={id}>{title}</label>}
       {control}
       <div id={`${id}-help`}>
-        {typeof node.description === 'string' && <p>{node.description}</p>}
+        {description !== undefined && <p>{description}</p>}
         {typeof node.format === 'string' && <p>{t('format', { format: node.format })}</p>}
         {fieldIssues.map((issue, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: array positions and schema branch indices are the JSON pointer identities.

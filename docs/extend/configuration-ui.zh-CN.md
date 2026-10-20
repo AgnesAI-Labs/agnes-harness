@@ -108,6 +108,8 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 
 表单支持对象、数组、枚举、`oneOf`/`anyOf` 方案选择、本地嵌套/递归引用、additionalProperties 键值编辑、说明与 format。引用展开在六层后停止。组合断言、元组、未知 UI 注释及无法忠实展示的结构，在对应子树使用 JSON 编辑器。未知键及未选方案的值保留在草稿里，不会被编辑操作过滤掉。完整验证器继续执行 `allOf`、条件、patternProperties、元组等 JSON Schema 断言。错误只返回 JSON Pointer 字段路径与代码，不回显输入值。
 
+字段的 `title` 与 `description` 可在 `x-locales` 下按语言提供译文，例如 `"x-locales": { "zh-CN": { "description": "…" } }`。没有当前语言译文的字段显示自身的 `title` 与 `description`。
+
 每个密钥字段须标注 `format: "credential-reference"`、`x-secret: true` 或 `writeOnly: true`。这些字段在方案、引用、自由键映射中也只接受 `secret://namespace/name` 引用。界面仅编辑引用；创建/替换实际凭据走凭据存储的独立只写 API。JSON 回退编辑仍受同样限制。审计隐藏引用与凭据形状的键值。插件通过授权的 secret 能力解析引用，不应期待配置已被替换为明文。
 
 行内校验与保存都由服务端共享的 `compilePluginConfig` 验证器执行。`_agnes/v1/plugins.config.get` 返回 `{ revision, entries, audit }`；`.validate` 接收 `{ profile, id, rowId, value }`，返回 `{ issues }`；`.save` 另需 `expectedRevision`、`clientId`、`commandId`。读取/验证需要 `packages.read`，保存需要 `packages.activate` 与服务端确定的 client 身份。SDK 入口为 `client.packages.config.get/validate/save`；本地 Web 中继为 `/admin/plugins/api/config/get`、`/validate`、`/save`。

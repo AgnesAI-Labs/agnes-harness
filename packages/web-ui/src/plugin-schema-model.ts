@@ -26,6 +26,7 @@ const supported = new Set([
   'readOnly',
   'writeOnly',
   'x-secret',
+  'x-locales',
   'type',
   'properties',
   'required',
@@ -54,6 +55,19 @@ export const pointerKey = (key: string) => key.replace(/~/g, '~0').replace(/\//g
 export const childPath = (path: string, key: string | number) => `${path}/${pointerKey(String(key))}`
 export const isSchemaObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** Author text in the reader's language: `x-locales.<locale>.<field>` over the schema's own `field`. */
+export function pluginSchemaText(
+  node: Readonly<Record<string, unknown>>,
+  field: 'title' | 'description',
+  locale: string,
+): string | undefined {
+  const locales = node['x-locales']
+  const localized =
+    isSchemaObject(locales) && isSchemaObject(locales[locale]) ? locales[locale][field] : undefined
+  if (typeof localized === 'string') return localized
+  return typeof node[field] === 'string' ? node[field] : undefined
+}
 
 export function resolvePluginSchema(root: PluginSchema, schema: PluginSchema): PluginSchema {
   let current = schema

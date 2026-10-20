@@ -4,6 +4,8 @@ import {
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
+  type PackageInstalledDescriptor,
+  resolvePluginMetadata,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import { useBusinessAgents } from '@agnes/web-admin/agents'
@@ -39,6 +41,25 @@ export type NewSessionCatalog = SessionDefaultsSnapshot & {
 export const loopIdentity = (loop: LoopSelection): string => JSON.stringify([loop.id, loop.version])
 /** What a recipe does, where its name alone does not say (the same help the admin catalog shows). */
 const PRESET_DESCRIPTIONS: Record<string, string> = { minimal: 'choiceHelp.minimal', ptc: 'choiceHelp.ptc' }
+
+/**
+ * Names a loop the Host catalog lists by id only after the installed plugin that is its sole source,
+ * such as 「Jev Agent Loop」 for `agnes.jev`. A loop with a name of its own keeps it.
+ */
+export function namedLoops(
+  loops: readonly AdminLoop[],
+  installed: readonly PackageInstalledDescriptor[],
+  locale: 'en' | 'zh-CN',
+  t: (key: string) => string,
+): AdminLoop[] {
+  return loops.map((loop) => {
+    if (choiceName(loop, t) !== loop.id) return loop
+    if (loops.filter((entry) => entry.sourcePackage === loop.sourcePackage).length !== 1) return loop
+    const item = installed.find((entry) => entry.id === loop.sourcePackage)
+    const label = resolvePluginMetadata(item?.metadata, locale)?.displayName
+    return label ? { ...loop, label } : loop
+  })
+}
 
 /** Read only same-origin public descriptions through the authenticated launcher BFF. */
 export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Promise<NewSessionCatalog> {
@@ -152,13 +173,14 @@ function advancedSettingsShown(): boolean {
  * default comes from are advanced: they show with advanced settings on, or while one is in effect.
  */
 export function LoopPicker() {
-  const { t: fallback } = useUiText('@agnes/web/composer', composerLocaleCatalog)
+  const { t: fallback, locale } = useUiText('@agnes/web/composer', composerLocaleCatalog)
   const tr = (key: string) => {
     const value = hostText(key)
     return value === key ? fallback(key) : value
   }
-  const state = useSyncExternalStore(subscribe, () => view)
+  const published = useSyncExternalStore(subscribe, () => view)
   const agents = useBusinessAgents()
+  const state = { ...published, loops: namedLoops(published.loops, agents.installed, locale, tr) }
   const launchable = agents.agents.filter((agent) => agents.readyAgents.includes(agent.ref))
   const selected = state.selected ? loopIdentity(state.selected) : ''
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
