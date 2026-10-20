@@ -10,6 +10,7 @@ import { runtime, toolResult, until } from '../pharma-gmp/scripts/runtime.mjs'
 if (!process.env.AGH_SHOWCASE_SKIP_BUILD)
   execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
     stdio: 'inherit',
+    timeout: 300000,
   })
 const descriptor = JSON.parse(
   await readFile(new URL('../aerospace-quality/client/agnes.client.json', import.meta.url), 'utf8'),
@@ -28,6 +29,7 @@ const evidence = {
   sessions: [],
   sessionBudgets: [],
   errors: [],
+  networkFailures: [],
   passed: false,
 }
 console.log(JSON.stringify({ roots: [], output }))
@@ -57,7 +59,16 @@ async function shot(page, label, locale, theme) {
 async function launch(page, button) {
   const previousSession = new URL(page.url()).searchParams.get('session')
   await button.click()
-  await page.getByTestId('agent-launch-review').waitFor({ timeout: 45000 })
+  await until(
+    async () => {
+      const error = page.locator('.agh-banner[data-tone=error]:visible').first()
+      if (await error.isVisible()) throw new Error(`Launch review failed: ${await error.innerText()}`)
+      return page.getByTestId('agent-launch-review').isVisible()
+    },
+    Boolean,
+    'launch review',
+    45000,
+  )
   await page.getByTestId('agent-launch-confirm').click()
   await page.waitForURL(
     (url) => {
@@ -136,6 +147,14 @@ try {
     )
     const page = await context.newPage()
     page.on('pageerror', (error) => evidence.errors.push(error.message))
+    page.on('requestfailed', (request) =>
+      evidence.networkFailures.push({
+        path: new URL(request.url()).pathname,
+        error: request.failure()?.errorText,
+      }),
+    )
+    page.setDefaultTimeout(30000)
+    page.setDefaultNavigationTimeout(45000)
     await page.goto(rt.url + '/?page=agents')
     const card = page.locator(`[data-application="${packageId}"]`)
     await card.waitFor({ timeout: 45000 })

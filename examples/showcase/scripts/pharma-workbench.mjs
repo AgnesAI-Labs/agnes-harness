@@ -11,6 +11,7 @@ import { testOperatorSignatures } from './signatures.mjs'
 if (!process.env.AGH_SHOWCASE_SKIP_BUILD)
   execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
     stdio: 'inherit',
+    timeout: 300000,
   })
 const descriptor = JSON.parse(
   await readFile(new URL('../pharma-gmp/client/agnes.client.json', import.meta.url), 'utf8'),
@@ -29,6 +30,8 @@ const evidence = {
   sessions: [],
   sessionBudgets: [],
   errors: [],
+  networkFailures: [],
+  navigationChecks: [],
   passed: false,
 }
 console.log(JSON.stringify({ roots: [], output }))
@@ -58,7 +61,16 @@ async function shot(page, label, locale, theme) {
 async function launch(page, button) {
   const previousSession = new URL(page.url()).searchParams.get('session')
   await button.click()
-  await page.getByTestId('agent-launch-review').waitFor({ timeout: 45000 })
+  await until(
+    async () => {
+      const error = page.locator('.agh-banner[data-tone=error]:visible').first()
+      if (await error.isVisible()) throw new Error(`Launch review failed: ${await error.innerText()}`)
+      return page.getByTestId('agent-launch-review').isVisible()
+    },
+    Boolean,
+    'launch review',
+    45000,
+  )
   await page.getByTestId('agent-launch-confirm').click()
   await page.waitForURL(
     (url) => {
@@ -120,6 +132,8 @@ try {
     rt = await runtime(false, 'pharma-gmp', { demoModel: true })
     evidence.roots.push(rt.root)
     console.log(JSON.stringify({ root: rt.root, locale }))
+    const other = await rt.install('packages/cli/dist/local/bundled-examples/showcase/aerospace-quality')
+    assert.equal(other.id, '@agnes-showcase/aerospace-quality')
     await rt.startWeb()
     const context = await browser.newContext({
       viewport: { width: 1600, height: 1100 },
@@ -137,6 +151,14 @@ try {
     )
     const page = await context.newPage()
     page.on('pageerror', (error) => evidence.errors.push(error.message))
+    page.on('requestfailed', (request) =>
+      evidence.networkFailures.push({
+        path: new URL(request.url()).pathname,
+        error: request.failure()?.errorText,
+      }),
+    )
+    page.setDefaultTimeout(30000)
+    page.setDefaultNavigationTimeout(45000)
     await page.goto(rt.url + '/?page=agents')
     const card = page.locator(`[data-application="${packageId}"]`)
     await card.waitFor({ timeout: 45000 })
@@ -159,7 +181,26 @@ try {
     await page.locator('.ph-kpi').first().waitFor({ timeout: 45000 })
     await page.getByTestId('home-entry-pharma-tasks').waitFor({ timeout: 30000 })
     assert.equal(await page.getByTestId('home-entry-pharma-batches').isVisible(), false)
+    assert.equal(await page.getByTestId('home-entry-aero-home').count(), 0)
+    assert.equal(await page.getByTestId('home-entry-aero-tasks').count(), 0)
     await shot(page, '04-slim-overview', locale, theme)
+    const navigation = await rt.client.request('_agnes/v1/applications.get', { profile: 'local-dev' })
+    assert.equal(navigation.selection.packageId, packageId)
+    assert.ok(navigation.candidates.some((app) => app.packageId === other.id && app.available))
+    evidence.navigationChecks.push({
+      locale,
+      selected: navigation.selection.packageId,
+      installed: navigation.candidates,
+      sidebar: await page.getByTestId('home-entries').innerText(),
+    })
+    await page.goto(rt.url + '/?page=plugins')
+    await page.locator('#plugin-search').fill('@agnes-showcase/')
+    await page.locator(`.plugin-row[data-plugin-id="${other.id}"]`).waitFor()
+    await page.locator(`.plugin-row[data-plugin-id="${packageId}"]`).waitFor()
+    assert.equal(await page.getByTestId('home-entry-aero-home').count(), 0)
+    await shot(page, '04b-two-installed-one-adopted', locale, theme)
+    await page.getByTestId('home-entry-pharma-home').click()
+    await page.locator('.ph-kpi').first().waitFor({ timeout: 45000 })
     const investigation = await launch(
       page,
       page

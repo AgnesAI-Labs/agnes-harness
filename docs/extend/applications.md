@@ -199,3 +199,5 @@ auto-confirms eligible business decisions and records that mode without a pendin
 workspace-write permissions retain manual confirmation. Never label an automatic confirmation as a manual click. `evidence` reads session tool
 receipts and opens the existing execution records and report files. Gallery scenarios replace role
 launch lists for workbench applications; role descriptions remain in collapsed details.
+
+Installed applications keep their pages available through plugin and agent surfaces. Only the adopted application contributes its pages to the main sidebar; ordinary non-application plugin navigation remains available.

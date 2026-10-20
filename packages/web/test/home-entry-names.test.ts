@@ -39,6 +39,76 @@ describe('home entry names', () => {
     dispose = registerBuiltinHomeEntries()
     expect(homeEntries.get('agents')?.subtitleKey).toBeUndefined()
   })
+  it('shows only the adopted application in primary navigation while keeping both installed pages reachable', async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    const builtins = registerBuiltinHomeEntries()
+    const entry = (id: string) => ({
+      id,
+      titleKey: id,
+      icon: 'file',
+      order: 40,
+      placement: 'primary' as const,
+      component: () => null,
+    })
+    const cleanups = [
+      builtins,
+      reserveHomeEntry('one', entry('one-home'), 'acme/one'),
+      reserveHomeEntry('two', entry('two-home'), 'acme/two'),
+      reserveHomeEntry('ordinary', entry('ordinary'), 'acme/tool'),
+    ]
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    const candidates = ['one', 'two'].map((id) => ({
+      packageId: `acme/${id}`,
+      applicationId: id,
+      version: '1.0.0',
+      available: true,
+    }))
+    const adopt = (id: string | undefined) =>
+      applicationIdentity.set({
+        revision: 1,
+        candidates,
+        assets: {},
+        status: id ? 'active' : 'host',
+        selection: id
+          ? {
+              packageId: `acme/${id}`,
+              applicationId: id,
+              integrity: 'v1',
+              declarationDigest: 'a'.repeat(64),
+              consentDigest: 'b'.repeat(64),
+              bindingDigest: 'c'.repeat(64),
+            }
+          : null,
+        effective: id ? { id, presentation: { navigation: { entries: [`acme/${id}#${id}-home`] } } } : null,
+      })
+    try {
+      await act(async () => {
+        adopt('two')
+        root.render(createElement(HomeEntriesNav, { t: enT }))
+      })
+      expect(host.querySelector('[data-testid="home-entry-two-home"]')).toBeTruthy()
+      expect(host.querySelector('[data-testid="home-entry-one-home"]')).toBeNull()
+      expect(host.querySelector('[data-testid="home-entry-ordinary"]')).toBeTruthy()
+      expect(resolveHomeEntry('acme/one#one-home')).toBeTruthy()
+      homeNavigation.openRef('acme/one#one-home')
+      expect(activeHomeEntry()?.id).toBe('one-home')
+      await act(async () => adopt('one'))
+      expect(host.querySelector('[data-testid="home-entry-one-home"]')).toBeTruthy()
+      expect(host.querySelector('[data-testid="home-entry-two-home"]')).toBeNull()
+      await act(async () => adopt(undefined))
+      expect(host.querySelector('[data-testid="home-entry-one-home"]')).toBeNull()
+      expect(host.querySelector('[data-testid="home-entry-two-home"]')).toBeNull()
+      expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeTruthy()
+      expect(host.querySelector('[data-testid="home-entry-agents"]')).toBeTruthy()
+    } finally {
+      await act(async () => {
+        root.unmount()
+        for (const off of cleanups.reverse()) off()
+      })
+      host.remove()
+    }
+  })
   it('loads a selected page and forwards the current context after it becomes available', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     let ready: ((value: { default: import('@agnes/web-client').HomeEntry['component'] }) => void) | undefined

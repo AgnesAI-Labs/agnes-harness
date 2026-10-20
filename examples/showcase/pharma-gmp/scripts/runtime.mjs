@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -203,13 +203,17 @@ export async function runtime(real, application = 'pharma-gmp', { demoModel = fa
     let log = ''
     for (const stream of [web.stdout, web.stderr])
       stream.on('data', (bytes) => {
-        log += redact(bytes)
+        log = (log + redact(bytes)).slice(-65536)
+        void appendFile(join(root, 'web-server.log'), redact(bytes))
       })
+    web.on('exit', (code, signal) => {
+      void appendFile(join(root, 'web-server.log'), `\nWeb process exited: ${code} ${signal}\n`)
+    })
     await until(
       async () => {
-        if (web.exitCode !== null) throw new Error(log)
+        if (web.exitCode !== null || web.signalCode !== null) throw new Error(log)
         try {
-          return (await fetch(url)).ok
+          return (await fetch(url, { signal: AbortSignal.timeout(5000) })).ok
         } catch {
           return false
         }
