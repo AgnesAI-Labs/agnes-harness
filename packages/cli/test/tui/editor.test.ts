@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { CURSOR_MARKER, VStack } from '../../src/tui/component.js'
 import { Editor, type MentionState } from '../../src/tui/editor.js'
-import { parseKey } from '../../src/tui/keys.js'
+import { parseKey, parseMouse } from '../../src/tui/keys.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
@@ -34,6 +34,58 @@ describe('parseKey', () => {
     expect(parseKey('\x1b[A', false).name).toBe('up')
     expect(parseKey('\x1b[13;2u', true).name).toBe('shift-enter')
     expect(parseKey('x', false)).toEqual({ name: 'char', ch: 'x' })
+  })
+
+  it('reads SGR mouse reports and drops the buttons the TUI has no use for', () => {
+    expect(parseMouse('\x1b[<64;10;5M')).toEqual([{ kind: 'wheel', rows: -3 }])
+    // Ctrl (16) rides along on the second wheel step.
+    expect(parseMouse('\x1b[<65;10;5M\x1b[<81;1;1M')).toEqual([
+      { kind: 'wheel', rows: 3 },
+      { kind: 'wheel', rows: 3 },
+    ])
+    expect(parseMouse('\x1b[<0;3;4M\x1b[<32;6;4M\x1b[<0;6;4m')).toEqual([
+      { kind: 'press', row: 3, col: 2 },
+      { kind: 'drag', row: 3, col: 5 },
+      { kind: 'release', row: 3, col: 5 },
+    ])
+    expect(parseMouse('\x1b[<2;1;1M\x1b[<66;1;1M')).toEqual([])
+    expect(parseMouse('\x1b[A')).toBeUndefined()
+    expect(parseMouse('\x1b[<64;10;5Mx')).toBeUndefined()
+  })
+
+  it('selects dragged screen text in reverse video, copies it on release and clears on a key', () => {
+    const term = new FakeTerminal({ columns: 30, rows: 5 })
+    const copied: string[] = []
+    let typed = ''
+    const root = {
+      render: () => ['hello 世界 there', '\x1b[1mbold\x1b[0m line'],
+      invalidate() {},
+      handleInput: (data: string) => {
+        typed += data
+        return true
+      },
+    }
+    const renderer = new Renderer(term, root, false, { wheel: () => {}, copy: (text) => copied.push(text) })
+    renderer.start()
+    expect(term.writes.join('')).toContain('\x1b[?1002h\x1b[?1006h')
+    term.feed('\x1b[<0;7;1M')
+    term.feed('\x1b[<32;3;2M')
+    term.feed('\x1b[<0;3;2m')
+    expect(copied).toEqual(['世界 there\nbo'])
+    renderer.renderNow()
+    expect(renderer.lastFrame).toEqual([
+      'hello \x1b[7m世界 there\x1b[27m',
+      '\x1b[1m\x1b[7mbo\x1b[27mld\x1b[0m line',
+    ])
+    // A click that never moved copies nothing; a key clears the highlight and still reaches the root.
+    term.feed('\x1b[<0;2;1M\x1b[<0;2;1m')
+    expect(copied).toHaveLength(1)
+    term.feed('x')
+    renderer.renderNow()
+    expect(typed).toBe('x')
+    expect(renderer.lastFrame).toEqual(['hello 世界 there', '\x1b[1mbold\x1b[0m line'])
+    renderer.stop()
+    expect(term.writes.join('')).toContain('\x1b[?1006l\x1b[?1002l\x1b[?1049l')
   })
 
   it('reads the kitty modifier only when the protocol is on', () => {

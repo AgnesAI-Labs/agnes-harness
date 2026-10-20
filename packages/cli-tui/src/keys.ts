@@ -62,6 +62,34 @@ const SEQ = new Map<string, KeyName>([
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte is what starts the sequence
 const CSI_U = /^\x1b\[(\d+)(?:;(\d+))?u$/
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte is what starts the sequence
+const SGR_MOUSE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
+const WHEEL_LINES = 3
+
+/** Wheel rows (negative is up), or a left-button press, drag or release at a 0-based screen cell. */
+export type MouseEvent =
+  | { kind: 'wheel'; rows: number }
+  | { kind: 'press' | 'drag' | 'release'; row: number; col: number }
+
+/**
+ * The events in a chunk made only of SGR (1006) mouse reports, or undefined when the chunk is anything
+ * else. Other buttons and the horizontal wheel are dropped: consumed, never typed into the prompt.
+ */
+export function parseMouse(data: string): MouseEvent[] | undefined {
+  if (!data.startsWith('\x1b[<') || data.replace(SGR_MOUSE, '') !== '') return undefined
+  const events: MouseEvent[] = []
+  for (const m of data.matchAll(SGR_MOUSE)) {
+    // Shift/alt/ctrl ride in 4/8/16; 32 marks motion; 64 a wheel, whose low bits are up, down, left, right.
+    const button = Number(m[1]) & ~28
+    const at = { row: Number(m[3]) - 1, col: Number(m[2]) - 1 }
+    if (button === 64 || button === 65)
+      events.push({ kind: 'wheel', rows: button === 64 ? -WHEEL_LINES : WHEEL_LINES })
+    else if (button === 0) events.push({ kind: m[4] === 'm' ? 'release' : 'press', ...at })
+    else if (button === 32) events.push({ kind: 'drag', ...at })
+  }
+  return events
+}
+
 export function parseKey(data: string, kitty: boolean): Key {
   const known = SEQ.get(data)
   if (known) return { name: known }

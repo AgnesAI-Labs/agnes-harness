@@ -15,6 +15,7 @@ import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdown } from './markdown.js'
+import { copyToClipboard, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
@@ -82,6 +83,7 @@ export class TuiApp {
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   private flushingQueued = false
   private queuedWake: ReturnType<typeof setTimeout> | undefined
+  private readonly mouse: TuiMouse
   private readonly header: Header
   private readonly statusBar: StatusBar
   private readonly hints: Hints
@@ -135,6 +137,8 @@ export class TuiApp {
       resourceController?: TuiResourceController
       /** The CLI has already entered its alternate screen before opening the session. */
       screenAlreadyEntered?: boolean
+      /** Where mouse-selected text goes; defaults to the system clipboard. */
+      copy?: (text: string) => void
       /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
       cwd?: string
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
@@ -176,6 +180,12 @@ export class TuiApp {
       generation: 1,
     })
     this.statusBar = new StatusBar(ansi, locale)
+    this.mouse = new TuiMouse(
+      (rows) => this.scrollTimeline(rows),
+      o.copy ?? ((text) => copyToClipboard(text, (s) => o.term.write(s))),
+      () => ansi.fg('success', tt('app.copied', this.locale)),
+      () => this.stopped || this.renderer.requestRender(),
+    )
     this.welcomeBanner = new WelcomeBanner({
       profile: o.profile ?? o.header ?? '',
       preset: o.preset ?? '',
@@ -369,12 +379,9 @@ export class TuiApp {
       // The input area, from the approval dialog down, sits on the bottom edge; a short
       // conversation leaves its gap above it rather than below.
       const gap = Number.isFinite(height) ? Math.max(0, height - above.length - below.length) : 0
-      return this.theme.frame(
-        createAnsi(o.term.caps.color),
-        [...above, ...Array.from({ length: gap }, () => ''), ...below],
-        width,
-        height,
-      )
+      const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
+      this.mouse.overlay(screen, above.length + gap - 1, width)
+      return this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
     const handle = root.handleInput.bind(root)
     root.handleInput = (data) => {
@@ -407,12 +414,7 @@ export class TuiApp {
       }
       if (key.name === 'pgup' || key.name === 'pgdn') {
         const page = Math.max(1, o.term.size().rows - this.reservedRows)
-        const needsEarlier = this.timeline.scroll(key.name === 'pgup' ? -page : page)
-        if (needsEarlier)
-          void this.projection.loadEarlier().then((loaded) => {
-            if (!loaded || this.stopped) return
-            this.renderer.requestRender()
-          })
+        this.scrollTimeline(key.name === 'pgup' ? -page : page)
         return true
       }
       // Idle Alt+Enter inserts a newline (the editor's own default, reached via `handle(data)`
@@ -445,7 +447,7 @@ export class TuiApp {
       }
       return handle(data)
     }
-    this.renderer = new Renderer(o.term, root, o.screenAlreadyEntered)
+    this.renderer = new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
     this.projection = this.makeProjection(o.session)
   }
 
@@ -534,6 +536,11 @@ export class TuiApp {
     if (!this.pendingResourceCommand || this.pendingResourceCommand.kind !== kind) return false
     this.pendingResourceCommand = undefined
     return true
+  }
+
+  private scrollTimeline(delta: number): void {
+    if (!this.timeline.scroll(delta)) return
+    void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
   }
 
   private makeProjection(session: Session): TuiProjection {
@@ -1108,6 +1115,7 @@ export class TuiApp {
     this.attachmentController.abort()
     if (this.queuedWake) clearTimeout(this.queuedWake)
     this.queuedWake = undefined
+    this.mouse.dispose()
     this.stopTicker()
     this.offPermission?.()
     for (const off of this.offClientEvents) off()

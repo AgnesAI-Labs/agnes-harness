@@ -1,5 +1,6 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
+import { type MouseEvent, parseMouse } from './keys.js'
 import { displayWidth, type Terminal } from './terminal.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -16,6 +17,45 @@ function historyLines(line: string, columns: number): string[] {
   lines.push(current)
   return lines
 }
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the escape is the point
+const SGR_SPLIT = /(\x1b\[[0-9;]*m)/
+
+/** Display columns [from, to) of a frame row, styles dropped. A wide glyph belongs to its first column. */
+function columnText(line: string, from: number, to: number): string {
+  let col = 0
+  let text = ''
+  for (const { segment } of GRAPHEMES.segment(line.replace(ANSI_RE, ''))) {
+    if (col >= from && col < to) text += segment
+    col += displayWidth(segment)
+  }
+  return text
+}
+
+/** Reverse video over columns [from, to), re-asserted after every style the row itself sets. */
+function reverseColumns(line: string, from: number, to: number): string {
+  let col = 0
+  let out = ''
+  let inside = false
+  for (const part of line.split(SGR_SPLIT)) {
+    if (part.startsWith('\x1b[')) {
+      out += inside ? `${part}\x1b[7m` : part
+      continue
+    }
+    for (const { segment } of GRAPHEMES.segment(part)) {
+      const want = col >= from && col < to
+      if (want !== inside) out += want ? '\x1b[7m' : '\x1b[27m'
+      inside = want
+      out += segment
+      col += displayWidth(segment)
+    }
+  }
+  return inside ? `${out}\x1b[27m` : out
+}
+
+/** Mouse handling the fullscreen app opts into: wheel rows to scroll by, and selected text to copy. */
+export type RendererMouse = { wheel(rows: number): void; copy(text: string): void }
+type Cell = { row: number; col: number }
 
 /**
  * Holds a root component and repaints only the rows that changed since the last frame.
@@ -42,11 +82,18 @@ export class Renderer {
   // branding lookup cannot leave the previous CLI transcript visible. Unit callers normally let
   // the renderer claim it itself.
   private screenEntered: boolean
+  // Screen cells, not content: what is copied is what the screen shows when the button comes up.
+  private selection: { anchor: Cell; head: Cell } | undefined
+  private dragging = false
 
   constructor(
     private readonly term: Terminal,
     private readonly root: Component,
     screenAlreadyEntered = false,
+    // Without mouse reporting the alternate screen turns the wheel into arrow keys, which the editor
+    // reads as prompt history. With it the terminal stops selecting text itself, so the renderer
+    // selects and copies instead.
+    private readonly mouse?: RendererMouse,
   ) {
     this.screenEntered = screenAlreadyEntered
   }
@@ -66,6 +113,8 @@ export class Renderer {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
     }
+    // 1002 reports presses, releases and motion while a button is held; 1006 gives SGR coordinates.
+    if (this.mouse) this.term.write('\x1b[?1002h\x1b[?1006h')
     this.offResize = this.term.onResize(() => {
       this.lastFrame = []
       this.lastCursorKey = ''
@@ -73,6 +122,13 @@ export class Renderer {
       this.renderNow()
     })
     this.offInput = this.term.onInput((d) => {
+      const events = this.mouse ? parseMouse(d) : undefined
+      if (events) return this.handleMouse(events)
+      if (this.selection) {
+        this.selection = undefined
+        this.dragging = false
+        this.requestRender()
+      }
       if (this.root.handleInput?.(d)) this.requestRender()
     })
     try {
@@ -114,6 +170,15 @@ export class Renderer {
       frame.push(defang(line.replaceAll(CURSOR_MARKER, '')))
     }
 
+    const range = this.selectionRange()
+    if (range)
+      for (let row = range.start.row; row <= range.end.row && row < frame.length; row++)
+        frame[row] = reverseColumns(
+          frame[row] as string,
+          row === range.start.row ? range.start.col : 0,
+          row === range.end.row ? range.end.col : Number.POSITIVE_INFINITY,
+        )
+
     const changed: string[] = []
     const height = Math.max(frame.length, this.lastFrame.length)
     for (let row = 0; row < height; row++) {
@@ -132,6 +197,49 @@ export class Renderer {
     this.term.write(`\x1b[?25l${changed.join('')}${place}`)
   }
 
+  /** Selection in reading order, end column exclusive; a click that never moved selects nothing. */
+  private selectionRange(): { start: Cell; end: Cell } | undefined {
+    const s = this.selection
+    if (!s || (s.anchor.row === s.head.row && s.anchor.col === s.head.col)) return undefined
+    const forward = s.anchor.row < s.head.row || (s.anchor.row === s.head.row && s.anchor.col < s.head.col)
+    return forward ? { start: s.anchor, end: s.head } : { start: s.head, end: s.anchor }
+  }
+
+  private handleMouse(events: MouseEvent[]): void {
+    const mouse = this.mouse as RendererMouse
+    for (const event of events) {
+      if (event.kind === 'wheel') {
+        if (!this.dragging) this.selection = undefined
+        mouse.wheel(event.rows)
+        continue
+      }
+      const at = { row: event.row, col: event.col }
+      if (event.kind === 'press') {
+        this.selection = { anchor: at, head: at }
+        this.dragging = true
+        continue
+      }
+      if (!this.dragging || !this.selection) continue
+      this.selection.head = at
+      if (event.kind !== 'release') continue
+      this.dragging = false
+      const range = this.selectionRange()
+      const text = range
+        ? Array.from({ length: range.end.row - range.start.row + 1 }, (_, i) => {
+            const row = range.start.row + i
+            return columnText(
+              this.lastFrame[row] ?? '',
+              row === range.start.row ? range.start.col : 0,
+              row === range.end.row ? range.end.col : Number.POSITIVE_INFINITY,
+            ).trimEnd()
+          }).join('\n')
+        : ''
+      if (text.trim()) mouse.copy(text)
+      else this.selection = undefined
+    }
+    this.requestRender()
+  }
+
   /** Restore the shell, optionally leaving one plain transcript, never a copy of UI chrome. */
   stop(transcript: readonly string[] = []): void {
     if (!this.active && !this.screenEntered) return
@@ -142,7 +250,9 @@ export class Renderer {
     this.offInput?.()
     this.offResize?.()
     try {
-      this.term.write('\x1b[?1049l\x1b[?25h')
+      this.selection = undefined
+      this.dragging = false
+      this.term.write(`${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`)
       this.screenEntered = false
       const columns = this.term.size().columns
       for (const line of transcript)

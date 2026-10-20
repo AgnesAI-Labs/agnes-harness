@@ -362,7 +362,8 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     await client.workspace.add(dir)
     const session = await client.session.new({ cwd: dir })
     const term = new FakeTerminal({ columns: 40, rows: 16 })
-    app = new TuiApp({ session, term, header: 'Agnes' })
+    const copied: string[] = []
+    app = new TuiApp({ session, term, header: 'Agnes', copy: (text) => copied.push(text) })
     await app.start()
     await app.submit('long question')
     await vi.waitFor(async () => {
@@ -377,8 +378,26 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
     term.feed('\x1b[6~')
     await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    const bottom = (await emulate(term, 40, 16)).lines
+    // The wheel scrolls the same window; without mouse reporting it would arrive as arrow keys and
+    // recall "long question" into the prompt instead.
+    expect(term.writes.join('')).toContain('\x1b[?1002h\x1b[?1006h')
+    term.feed('\x1b[<64;1;1M'.repeat(10))
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[<65;1;1M'.repeat(10))
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    expect((await emulate(term, 40, 16)).lines).toEqual(bottom)
+    // Dragging over the reply copies what the screen shows and says so without moving a row.
+    const row = bottom.indexOf('line 8') + 1
+    term.feed(`\x1b[<0;1;${row}M\x1b[<32;7;${row}M\x1b[<0;7;${row}m`)
+    expect(copied).toEqual(['line 8'])
+    await vi.waitFor(async () =>
+      expect((await emulate(term, 40, 16)).lines.join('\n')).toContain('✓ Copied to clipboard'),
+    )
+    expect((await emulate(term, 40, 16)).lines.indexOf('line 8')).toBe(row - 1)
     expect((await emulate(term, 40, 16)).scrollback).toEqual(history)
     await app.stop()
+    expect(term.writes.join('')).toContain('\x1b[?1006l\x1b[?1002l\x1b[?1049l')
     const exited = await emulate(term, 40, 16)
     const shell = [...exited.scrollback, ...exited.lines].join('\n')
     expect(shell).not.toContain('long question')

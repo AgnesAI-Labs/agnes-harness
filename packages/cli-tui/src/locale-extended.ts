@@ -100,6 +100,7 @@ export const EXTENDED_KEYS = [
   'app.composerPlaceholder',
   'app.questionSent',
   'app.surfacePrompt',
+  'app.copied',
   'app.themeSaved',
   'app.themeEphemeral',
   'memory.permissionFull',
@@ -252,6 +253,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'app.questionSent': 'Answer sent; the agent can continue independent work.',
     'app.surfacePrompt':
       'Surface: reply with labels or option numbers; multiple choices use commas, multiple fields use JSON. Answers grant no tool permission.',
+    'app.copied': '✓ Copied to clipboard',
     'app.themeSaved': 'theme {name} · preference saved',
     'app.themeEphemeral': 'theme {name} · preference could not be saved; this session only',
     'memory.permissionFull': 'routine approvals skipped',
@@ -395,6 +397,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'app.composerPlaceholder': '想做点什么？从一句话开始。',
     'app.questionSent': '回答已发送；助手可以继续独立完成工作。',
     'app.surfacePrompt': '交互表单：填写标签或选项编号；多选用逗号，多字段用 JSON。回答不授予工具权限。',
+    'app.copied': '✓ 已复制到剪贴板',
     'app.themeSaved': 'theme {name} · 已保存',
     'app.themeEphemeral': 'theme {name} · 未能保存偏好，仅本次生效',
     'memory.permissionFull': '跳过普通审批',
