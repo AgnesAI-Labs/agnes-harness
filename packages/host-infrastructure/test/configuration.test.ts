@@ -329,6 +329,21 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
   const keyed = routes[1]?.credentialRef
   if (!keyed) throw new Error('keyed route has no credential')
   await expect(createCredentialStore({ root }).read(keyed)).resolves.toMatchObject({ value: 'sk-relay' })
+
+  // A keyless account has no key to protect: it moves to another address without one.
+  const moved = { ...compatible, accountId: 'relay', model: 'my-model', models: [listed] }
+  await expect(reopened.test({ ...compatible, accountId: 'relay' })).resolves.toMatchObject({
+    verified: true,
+  })
+  expect(requestsHeaders(server.requests).at(-1)?.authorization).toBeUndefined()
+  expect((await reopened.save({ ...moved, expectedRevision: 2 })).accounts?.[0]).toMatchObject({
+    baseUrl: server.baseUrl,
+    credentialConfigured: true,
+  })
+  // A real key never follows the account to a new address unasked.
+  await expect(
+    reopened.save({ ...moved, accountId: 'keyed', baseUrl: bare, expectedRevision: 3 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED', field: 'apiKey' })
 })
 
 it('refuses a rejected key while listing an OpenAI-compatible endpoint', async () => {

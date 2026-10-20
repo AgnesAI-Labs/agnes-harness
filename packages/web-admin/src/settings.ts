@@ -440,7 +440,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const baseUrl = ui.baseUrl.value.trim()
     const apiKey = ui.apiKey.value
     const row = selectedAccount()
-    if (row && baseUrl && row.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, '') && !apiKey)
+    // A compatible account may have no key to re-enter: the backend refuses to move a stored one.
+    const moved = row && baseUrl && row.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, '')
+    if (moved && !apiKey && !isCompatible())
       throw Object.assign(new Error(tr('settings.key.endpointChanged')), { field: 'apiKey' })
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
       throw new Error(tr('settings.provider.switchKeyRequired'))

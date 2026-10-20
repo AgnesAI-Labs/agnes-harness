@@ -905,7 +905,7 @@ export function createConfigurationService(
     const row = selectedAccount(state, input)
     const baseUrl = input.baseUrl === undefined ? (row?.baseUrl ?? parsed.baseUrl) : parsed.baseUrl
     validateEndpoint(parsed.entry, baseUrl)
-    requireEndpointCredential(baseUrl, row, parsed)
+    await requireEndpointCredential(baseUrl, row, parsed, readCredential)
     if (isPayloadOnlyEntry(parsed.entry))
       return testPayloadOnlyAccount(
         { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
@@ -1020,7 +1020,7 @@ export function createConfigurationService(
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
     validateEndpoint(entry, baseUrl)
-    requireEndpointCredential(baseUrl, existing, parsed)
+    await requireEndpointCredential(baseUrl, existing, parsed, readCredential)
     if (isPayloadOnlyEntry(entry)) {
       const row = payloadOnlyAccountRow({
         input,

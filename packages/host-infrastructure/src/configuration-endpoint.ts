@@ -1,4 +1,5 @@
 import { getApiKeyProvider, validateModelBaseUrl } from '@agnes/ai'
+import { KEYLESS_CREDENTIAL } from './configuration-compatible.js'
 import { ConfigurationError } from './configuration-error.js'
 
 /** Structural parsing also reads saved records; adapter policy is checked on save and test only. */
@@ -23,24 +24,35 @@ export function parseBaseUrl(raw: string): string {
   return raw
 }
 
-/** Saved destinations never inherit credentials without an explicit choice by the caller. */
-export function requireEndpointCredential(
+/**
+ * Saved destinations never inherit credentials without an explicit choice by the caller. A keyless
+ * compatible account stores only the placeholder, which has nothing to protect, so it may move.
+ */
+export async function requireEndpointCredential(
   baseUrl: string,
-  row: { baseUrl: string; id: string } | undefined,
+  row: { baseUrl: string; id: string; credentialRef: string } | undefined,
   parsed: { apiKey?: string; credentialRef?: string },
-): void {
+  read: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>,
+): Promise<void> {
   if (
-    row &&
-    baseUrl.replace(/\/$/, '') !== row.baseUrl.replace(/\/$/, '') &&
-    parsed.apiKey === undefined &&
-    parsed.credentialRef === undefined
+    !row ||
+    baseUrl.replace(/\/$/, '') === row.baseUrl.replace(/\/$/, '') ||
+    parsed.apiKey !== undefined ||
+    parsed.credentialRef !== undefined
   )
-    throw new ConfigurationError(
-      'CONFIG_CREDENTIAL_REQUIRED',
-      undefined,
-      undefined,
-      getApiKeyProvider(row.id)?.capabilities?.payloadOnly === true ? 'credentialRef' : 'apiKey',
-    )
+    return
+  const entry = getApiKeyProvider(row.id)
+  if (entry?.capabilities?.declaredModels === true) {
+    const stored = await read(row.credentialRef)
+    if (stored?.kind === 'api-key' && stored.provider === row.id && stored.value === KEYLESS_CREDENTIAL)
+      return
+  }
+  throw new ConfigurationError(
+    'CONFIG_CREDENTIAL_REQUIRED',
+    undefined,
+    undefined,
+    entry?.capabilities?.payloadOnly === true ? 'credentialRef' : 'apiKey',
+  )
 }
 
 export function validateEndpoint(entry: { api: string; route: string }, baseUrl: string): void {

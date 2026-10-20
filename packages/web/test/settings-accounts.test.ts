@@ -493,7 +493,7 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   h.controller.close()
 })
 
-it('edits a saved OpenAI-compatible account: its models are part of the draft', async () => {
+it('edits a saved OpenAI-compatible account: its models are part of the draft, a new address needs no key', async () => {
   const compatible = {
     id: 'openai-compatible',
     label: 'OpenAI-compatible endpoint',
@@ -526,6 +526,17 @@ it('edits a saved OpenAI-compatible account: its models are part of the draft', 
   await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
   const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
   expect(saved[0]).toMatchObject({ models: [model('a')] })
+  // A new address saves without a key; the backend decides whether a stored key may follow.
+  await h.click('button[aria-label="编辑 relay"]')
+  h.input('config-base-url').value = 'http://moved.example/v1'
+  h.input('config-base-url').dispatchEvent(new (window as Window).Event('input', { bubbles: true }))
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe('a'))
+  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalledTimes(2))
+  const moved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
+  expect(moved[0]).toMatchObject({ baseUrl: 'http://moved.example/v1' })
+  expect(moved[0]).not.toHaveProperty('apiKey')
   h.controller.close()
 })
 

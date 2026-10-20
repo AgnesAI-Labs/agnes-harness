@@ -175,7 +175,9 @@ export function renderAccountKeyHint(
     oauth
       ? 'settings.key.oauthHint'
       : endpointChanged
-        ? 'settings.key.endpointChanged'
+        ? providerId === COMPATIBLE_PROVIDER
+          ? 'settings.key.optionalHint'
+          : 'settings.key.endpointChanged'
         : connected && saved?.id === providerId && saved.credentialConfigured
           ? 'settings.key.savedHint'
           : connected
