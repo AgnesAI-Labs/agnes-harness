@@ -231,6 +231,16 @@ export class PiAdapter extends WireAdapter {
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>
   private readonly ledger: RetryAttemptLedger
 
+  /**
+   * Whether this adapter has already asked again as often as it will. The far end was tried `maxRetries`
+   * more times after the first; a caller that asks once more gets the same answer after the same wait, so
+   * the failure it is handed is final. A call that opted out of retries, or an adapter configured not to
+   * retry, has spent nothing and leaves that decision to its caller.
+   */
+  private retriesSpent(attempt: number, retry: false | undefined): boolean {
+    return retry !== false && this.maxRetries > 0 && attempt >= this.maxRetries
+  }
+
   constructor(cfg: {
     id?: string
     /** Built-in provider identity, distinct from an account's routing name. */
@@ -758,7 +768,9 @@ export class PiAdapter extends WireAdapter {
                 break
               }
               emitted = true
-              yield w
+              yield w.type === 'error' && w.retryable && this.retriesSpent(attempt, opts.retry)
+                ? { ...w, retryable: false }
+                : w
               if (w.type === 'done' || w.type === 'error') return
             }
             if (retryAfter !== undefined) break
@@ -796,7 +808,11 @@ export class PiAdapter extends WireAdapter {
             retryAfter = nextRetryDelay(attempt + 1)
             retryError = event
           } else {
-            yield { ...event, ...withResponse(wire) }
+            yield {
+              ...event,
+              ...(event.retryable && this.retriesSpent(attempt, opts.retry) ? { retryable: false } : {}),
+              ...withResponse(wire),
+            }
             return
           }
         } finally {

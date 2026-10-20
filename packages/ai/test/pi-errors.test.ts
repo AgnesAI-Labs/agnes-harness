@@ -139,7 +139,7 @@ function adapter(cfg: Partial<ConstructorParameters<typeof PiAdapter>[0]> & { st
 }
 const drain = async (
   a: PiAdapter,
-  over: Partial<{ signal: AbortSignal; timeoutMs: { firstToken: number; total: number } }> = {},
+  over: Partial<{ signal: AbortSignal; retry: false; timeoutMs: { firstToken: number; total: number } }> = {},
 ): Promise<WireEvent[]> => {
   const out: WireEvent[] = []
   for await (const e of a.stream('gw', fakeRequest({ route: 'gw', model: 'm' }), {
@@ -308,6 +308,43 @@ describe('timeouts and cancellation', () => {
     a.bindCredential('gw', 'k')
     await drain(a, { timeoutMs: slow })
     expect(attempts).toBe(6)
+  })
+
+  const flakyAdapter = (config: { maxRetries?: number } = {}) => {
+    const count = { attempts: 0 }
+    const stream: StreamImpl = () => {
+      count.attempts++
+      return (async function* () {
+        yield { type: 'error', reason: 'error', error: msg('503 Service Unavailable') } as never
+      })()
+    }
+    const a = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: stream,
+      sleep: async () => {},
+      ledger: memoryRetryLedger(),
+      ...config,
+    })
+    a.bindCredential('gw', 'k')
+    return { a, count }
+  }
+
+  // Only TRANSPORT keeps what the adapter says: the guard clamps RATE_LIMIT and TIMEOUT to retryable by
+  // code, so those two are still asked again by the caller after the adapter has given up.
+  it('hands its caller a final failure once its own retries are spent, so the caller does not ask six more times', async () => {
+    const { a, count } = flakyAdapter()
+    const out = await drain(a, { timeoutMs: slow })
+    expect(count.attempts).toBe(6)
+    expect(out.at(-1)).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: false })
+  })
+
+  it('leaves the decision to its caller when it was told not to retry or was configured not to', async () => {
+    const off = flakyAdapter()
+    expect((await drain(off.a, { timeoutMs: slow, retry: false })).at(-1)).toMatchObject({ retryable: true })
+    expect(off.count.attempts).toBe(1)
+    const none = flakyAdapter({ maxRetries: 0 })
+    expect((await drain(none.a, { timeoutMs: slow })).at(-1)).toMatchObject({ retryable: true })
+    expect(none.count.attempts).toBe(1)
   })
 })
 
