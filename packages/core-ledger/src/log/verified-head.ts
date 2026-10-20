@@ -1,5 +1,6 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { Seq, SessionKey } from '@agnes/core-common/types'
+import type { PersistenceVerifiedHead } from '@agnes/extension-api'
 import { jcs } from '@agnes/protocol'
 import { LEDGER_INTEGRITY_ALGORITHM } from './integrity.js'
 import type { StorageAdapter } from './storage.js'
@@ -13,16 +14,7 @@ export const VERIFIED_HEAD_ALGORITHM = 'agnes-ledger-checkpoint-v1' as const
  * It only lets an open show history before the prefix has been hashed again; the full chain is still
  * verified in the background before anything other than user input is written (see SessionLogImpl).
  */
-export type VerifiedHead = {
-  sessionKey: SessionKey
-  throughSeq: Seq
-  headDigest: string
-  legacyThroughSeq: Seq
-  algorithm: typeof LEDGER_INTEGRITY_ALGORITHM
-  verifiedFullAtMs: number
-  writtenAtMs: number
-  checkpointDigest: string
-}
+export type VerifiedHead = PersistenceVerifiedHead
 
 export function verifiedHeadDigest(h: Omit<VerifiedHead, 'checkpointDigest' | 'writtenAtMs'>): string {
   return sha256Hex(

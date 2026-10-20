@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { defaultIds } from '@agnes/core-common/ids'
 import { prepareIntegrity } from '@agnes/core-ledger/log/integrity'
@@ -12,6 +12,7 @@ import {
 import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
 import { makeVerifiedHead } from '@agnes/core-ledger/log/verified-head'
 import { afterEach, describe, expect, it } from 'vitest'
+import { openConfiguredPersistence } from '../../src/adapters/storage-provider.js'
 import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -38,7 +39,7 @@ const opener = {
 }
 
 const dirs: string[] = []
-const open: SqliteStorage[] = []
+const open: StorageAdapter[] = []
 afterEach(async () => {
   for (const s of open.splice(0)) await s.close()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
@@ -104,32 +105,40 @@ function rowCount(file: string, table: string, key = 'k'): number {
 const TAMPER = `UPDATE events SET data = json_set(data, '$.content[0].text', 'tampered') WHERE session_key = ? AND seq = ?`
 
 describe('verified-head checkpoint against a tampered SQLite ledger', () => {
-  it('a row changed before the checkpoint: opens from it, then the background verify seals the session and drops it', async () => {
-    const file = await built()
-    raw(file, TAMPER, 'k', 10)
-    const storage = sqlite(file)
-    const log = await SessionLogImpl.open(options(storage, 'r1'))
-    expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
-    expect(log.historyVerified).toBe(false)
-    // Issued while the verification is still running: held, then refused, and nothing lands.
-    const held = log.append([input('model-side write')])
-    await expect(log.fullVerified()).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-      detail: { seq: 10 },
-    })
-    await expect(held).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    await expect(log.append([input('after')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    expect(log.faulted).toBe(true)
-    expect(rowCount(file, 'events')).toBe(50)
-    expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
-    await log.close()
-    expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
-    await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-  })
+  it.each(['cold', 'warm', 'provider-warm'] as const)(
+    '%s open: a row changed before the checkpoint seals the session in the background and drops it',
+    async (mode) => {
+      const file = await built()
+      const storage =
+        mode === 'provider-warm' ? await openConfiguredPersistence({ dataDir: dirname(file) }) : sqlite(file)
+      if (mode === 'provider-warm') open.push(storage)
+      const live = mode !== 'cold' ? await SessionLogImpl.open(options(storage, 'r1')) : undefined
+      await live?.fullVerified()
+      raw(file, TAMPER, 'k', 10)
+      const log = live ?? (await SessionLogImpl.open(options(storage, 'r1')))
+      if (live) await expect(live.verifyHistory()).resolves.toBe(50)
+      expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
+      expect(log.historyVerified).toBe(false)
+      // Issued while the verification is still running: held, then refused, and nothing lands.
+      const held = log.append([input('model-side write')])
+      await expect(log.fullVerified()).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+        detail: { seq: 10 },
+      })
+      await expect(held).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await expect(log.append([input('after')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
+      expect(log.faulted).toBe(true)
+      expect(rowCount(file, 'events')).toBe(50)
+      expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
+      await log.close()
+      expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
+      await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
+    },
+  )
 
   it('a row changed after the checkpoint: the unverified tail is hashed at open, which fails', async () => {
     const file = await built()

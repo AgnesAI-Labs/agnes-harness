@@ -1931,7 +1931,7 @@ export class SessionImpl {
     // Every model request, tool run and step hook starts in a step, so none starts on history that an
     // open folded from a checkpoint until the background verification has hashed all of it, and none
     // at all once that verification failed: `fullVerified()` then rejects with the failure.
-    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
+    while (!this.d.log.historyVerified) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())

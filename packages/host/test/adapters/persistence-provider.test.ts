@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRefineHarness, packageStorage, RefineQueue } from '@agnes/base'
-import { CoreError } from '@agnes/core'
+import { CoreError, defaultIds, SessionLogImpl } from '@agnes/core'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {
   persistenceContract,
@@ -125,6 +125,38 @@ describe('persistence provider', () => {
       expect(bundle.storage.sqlite?.dialect).toBe('sqlite')
       expect(existsSync(join(dir, 'sessions.db'))).toBe(true)
       expect('file' in bundle.storage).toBe(false)
+      const options = {
+        storage: bundle.storage,
+        key: 'checkpoint',
+        writerRunId: 'checkpoint-writer',
+        ttlMs: 60_000,
+        ids: defaultIds(),
+        clock: Date.now,
+      }
+      const writer = await SessionLogImpl.open(options)
+      await writer.append([
+        {
+          type: 'user/message',
+          data: { content: [{ type: 'text', text: 'checkpoint input' }] },
+          actor: { id: 'owner', role: 'owner', org: 'local', deptPath: [], attrs: {} },
+          origin: 'principal',
+          trust: 'trusted',
+        },
+      ])
+      await writer.close()
+      const head = await bundle.storage.readVerifiedHead?.('checkpoint')
+      expect(head?.throughSeq).toBe(1)
+      expect(await bundle.storage.integrityDigestAt?.('checkpoint', 1)).toBe(head?.headDigest)
+      expect((await bundle.storage.ledgerStats?.('checkpoint'))?.storedBytes).toBeGreaterThan(0)
+      const reader = await SessionLogImpl.open(options)
+      expect(reader.openStats.checkpoint).toEqual({ used: true, throughSeq: 1 })
+      await reader.fullVerified()
+      await reader.verifyHistory()
+      expect(reader.historyVerified).toBe(false)
+      await reader.fullVerified()
+      await reader.close()
+      await bundle.storage.deleteVerifiedHead?.('checkpoint')
+      expect(await bundle.storage.readVerifiedHead?.('checkpoint')).toBeUndefined()
       const metadata = bundle.storage.metadata.namespace('owner', 'config')
       expect(metadata.get('legacy')).toEqual({ enabled: true })
       metadata.delete('legacy')
@@ -132,6 +164,7 @@ describe('persistence provider', () => {
     } finally {
       await bundle.close()
     }
+    await expect(bundle.storage.readVerifiedHead?.('checkpoint')).rejects.toMatchObject({ code: 'E_CLOSED' })
     const reopened = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
     try {
       expect(reopened.storage.metadata.namespace('owner', 'config').get('legacy')).toBeUndefined()
@@ -167,8 +200,17 @@ describe('persistence provider', () => {
         const store = await sqlitePersistenceProvider.open({ dataDir: join(options.dataDir, 'custom') })
         if (!store.metadata || !store.reclaim) throw new Error('fixture ports missing')
         const metadata = store.metadata
+        const legacy = { ...store }
+        for (const method of [
+          'readVerifiedHead',
+          'writeVerifiedHead',
+          'deleteVerifiedHead',
+          'integrityDigestAt',
+          'ledgerStats',
+        ] as const)
+          delete legacy[method]
         return {
-          ...store,
+          ...legacy,
           metadata: { namespace: (owner, name) => Object.freeze(metadata.namespace(owner, name)) },
           reclaim: Object.freeze(store.reclaim),
           async scan(key, query) {
@@ -189,6 +231,7 @@ describe('persistence provider', () => {
     try {
       await bundle.storage.open('k', { writerRunId: 'r', ttlMs: 60_000 })
       expect(await bundle.storage.scan('k', { limit: 1 })).toEqual([])
+      expect(bundle.storage.readVerifiedHead).toBeUndefined()
       expect(seen).toEqual(['scan'])
       expect(bundle.storage.childControlFormat()).toBeGreaterThan(0)
       expect(bundle.storage.crashReclaim.listExpired(Date.now())).toEqual([])
