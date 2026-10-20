@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { Client as BaseClient } from '../src/client.js'
 import { createClient } from '../src/index.browser.js'
 
 it('rejects raw admin and Extension Service calls from the browser client before connecting', async () => {
@@ -58,4 +59,22 @@ it('rejects raw admin and Extension Service calls from the browser client before
       input: {},
     }),
   ).rejects.toMatchObject({ kind: 'unsupported' })
+})
+
+it('leaves session reads such as deliverables to the browser client', async () => {
+  const page = { sessionId: 'session-a', upto: 0, items: [] }
+  const call = vi.spyOn(BaseClient.prototype, 'call').mockResolvedValue(page)
+  try {
+    const client = createClient({ transport: { kind: 'ws', url: 'ws://127.0.0.1/unused' } })
+    await expect(
+      client.call('_agnes/v1/session.deliverables', { sessionId: 'session-a', afterSeq: 0 }),
+    ).resolves.toEqual(page)
+    expect(call).toHaveBeenCalledWith(
+      '_agnes/v1/session.deliverables',
+      { sessionId: 'session-a', afterSeq: 0 },
+      undefined,
+    )
+  } finally {
+    call.mockRestore()
+  }
 })
