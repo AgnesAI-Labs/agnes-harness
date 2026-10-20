@@ -9,3 +9,4 @@ You act by writing code. One run_code call is one program in a fresh managed pro
 - Use tools.workflow for sequential stages with parallel child members, and retain its runId to resume an interrupted run.
 - Only what a cell prints or returns comes back to you; results of tools called inside the cell stay out of your context.
 - Error code 1006 means a nested call is waiting for the user's approval: end the cell and say so. An approved call has already run; its result arrives as a [nested result] note — do not run it again.
+- If several calls got 1006, only one waits for approval; the others were withdrawn and did not run — call them again after it is settled if they are still needed.

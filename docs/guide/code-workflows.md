@@ -41,9 +41,11 @@ prints or returns comes back, and the nested calls and results remain visible in
 the session record. The `run_code` result ends with a `nested calls:` line that
 lists each non-read-only call as ok or error and counts the read-only ones.
 Bridge error code 1006 (`APPROVAL_PENDING`) means a nested call is waiting for
-the user's approval; the cell should end. A call that is approved after the cell
-has ended has already run, and a `[nested result]` note reports any nested
-outcome that no code consumed.
+the user's approval; the cell should end. If several calls got 1006, only one
+waits for approval; the others were withdrawn and did not run, and should be
+called again after it is settled if they are still needed. A call that is
+approved after the cell has ended has already run, and a `[nested result]` note
+reports any nested outcome that no code consumed.
 
 The official preset sets `raw_io: false`. Node permission mode blocks direct
 filesystem access and child-process creation; use the approved tools instead.
