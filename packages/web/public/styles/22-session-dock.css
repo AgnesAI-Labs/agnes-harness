@@ -306,7 +306,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--agnes-bg-subtle);
+    background: var(--agnes-bg-app-content);
   }
   .workbench-files[data-layout="split"] .workbench-files-tree {
     flex: 0 0 var(--workbench-tree-width, 250px);
@@ -327,7 +327,7 @@
   .workbench-files-filter .agh-search-bar-field > input {
     height: 28px;
     min-height: 28px;
-    background: var(--agnes-input-surface);
+    background: var(--agnes-bg-app-content);
   }
   .workbench-tree-scroll {
     flex: 1;
@@ -599,7 +599,7 @@
     line-height: 1.7;
     tab-size: 2;
     counter-reset: workbench-line;
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-app-content);
   }
   .workbench-file-preview > pre > code {
     display: block;
@@ -621,7 +621,7 @@
     padding-right: 0.9rem;
     text-align: right;
     color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-app-content);
     user-select: none;
   }
   .workbench-code-text {

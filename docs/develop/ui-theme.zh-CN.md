@@ -20,8 +20,9 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 
 | 角色 | Token | 浅色 | 深色 |
 | --- | --- | --- | --- |
-| 底色 | `--agnes-bg-page`、`--agnes-bg-app-content` | `#FBFAF8` | `#15161A` |
-| 侧栏与面板 | `--agnes-bg-app-sidebar`、`--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
+| 内容（对话及整个工作台面板） | `--agnes-bg-page`、`--agnes-bg-app-content` | `#FBFAF8` | `#1B1C21` |
+| 导航（侧栏及设置导航栏） | `--agnes-bg-app-sidebar` | `#F3F3F1` | `#15161A` |
+| 柔和填充 | `--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
 | 表面（卡片、输入框、菜单、弹窗） | `--agnes-bg-surface`、`--agnes-bg-popover`、`--agnes-input-surface` | `#FFFFFF` | `#1F2026` |
 | 用户消息气泡 | `--agnes-bg-user-bubble` | `#EFEFEC` | `#26272D` |
 | 正文 | `--agnes-text-primary` | `#1B1D22` | `#E6E7EA` |
@@ -35,6 +36,7 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 
 保持主题一致的几条规则：
 
+- 基础表面只有内容与导航两层，浅深两色下导航都深一阶。工作台页签、筛选行、正文和页脚统一使用内容表面；浮起的卡片、输入区、菜单和弹窗使用表面 token。皮肤通过同一组公开语义 token 覆盖这些角色。
 - 强调色只用于主操作、当前选中和状态指示，不用于装饰；状态色与强调色分开。
 - 悬停、选中和卡片底色是正文色的半透明叠层（`--agnes-bg-hover`、`--agnes-bg-selected`、`--agnes-bg-card`），因此在底色、面板和表面上都成立。
 - 状态色有两档：`-text` 用于文字（在底色和自身 `-bg` 上达到 4.5:1），`-solid` 用于圆点和图标（3:1）。浅色下文字档比标记档更深。

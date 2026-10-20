@@ -110,7 +110,7 @@
      其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
     --agnes-icon-secondary: var(--agnes-text-secondary);
 
-    /* Background —— 暖白底、浅灰侧栏/面板、纯白表面，三层各差一档。 */
+    /* Two base surfaces: warm content and a darker navigation rail. White is raised content. */
     --agnes-bg-page: var(--agnes-color-gray-25);
     --agnes-bg-surface: var(--agnes-color-gray-0);
     --agnes-bg-popover: var(--agnes-color-gray-0);
@@ -285,8 +285,8 @@
     /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
     --agnes-icon-secondary: var(--agnes-text-secondary);
 
-    /* Background —— 页面底 < 侧栏/面板 < 表面，逐级变亮。 */
-    --agnes-bg-page: var(--agnes-color-gray-950);
+    /* Same hierarchy as light: navigation is darker than content; raised surfaces are lighter. */
+    --agnes-bg-page: var(--agnes-color-gray-925);
     --agnes-bg-surface: var(--agnes-color-gray-850);
     --agnes-bg-popover: var(--agnes-color-gray-850);
     --agnes-bg-card: var(--agnes-color-white-a04);
@@ -369,7 +369,7 @@
     --shadow-popover: 0 0 0 var(--hairline) rgb(255 255 255 / 12%), 0 14px 44px rgb(0 0 0 / 55%);
 
     /* Product-specific */
-    --agnes-bg-app-sidebar: var(--agnes-color-gray-925);
+    --agnes-bg-app-sidebar: var(--agnes-color-gray-950);
     --agnes-bg-app-content: var(--agnes-bg-page);
 
     /* 保留 Trace 类型的稳定识别色；透明背景自然与深色表面合成。 */

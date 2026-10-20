@@ -515,10 +515,21 @@ export function SettingsChoice({
   )
 }
 
-/** The fixed look of each scheme: a thumbnail shows what it is, whatever theme the page is in. */
+/** Fixed previews share the theme palette. Active-scheme semantic tokens would make both previews
+ * identical, so only these miniature illustrations use the explicit light/dark palette roles. */
 const SCHEME_LOOK = {
-  light: { page: '#fbfaf8', rail: '#ecebe6', card: '#ffffff', line: '#e4e3df' },
-  dark: { page: '#15161a', rail: '#24262c', card: '#1f2026', line: '#30323a' },
+  light: {
+    page: 'var(--agnes-color-gray-25)',
+    rail: 'var(--agnes-color-gray-50)',
+    card: 'var(--agnes-color-gray-0)',
+    line: 'var(--agnes-color-gray-150)',
+  },
+  dark: {
+    page: 'var(--agnes-color-gray-925)',
+    rail: 'var(--agnes-color-gray-950)',
+    card: 'var(--agnes-color-gray-850)',
+    line: 'var(--agnes-color-gray-750)',
+  },
 } as const
 
 /**

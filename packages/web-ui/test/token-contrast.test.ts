@@ -31,7 +31,7 @@ function luminance(rgb: Color): number {
 }
 const pairs: [string, string, number][] = [
   ...['primary', 'secondary', 'tertiary', 'icon-secondary'].flatMap((role): [string, string, number][] =>
-    ['page', 'surface', 'popover', 'subtle', 'card', 'hover'].map((bg) => [
+    ['page', 'app-content', 'app-sidebar', 'surface', 'popover', 'subtle', 'card', 'hover'].map((bg) => [
       role === 'icon-secondary' ? '--agnes-icon-secondary' : `--agnes-text-${role}`,
       `--agnes-bg-${bg}`,
       4.5,
@@ -50,6 +50,12 @@ const pairs: [string, string, number][] = [
   ...['border', 'border-emphasis', 'border-focus'].map((role): [string, string, number] => [
     `--agnes-input-${role}`,
     '--agnes-input-surface',
+    3,
+  ]),
+  // The workbench filter is a flat field on the content surface, including hover and focus.
+  ...['border', 'border-emphasis', 'border-focus'].map((role): [string, string, number] => [
+    `--agnes-input-${role}`,
+    '--agnes-bg-app-content',
     3,
   ]),
   ['--agnes-brand-focus-ring', '--agnes-bg-page', 3],
@@ -97,6 +103,13 @@ describe('menu material keeps text contrast over any backdrop', () => {
 })
 describe('default skin contrast table (pure CSS calculation)', () => {
   for (const [theme, tokens] of Object.entries({ light, dark })) {
+    it(`${theme}: navigation is darker than content and raised surfaces`, () => {
+      const navigation = luminance(color('--agnes-bg-app-sidebar', tokens))
+      const content = luminance(color('--agnes-bg-app-content', tokens))
+      const raised = luminance(color('--agnes-bg-surface', tokens))
+      expect(navigation).toBeLessThan(content)
+      expect(content).toBeLessThan(raised)
+    })
     it.each(pairs)(`${theme}: %s on %s ≥ %s:1`, (fg, bg, floor) => {
       const background = over(color(bg, tokens), color('--agnes-bg-page', tokens))
       const a = luminance(over(color(fg, tokens), background)),

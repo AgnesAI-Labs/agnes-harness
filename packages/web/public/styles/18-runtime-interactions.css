@@ -377,11 +377,11 @@
   }
 
   [data-agnes-region="workbench-right"] {
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-app-content);
     border-left: 1px solid var(--agnes-line-primary);
   }
   [data-agnes-region="workbench-bottom"] {
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-app-content);
     border-top: 1px solid var(--agnes-line-primary);
   }
 }

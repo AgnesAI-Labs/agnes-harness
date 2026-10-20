@@ -99,7 +99,7 @@
         },
         "--agnes-bg-app-sidebar": {
           "light": "#eaf0f5",
-          "dark": "#101d2c"
+          "dark": "#080e17"
         },
         "--agnes-brand-primary": {
           "light": "#146477",

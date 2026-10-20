@@ -1,7 +1,7 @@
 @layer skin {
   [data-agnes-region="sidebar"] {
     border-right: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-app-sidebar);
   }
   [data-agnes-region="home-page"] {
     background: var(--agnes-bg-page);

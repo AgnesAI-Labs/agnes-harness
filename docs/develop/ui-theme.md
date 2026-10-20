@@ -20,8 +20,9 @@ Components and plugins read semantic tokens only. The palette is the single plac
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Ground | `--agnes-bg-page`, `--agnes-bg-app-content` | `#FBFAF8` | `#15161A` |
-| Sidebar and panels | `--agnes-bg-app-sidebar`, `--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
+| Content (conversation and the whole workbench panel) | `--agnes-bg-page`, `--agnes-bg-app-content` | `#FBFAF8` | `#1B1C21` |
+| Navigation (sidebar and settings rail) | `--agnes-bg-app-sidebar` | `#F3F3F1` | `#15161A` |
+| Subtle fill | `--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
 | Surface (cards, inputs, menus, dialogs) | `--agnes-bg-surface`, `--agnes-bg-popover`, `--agnes-input-surface` | `#FFFFFF` | `#1F2026` |
 | User message bubble | `--agnes-bg-user-bubble` | `#EFEFEC` | `#26272D` |
 | Text | `--agnes-text-primary` | `#1B1D22` | `#E6E7EA` |
@@ -35,6 +36,7 @@ Components and plugins read semantic tokens only. The palette is the single plac
 
 Rules that keep the theme coherent:
 
+- There are two base surfaces: content and navigation, with navigation one step darker in both modes. Workbench tabs, filter rows, bodies and footers all use the content surface. Raised cards, the composer, popovers and dialogs use the surface tokens. Skins override these semantic roles through the same public tokens.
 - The accent marks the primary action, the current selection and state. It is not decoration, and status colours stay separate from it.
 - Hover, selected and card surfaces are translucent overlays of the text colour (`--agnes-bg-hover`, `--agnes-bg-selected`, `--agnes-bg-card`), so they work on the ground, on panels and on surfaces alike.
 - Status has two strengths: `-text` for words (4.5:1 on the ground and on its own `-bg`) and `-solid` for dots and icons (3:1). In light mode the text shade is darker than the mark.
