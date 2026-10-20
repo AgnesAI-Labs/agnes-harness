@@ -1,5 +1,6 @@
 import { HostError } from '@agnes/host-common/errors'
 import { mergeValue } from '@agnes/host-common/presets/merge'
+import { OVERLAY_PREFIX } from '@agnes/host-common/presets/permission'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -8,6 +9,16 @@ import { applyProviderPreset } from '@agnes/host-providers/assemble/provider-sel
 import { applyTelemetryConsent, readProfileTelemetryConsent } from '../sessions/session-hooks.js'
 import { type AssemblyContext, duplicateContribution } from './context.js'
 import type { PackageSet } from './packages.js'
+
+/**
+ * Consent belongs to the recipe a session runs. A permission overlay writes permission-axis fields only,
+ * so stamping `telemetry` onto it would make it refuse to apply.
+ */
+const withConsent = (
+  name: string,
+  doc: PresetDoc,
+  consent: ReturnType<typeof readProfileTelemetryConsent>,
+) => (name.startsWith(OVERLAY_PREFIX) ? doc : applyTelemetryConsent(doc, consent))
 
 /** Rebuild the pure preset catalogue from the exact package modules selected for this Host generation. */
 function collectPresets(
@@ -21,9 +32,9 @@ function collectPresets(
       presets[name] =
         name in presets
           ? duplicateContribution(module.id, 'preset', name)
-          : applyTelemetryConsent(document, profileConsent)
+          : withConsent(name, document, profileConsent)
   for (const [name, doc] of Object.entries(profile.bundlePresets ?? {}))
-    presets[name] = applyTelemetryConsent(mergeValue(presets[name], doc) as PresetDoc, profileConsent)
+    presets[name] = withConsent(name, mergeValue(presets[name], doc) as PresetDoc, profileConsent)
   return presets
 }
 
