@@ -1,32 +1,13 @@
+import { approvalSummary, baseToolTitle, localizeToolSummary, webUiLocaleCatalog } from '@agnes/web-ui'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
 
-/** Built-in tools with a readable name; anything else keeps its own name. */
-const TOOL_LABEL: Record<string, TraceMessageKey> = {
-  read: 'trace.tool.read',
-  write: 'trace.tool.write',
-  edit: 'trace.tool.edit',
-  shell: 'trace.tool.shell',
-  bash: 'trace.tool.shell',
-  ls: 'trace.tool.ls',
-  grep: 'trace.tool.grep',
-  find: 'trace.tool.find',
-  web_fetch: 'trace.tool.web_fetch',
-  web_search: 'trace.tool.web_search',
-  ask_user_question: 'trace.tool.ask_user_question',
-  ui_render: 'trace.tool.ui_render',
-  ui_update: 'trace.tool.ui_update',
-  ui_close: 'trace.tool.ui_close',
-  ui_submit: 'trace.tool.ui_submit',
-  todo: 'trace.tool.todo',
-  subagent_spawn: 'trace.tool.subagent_spawn',
-  present: 'trace.tool.present',
-  pty_open: 'trace.tool.pty_open',
-}
-
-export const toolLabel = (name: string): string => {
-  const key = TOOL_LABEL[name]
-  return key ? traceText(key) : name
-}
+const toolTranslate: import('@agnes/web-ui').Translate = (key, vars) =>
+  (webUiLocaleCatalog[traceLocale()][key] ?? key).replace(/\{([^}]+)\}/g, (match, name: string) =>
+    String(vars?.[name] ?? match),
+  )
+export const toolLabel = (name: string): string => baseToolTitle(name, toolTranslate) ?? name
+export const traceApprovalSummary = (node: Extract<import('@agnes/protocol').UINode, { kind: 'approval' }>) =>
+  approvalSummary(node, toolTranslate)
 
 /** Argument previews are capped in length, so a long call arrives as unparseable JSON. */
 const parse = (text: string | undefined): Record<string, unknown> | undefined => {
@@ -92,7 +73,11 @@ export function summarizeTool(input: {
 }): ToolSummary {
   if (input.presentation)
     return {
-      text: [input.presentation.title, input.presentation.summary, input.presentation.description]
+      text: [
+        baseToolTitle(input.name, toolTranslate) ?? input.presentation.title,
+        input.presentation.summary,
+        input.presentation.description,
+      ]
         .filter(Boolean)
         .join(' · '),
     }
@@ -188,6 +173,10 @@ export function summarizeTool(input: {
   }
   const described = input.summary && input.summary !== input.name ? input.summary : undefined
   return {
-    text: described ? oneLine(described) : TOOL_LABEL[input.name] ? label : traceText('trace.tool.generic'),
+    text: described
+      ? oneLine(localizeToolSummary(described, toolTranslate, input.name))
+      : baseToolTitle(input.name, toolTranslate)
+        ? label
+        : traceText('trace.tool.generic'),
   }
 }

@@ -38,6 +38,7 @@ import { initialState, type LedgerState } from '../reduce/state.js'
 import {
   type ApprovalNode,
   approvalSubject,
+  approvalToolReference,
   automaticToolPermission,
   reconcileTool,
 } from './approval-subject.js'
@@ -847,11 +848,13 @@ export class UIProjectionCell {
           answeredBy?: import('@agnes/protocol').Actor
         }
         if (event.origin !== 'system' || event.trust !== 'trusted' || evidence.reason !== 'full-access') break
+        const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
         this.pushNode({
           kind: 'approval',
           id,
           seq,
           state: 'decided',
+          ...approvalToolReference(tool),
           summary: clip(evidence.summary ?? '', 4096),
           risk: 'always',
           options: [],
@@ -862,7 +865,6 @@ export class UIProjectionCell {
             ...(evidence.answeredBy?.id ? { byLabel: evidence.answeredBy.id } : {}),
           },
         })
-        const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
         if (tool && evidence.answeredBy && evidence.requestId) {
           tool.permissionDecision = automaticToolPermission(evidence.requestId, evidence.answeredBy)
           changed.add(tool.id)
@@ -896,6 +898,7 @@ export class UIProjectionCell {
           summary: clip(value.request.spec.prompt, 4096),
           ...(value.request.spec.presentation ? { presentation: value.request.spec.presentation } : {}),
           ...approvalSubject(value.request.spec.subject),
+          ...approvalToolReference(this.tools.get(value.request.operationId)),
           // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
           ...(value.request.owner === 'core/unknown-outcome'
             ? { reconcile: { tool: reconcileTool(value.request.spec.subject) } }

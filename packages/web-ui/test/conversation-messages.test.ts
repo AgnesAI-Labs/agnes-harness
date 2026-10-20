@@ -363,9 +363,9 @@ describe('W3b projected message DOM', () => {
     expect(item('tool')?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
     expect(item('tool')?.getAttribute('aria-label')).toContain('正在执行')
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBeNull()
-    expect(item('tool')?.querySelector('.tool-detail-inner .tool-detail-text')?.textContent).toContain(
-      '执行参数',
-    )
+    expect(
+      item('tool')?.querySelector('.tool-detail-inner [data-testid="tool-detail-text"]')?.textContent,
+    ).toContain('原始参数')
     expect(item('approval')?.textContent).toContain('需要你确认')
     expect(item('cost')?.textContent).toContain('费用未提供')
     expect(item('artifact')?.textContent).toContain('report.md')
@@ -571,22 +571,22 @@ describe('W3b projected message DOM', () => {
       ],
     })
     await mount(store)
-    const detail = (id: string) => item(id)?.querySelector('.tool-detail-text')?.textContent
-    expect(item('exit')?.getAttribute('aria-label')).toBe('工具 shell：退出码 1')
+    const detail = (id: string) => item(id)?.querySelector('[data-testid="tool-detail-text"]')?.textContent
+    expect(item('exit')?.getAttribute('aria-label')).toBe('工具 运行命令：退出码 1')
     expect(item('exit')?.querySelector('.tool-status')?.textContent).toBe('退出码 1')
-    expect(detail('exit')).toContain('执行结果\nhello')
+    expect(detail('exit')).toContain('标准输出hello')
     expect(detail('exit')).not.toContain('[exit 1]')
     expect(detail('exit')).not.toContain('错误详情')
-    expect(detail('silent')).toContain('执行结果\n（无输出）')
-    expect(item('silent')?.getAttribute('aria-label')).toBe('工具 shell：退出码 2')
-    expect(item('cut')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
-    expect(detail('cut')).toContain('错误详情\npartial output')
-    expect(item('other')?.getAttribute('aria-label')).toBe('工具 read：执行失败')
-    expect(item('timeout')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
-    expect(detail('timeout')).toContain('错误详情\npart')
+    expect(detail('silent')).toContain('（无输出）')
+    expect(item('silent')?.getAttribute('aria-label')).toBe('工具 运行命令：退出码 2')
+    expect(item('cut')?.getAttribute('aria-label')).toBe('工具 运行命令：执行失败')
+    expect(detail('cut')).toContain('标准输出partial output')
+    expect(item('other')?.getAttribute('aria-label')).toBe('工具 读取：执行失败')
+    expect(item('timeout')?.getAttribute('aria-label')).toBe('工具 运行命令：执行失败')
+    expect(detail('timeout')).toContain('标准输出part')
     expect(detail('timeout')).toContain('[timed out after 118000ms')
-    expect(item('done')?.getAttribute('aria-label')).toBe('工具 shell：执行完成')
-    expect(detail('done')).toContain('执行结果\nfine\n[exit 0]')
+    expect(item('done')?.getAttribute('aria-label')).toBe('工具 运行命令：执行完成')
+    expect(detail('done')).toContain('标准输出fine退出码 0')
   })
 
   it('shows lost output, terminal failure and expiry without inventing authorization controls', async () => {
@@ -886,7 +886,9 @@ it('uses declared tool intent and scope while keeping commands, identifiers and 
   expect(row?.textContent).not.toContain('plain_release')
   expect(row?.textContent).not.toContain('secret')
   expect(item('human')?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('true')
-  expect(item('human')?.querySelector('.tool-detail-text')?.textContent).toContain('echo secret')
+  expect(item('human')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+    'echo secret',
+  )
 })
 
 it('separates successful shell environment diagnostics, preserving real stderr and failed output', async () => {
@@ -920,9 +922,9 @@ it('separates successful shell environment diagnostics, preserving real stderr a
   await act(async () =>
     item('noise')?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')?.click(),
   )
-  expect(item('noise')?.querySelector('.tool-detail-text')?.textContent).toContain(
+  expect(item('noise')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
     'script warning: incomplete row',
   )
-  expect(item('noise')?.querySelector('.tool-detail-text')?.textContent).not.toContain('xcrun_db')
+  expect(item('noise')?.querySelector('[data-testid="tool-stderr"]')?.textContent).not.toContain('xcrun_db')
   expect(item('noise')?.querySelector('[data-open]')?.getAttribute('data-open')).toBe('false')
 })

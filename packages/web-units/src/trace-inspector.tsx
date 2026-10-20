@@ -296,7 +296,7 @@ function InspectorView({
             </TraceCard>
             {row.review ? (
               <TraceCard title={traceText('trace.card.review')} testId="trace-auto-review">
-                <Disclosure summary={traceText('trace.facts.technical')}>
+                <Disclosure variant="plain" summary={traceText('trace.facts.technical')}>
                   <TraceReview name={row.tool?.name ?? row.source} review={row.review} />
                 </Disclosure>
               </TraceCard>

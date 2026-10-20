@@ -1,4 +1,5 @@
 import type { Translate } from '../../locales/index.js'
+import { baseToolTitle } from '../../tool-presentation.js'
 import type { ToolNode } from './context.js'
 
 /** What a step did, in the reader's terms. It names the row and counts toward the group summary. */
@@ -100,6 +101,7 @@ export interface ToolStep {
   /** The untruncated target, for the tooltip. */
   full: string
   /** The command line itself, when the call ran one. */
+  mono?: boolean
   command?: string
 }
 
@@ -109,9 +111,18 @@ export function toolStep(node: ToolNode, t: Translate, presentation?: { name: st
     const view = node.presentation
     const scope = argument(node.argsPreview, ['path', 'file_path', 'object', 'batch', 'scope'])
     const target = [...new Set([scope, view.summary, view.description].filter(Boolean))].join(' · ')
-    return { kind: 'tool', verb: view.title, target, full: target }
+    const command =
+      toolKind(node.name) === 'command' ? argument(node.argsPreview, ['command', 'cmd', 'script']) : undefined
+    return {
+      kind: 'tool',
+      verb: baseToolTitle(node.name, t) ?? view.title,
+      target,
+      full: target,
+      ...(command ? { command } : {}),
+    }
   }
-  if (presentation) return { kind: 'tool', verb: presentation.name, target: '', full: '' }
+  if (presentation)
+    return { kind: 'tool', verb: baseToolTitle(node.name, t) ?? presentation.name, target: '', full: '' }
   const kind = toolKind(node.name)
   const raw = argument(node.argsPreview, TARGET_KEYS[kind]) ?? ''
   const full =
@@ -120,12 +131,14 @@ export function toolStep(node: ToolNode, t: Translate, presentation?: { name: st
   return {
     ...(command ? { command } : {}),
     kind,
+    mono: ['read', 'edit', 'list'].includes(kind) && Boolean(full),
     verb:
-      kind === 'tool'
+      baseToolTitle(node.name, t) ??
+      (kind === 'tool'
         ? t('activity.verb.generic')
         : kind === 'web' && /search/i.test(node.name)
           ? t('activity.verb.webSearch')
-          : t(`activity.verb.${kind}`),
+          : t(`activity.verb.${kind}`)),
     target: firstLine(full),
     full,
   }

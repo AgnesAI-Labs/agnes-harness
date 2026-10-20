@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { conversationLocaleCatalog } from '../locales/conversation.js'
 import type { Translate } from '../locales/index.js'
 import { SettingsDetails } from '../settings-layout.js'
+import { baseToolTitle } from '../tool-presentation.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 const interactionKinds: Readonly<Record<string, string>> = {
@@ -30,7 +31,7 @@ export function interactionToolPresentation(
   if (!kind) return undefined
   const summary =
     node.status === 'completed' ? t(`tool.interaction.${kind}.completed`) : t(`tool.status.${node.status}`)
-  return { name: t(`tool.interaction.${kind}.name`), summary }
+  return { name: baseToolTitle(node.name, t) ?? t(`tool.interaction.${kind}.name`), summary }
 }
 
 /** Raw interaction protocol remains inspectable, but is never the primary result. */

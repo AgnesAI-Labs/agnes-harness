@@ -114,7 +114,7 @@ export function ApplicationEvidence({ context }: { context: UiExtensionContext }
                   ? '打开'
                   : 'Open'}
           </Button>
-          <Disclosure summary={zh ? '来源与详情' : 'Source and details'}>
+          <Disclosure variant="plain" summary={zh ? '来源与详情' : 'Source and details'}>
             <p>
               <code>{item.node.name}</code> · {zh ? '工具回执' : 'Tool receipt'} #{item.node.resultSeq}
             </p>

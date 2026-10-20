@@ -1,3 +1,4 @@
+import { baseToolTitle, localizeToolSummary } from '@agnes/web-ui'
 // What the live approval card says about a tool call: what it will do, the arguments it will run with,
 // and what the session-wide choice covers. Pure, so the wording and the "can everything be seen"
 // rule are tested without a page.
@@ -86,8 +87,8 @@ export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate
   const humanTitle = title && (!tool || (title !== tool && !title.startsWith(`${tool} `))) ? title : undefined
   const summary =
     isRecord(input) && typeof input.description === 'string' && input.description.trim()
-      ? input.description
-      : humanTitle || impact
+      ? [baseToolTitle(tool ?? '', t), input.description].filter(Boolean).join(' · ')
+      : (humanTitle ? localizeToolSummary(humanTitle, t, tool) : baseToolTitle(tool ?? '', t)) || impact
   const sessionLabel = t('app.approval.session.tool')
   if (input === undefined) return { summary, impact, sessionLabel }
   const text = JSON.stringify(leadingFirst(input), null, 2) ?? String(input)

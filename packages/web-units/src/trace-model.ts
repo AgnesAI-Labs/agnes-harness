@@ -2,7 +2,7 @@ import type { UINode, UISpan, UITurn } from '@agnes/protocol'
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
 import type { TraceMetric, TraceTokenMetrics } from './trace-request-metrics.js'
-import { summarizeTool } from './trace-summary.js'
+import { summarizeTool, traceApprovalSummary } from './trace-summary.js'
 
 export const BADGE_KEY: Record<string, TraceMessageKey> = {
   user: 'trace.badge.user',
@@ -232,7 +232,7 @@ const nodePreview = (node: UINode): string => {
     const result = node.resultPreview ? ` → ${node.resultPreview}` : ''
     return `${node.name}${summary}${args}${result}`
   }
-  if (node.kind === 'approval') return node.summary
+  if (node.kind === 'approval') return traceApprovalSummary(node)
   if (node.kind === 'compaction') return node.summary ?? ''
   if (node.kind === 'cost') return node.model ?? node.purpose ?? ''
   if (node.kind === 'artifact') return node.name

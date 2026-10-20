@@ -78,7 +78,7 @@ export function TraceToolbar({
     <div className="trace-toolbar" hidden={hidden}>
       <div className="trace-toolbar-lead">
         {loop ? (
-          <Disclosure summary={traceText('trace.facts.technical')}>
+          <Disclosure variant="plain" summary={traceText('trace.facts.technical')}>
             <span className="trace-stat trace-loop" key="session-loop">
               {traceText('trace.sessionLoop', { id: loop.id, version: loop.version })}
             </span>

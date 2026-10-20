@@ -3589,6 +3589,8 @@
             "kind": {
               "const": "approval"
             },
+            "toolName": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "toolUseId": { "type": "string", "maxLength": 128 },
             "category": { "enum": ["permission", "question"] },
             "purpose": {
               "type": "string",

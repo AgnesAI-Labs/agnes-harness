@@ -141,7 +141,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           {detail}
           {view.warning !== undefined && <p className="approval-warning">{view.warning}</p>}
           {view.preview !== undefined && (
-            <Disclosure summary={fallbackT('ui.technicalDetails')}>
+            <Disclosure variant="plain" summary={fallbackT('ui.technicalDetails')}>
               {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the full arguments. */}
               <pre tabIndex={0} data-testid="approval-preview">
                 {view.preview}

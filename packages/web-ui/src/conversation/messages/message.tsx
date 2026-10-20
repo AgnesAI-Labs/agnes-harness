@@ -2,6 +2,8 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import type { ReactNode, RefObject } from 'react'
 import { memo, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
+import { approvalSummary, baseToolTitle } from '../../tool-presentation.js'
+import { Button } from '../../ui/button.js'
 import { DecisionFields, decisionPresentation } from '../../ui/decision-presentation.js'
 import { ConversationCost } from '../cost.js'
 import { ActivityIcon, ActivityRow } from './activity-row.js'
@@ -24,7 +26,7 @@ const APPROVAL_STEP_KEYS: Record<string, string> = {
  * An approval in the process is one line: what was decided · what it was for. The card that asks
  * for the decision is the approval region; this line is its record in the turn.
  */
-function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
+function ApprovalStep({ node, t, primaryCard }: { node: ApprovalNode; t: Translate; primaryCard?: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const decided = node.state === 'decided' && node.decision
   // Core asking whether a call that lost its result ran is a question of fact, not a permission.
@@ -37,7 +39,19 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
   const presentation = decisionPresentation(node.presentation)
   const summary = reconcile
     ? t('activity.reconcile.summary', { tool: reconcile.tool })
-    : (presentation?.title ?? node.summary)
+    : (presentation?.title ?? approvalSummary(node, t))
+  if (node.state === 'pending' && primaryCard)
+    return (
+      <Button
+        appearance="link"
+        className="approval-pending-link"
+        href="#approval-content"
+        title={summary}
+        data-testid="approval-step"
+      >
+        {approvalStatus(node, t)} · {summary}
+      </Button>
+    )
   return (
     <>
       <ActivityRow
@@ -47,7 +61,7 @@ function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
         verb={<span className="tool-status">{key ? t(key) : approvalStatus(node, t)}</span>}
         target={<span className="approval-summary">{summary}</span>}
         tooltip={summary}
-        mono={!reconcile && !presentation}
+        mono={false}
         state={
           node.state === 'pending'
             ? 'attention'
@@ -102,7 +116,9 @@ export function nativeContent(
         <ConversationToolCard node={node} t={t} turnStatus={turnStatus} />
       )
     case 'approval':
-      return <ApprovalStep node={node} t={t} />
+      return (
+        <ApprovalStep node={node} t={t} primaryCard={turnStatus === 'running' || turnStatus === 'waiting'} />
+      )
     case 'cost':
       return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} t={t} />
     case 'artifact':
@@ -200,7 +216,7 @@ function MessageView({
             'data-status': node.status,
             // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
             'aria-label': props.t('tool.card.aria', {
-              name: node.presentation?.title ?? node.name,
+              name: baseToolTitle(node.name, props.t) ?? node.presentation?.title ?? node.name,
               status: toolOutcome(node, props.t).label,
             }),
           }

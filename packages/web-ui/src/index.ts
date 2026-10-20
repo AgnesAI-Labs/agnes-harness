@@ -171,6 +171,7 @@ export {
   splitList,
 } from './settings-values.js'
 export { terminalKey, terminalScreen } from './terminal-screen.js'
+export { approvalSummary, baseToolTitle, localizeToolSummary } from './tool-presentation.js'
 export { Badge } from './ui/badge.js'
 export { Banner, type BannerProps } from './ui/banner.js'
 export { Button, type ButtonProps } from './ui/button.js'

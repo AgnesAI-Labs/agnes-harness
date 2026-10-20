@@ -101,7 +101,7 @@ it('keeps tool previews of astral characters within the published limits', async
     seq: events.at(-1)!.seq + 1,
     type: 'decision/state',
     register: 'decision/state',
-    data: pendingDecision('review', { subject, sessionId: 'bounds' }),
+    data: pendingDecision('review', { subject, sessionId: 'bounds', operationId: 'tool-1' }),
   })
   const timeline = await projectUI(events, {
     sessionKey: 'bounds',
@@ -113,6 +113,8 @@ it('keeps tool previews of astral characters within the published limits', async
   expect(tool?.kind === 'tool' && tool.presentation).toEqual(presentation)
   const approval = timeline.nodes.find((node) => node.kind === 'approval')
   expect(approval?.kind === 'approval' && JSON.parse(approval.subjectText!)).toEqual(subject)
+  expect(approval?.kind === 'approval' && approval.toolName).toBe('shell')
+  expect(approval?.kind === 'approval' && approval.toolUseId).toBe('tool-1')
   expectPublishable(timeline)
 })
 
@@ -189,6 +191,8 @@ it('projects durable automatic permission evidence beside its tool without a pen
   })
   expect(timeline.nodes.find((node) => node.kind === 'approval')).toMatchObject({
     state: 'decided',
+    toolName: 'plugin_test',
+    toolUseId: 'call',
     decision: { reason: 'full-access' },
     options: [],
   })

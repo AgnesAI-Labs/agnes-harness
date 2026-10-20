@@ -82,7 +82,10 @@ function TurnView({
   const others = members.filter((node) => node.kind !== 'user' && node.kind !== 'cost')
   const attention = (node: UINode) =>
     (node.kind === 'approval' && node.state === 'pending') || attentionIds.includes(node.id)
-  const pendingApproval = others.some((node) => node.kind === 'approval' && node.state === 'pending')
+  const pendingApproval = others.findLast(
+    (node): node is Extract<UINode, { kind: 'approval' }> =>
+      node.kind === 'approval' && node.state === 'pending',
+  )
   const awaitingToolApproval = others.some(
     (node) => node.kind === 'tool' && node.status === 'awaiting_approval',
   )
@@ -148,6 +151,8 @@ function TurnView({
     (a, b) => Number(a.id === turn.finalAssistantId) - Number(b.id === turn.finalAssistantId),
   )
   for (const node of ordered) {
+    // The decision line points to the primary card; its waiting tool is the same pending action.
+    if (processActive && node.kind === 'tool' && node.toolUseId === pendingApproval?.toolUseId) continue
     if (stepOf(node)) addStep(node, false)
     else if (node.kind === 'assistant') {
       if (node.thinking?.trim() || shownThoughts.has(node.id)) addStep(node, true)

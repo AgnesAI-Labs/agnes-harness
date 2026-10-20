@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { FactChainParams, FactChainResult, UINode, UISpan, UITurn } from '@agnes/protocol'
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
+import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -41,8 +42,18 @@ describe('tool summaries', () => {
     expect(say('ask_user_question', { questions: [{ label: '鞋子类型' }, { label: '交付形式' }] })).toBe(
       '提问 2 个问题：鞋子类型、交付形式',
     )
-    expect(say('ui_submit', { answers: { a: 1, b: 2 } })).toBe('提交界面 · 2 个回答')
+    expect(say('ui_submit', { answers: { a: 1, b: 2 } })).toBe('提交答案 · 2 个回答')
     expect(say('grep', { pattern: 'TODO' })).toBe('搜索内容「TODO」')
+    for (const locale of ['en', 'zh-CN'] as const) {
+      document.documentElement.lang = locale
+      for (const [key, title] of Object.entries(webUiLocaleCatalog[locale])) {
+        if (!key.startsWith('baseTool.')) continue
+        const name = key.slice('baseTool.'.length)
+        const summary = summarizeTool({ name, summary: 'Run tool · Verify record' }).text
+        expect(summary, `${locale} ${name}`).toContain(title)
+        expect(summary, `${locale} ${name}`).not.toContain('Run tool')
+      }
+    }
   })
 
   it('reads a cut-off argument preview while keeping raw JSON out of the summary', () => {

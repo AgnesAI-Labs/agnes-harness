@@ -723,10 +723,10 @@ it.each([
   [
     'shell python3 script.py cwd="private"',
     'Count words in brief.md to verify the script',
-    'Count words in brief.md to verify the script',
+    '运行命令 · Count words in brief.md to verify the script',
   ],
   ['Review the chosen report', undefined, 'Review the chosen report'],
-  ['shell python3 script.py cwd="private"', undefined, zhT('app.approval.impact.execute')],
+  ['shell python3 script.py cwd="private"', undefined, '运行命令'],
 ])(
   'keeps human intent in live approval headers and raw commands in details (%s)',
   (title, description, expected) => {

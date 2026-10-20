@@ -95,6 +95,13 @@ sys.stderr.write("xcrun: error: couldn't create cache file '/tmp/xcrun_db-test' 
       const approval = page.getByTestId('approval-card')
       await expect(approval).toBeVisible()
       await expect(approval.locator('.approval-summary-text')).not.toContainText('python3')
+      await expect(approval.locator('.approval-summary-text')).toContainText(zh ? '运行命令' : 'Run command')
+      await expect(
+        page.getByTestId('conversation-turn').last().locator('[data-agnes-tool-card]'),
+      ).toHaveCount(0)
+      await expect(page.getByTestId('conversation-turn').last().getByTestId('approval-step')).toHaveCount(1)
+      await expect(approval.locator('.agh-disclosure-chevron')).toBeVisible()
+      await expect(approval.locator('.agh-disclosure-marker')).toHaveCount(0)
       await expect(approval.getByTestId('approval-preview')).toBeAttached()
       await expect(approval.getByTestId('approval-preview')).toBeHidden()
       await capture(page, `${locale}-${theme}-script-approval`)
@@ -115,19 +122,46 @@ sys.stderr.write("xcrun: error: couldn't create cache file '/tmp/xcrun_db-test' 
       if ((await scriptTurn.getByTestId('turn-process-toggle').getAttribute('aria-expanded')) !== 'true')
         await scriptTurn.getByTestId('turn-process-toggle').click()
       await expandActivityGroups(scriptTurn)
+      await expect(scriptTurn.getByTestId('tool-detail-toggle')).toHaveAttribute('aria-expanded', 'false')
+      await expect(scriptTurn.getByTestId('tool-detail-text')).toBeHidden()
+      await expect(scriptTurn.locator('.approval-summary')).toContainText(zh ? '运行命令' : 'Run command')
+      await expect(scriptTurn.locator('.approval-summary').locator('..')).not.toHaveAttribute(
+        'data-mono',
+        'true',
+      )
+      await expect(
+        scriptTurn.getByTestId('tool-detail-toggle').locator('.activity-target'),
+      ).not.toHaveAttribute('data-mono', 'true')
+      expect(
+        await scriptTurn
+          .getByTestId('tool-detail-toggle')
+          .locator('.activity-target')
+          .evaluate((element) => getComputedStyle(element).fontFamily),
+      ).not.toMatch(/mono|Menlo|Consolas/i)
+      await capture(page, `${locale}-${theme}-script-collapsed`)
       await scriptTurn.getByTestId('tool-detail-toggle').click()
       await expect(scriptTurn.getByTestId('tool-detail-text')).toContainText(
         'script warning: record incomplete',
       )
-      // The demo's final answer echoes the raw receipt; classify the execution output section.
-      const execution = (await scriptTurn.getByTestId('tool-detail-text').innerText()).split('[Demo model')[0]
-      expect(execution).not.toContain('xcrun_db-test')
+      await expect(scriptTurn.getByTestId('tool-command')).toHaveText('python3 count_words.py brief.md')
+      await expect(scriptTurn.getByTestId('tool-stdout')).toHaveText('6')
+      await expect(scriptTurn.getByTestId('tool-stderr')).toHaveText('script warning: record incomplete')
+      await expect(scriptTurn.getByTestId('tool-raw-args')).toBeHidden()
+      await expect(scriptTurn.locator('.tool-output .agh-tag')).toHaveText(zh ? '退出码 0' : 'Exit code 0')
+      expect((await scriptTurn.locator('.tool-output .agh-tag').boundingBox())?.width).toBeLessThan(200)
+      await expect(scriptTurn.locator('.tool-output .agh-disclosure-marker')).toHaveCount(0)
       await expect(
         scriptTurn.getByRole('button', {
           name: zh ? '环境提示（命令已成功）' : 'Environment warnings (command succeeded)',
         }),
       ).toBeVisible()
+      const primaryCode = await scriptTurn.locator('.tool-output pre:visible').allTextContents()
+      expect(primaryCode.filter((text) => text.includes('python3 count_words.py brief.md'))).toHaveLength(1)
       await capture(page, `${locale}-${theme}-script-result`)
+      const rawArgs = scriptTurn.getByRole('button', { name: zh ? '原始参数' : 'Raw arguments', exact: true })
+      await rawArgs.click()
+      await expect(scriptTurn.getByTestId('tool-raw-args')).toContainText('python3 count_words.py brief.md')
+      await rawArgs.click()
       await prompt(session, 'call present {"files":[{"path":"report.html","name":"Event report"}]}')
       await expect(page.getByTestId('turn-deliverables').last()).toBeVisible()
       await page
@@ -154,6 +188,7 @@ sys.stderr.write("xcrun: error: couldn't create cache file '/tmp/xcrun_db-test' 
       await expect(page.locator('.trace-inspector [data-link="receipt"]')).toBeVisible()
       await expect(page.getByTestId('trace-gaps')).toBeHidden()
       await expect(page.getByTestId('trace-readonly')).not.toContainText(/exactly once|恰好执行/)
+      await expect(page.locator('.trace-inspector .agh-disclosure-marker')).toHaveCount(0)
       await capture(page, `${locale}-${theme}-trace`)
       await page.locator('#view-chat').click()
       const signing = session.prompt('call plain_review {}', { signal: AbortSignal.timeout(60_000) })
@@ -181,6 +216,7 @@ sys.stderr.write("xcrun: error: couldn't create cache file '/tmp/xcrun_db-test' 
         zh ? '可查看' : 'Available',
       )
       await expect(page.locator('#workbench-right code')).toBeHidden()
+      await expect(page.locator('#workbench-right .application-panel .agh-disclosure-marker')).toHaveCount(0)
       await capture(page, `${locale}-${theme}-evidence`)
       await page
         .locator('#workbench-right .application-panel')

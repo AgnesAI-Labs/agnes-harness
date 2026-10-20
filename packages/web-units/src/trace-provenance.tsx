@@ -122,7 +122,7 @@ function Chain({ links }: { links: readonly Link[] }) {
           <span className="trace-chain-label">{link.label}</span>
           <span className="trace-chain-value">{link.value}</span>
           {link.detail?.length ? (
-            <Disclosure summary={link.label}>
+            <Disclosure variant="plain" summary={link.label}>
               <ul className="trace-chain-detail">
                 {link.detail.map((item) => (
                   <li key={item}>{item}</li>
@@ -212,7 +212,7 @@ function AuthoringRecord({ node }: { node: Node<'authoring'> }) {
           : traceText('trace.authoring.noTests')}
       </p>
       <p>{traceText(node.reviewed ? 'trace.authoring.reviewed' : 'trace.authoring.unreviewed')}</p>
-      <Disclosure summary={traceText('trace.authoring.details')}>
+      <Disclosure variant="plain" summary={traceText('trace.authoring.details')}>
         <pre className="trace-pre">
           {JSON.stringify(
             {
@@ -294,7 +294,7 @@ export function TraceSourceRecord({
         <p className="trace-detail-status">{traceText('trace.provenance.empty')}</p>
       )}
       {uncertain && <p role="status">{traceText('trace.facts.uncertain')}</p>}
-      <Disclosure summary={traceText('trace.facts.technical')}>
+      <Disclosure variant="plain" summary={traceText('trace.facts.technical')}>
         {authoring.map((node) => (
           <AuthoringRecord key={node.id} node={node} />
         ))}

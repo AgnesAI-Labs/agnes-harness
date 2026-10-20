@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
@@ -14,6 +16,7 @@ import {
 } from '../src/conversation/messages/tool-step.js'
 import { webSources } from '../src/conversation/messages/web-sources.js'
 import { webUiLocaleCatalog } from '../src/locales/index.js'
+import { approvalSummary, baseToolTitle } from '../src/tool-presentation.js'
 
 const translate =
   (locale: 'zh-CN' | 'en'): ConversationMessagesProps['t'] =>
@@ -77,7 +80,7 @@ describe('step naming', () => {
       target: '~/work/a.md',
     })
     expect(toolStep(tool('d', 'grep', { pattern: 'TODO', path: '.' }), t)).toMatchObject({
-      verb: '搜索',
+      verb: '搜索内容',
       target: 'TODO',
     })
     expect(toolStep(tool('e', 'edit', { path: 'src/a.ts' }), t).verb).toBe('编辑')
@@ -302,7 +305,7 @@ describe('turn timeline', () => {
     expect(failed?.querySelector('.activity-target')).toBeNull()
     expect(failed?.querySelector('.activity-note')?.textContent).toBe('退出码 1')
     await click(failed)
-    expect(wrapper('sh')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain('$ cat x')
+    expect(wrapper('sh')?.querySelector('[data-testid="tool-command"]')?.textContent).toBe('cat x')
 
     // Settling collapses the process to the answer; nothing was remounted along the way.
     const settled = nodes.map((node) => node)
@@ -389,8 +392,24 @@ describe('turn timeline', () => {
     await click(host.querySelector('[data-testid="turn-activity-toggle"]'))
     const verb = (id: string) => wrapper(id)?.querySelector('.activity-verb')?.textContent
     expect([verb('ok'), verb('no'), verb('late')]).toEqual(['已允许本会话执行', '已拒绝', '等待超时，未执行'])
-    expect(wrapper('ok')?.querySelector('.activity-target')?.textContent).toBe('shell ls -la')
+    expect(wrapper('ok')?.querySelector('.activity-target')?.textContent).toBe('运行命令')
     expect(host.querySelector('[data-approval-action]')).toBeNull()
+    const waiting: UINode[] = [
+      user,
+      tool('unrelated', 'read', { path: 'other.md' }, { status: 'running' }),
+      tool('waiting', 'shell', { command: 'echo private' }, { status: 'awaiting_approval' }),
+      approval('pending', { state: 'pending', summary: 'Run command · Verify report', toolUseId: 'waiting' }),
+    ]
+    await render(waiting, turn(waiting, { status: 'waiting' }))
+    expect(host.querySelector('[data-node-id="waiting"]')).toBeNull()
+    expect(host.querySelector('[data-node-id="unrelated"]')).not.toBeNull()
+    expect(host.querySelectorAll('[data-testid="approval-step"]')).toHaveLength(1)
+    expect(host.querySelector('[data-testid="approval-step"]')?.getAttribute('href')).toBe(
+      '#approval-content',
+    )
+    expect(host.querySelector('[data-testid="approval-step"]')?.textContent).toContain(
+      '运行命令 · Verify report',
+    )
   })
 
   it('says nothing above a plain answer and marks only the newest turn as latest', async () => {
@@ -469,4 +488,73 @@ describe('turn timeline', () => {
     )
     expect(host.querySelector('[data-node-id="a1"]')?.textContent).toContain('BY')
   })
+})
+
+// The package manifests are the shipped inventory, independent of the display catalog.
+it.each(['en', 'zh-CN'] as const)('uses one localized title for every declared base tool (%s)', (locale) => {
+  const translateTool = translate(locale)
+  const directory = resolve('packages/base/extensions')
+  const names: string[] = readdirSync(directory).flatMap((folder) => {
+    const file = join(directory, folder, 'package.json')
+    if (!existsSync(file)) return []
+    const pkg = JSON.parse(readFileSync(file, 'utf8'))
+    return (pkg.agnes?.plugins ?? []).flatMap(
+      (row: { capabilities?: { tools?: { names?: string[] } } }) => row.capabilities?.tools?.names ?? [],
+    )
+  })
+  expect(names.length).toBeGreaterThan(50)
+  for (const name of names) {
+    const title = baseToolTitle(name, translateTool)
+    expect(title, name).toBeTruthy()
+    expect(title, name).not.toContain('baseTool.')
+    if (locale === 'zh-CN') expect(title, name).toMatch(/[\u4e00-\u9fff]/)
+    expect(toolStep(tool(name, name, {}), translateTool).verb, name).toBe(title)
+    expect(
+      approvalSummary(
+        {
+          kind: 'approval',
+          id: name,
+          seq: 1,
+          state: 'decided',
+          risk: 'always',
+          options: [],
+          summary: 'Run tool · Verify Record-1',
+          toolName: name,
+        },
+        translateTool,
+      ),
+      name,
+    ).toBe(`${title} · Verify Record-1`)
+    expect(
+      approvalSummary(
+        {
+          kind: 'approval',
+          id: name,
+          seq: 1,
+          state: 'decided',
+          risk: 'always',
+          options: [],
+          summary: 'Run tool · Verify Record-1',
+          subjectText: JSON.stringify({ call: { name } }),
+        },
+        translateTool,
+      ),
+      name,
+    ).toBe(`${title} · Verify Record-1`)
+  }
+  expect(
+    approvalSummary(
+      {
+        kind: 'approval',
+        id: 'plugin',
+        seq: 1,
+        state: 'pending',
+        risk: 'always',
+        options: [],
+        summary: 'Read file · custom purpose',
+        subjectText: '{"call":{"name":"custom_review"}}',
+      },
+      translateTool,
+    ),
+  ).toBe('Read file · custom purpose')
 })

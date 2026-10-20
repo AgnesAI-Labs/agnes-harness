@@ -4,6 +4,7 @@ import { adminConfirmationLocaleCatalog } from '../src/locales/admin-confirmatio
 import { adminDetailLocaleCatalog } from '../src/locales/admin-detail.js'
 import { adminDialogsLocaleCatalog } from '../src/locales/admin-dialogs.js'
 import { adminListLocaleCatalog } from '../src/locales/admin-list.js'
+import { baseToolCatalog } from '../src/locales/base-tools.js'
 import { computerUseUiCatalog } from '../src/locales/computer-use.js'
 import { configFormCatalog } from '../src/locales/config-form.js'
 import { conversationLocaleCatalog } from '../src/locales/conversation.js'
@@ -20,6 +21,7 @@ const catalogs = [
   ['admin detail', adminDetailLocaleCatalog],
   ['admin list', adminListLocaleCatalog],
   ['conversation', conversationLocaleCatalog],
+  ['base tool titles', baseToolCatalog],
   ['admin aggregate', adminLocaleCatalog],
   ['resource detail', resourceDetailLocaleCatalog],
   ['resource list', resourceListLocaleCatalog],

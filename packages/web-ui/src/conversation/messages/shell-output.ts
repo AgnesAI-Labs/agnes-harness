@@ -27,3 +27,21 @@ export function shellOutput(text: string | undefined): { text: string | undefine
     environment: environment.join('\n'),
   }
 }
+
+/** The shell's published text format; incomplete/timeout output stays untouched and has no exit badge. */
+export function shellTranscript(text: string | undefined): {
+  stdout: string
+  stderr?: string
+  exit?: number
+  truncated?: boolean
+} {
+  const raw = text ?? ''
+  const end = /\n?\[exit (-?\d+)\]( \[output truncated by sandbox\])?\s*$/.exec(raw)
+  const body = end ? raw.slice(0, end.index).trimEnd() : raw
+  const split = body.indexOf('[stderr]\n')
+  return {
+    stdout: (split < 0 ? body : body.slice(0, split)).trimEnd(),
+    ...(split < 0 ? {} : { stderr: body.slice(split + '[stderr]\n'.length).trimEnd() }),
+    ...(end ? { exit: Number(end[1]), ...(end[2] ? { truncated: true } : {}) } : {}),
+  }
+}
