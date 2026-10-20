@@ -1,4 +1,4 @@
-import { defaultLoop, userImagePolicy } from '@agnes/protocol'
+import { defaultLoop, userImagePolicy, type WorkspaceEntry } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { choiceName } from '@agnes/web-admin/settings/choices'
 import type { ComposerView } from '@agnes/web-conversation/composer'
@@ -20,6 +20,40 @@ import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
+
+/** The draft's workspace chip. The managed chats workspace reads as no choice: 「选择工作区」. */
+export function composerWorkspaceView(input: {
+  selected: WorkspaceEntry | undefined
+  rows: readonly WorkspaceEntry[]
+  current: boolean
+  drafting: boolean
+  disabled: boolean
+  t: AppSessionContext['t']
+}): ComposerView['workspace'] {
+  const { selected, t } = input
+  const choices = input.rows.filter((row) => row.kind !== 'chats')
+  if (selected?.kind === 'chats')
+    return {
+      root: selected.path,
+      visible: input.drafting,
+      disabled: input.disabled,
+      label: t('composer.workspace.select'),
+      title: t('composer.workspace.select'),
+      chats: true,
+      choices,
+    }
+  const fallback = input.current ? 'composer.workspace.current' : 'composer.workspace.select'
+  return {
+    ...(selected?.path ? { root: selected.path, path: shortenHome(selected.path) } : {}),
+    visible: input.drafting,
+    disabled: input.disabled,
+    label: selected?.name ?? t(fallback),
+    title: selected?.path ?? t(input.current ? 'composer.workspace.currentTitle' : fallback),
+    choices,
+    clearable:
+      input.drafting && !!selected && input.rows.some((row) => row.kind === 'chats' && row.available),
+  }
+}
 
 export function createComposerController(
   context: Pick<
@@ -77,6 +111,7 @@ export function createComposerController(
     | 'topbarRuntime'
     | 'tracePanel'
     | 'updateSidebar'
+    | 'workspaceRows'
   >,
 ) {
   function renderControls(): void {
@@ -447,23 +482,14 @@ export function createComposerController(
       },
       stopping: context.stopping,
       usage: context.projection?.usage,
-      workspace: {
-        ...(context.selectedWorkspace?.path
-          ? { root: context.selectedWorkspace.path, path: shortenHome(context.selectedWorkspace.path) }
-          : {}),
-        visible: !context.readOnly && (!context.current || context.draftingNew),
+      workspace: composerWorkspaceView({
+        selected: context.selectedWorkspace,
+        rows: context.workspaceRows,
+        current: Boolean(context.current),
+        drafting: !context.readOnly && (!context.current || context.draftingNew),
         disabled: !available || context.submissions.sending || context.sessionPending,
-        label:
-          context.selectedWorkspace?.name ??
-          (context.current
-            ? context.t('composer.workspace.current')
-            : context.t('composer.workspace.select')),
-        title:
-          context.selectedWorkspace?.path ??
-          (context.current
-            ? context.t('composer.workspace.currentTitle')
-            : context.t('composer.workspace.select')),
-      },
+        t: context.t,
+      }),
     }
     if (context.draftingNew && !context.draftLoopAvailable()) composerView.send.disabled = true
     // A level the deployment refuses, or one an older Host cannot apply to the recipe, is not sent.

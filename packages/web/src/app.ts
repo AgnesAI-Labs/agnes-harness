@@ -886,6 +886,8 @@ const clientModules = await startClientModules({
     onPromoteQueued: (itemId) => handleQueuedAction(itemId, 'promote'),
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
+    onWorkspaceSelect: (workspace) => workspaceController.select(workspace),
+    onWorkspaceRemove: (workspace) => run(() => workspaceController.remove(workspace)),
   },
   traceContainer: hosts.trace,
   trace: {

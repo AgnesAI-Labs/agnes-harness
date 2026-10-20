@@ -8,6 +8,26 @@ import { mountNewSessionDialog } from '../new-session-dialog.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from '../workspace-picker.js'
 
 /**
+ * The draft's workspace: an explicit choice, else the one already selected, else the most recently
+ * used available one. The managed chats workspace is never the default unless it is all there is.
+ */
+export function draftWorkspace(
+  rows: readonly WorkspaceEntry[],
+  selected: WorkspaceEntry | undefined,
+  workspace?: WorkspaceEntry,
+): WorkspaceEntry | undefined {
+  if (workspace) return workspace
+  if (selected?.available) return selected
+  return (
+    rows.find((row) => row.available && row.kind !== 'chats') ??
+    rows.find((row) => row.available && row.kind === 'chats') ??
+    selected
+  )
+}
+
+const chosen = (rows: readonly WorkspaceEntry[]) => rows.filter((row) => row.kind !== 'chats')
+
+/**
  * The draft's workspace and the picker that changes it. The address carries the draft's
  * `workspaceId`, so a refresh (which keeps `?new=1`) restores the same workspace instead of
  * asking again; the picker opens on its own only when no workspace is available at all.
@@ -59,13 +79,17 @@ export function createWorkspaceController(
     history.replaceState(history.state, '', preserveRouteParams(url))
   }
 
-  /** An explicit choice, else the one already selected, else the most recently used available one. */
   function resolveDraft(workspace?: WorkspaceEntry): void {
-    const selected = context.selectedWorkspace
-    remember(
-      workspace ??
-        (selected?.available ? selected : (context.workspaceRows.find((row) => row.available) ?? selected)),
-    )
+    remember(draftWorkspace(context.workspaceRows, context.selectedWorkspace, workspace))
+  }
+
+  /** The composer chip's choice: a registered workspace, or `'chats'` to work without one. */
+  function select(workspace: WorkspaceEntry | 'chats'): void {
+    const next = workspace === 'chats' ? context.workspaceRows.find((row) => row.kind === 'chats') : workspace
+    if (!next) return
+    remember(next)
+    context.renderControls()
+    context.composerRuntime.focus()
   }
 
   function renderControls(): void {
@@ -88,7 +112,7 @@ export function createWorkspaceController(
     context.workspaceRows = page.items
     const selected = context.selectedWorkspace
     if (selected) context.selectedWorkspace = page.items.find((row) => row.path === selected.path)
-    dialog.update({ workspaces: page.items, current: context.selectedWorkspace?.path })
+    dialog.update({ workspaces: chosen(page.items), current: context.selectedWorkspace?.path })
     context.updateSidebar()
   }
 
@@ -103,7 +127,7 @@ export function createWorkspaceController(
         ...context.workspaceRows.filter((row) => row.path !== workspace.path),
       ]
       remember(workspace)
-      dialog.update({ workspaces: context.workspaceRows, path: '' })
+      dialog.update({ workspaces: chosen(context.workspaceRows), path: '' })
       await context.list()
       requestNewSession()
       dialog.close()
@@ -161,6 +185,7 @@ export function createWorkspaceController(
       return creating
     },
     resolveDraft,
+    select,
     renderControls,
     open,
     apply,

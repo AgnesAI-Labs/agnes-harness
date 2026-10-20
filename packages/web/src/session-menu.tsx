@@ -20,8 +20,11 @@ export function SessionMenu({
   t,
   action,
   platform,
+  chats = false,
 }: {
   platform?: string | undefined
+  /** A chat in the managed chats workspace has no folder of its own to show. */
+  chats?: boolean
   id: string
   title: string
   disabled: boolean
@@ -81,7 +84,7 @@ export function SessionMenu({
           tone="neutral"
           label={t('session.menu.triggerAria', { name: title })}
           trigger={button}
-          items={ITEMS.map(([item, key, icon]) => ({
+          items={ITEMS.filter(([item]) => !chats || item !== 'revealWorkspace').map(([item, key, icon]) => ({
             id: item,
             dividerBefore: item === 'revealWorkspace' || item === 'archive',
             label: t(

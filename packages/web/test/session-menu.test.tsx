@@ -11,7 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderMenu(platform?: string) {
+function renderMenu(platform?: string, chats = false) {
   const host = document.createElement('div')
   document.body.append(host)
   const select = vi.fn()
@@ -22,6 +22,7 @@ function renderMenu(platform?: string) {
         title="名称 visible"
         disabled={disabled}
         platform={platform}
+        chats={chats}
         t={zhT}
         action={select}
       />
@@ -125,6 +126,11 @@ it.each(['win32', 'darwin'])(
     expect(menu.row.hasAttribute('data-menu-open')).toBe(false)
   },
 )
+
+it('offers no folder to show for a chat in the managed chats workspace', async () => {
+  const items = [...(await renderMenu('darwin', true).open()).querySelectorAll('[role="menuitem"]')]
+  expect(items.map((item) => item.textContent)).toEqual(['重命名', '分叉会话', '运行信息', '归档会话'])
+})
 
 it('labels the trigger for assistive technology and starts collapsed', () => {
   const { trigger } = renderMenu()

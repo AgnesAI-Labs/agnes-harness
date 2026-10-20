@@ -265,6 +265,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
   const needle = query.trim().toLocaleLowerCase()
   const name = (path: string | undefined) => {
     const workspace = options.workspaces.find((entry) => entry.path === path)
+    if (workspace?.kind === 'chats') return t('nav.chats')
     return workspace ? workspaceLabel(workspace) : (path?.split(/[\\/]/).filter(Boolean).at(-1) ?? '')
   }
   const rows = sortSessionsByRecency(
@@ -383,6 +384,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
     for (const group of options.paging.groups) groups.set(group.groupId, group.items)
     count = options.paging.groups.reduce((sum, group) => sum + group.total, 0)
   }
+  const chatsPath = options.workspaces.find((entry) => entry.kind === 'chats')?.path
   const item = (row: SidebarNavigationOptions['sessions'][number]): ConversationItemType => {
     const title =
       row.title ||
@@ -419,6 +421,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
               t={t}
               action={options.action}
               platform={options.runtimePlatform}
+              chats={!!chatsPath && row.cwd === chatsPath}
             />
           )}
         </>
@@ -448,7 +451,13 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
           const workspace = options.workspaces.find((entry) =>
             page ? entry.workspaceId === page.workspaceId : entry.path === path,
           )
-          const name = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
+          // The managed chats workspace is a group of chats, not a folder the user chose.
+          const chats = workspace?.kind === 'chats'
+          const name = chats
+            ? t('nav.chats')
+            : workspace
+              ? workspaceLabel(workspace)
+              : t('session.uncategorized')
           const collapsed = page ? !page.opened : collapsedGroups.has(path)
           const expanded = expandedGroups.has(path)
           const sorted = page ? sessions : sortSessionsByRecency(sessions)
@@ -469,7 +478,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   className="workspace-heading"
                   aria-expanded={!collapsed}
                   aria-controls={listId}
-                  title={workspace?.path ?? t('nav.noWorkspaceTitle')}
+                  title={chats ? name : (workspace?.path ?? t('nav.noWorkspaceTitle'))}
                   onClick={() => {
                     if (page) {
                       options.groupAction?.(path, 'toggle')
@@ -481,8 +490,14 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                     redraw((value) => value + 1)
                   }}
                 >
-                  <FolderIcon className="icon icon-folder icon-folder-closed" />
-                  <FolderIcon open className="icon icon-folder icon-folder-open" />
+                  {chats ? (
+                    <Icon name="message-square" className="icon icon-chats" />
+                  ) : (
+                    <>
+                      <FolderIcon className="icon icon-folder icon-folder-closed" />
+                      <FolderIcon open className="icon icon-folder icon-folder-open" />
+                    </>
+                  )}
                   <span className="workspace-name">
                     <NavigationLabel text={name} />
                   </span>
@@ -500,6 +515,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                     }
                     newSession={() => options.newSession(workspace)}
                     action={options.workspaceAction}
+                    managed={chats}
                   />
                 )}
               </div>

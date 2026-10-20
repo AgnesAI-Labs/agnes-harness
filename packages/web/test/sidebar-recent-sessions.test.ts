@@ -306,6 +306,37 @@ describe('recent sessions per workspace', () => {
     })
   })
 
+  it('shows the managed chats workspace as 「临时会话」 with only a new-session action', () => {
+    const chats: WorkspaceEntry = { ...workspace, path: '/data/chats', name: 'chats', kind: 'chats' }
+    const nav = document.createElement('nav')
+    document.body.append(nav)
+    const newSession = vi.fn()
+    flushSync(() =>
+      renderSessionNavigation(
+        {
+          nav,
+          sessions: [session(0), { ...session(1), cwd: chats.path }],
+          workspaces: [workspace, chats],
+          labels: new Map(),
+          newSession,
+          open: vi.fn(),
+          action: vi.fn(),
+          workspaceAction: vi.fn(),
+        },
+        zhT,
+      ),
+    )
+    const [folder, chatGroup] = [...nav.querySelectorAll<HTMLElement>('.workspace-group')]
+    expect(folder?.querySelector('.workspace-name')?.textContent).toBe('WorkLLM')
+    expect(folder?.querySelector('.workspace-menu-trigger')).not.toBeNull()
+    expect(chatGroup?.querySelector('.workspace-name')?.textContent).toBe('临时会话')
+    expect(chatGroup?.querySelector('.workspace-heading')?.getAttribute('title')).toBe('临时会话')
+    expect(chatGroup?.querySelector('.icon-folder')).toBeNull()
+    expect(chatGroup?.querySelector('.workspace-menu-trigger')).toBeNull()
+    chatGroup?.querySelector<HTMLButtonElement>('.workspace-new-session')?.click()
+    expect(newSession).toHaveBeenCalledWith(chats)
+  })
+
   it('draws the heading tools small and quiet: 24px buttons, 14px icons, darker when pointed at', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     expect(css).toMatch(
