@@ -80,11 +80,7 @@ import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/t
 import { toolCallPayload } from '../../step/tool-call.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
-import {
-  bindToolAvailability,
-  disclosureRestriction,
-  prepareToolAvailability,
-} from './tool-availability.js'
+import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 

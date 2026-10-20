@@ -2,6 +2,8 @@
 
 [English](tool-runtime.md) | 简体中文
 
+完成校验保留 `RepairSeam.decide` 明确返回的 `complete`，不会把未通过的校验改记为通过。Core 将继续修正或升级的请求限制为一次自动修正。校验或修复基础设施故障会结束本轮，并以可信恢复审计记录未能完成校验；内容拒绝与此分开。已移除校验器 `park` 创建的未知结果人工接受请求（包括原来的 `always`/`budget` 风险）；操作审阅、未知业务副作用核对和预算报价仍使用原有决策通道。
+
 `@agnes/extension-api` 提供两个合同：`ToolRuntimeProvider.create({ maxParallel })` 创建会话级运行时，支持单次执行、批量执行、取消和销毁；`ToolPolicy.decide(input, signal, ports?)` 返回带原因的 `allow`、`ask` 或 `deny`。
 
 普通 Cordis 插件注入 `providers`，通过 `providers.register(toolRuntimeKind, provider)` 或 `providers.register(toolPolicyKind, policy)` 注册，注册由调用插件的 fiber 所有。读取 `providers.catalog()` 并按 `kind` 筛选；目录包含 id、版本、来源包、能力和选型/生命周期元数据。卸载选中的提供方会取消其生命周期，后续调用明确失败。

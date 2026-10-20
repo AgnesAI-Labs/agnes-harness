@@ -292,7 +292,7 @@ function TurnView({
           </span>
         }
       />
-      {turn.status === 'failed' && (
+      {turn.status === 'failed' && !turn.verification && (
         <p className="turn-error" role="alert">
           {turn.error
             ? t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
@@ -300,6 +300,15 @@ function TurnView({
                 reason: turn.reason ?? t('turn.error.unknownReason'),
               })}
         </p>
+      )}
+      {turn.verification && (
+        <Disclosure
+          className="turn-recovery"
+          data-testid="turn-verification"
+          summary={t(`turn.verification.${turn.verification}`)}
+        >
+          <p>{t(`turn.verification.${turn.verification}.detail`)}</p>
+        </Disclosure>
       )}
       {recoveryFacts.length > 0 && (
         <Disclosure
@@ -378,7 +387,10 @@ function TurnView({
             )
           }
           const { node } = entry
-          const always = entry.type === 'final' || entry.type === 'attention'
+          const always =
+            entry.type === 'final' ||
+            entry.type === 'attention' ||
+            (turn.verification === 'blocked' && entry.type === 'narration')
           return (
             <div
               key={node.id}

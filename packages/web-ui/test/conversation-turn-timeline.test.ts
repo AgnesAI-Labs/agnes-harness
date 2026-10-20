@@ -172,6 +172,70 @@ describe('turn timeline', () => {
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
 
+  it.each(['zh-CN', 'en'] as const)(
+    'keeps blocked answers visible with one collapsed explanation (%s)',
+    async (locale) => {
+      const retry = vi.fn()
+      const nodes = [
+        user,
+        say('draft', 'Available evidence.'),
+        say('answer', 'Still needs an independent check.'),
+      ]
+      await render(
+        nodes,
+        turn(nodes, {
+          status: 'failed',
+          reason: 'blocked',
+          verification: 'blocked',
+          finalAssistantId: 'answer',
+          endedAt: '2026-10-01T00:00:01.000Z',
+        }),
+        {
+          t: translate(locale),
+          renderTurnActions: (_turn, _text, settled) =>
+            settled ? createElement('button', { type: 'button', onClick: retry }, 'Retry') : null,
+        },
+      )
+      expect(wrapper('draft')?.hidden).toBe(false)
+      expect(wrapper('answer')?.hidden).toBe(false)
+      const notes = host.querySelectorAll('[data-testid="turn-verification"]')
+      expect(notes).toHaveLength(1)
+      expect(notes[0]?.getAttribute('data-open')).toBe('false')
+      expect(notes[0]?.textContent).toContain(
+        locale === 'en' ? 'automatic correction has stopped' : '回答仍未通过校验',
+      )
+      expect(host.querySelector('.turn-error')).toBeNull()
+      expect(host.textContent).not.toContain('blocked')
+      const retryButton = [...host.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Retry',
+      )
+      expect(retryButton?.disabled).toBe(false)
+      await click(retryButton)
+      expect(retry).toHaveBeenCalled()
+    },
+  )
+  it.each(['unavailable', 'unverified'] as const)(
+    'distinguishes completed answers whose verification is %s',
+    async (verification) => {
+      const nodes = [user, say('answer', 'Available answer.')]
+      await render(
+        nodes,
+        turn(nodes, {
+          status: 'completed',
+          reason: 'completed',
+          verification,
+          finalAssistantId: 'answer',
+          endedAt: '2026-10-01T00:00:01.000Z',
+        }),
+      )
+      const note = host.querySelector('[data-testid="turn-verification"]')
+      expect(note?.getAttribute('data-open')).toBe('false')
+      expect(note?.textContent).toContain(verification === 'unavailable' ? '未能完成校验' : '完成校验未通过')
+      expect(wrapper('answer')?.hidden).toBe(false)
+      expect(host.querySelector('.turn-error')).toBeNull()
+    },
+  )
+
   it.each([true, false])(
     'shows one collapsed recovery note and retains raw attempts (visual=%s)',
     async (visual) => {

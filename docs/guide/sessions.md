@@ -24,7 +24,7 @@ While opening, the preview uses a neutral status line and stays readable at norm
 
 The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 
-Tool argument failures are corrected automatically. By default, two consecutive invalid calls to the same tool disable that tool for the rest of the turn; other tools remain available and a new turn starts fresh. Web groups the attempts in one collapsed technical record and uses text when a view cannot be generated. Completion-verifier failures receive at most one automatic repair, then block completion with diagnostic evidence; they never ask you to grant permission. A failed operation is not recorded as successful.
+Tool argument failures are corrected automatically. By default, two consecutive invalid calls to the same tool disable that tool for the rest of the turn; other tools remain available and a new turn starts fresh. Web groups the attempts in one collapsed technical record and uses text when a view cannot be generated. Content failures from the completion verifier receive at most one automatic correction, then stop with the existing text and a collapsed explanation preserved. The completion policy may also explicitly finish with the nonpassing verdict recorded. If the verifier or repair service is unavailable, the turn ends with an honest “could not complete verification” note. Human acceptance of unverified completion has been removed, and historical verifier questions are withdrawn automatically. Business approvals, unknown-effect reconciliation and budget approvals remain available. A failed operation is not recorded as successful.
 
 ## Find and resume a session
 

@@ -1,9 +1,9 @@
-// A plain read-only fixture: recovery belongs to Core, with no application-specific workaround.
+// A plain mechanism fixture: recovery belongs to Core, with no application-specific workaround.
 const Kind = Symbol.for('TypeBox.Kind')
 export const argumentRecovery = {
   inject: ['tools'],
   apply(ctx) {
-    ctx.tools.register({
+    const probe = {
       name: 'recovery_probe',
       description: 'Read one synthetic observation for the tool argument recovery acceptance.',
       parameters: {
@@ -26,6 +26,24 @@ export const argumentRecovery = {
       },
       async execute({ observation }) {
         return { content: [{ type: 'text', text: `Synthetic observation: ${observation}` }] }
+      },
+    }
+    ctx.tools.register(probe)
+    let records = 0
+    ctx.tools.register({
+      ...probe,
+      name: 'recovery_record',
+      description: 'Record one synthetic progress observation in memory for completion-check acceptance.',
+      meta: {
+        ...probe.meta,
+        isReadOnly: false,
+        isConcurrencySafe: false,
+        replay: 'never',
+        requiresApproval: 'never',
+      },
+      async execute({ observation }) {
+        records++
+        return { content: [{ type: 'text', text: `Synthetic progress ${records}: ${observation}` }] }
       },
     })
   },
