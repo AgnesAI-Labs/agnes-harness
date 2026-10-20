@@ -188,69 +188,69 @@ describe('turn timeline', () => {
     },
   )
 
-  it.each(['zh-CN', 'en'] as const)(
-    'keeps one total and call details inside the process (%s)',
-    async (locale) => {
-      const calls: UITurn['usage']['calls'] = [1, 2, 3].map((n) => ({
-        id: `call:${n}`,
-        seq: n + 2,
-        purpose: 'inference',
-        model: 'test-model',
-        creditSource: 'estimated',
-        tokens: { input: 777, output: 10, cacheRead: 0, cacheWrite: 0 },
-        billing: { usdMicros: 246, source: 'estimated', subscription: false },
-      }))
-      const nodes: UINode[] = [
-        user,
-        say('final', 'answer'),
-        ...calls.map((call) => ({
-          kind: 'cost' as const,
-          ...call,
-          source: call.creditSource,
-        })),
-      ]
-      const current = turn(nodes, {
-        // Late cost nodes can sit outside the turn's loaded node list.
-        nodeIds: ['user', 'final'],
-        status: 'completed',
-        finalAssistantId: 'final',
-        durationMs: 12000,
-        usage: {
-          totals: { input: 2331, output: 30, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-          calls,
-          cost: { usdMicros: 738, source: 'estimated', subscription: false },
-          reasoningComplete: true,
-          billingComplete: true,
-        },
-      })
-      for (const live of [true, false]) {
-        if (live) await render(nodes, { ...current, status: 'running' }, { t: translate(locale) })
-        await render(nodes, current, { t: translate(locale) })
-        const process = host.querySelector<HTMLElement>('.turn-process')
-        const body = process?.querySelector<HTMLElement>(':scope > .agh-disclosure-content')
-        expect(process?.hidden).toBe(false)
-        expect(body?.hidden).toBe(true)
-        expect(
-          host.querySelectorAll('[data-node-kind="cost"], .timeline-unassigned .call-usage'),
-        ).toHaveLength(0)
-        expect(host.querySelectorAll('[data-testid="turn-process-usage-total"]')).toHaveLength(1)
-        expect(body?.querySelector('[data-testid="turn-process-usage-total"]')?.textContent).toBe(
-          locale === 'zh-CN'
-            ? '输入 2.3K · 输出 30 · $0.000738（估算）'
-            : 'In 2.3K · Out 30 · $0.000738 (estimated)',
-        )
-        await click(process?.querySelector('[data-testid="turn-process-toggle"]'))
-        expect(body?.hidden).toBe(false)
-        const toggle = body?.querySelector('[data-testid="turn-usage-calls"]')
-        expect(toggle).toBeTruthy()
-        await click(toggle)
-        expect(body?.querySelectorAll('.turn-call')).toHaveLength(3)
-        await click(body?.querySelector('.turn-call .agh-disclosure-summary'))
-        expect(body?.querySelector('.turn-call .usage-grid')?.textContent).toContain('777')
-        await click(process?.querySelector('[data-testid="turn-process-toggle"]'))
-      }
-    },
-  )
+  it.each(['zh-CN', 'en'] as const)('keeps usage out of the turn process details (%s)', async (locale) => {
+    const calls: UITurn['usage']['calls'] = [1, 2, 3].map((n) => ({
+      id: `call:${n}`,
+      seq: n + 2,
+      purpose: 'inference',
+      model: 'test-model',
+      creditSource: 'estimated',
+      tokens: { input: 777, output: 10, cacheRead: 0, cacheWrite: 0 },
+      billing: { usdMicros: 246, source: 'estimated', subscription: false },
+    }))
+    const nodes: UINode[] = [
+      user,
+      say('final', 'answer'),
+      ...calls.map((call) => ({
+        kind: 'cost' as const,
+        ...call,
+        source: call.creditSource,
+      })),
+    ]
+    const current = turn(nodes, {
+      // Late cost nodes can sit outside the turn's loaded node list.
+      nodeIds: ['user', 'final'],
+      status: 'completed',
+      finalAssistantId: 'final',
+      durationMs: 12000,
+      usage: {
+        totals: { input: 2331, output: 30, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        calls,
+        cost: { usdMicros: 738, source: 'estimated', subscription: false },
+        reasoningComplete: true,
+        billingComplete: true,
+      },
+    })
+    const noUsage = () => {
+      expect(host.querySelectorAll('[data-node-kind="cost"], .timeline-unassigned .call-usage')).toHaveLength(
+        0,
+      )
+      // Anywhere in the turn but its footer, whose hover card owns usage.
+      const leaked = [
+        ...host.querySelectorAll(
+          '[data-testid="turn-process-usage-total"], [data-testid="turn-usage-calls"], .turn-usage-panel, .call-usage',
+        ),
+      ].filter((node) => !node.closest('.turn-footer'))
+      expect(leaked).toHaveLength(0)
+    }
+    for (const live of [true, false]) {
+      if (live) await render(nodes, { ...current, status: 'running' }, { t: translate(locale) })
+      // Usage alone leaves nothing to unfold: the process row stays hidden.
+      await render(nodes, current, { t: translate(locale) })
+      expect(host.querySelector<HTMLElement>('.turn-process')?.hidden).toBe(true)
+      noUsage()
+    }
+    // With steps the process still unfolds, and still carries no usage.
+    const stepped = [user, tool('ls', 'ls', { path: '.' }), say('final', 'answer')]
+    await render(stepped, { ...current, nodeIds: stepped.map((node) => node.id) }, { t: translate(locale) })
+    const process = host.querySelector<HTMLElement>('.turn-process')
+    expect(process?.hidden).toBe(false)
+    expect(host.querySelector('.turn-process-body:not([hidden])')).toBeNull()
+    await click(process?.querySelector('[data-testid="turn-process-toggle"]'))
+    expect(process?.dataset.open).toBe('true')
+    expect(host.querySelector('.turn-process-body:not([hidden])')).not.toBeNull()
+    noUsage()
+  })
 
   it('interleaves unboxed prose with one row per run of steps, and opens a run into its steps', async () => {
     const nodes: UINode[] = [

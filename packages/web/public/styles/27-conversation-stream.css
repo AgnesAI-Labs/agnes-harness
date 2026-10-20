@@ -88,14 +88,6 @@
   .turn-process > .agh-disclosure-content[hidden] {
     display: none;
   }
-  .turn-process-usage {
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-  .turn-process-usage-total {
-    margin: var(--s4) 0;
-  }
   .process-chevron {
     flex: 0 0 auto;
     width: 0.875rem;
