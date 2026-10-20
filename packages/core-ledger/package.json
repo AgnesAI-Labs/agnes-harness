@@ -16,6 +16,7 @@
     "./log/storage": "./src/log/storage.ts",
     "./log/verified-head": "./src/log/verified-head.ts",
     "./project/cache-health": "./src/project/cache-health.ts",
+    "./project/deliverables": "./src/project/deliverables.ts",
     "./project/child-trace-cache": "./src/project/child-trace-cache.ts",
     "./project/named": "./src/project/named.ts",
     "./project/rlaf": "./src/project/rlaf.ts",
