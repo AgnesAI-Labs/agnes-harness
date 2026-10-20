@@ -446,7 +446,7 @@ describe('[nested result] notes', () => {
             void held.s?.abort(stopper)
             held.s?.ac.abort()
           }
-          return undefined
+          return {}
         },
       },
     })
