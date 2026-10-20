@@ -163,6 +163,127 @@ describe('surface', () => {
       const child = seedSurface('main', parent.snapshot(), 2)
       expect(child.snapshot().nestedToolUseIds.has('t1')).toBe(false)
     })
+
+    it('records a nested call only by a string id', () => {
+      seq = 0
+      const events = [
+        asst('a'),
+        ev('tool/call', { name: 'read', args: {}, ordinal: 0, depth: 1 }),
+        ev('tool/result', { toolUseId: 'undefined', content: [], isError: false }),
+        ev('tool/result', { content: [], isError: false }),
+      ]
+      expect(computeSurface(events).map((n) => n.seq)).toEqual([1, 3, 4])
+      const cache = new SurfaceCache('main')
+      cache.push(events)
+      expect(cache.snapshot().nestedToolUseIds.size).toBe(0)
+      expect(cache.nodes().map((n) => n.seq)).toEqual([1, 3, 4])
+    })
+
+    /** The surfaces a full fold, an incremental cache, and a cache seeded mid-ledger build. */
+    const everyFold = (events: Event[], forkAt: number) => {
+      const cache = new SurfaceCache('main')
+      cache.push(events)
+      const parent = new SurfaceCache('main')
+      parent.push(events.slice(0, forkAt))
+      const seeded = seedSurface('main', parent.snapshot(), events[forkAt - 1]?.seq ?? 0)
+      seeded.push(events.slice(forkAt))
+      return [computeSurface(events), cache.nodes(), seeded.nodes()].map((nodes) =>
+        nodes.map((n) => [n.seq, n.kind]),
+      )
+    }
+
+    it('an old ledger whose summary ended on a nested continuation result keeps its compactions', () => {
+      seq = 0
+      // Written before nested results were hidden: the approval continuation's nested result (6) was
+      // on the surface then, and the cut ended the summarized range on it.
+      const events = [
+        user('go'), // 1
+        asst('calls outer'), // 2
+        call('t0', 0), // 3
+        call('t1', 1), // 4
+        res('t0'), // 5
+        res('t1', { sourceEventSeqs: [4] }), // 6
+        asst('done'), // 7
+        user('next'), // 8
+        ev(
+          'assistant/message',
+          { content: [{ type: 'text', text: 'sum1' }], stopReason: 'end_turn' },
+          { surfaceOp: { op: 'replace', start: 1, end: 6 }, sourceEventSeqs: [1, 2, 5, 6] },
+        ), // 9
+        asst('more'), // 10
+        ev(
+          'assistant/message',
+          { content: [{ type: 'text', text: 'sum2' }], stopReason: 'end_turn' },
+          { surfaceOp: { op: 'replace', start: 9, end: 7 }, sourceEventSeqs: [9, 7] },
+        ), // 11
+      ]
+      const afterFirst = [
+        [9, 'summary'],
+        [7, 'assistant'],
+        [8, 'user'],
+      ]
+      expect(computeSurface(events.slice(0, 9)).map((n) => [n.seq, n.kind])).toEqual(afterFirst)
+      const expected = [
+        [11, 'summary'],
+        [8, 'user'],
+        [10, 'assistant'],
+      ]
+      for (const forkAt of [5, 6, 9, 10])
+        expect(everyFold(events, forkAt)).toEqual([expected, expected, expected])
+    })
+
+    it('snaps a hidden start to the first visible node after it, past an earlier summary', () => {
+      seq = 0
+      const events = [
+        user('a'), // 1
+        asst('b'), // 2
+        asst('calls outer'), // 3
+        call('t0', 0), // 4
+        call('t1', 1), // 5
+        res('t1'), // 6
+        res('t0'), // 7
+        user('c'), // 8
+        ev(
+          'assistant/message',
+          { content: [{ type: 'text', text: 'sum1' }], stopReason: 'end_turn' },
+          { surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2] },
+        ), // 9: sits before seq 6 although it was written after it
+        ev(
+          'assistant/message',
+          { content: [{ type: 'text', text: 'sum2' }], stopReason: 'end_turn' },
+          { surfaceOp: { op: 'replace', start: 6, end: 8 }, sourceEventSeqs: [6, 7, 8] },
+        ), // 10
+      ]
+      const expected = [
+        [9, 'summary'],
+        [3, 'assistant'],
+        [10, 'summary'],
+      ]
+      for (const forkAt of [6, 9]) expect(everyFold(events, forkAt)).toEqual([expected, expected, expected])
+    })
+
+    it('a range holding only hidden results masks nothing', () => {
+      seq = 0
+      const events = [
+        asst('calls outer'), // 1
+        call('t0', 0), // 2
+        call('t1', 1), // 3
+        call('t2', 1), // 4
+        res('t0'), // 5
+        res('t1'), // 6
+        res('t2'), // 7
+        ev(
+          'assistant/message',
+          { content: [{ type: 'text', text: 'sum' }], stopReason: 'end_turn' },
+          { surfaceOp: { op: 'replace', start: 6, end: 7 }, sourceEventSeqs: [6, 7] },
+        ), // 8
+      ]
+      const cache = new SurfaceCache('main')
+      cache.push(events)
+      expect(cache.replaceGeneration).toBe(0)
+      expect(cache.nodes().map((n) => n.seq)).toEqual([1, 5])
+      expect(computeSurface(events).map((n) => n.seq)).toEqual([1, 5])
+    })
   })
 
   it('filters by lane and stops at upto', () => {
