@@ -27,7 +27,7 @@ export type ResolvedPreset = {
 }
 
 const refuse = (message: string, detail: Record<string, unknown>): never => {
-  throw new HostError('E_PRESET_UNSUPPORTED', message, { detail })
+  throw new HostError('E_PRESET_UNSUPPORTED', message, { detail: { ...detail, reason: 'permission-axis' } })
 }
 
 /**

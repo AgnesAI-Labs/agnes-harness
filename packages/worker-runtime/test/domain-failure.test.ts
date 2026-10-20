@@ -117,6 +117,43 @@ it.each([
       detail: { reason, secret: 'private' },
     })
     expect(failure).toEqual({ code: wire, message, data })
+    const unreadable = Object.defineProperty({ code, detail: { reason } }, 'message', {
+      get() {
+        throw new Error('private authoring getter')
+      },
+    })
+    expect(workerDomainFailure(unreadable)).toEqual(failure)
     expect(JSON.stringify(failure)).not.toContain('private')
   },
 )
+
+it('keeps startup failures closed while sharing their codes with the public contract', async () => {
+  const { workerBootFailureCode } = await import('../src/boot-failure.js')
+  expect(workerBootFailureCode('E_SEAM_INIT')).toBe('E_SEAM_INIT')
+  expect(workerBootFailureCode('E_BUDGET')).toBeUndefined()
+  expect(workerBootFailureCode('UNKNOWN_DENIED')).toBeUndefined()
+})
+
+it('keeps unknown worker failures generic even when exception accessors throw', async () => {
+  const { workerDomainFailure } = await import('../src/worker-errors.js')
+  const failures = [
+    Object.defineProperty({ code: 'UNKNOWN_DENIED' }, 'message', {
+      get() {
+        throw new Error('private log')
+      },
+    }),
+    new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('private descriptor')
+        },
+      },
+    ),
+  ]
+  for (const error of failures) {
+    const failure = workerDomainFailure(error)
+    expect(failure.message).toBe('Worker operation failed.')
+    expect(JSON.stringify(failure)).not.toContain('private')
+  }
+})

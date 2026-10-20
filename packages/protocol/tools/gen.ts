@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateModule, type JsonSchemaDoc } from './gen-core.js'
 import { writeDocs } from './gen-docs.js'
+import { writePublicErrors } from './gen-public-errors.js'
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), '..')
 type ImportSpec = { from: string; defs: string[] }
@@ -577,6 +578,7 @@ for (const t of TARGETS) {
 // readable as prose.
 const { writeAppServerArtifacts } = await import('./gen-app-server.js')
 dirty += writeAppServerArtifacts(pkg, check)
+dirty += writePublicErrors(pkg, check)
 // Load extension author documentation only after schema artifacts are emitted.
 // Its protocol imports must not influence schema registration/identity ordering.
 dirty += await writeDocs(check)

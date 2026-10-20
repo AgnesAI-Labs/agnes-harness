@@ -183,7 +183,21 @@ it('review: a business question with permission-shaped options still needs human
       purpose: 'business.confirm',
       subject: { question: 'Did the customer accept the delivery?' },
     })
-    expect((await f.ctx.decisions.get(h)).result).toBeNull()
+    const pending = await f.ctx.decisions.get(h)
+    expect(pending.result).toBeNull()
+    await f.session.decideApproval({
+      command: {
+        handle: h,
+        revision: pending.revision,
+        commandId: 'business-reject',
+        response: { option: 'rejected', value: null },
+      },
+      context: { actor, category: 'human', authorize() {} },
+    })
+    expect((await f.ctx.decisions.get(h)).result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'rejected', value: null },
+    })
   } finally {
     await f.session.close()
   }

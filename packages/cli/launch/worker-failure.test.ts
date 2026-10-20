@@ -1,9 +1,10 @@
-import { HostError } from '@agnes/host'
+import { HOST_ERROR_CODES, HostError } from '@agnes/host'
 import { expect, it } from 'vitest'
 import { workerFailureCode } from './worker-failure.js'
 
 it('reports known startup codes without exposing message, detail or stack', () => {
-  expect(workerFailureCode(new HostError('E_SEAM_INIT', 'startup failed'))).toBe('E_SEAM_INIT')
+  for (const code of HOST_ERROR_CODES)
+    expect(workerFailureCode(new HostError(code, 'private startup log'))).toBe(code)
   expect(
     workerFailureCode(Object.assign(new Error('secret content'), { code: 'EPERM', detail: 'secret' })),
   ).toBe('EPERM')

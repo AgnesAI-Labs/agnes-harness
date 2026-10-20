@@ -37,6 +37,7 @@ import {
   type ExtUiResponseParams,
   type ParticipantListResult,
   type ParticipantParams,
+  publicRejectionRpc,
   rpcError,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
@@ -582,36 +583,10 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   },
 ]
 
-/**
- * The closed set of structural refusals a preset or model switch can raise, collapsed to one wire
- * error: `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED` are host's `validatePresetSwitch` (
- * `packages/host/src/runtime/sessions/session-switch.ts`), `E_MODEL_UNSUPPORTED` is host's `validateModelSwitch`'s own
- * policy refusal (the pair exists and the provider publishes it, but it is outside this deployment's
- * assembled route table), and `E_MODEL_UNKNOWN` is core's own structural double-check
- * (`packages/core/src/step/reentry.ts`'s `setModel`, reached if a caller ever skips the host gate).
- * A client only needs to know "this switch was refused"; `reason` carries which of the four it was,
- * so the four do not need four different RPC codes.
- *
- * Earlier drafts of this file had `mapCore` recognize a single `E_PRESET_SWITCH` code that no version
- * of core or host has ever thrown - fixed 2026-09-10 once host's real gate (commits `536aa18` ->
- * `ac4ca85` -> `3b10b07`) landed, to recognize the four codes the gate and core actually raise.
- *
- * Used by both `methods/acp.ts`'s `session/set_mode` and this file's own `_agnes/v1/session.setPreset`/
- * `session.setModel` handlers below, now that `@agnes/protocol` carries schemas for the latter two
- * (landed 2026-09-10) - so there is exactly one place that turns a host validation throw into the
- * wire's `PRESET_SWITCH_REJECTED`, not a drifting copy per call site.
- */
-const REJECT_CODES = new Set([
-  'E_PRESET_UNSUPPORTED',
-  'E_PRESET_UNRESOLVED',
-  'E_MODEL_UNSUPPORTED',
-  'E_MODEL_UNKNOWN',
-])
+/** Known domain refusals use the generated public contract; existing RPC envelopes stay intact. */
 export function mapCore(e: unknown): never {
-  const err = e as { code?: string; message?: string }
-  if (err.code && REJECT_CODES.has(err.code))
-    throw rpcError('PRESET_SWITCH_REJECTED', { reason: err.message ?? 'rejected' })
-  throw e
+  if (typeof (e as { code?: unknown } | null)?.code === 'number') throw e
+  throw publicRejectionRpc(e) ?? e
 }
 
 /** Exported so both branches of every predicate are reachable from a table-driven test. */
@@ -884,10 +859,19 @@ export function registerAgnes(
       return receipt
     } catch (error) {
       const e = error as { code?: unknown; message?: unknown }
-      if (e.code === 'E_RELATION' || e.code === 'E_CAS')
-        throw rpcError('APPROVAL_REJECTED', {
-          reason: typeof e.message === 'string' ? e.message : 'approval rejected',
-        })
+      if (e.code === 'E_RELATION' || e.code === 'E_CAS') {
+        const rejection = publicRejectionRpc(error)
+        throw rpcError(
+          'APPROVAL_REJECTED',
+          rejection
+            ? {
+                ...rejection.data,
+                code: 'APPROVAL_REJECTED',
+                cause: { code: rejection.data.code },
+              }
+            : {},
+        )
+      }
       throw error
     }
   })

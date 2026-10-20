@@ -849,7 +849,7 @@ export class TuiApp {
 
   private showError(error?: unknown): void {
     if (this.stopped) return
-    this.statusBar.setNotice(formatTuiErrorNotice(error), 'error')
+    this.statusBar.setNotice(formatTuiErrorNotice(error, this.o.locale ?? 'en'), 'error')
     this.renderer.requestRender()
   }
 

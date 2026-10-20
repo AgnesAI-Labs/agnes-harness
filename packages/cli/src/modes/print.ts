@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
+import { publicErrorHelp } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
 import type { Booted, ParsedArgs } from '../types.js'
@@ -11,6 +12,7 @@ export type PrintIO = {
   stderr: NodeJS.WritableStream & { isTTY?: boolean }
   stdin: NodeJS.ReadableStream & { isTTY?: boolean }
   cwd: string
+  locale?: string
   /** How the signal ladder reaches the turn in flight. Absent in tests that send no signals. */
   registerCancel?: (cancel: () => Promise<void>) => void
   /** Which signal, if any, has arrived. Read after the turn: an abort's exit code is the signal's. */
@@ -141,15 +143,10 @@ function reasonFromThrow(e: unknown): TurnEndReason | null {
   return typeof reason === 'string' ? (reason as TurnEndReason) : null
 }
 
-// `error{code,message}` as the turn/end row (or daemon's TURN_ERROR data) carries it. The message is
-// already redacted upstream; this only keeps it to one printable line.
-function errorCause(error: unknown): string {
-  const e = error as { code?: unknown; message?: unknown } | null | undefined
-  return [e?.code, e?.message]
-    .filter((part): part is string => typeof part === 'string' && part.length > 0)
-    .join(' ')
-    .replace(/\p{Cc}+/gu, ' ')
-    .slice(0, 200)
+/** Only schema-owned reasons and actions are public; turn messages may contain provider logs. */
+function errorCause(error: unknown, locale = 'en'): string {
+  const help = publicErrorHelp(error, locale)
+  return help ? `${help.code}: ${help.reason} ${help.action}` : ''
 }
 
 /**
@@ -303,7 +300,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // turn that would have succeeded. The word is what tells them apart. An `error` turn also names
     // its cause: without it the caller cannot tell a bad key from an unknown model from an outage.
     if (exitCode !== 0 && p.mode !== 'json') {
-      const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError)
+      const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError, io.locale)
       io.stderr.write(
         `agnes: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
       )

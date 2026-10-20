@@ -2452,10 +2452,10 @@
     }
   },
   "$defs": {
-    "Dbfd8cae09b55_AppServerErrorCause": {
-      "$ref": "#/$defs/Rc95e052027cd"
+    "D12ae2453b777_AppServerErrorCause": {
+      "$ref": "#/$defs/R292f9fbb2c2f"
     },
-    "Rc95e052027cd": {
+    "R292f9fbb2c2f": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -2780,6 +2780,570 @@
             {
               "const": "SEARCH_TIMEOUT",
               "type": "string"
+            },
+            {
+              "const": "E_PRESET_UNSUPPORTED",
+              "type": "string"
+            },
+            {
+              "const": "E_PRESET_UNRESOLVED",
+              "type": "string"
+            },
+            {
+              "const": "E_MODEL_UNSUPPORTED",
+              "type": "string"
+            },
+            {
+              "const": "E_MODEL_UNKNOWN",
+              "type": "string"
+            },
+            {
+              "const": "E_SEAM_INIT",
+              "type": "string"
+            },
+            {
+              "const": "E_PERMISSION_REVOKED",
+              "type": "string"
+            },
+            {
+              "const": "E_PERMISSION_GRANT_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "E_BUDGET",
+              "type": "string"
+            },
+            {
+              "const": "BUDGET_EXCEEDED",
+              "type": "string"
+            },
+            {
+              "const": "APPROVAL_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "APPROVAL_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "APPROVAL_STATE_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "APPROVAL_GRANT_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "UNATTENDED_APPROVAL_REFUSED",
+              "type": "string"
+            },
+            {
+              "const": "E_FS_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "E_CAPABILITY_UNDECLARED",
+              "type": "string"
+            },
+            {
+              "const": "E_WORKSPACE_UNTRUSTED",
+              "type": "string"
+            },
+            {
+              "const": "E_LEASE_EXPIRED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_CANDIDATE_STALE",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_MANAGEMENT_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_PORT_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_PERMISSION_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_LOCAL_OWNER_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_TEST_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_TEST_UNANSWERED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_TEST_SANDBOX_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_FILES_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_UNTRUSTED",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_CAPABILITY",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_MANIFEST",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_API_RANGE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_SOURCE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_TRUST",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_STATE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_BLOCKED",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_PREVIEW_STALE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_CANCELLED",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_BUSY",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_ATOMIC_PUBLISH_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_DOCUMENT_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_FILE_MISSING",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_FILE_REFUSED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_BAD_RECEIPT",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_BUSY",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_CANCELLED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_CAPABILITY_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_EXPIRED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_FAILED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_INTERRUPTED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_LEASE_CHANGED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_LOCAL_OWNER_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_TIMEOUT",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_INSTALL_SESSION_CLOSED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_LINK_REFUSED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_NAME_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_NOT_READY",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_PATH_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_PATH_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_PROPOSAL_TERMINAL",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_PROPOSAL_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_READ_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_RECEIPT_DIRECTORY_UNSAFE",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_RESOURCE_CHANGED_OR_SHADOWED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_RESOURCE_OPERATION_FAILED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_RESOURCE_OPERATION_PENDING",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_SIZE_LIMIT",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_SOURCE_CHANGED",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_SOURCE_NOT_DIRECTORY",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_SOURCE_TARGET_OVERLAP",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_STAGE_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_TARGET_BUSY",
+              "type": "string"
+            },
+            {
+              "const": "SKILL_TARGET_CONFLICT",
+              "type": "string"
+            },
+            {
+              "const": "OVERLOADED",
+              "type": "string"
+            },
+            {
+              "const": "SESSION_BUSY",
+              "type": "string"
+            },
+            {
+              "const": "SESSION_NOT_FOUND",
+              "type": "string"
+            },
+            {
+              "const": "GENERATION_STALE",
+              "type": "string"
+            },
+            {
+              "const": "CURSOR_OUT_OF_RANGE",
+              "type": "string"
+            },
+            {
+              "const": "CAPABILITY_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "AUTH_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "PRESET_SWITCH_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "CLAIM_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "SEMANTIC_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "REQUEST_TIMEOUT",
+              "type": "string"
+            },
+            {
+              "const": "OUTCOME_UNKNOWN",
+              "type": "string"
+            },
+            {
+              "const": "PARSE_ERROR",
+              "type": "string"
+            },
+            {
+              "const": "INVALID_REQUEST",
+              "type": "string"
+            },
+            {
+              "const": "METHOD_NOT_FOUND",
+              "type": "string"
+            },
+            {
+              "const": "INVALID_PARAMS",
+              "type": "string"
+            },
+            {
+              "const": "INTERNAL_ERROR",
+              "type": "string"
+            },
+            {
+              "const": "E_RELATION",
+              "type": "string"
+            },
+            {
+              "const": "E_CAS",
+              "type": "string"
+            },
+            {
+              "const": "AUTH",
+              "type": "string"
+            },
+            {
+              "const": "RATE_LIMIT",
+              "type": "string"
+            },
+            {
+              "const": "OUTPUT_LIMIT",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_REJECT_IN_REVIEW_UI",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_PUBLICATION_UNANSWERED",
+              "type": "string"
+            },
+            {
+              "const": "PLUGIN_REQUEST_LIMIT",
+              "type": "string"
+            },
+            {
+              "const": "HELPER_MANAGEMENT_FAILED",
+              "type": "string"
+            },
+            {
+              "const": "QUOTA",
+              "type": "string"
+            },
+            {
+              "const": "OVERFLOW",
+              "type": "string"
+            },
+            {
+              "const": "TIMEOUT",
+              "type": "string"
+            },
+            {
+              "const": "NO_MODEL",
+              "type": "string"
+            },
+            {
+              "const": "NO_ADAPTER",
+              "type": "string"
+            },
+            {
+              "const": "FORMAT",
+              "type": "string"
+            },
+            {
+              "const": "TRANSPORT",
+              "type": "string"
+            },
+            {
+              "const": "CONTRACT_MISMATCH",
+              "type": "string"
+            },
+            {
+              "const": "ABORTED",
+              "type": "string"
+            },
+            {
+              "const": "E_PROFILE_FRAGMENT_KEY",
+              "type": "string"
+            },
+            {
+              "const": "E_PROFILE_CYCLE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_DUPLICATE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_QUARANTINED",
+              "type": "string"
+            },
+            {
+              "const": "E_DEP_MISSING",
+              "type": "string"
+            },
+            {
+              "const": "E_SEAM_MISSING",
+              "type": "string"
+            },
+            {
+              "const": "E_CEILING_EXCEEDED",
+              "type": "string"
+            },
+            {
+              "const": "E_SEAM_IMMUTABLE",
+              "type": "string"
+            },
+            {
+              "const": "E_STATIC_COMPONENT",
+              "type": "string"
+            },
+            {
+              "const": "E_LOCK_MISMATCH",
+              "type": "string"
+            },
+            {
+              "const": "E_WORKSPACE_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "E_WORKSPACE_CLOSED",
+              "type": "string"
+            },
+            {
+              "const": "E_REMOTE_WORKSPACE",
+              "type": "string"
+            },
+            {
+              "const": "E_MANAGED_POLICY_CORRUPT",
+              "type": "string"
+            },
+            {
+              "const": "E_SECRET_UNRESOLVED",
+              "type": "string"
+            },
+            {
+              "const": "E_API_RANGE",
+              "type": "string"
+            },
+            {
+              "const": "E_SEAM_EXPORT_MISSING",
+              "type": "string"
+            },
+            {
+              "const": "E_EXT_LOAD",
+              "type": "string"
+            },
+            {
+              "const": "E_EXT_ISOLATION_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "E_HOST_CLOSED",
+              "type": "string"
+            },
+            {
+              "const": "E_GENERATION_EXECUTION_UNSETTLED",
+              "type": "string"
+            },
+            {
+              "const": "E_HOME_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "E_WRITER_LEASE",
+              "type": "string"
+            },
+            {
+              "const": "E_STORAGE_FAULT",
+              "type": "string"
+            },
+            {
+              "const": "E_LEDGER_INTEGRITY",
+              "type": "string"
+            },
+            {
+              "const": "BUNDLE_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "PROVIDER_UNCONFIGURED",
+              "type": "string"
+            },
+            {
+              "const": "LOOP_MISSING",
+              "type": "string"
+            },
+            {
+              "const": "SANDBOX_UNAVAILABLE",
+              "type": "string"
             }
           ]
         }
@@ -2788,10 +3352,10 @@
         "code"
       ]
     },
-    "Dbfd8cae09b55_AppServerError": {
-      "$ref": "#/$defs/Rbaffa7d8c41e"
+    "D12ae2453b777_AppServerError": {
+      "$ref": "#/$defs/R5ef8759ba4c6"
     },
-    "Rbaffa7d8c41e": {
+    "R5ef8759ba4c6": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -2918,7 +3482,15 @@
               "type": "string"
             },
             "cause": {
-              "$ref": "#/$defs/Dbfd8cae09b55_AppServerErrorCause"
+              "$ref": "#/$defs/D12ae2453b777_AppServerErrorCause"
+            },
+            "publicReason": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "userAction": {
+              "maxLength": 512,
+              "type": "string"
             }
           },
           "required": [
@@ -2934,7 +3506,7 @@
         "data"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialReference": {
+    "D12ae2453b777_AdminCredentialReference": {
       "$ref": "#/$defs/R4a457ed3aaf2"
     },
     "R4a457ed3aaf2": {
@@ -2976,7 +3548,7 @@
         "configId"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialMetadata": {
+    "D12ae2453b777_AdminCredentialMetadata": {
       "$ref": "#/$defs/Rcee1c56c4e38"
     },
     "Rcee1c56c4e38": {
@@ -3006,7 +3578,7 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialReference"
+            "$ref": "#/$defs/D12ae2453b777_AdminCredentialReference"
           }
         }
       },
@@ -3018,7 +3590,7 @@
         "references"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialsList": {
+    "D12ae2453b777_AdminCredentialsList": {
       "$ref": "#/$defs/R1a34880ae350"
     },
     "R1a34880ae350": {
@@ -3029,7 +3601,7 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialMetadata"
+            "$ref": "#/$defs/D12ae2453b777_AdminCredentialMetadata"
           }
         }
       },
@@ -3037,7 +3609,7 @@
         "items"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialCreate": {
+    "D12ae2453b777_AdminCredentialCreate": {
       "$ref": "#/$defs/Rd410a5bee4de"
     },
     "Rd410a5bee4de": {
@@ -3062,7 +3634,7 @@
         "value"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialSet": {
+    "D12ae2453b777_AdminCredentialSet": {
       "$ref": "#/$defs/Ra824047421bc"
     },
     "Ra824047421bc": {
@@ -3086,7 +3658,7 @@
         "value"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialRename": {
+    "D12ae2453b777_AdminCredentialRename": {
       "$ref": "#/$defs/R85ad53e36b25"
     },
     "R85ad53e36b25": {
@@ -3110,7 +3682,7 @@
         "label"
       ]
     },
-    "Dbfd8cae09b55_AdminCredentialDelete": {
+    "D12ae2453b777_AdminCredentialDelete": {
       "$ref": "#/$defs/Ra1903dfc34ad"
     },
     "Ra1903dfc34ad": {
@@ -3133,7 +3705,7 @@
         "id"
       ]
     },
-    "Dbfd8cae09b55_AdminEmpty": {
+    "D12ae2453b777_AdminEmpty": {
       "$ref": "#/$defs/R91fe060caa26"
     },
     "R91fe060caa26": {
@@ -3141,7 +3713,7 @@
       "type": "object",
       "properties": {}
     },
-    "Dbfd8cae09b55_AdminBundlesSave": {
+    "D12ae2453b777_AdminBundlesSave": {
       "$ref": "#/$defs/Rb408c73d920d"
     },
     "Rb408c73d920d": {
@@ -3166,7 +3738,7 @@
         "bundles"
       ]
     },
-    "Dbfd8cae09b55_AdminBundlesResult": {
+    "D12ae2453b777_AdminBundlesResult": {
       "$ref": "#/$defs/Re00e8d605acf"
     },
     "Re00e8d605acf": {
@@ -3218,7 +3790,7 @@
         "effect"
       ]
     },
-    "Dbfd8cae09b55_AdminCompositionParams": {
+    "D12ae2453b777_AdminCompositionParams": {
       "$ref": "#/$defs/Re1b7c9538ab8"
     },
     "Re1b7c9538ab8": {
@@ -3231,7 +3803,7 @@
         }
       }
     },
-    "Dbfd8cae09b55_AdminCompositionResult": {
+    "D12ae2453b777_AdminCompositionResult": {
       "$ref": "#/$defs/R41fbd0de4040"
     },
     "R41fbd0de4040": {
@@ -3381,7 +3953,7 @@
         }
       ]
     },
-    "Dbfd8cae09b55_AdminSearchSave": {
+    "D12ae2453b777_AdminSearchSave": {
       "$ref": "#/$defs/R04e0722a900b"
     },
     "R04e0722a900b": {
@@ -3416,7 +3988,7 @@
         "provider"
       ]
     },
-    "Dbfd8cae09b55_AdminSearchTest": {
+    "D12ae2453b777_AdminSearchTest": {
       "$ref": "#/$defs/R62f246babdb7"
     },
     "R62f246babdb7": {
@@ -3437,7 +4009,7 @@
         "query"
       ]
     },
-    "Dbfd8cae09b55_AdminSearchResult": {
+    "D12ae2453b777_AdminSearchResult": {
       "$ref": "#/$defs/R58fc95d93535"
     },
     "R58fc95d93535": {
@@ -3448,7 +4020,7 @@
         }
       }
     },
-    "Dbfd8cae09b55_AdminContextConfig": {
+    "D12ae2453b777_AdminContextConfig": {
       "$ref": "#/$defs/R21894b8f67d6"
     },
     "R21894b8f67d6": {
@@ -3517,7 +4089,7 @@
         "customSkillRoots"
       ]
     },
-    "Dbfd8cae09b55_AdminContextParams": {
+    "D12ae2453b777_AdminContextParams": {
       "$ref": "#/$defs/R2bb94c6540c5"
     },
     "R2bb94c6540c5": {
@@ -3585,7 +4157,7 @@
         }
       }
     },
-    "Dbfd8cae09b55_AdminContextResult": {
+    "D12ae2453b777_AdminContextResult": {
       "$ref": "#/$defs/Rdff469d08979"
     },
     "Rdff469d08979": {
@@ -3593,7 +4165,7 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/Dbfd8cae09b55_AdminContextConfig"
+          "$ref": "#/$defs/D12ae2453b777_AdminContextConfig"
         },
         "workspaces": {
           "maxItems": 4096,
@@ -3690,7 +4262,7 @@
         "workspaces"
       ]
     },
-    "Dbfd8cae09b55_AdminHistoryParams": {
+    "D12ae2453b777_AdminHistoryParams": {
       "$ref": "#/$defs/R7eec7d41924b"
     },
     "R7eec7d41924b": {
@@ -3720,7 +4292,7 @@
         "workspace"
       ]
     },
-    "Dbfd8cae09b55_AdminHistoryResult": {
+    "D12ae2453b777_AdminHistoryResult": {
       "$ref": "#/$defs/R26245f75b96e"
     },
     "R26245f75b96e": {
@@ -3785,7 +4357,7 @@
         "truncated"
       ]
     },
-    "Dbfd8cae09b55_AdminPlanParams": {
+    "D12ae2453b777_AdminPlanParams": {
       "$ref": "#/$defs/R1ea8182169f3"
     },
     "R1ea8182169f3": {
@@ -3811,7 +4383,7 @@
         "line"
       ]
     },
-    "Dbfd8cae09b55_AdminPlanResult": {
+    "D12ae2453b777_AdminPlanResult": {
       "$ref": "#/$defs/R0e8b17dba52d"
     },
     "R0e8b17dba52d": {
@@ -3831,7 +4403,7 @@
         "text"
       ]
     },
-    "Dbfd8cae09b55_AdminMcpOAuthSave": {
+    "D12ae2453b777_AdminMcpOAuthSave": {
       "$ref": "#/$defs/R546900150242"
     },
     "R546900150242": {
@@ -3892,7 +4464,7 @@
         "credential"
       ]
     },
-    "Dbfd8cae09b55_DoctorParams": {
+    "D12ae2453b777_DoctorParams": {
       "$ref": "#/$defs/R7c9eacc877fc"
     },
     "R7c9eacc877fc": {
@@ -3904,7 +4476,7 @@
         }
       }
     },
-    "Dbfd8cae09b55_DoctorCheck": {
+    "D12ae2453b777_DoctorCheck": {
       "$ref": "#/$defs/R40a46a573031"
     },
     "R40a46a573031": {
@@ -4045,7 +4617,7 @@
         "fixHintKey"
       ]
     },
-    "Dbfd8cae09b55_DoctorResult": {
+    "D12ae2453b777_DoctorResult": {
       "$ref": "#/$defs/R3c0dc227323d"
     },
     "R3c0dc227323d": {
@@ -4056,7 +4628,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_DoctorCheck"
+            "$ref": "#/$defs/D12ae2453b777_DoctorCheck"
           }
         },
         "status": {
@@ -4085,7 +4657,7 @@
         "status"
       ]
     },
-    "Dbfd8cae09b55_MemorySettings": {
+    "D12ae2453b777_MemorySettings": {
       "$ref": "#/$defs/R9e1c4826d751"
     },
     "R9e1c4826d751": {
@@ -4153,7 +4725,7 @@
         "userEnabled"
       ]
     },
-    "Dbfd8cae09b55_MemorySettingsPatch": {
+    "D12ae2453b777_MemorySettingsPatch": {
       "$ref": "#/$defs/Rb5599f16e0d9"
     },
     "Rb5599f16e0d9": {
@@ -4211,7 +4783,7 @@
         }
       }
     },
-    "Dbfd8cae09b55_MemorySource": {
+    "D12ae2453b777_MemorySource": {
       "$ref": "#/$defs/Re064708ffd3b"
     },
     "Re064708ffd3b": {
@@ -4238,7 +4810,7 @@
         "turn"
       ]
     },
-    "Dbfd8cae09b55_MemoryFileInfo": {
+    "D12ae2453b777_MemoryFileInfo": {
       "$ref": "#/$defs/R458b6f8d1a47"
     },
     "R458b6f8d1a47": {
@@ -4269,7 +4841,7 @@
         "lines"
       ]
     },
-    "Dbfd8cae09b55_MemoryFile": {
+    "D12ae2453b777_MemoryFile": {
       "$ref": "#/$defs/Rf3b7224971d2"
     },
     "Rf3b7224971d2": {
@@ -4305,7 +4877,7 @@
         "content"
       ]
     },
-    "Dbfd8cae09b55_MemoryInspection": {
+    "D12ae2453b777_MemoryInspection": {
       "$ref": "#/$defs/Ra3f73dc2539d"
     },
     "Ra3f73dc2539d": {
@@ -4318,13 +4890,13 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Dbfd8cae09b55_MemorySettings"
+          "$ref": "#/$defs/D12ae2453b777_MemorySettings"
         },
         "files": {
           "maxItems": 128,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_MemoryFileInfo"
+            "$ref": "#/$defs/D12ae2453b777_MemoryFileInfo"
           }
         },
         "bytes": {
@@ -4332,7 +4904,7 @@
           "type": "integer"
         },
         "lastWriter": {
-          "$ref": "#/$defs/Dbfd8cae09b55_MemorySource"
+          "$ref": "#/$defs/D12ae2453b777_MemorySource"
         }
       },
       "required": [
@@ -4342,7 +4914,7 @@
         "bytes"
       ]
     },
-    "Dbfd8cae09b55_AdminMemoryParams": {
+    "D12ae2453b777_AdminMemoryParams": {
       "$ref": "#/$defs/R5bb1426342f0"
     },
     "R5bb1426342f0": {
@@ -4355,7 +4927,7 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Dbfd8cae09b55_MemorySettingsPatch"
+          "$ref": "#/$defs/D12ae2453b777_MemorySettingsPatch"
         },
         "file": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
@@ -4374,7 +4946,7 @@
         "cwd"
       ]
     },
-    "Dbfd8cae09b55_AdminMemoryResult": {
+    "D12ae2453b777_AdminMemoryResult": {
       "$ref": "#/$defs/R32e6cfb52318"
     },
     "R32e6cfb52318": {
@@ -4404,10 +4976,10 @@
           }
         },
         "inspection": {
-          "$ref": "#/$defs/Dbfd8cae09b55_MemoryInspection"
+          "$ref": "#/$defs/D12ae2453b777_MemoryInspection"
         },
         "file": {
-          "$ref": "#/$defs/Dbfd8cae09b55_MemoryFile"
+          "$ref": "#/$defs/D12ae2453b777_MemoryFile"
         }
       },
       "required": [
@@ -4415,7 +4987,7 @@
         "inspection"
       ]
     },
-    "Dbfd8cae09b55_ObservabilitySettings": {
+    "D12ae2453b777_ObservabilitySettings": {
       "$ref": "#/$defs/R0b672034daad"
     },
     "R0b672034daad": {
@@ -4508,7 +5080,7 @@
         "enabled"
       ]
     },
-    "Dbfd8cae09b55_ObservabilityHealth": {
+    "D12ae2453b777_ObservabilityHealth": {
       "$ref": "#/$defs/R90edc6e323e7"
     },
     "R90edc6e323e7": {
@@ -4566,7 +5138,7 @@
         "failures"
       ]
     },
-    "Dbfd8cae09b55_AdminObservabilityParams": {
+    "D12ae2453b777_AdminObservabilityParams": {
       "$ref": "#/$defs/Rc20fedecc357"
     },
     "Rc20fedecc357": {
@@ -4574,14 +5146,14 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Dbfd8cae09b55_ObservabilitySettings"
+          "$ref": "#/$defs/D12ae2453b777_ObservabilitySettings"
         },
         "test": {
           "type": "boolean"
         }
       }
     },
-    "Dbfd8cae09b55_AdminObservabilityResult": {
+    "D12ae2453b777_AdminObservabilityResult": {
       "$ref": "#/$defs/R28f3453b8b2c"
     },
     "R28f3453b8b2c": {
@@ -4589,10 +5161,10 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Dbfd8cae09b55_ObservabilitySettings"
+          "$ref": "#/$defs/D12ae2453b777_ObservabilitySettings"
         },
         "health": {
-          "$ref": "#/$defs/Dbfd8cae09b55_ObservabilityHealth"
+          "$ref": "#/$defs/D12ae2453b777_ObservabilityHealth"
         },
         "connection": {
           "anyOf": [
@@ -4607,7 +5179,7 @@
           ]
         },
         "workerHealth": {
-          "$ref": "#/$defs/Dbfd8cae09b55_ObservabilityHealth"
+          "$ref": "#/$defs/D12ae2453b777_ObservabilityHealth"
         },
         "workerState": {
           "anyOf": [
@@ -4631,7 +5203,7 @@
         "health"
       ]
     },
-    "Dbfd8cae09b55_WebhookRule": {
+    "D12ae2453b777_WebhookRule": {
       "$ref": "#/$defs/R2d8f40fccc3b"
     },
     "R2d8f40fccc3b": {
@@ -4759,7 +5331,7 @@
         "ratePerMinute"
       ]
     },
-    "Dbfd8cae09b55_WebhookConfig": {
+    "D12ae2453b777_WebhookConfig": {
       "$ref": "#/$defs/R6df345ce2566"
     },
     "R6df345ce2566": {
@@ -4787,7 +5359,7 @@
         "maxPayloadBytes"
       ]
     },
-    "Dbfd8cae09b55_WebhookDelivery": {
+    "D12ae2453b777_WebhookDelivery": {
       "$ref": "#/$defs/R654e0ee2732d"
     },
     "R654e0ee2732d": {
@@ -4895,7 +5467,7 @@
         "status"
       ]
     },
-    "Dbfd8cae09b55_WebhookSnapshot": {
+    "D12ae2453b777_WebhookSnapshot": {
       "$ref": "#/$defs/R7926db09bc6a"
     },
     "R7926db09bc6a": {
@@ -4903,20 +5475,20 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/Dbfd8cae09b55_WebhookConfig"
+          "$ref": "#/$defs/D12ae2453b777_WebhookConfig"
         },
         "rules": {
           "maxItems": 128,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_WebhookRule"
+            "$ref": "#/$defs/D12ae2453b777_WebhookRule"
           }
         },
         "deliveries": {
           "maxItems": 200,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_WebhookDelivery"
+            "$ref": "#/$defs/D12ae2453b777_WebhookDelivery"
           }
         },
         "secretRefs": {
@@ -4937,7 +5509,7 @@
         "secretRefs"
       ]
     },
-    "Dbfd8cae09b55_WebhookRequest": {
+    "D12ae2453b777_WebhookRequest": {
       "$ref": "#/$defs/Rb2329c71e428"
     },
     "Rb2329c71e428": {
@@ -4973,10 +5545,10 @@
           ]
         },
         "config": {
-          "$ref": "#/$defs/Dbfd8cae09b55_WebhookConfig"
+          "$ref": "#/$defs/D12ae2453b777_WebhookConfig"
         },
         "rule": {
-          "$ref": "#/$defs/Dbfd8cae09b55_WebhookRule"
+          "$ref": "#/$defs/D12ae2453b777_WebhookRule"
         },
         "ruleId": {
           "minLength": 1,
@@ -5007,7 +5579,7 @@
         "action"
       ]
     },
-    "Dbfd8cae09b55_WebhookResult": {
+    "D12ae2453b777_WebhookResult": {
       "$ref": "#/$defs/R7b3bf96b0597"
     },
     "R7b3bf96b0597": {
@@ -5015,14 +5587,14 @@
       "type": "object",
       "properties": {
         "snapshot": {
-          "$ref": "#/$defs/Dbfd8cae09b55_WebhookSnapshot"
+          "$ref": "#/$defs/D12ae2453b777_WebhookSnapshot"
         },
         "delivery": {
-          "$ref": "#/$defs/Dbfd8cae09b55_WebhookDelivery"
+          "$ref": "#/$defs/D12ae2453b777_WebhookDelivery"
         }
       }
     },
-    "Dbfd8cae09b55_FeedbackTarget": {
+    "D12ae2453b777_FeedbackTarget": {
       "$ref": "#/$defs/Rb40e26b71cb4"
     },
     "Rb40e26b71cb4": {
@@ -5059,7 +5631,7 @@
         "turn"
       ]
     },
-    "Dbfd8cae09b55_FeedbackItem": {
+    "D12ae2453b777_FeedbackItem": {
       "$ref": "#/$defs/Rf20a6c5451a7"
     },
     "Rf20a6c5451a7": {
@@ -5075,7 +5647,7 @@
           "type": "string"
         },
         "target": {
-          "$ref": "#/$defs/Dbfd8cae09b55_FeedbackTarget"
+          "$ref": "#/$defs/D12ae2453b777_FeedbackTarget"
         },
         "rating": {
           "anyOf": [
@@ -5184,7 +5756,7 @@
         "candidateHash"
       ]
     },
-    "Dbfd8cae09b55_FeedbackGrowth": {
+    "D12ae2453b777_FeedbackGrowth": {
       "$ref": "#/$defs/R004c7b070ae0"
     },
     "R004c7b070ae0": {
@@ -5268,7 +5840,7 @@
         "version"
       ]
     },
-    "Dbfd8cae09b55_AdminFeedbackParams": {
+    "D12ae2453b777_AdminFeedbackParams": {
       "$ref": "#/$defs/R096ea8003594"
     },
     "R096ea8003594": {
@@ -5300,7 +5872,7 @@
           "type": "string"
         },
         "target": {
-          "$ref": "#/$defs/Dbfd8cae09b55_FeedbackTarget"
+          "$ref": "#/$defs/D12ae2453b777_FeedbackTarget"
         },
         "id": {
           "maxLength": 512,
@@ -5374,7 +5946,7 @@
         "action"
       ]
     },
-    "Dbfd8cae09b55_AdminFeedbackResult": {
+    "D12ae2453b777_AdminFeedbackResult": {
       "$ref": "#/$defs/Rd6840da5e77f"
     },
     "Rd6840da5e77f": {
@@ -5385,14 +5957,14 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_FeedbackItem"
+            "$ref": "#/$defs/D12ae2453b777_FeedbackItem"
           }
         },
         "growth": {
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Dbfd8cae09b55_FeedbackGrowth"
+            "$ref": "#/$defs/D12ae2453b777_FeedbackGrowth"
           }
         },
         "counts": {
@@ -5435,124 +6007,124 @@
       ]
     },
     "_agnes_v1_admin_feedbackParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminFeedbackParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminFeedbackParams"
     },
     "_agnes_v1_admin_feedbackResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminFeedbackResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminFeedbackResult"
     },
     "_agnes_v1_admin_credentials_listParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminEmpty"
+      "$ref": "#/$defs/D12ae2453b777_AdminEmpty"
     },
     "_agnes_v1_admin_credentials_listResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialsList"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialsList"
     },
     "_agnes_v1_admin_credentials_createParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialCreate"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialCreate"
     },
     "_agnes_v1_admin_credentials_createResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialMetadata"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_setParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialSet"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialSet"
     },
     "_agnes_v1_admin_credentials_setResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialMetadata"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_renameParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialRename"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialRename"
     },
     "_agnes_v1_admin_credentials_renameResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialMetadata"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_deleteParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCredentialDelete"
+      "$ref": "#/$defs/D12ae2453b777_AdminCredentialDelete"
     },
     "_agnes_v1_admin_credentials_deleteResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminEmpty"
+      "$ref": "#/$defs/D12ae2453b777_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminEmpty"
+      "$ref": "#/$defs/D12ae2453b777_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminBundlesResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminBundlesResult"
     },
     "_agnes_v1_admin_bundles_saveParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminBundlesSave"
+      "$ref": "#/$defs/D12ae2453b777_AdminBundlesSave"
     },
     "_agnes_v1_admin_bundles_saveResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminBundlesResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminBundlesResult"
     },
     "_agnes_v1_admin_composition_getParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCompositionParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminCompositionParams"
     },
     "_agnes_v1_admin_composition_getResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminCompositionResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminCompositionResult"
     },
     "_agnes_v1_admin_search_getParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminEmpty"
+      "$ref": "#/$defs/D12ae2453b777_AdminEmpty"
     },
     "_agnes_v1_admin_search_getResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminSearchResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminSearchResult"
     },
     "_agnes_v1_admin_search_saveParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminSearchSave"
+      "$ref": "#/$defs/D12ae2453b777_AdminSearchSave"
     },
     "_agnes_v1_admin_search_saveResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminSearchResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminSearchResult"
     },
     "_agnes_v1_admin_search_testParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminSearchTest"
+      "$ref": "#/$defs/D12ae2453b777_AdminSearchTest"
     },
     "_agnes_v1_admin_search_testResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminSearchResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminSearchResult"
     },
     "_agnes_v1_admin_contextParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminContextParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminContextParams"
     },
     "_agnes_v1_admin_contextResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminContextResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminContextResult"
     },
     "_agnes_v1_admin_history_searchParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminHistoryParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminHistoryParams"
     },
     "_agnes_v1_admin_history_searchResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminHistoryResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminHistoryResult"
     },
     "_agnes_v1_admin_planParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminPlanParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminPlanParams"
     },
     "_agnes_v1_admin_planResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminPlanResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminPlanResult"
     },
     "_agnes_v1_admin_mcp_oauth_saveParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminMcpOAuthSave"
+      "$ref": "#/$defs/D12ae2453b777_AdminMcpOAuthSave"
     },
     "_agnes_v1_admin_mcp_oauth_saveResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminEmpty"
+      "$ref": "#/$defs/D12ae2453b777_AdminEmpty"
     },
     "_agnes_v1_doctor_runParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_DoctorParams"
+      "$ref": "#/$defs/D12ae2453b777_DoctorParams"
     },
     "_agnes_v1_doctor_runResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_DoctorResult"
+      "$ref": "#/$defs/D12ae2453b777_DoctorResult"
     },
     "_agnes_v1_admin_memoryParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminMemoryParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminMemoryParams"
     },
     "_agnes_v1_admin_memoryResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminMemoryResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminMemoryResult"
     },
     "_agnes_v1_admin_observabilityParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminObservabilityParams"
+      "$ref": "#/$defs/D12ae2453b777_AdminObservabilityParams"
     },
     "_agnes_v1_admin_observabilityResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AdminObservabilityResult"
+      "$ref": "#/$defs/D12ae2453b777_AdminObservabilityResult"
     },
     "_agnes_v1_admin_triggersParams": {
-      "$ref": "#/$defs/Dbfd8cae09b55_WebhookRequest"
+      "$ref": "#/$defs/D12ae2453b777_WebhookRequest"
     },
     "_agnes_v1_admin_triggersResult": {
-      "$ref": "#/$defs/Dbfd8cae09b55_WebhookResult"
+      "$ref": "#/$defs/D12ae2453b777_WebhookResult"
     },
     "D81a462e0f9ba_PluginConfigGetParams": {
       "$ref": "#/$defs/R7248095df605"
@@ -48537,7 +49109,7 @@
       "$ref": "#/$defs/Dcb9abaf6306a_DaemonNotice"
     },
     "AppServerError": {
-      "$ref": "#/$defs/Dbfd8cae09b55_AppServerError"
+      "$ref": "#/$defs/D12ae2453b777_AppServerError"
     }
   }
 }

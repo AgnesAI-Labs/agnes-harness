@@ -254,7 +254,7 @@ it('loads an earlier fixed-cut page on PgUp without moving the live attach curso
   }
 })
 
-it('shows a stable error code without exposing the raw failure message', async () => {
+it('keeps an unknown error generic without exposing the raw failure message', async () => {
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
@@ -274,7 +274,7 @@ it('shows a stable error code without exposing the raw failure message', async (
   try {
     await app.start()
     await vi.waitFor(async () =>
-      expect((await screenOf(term, 80, 24)).join('\n')).toContain('Request failed (E_PROJECTION_TEST).'),
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('Request failed. Try again.'),
     )
     expect((await screenOf(term, 80, 24)).join('\n')).not.toContain('secret backend detail')
   } finally {

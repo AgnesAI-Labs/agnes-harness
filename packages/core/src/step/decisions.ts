@@ -63,7 +63,9 @@ export interface DecisionAnswerContext {
   authorize(snapshot: DecisionSnapshot): void | Promise<void>
 }
 function fail(message: string): never {
-  throw new CoreError('E_RELATION', `DECISION_${message}`)
+  throw new CoreError('E_RELATION', `DECISION_${message}`, {
+    reason: message.toLowerCase().replaceAll('_', '-'),
+  })
 }
 const detached = <T>(value: T): T => structuredClone(value)
 

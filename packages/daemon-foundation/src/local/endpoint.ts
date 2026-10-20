@@ -3,6 +3,7 @@ import {
   attachmentErrorCode,
   METHODS,
   type MethodName,
+  publicRejectionRpc,
   type RpcError,
   rpcError,
   toRpcError,
@@ -475,6 +476,8 @@ export class LocalEndpoint implements RpcEndpoint {
         }
         return fail(id, e)
       }
+      const rejection = publicRejectionRpc(e)
+      if (rejection) return fail(id, rejection)
       const diagnosticId = randomUUID()
       // Never persist params, exception messages, stacks or arbitrary exception properties.
       let errorCode = 'UNKNOWN'

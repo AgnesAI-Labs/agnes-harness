@@ -599,3 +599,13 @@ async function skillLeaseBoundary(boundary: string, stage: string) {
     await s.ep.close()
   }
 }
+
+it.each([
+  [{ code: -32006, data: { code: 'CAPABILITY_DENIED' } }, 'SKILL_INSTALL_CAPABILITY_DENIED'],
+  [{ code: -32602, data: { code: 'INVALID_PARAMS' } }, 'SKILL_INSTALL_INVALID'],
+  [{ code: 'SKILL_INSTALL_REJECTED', message: 'private log' }, 'SKILL_INSTALL_REJECTED'],
+  [{ code: 'UNKNOWN_DENIED', message: 'private log' }, 'SKILL_INSTALL_FAILED'],
+])('keeps installation error categories scoped to the generated contract', async (error, code) => {
+  const { skillInstallReplyError } = await import('../src/supervisor/skill-install-error.js')
+  expect(skillInstallReplyError(error)).toEqual({ code, message: code })
+})

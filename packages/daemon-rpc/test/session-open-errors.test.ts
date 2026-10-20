@@ -78,12 +78,19 @@ describe('throwSessionOpenRpcError', () => {
         detail: { reason: 'bundle-unavailable' },
       }),
       { code: 'E_PRESET_UNSUPPORTED', message: 'omitted', reason: 'bundle-unavailable' },
-    ])
-      expect(caught(error)).toMatchObject({
+    ]) {
+      const failure = caught(error)
+      expect(failure).toMatchObject({
         code: -32011,
         message: 'SEMANTIC_REJECTED',
         data: { code: 'BUNDLE_UNAVAILABLE' },
       })
+      expect(normalizeRpcError(failure as RpcError).data).toMatchObject({
+        cause: { code: 'BUNDLE_UNAVAILABLE' },
+        publicReason: 'The selected agent bundle is unavailable.',
+        userAction: 'Install, enable and trust the bundle, or choose another agent.',
+      })
+    }
     expect(
       caught({ code: 'E_PRESET_UNSUPPORTED', message: 'omitted', reason: 'preset-not-allowed' }),
     ).toMatchObject({ code: -32008, message: 'PRESET_SWITCH_REJECTED' })
@@ -149,4 +156,121 @@ describe('throwSessionOpenRpcError', () => {
       expect(caught(unknown)).toBe(unknown)
     },
   )
+})
+
+it('carries real Host permission-axis and revoked full-access denials through worker framing to the SDK', async () => {
+  const { resolvePreset } = await import('@agnes/host')
+  const { LocalEndpoint } = await import('@agnes/daemon-foundation/local/endpoint')
+  const { createClient, JsonRpcError } = await import('@agnes/sdk')
+  const { encodeFrame, JsonlDecoder, workerDomainFailure } = await import('@agnes/worker-runtime')
+  const { assertCurrentPermission, withPermissionContext } = await import('../src/local/permission-scope.js')
+  const { publicErrorHelp } = await import('@agnes/protocol')
+  const refusals = [
+    {
+      code: 'E_PRESET_UNSUPPORTED',
+      reason: 'permission-axis',
+      raise: () =>
+        resolvePreset('full-access', { 'full-access': { name: 'full-access' } }, { permission: 'read-only' }),
+    },
+    {
+      code: 'E_PERMISSION_REVOKED',
+      reason: undefined,
+      raise: () =>
+        withPermissionContext(
+          {
+            policy: 'full-access',
+            sessionKey: 'synthetic',
+            sessionId: 'synthetic',
+            epoch: 1,
+            actor: { id: 'synthetic', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          },
+          () => {},
+          assertCurrentPermission,
+          async () => undefined,
+        ),
+    },
+    {
+      code: 'E_PACKAGE_BLOCKED',
+      reason: undefined,
+      raise: async () => {
+        const { PackageError } = await import('@agnes/package-manager')
+        throw new PackageError('E_CEILING_EXCEEDED', 'private publication policy log', {
+          detail: { token: 'private' },
+        })
+      },
+    },
+    {
+      code: 'INTERNAL',
+      reason: undefined,
+      raise: () => {
+        throw Object.assign(new Error('private authoring log'), { code: 'UNKNOWN_DENIED_private' })
+      },
+    },
+  ]
+  for (const code of [
+    'E_BUDGET',
+    'BUDGET_EXCEEDED',
+    'APPROVAL_REJECTED',
+    'APPROVAL_GRANT_UNAVAILABLE',
+    'PLUGIN_PUBLICATION_UNANSWERED',
+  ]) {
+    refusals.push({
+      code,
+      reason: undefined,
+      raise: () => {
+        throw Object.assign(new Error('private native or authoring log'), {
+          code,
+          detail: { token: 'private' },
+        })
+      },
+    })
+  }
+  for (const row of refusals) {
+    const endpoint = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    endpoint.register('initialize', async (_params, cx) => {
+      cx.conn.initialized = true
+      return { protocolVersion: 1, agentCapabilities: {} }
+    })
+    endpoint.register('session/new', async () => {
+      try {
+        await row.raise()
+      } catch (raised) {
+        const failure = workerDomainFailure(raised)
+        const [frame] = new JsonlDecoder().feed(
+          encodeFrame({ kind: 'reply', requestId: 'synthetic', error: failure }),
+        )
+        expect(JSON.stringify(frame)).not.toContain('private authoring log')
+        throw (frame as { error: unknown }).error
+      }
+      throw new Error('Expected a refusal')
+    })
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    try {
+      const error = await client.session.new({ cwd: '/tmp' }).catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(JsonRpcError)
+      const rpc = error as InstanceType<typeof JsonRpcError>
+      expect(rpc.data).toMatchObject({ code: row.code, diagnosticId: expect.any(String) })
+      expect(JSON.stringify(rpc.data)).not.toContain('private')
+      if (row.code === 'INTERNAL') {
+        expect(rpc.code).toBe(-32603)
+        expect(rpc.data).not.toHaveProperty('cause')
+        expect(publicErrorHelp(rpc)).toBeUndefined()
+      } else {
+        expect(rpc.data).toMatchObject({
+          cause: { code: row.code },
+          publicReason: expect.any(String),
+          userAction: expect.any(String),
+        })
+        if (row.reason) expect(rpc.data.reason).toBe(row.reason)
+        for (const locale of ['en', 'zh-CN']) {
+          const help = publicErrorHelp(rpc, locale)
+          expect(help?.code).toBe(row.code)
+          expect(help?.action.length).toBeGreaterThan(10)
+        }
+      }
+    } finally {
+      await client.close()
+      await endpoint.close()
+    }
+  }
 })

@@ -32,6 +32,8 @@ workspace 必须通过 `_agnes/v1/workspace.add` 登记，客户端提供 `cwd` 
 
 ## 错误
 
+公开拒绝码由 `packages/protocol/schema/app-server.json` 的 `AppServerErrorCause` 定义，注解生成共享的 RPC 分类及中英文原因和处理建议。错误 envelope 在 `diagnosticId` 旁新增 `data.publicReason`、`data.userAction`（固定英文文案）；多个拒绝共用 RPC 分类时，`data.cause.code` 仍保留具体拒绝码，SDK 原样传递。客户端可使用 `@agnes/protocol` 的 `publicErrorHelp(error, locale)`，Web 可使用 `@agnes/web-ui` 的 `appServerErrorMessage`。未知 domain 错误继续作为通用内部失败；不会从异常原文推断或翻译未知原因。`business.confirm` 等业务决策通过快照保留回答选项（包括 `reject`），业务回答被拒绝并不属于传输失败。
+
 错误包含 JSON-RPC 数字代码、固定安全消息，以及 `data`：
 
 ```json

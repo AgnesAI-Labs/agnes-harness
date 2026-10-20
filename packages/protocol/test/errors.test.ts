@@ -9,6 +9,8 @@ import {
   httpRpcError,
   normalizeRpcError,
   observeDiagnostics,
+  publicErrorHelp,
+  publicRejectionRpc,
   rpcError,
   safeDiagnosticRecord,
   validateAgainst,
@@ -132,4 +134,57 @@ it('exports independently resolvable JSON Schema for every method and the error 
       data: { code: 'AUTH_INVALID', messageKey: 'unsafe.secret', diagnosticId: 'missing' },
     }),
   ).toBe(false)
+})
+
+it('keeps unknown rejections generic and ignores forged public copy and unsafe reason identifiers', () => {
+  for (const code of ['UNKNOWN_DENIED', 'UNKNOWN_AUTH', 'PRIVATE_TIMEOUT', 'constructor', '__proto__']) {
+    expect(
+      publicRejectionRpc({
+        code,
+        message: 'private',
+        detail: { reason: 'permission-axis' },
+        data: { code: 'SEMANTIC_REJECTED', reason: 'APPROVAL_REJECTED' },
+      }),
+    ).toBeUndefined()
+    expect(
+      publicErrorHelp({ data: { code, publicReason: 'private', userAction: 'private' } }),
+    ).toBeUndefined()
+    expect(
+      publicErrorHelp({ data: { code, reason: 'APPROVAL_REJECTED', cause: { code: 'E_BUDGET' } } }),
+    ).toBeUndefined()
+    expect(errorMessageKey(code)).toBe('appServer.errors.internal')
+  }
+  const error = normalizeRpcError(
+    rpcError('PRESET_SWITCH_REJECTED', {
+      code: 'E_PRESET_UNSUPPORTED',
+      reason: 'private reason',
+      publicReason: 'private',
+      userAction: 'private',
+    }),
+  )
+  expect(error.data.publicReason).toBe('The preset or permission selection was refused.')
+  expect(error.data.userAction).toBe('Choose a supported preset and a compatible permission level.')
+  expect(normalizeRpcError(error)).toEqual(error)
+})
+
+it('keeps accessor-backed codes closed when their values change during classification', () => {
+  let causeReads = 0
+  const cause = {
+    get code() {
+      return causeReads++ === 0 ? 'E_BUDGET' : 'private-code'
+    },
+  }
+  const envelope = normalizeRpcError(rpcError('SEMANTIC_REJECTED', { cause }))
+  expect(envelope.data.cause).toEqual({ code: 'E_BUDGET' })
+  expect(JSON.stringify(envelope)).not.toContain('private')
+  let domainReads = 0
+  const domain = {
+    get code() {
+      return domainReads++ === 0 ? 'E_BUDGET' : 'private-code'
+    },
+  }
+  expect(publicErrorHelp(domain)).toMatchObject({
+    code: 'E_BUDGET',
+    reason: 'The operation was refused by the budget limit.',
+  })
 })

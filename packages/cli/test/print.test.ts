@@ -172,7 +172,7 @@ describe('runPrint in text mode', () => {
       })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
       expect(o.err()).toBe(
-        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT status=400 [2J\n`,
+        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT: The provider connection failed. Check connectivity and inspect the request status before retrying.\n`,
       )
     },
   )
@@ -190,7 +190,9 @@ describe('runPrint in text mode', () => {
     })
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): AUTH status=401\n`)
+    expect(o.err()).toBe(
+      `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
+    )
   })
 
   it('an rpc error that is not a turn outcome is not dressed up as one', async () => {
@@ -486,4 +488,49 @@ it('--new chooses an explicit fresh session without changing stdout', async () =
   })
   expect(output.out()).toBe('fresh\n')
   expect(output.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+})
+
+it.each([
+  [
+    'en',
+    'The operation was refused by the budget limit.',
+    'Review the remaining budget and limits before trying again.',
+  ],
+  ['zh-CN', '操作因预算限制被拒绝。', '请检查剩余预算和上限后再重试。'],
+])(
+  'prints the public budget reason and action in %s without provider text',
+  async (locale, reason, action) => {
+    const output = io()
+    const endpoint = scriptedEndpoint({
+      reason: 'error',
+      turnEndError: { code: 'BUDGET_EXCEEDED', message: 'private provider log' },
+    })
+    const connected = await booted(endpoint)
+    try {
+      expect(await runPrint(connected, parseArgs(['-p', 'q']), { ...output, locale })).toBe(1)
+      expect(output.err()).toContain(reason)
+      expect(output.err()).toContain(action)
+      expect(output.err()).not.toContain('private')
+    } finally {
+      await connected.close()
+    }
+  },
+)
+
+it('keeps unknown turn failures generic without printing their code or private logs', async () => {
+  const output = io()
+  const connected = await booted(
+    scriptedEndpoint({
+      reason: 'error',
+      turnEndError: { code: 'UNKNOWN_PRIVATE', message: 'private provider log' },
+    }),
+  )
+  try {
+    expect(await runPrint(connected, parseArgs(['-p', 'q']), output)).toBe(1)
+    expect(output.err()).toContain('turn ended: error (exit 1)')
+    expect(output.err()).not.toContain('UNKNOWN_PRIVATE')
+    expect(output.err()).not.toContain('private')
+  } finally {
+    await connected.close()
+  }
 })

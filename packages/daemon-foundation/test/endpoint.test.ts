@@ -664,3 +664,26 @@ it('returns fixed attachment reasons for local Core failures without forwarding 
   expect(JSON.stringify(reply)).not.toContain('private')
   await ep.close()
 })
+
+it.each([
+  'E_BUDGET',
+  'BUDGET_EXCEEDED',
+  'APPROVAL_REJECTED',
+  'APPROVAL_GRANT_UNAVAILABLE',
+  'PLUGIN_TEST_REJECTED',
+  'E_PACKAGE_BLOCKED',
+])('preserves the public domain rejection %s without private exception material', async (code) => {
+  const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+  ep.register('initialize', async () => {
+    throw Object.assign(new Error('private authoring log'), { code, detail: { token: 'private token' } })
+  })
+  try {
+    const result = await ep.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: INIT_PARAMS })
+    expect(result).toMatchObject({
+      error: { data: { code, cause: { code }, diagnosticId: expect.any(String) } },
+    })
+    expect(JSON.stringify(result)).not.toContain('private')
+  } finally {
+    await ep.close()
+  }
+})

@@ -698,6 +698,7 @@ export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help
 export * from './plugin-transports.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
+export * from './public-errors.js'
 export {
   type ReferenceCandidate,
   type ReferenceSearchResult,

@@ -12,7 +12,7 @@ import {
   stopDaemon,
 } from '@agnes/daemon'
 import { installDiagnosticJournal } from '@agnes/observability'
-import { AGNES_ERRORS, JSONRPC_ERRORS } from '@agnes/protocol'
+import { AGNES_ERRORS, JSONRPC_ERRORS, publicErrorHelp } from '@agnes/protocol'
 import {
   confirmResourceOperation,
   isResourceOperationFailure,
@@ -955,6 +955,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                   composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
                 })
               : runPrint(booted, p, {
+                  locale: io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en',
                   stdout: io.stdout,
                   stderr: io.stderr,
                   stdin: io.stdin,
@@ -976,6 +977,11 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       await Promise.race([booted.close().catch(() => undefined), exited])
     }
   } catch (e) {
+    const help = publicErrorHelp(e, io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en')
+    if (help) {
+      io.stderr.write(`${help.code}: ${help.reason} ${help.action}\n`)
+      return ExitCode.ERROR
+    }
     const safeFailure =
       safeResourceFailureLine(e) ??
       safeExpectedResourceRpcFailureLine(e) ??
@@ -996,14 +1002,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       )
       return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
     }
-    // The stack alone is not an answer: a JSON-RPC failure stringifies to its name and number, and
-    // everything an operator could act on -- which refusal, from where -- is in `data.code`.
-    const data = (e as { data?: { code?: unknown; message?: unknown } } | null)?.data
-    const detail = [data?.code, data?.message].filter((x) => typeof x === 'string').join(': ')
-    const reason = `agnes: ${(e as Error).message}${detail ? ` ${detail}` : ''}`.replace(/[\r\n]+/g, ' ')
-    io.stderr.write(
-      `${reason}; run agh${p.command ? ` ${p.command}` : ''} --help for usage or agh doctor for configuration\n`,
-    )
+    // Unknown failures have no public display contract; keep logs and arbitrary data out of stderr.
+    io.stderr.write('agnes: The request failed. Inspect its status with agh doctor.\n')
     return ExitCode.ERROR
   } finally {
     stopDiagnostics?.()

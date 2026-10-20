@@ -1,22 +1,40 @@
-import { domainFailureFromUnknown } from '@agnes/error-sanitization'
-import { attachmentErrorCode, rpcError } from '@agnes/protocol'
+import {
+  attachmentErrorCode,
+  publicErrorContract,
+  publicErrorCopy,
+  publicErrorReason,
+  publicRejectionRpc,
+  rpcError,
+} from '@agnes/protocol'
 
-/** Preserve a fixed attachment refusal across the worker link without exposing native messages. */
+/** The worker link carries fixed public text and declared reasons, never exception messages or detail. */
 export function workerDomainFailure(error: unknown) {
-  const code = attachmentErrorCode(error)
-  if (code) return rpcError('INVALID_PARAMS', { code })
-  const failure = domainFailureFromUnknown(error)
-  if (failure.code === 'E_PRESET_UNSUPPORTED') {
-    if (failure.reason === 'bundle-unavailable')
+  const attachment = attachmentErrorCode(error)
+  if (attachment) return rpcError('INVALID_PARAMS', { code: attachment })
+  let raw: unknown
+  try {
+    raw =
+      error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined
+  } catch {
+    /* A malformed exception remains a generic worker failure. */
+  }
+  const code = typeof raw === 'string' && raw.length > 0 ? raw : 'E_WORKER'
+  const reason = publicErrorReason(error)
+  if (code === 'E_PRESET_UNSUPPORTED') {
+    if (reason === 'bundle-unavailable')
       return rpcError('SEMANTIC_REJECTED', {
         code: 'BUNDLE_UNAVAILABLE',
         reason: 'selected bundle is not installed, enabled and trusted',
       })
-    if (failure.reason === 'preset-not-allowed')
+    if (reason === 'preset-not-allowed')
       return rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed' })
   }
-  // Preserve closed admission refusals as RPC errors; the daemon must not turn them into UNKNOWN.
-  if (['E_PRESET_UNSUPPORTED', 'E_PRESET_UNRESOLVED', 'E_MODEL_UNSUPPORTED'].includes(failure.code))
-    return rpcError('PRESET_SWITCH_REJECTED', { code: failure.code })
-  return failure
+  const contract = publicErrorContract(code)
+  const rejection = publicRejectionRpc(error)
+  if (rejection && contract?.rpc === 'PRESET_SWITCH_REJECTED') return rejection
+  return {
+    code,
+    message: contract ? publicErrorCopy(code, reason).en.reason : 'Worker operation failed.',
+    ...(reason ? { reason } : {}),
+  }
 }

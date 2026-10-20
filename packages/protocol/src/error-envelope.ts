@@ -1,71 +1,31 @@
-import { Value } from '@sinclair/typebox/value'
-import { type AppServerError, AppServerErrorCause } from '../gen/ts/app-server.js'
+import type { AppServerError, AppServerErrorCause } from '../gen/ts/app-server.js'
 import { recordDiagnostic } from './diagnostic-records.js'
 import { AGNES_ERRORS, JSONRPC_ERRORS, type RpcError } from './errors.js'
+import { publicErrorCode, publicErrorContract, publicErrorCopy, publicErrorReason } from './public-errors.js'
 
 /** Pure classification for safe diagnostic records; does not create or persist an error. */
 export function errorMessageKey(code: string): AppServerError['data']['messageKey'] {
-  if (code === 'MEMORY_CONSOLIDATION_REQUIRED') return 'appServer.errors.memoryCap'
-  if (code === 'MEMORY_SECRET_LIKE_CONTENT') return 'appServer.errors.memorySecret'
-  if (code === 'MEMORY_DISABLED') return 'appServer.errors.memoryDisabled'
-  if (code === 'MEMORY_COMMITTED_METADATA_FAILED') return 'appServer.errors.memoryPartial'
-  if (code === 'MEMORY_CONFLICT' || code === 'MEMORY_POLICY_CHANGED') return 'appServer.errors.conflict'
-  if (code === 'CONFIG_CREDENTIAL_REQUIRED') return 'appServer.errors.credentialRequired'
-  if (code === 'CONFIG_CREDENTIAL_REJECTED') return 'appServer.errors.credentialRejected'
-  if (code.startsWith('CONFIG_CREDENTIAL_')) return 'appServer.errors.credentialStore'
-  if (code === 'E_PRESET_UNRESOLVED') return 'appServer.errors.unavailable'
-  if (code === 'E_SANDBOX_WORKSPACE') return 'appServer.errors.unavailable'
-  if (code.startsWith('E_PROVIDER_')) return 'appServer.errors.provider'
-  if (code === 'E_SESSION_VERSION_NEWER') return 'appServer.errors.sessionNewer'
-  if (code === 'E_SESSION_VERSION_OLDER' || code.startsWith('E_SEAM_PIN_'))
-    return 'appServer.errors.sessionOlder'
-  if (code === 'E_SESSION_CORRUPT') return 'appServer.errors.sessionCorrupt'
-  if (code.startsWith('E_GENERATION_')) return 'appServer.errors.generation'
-  if (code.includes('REVISION_CONFLICT') || code === 'GENERATION_STALE') return 'appServer.errors.conflict'
-  if (code.includes('TIMEOUT')) return 'appServer.errors.timeout'
-  if (code.includes('AUTH')) return 'appServer.errors.auth'
-  if (
-    code.includes('FORBIDDEN') ||
-    code.includes('DENIED') ||
-    code.includes('PERMISSION') ||
-    code.includes('ORIGIN')
-  )
-    return 'appServer.errors.forbidden'
-  if (code.includes('BUSY')) return 'appServer.errors.busy'
-  if (code === 'METHOD_NOT_FOUND') return 'appServer.errors.methodNotFound'
-  if (code.includes('NOT_FOUND')) return 'appServer.errors.notFound'
-  if (code.includes('ROUTE')) return 'appServer.errors.methodNotFound'
-  if (code === 'PARSE_ERROR' || code === 'INVALID_REQUEST') return 'appServer.errors.invalidRequest'
-  if (
-    code === 'INVALID_PARAMS' ||
-    code.includes('INVALID') ||
-    code.includes('REQUEST') ||
-    code.includes('BODY_TOO_LARGE')
-  )
-    return 'appServer.errors.invalidParams'
-  if (
-    code.includes('UNAVAILABLE') ||
-    code.includes('UNCONFIGURED') ||
-    code.includes('NOT_CONFIGURED') ||
-    code.includes('UNSUPPORTED')
-  )
-    return 'appServer.errors.unavailable'
-  if (code === 'SEMANTIC_REJECTED') return 'appServer.errors.rejected'
-  return 'appServer.errors.internal'
+  return publicErrorContract(code)?.messageKey ?? 'appServer.errors.internal'
 }
 /** Only a closed cause code crosses the boundary; messages, stacks and nested data never do. */
 function knownCause(value: unknown): value is AppServerErrorCause['code'] {
-  return typeof value === 'string' && Value.Check(AppServerErrorCause, { code: value })
+  return publicErrorContract(value) !== undefined
 }
 export function normalizeRpcError(error: RpcError): AppServerError {
   const names = { ...AGNES_ERRORS, ...JSONRPC_ERRORS }
   const name = Object.entries(names).find(([, number]) => number === error.code)?.[0] ?? 'INTERNAL_ERROR'
-  const { cause: supplied, messageKey: _key, diagnosticId: oldId, ...data } = error.data
-  const candidate =
-    supplied && typeof supplied === 'object'
-      ? (supplied as { code?: unknown }).code
-      : (data.reason ?? data.code)
-  const cause = knownCause(candidate) ? { code: candidate } : undefined
+  const {
+    cause: _cause,
+    messageKey: _key,
+    diagnosticId: oldId,
+    publicReason: _reason,
+    userAction: _action,
+    ...data
+  } = error.data
+  const candidate = publicErrorCode(error)
+  const cause = candidate ? { code: candidate } : undefined
+  const contract = publicErrorContract(candidate)
+  const copy = publicErrorCopy(candidate, publicErrorReason(error)).en
   const diagnosticId =
     typeof oldId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(oldId)
       ? oldId
@@ -94,6 +54,7 @@ export function normalizeRpcError(error: RpcError): AppServerError {
       diagnosticId,
       ...(!available ? { diagnosticUnavailable: true } : {}),
       ...(cause ? { cause } : {}),
+      ...(contract ? { publicReason: copy.reason, userAction: copy.action } : {}),
     },
   }
 }

@@ -53,7 +53,7 @@ export async function assertCurrentPermission(): Promise<void> {
     !Number.isSafeInteger(context.epoch) ||
     !samePermissionContext(context, await current.verify())
   )
-    throw new Error('Permission authority revoked')
+    throw Object.assign(new Error('Permission authority revoked'), { code: 'E_PERMISSION_REVOKED' })
 }
 export async function assertPermissionBinding(
   binding: { scope: string; bindingHash: string; sessionKey: string },
@@ -70,10 +70,12 @@ export async function assertPermissionBinding(
       row.sessionKey === binding.sessionKey,
   )
   if (!grant || clock() >= Date.parse(grant.deadline))
-    throw new Error('Permission grant unavailable or expired')
+    throw new PermissionGrantUnavailable('Permission grant unavailable or expired')
 }
 
-export class PermissionGrantUnavailable extends Error {}
+export class PermissionGrantUnavailable extends Error {
+  readonly code = 'E_PERMISSION_GRANT_UNAVAILABLE'
+}
 
 /** A backend-owned consumed grant retained across a background task's entire lifetime. */
 export async function acquirePermissionLease(
@@ -132,7 +134,8 @@ export async function automaticRequestDecision(req: ApprovalRequest) {
   const answer = automaticPermissionDecision(current.context, purpose, req.options)
   if (!answer) return undefined
   await assertCurrentPermission()
-  if (current.grants.has(req.requestId)) throw new Error('Permission grant already issued')
+  if (current.grants.has(req.requestId))
+    throw new PermissionGrantUnavailable('Permission grant already issued')
   const evidence: AutomaticPermissionEvidence = {
     requestId: req.requestId,
     stepId: req.stepId,
@@ -164,7 +167,7 @@ export async function automaticRequestDecision(req: ApprovalRequest) {
 export async function completeAutomaticDecision(req: ApprovalRequest, clock: () => number): Promise<void> {
   const current = scope.getStore(),
     grant = current?.grants.get(req.requestId)
-  if (!current || !grant) throw new Error('Permission grant unavailable')
+  if (!current || !grant) throw new PermissionGrantUnavailable('Permission grant unavailable')
   await assertPermissionBinding(req, clock, 'authorized')
   const consumed = { ...grant, at: new Date().toISOString(), consumption: 'consumed' as const }
   await current.record(consumed)

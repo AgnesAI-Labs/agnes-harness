@@ -110,11 +110,33 @@ describe('admin text labels', () => {
 it('localizes only schema message keys and ignores exception text and unknown keys', () => {
   const error = { message: 'private exception', data: { messageKey: 'appServer.errors.credentialRejected' } }
   expect(appServerErrorMessage(error, 'en')).toBe('The credential was rejected. Check it and try again.')
-  expect(appServerErrorMessage(error, 'zh-CN')).toBe('凭据被拒绝，请检查后重试。')
+  expect(appServerErrorMessage(error, 'zh-CN')).toBe('凭据被拒绝。 请检查后重试。')
   for (const value of [
     { data: { messageKey: 'appServer.errors.__proto__' } },
     { message: 'private exception' },
     null,
   ])
     expect(appServerErrorMessage(value, 'en')).toBeUndefined()
+})
+
+it('renders schema-owned rejection reasons and actions in both locales without trusting server prose', () => {
+  for (const code of [
+    'E_PERMISSION_REVOKED',
+    'APPROVAL_REJECTED',
+    'BUDGET_EXCEEDED',
+    'PLUGIN_TEST_REJECTED',
+    'E_PACKAGE_BLOCKED',
+  ]) {
+    const error = { data: { code, publicReason: 'private reason', userAction: 'private action' } }
+    const en = appServerErrorMessage(error, 'en')
+    const zh = appServerErrorMessage(error, 'zh-CN')
+    expect(en).toBeTruthy()
+    expect(zh).toMatch(/[\u4e00-\u9fff]/)
+    expect(zh).not.toBe(en)
+    expect(en).not.toContain('private')
+    expect(zh).not.toContain('private')
+  }
+  expect(
+    appServerErrorMessage({ data: { code: 'UNKNOWN_DENIED', publicReason: 'private' } }, 'en'),
+  ).toBeUndefined()
 })

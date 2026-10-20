@@ -94,6 +94,6 @@ export function conflictingPermission(name: string, alias: Permission, requested
   return new HostError(
     'E_PRESET_UNSUPPORTED',
     `preset ${name} is the ${alias} permission and cannot be combined with ${requested}`,
-    { detail: { source: name, capability: 'permission', alias, requested } },
+    { detail: { source: name, capability: 'permission', alias, requested, reason: 'permission-axis' } },
   )
 }

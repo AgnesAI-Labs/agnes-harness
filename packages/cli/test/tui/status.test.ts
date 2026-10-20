@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createAnsi } from '../../src/tui/ansi.js'
+import { ANSI_RE, createAnsi } from '../../src/tui/ansi.js'
 import { Loader } from '../../src/tui/components/loader.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
@@ -112,6 +112,19 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(line).toContain(ansi.fg('danger', '执行中断，30 s 内自动恢复'))
     expect(line).toContain(ansi.fg('warning', '⟳ reconnecting'))
     expect(line).toContain(ansi.fg('faint', ' · '))
+    s.setNotice(
+      'The operation was refused. Review the candidate and request a new approval before retrying.',
+      'error',
+    )
+    const narrow = s
+      .render(40)
+      .map((line) => line.replace(ANSI_RE, ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+    expect(s.render(40).every((line) => displayWidth(line) <= 40)).toBe(true)
+    expect(narrow).toContain(
+      'The operation was refused. Review the candidate and request a new approval before retrying.',
+    )
     s.setNotice('模型已切换', 'success')
     expect(s.render(100)[0]).toContain(ansi.fg('success', '模型已切换'))
     s.setNotice('普通提示')

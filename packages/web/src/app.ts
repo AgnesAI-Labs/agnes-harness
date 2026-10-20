@@ -3,6 +3,7 @@ import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import {
+  appServerErrorMessage,
   bindDialogSheets,
   createCatalogTranslator,
   preserveRouteParams,
@@ -1390,6 +1391,8 @@ let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
   const attachment = attachmentErrorMessage(error, t)
   if (attachment) return attachment
+  const publicMessage = appServerErrorMessage(error, clientModules.locale.getSnapshot())
+  if (publicMessage) return publicMessage
   // Provider values are redacted by settings before leaving that controller.
   const message = error instanceof Error ? error.message : t('app.error.fallback')
   const diagnostic =

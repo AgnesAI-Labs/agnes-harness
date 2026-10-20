@@ -1,17 +1,8 @@
-/** Closed boot refusals only. No extension prose, stack, paths or credentials cross this channel. */
-const BOOT_FAILURE_CODES = new Set([
-  'E_SEAM_INIT',
-  'E_SEAM_MISSING',
-  'E_SEAM_EXPORT_MISSING',
-  'E_PROVIDER_INVALID',
-  'E_DEP_MISSING',
-  'E_EXT_LOAD',
-  'E_LOCK_MISMATCH',
-  'E_API_RANGE',
-])
+import { publicErrorContract } from '@agnes/protocol'
 
+/** Closed boot refusals are generated from the public error contract; no extension prose crosses IPC. */
 export function workerBootFailureCode(value: unknown): string | undefined {
-  return typeof value === 'string' && BOOT_FAILURE_CODES.has(value) ? value : undefined
+  return typeof value === 'string' && publicErrorContract(value)?.boot ? value : undefined
 }
 
 /** The executable waits for IPC delivery before exiting; custom embedders need no IPC channel. */

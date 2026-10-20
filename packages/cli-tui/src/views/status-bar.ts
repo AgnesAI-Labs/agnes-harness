@@ -1,6 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import type { Branding } from '@agnes/sdk'
-import { type Component, escapeControl } from '../component.js'
+import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import {
   formatCredits,
@@ -11,6 +11,7 @@ import {
 import { type Locale, t } from '../locale.js'
 import type { Tone } from '../palette.js'
 import type { StatusItem } from '../slots.js'
+import { displayWidth } from '../terminal.js'
 import { brandColour, type ThemedAnsi } from '../theme.js'
 import { RAIL_MIN_WIDTH } from './composer-rail.js'
 
@@ -94,6 +95,7 @@ export class StatusBar implements Component {
     // (slot fills, notices): every other part is minted by this component itself from numbers
     // and a fixed enum, so nothing else here can carry a stray control byte to the terminal.
     const link = t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)
+    const notice = this.notice ? this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice)) : ''
     const parts = [
       ...this.slots.map(
         (s) =>
@@ -103,10 +105,24 @@ export class StatusBar implements Component {
         ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 'danger' : 'warning', this.budget))
         : '',
       this.parked ? this.ansi.dim(this.parked) : '',
-      this.notice ? this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice)) : '',
+      notice,
       this.link === 'ok' ? '' : this.ansi.fg('warning', `⟳ ${link}`),
     ].filter(Boolean)
-    const lines = [fitLine(parts.join(this.ansi.fg('faint', ' · ')), width)]
+    const separator = this.ansi.fg('faint', ' · ')
+    const content = parts.join(separator)
+    const lines = [fitLine(content, width)]
+    // A public refusal includes both a reason and an action; keep the action readable on narrow terminals.
+    if (notice && this.noticeTone === 'error' && displayWidth(content) > width) {
+      const context = parts.filter((part) => part !== notice).join(separator)
+      lines.splice(
+        0,
+        lines.length,
+        ...(context ? [fitLine(context, width)] : []),
+        ...wrapText(escapeControl(this.notice), width).map((line) =>
+          fitLine(this.ansi.fg(NOTICE_TONE.error, line), width),
+        ),
+      )
+    }
     // The composer rail draws the context gauge at the same width; below its floor this line does.
     const usage = this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH)
     if (usage?.trim()) lines.push(usage)
