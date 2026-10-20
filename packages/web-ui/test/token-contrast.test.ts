@@ -31,7 +31,20 @@ function luminance(rgb: Color): number {
 }
 const pairs: [string, string, number][] = [
   ...['primary', 'secondary', 'tertiary', 'icon-secondary'].flatMap((role): [string, string, number][] =>
-    ['page', 'app-content', 'app-sidebar', 'surface', 'popover', 'subtle', 'card', 'hover'].map((bg) => [
+    [
+      'page',
+      'app-content',
+      'app-sidebar',
+      'surface',
+      'popover',
+      'subtle',
+      'card',
+      'hover',
+      'selected',
+      'fill',
+      'code',
+      'user-bubble',
+    ].map((bg) => [
       role === 'icon-secondary' ? '--agnes-icon-secondary' : `--agnes-text-${role}`,
       `--agnes-bg-${bg}`,
       4.5,
@@ -102,13 +115,49 @@ describe('menu material keeps text contrast over any backdrop', () => {
   })
 })
 describe('default skin contrast table (pure CSS calculation)', () => {
+  it.each(['aerospace-quality', 'pharma-gmp'])('%s shares the two light surfaces', (application) => {
+    const descriptor = JSON.parse(
+      readFileSync(
+        new URL(`../../../examples/showcase/${application}/client/agnes.client.json`, import.meta.url),
+        'utf8',
+      ),
+    ) as { skins: { tokens: Record<string, { light: string }> }[] }
+    const skin = descriptor.skins[0]
+    expect(skin, application).toBeDefined()
+    const overrides = Object.fromEntries(
+      Object.entries(skin?.tokens ?? {}).map(([name, modes]) => [name, modes.light]),
+    )
+    const tokens = { ...light, ...overrides }
+    for (const role of ['page', 'app-content', 'surface', 'group', 'popover'])
+      expect(color(`--agnes-bg-${role}`, tokens), role).toEqual([255, 255, 255, 1])
+    expect(color('--agnes-bg-app-sidebar', tokens)).toEqual([243, 243, 241, 1])
+  })
   for (const [theme, tokens] of Object.entries({ light, dark })) {
-    it(`${theme}: navigation is darker than content and raised surfaces`, () => {
+    it(`${theme}: navigation and content follow the shared surface hierarchy`, () => {
       const navigation = luminance(color('--agnes-bg-app-sidebar', tokens))
       const content = luminance(color('--agnes-bg-app-content', tokens))
       const raised = luminance(color('--agnes-bg-surface', tokens))
       expect(navigation).toBeLessThan(content)
-      expect(content).toBeLessThan(raised)
+      if (theme === 'light') {
+        expect(color('--agnes-bg-app-content', tokens)).toEqual([255, 255, 255, 1])
+        expect(content).toBe(raised)
+        for (const role of ['page', 'surface', 'popover', 'group', 'control'])
+          expect(color(`--agnes-bg-${role}`, tokens), role).toEqual([255, 255, 255, 1])
+        for (const role of ['app-sidebar', 'subtle', 'card', 'code', 'fill', 'user-bubble'])
+          expect(color(`--agnes-bg-${role}`, tokens), role).toEqual([243, 243, 241, 1])
+      } else expect(content).toBeLessThan(raised)
+      for (const base of ['app-content', 'app-sidebar']) {
+        const background = color(`--agnes-bg-${base}`, tokens)
+        const hover = luminance(over(color('--agnes-bg-hover', tokens), background))
+        const selected = luminance(over(color('--agnes-bg-selected', tokens), background))
+        if (theme === 'light') {
+          expect(selected).toBeLessThan(hover)
+          expect(hover).toBeLessThan(luminance(background))
+        } else {
+          expect(selected).toBeGreaterThan(hover)
+          expect(hover).toBeGreaterThan(luminance(background))
+        }
+      }
     })
     it.each(pairs)(`${theme}: %s on %s ≥ %s:1`, (fg, bg, floor) => {
       const background = over(color(bg, tokens), color('--agnes-bg-page', tokens))

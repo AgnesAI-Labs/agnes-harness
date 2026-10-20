@@ -114,15 +114,15 @@
       "css": "./skin.css",
       "tokens": {
         "--agnes-bg-page": {
-          "light": "#f4f7fa",
+          "light": "var(--agnes-bg-group)",
           "dark": "#0c1420"
         },
         "--agnes-bg-app-content": {
-          "light": "#f4f7fa",
+          "light": "var(--agnes-bg-page)",
           "dark": "#0c1420"
         },
         "--agnes-bg-app-sidebar": {
-          "light": "#eaf0f5",
+          "light": "var(--agnes-bg-subtle)",
           "dark": "#080e17"
         },
         "--agnes-brand-primary": {
@@ -130,11 +130,11 @@
           "dark": "#72c7dc"
         },
         "--agnes-bg-surface": {
-          "light": "#ffffff",
+          "light": "var(--agnes-bg-group)",
           "dark": "#142333"
         },
         "--agnes-bg-popover": {
-          "light": "#ffffff",
+          "light": "var(--agnes-bg-group)",
           "dark": "#182a3c"
         },
         "--agnes-button-primary-bg": {

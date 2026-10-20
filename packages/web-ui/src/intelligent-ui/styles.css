@@ -254,7 +254,7 @@
   }
   .agnes-intelligent-detail-card {
     container-type: inline-size;
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
     padding: var(--s16);
@@ -425,7 +425,7 @@
     padding: var(--s16);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
   }
   .agnes-intelligent-surface > :focus-visible {
     outline: var(--focus-outline);

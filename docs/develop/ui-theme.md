@@ -2,7 +2,7 @@
 
 English | [简体中文](ui-theme.zh-CN.md)
 
-Agnes Web has one built-in theme, used by the workbench, settings and the standalone admin pages. It is calm and tool-like: a warm off-white ground, one graphite gray family, one indigo accent, borders instead of shadows. Light and dark are both complete.
+Agnes Web has one built-in theme, used by the workbench, settings and the standalone admin pages. It is calm and tool-like: pure white working content, a single gray navigation step, one graphite gray family, one indigo accent, borders instead of shadows. Light and dark are both complete.
 
 [Documentation](../README.md) · [Skins](skins.md) · [UI author guide](ui-author-guide.md) · [Frontend](frontend.md)
 
@@ -20,11 +20,11 @@ Components and plugins read semantic tokens only. The palette is the single plac
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Content (conversation and the whole workbench panel) | `--agnes-bg-page`, `--agnes-bg-app-content` | `#FBFAF8` | `#1B1C21` |
+| Content (conversation and the whole workbench panel) | `--agnes-bg-page`, `--agnes-bg-app-content` | `#FFFFFF` | `#1B1C21` |
 | Navigation (sidebar and settings rail) | `--agnes-bg-app-sidebar` | `#F3F3F1` | `#15161A` |
 | Subtle fill | `--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
 | Surface (cards, inputs, menus, dialogs) | `--agnes-bg-surface`, `--agnes-bg-popover`, `--agnes-input-surface` | `#FFFFFF` | `#1F2026` |
-| User message bubble | `--agnes-bg-user-bubble` | `#EFEFEC` | `#26272D` |
+| User message bubble | `--agnes-bg-user-bubble` | `#F3F3F1` | `#26272D` |
 | Text | `--agnes-text-primary` | `#1B1D22` | `#E6E7EA` |
 | Secondary text | `--agnes-text-secondary` | `#4B4F58` | `#C3C6CC` |
 | Muted text | `--agnes-text-tertiary` | `#666B76` | `#9A9EA8` |
@@ -36,9 +36,11 @@ Components and plugins read semantic tokens only. The palette is the single plac
 
 Rules that keep the theme coherent:
 
-- There are two base surfaces: content and navigation, with navigation one step darker in both modes. Workbench tabs, filter rows, bodies and footers all use the content surface. Raised cards, the composer, popovers and dialogs use the surface tokens. Skins override these semantic roles through the same public tokens.
-- The accent marks the primary action, the current selection and state. It is not decoration, and status colours stay separate from it.
-- Hover, selected and card surfaces are translucent overlays of the text colour (`--agnes-bg-hover`, `--agnes-bg-selected`, `--agnes-bg-card`), so they work on the ground, on panels and on surfaces alike.
+- Light mode has exactly two neutral base surfaces: pure white `#ffffff` for working content and gray `#f3f3f1` for navigation and auxiliary fills. There is no intermediate off-white base; light empty states do not add a brand glow. The sidebar and settings rail are gray; conversation, documents, trace, galleries, automations, settings bodies and admin pages are white.
+- The top bar and the entire right workbench (application tabs, filters, body and footer) are white: they operate on and inspect the current task, so they continue the conversation surface. Secondary navigation inside a panel, code blocks, icon tiles, neutral fields and the user bubble use the one gray fill.
+- Cards, grouped settings, tool/evidence cards, the composer, dialogs, drawers and popovers use white surface tokens. Cards have a subtle primary border; the composer and floating layers also have soft shadows. The same structure applies to showcase applications: aerospace/pharma retain brand and status colours while using the shared neutral surfaces. Dark mode keeps its existing surface values.
+- Hover and selection are temporary graphite overlays (`--agnes-bg-hover`, `--agnes-bg-selected`), not extra base surfaces. A selected navigation/session row uses white with a quiet border or raised edge. Primary actions, focus, menu selection and status keep their explicit accent/status tokens.
+- Auxiliary fills use `--agnes-bg-subtle`, `--agnes-bg-fill`, `--agnes-bg-card` and `--agnes-bg-code`; actual card containers use `--agnes-bg-surface` or `--agnes-bg-group`. Filled neutral inputs use gray and return to white on focus; plain inputs read the white input surface. Flat workbench filters stay white. `--agnes-line-primary` frames containers; `--agnes-line-hairline` divides rows without adding another filled layer. Menus retain their 94% white material over a blurred backdrop, so sampled overlay pixels may differ from the two opaque base colours.
 - Status has two strengths: `-text` for words (4.5:1 on the ground and on its own `-bg`) and `-solid` for dots and icons (3:1). In light mode the text shade is darker than the mark.
 - Muted text keeps 4.5:1 on every surface it appears on, including hover and card overlays; control boundaries (`--agnes-input-border`) and the focus ring keep 3:1. A text field is a soft neutral fill (`--agnes-bg-fill`) inside that thin boundary line; the keyboard focus ring is a 1px solid line at the element's edge (`--focus-line`, the part that carries 3:1) inside a soft 3px halo (`--focus-outline`), both following the element's radius. The contrast tables in [`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) and [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) enforce this for both modes.
 

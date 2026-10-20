@@ -107,7 +107,8 @@
       background-position: -60% 0;
     }
   }
-  .empty-state-welcome::before {
+  /* Light empty states keep the white content canvas; preserve the existing dark-mode glow. */
+  .dark .empty-state-welcome::before {
     content: "";
     position: absolute;
     top: 50%;

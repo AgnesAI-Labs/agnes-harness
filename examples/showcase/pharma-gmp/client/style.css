@@ -32,7 +32,7 @@
   .ph-kpi,
   .ph-card,
   .ph-lane {
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
     border: 1px solid var(--agnes-line-primary);
     border-radius: 12px;
   }
@@ -196,7 +196,7 @@
   }
   .ph-ticket {
     border: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
     border-radius: 8px;
     margin: 12px 0;
     padding: 12px;

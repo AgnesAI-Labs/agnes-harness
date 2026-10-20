@@ -2,7 +2,7 @@
 
 [English](ui-theme.md) | 简体中文
 
-Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用。它安静、偏工具感：暖白底色、一个石墨灰族、一个靛蓝强调色，用边框而不是阴影区分层次。浅色与深色同样完整。
+Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用。它安静、偏工具感：纯白工作内容、一阶灰色导航、一个石墨灰族、一个靛蓝强调色，用边框而不是阴影区分层次。浅色与深色同样完整。
 
 [文档](../README.zh-CN.md) · [皮肤](skins.zh-CN.md) · [UI 作者指南](ui-author-guide.zh-CN.md) · [前端](frontend.zh-CN.md)
 
@@ -20,11 +20,11 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 
 | 角色 | Token | 浅色 | 深色 |
 | --- | --- | --- | --- |
-| 内容（对话及整个工作台面板） | `--agnes-bg-page`、`--agnes-bg-app-content` | `#FBFAF8` | `#1B1C21` |
+| 内容（对话及整个工作台面板） | `--agnes-bg-page`、`--agnes-bg-app-content` | `#FFFFFF` | `#1B1C21` |
 | 导航（侧栏及设置导航栏） | `--agnes-bg-app-sidebar` | `#F3F3F1` | `#15161A` |
 | 柔和填充 | `--agnes-bg-subtle` | `#F3F3F1` | `#1B1C21` |
 | 表面（卡片、输入框、菜单、弹窗） | `--agnes-bg-surface`、`--agnes-bg-popover`、`--agnes-input-surface` | `#FFFFFF` | `#1F2026` |
-| 用户消息气泡 | `--agnes-bg-user-bubble` | `#EFEFEC` | `#26272D` |
+| 用户消息气泡 | `--agnes-bg-user-bubble` | `#F3F3F1` | `#26272D` |
 | 正文 | `--agnes-text-primary` | `#1B1D22` | `#E6E7EA` |
 | 次要文字 | `--agnes-text-secondary` | `#4B4F58` | `#C3C6CC` |
 | 弱化文字 | `--agnes-text-tertiary` | `#666B76` | `#9A9EA8` |
@@ -36,9 +36,11 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 
 保持主题一致的几条规则：
 
-- 基础表面只有内容与导航两层，浅深两色下导航都深一阶。工作台页签、筛选行、正文和页脚统一使用内容表面；浮起的卡片、输入区、菜单和弹窗使用表面 token。皮肤通过同一组公开语义 token 覆盖这些角色。
-- 强调色只用于主操作、当前选中和状态指示，不用于装饰；状态色与强调色分开。
-- 悬停、选中和卡片底色是正文色的半透明叠层（`--agnes-bg-hover`、`--agnes-bg-selected`、`--agnes-bg-card`），因此在底色、面板和表面上都成立。
+- 浅色只有两个中性基础表面：工作内容纯白 `#ffffff`，导航和辅助填充灰色 `#f3f3f1`，不增加中间近白底；浅色空态不再叠加品牌光晕。侧栏与设置导航为灰；对话、文档、轨迹、画廊、自动化、设置正文与管理页为白。
+- 顶栏及整个右侧工作台（应用页签、筛选、正文、页脚）为白：它们操作和检查当前任务，因此延续对话内容表面。面板内部的次级导航、代码块、图标底、普通输入填充和用户气泡用同一阶灰。
+- 卡片、设置分组、工具/证据卡、composer、弹窗、抽屉和浮层使用白色表面 token。卡片用轻量 primary 边框分组，composer 和悬浮层另加柔和阴影。航天/制药应用采用同一中性表面，保留品牌与状态色。深色保持既有表面取值。
+- hover 和 selected 是临时石墨叠层（`--agnes-bg-hover`、`--agnes-bg-selected`），不作为额外基础表面；选中导航/会话项用白底和轻边界或微抬升。主操作、焦点、菜单选中和状态继续使用明确的强调/状态 token。
+- 辅助填充统一由 `--agnes-bg-subtle`、`--agnes-bg-fill`、`--agnes-bg-card` 和 `--agnes-bg-code` 提供；实际卡片容器使用 `--agnes-bg-surface` 或 `--agnes-bg-group`。填充型输入框为灰色，聚焦回到白色；普通输入框读取白色输入表面，工作台的平面筛选框保持白底。`--agnes-line-primary` 界定容器，`--agnes-line-hairline` 分隔行，不增加填充层。菜单保留 94% 白色 material 与背景模糊，因此浮层实际像素可以偏离两个不透明基础色。
 - 状态色有两档：`-text` 用于文字（在底色和自身 `-bg` 上达到 4.5:1），`-solid` 用于圆点和图标（3:1）。浅色下文字档比标记档更深。
 - 弱化文字在它出现的每一种表面上（包括悬停与卡片叠层）都保持 4.5:1；控件边界（`--agnes-input-border`）和焦点环保持 3:1。输入框是这条细边界线内的柔和中性填充（`--agnes-bg-fill`）；键盘焦点环由紧贴元素边缘的 1px 实色线（`--focus-line`，由它保证 3:1）和外侧 3px 柔和光晕（`--focus-outline`）组成，都跟随元素圆角。[`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) 与 [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) 中的对比度表对两种模式分别校验。
 

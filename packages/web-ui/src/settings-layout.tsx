@@ -519,7 +519,7 @@ export function SettingsChoice({
  * identical, so only these miniature illustrations use the explicit light/dark palette roles. */
 const SCHEME_LOOK = {
   light: {
-    page: 'var(--agnes-color-gray-25)',
+    page: 'var(--agnes-color-gray-0)',
     rail: 'var(--agnes-color-gray-50)',
     card: 'var(--agnes-color-gray-0)',
     line: 'var(--agnes-color-gray-150)',
@@ -545,7 +545,7 @@ export function SchemeThumbnail({ scheme }: { scheme: 'system' | 'light' | 'dark
       <>
         <rect x={x} width={width} height="72" fill={look.page} />
         <rect x={x + 6} y="6" width={rail} height="60" rx="4" fill={look.rail} />
-        <rect x={left} y="6" width={right - left} height="33" rx="4" fill={look.card} />
+        <rect x={left} y="6" width={right - left} height="33" rx="4" fill={look.card} stroke={look.line} />
         {[46, 55, 64].map((y) => (
           <rect key={y} x={left} y={y} width={right - left} height="2" rx="1" fill={look.line} />
         ))}

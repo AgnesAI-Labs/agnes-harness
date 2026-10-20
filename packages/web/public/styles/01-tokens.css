@@ -32,6 +32,7 @@
     /* 透明叠层必须定义为完整颜色值，不得用整体 opacity 模拟。 */
     --agnes-color-ink-a04: rgb(27 29 34 / 4%);
     --agnes-color-ink-a06: rgb(27 29 34 / 6%);
+    --agnes-color-ink-a08: rgb(27 29 34 / 8%);
     --agnes-color-ink-a09: rgb(27 29 34 / 9%);
     --agnes-color-ink-a36: rgb(27 29 34 / 36%);
     --agnes-color-white-a04: rgb(255 255 255 / 4%);
@@ -110,18 +111,19 @@
      其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
     --agnes-icon-secondary: var(--agnes-text-secondary);
 
-    /* Two base surfaces: warm content and a darker navigation rail. White is raised content. */
-    --agnes-bg-page: var(--agnes-color-gray-25);
+    /* Two opaque light surfaces: white working content and one gray navigation/fill step.
+       Containers stay white; borders and elevation distinguish them from white content. */
+    --agnes-bg-page: var(--agnes-color-gray-0);
     --agnes-bg-surface: var(--agnes-color-gray-0);
     --agnes-bg-popover: var(--agnes-color-gray-0);
-    --agnes-bg-card: var(--agnes-color-ink-a04);
-    --agnes-bg-code: var(--agnes-color-ink-a04);
-    --agnes-bg-selected: var(--agnes-color-ink-a09);
+    --agnes-bg-card: var(--agnes-bg-subtle);
+    --agnes-bg-code: var(--agnes-bg-subtle);
+    --agnes-bg-selected: var(--agnes-color-ink-a08);
     --agnes-bg-hover: var(--agnes-color-ink-a06);
     /* Soft neutral fill of text fields, secondary buttons and icon tiles: no border needed. */
-    --agnes-bg-fill: var(--agnes-color-ink-a06);
-    --agnes-bg-fill-hover: var(--agnes-color-ink-a09);
-    /* A grouped card of rows: the surface itself in light, one step lighter in dark. */
+    --agnes-bg-fill: var(--agnes-bg-subtle);
+    --agnes-bg-fill-hover: var(--agnes-color-ink-a08);
+    /* White content containers; the legacy card role is the one gray auxiliary fill. */
     --agnes-bg-group: var(--agnes-color-gray-0);
     --agnes-bg-scrim: var(--agnes-color-ink-a36);
     --agnes-bg-lightbox: var(--agnes-color-black-a85);
@@ -129,7 +131,7 @@
     --agnes-surface-glass-soft: var(--agnes-color-white-a72);
     --agnes-surface-glass-hover: var(--agnes-color-white-a54);
     /* The user's own message: a soft neutral bubble, never the accent. */
-    --agnes-bg-user-bubble: var(--agnes-color-gray-100);
+    --agnes-bg-user-bubble: var(--agnes-bg-subtle);
 
     /* Input —— 柔和填充、无重边框；聚焦时回到表面色并出现柔和强调环。 */
     --agnes-input-surface: var(--agnes-bg-surface);
@@ -178,10 +180,10 @@
     --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
     --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
     /* The current item of a navigation rail: a raised pill, barely lifted. */
-    --shadow-raised: 0 0 0 1px rgb(27 29 34 / 5%), 0 1px 2px rgb(27 29 34 / 8%);
+    --shadow-raised: 0 0 0 1px rgb(27 29 34 / 5%), 0 1px 2px var(--agnes-color-ink-a08);
     /* The composer card's 1px lift; every other bordered card stays flat. */
     --shadow-hairline: 0 1px 2px rgb(27 29 34 / 5%);
-    --shadow-dialog: 0 4px 12px rgb(27 29 34 / 8%), 0 24px 56px rgb(27 29 34 / 16%);
+    --shadow-dialog: 0 4px 12px var(--agnes-color-ink-a08), 0 24px 56px rgb(27 29 34 / 16%);
     --shadow-elevation-soft: 0 1px 2px rgb(27 29 34 / 6%), 0 8px 24px rgb(27 29 34 / 10%);
     --shadow-elevation-prominent: var(--elevation-1);
     --elevation-0: none;

@@ -403,7 +403,7 @@
     padding: 0.875rem;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
   }
   :is(#account-dialog, .account-page-host) .oauth-controls[hidden] {
     display: none;

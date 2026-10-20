@@ -97,11 +97,11 @@
           "dark": "#59c8c5"
         },
         "--agnes-bg-page": {
-          "light": "#f2f6f5",
+          "light": "var(--agnes-bg-group)",
           "dark": "#101b20"
         },
         "--agnes-bg-app-content": {
-          "light": "#f2f6f5",
+          "light": "var(--agnes-bg-page)",
           "dark": "#101b20"
         }
       }

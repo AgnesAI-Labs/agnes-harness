@@ -257,7 +257,7 @@
     --ant-select-hover-border-color: var(--agnes-brand-primary);
     --ant-select-active-border-color: var(--agnes-brand-primary);
     --ant-select-active-outline-color: var(--agnes-brand-focus-ring);
-    --ant-tabs-card-bg: var(--agnes-bg-card);
+    --ant-tabs-card-bg: var(--agnes-bg-group);
     --ant-tabs-ink-bar-color: var(--agnes-brand-primary);
     --ant-tabs-item-color: var(--agnes-text-primary);
     --ant-tabs-item-selected-color: var(--agnes-text-primary);
@@ -303,7 +303,7 @@
     --ant-thought-chain-item-motion-description: var(--agnes-text-tertiary);
     --ant-thought-chain-color-text-blink-default: var(--agnes-text-tertiary);
     --ant-thought-chain-color-text-blink: var(--agnes-text-primary);
-    --ant-thought-chain-item-solid-bg: var(--agnes-bg-card);
+    --ant-thought-chain-item-solid-bg: var(--agnes-bg-group);
     --ant-thought-chain-item-solid-hover-bg: var(--agnes-bg-hover);
     --ant-thought-chain-item-outlined-bg: var(--agnes-bg-surface);
     --ant-thought-chain-item-outlined-hover-bg: var(--agnes-bg-hover);
@@ -1506,7 +1506,7 @@
     padding: var(--s12);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
   }
   .agnes-intelligent-surface [data-testid="ui-confirmation"] p {
     margin: 0;

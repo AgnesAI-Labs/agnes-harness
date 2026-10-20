@@ -1,8 +1,9 @@
 @layer app {
   .ph-evidence-card {
+    border: 1px solid var(--agnes-line-primary);
     border-left: 3px solid var(--agnes-brand-primary);
     padding: 14px;
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
     border-radius: 8px;
   }
   .ph-evidence-card pre {

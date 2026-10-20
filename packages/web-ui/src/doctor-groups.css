@@ -7,7 +7,7 @@
     overflow: hidden;
     border: 1px solid var(--agnes-line-hairline);
     border-radius: var(--radius-card);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-group);
   }
   .agnes-doctor-card[data-checking="true"]::before {
     content: "";
