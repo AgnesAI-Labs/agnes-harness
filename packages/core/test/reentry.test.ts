@@ -498,6 +498,12 @@ describe('re-entry and slots', () => {
     expect(parkedBatch.find((call) => call.toolUseId === kept)?.status).toBe('awaiting_approval')
     expect(parkedBatch.find((call) => call.toolUseId === other.toolUseId)?.status).toBe('completed')
     expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
+    // The other call's question is withdrawn as unanswered, with the code that says why.
+    const withdrawn = gates.find(
+      (d) => (d.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId === other.toolUseId,
+    )
+    expect(withdrawn?.result).toMatchObject({ reason: 'unavailable', code: 'approval-pending' })
+    expect(withdrawn?.invalidation).toBeFalsy()
     await answerToolDecision(h.session, gates.indexOf(pending) + 1, 'allowed-once', {
       ...actor,
       id: 'approver',
@@ -506,6 +512,91 @@ describe('re-entry and slots', () => {
       'completed',
     )
     expect(ran).toHaveLength(1)
+  })
+
+  it('a single depth-2 approval parks on the depth-2 call and leaves its parent completed', async () => {
+    const r = new ToolRegistry()
+    const ran: string[] = []
+    r.add(
+      shellTool(async (args) => {
+        ran.push((args as { command: string }).command)
+        return { content: [{ type: 'text' as const, text: 'ran' }] }
+      }),
+      { source: 's', trust: 'builtin' },
+    )
+    const invoking = (name: string, child: string) =>
+      ({
+        name,
+        description: 'x',
+        parameters: Type.Object({}),
+        meta: { ...meta, isReadOnly: true, isConcurrencySafe: true, replay: 'safe' },
+        execute: async (
+          _args: unknown,
+          ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } },
+        ) => {
+          const code = await ctx.tools.invoke(child, { command: 'click' }).then(
+            () => 'ok',
+            (error) => String((error as { code?: string }).code),
+          )
+          return { content: [{ type: 'text' as const, text: `${name}: ${code}` }] }
+        },
+      }) as never
+    r.add(invoking('middle', 'shell'), { source: 's', trust: 'builtin' })
+    r.add(invoking('outer', 'middle'), { source: 's', trust: 'builtin' })
+    const seams = fakeSeams({
+      approval: { ask: async () => ({ ticket: 'depth-2-ticket', expiresAt: '2999-01-01T00:00:00.000Z' }) },
+    })
+    const h = await openSession({
+      provider: fakeProvider([toolTurn('outer', {}), textTurn('done')]),
+      registry: r,
+      seams,
+      preset: { ...presetDefaults(), depthLimit: 2 },
+    })
+    // The batch as the first turn parks on it (see the tests above).
+    let parkedBatch: Array<{ toolUseId: string; name: string; status: string }> = []
+    const endTurn = h.session.endTurn.bind(h.session)
+    vi.spyOn(h.session, 'endTurn').mockImplementation((reason, extra) => {
+      const op = h.session.op()
+      if (reason === 'parked' && op?.phase.kind === 'tools' && !parkedBatch.length)
+        parkedBatch = op.phase.batch.calls
+      return endTurn(reason, extra)
+    })
+    await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'parked',
+    )
+    const gates = (await h.session.decisions.list()).filter((d) => d.request.owner === 'core/tool-permission')
+    const open = gates.filter((d) => !d.result && !d.invalidation && !d.consumption)
+    expect(open).toHaveLength(1)
+    const calls = (await h.log.scan({ type: 'tool/call', limit: 20 })).map(
+      (row) => row.data as { toolUseId: string; name: string; depth?: number },
+    )
+    expect(calls.map((call) => [call.name, call.depth ?? 0])).toEqual([
+      ['outer', 0],
+      ['middle', 1],
+      ['shell', 2],
+    ])
+    const shell = calls.find((call) => call.name === 'shell')
+    expect((open[0]?.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId).toBe(
+      shell?.toolUseId,
+    )
+    expect(parkedBatch.find((call) => call.name === 'middle')?.status).toBe('completed')
+    expect(parkedBatch.find((call) => call.name === 'shell')?.status).toBe('awaiting_approval')
+    expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
+    expect(ran).toEqual([])
+    await answerToolDecision(
+      h.session,
+      gates.indexOf(open[0] as (typeof gates)[number]) + 1,
+      'allowed-once',
+      {
+        ...actor,
+        id: 'approver',
+      },
+    )
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(ran).toEqual(['click'])
   })
 
   it('two concurrent depth-2 approvals close the depth-2 call that asked, not its parent', async () => {
