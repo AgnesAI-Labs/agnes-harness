@@ -39,3 +39,20 @@ export function createRefreshCoordinator(options: { refresh(): Promise<void>; ca
     },
   }
 }
+
+/** Runs `run` once, `settleMs` after the first request of a burst; requests within that wait join it. */
+export function coalesceBurst(run: () => void, settleMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return {
+    request(): void {
+      timer ??= setTimeout(() => {
+        timer = undefined
+        run()
+      }, settleMs)
+    },
+    stop(): void {
+      clearTimeout(timer)
+      timer = undefined
+    },
+  }
+}

@@ -68,6 +68,7 @@ it.each(['before', 'after'])(
       renderControls() {},
       renderer: { reset() {} },
       refreshSessionControls: () => controls,
+      readSessionControls: () => controls.then(() => async () => {}),
       clearSessionRecovery() {},
       list: async () => {},
       projection: undefined as unknown,

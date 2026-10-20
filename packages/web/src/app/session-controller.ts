@@ -64,6 +64,7 @@ export function createSessionController(
     | 'topbarRuntime'
     | 'transcriptMeta'
     | 'readOnlyController'
+    | 'readSessionControls'
     | 'windowAtStart'
     | 'workspaceRows'
   >,
@@ -175,6 +176,9 @@ export function createSessionController(
       // Admission establishes execution identity, but the unverified preview remains on screen
       // until the first authoritative opening commits. A late preview must not downgrade this.
       context.clientModules.session.setSession(loaded.id, 'connecting')
+      // Controls need only the admitted session: read them alongside the opening, apply them after it.
+      const controls = context.readSessionControls(loaded)
+      controls.catch(() => undefined)
       context.sessionIsolation = undefined
       void Promise.resolve()
         .then(() => context.client.session.runtime(loaded.id))
@@ -300,7 +304,10 @@ export function createSessionController(
       })
       bindingOwner.watch(epoch, liveProjection)
       await liveProjection.start()
-      await context.refreshSessionControls(loaded)
+      // A read lost while the opening was out (a dropped connection) is made again, as before.
+      const applyControls = await controls.catch(() => context.readSessionControls(loaded))
+      // The readiness render below paints the applied controls in the same task.
+      await applyControls({ render: false })
       if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false
