@@ -1,13 +1,8 @@
-import { captureRequest, useRequestScope } from './async-request.js'
-
-const clearCommand = 'agh app clear'
-const recoveryPath = '/?admin'
-
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
+import { resolveApplicationBrand } from '@agnes/web-client'
 import {
   Button,
   SettingsBlock,
-  SettingsCode,
   SettingsPageDescription,
   SettingsTechnicalDetails,
   scopedResourceKey,
@@ -18,7 +13,11 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationPreviewSummary } from './application-preview.js'
+import { ApplicationSummary } from './application-summary.js'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { InterfaceImplementations } from './interface-implementations.js'
+
+const clearCommand = 'agh app clear'
 
 /** Minimal application settings. Backend owns preview validation and compare-and-swap. */
 export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | undefined; canSave: boolean }) {
@@ -83,8 +82,8 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
     <>
       <SettingsPageDescription>
         {tr(
-          'Choose product identity and presentation defaults. Execution settings and existing sessions keep their bindings.',
-          '选择产品身份与展示默认值，执行配置和已有会话保持原绑定。',
+          'An application changes the name, home page, navigation and available agents. Existing conversations keep their settings.',
+          '应用会改变名称、首页、导航和可选智能体。已有对话保留原来的运行设置。',
         )}
       </SettingsPageDescription>
       <SettingsBlock
@@ -98,32 +97,12 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         <Button disabled={!api || busy || resource.loading} onClick={refresh}>
           {tr('Refresh candidates', '刷新候选')}
         </Button>
-        <p>
-          {tr('Current application', '当前应用')}: {state?.selection?.applicationId ?? 'Agnes Harness'}
-        </p>
-        {state?.status === 'unresolved' && (
-          <p role="status">
-            {tr('Unresolved; showing Agnes Harness', '选择未解析，当前显示 Agnes Harness')} · {state.reason}
-          </p>
-        )}
-        <p>
-          {tr('Default agent', '默认智能体')}:{' '}
-          {state?.effective?.defaultAgent ?? tr('General assistant', '通用助手')}
-        </p>
-        {state?.effective && (
-          <SettingsTechnicalDetails title={tr('Technical details', '技术详情')}>
-            <SettingsCode
-              label={tr('Current presentation', '当前展示')}
-              copy={JSON.stringify(state.effective, null, 2)}
-            >
-              {JSON.stringify(state.effective, null, 2)}
-            </SettingsCode>
-          </SettingsTechnicalDetails>
-        )}
+        <ApplicationSummary state={state} />
         {state?.candidates.map((candidate) => (
           <p key={candidate.packageId}>
             <span>
-              {candidate.applicationId} · {candidate.packageId}@{candidate.version}
+              <CandidateName api={api} candidate={candidate} revision={state.revision} /> ·{' '}
+              {candidate.version}
             </span>{' '}
             <Button
               disabled={busy || resource.loading || !candidate.available || !canSave}
@@ -150,8 +129,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
               )}
             </p>
             <p>
-              {tr('Recovery', '恢复方法')}: <a href={recoveryPath}>{recoveryPath}</a> ·{' '}
-              <code>{clearCommand}</code>
+              {tr(
+                'The “Official UI / Switch application” entry always opens these settings.',
+                '工作台上的“官方界面 / 切换应用”入口可随时回到此页。',
+              )}
             </p>
             <Button
               disabled={busy || resource.loading || !canSave || !state}
@@ -184,20 +165,55 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             })
           }
         >
-          {tr('Clear application and interface choices', '清除应用与界面实现选择')}
+          {tr('Restore official interface', '恢复官方界面')}
         </Button>
-        <p>
-          <a href="/?admin">{tr('Host recovery', '宿主恢复')}</a> · <code>{clearCommand}</code>
-        </p>
+        <SettingsTechnicalDetails title={tr('Recovery tools', '恢复工具')}>
+          <p>
+            <a href="/?admin">{tr('Host recovery', '宿主恢复')}</a> · <code>{clearCommand}</code>
+          </p>
+        </SettingsTechnicalDetails>
       </SettingsBlock>
       {state && (
-        <InterfaceImplementations
-          api={api}
-          state={state}
-          canSave={canSave && !busy && !resource.loading}
-          onChange={setState}
-        />
+        <SettingsTechnicalDetails title={tr('Advanced interface choices', '高级界面选择')}>
+          <InterfaceImplementations
+            api={api}
+            state={state}
+            canSave={canSave && !busy && !resource.loading}
+            onChange={setState}
+          />
+        </SettingsTechnicalDetails>
       )}
+    </>
+  )
+}
+
+/** Preview is a read, so candidates can show the declared human name without changing adoption. */
+function CandidateName({
+  api,
+  candidate,
+  revision,
+}: {
+  api: PluginAdminApi | undefined
+  candidate: ApplicationState['candidates'][number]
+  revision: number
+}) {
+  const language = useDocumentLanguage()
+  const preview = useResource(
+    api && candidate.available
+      ? scopedResourceKey(api, `application-name:${candidate.packageId}:${candidate.version}:${revision}`)
+      : undefined,
+    async () => {
+      if (!api) throw new Error('Admin unavailable')
+      return api.previewApplication(candidate.packageId)
+    },
+  )
+  return (
+    <>
+      {preview.data
+        ? resolveApplicationBrand(preview.data.declaration, language).name
+        : language === 'zh-CN'
+          ? '可用应用'
+          : 'Available application'}
     </>
   )
 }

@@ -12,7 +12,7 @@ const catalog: LocaleCatalog = {
     'restart-required': 'After restart',
     'historical-only': 'History only',
     disabled: 'Disabled',
-    untrusted: 'Untrusted',
+    untrusted: 'Awaiting trust',
     trust: 'Review trust',
     enable: 'Enable',
     'configure-credential': 'Configure credential',
@@ -27,7 +27,7 @@ const catalog: LocaleCatalog = {
     'restart-required': '重启后生效',
     'historical-only': '仅历史',
     disabled: '已停用',
-    untrusted: '未信任',
+    untrusted: '待信任',
     trust: '审阅信任',
     enable: '启用',
     'configure-credential': '配置凭据',
@@ -64,7 +64,11 @@ export function PluginPrimaryStatus({
         {t(state)}
       </Badge>{' '}
       <MetaText data-testid="plugin-status-reason">
-        {status?.reason[locale === 'zh-CN' ? 'zh-CN' : 'en'] ?? t('unconfirmed')}
+        {state === 'untrusted'
+          ? locale === 'zh-CN'
+            ? '已安装；还需审阅信任并启用。'
+            : 'Installed; review trust and enable to finish.'
+          : (status?.reason[locale === 'zh-CN' ? 'zh-CN' : 'en'] ?? t('unconfirmed'))}
       </MetaText>
       {status && status.nextAction !== 'none' && action && (
         <Button

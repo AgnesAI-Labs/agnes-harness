@@ -97,7 +97,9 @@ it.each([false, true])(
         readOnly ? securityUxCatalog.en?.lockedReadOnly : null,
       )
       expect(host.querySelector('[data-testid="security-full-exceptions-toggle"]')).toBeNull()
-      expect(host.textContent).toContain('Everything is allowed automatically; no approval prompts')
+      expect(host.textContent).toContain(
+        'Tool actions are allowed automatically; business sign-offs follow the application’s rules.',
+      )
       expect(pick('full-access').checked).toBe(false)
       expect(document.querySelector('[data-testid="security-full-confirm"]')).toBeNull()
       expect(writes).toEqual([])
@@ -156,7 +158,9 @@ it.each(['en', 'zh-CN'] as const)('describes default permission boundaries in %s
   expect(copy?.['workspace-writeHelp']).toContain(
     locale === 'en' ? 'Asks you before running commands' : '运行命令前先问你',
   )
-  expect(copy?.['full-accessHelp']).toContain(locale === 'en' ? 'no approval prompts' : '不再弹出审批')
+  expect(copy?.['full-accessHelp']).toContain(
+    locale === 'en' ? 'business sign-offs follow the application’s rules' : '业务签署仍按应用规则确认',
+  )
 })
 
 it.each(['pending', 'failed'])(

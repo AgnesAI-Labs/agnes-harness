@@ -7,10 +7,10 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.title': 'Side models',
     'side.count': '· {count}',
     'side.note':
-      'Payload requests only: never shown in the conversation model picker. Loop plugins call it by route name.',
+      'Side models handle specialist requests outside chat. A payload request is structured data sent by a plugin; loop plugins, such as the Jev loop, control each step of an agent’s work.',
     'side.emptyTitle': 'No side models yet',
     'side.emptyNote':
-      'A side model takes payload requests only. Loop plugins (such as the Jev loop) call it; it never appears in the conversation model picker.',
+      'For chat, configure a conversation model above. A side model receives structured data (payload requests) from a loop plugin, which controls each step of a task, such as the Jev loop. It does not receive chat messages.',
     'side.add': 'Add side model',
     'side.edit': 'Edit',
     'side.editAria': 'Edit {label}',
@@ -85,9 +85,11 @@ export const sideModelsCatalog: LocaleCatalog = {
   'zh-CN': {
     'side.title': '旁路模型',
     'side.count': '· {count}',
-    'side.note': '只接收载荷请求，不出现在对话的模型选择里。循环插件按路由名调用它。',
+    'side.note':
+      '旁路模型处理独立于聊天的专门请求。载荷请求是插件提交的结构化数据；循环插件控制智能体每一步的执行，例如 Jev 循环。',
     'side.emptyTitle': '还没有旁路模型',
-    'side.emptyNote': '旁路模型只接收载荷请求，供循环插件（比如 Jev 循环）调用，不会出现在对话的模型选择里。',
+    'side.emptyNote':
+      '一般聊天只需配置上方的对话模型。旁路模型供循环插件（控制任务每一步的执行，例如 Jev 循环）调用，接收结构化数据（载荷请求），不接收聊天消息。',
     'side.add': '添加旁路模型',
     'side.edit': '编辑',
     'side.editAria': '编辑 {label}',

@@ -188,7 +188,9 @@ export function PluginInstallReview({
       name={name}
       meta={[kind, preview.version, tier]}
       lead={t(`preview.description.${describe}`)}
-      before={current ? <UpdateDiff preview={preview} fromVersion={current.version} /> : undefined}
+      before={
+        current ? <UpdateDiff preview={preview} fromVersion={current.version} current={current} /> : undefined
+      }
       gets={
         <SettingsItem
           icon="key-round"

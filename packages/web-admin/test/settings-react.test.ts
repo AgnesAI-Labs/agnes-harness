@@ -143,7 +143,7 @@ it('operates the React settings pane and account dialog without losing native fo
         ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true })),
     )
     expect(dialog.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
-    expect(dialog.querySelector('#settings-section-tabs [role="tab"]')).toBeNull()
+    expect(dialog.querySelectorAll('#settings-section-tabs [role="tab"]')).toHaveLength(2)
   }
   expect(moved).toEqual([
     { kind: 'page', page: 'plugins', tab: 'mcp' },
@@ -161,8 +161,12 @@ it('operates the React settings pane and account dialog without losing native fo
     [...dialog.querySelectorAll('#settings-advanced button[data-settings-section]')].map((item) =>
       item.getAttribute('data-settings-section'),
     ),
-  ).toEqual(['models', 'diagnostics'])
-  flushSync(() => dialog.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.click())
+  ).toEqual(['diagnostics'])
+  flushSync(() =>
+    dialog
+      .querySelector<HTMLButtonElement>('#settings-section-tabs [data-settings-section="models"]')
+      ?.click(),
+  )
   expect(onPage.mock.calls[0]?.[0].detail).toBe('models')
   const paneSlot = dialog.querySelector<HTMLElement>('#settings-pane-slot-model')
   if (!paneSlot) throw new Error('model pane slot missing')
@@ -618,7 +622,7 @@ it('opens the application adoption page in its stable group independently of the
     await act(async () =>
       root.render(createElement(SettingsPages, { admin: adminOf({ runtime, application }) })),
     )
-    await vi.waitFor(() => expect(host.textContent).toContain('Acme'))
+    await vi.waitFor(() => expect(host.textContent).toContain('Available application · 1.0.0'))
     expect(host.textContent).toContain('agh app clear')
     expect(application).toHaveBeenCalled()
     expect(host.querySelector('[data-testid="application-placeholder"]')).toBeNull()
@@ -635,7 +639,7 @@ it('opens the application adoption page in its stable group independently of the
       ['context', 'context'],
     ] as const)
       expect(settingsRoute(old)).toEqual({ id: 'models', anchor: `settings-subsection-${anchor}` })
-    expect(settingsSections.get('models')?.group).toBe('advanced')
+    expect(settingsSections.get('models')?.group).toBe('accounts')
     expect(settingsSections.get('diagnostics')?.group).toBe('advanced')
   } finally {
     await act(async () => root.unmount())
@@ -683,7 +687,7 @@ it('keeps advanced composition reachable behind technical details while leading 
       ),
     )
     await vi.waitFor(() => expect(host.querySelector('[data-testid="run-config-technical"]')).not.toBeNull())
-    expect(host.textContent).toContain('Choose an agent on the Agents page')
+    expect(host.textContent).toContain('First choose who answers on the Agents page')
     const technical = host.querySelector<HTMLElement>('[data-testid="run-config-technical"]')
     const toggle = technical?.querySelector<HTMLButtonElement>(':scope > button')
     if (!technical || !toggle) throw new Error('technical details missing')

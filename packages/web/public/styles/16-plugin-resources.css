@@ -686,6 +686,10 @@
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
+  .confirm-facts-list pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   .confirm-facts-list dt {
     color: var(--agnes-text-tertiary);
   }

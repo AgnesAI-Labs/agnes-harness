@@ -1,6 +1,6 @@
 {
   "name": "@agnes/interaction-ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -23,9 +23,16 @@
           "ui": true
         },
         "metadata": {
-          "displayName": "Interaction presentation",
-          "summary": "Question docks, answer receipts and Intelligent UI surfaces.",
-          "description": "Question docks, answer receipts and Intelligent UI surfaces."
+          "displayName": "Questions and confirmations",
+          "summary": "Answer questions, confirm actions and review interaction history.",
+          "description": "Answer questions, confirm actions and review interaction history.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "交互与确认",
+              "summary": "在对话中回答问题、确认操作并查看交互记录。",
+              "description": "在对话中回答问题、确认操作并查看交互记录。"
+            }
+          }
         }
       }
     ],
@@ -36,9 +43,16 @@
       }
     ],
     "metadata": {
-      "displayName": "Interaction presentation",
-      "summary": "Question docks, answer receipts and Intelligent UI surfaces.",
-      "description": "Question docks, answer receipts and Intelligent UI surfaces."
+      "displayName": "Questions and confirmations",
+      "summary": "Answer questions, confirm actions and review interaction history.",
+      "description": "Answer questions, confirm actions and review interaction history.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "交互与确认",
+          "summary": "在对话中回答问题、确认操作并查看交互记录。",
+          "description": "在对话中回答问题、确认操作并查看交互记录。"
+        }
+      }
     },
     "provides": [
       "ui"

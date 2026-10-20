@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
@@ -115,4 +115,24 @@ it('names the built-in payload-only adapter and its payload capabilities in both
       'providerCapability.payloadOnly',
     ])
       expect(settingsCatalog[locale][key], `${locale}/${key}`).toEqual(expect.any(String))
+})
+
+it('localizes shipped presentation plugin names and purposes for Chinese and English', async () => {
+  const { resolvePluginMetadata } = await import('@agnes/protocol')
+  for (const [name, en, zh] of [
+    ['goal-ui', 'Goals and progress', '目标与进度'],
+    ['jev-loop', 'Jev Agent Loop', 'Jev 运行方式'],
+    ['interaction-ui', 'Questions and confirmations', '交互与确认'],
+    ['deliverables-ui', 'Files and deliverables', '交付物展示'],
+  ]) {
+    const manifest = JSON.parse(
+      readFileSync(resolve(`packages/package-manager/bundled-plugins/${name}/package.json`), 'utf8'),
+    )
+    for (const metadata of [manifest.agnes.metadata, manifest.agnes.plugins[0].metadata]) {
+      expect(resolvePluginMetadata(metadata, 'en')?.displayName).toBe(en)
+      expect(resolvePluginMetadata(metadata, 'zh-CN')?.displayName).toBe(zh)
+      expect(resolvePluginMetadata(metadata, 'zh-CN')?.summary).toMatch(/\p{Script=Han}/u)
+      expect(resolvePluginMetadata(metadata, 'en')?.summary).not.toMatch(/\p{Script=Han}/u)
+    }
+  }
 })

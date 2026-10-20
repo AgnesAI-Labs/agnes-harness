@@ -99,6 +99,10 @@ describe('web-ui public component layer', () => {
         host,
         createElement(SettingsModelPane, { beforeAccounts: null, afterAccounts: null }),
       )
+      const advanced = host.querySelector('[data-testid=advanced-models]')
+      expect(advanced?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+      expect(advanced?.textContent).toContain(locale === 'en' ? 'Advanced: side models' : '高级：旁路模型')
+      expect(advanced?.querySelector('#config-side-models')).not.toBeNull()
       expect(host.querySelector('#config-accounts')?.getAttribute('data-empty-text')).toBe(empty)
       expect(host.querySelector('#config-accounts')?.getAttribute('data-loading-text')).toBe(loading)
       unmount()

@@ -10,7 +10,7 @@ Jev is **not a chat model**. The adapter takes a payload and nothing else: no me
 
 ## Settings page
 
-In Settings → Models & accounts, the **Side models** group after the account list adds an entry:
+In Settings → Models & accounts, expand **Advanced: side models and task models**, then add an entry under **Side models**:
 
 1. The adapter is fixed to `typesafe-systemone`.
 2. The endpoint defaults to `https://openrouter.ai/api/v1` and can point at `https://api.typesafe.ai/v1` directly. The rules are the adapter's: no templates, no inline credentials, no query or fragment, and plain `http` only on loopback addresses.

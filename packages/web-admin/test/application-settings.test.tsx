@@ -83,18 +83,19 @@ it.each(['known', 'unknown'])(
     expect(document.body.textContent).toContain('Trusted JavaScript')
     const summary = document.querySelector('[data-testid="consent-summary"]')
     expect(summary?.textContent).toContain('Ava')
-    expect(summary?.textContent).toContain('acme/kit#overview')
+    expect(summary?.textContent).toContain('Application home page')
     expect(summary?.textContent).toContain('Automation')
-    expect(summary?.textContent).toContain('acme/kit#desk')
-    expect(summary?.textContent).toContain('Navigation · acme/kit#nav')
+    expect(summary?.textContent).toContain('1 application agents')
+    expect(summary?.textContent).toContain('Navigation')
     expect(summary?.textContent).toContain('Read files: /synthetic/status')
     expect(summary?.textContent).toContain('Network hosts: status.example')
     expect(summary?.textContent).not.toContain(preview.consentDigest)
     expect(summary?.textContent).not.toContain(preview.integrity)
     expect(summary?.textContent).not.toContain('private-entry.js')
+    expect(summary?.textContent).not.toContain('acme/kit#')
     expect(summary?.querySelector('pre')).toBeNull()
     expect(summary?.textContent).toContain(
-      diffStatus === 'known' ? 'Removed dependencies: acme/old' : 'Changes are unknown',
+      diffStatus === 'known' ? 'Removed dependencies: 1' : 'Changes are unknown',
     )
     const css = readFileSync(resolve(import.meta.dirname, '../../web-ui/src/tokens.css'), 'utf8')
     const rule = css.match(/\.agnes-settings-card p a[^{}]*\{[^}]*\}/)?.[0]
@@ -103,6 +104,7 @@ it.each(['known', 'unknown'])(
     style.id = 'inline-link-test-style'
     style.textContent = rule!
     document.head.append(style)
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Recovery tools' })))
     const recovery = getByRole(document.body, 'link', { name: 'Host recovery' })
     expect(getComputedStyle(recovery).textDecorationLine).toBe('underline')
     const technical = document.querySelector<HTMLElement>('[data-testid="consent-technical"]')
@@ -194,6 +196,7 @@ it('previews a declared role without adopting an application and resets stale co
   const root = createRegionRenderer(document.body)
   stop = () => root.unmount()
   await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
+  await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: '高级界面选择' })))
   await waitFor(() =>
     expect(getByRole(document.body, 'button', { name: '预览' }).hasAttribute('disabled')).toBe(false),
   )
@@ -264,12 +267,12 @@ it.each(['focus', 'agnes:plugins-invalidated', 'agnes:packages-changed', 'manual
       else if (trigger === 'visibility') {
         const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
         await vi.advanceTimersByTimeAsync(5_000)
-        expect(document.body.textContent).not.toContain('acme/kit@1.0.0')
+        expect(document.body.textContent).not.toContain('Available application · 1.0.0')
         visibility.mockReturnValue('visible')
         document.dispatchEvent(new Event('visibilitychange'))
       } else fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh candidates' }))
     })
-    expect(document.body.textContent).toContain('acme/kit@1.0.0')
+    expect(document.body.textContent).toContain('Available application · 1.0.0')
     expect(document.body.textContent).toContain('community/gallery#ui')
     expect(document.body.textContent).toContain('Current application: Agnes Harness')
     expect(document.querySelector('[data-testid="consent-summary"]')).toBeNull()
@@ -307,9 +310,72 @@ it('makes no periodic application requests while the mounted page is idle', asyn
   stop = () => root.unmount()
   await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
   expect(document.body.textContent).toContain('Current application: Agnes Harness')
-  expect(getByRole(document.body, 'heading', { name: 'Interface implementations' })).toBeDefined()
+  expect(
+    getByRole(document.body, 'heading', { name: 'Interface implementations', hidden: true }),
+  ).toBeDefined()
   // Count requests to the public client boundary after the initial page read has settled.
   api.application.mockClear()
   await act(async () => vi.advanceTimersByTimeAsync(60_000))
   expect(api.application).not.toHaveBeenCalled()
 })
+
+it.each(['en', 'zh-CN'])(
+  'shows an active application by human name, version and effects in %s',
+  async (language) => {
+    document.documentElement.lang = language
+    const state: ApplicationState = {
+      revision: 4,
+      status: 'active',
+      assets: {},
+      selection: {
+        packageId: 'acme/kit',
+        applicationId: 'machine-app',
+        integrity: `sha256-${'a'.repeat(64)}`,
+        declarationDigest: 'b'.repeat(64),
+        consentDigest: 'c'.repeat(64),
+        bindingDigest: 'd'.repeat(64),
+      },
+      effective: {
+        id: 'machine-app',
+        brand: { name: { en: 'Service desk', 'zh-CN': '服务工作台' } },
+        presentation: {
+          home: 'acme/kit#overview',
+          navigation: { hideBuiltin: ['agents', 'business-agents', 'plugins'] },
+        },
+        defaultAgent: 'acme/kit#desk',
+        agents: ['acme/kit#desk'],
+      },
+      candidates: [
+        { packageId: 'acme/kit', applicationId: 'machine-app', version: '2.0.1', available: true },
+      ],
+    }
+    const api = {
+      application: async () => state,
+      previewApplication: async () => ({ declaration: state.effective }),
+    }
+    const root = createRegionRenderer(document.body)
+    stop = () => root.unmount()
+    await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
+    const main = [...document.querySelectorAll('p')]
+      .filter((node) => !node.closest('[hidden]'))
+      .map((node) => node.textContent)
+      .join(' ')
+    expect(main).toContain(language === 'zh-CN' ? '服务工作台' : 'Service desk')
+    expect(main).toContain('2.0.1')
+    expect(main).toContain(
+      language === 'zh-CN' ? '隐藏导航: 智能体, 插件' : 'Hidden navigation: Agents, Plugins',
+    )
+    expect(main).not.toContain('acme/kit#')
+    expect(main).not.toContain('machine-app')
+    expect(
+      getByRole(document.body, 'button', {
+        name: language === 'zh-CN' ? '恢复官方界面' : 'Restore official interface',
+      }).hasAttribute('disabled'),
+    ).toBe(false)
+    expect(
+      getByRole(document.body, 'button', {
+        name: language === 'zh-CN' ? '高级界面选择' : 'Advanced interface choices',
+      }).getAttribute('aria-expanded'),
+    ).toBe('false')
+  },
+)

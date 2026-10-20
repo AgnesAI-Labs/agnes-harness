@@ -295,7 +295,12 @@ export function PermissionDefaults({
           <SettingsItem
             label={t('defaultRecipe')}
             info={t('defaultRecipeHelp')}
-            description={recipeHelp(more.includes(chosenPreset) ? chosenPreset : defaultRecipe) || undefined}
+            description={[
+              t('defaultRecipeHelp'),
+              recipeHelp(more.includes(chosenPreset) ? chosenPreset : defaultRecipe),
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             <SettingsSelect
               data-testid="security-more-presets"

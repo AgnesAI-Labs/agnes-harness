@@ -227,10 +227,8 @@ it.each(['en', 'zh-CN'] as const)(
     expect(host.querySelector('[data-testid=plugin-source-badge]')?.textContent).toBe(
       locale === 'en' ? 'Community' : '社区',
     )
-    // Observed registrations are labelled separately from absent author declarations.
-    expect(host.querySelector('[data-testid=plugin-registered-provides]')?.textContent).toBe(
-      locale === 'en' ? 'Registered: 1 Tools' : '已登记: 1 个工具',
-    )
+    // Registration diagnostics belong in the detail view, not the main list.
+    expect(host.querySelector('[data-testid=plugin-registered-provides]')).toBeNull()
     expect(host.textContent).not.toMatch(/category\./)
     // The source is the row's only badge.
     expect(host.querySelector('[data-plugin-id]')?.querySelectorAll('.agh-tag')).toHaveLength(1)
@@ -402,11 +400,8 @@ describe('where a plugin comes from and what it includes', () => {
     expect(pluginIncludes(purposeRow, running, t)).toBe('')
     const host = document.createElement('div')
     const dispose = mountRegion(host, createElement(PluginPurposeBadges, { item: declared, value: running }))
-    expect(host.querySelector('[data-testid="plugin-declared-provides"]')?.textContent).toContain('Declared')
-    expect(host.querySelector('[data-testid="plugin-registered-provides"]')?.textContent).toContain(
-      'Registered',
-    )
-    expect(host.querySelector('[data-testid="plugin-registered-provides"]')?.textContent).toContain('2 Tools')
+    expect(host.querySelector('[data-testid="plugin-declared-provides"]')?.textContent).toContain('Includes')
+    expect(host.querySelector('[data-testid="plugin-registered-provides"]')).toBeNull()
     dispose()
     expect(pluginIncludes(purposeRow, undefined, t)).toBe('')
   })
@@ -468,7 +463,7 @@ it.each(['en', 'zh-CN'] as const)(
       ['restart-required', 'restart', 'After restart', '重启后生效'],
       ['historical-only', 'enable', 'History only', '仅历史'],
       ['disabled', 'enable', 'Disabled', '已停用'],
-      ['untrusted', 'trust', 'Untrusted', '未信任'],
+      ['untrusted', 'trust', 'Awaiting trust', '待信任'],
     ] as const
     for (const [state, nextAction, en, zh] of states) {
       const host = document.createElement('div')
@@ -520,7 +515,13 @@ it.each(['en', 'zh-CN'] as const)(
         expect(primary?.querySelectorAll('.agh-tag')).toHaveLength(1)
         expect(primary?.textContent).toContain(locale === 'en' ? en : zh)
         expect(primary?.querySelector('[data-testid=plugin-status-reason]')?.textContent).toBe(
-          locale === 'en' ? 'Backend reason' : '后端原因',
+          state === 'untrusted'
+            ? locale === 'en'
+              ? 'Installed; review trust and enable to finish.'
+              : '已安装；还需审阅信任并启用。'
+            : locale === 'en'
+              ? 'Backend reason'
+              : '后端原因',
         )
         expect(host.querySelector('[role=switch]')?.getAttribute('aria-checked')).toBe(String(enabled))
         const button = primary?.querySelector('button')

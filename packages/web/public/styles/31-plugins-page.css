@@ -1,4 +1,22 @@
 @layer app {
+  .application-switch {
+    flex: none;
+    padding: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] {
+    align-content: start;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] > .plugin-list {
+    flex: none;
+    overflow: visible;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] .agh-empty-state {
+    min-height: 0;
+    padding-block: var(--s16);
+  }
   /* The plugins page: tabs under the header, grouped rows, the catalog as a gallery. */
   .plugins-page-tabs > .ant-tabs-nav {
     margin-bottom: var(--s20, 1.25rem);

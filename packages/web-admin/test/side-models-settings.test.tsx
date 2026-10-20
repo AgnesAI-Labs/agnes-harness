@@ -161,7 +161,7 @@ it('lists only payload-only accounts as account-style cards with a counted headi
   expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('Side models')
   expect(host.querySelector('[data-testid="side-models-count"]')?.textContent).toBe('· 1')
   expect(host.querySelector('[data-testid="side-models-note"]')?.textContent).toContain(
-    'Payload requests only',
+    'A payload request is structured data',
   )
   const row = host.querySelector('[data-testid="side-model-jev"]')
   expect(row?.textContent).toContain('Jev')
@@ -216,7 +216,7 @@ it('shows an empty state with the shared dashed add row and no route hint', asyn
   const { host } = await mount(client([chatAccount]), { accounts: [chatAccount] })
   const empty = host.querySelector('[data-testid="side-models-empty"]')
   expect(empty?.textContent).toContain('No side models yet')
-  expect(empty?.textContent).toContain('Loop plugins (such as the Jev loop) call it')
+  expect(empty?.textContent).toContain('loop plugin, which controls each step of a task')
   // The add action is the same dashed row the account list uses, not a primary button.
   const add = host
     .querySelector('[data-testid="side-models-empty"]')
@@ -314,7 +314,7 @@ it('shows the group copy in zh-CN when the document is zh-CN', async () => {
   const { host } = await mount(client())
   expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('旁路模型')
   expect(host.querySelector('[data-testid="side-models-note"]')?.textContent).toBe(
-    '只接收载荷请求，不出现在对话的模型选择里。循环插件按路由名调用它。',
+    '旁路模型处理独立于聊天的专门请求。载荷请求是插件提交的结构化数据；循环插件控制智能体每一步的执行，例如 Jev 循环。',
   )
   expect(host.querySelector('[data-testid="side-model-route-hint"]')?.textContent).toBe(
     '在循环插件设置的 jev.route 里填入上面的路由名。',

@@ -106,6 +106,15 @@ export function SidebarDshFrame({
 /** Render the built-in sidebar behind the root-scoped slot ledger without replacing its outer landmark. */
 export interface SidebarRegionMount extends EmptyStateRegionMount, SidebarHandle {}
 
+function ApplicationSwitch({ locale }: { locale: LocaleService }) {
+  const language = useSyncExternalStore(locale.subscribe, locale.getSnapshot)
+  return (
+    <a className="application-switch" href="?settings=application" data-testid="application-switch">
+      {language === 'zh-CN' ? '官方界面 / 切换应用' : 'Official UI / Switch application'}
+    </a>
+  )
+}
+
 export function mountSidebarRegion(
   registry: SlotRegistry,
   container: HTMLElement,
@@ -157,6 +166,7 @@ export function mountSidebarRegion(
     root.render(
       <SlotsProvider registry={rootStableRegistry(registry)} locale={locale}>
         <SlotOutlet name={SIDEBAR_SLOT} />
+        <ApplicationSwitch locale={locale} />
       </SlotsProvider>,
     )
   })

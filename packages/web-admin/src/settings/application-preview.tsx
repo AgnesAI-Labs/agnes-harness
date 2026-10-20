@@ -59,6 +59,12 @@ const permissionLabels: Record<string, [string, string]> = {
   read: ['Read files', '读取文件'],
   write: ['Write files', '写入文件'],
   model: ['Model access', '模型访问'],
+  store: ['Store data', '存储数据'],
+  device: ['Use devices', '使用设备'],
+  wake: ['Run in background', '后台运行'],
+  uiData: ['Interface data', '界面数据'],
+  streams: ['Live updates', '实时更新'],
+  managedServices: ['Managed services', '托管服务'],
   childAgents: ['Child agents', '子代理'],
   ui: ['UI', '界面'],
   tools: ['Tools', '工具'],
@@ -95,7 +101,7 @@ const partLabels: Record<string, [string, string]> = {
   'deliverables-workbench': ['Deliverables workbench', '交付物工作区'],
 }
 
-const navigationLabels: Record<string, [string, string]> = {
+export const navigationLabels: Record<string, [string, string]> = {
   agents: ['Agents', '智能体'],
   'business-agents': ['Agents', '智能体'],
   automation: ['Automation', '自动化'],
@@ -131,42 +137,53 @@ export function ApplicationPreviewSummary({
             <PreviewBrand preview={preview} />
             <h4>{tr('Pages and navigation', '页面与导航')}</h4>
             <p>
-              {tr('Home / skin', '主页 / 皮肤')}: {declaration.presentation?.home ?? host} /{' '}
-              {declaration.presentation?.skin ?? host}
+              {tr('Home / skin', '主页 / 皮肤')}:{' '}
+              {declaration.presentation?.home ? tr('Application home page', '应用首页') : host} /{' '}
+              {declaration.presentation?.skin ? tr('Application theme', '应用主题') : host}
             </p>
             <p>
               {tr('Navigation pages', '导航页面')}:{' '}
-              {list(navigation?.entries, navigation?.entries ? none : host)}
+              {navigation?.entries
+                ? tr(
+                    `${navigation.entries.length} application pages`,
+                    `${navigation.entries.length} 个应用页面`,
+                  )
+                : host}
             </p>
             <p>
               {tr('Hidden host entries', '隐藏的宿主入口')}:{' '}
-              {list(
-                navigation?.hideBuiltin?.map((entry) => tr(...(navigationLabels[entry] ?? [entry, entry]))),
-              )}
+              {list([
+                ...new Set(
+                  navigation?.hideBuiltin?.map((entry) => tr(...(navigationLabels[entry] ?? [entry, entry]))),
+                ),
+              ])}
             </p>
             <h4>{tr('Agents', '智能体')}</h4>
             <p>
               {tr('Visible agents', '可见智能体')}:{' '}
-              {list(
-                declaration.agents,
-                declaration.agents ? none : tr('All available agents', '全部可用智能体'),
-              )}
+              {declaration.agents
+                ? tr(
+                    `${declaration.agents.length} application agents`,
+                    `${declaration.agents.length} 个应用智能体`,
+                  )
+                : tr('All available agents', '全部可用智能体')}
             </p>
             <p>
               {tr('Default agent', '默认智能体')}:{' '}
-              {declaration.defaultAgent ?? tr('General assistant', '通用助手')}
+              {declaration.defaultAgent
+                ? tr('Chosen by this application', '由应用指定')
+                : tr('General assistant', '通用助手')}
             </p>
           </>
         )}
-        <h4>{tr('Replaced roles and code sources', '替换的接管角色与代码来源')}</h4>
+        <h4>{tr('Interface changes', '界面变化')}</h4>
         {preview.replacedRoles.length ? (
           <ul>
             {preview.replacedRoles.map((value) => {
               const item = object(value)
               return (
                 <li key={JSON.stringify(value)}>
-                  {role(text(item?.role))} ·{' '}
-                  {`${text(item?.packageId) || preview.packageId}#${text(item?.clientId)}`}
+                  {role(text(item?.role))}
                   {strings(item?.visibleParts).length > 0 && (
                     <p>
                       {tr('Visible parts replaced', '将替换的可见部分')}:{' '}
@@ -186,10 +203,10 @@ export function ApplicationPreviewSummary({
         {diff?.status === 'known' ? (
           <>
             <p>
-              {tr('Added dependencies', '新增依赖')}: {list(strings(diff.added))}
+              {tr('Added dependencies', '新增依赖')}: {strings(diff.added).length}
             </p>
             <p>
-              {tr('Removed dependencies', '移除依赖')}: {list(strings(diff.removed))}
+              {tr('Removed dependencies', '移除依赖')}: {strings(diff.removed).length}
             </p>
           </>
         ) : (
@@ -213,7 +230,7 @@ export function ApplicationPreviewSummary({
               const permissions = capabilities ? permissionLines(capabilities, tr) : []
               return (
                 <li key={JSON.stringify(value)}>
-                  {text(item?.packageId) || tr('Unknown package', '未知插件')} · {text(item?.version)}
+                  {tr('Required plugin', '所需插件')} · {text(item?.version)}
                   <ul>
                     {(capabilities
                       ? permissions.length
@@ -237,10 +254,15 @@ export function ApplicationPreviewSummary({
           <p>{tr('No dependencies reported', '未报告依赖')}</p>
         )}
         <p>
-          {tr('Source and signature', '来源与签名')}: {preview.source.ref} · {preview.signature}
+          {tr('Version', '版本')}: {preview.version}
         </p>
         <p>
-          {preview.packageId}@{preview.version}
+          {preview.signature === 'verified'
+            ? tr('Verified publisher', '发布者已验证')
+            : tr(
+                'Publisher not verified; review the source in technical details.',
+                '发布者尚未验证，请在技术详情中审阅来源。',
+              )}
         </p>
       </div>
       <SettingsTechnicalDetails title={tr('Technical details', '技术详情')} data-testid="consent-technical">

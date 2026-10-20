@@ -4,7 +4,7 @@ import {
   type PluginCapabilities,
   pluginFailureHelp,
 } from '@agnes/protocol'
-import { useUiText } from '@agnes/web-ui'
+import { SettingsCode, useDocumentLanguage, useUiText } from '@agnes/web-ui'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 
 type Text = (key: string) => string
@@ -72,6 +72,11 @@ export function FailureHelp({ reason, t }: { reason: string; t: Text }) {
 }
 
 export function ProvenanceReview({ value, t }: { value: PackageProvenance | undefined; t: Text }) {
+  const language = useDocumentLanguage()
+  const local =
+    ['local-folder', 'local-file', 'workspace'].includes(value?.sourceKind ?? '') ||
+    ['file', 'local', 'workspace', 'path'].includes(value?.source.type ?? '')
+  const installedAt = value?.installedAt && new Date(value.installedAt)
   return (
     <section aria-label={t('provenance.title')}>
       <h3>{t('provenance.title')}</h3>
@@ -85,10 +90,17 @@ export function ProvenanceReview({ value, t }: { value: PackageProvenance | unde
         </a>
       )}
       {value && (
-        <dl>
+        <dl className="confirm-facts-list">
           <dt>{t('provenance.source')}</dt>
           <dd>
-            {value.sourceKind ?? value.source.type}: {value.resolvedLocation ?? value.source.ref}
+            {local
+              ? language === 'zh-CN'
+                ? '本地文件夹或文件'
+                : 'Local folder or file'
+              : language === 'zh-CN'
+                ? '远程插件来源'
+                : 'Remote plugin source'}{' '}
+            · {value.resolvedLocation ?? value.source.ref}
           </dd>
           {value.publisher && (
             <>
@@ -97,12 +109,20 @@ export function ProvenanceReview({ value, t }: { value: PackageProvenance | unde
             </>
           )}
           <dt>{t('provenance.digest')}</dt>
-          <dd>{value.treeIntegrity ?? value.integrity}</dd>
+          <dd>
+            <SettingsCode label={t('provenance.digest')} copy={value.treeIntegrity ?? value.integrity}>
+              {value.treeIntegrity ?? value.integrity}
+            </SettingsCode>
+          </dd>
           {value.installedAt && (
             <>
               <dt>{t('provenance.installed')}</dt>
               <dd>
-                {value.installedAt} · {value.installer}
+                {installedAt && Number.isFinite(installedAt.getTime())
+                  ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(
+                      installedAt,
+                    )
+                  : value.installedAt}
               </dd>
             </>
           )}

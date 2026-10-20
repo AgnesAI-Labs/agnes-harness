@@ -4,6 +4,10 @@ export const ADMIN_CONFIRMATION_LOCALE_NAMESPACE = '@agnes/web-ui/admin-confirma
 
 export const adminConfirmationLocaleCatalog: LocaleCatalog = {
   en: {
+    'diff.permissions-unavailable':
+      'Permission comparison unavailable: one version has no permission declaration.',
+    'diff.files-unavailable':
+      'File comparison unavailable: this preview does not include a changed-file list.',
     'list.separator': ', ',
     'boolean.allowed': 'Allowed',
     'boolean.denied': 'Not allowed',
@@ -52,8 +56,7 @@ export const adminConfirmationLocaleCatalog: LocaleCatalog = {
     'empty.contributions':
       'No contributions reported by the host; still verify the integrity digest for this installation.',
     'empty.blockers': 'No blockers reported by the host.',
-    'empty.capability-diff':
-      'The host reported no capability differences from the current baseline; this does not mean the package has no capabilities.',
+    'empty.capability-diff': 'No capability changes found in this comparison.',
     'empty.dependencies': 'No dependencies reported by the host.',
     'empty.warnings': 'No warnings reported by the host.',
     'diff.added': 'Added capability: {item}',
@@ -107,6 +110,8 @@ export const adminConfirmationLocaleCatalog: LocaleCatalog = {
     'facts.no-composite-activation': 'Not reported; combined activation is unavailable.',
   },
   'zh-CN': {
+    'diff.permissions-unavailable': '无法比较权限：其中一个版本未提供权限声明。',
+    'diff.files-unavailable': '无法比较文件：此次预览不包含文件变更清单。',
     'list.separator': '、',
     'boolean.allowed': '允许',
     'boolean.denied': '不允许',
@@ -153,7 +158,7 @@ export const adminConfirmationLocaleCatalog: LocaleCatalog = {
     'contribution.no-required-services': '未报告所需服务授权。',
     'empty.contributions': '后台未报告贡献；请仍核对本次安装的完整性摘要。',
     'empty.blockers': '后台未报告阻断项。',
-    'empty.capability-diff': '后台未报告相对于当前基线的能力差异；这不表示这个包不包含能力。',
+    'empty.capability-diff': '本次比较未发现能力变化。',
     'empty.dependencies': '后台未报告依赖项。',
     'empty.warnings': '后台未报告警告。',
     'diff.added': '新增能力：{item}',

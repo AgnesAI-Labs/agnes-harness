@@ -175,6 +175,12 @@ describe('migrated sidebar region', () => {
       newDisabled: false,
     })
 
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
+      '官方界面 / 切换应用',
+    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.getAttribute('href')).toBe(
+      '?settings=application',
+    )
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelectorAll('#new')).toHaveLength(1)
     expect(sidebar.querySelectorAll('#settings')).toHaveLength(1)
@@ -185,6 +191,9 @@ describe('migrated sidebar region', () => {
     await vi.waitFor(
       () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
       committed,
+    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
+      'Official UI / Switch application',
     )
     expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
     expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
@@ -199,6 +208,9 @@ describe('migrated sidebar region', () => {
     )
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
+        '官方界面 / 切换应用',
+      )
       expect(sidebar.querySelector('#new')).toBeNull()
     }, committed)
     remove()

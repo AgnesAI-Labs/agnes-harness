@@ -1,6 +1,6 @@
 import { type ReactNode, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { fallbackT, type Translate } from './locales/index.js'
-import { SettingsPage } from './settings-layout.js'
+import { SettingsPage, SettingsTechnicalDetails } from './settings-layout.js'
 import { SettingsBlock } from './ui/settings-controls.js'
 import { SettingsDrill, SettingsInfo } from './ui/settings-subpages.js'
 
@@ -116,8 +116,17 @@ export function SettingsModelPane({
           data-loading-text={t('accounts.loading')}
         />
       </SettingsBlock>
-      <div id="config-side-models" />
-      <div id="config-auxiliary-models" />
+      <SettingsTechnicalDetails
+        title={
+          t('settings-shell.advancedModels') === 'settings-shell.advancedModels'
+            ? fallbackT('ui.advancedModels')
+            : t('settings-shell.advancedModels')
+        }
+        data-testid="advanced-models"
+      >
+        <div id="config-side-models" />
+        <div id="config-auxiliary-models" />
+      </SettingsTechnicalDetails>
       {afterAccounts}
       {/* The two account pages open from the add row and from an account row; their rows stay hidden. */}
       <SettingsDrill

@@ -47,7 +47,7 @@ export function PreviewFacts({
   return (
     <>
       {current ? (
-        <UpdateDiff preview={preview} fromVersion={current.version} />
+        <UpdateDiff preview={preview} fromVersion={current.version} current={current} />
       ) : (
         <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
       )}

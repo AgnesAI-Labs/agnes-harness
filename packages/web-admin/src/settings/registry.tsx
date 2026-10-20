@@ -7,6 +7,7 @@ import type {
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import {
+  Button,
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
@@ -204,12 +205,13 @@ const definitions: readonly [
     ),
   ],
   [
-    'advanced',
+    'accounts',
     'models',
-    80,
+    11,
     (c, t) => (
       <>
         <p className="agnes-settings-note">{t('runConfigIntro')}</p>
+        <Button onClick={() => c.navigate('examples')}>{t('agentGallery')}</Button>
         <div id="settings-subsection-models" tabIndex={-1} className="agnes-settings-anchor">
           <SessionDefaultsPanel
             api={c.api}

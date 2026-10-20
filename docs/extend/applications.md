@@ -92,7 +92,7 @@ Build a replacement using public exports: [Build a presentation plugin](presenta
 
 ## Choose one interface implementation
 
-In **Settings → Application → Interface implementations**, an administrator can replace each standard
+In **Settings → Application → Advanced interface choices**, an administrator can replace each standard
 role independently. Keep application A's brand and navigation while choosing plugin B for deliverables,
 or keep the default AGH application and choose B without adopting any application. Each row shows the
 current implementation and its source (**Default / Application / Your choice**), candidates from
@@ -131,6 +131,8 @@ untrusted, removed, changed or has unavailable assets/references, its saved sele
 **unresolved**, with a reason, while presentation falls back to AGH. It never silently selects B.
 URL overrides take precedence over user preferences, application defaults and host defaults, in that
 order. Clearing removes application defaults and preserves user preferences. Effective-application changes immediately remove application CSS and tokens; late CSS from a revoked application cannot repaint. A browser image decode failure also falls back to the host.
+
+The host sidebar always keeps **Official UI / Switch application**, even when an application replaces navigation. Open it to review the application name, version and interface changes, or choose **Restore official interface**. Advanced interface references and recovery commands are collapsed under technical details.
 
 Open **`/?admin`** for the separate host recovery bootstrap. It selects the host identity and skin
 before importing application JavaScript, CSS, roles or navigation. The URL grants no authority;

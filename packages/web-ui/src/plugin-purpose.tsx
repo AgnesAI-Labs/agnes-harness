@@ -2,7 +2,7 @@ import { resolvePluginMetadata } from '@agnes/protocol'
 import type { ReactNode } from 'react'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import { type PluginPresentation, type PluginPurposeItem, pluginOrigin } from './plugin-presentation.js'
-import { SettingsDetails } from './settings-layout.js'
+import { SettingsDetails, SettingsTechnicalDetails } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import type { IconName } from './ui/icon-set.js'
 import { MetaText } from './ui/tag.js'
@@ -78,27 +78,9 @@ export function PluginPurposeBadges({
   const { t } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const includes = pluginIncludes(item, value, t)
   if (!item.metadata && !includes && !value?.provides.length) return null
-  const registered = new Map<string, number>()
-  for (const entry of value?.provides ?? []) registered.set(entry.kind, (registered.get(entry.kind) ?? 0) + 1)
   return (
     <MetaText data-testid="plugin-purpose-badges">
-      {includes && (
-        <span data-testid="plugin-declared-provides">
-          {t('declared')}: {includes}
-        </span>
-      )}
-      <span data-testid="plugin-registered-provides">
-        {includes ? ' · ' : ''}
-        {t('registered')}:{' '}
-        {registered.size
-          ? [...registered]
-              .map(([kind, count]) => {
-                const key = `provide.${kind}`
-                return t('includesItem', { count, name: t(key) === key ? kind : t(key) })
-              })
-              .join(' · ')
-          : t('registrationUnavailable')}
-      </span>
+      {includes && <span data-testid="plugin-declared-provides">{t('includes', { items: includes })}</span>}
     </MetaText>
   )
 }
@@ -187,18 +169,20 @@ export function PluginPurposeSections({
           <h3>{t('provides')}</h3>
           <PluginProvidesChips value={value} />
           {!!value?.provides.length && (
-            <ul>
-              {value.provides.map((entry) => (
-                <li key={`${entry.kind}:${entry.id}`}>
-                  <code>{entry.id}</code> ·{' '}
-                  {t(`provide.${entry.kind}`) === `provide.${entry.kind}`
-                    ? entry.kind
-                    : t(`provide.${entry.kind}`)}
-                  {entry.selected !== undefined && <> · {t(entry.selected ? 'selected' : 'available')}</>}
-                  {entry.scope && <> · {entry.scope}</>}
-                </li>
-              ))}
-            </ul>
+            <SettingsTechnicalDetails title={t('technical')}>
+              <ul>
+                {value.provides.map((entry) => (
+                  <li key={`${entry.kind}:${entry.id}`}>
+                    <code>{entry.id}</code> ·{' '}
+                    {t(`provide.${entry.kind}`) === `provide.${entry.kind}`
+                      ? entry.kind
+                      : t(`provide.${entry.kind}`)}
+                    {entry.selected !== undefined && <> · {t(entry.selected ? 'selected' : 'available')}</>}
+                    {entry.scope && <> · {entry.scope}</>}
+                  </li>
+                ))}
+              </ul>
+            </SettingsTechnicalDetails>
           )}
         </section>
       )}

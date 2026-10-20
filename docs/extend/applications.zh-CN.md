@@ -96,6 +96,8 @@ inspect、不可变快照、信任哈希和浏览器 roster 全程保留声明�
 **unresolved** 及原因，展示安全回落 AGH，绝不自动选 B。优先级依次是 URL 显式覆盖、用户偏好、应用默认、宿主默认；
 清除应用只移除应用默认，保留用户偏好。
 
+宿主侧栏始终保留**官方界面 / 切换应用**，应用替换导航也不会移除此入口。打开后可查看应用名称、版本和界面变化，或选择**恢复官方界面**。高级界面引用和恢复命令收在折叠的技术详情中。
+
 **`/?admin`** 是独立宿主恢复 bootstrap，在导入应用 JavaScript、CSS、角色和导航之前选择宿主品牌与皮肤。
 URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app clear [--profile NAME] [--json]`**
 在通用 boot 前分派，不加载插件，只清除展示选择。daemon 运行时走在线 CAS；否则使用同一配置锁和 revision 原子写入。
@@ -114,7 +116,7 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 
 ## 单独选择界面实现
 
-在 **设置 → 应用 → 界面实现** 中，管理员可以分别替换 navigation、conversation、composer、goal、interaction、deliverables 六种标准角色。例如保留应用 A 的品牌和导航，只选择插件 B 的交付物界面；也可以保留默认 AGH 应用，直接选择 B，无需采纳任何应用。
+在 **设置 → 应用 → 高级界面选择** 中，管理员可以分别替换 navigation、conversation、composer、goal、interaction、deliverables 六种标准角色。例如保留应用 A 的品牌和导航，只选择插件 B 的交付物界面；也可以保留默认 AGH 应用，直接选择 B，无需采纳任何应用。
 
 每行显示当前实现、来源（**默认 / 应用 / 你的选择**）、候选和“恢复默认”。候选来自已安装、受信且启用的插件，其 profile client 必须在静态 `presentationRoles` 中声明该角色。作者只需声明角色，无需额外声明应用。
 

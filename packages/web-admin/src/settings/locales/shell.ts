@@ -2,6 +2,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const shellCatalog: LocaleCatalog = {
   en: {
+    agentGallery: 'Choose who answers: Agents',
     copyId: 'Copy technical ID',
     copiedId: 'ID copied',
     runtimeDetails: 'Runtime details',
@@ -12,7 +13,7 @@ export const shellCatalog: LocaleCatalog = {
     generationHelp: 'Move sessions to the current plugin version',
     localShort: 'Rescan and trust workspace plugins',
     runConfigIntro:
-      'Choose an agent on the Agents page. Set how new sessions run here, and what they may do under Permissions.',
+      'First choose who answers on the Agents page. Run configuration decides how it works; Permissions decide what it may do. These are defaults for new conversations.',
     compositionDetailsHelp:
       'Bundles layer reusable plugin settings; Preset IDs identify permission profiles. These advanced defaults apply to all new sessions, including agents. Review the effective configuration before saving.',
     isolationDetails: 'Isolation technical details',
@@ -58,7 +59,7 @@ export const shellCatalog: LocaleCatalog = {
     pinsChecking: 'Checking plugin retention records…',
     providerTypes: 'Plugin types',
     agentExecution: 'Running mode',
-    agentExecutionHelp: 'The running mode new sessions run and its default limits.',
+    agentExecutionHelp: 'How the agent thinks, uses tools and continues to the next step.',
     agentPromptHelp: 'What the agent is told before every task.',
     agentPromptDefault: 'Default',
     agentPromptCustom: 'Customized',
@@ -196,6 +197,7 @@ export const shellCatalog: LocaleCatalog = {
       'This view explains desired configuration. Live session bindings are listed separately; a saved combination selection may still require a restart.',
   },
   'zh-CN': {
+    agentGallery: '选择由谁回答：智能体',
     copyId: '复制技术标识',
     copiedId: '已复制标识',
     runtimeDetails: '运行详情',
@@ -205,7 +207,8 @@ export const shellCatalog: LocaleCatalog = {
     providerCount: '{kinds} 类 · {count} 个',
     generationHelp: '把会话迁移到当前插件版本',
     localShort: '重新加载、信任工作区插件',
-    runConfigIntro: '在智能体页选择智能体；在此设置新会话的运行方式，在权限页决定它能做什么。',
+    runConfigIntro:
+      '先在智能体页选择由谁回答；运行配置决定它怎样完成任务；权限决定它可以做什么。这里只设置新对话的默认值。',
     compositionDetailsHelp:
       'Bundle 叠加可复用的插件设置；Preset 标识对应权限方案。这些高级默认值作用于所有新会话，包括智能体；保存前请查看最终生效配置。',
     isolationDetails: '隔离保护技术详情',
@@ -249,7 +252,7 @@ export const shellCatalog: LocaleCatalog = {
     pinsChecking: '正在检查插件文件保留记录…',
     providerTypes: '插件类型',
     agentExecution: '运行方式',
-    agentExecutionHelp: '新会话使用的执行循环及其默认限制。',
+    agentExecutionHelp: '决定智能体怎样思考、调用工具并继续下一步。',
     agentPromptHelp: '每次任务开始前告诉智能体的内容。',
     agentPromptDefault: '默认',
     agentPromptCustom: '已自定义',
