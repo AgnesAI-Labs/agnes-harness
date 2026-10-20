@@ -9,6 +9,7 @@ import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-comm
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import { isNestedCall } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
@@ -444,6 +445,8 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
     // A call whose own assistant message is no longer on the surface has no landing site: it is
     // dropped with the message rather than moved onto one that did not ask for it.
     if (owner === undefined || !visible.has(owner)) continue
+    // A nested call (a tool's own `ctx.tools.invoke`) was never asked for by the model.
+    if (isNestedCall(row.data)) continue
     const d = row.data as { toolUseId?: unknown; name?: unknown; args?: unknown; ordinal?: unknown }
     out.push({
       assistantSeq: owner,

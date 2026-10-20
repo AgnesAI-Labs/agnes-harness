@@ -135,11 +135,13 @@ describe('the surface, appended in place', () => {
   it.each(sources)('matches the reference row for row: %s', { timeout: 60_000 }, (_name, rows) => {
     const cache = new SurfaceCache('main')
     let reference: ReturnType<typeof referenceComputeSurface> = []
+    const nested = new Set<string>()
     const all: Event[] = []
     for (const row of rows()) {
       all.push(row)
       cache.push([row])
-      if ((row.lane ?? 'main') === 'main') reference = referenceApplyEvent(reference, row, new Set()).nodes
+      if ((row.lane ?? 'main') === 'main')
+        reference = referenceApplyEvent(reference, row, new Set(), nested).nodes
       expect(cache.nodes(), `row ${row.seq}`).toEqual(reference)
     }
     expect(computeSurface(all)).toEqual(referenceComputeSurface(all))

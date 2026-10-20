@@ -13,11 +13,25 @@ export type SurfaceNode = {
   masked?: { start: Seq; end: Seq; sourceEventSeqs: Seq[] }
 }
 
-/** A surface's nodes as they stood when taken; `byId` is the live, append-only map, read up to the fork seq. */
+/**
+ * A surface's nodes as they stood when taken; `byId` and `nestedToolUseIds` are the live, append-only
+ * maps, read up to the fork seq. `nestedToolUseIds` maps each nested call's id to the seq of its
+ * `tool/call` row, which is what lets a seed keep only the ids that existed at its fork point.
+ */
 export type SurfaceSnapshot = {
   nodes: readonly SurfaceNode[]
   replaceGeneration: number
   byId: ReadonlyMap<Seq, Event>
+  nestedToolUseIds: ReadonlyMap<string, Seq>
+}
+
+/**
+ * Whether a `tool/call` row's data is a nested call: one a tool made through `ctx.tools.invoke`,
+ * which carries `depth > 0`. The model never asked for it, so neither it nor its result is shown.
+ */
+export function isNestedCall(data: unknown): boolean {
+  const depth = (data as { depth?: unknown } | null | undefined)?.depth
+  return typeof depth === 'number' && depth > 0
 }
 
 /** Message types carried by the surface; delegated session starts also reset its scope. */
@@ -27,12 +41,22 @@ const KIND: Record<string, SurfaceNode['kind']> = {
   'tool/result': 'tool_result',
 }
 
+/** Whether `e` is the result of a nested call, which never reaches the surface. */
+function hiddenResult(e: Event, nested: ReadonlyMap<string, Seq>): boolean {
+  return e.type === 'tool/result' && nested.has(String((e.data as { toolUseId?: unknown }).toolUseId))
+}
+
 /**
  * Folds one event onto a surface the caller owns, in place. `changed` says whether the surface is
  * different afterwards; `replaced` says whether a range was actually masked, which is what a
  * generation counter should count — an event whose range no longer resolves changes nothing.
  */
-function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: boolean; replaced: boolean } {
+function applyEvent(
+  nodes: SurfaceNode[],
+  e: Event,
+  pins: Set<Seq>,
+  nested: Map<string, Seq>,
+): { changed: boolean; replaced: boolean } {
   if (e.type === 'session/start') {
     const start = e.data as unknown as SessionStart
     if (start.parent && start.delegation?.kind === 'spawn') {
@@ -43,8 +67,16 @@ function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: 
       return { changed, replaced: changed }
     }
   }
+  if (e.type === 'tool/call') {
+    // Read only to remember which calls are nested; a call is never a node of its own.
+    if (isNestedCall(e.data)) nested.set(String((e.data as { toolUseId?: unknown }).toolUseId), e.seq)
+    return { changed: false, replaced: false }
+  }
   const kind = KIND[e.type]
   if (!kind) return { changed: false, replaced: false }
+  // A nested call's result belongs to the tool that made the call, not to the conversation. This is
+  // read by call id, so a refused result (which names no source rows) is hidden like any other.
+  if (hiddenResult(e, nested)) return { changed: false, replaced: false }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {
     const { start, end } = e.surfaceOp
     const i = nodes.findIndex((n) => n.seq === start)
@@ -75,10 +107,11 @@ export function computeSurface(
   const lane = opts.lane ?? 'main'
   const pins = opts.pins ?? new Set<Seq>()
   const nodes: SurfaceNode[] = []
+  const nested = new Map<string, Seq>()
   for (const e of events) {
     if (opts.upto !== undefined && e.seq > opts.upto) break
     if ((e.lane ?? 'main') !== lane) continue
-    applyEvent(nodes, e, pins)
+    applyEvent(nodes, e, pins, nested)
   }
   return nodes
 }
@@ -147,6 +180,8 @@ export class SurfaceCache {
   #nodes: SurfaceNode[] = []
   #view: readonly SurfaceNode[] | undefined
   readonly #byId = new Map<Seq, Event>()
+  // Nested calls are not model-visible rows, so they stay out of #byId; only their ids are kept.
+  readonly #nested = new Map<string, Seq>()
   readonly #lane: string
   readonly #pins: Set<Seq>
   #upto = 0
@@ -158,6 +193,7 @@ export class SurfaceCache {
       const cache = new SurfaceCache(lane)
       cache.#nodes = snap.nodes.map((n) => (n.pinned ? { ...n, pinned: false } : n))
       for (const [id, event] of snap.byId) if (id <= seq) cache.#byId.set(id, event)
+      for (const [id, callSeq] of snap.nestedToolUseIds) if (callSeq <= seq) cache.#nested.set(id, callSeq)
       cache.replaceGeneration = snap.replaceGeneration
       cache.#upto = seq
       return cache
@@ -170,7 +206,12 @@ export class SurfaceCache {
   }
 
   snapshot(): SurfaceSnapshot {
-    return { nodes: this.nodes(), replaceGeneration: this.replaceGeneration, byId: this.#byId }
+    return {
+      nodes: this.nodes(),
+      replaceGeneration: this.replaceGeneration,
+      byId: this.#byId,
+      nestedToolUseIds: this.#nested,
+    }
   }
 
   constructor(lane: string, pins: Set<Seq> = new Set()) {
@@ -182,8 +223,8 @@ export class SurfaceCache {
     for (const e of events) {
       if (e.seq > this.#upto) this.#upto = e.seq
       if ((e.lane ?? 'main') !== this.#lane) continue
-      if (KIND[e.type]) this.#byId.set(e.seq, e)
-      const applied = applyEvent(this.#nodes, e, this.#pins)
+      const applied = applyEvent(this.#nodes, e, this.#pins, this.#nested)
+      if (KIND[e.type] && !hiddenResult(e, this.#nested)) this.#byId.set(e.seq, e)
       if (applied.changed) this.#view = undefined
       if (applied.replaced) this.replaceGeneration++
     }

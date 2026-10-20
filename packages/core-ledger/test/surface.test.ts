@@ -2,7 +2,14 @@ import { defaultIds } from '@agnes/core-common/ids'
 import type { Event, EventInput } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
-import { computeSurface, pairClosed, SurfaceCache, validateReplace } from '../src/project/surface.js'
+import {
+  computeSurface,
+  isNestedCall,
+  pairClosed,
+  SurfaceCache,
+  seedSurface,
+  validateReplace,
+} from '../src/project/surface.js'
 import { openTracked } from '../src/reduce/tracker.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -90,6 +97,72 @@ describe('surface', () => {
       [3, 'tool_result'],
       [4, 'assistant'],
     ])
+  })
+
+  describe('nested tool calls', () => {
+    const call = (id: string, depth: number) =>
+      ev('tool/call', { toolUseId: id, name: 'read', args: {}, ordinal: 0, depth })
+    const nestedEvents = (refusedNestedResult = false) => {
+      seq = 0
+      return [
+        asst('a'),
+        call('t0', 0),
+        call('t1', 1),
+        res('t1', refusedNestedResult ? {} : { sourceEventSeqs: [3] }),
+        res('t0'),
+      ]
+    }
+
+    it('hides a nested result and keeps the top-level one', () => {
+      const surface = computeSurface(nestedEvents())
+      expect(surface.map((n) => n.kind)).toEqual(['assistant', 'tool_result'])
+      expect((surface[1]?.event.data as { toolUseId: string } | undefined)?.toolUseId).toBe('t0')
+    })
+
+    it('hides a refused nested result that has no sourceEventSeqs', () => {
+      const surface = computeSurface(nestedEvents(true))
+      expect(surface.map((n) => n.kind)).toEqual(['assistant', 'tool_result'])
+      expect((surface[1]?.event.data as { toolUseId: string } | undefined)?.toolUseId).toBe('t0')
+    })
+
+    it('hides depth 2 calls', () => {
+      seq = 0
+      const surface = computeSurface([asst('a'), call('t2', 2), res('t2')])
+      expect(surface.map((n) => n.kind)).toEqual(['assistant'])
+    })
+
+    it('keeps a call without a depth top-level', () => {
+      expect(isNestedCall({ toolUseId: 't', name: 'read' })).toBe(false)
+      expect(isNestedCall({ depth: 0 })).toBe(false)
+      expect(isNestedCall({ depth: 1 })).toBe(true)
+      expect(isNestedCall(null)).toBe(false)
+    })
+
+    it('SurfaceCache hides them incrementally', () => {
+      const events = nestedEvents()
+      const cache = new SurfaceCache('main')
+      cache.push(events)
+      expect(cache.nodes().map((n) => n.kind)).toEqual(['assistant', 'tool_result'])
+      expect(cache.eventsById().has(4)).toBe(false)
+      expect(cache.snapshot().nestedToolUseIds.has('t1')).toBe(true)
+    })
+
+    it('seeded surface keeps nested calls hidden', () => {
+      const events = nestedEvents()
+      const parent = new SurfaceCache('main')
+      parent.push(events.slice(0, 3))
+      const child = seedSurface('main', parent.snapshot(), 3)
+      child.push([events[3] as Event])
+      expect(child.nodes().map((n) => n.kind)).toEqual(['assistant'])
+    })
+
+    it('a seed drops nested ids past its fork seq', () => {
+      const events = nestedEvents()
+      const parent = new SurfaceCache('main')
+      parent.push(events.slice(0, 3))
+      const child = seedSurface('main', parent.snapshot(), 2)
+      expect(child.snapshot().nestedToolUseIds.has('t1')).toBe(false)
+    })
   })
 
   it('filters by lane and stops at upto', () => {
