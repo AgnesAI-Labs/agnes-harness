@@ -21,6 +21,7 @@ const docs: Record<string, PresetDoc> = Object.fromEntries(
       }),
   ),
 )
+docs['app-role'] = { name: 'app-role', extends: 'standard', approval: { command_policy: [] } }
 const recipes = Object.keys(docs).filter((name) => !name.startsWith('permission-'))
 
 const roots: string[] = []
@@ -56,6 +57,8 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     expect(session.preset.name).toBe('ptc')
     expect(session.preset.permission).toBe('read-only')
     expect(session.toolPolicy().id).toBe('read-only')
+    await expect(session.setYolo(true, session.d.actor)).rejects.toThrow('requires a new session')
+    expect(session.yolo).toBe(false)
     expect(await startRow(session)).toMatchObject({ preset: 'ptc', permission: 'read-only' })
     await session.close()
     await host.close()
@@ -249,4 +252,53 @@ describe('sessionSelection', () => {
       'unknown permission',
     )
   })
+})
+
+it('a live full-access choice governs a fixed application recipe and restores its chooser on reopen', async () => {
+  const { host, dataDir, options } = await open()
+  const session = await host.createSession({ cwd: dataDir, preset: 'app-role' })
+  const key = session.key
+  const preset = structuredClone(session.preset)
+  const chooser = { ...session.d.actor, id: 'full-access-chooser' }
+  try {
+    expect(session.permissionContext.policy).toBe('')
+    await session.setYolo(true, chooser)
+    expect(session.preset).toEqual(preset)
+    const port = session.decisions.port({
+      owner: 'fixture/app',
+      sourcePackage: '@fixture/app',
+      packageVersion: '1',
+      operationId: 'sign',
+      alive() {},
+    })
+    const handle = await port.request({
+      key: 'signature',
+      purpose: 'business.confirm',
+      subject: { revision: 0 },
+      prompt: 'Sign?',
+      options: ['allowed-once', 'rejected'],
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+      responseSchema: { type: 'string', enum: ['I confirm.'] },
+    })
+    expect((await port.get(handle)).result).toMatchObject({
+      code: 'full-access',
+      answeredBy: { id: chooser.id, attrs: { confirmationMode: 'auto-confirmed under full access' } },
+      response: { value: 'I confirm.' },
+    })
+    const admission = await port.admit!(handle)
+    await admission.verify()
+  } finally {
+    await session.close()
+    await host.close()
+  }
+  const next = (await createTestHost(options)).host
+  try {
+    const reopened = await next.createSession({ key, cwd: dataDir })
+    expect(reopened.permissionContext).toMatchObject({ policy: 'full-access', actor: chooser })
+    await reopened.setYolo(false, chooser)
+    expect(reopened.permissionContext.policy).not.toBe('full-access')
+    await reopened.close()
+  } finally {
+    await next.close()
+  }
 })

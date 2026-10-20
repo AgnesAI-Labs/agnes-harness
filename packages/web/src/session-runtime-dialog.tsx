@@ -85,8 +85,13 @@ export function RuntimeInfo({
   const loop = runtime.loop ?? capabilities?.loop.value
   const model = capabilities?.modelRoutes.value?.primary.model
   const preset = capabilities?.permissions.preset ?? runtime.preset?.name
+  const effectiveLevel = policy?.permission ? policy.permission.policy || 'workspace-write' : level
   const levelId =
-    level && PERMISSION_KEYS[level] ? level : preset && PERMISSION_KEYS[preset] ? preset : undefined
+    effectiveLevel && PERMISSION_KEYS[effectiveLevel]
+      ? effectiveLevel
+      : preset && PERMISSION_KEYS[preset]
+        ? preset
+        : undefined
   const readOnly = capabilities?.permissions.readOnly ?? policy?.readOnly
   const permission =
     levelId || preset
@@ -108,7 +113,11 @@ export function RuntimeInfo({
           description={loopLabel ?? loop?.id ?? unknown}
         />
         <SettingsItem icon="sparkles" label={t('session.runtime.model')} description={model ?? unknown} />
-        <SettingsItem icon="shield" label={t('session.runtime.policy')} description={permission} />
+        <SettingsItem
+          icon="shield"
+          label={t('session.runtime.policy')}
+          description={[permission, policy?.permission?.principal].filter(Boolean).join(' · ')}
+        />
         {policy?.sandbox.provider === 'local' &&
           policy.sandbox.enforcement &&
           policy.sandbox.enforcement.level !== 'full' &&
@@ -402,34 +411,39 @@ export function createRuntimeDialog(options: {
         render()
       })
   }
-  return {
-    async open(id: string, trigger: HTMLElement) {
-      const mine = ++version
-      sessionId = id
-      returnFocus = trigger
-      runtime = undefined
-      tools = undefined
-      toolsFailed = false
-      toolsBusy = false
-      grants = undefined
-      revoking = undefined
-      loopLabel = undefined
-      opened = true
+  const open = async (id: string, trigger: HTMLElement) => {
+    const mine = ++version
+    sessionId = id
+    returnFocus = trigger
+    runtime = undefined
+    tools = undefined
+    toolsFailed = false
+    toolsBusy = false
+    grants = undefined
+    revoking = undefined
+    loopLabel = undefined
+    opened = true
+    render()
+    try {
+      const value = await options.client.session.runtime(id)
+      if (mine !== version) return
+      runtime = value
+      // The composer's catalog names loops; an id it does not know is shown as it is.
+      loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
       render()
-      try {
-        const value = await options.client.session.runtime(id)
-        if (mine !== version) return
-        runtime = value
-        // The composer's catalog names loops; an id it does not know is shown as it is.
-        loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
-        render()
-        void readTools(mine)
-        void readGrants(mine, id)
-      } catch (failure) {
-        if (mine !== version) return
-        close()
-        options.error(failure)
-      }
+      void readTools(mine)
+      void readGrants(mine, id)
+    } catch (failure) {
+      if (mine !== version) return
+      close()
+      options.error(failure)
+    }
+  }
+  return {
+    open,
+    /** An invalidation only identifies what to re-read; it never supplies runtime authority. */
+    invalidate(id: string) {
+      if (opened && sessionId === id && returnFocus) return open(id, returnFocus)
     },
     dispose() {
       opened = false

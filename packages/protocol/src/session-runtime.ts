@@ -120,6 +120,10 @@ export const SessionRuntimeDescriptor = Type.Object(
       Type.Object(
         {
           approvalMode: Type.Optional(text),
+          /** Effective backend permission after the user's session switch, separate from declared policy. */
+          permission: Type.Optional(
+            Type.Object({ policy: Type.String(), principal: text }, { additionalProperties: false }),
+          ),
           toolPolicy: text,
           toolRuntime: text,
           readOnly: Type.Boolean(),

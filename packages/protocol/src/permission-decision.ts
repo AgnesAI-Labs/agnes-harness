@@ -2,7 +2,7 @@ import type { Actor, DecisionPresentation } from '../gen/ts/session-v1.js'
 
 /** Backend snapshot, outside all author-controlled inputs. Identity changes on reopen. */
 export interface PermissionContext {
-  /** Resolved permission axis; never a recipe name or tool-policy provider id. Empty for fixed custom recipes. */
+  /** Effective backend permission, including a trusted session switch; never a recipe or provider id. */
   readonly policy: string
   readonly actor: Actor
   readonly sessionKey: string

@@ -44503,6 +44503,24 @@
               "maxLength": 1024,
               "type": "string"
             },
+            "permission": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "policy": {
+                  "type": "string"
+                },
+                "principal": {
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "policy",
+                "principal"
+              ]
+            },
             "toolPolicy": {
               "minLength": 1,
               "maxLength": 1024,

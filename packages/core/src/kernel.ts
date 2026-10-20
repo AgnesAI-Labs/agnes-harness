@@ -403,6 +403,12 @@ export class Kernel {
     return creating
   }
 
+  private bindSessionScope(session: SessionImpl, options: SessionOptions): void {
+    if (options.toolFilter) bindChildSessionToolFilter(session, options.toolFilter)
+    const parentKey = options.parent?.key ?? session.d.log.parent?.key
+    if (parentKey) session.inheritAutomaticPermissions(this.sessions.get(parentKey))
+  }
+
   private async openSession(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
     const preset = so.preset ?? this.o.preset
     const lane = so.lane ?? 'main'
@@ -454,6 +460,7 @@ export class Kernel {
       // once and a second caller's overrides would simply not be fitted.
       if (so.seams && Object.keys(so.seams).length > 0)
         throw new CoreError('E_LANE_BUSY', `session ${key} is already open; seams cannot be refitted`)
+      if (so.parent) existing.inheritAutomaticPermissions(this.sessions.get(so.parent.key))
       return existing
     }
     const logger = this.o.logger ?? NO_LOG
@@ -696,7 +703,7 @@ export class Kernel {
         ...(this.o.quiet ? { quietGroup } : {}),
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
       })
-      if (so.toolFilter) bindChildSessionToolFilter(session, so.toolFilter)
+      this.bindSessionScope(session, so)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)
       let resumed = false

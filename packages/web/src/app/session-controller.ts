@@ -25,6 +25,7 @@ export function createSessionController(
     | 'draftingNew'
     | 'initialModelPending'
     | 'initialPermissionPending'
+    | 'invalidateSessionRuntime'
     | 'knownSessionModel'
     | 'list'
     | 'live'
@@ -384,6 +385,8 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+    if (['x/core/permission-projection-invalidated', 'x/core/yolo-switch'].includes(event.type))
+      context.invalidateSessionRuntime(session.id)
     const epoch = context.sessionBinding.capture()
     const showError = (error: unknown) => {
       if (context.sessionBinding.isCurrent(epoch, session)) context.showError(error)

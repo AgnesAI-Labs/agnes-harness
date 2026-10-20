@@ -5,6 +5,7 @@ import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
+import type { SessionImpl } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 
@@ -57,6 +58,36 @@ function kernel(
 }
 
 const sessionOpts = { actor, resolvedProfileHash: 'h1', cwd: '/w', writerRunId: 'r1' }
+
+async function invalidatesProjection(
+  sessions: SessionImpl[],
+  change: () => unknown | Promise<unknown>,
+  enabled: boolean,
+) {
+  const releases: (() => void)[] = []
+  const rows = sessions.map(
+    (session) =>
+      new Promise<unknown>((resolve) => {
+        releases.push(
+          session.onAppended((events) => {
+            const notice = events.find((event) => event.type === 'x/core/permission-projection-invalidated')
+            if (!notice) return
+            resolve(notice)
+          }),
+        )
+      }),
+  )
+  try {
+    await change()
+    for (const notice of await Promise.all(rows)) {
+      expect(notice).toMatchObject({ origin: 'system', trust: 'trusted', ignorable: true })
+      expect((notice as { data: unknown }).data).toEqual({})
+    }
+    for (const session of sessions) expect((await session.projectUI()).yolo).toBe(enabled)
+  } finally {
+    for (const release of releases) release()
+  }
+}
 
 describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
   it('refuses a child when generationLimit is 0 and does not start a model', async () => {
@@ -209,4 +240,125 @@ describe('CoreError', () => {
   it('is the class thrown for child limit failures', () => {
     expect(new CoreError('E_CHILD_LIMIT', 'x')).toBeInstanceOf(Error)
   })
+})
+
+it('children inherit the full-access chooser and lose stale admissions when the parent switches or closes', async () => {
+  const k = kernel()
+  try {
+    const parent = await k.session('permission-parent', sessionOpts)
+    const principal = { ...actor, id: 'full-access-chooser' }
+    await parent.setYolo(true, principal)
+    const handle = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'sign' })
+    const child = k.get(handle.key)!
+    expect(child.yolo).toBe(true)
+    expect(child.permissionContext).toMatchObject({ policy: 'full-access', actor: principal })
+    const port = child.decisions.port({
+      owner: 'fixture/child',
+      sourcePackage: '@fixture/child',
+      packageVersion: '1',
+      operationId: 'sign',
+      alive() {},
+    })
+    const spec = {
+      key: 'signature',
+      purpose: 'business.confirm',
+      subject: { revision: 0 },
+      prompt: 'Sign?',
+      options: ['allowed-once', 'rejected'],
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+      responseSchema: { type: 'string', enum: ['I confirm.'] },
+    }
+    const decision = await port.request(spec)
+    expect((await port.get(decision)).result).toMatchObject({
+      code: 'full-access',
+      answeredBy: { id: principal.id },
+    })
+    const admission = await port.admit!(decision)
+    await invalidatesProjection([child], () => parent.setYolo(false, actor), false)
+    expect(child.yolo).toBe(false)
+    expect(child.permissionContext.policy).not.toBe('full-access')
+    expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
+    await child.setYolo(true, principal)
+    expect(child.permissionContext.policy).not.toBe('full-access')
+    await invalidatesProjection([child], () => parent.setYolo(true, principal), true)
+    expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
+    const fresh = await port.request({ ...spec, key: 'fresh' })
+    const active = await port.admit!(fresh)
+    await invalidatesProjection([child], () => parent.close(), false)
+    expect(() => active.assertActive()).toThrow()
+    expect(child.permissionContext.policy).not.toBe('full-access')
+  } finally {
+    await k.close()
+  }
+})
+
+it('invalidates live descendants on rebind and follows only their current parent without child switches', async () => {
+  const k = kernel({
+    preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 3, maxFanOut: 4 },
+  })
+  try {
+    const parent = await k.session('original-parent', sessionOpts)
+    const other = await k.session('replacement-parent', sessionOpts)
+    await parent.setYolo(true, { ...actor, id: 'original-chooser' })
+    const first = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'child' })
+    const child = k.get(first.key)!
+    const second = await child.d.children.create({ parent: child.key, cwd: '/w', input: 'grandchild' })
+    const grandchild = k.get(second.key)!
+    const descendants = [child, grandchild]
+    await invalidatesProjection(descendants, () => parent.setYolo(false, actor), false)
+    await invalidatesProjection(descendants, () => parent.setYolo(true, actor), true)
+    await invalidatesProjection(descendants, () => child.inheritAutomaticPermissions(other), false)
+    await parent.setYolo(false, actor)
+    await parent.setYolo(true, actor)
+    for (const session of descendants) expect((await session.projectUI()).yolo).toBe(false)
+    const principal = { ...actor, id: 'replacement-chooser' }
+    await invalidatesProjection(descendants, () => other.setYolo(true, principal), true)
+    for (const session of descendants) expect(session.permissionContext.actor.id).toBe(principal.id)
+    const failedNotice = vi
+      .spyOn(child.d.log, 'append')
+      .mockRejectedValueOnce(new Error('notification storage failed'))
+    await other.setYolo(false, actor)
+    failedNotice.mockRestore()
+    for (const session of descendants) expect(session.permissionContext.policy).not.toBe('full-access')
+    await invalidatesProjection(descendants, () => other.setYolo(true, principal), true)
+    await invalidatesProjection(descendants, () => child.inheritAutomaticPermissions(undefined), false)
+    await invalidatesProjection(descendants, () => child.inheritAutomaticPermissions(other), true)
+    await invalidatesProjection(descendants, () => other.close(), false)
+    for (const session of descendants) {
+      // Forks retain their parent's historical rows; no switch may attest a choice for the child.
+      const switches = await session.d.log.scan({ type: 'x/core/yolo-switch', limit: 20 })
+      expect(
+        switches.filter((row) => (row.data as { sessionKey?: string }).sessionKey === session.key),
+      ).toEqual([])
+    }
+  } finally {
+    await k.close()
+  }
+})
+
+it('reopened children cannot recover full access from a copied preset without their live parent', async () => {
+  const storage = new MemoryStorage()
+  const preset = {
+    ...presetDefaults(),
+    permission: 'full-access' as const,
+    treeBudgetCredits: 100,
+    generationLimit: 1,
+    maxFanOut: 2,
+  }
+  const first = kernel({ storage, preset })
+  const parent = await first.session('reopen-parent', sessionOpts)
+  await parent.setYolo(true, actor)
+  const handle = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'inspect' })
+  expect(first.get(handle.key)?.permissionContext.policy).toBe('full-access')
+  await first.close()
+  const second = kernel({ storage, preset })
+  try {
+    const orphan = await second.session(handle.key, { ...sessionOpts, writerRunId: 'reopen-child' })
+    expect(orphan.yolo).toBe(false)
+    expect(orphan.permissionContext.policy).not.toBe('full-access')
+    await orphan.setYolo(true, actor)
+    expect(orphan.permissionContext.policy).not.toBe('full-access')
+  } finally {
+    await second.close()
+  }
 })
