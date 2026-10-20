@@ -55,6 +55,7 @@ async function shot(page, label, locale, theme) {
   await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
   await page.screenshot({ path: join(output, file), fullPage: true, animations: 'disabled' })
   evidence.screenshots.push(file)
+  console.log(JSON.stringify({ screenshot: file }))
 }
 async function launch(page, button) {
   const previousSession = new URL(page.url()).searchParams.get('session')

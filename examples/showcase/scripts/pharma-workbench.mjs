@@ -57,6 +57,7 @@ async function shot(page, label, locale, theme) {
   await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
   await page.screenshot({ path: join(output, file), fullPage: true, animations: 'disabled' })
   evidence.screenshots.push(file)
+  console.log(JSON.stringify({ screenshot: file }))
 }
 async function launch(page, button) {
   const previousSession = new URL(page.url()).searchParams.get('session')
@@ -198,6 +199,8 @@ try {
     await page.locator(`.plugin-row[data-plugin-id="${other.id}"]`).waitFor()
     await page.locator(`.plugin-row[data-plugin-id="${packageId}"]`).waitFor()
     assert.equal(await page.getByTestId('home-entry-aero-home').count(), 0)
+    await page.getByTestId('home-entry-pharma-home').waitFor()
+    await page.getByTestId('home-entry-pharma-tasks').waitFor()
     await shot(page, '04b-two-installed-one-adopted', locale, theme)
     await page.getByTestId('home-entry-pharma-home').click()
     await page.locator('.ph-kpi').first().waitFor({ timeout: 45000 })
