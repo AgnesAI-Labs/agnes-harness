@@ -1,0 +1,43 @@
+import type { UINode } from '@agnes/protocol'
+import { baseToolCatalog } from './locales/base-tools.js'
+import type { Translate } from './locales/index.js'
+
+/** Optional because plugins own their titles; only the base vocabulary is localized here. */
+export function baseToolTitle(name: string, t: Translate): string | undefined {
+  const key = `baseTool.${name}`
+  return Object.hasOwn(baseToolCatalog.en, key) ? t(key) : undefined
+}
+
+/** Localize the title of a recorded summary without translating its user-authored purpose. */
+export function localizeToolSummary(summary: string, t: Translate, name?: string): string {
+  const [lead = '', ...rest] = summary.split(' · ')
+  const known = name && baseToolTitle(name, t)
+  if (name && !known) return summary
+  const rawName = name ?? summary.split(' ')[0]
+  if (rawName && summary.startsWith(`${rawName} `) && baseToolTitle(rawName, t))
+    return baseToolTitle(rawName, t) ?? summary
+  const legacy = { 'Run command': 'shell', 'Read file': 'read', 'Write file': 'write', 'Edit file': 'edit' }
+  const title = known ?? baseToolTitle(legacy[lead as keyof typeof legacy] ?? lead, t)
+  if (!title) return summary
+  const replace =
+    lead === name ||
+    lead === 'Run tool' ||
+    [...Object.values(baseToolCatalog.en), ...Object.values(baseToolCatalog['zh-CN'])].includes(lead) ||
+    Object.hasOwn(legacy, lead)
+  return replace ? [title, ...rest].join(' · ') : summary
+}
+
+export function approvalSummary(node: Extract<UINode, { kind: 'approval' }>, t: Translate): string {
+  let name: string | undefined = node.toolName
+  try {
+    const subject: unknown = JSON.parse(node.subjectText ?? 'null')
+    if (!name && subject && typeof subject === 'object' && 'call' in subject) {
+      const call = subject.call
+      if (call && typeof call === 'object' && 'name' in call && typeof call.name === 'string')
+        name = call.name
+    }
+  } catch {
+    /* Old or clipped subjects still have the saved summary. */
+  }
+  return localizeToolSummary(node.summary, t, name)
+}

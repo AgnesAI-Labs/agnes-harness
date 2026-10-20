@@ -37,6 +37,7 @@ import { initialState, type LedgerState } from '../reduce/state.js'
 import {
   type ApprovalNode,
   approvalSubject,
+  approvalToolReference,
   automaticToolPermission,
   reconcileTool,
 } from './approval-subject.js'
@@ -49,6 +50,7 @@ import {
 import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
 import { SurfaceCache } from './surface.js'
+import { initialToolNode } from './tool-node.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
@@ -799,16 +801,7 @@ export class UIProjectionCell {
         )
           this.plans.set(planCall.toolUseId, planCall.args.plan)
         const call = data as ToolCall
-        const node: ToolNode = {
-          kind: 'tool',
-          id,
-          seq,
-          toolUseId: call.toolUseId,
-          name: call.name,
-          status: 'planned',
-          summary: clip(call.name, 512),
-          argsPreview: clip(canonicalJson(call.args), 2048),
-        }
+        const node = initialToolNode(id, seq, call)
         this.tools.set(call.toolUseId, node)
         this.pushNode(node)
         changed.add(id)
@@ -842,11 +835,13 @@ export class UIProjectionCell {
           answeredBy?: import('@agnes/protocol').Actor
         }
         if (event.origin !== 'system' || event.trust !== 'trusted' || evidence.reason !== 'full-access') break
+        const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
         this.pushNode({
           kind: 'approval',
           id,
           seq,
           state: 'decided',
+          ...approvalToolReference(tool),
           summary: clip(evidence.summary ?? '', 4096),
           risk: 'always',
           options: [],
@@ -857,7 +852,6 @@ export class UIProjectionCell {
             ...(evidence.answeredBy?.id ? { byLabel: evidence.answeredBy.id } : {}),
           },
         })
-        const tool = evidence.toolUseId ? this.tools.get(evidence.toolUseId) : undefined
         if (tool && evidence.answeredBy && evidence.requestId) {
           tool.permissionDecision = automaticToolPermission(evidence.requestId, evidence.answeredBy)
           changed.add(tool.id)
@@ -893,6 +887,7 @@ export class UIProjectionCell {
           summary: clip(value.request.spec.prompt, 4096),
           ...(value.request.spec.presentation ? { presentation: value.request.spec.presentation } : {}),
           ...approvalSubject(value.request.spec.subject),
+          ...approvalToolReference(this.tools.get(value.request.operationId)),
           // Core asking whether a call that lost its result ran: a reconciliation, not a permission.
           ...(value.request.owner === 'core/unknown-outcome'
             ? { reconcile: { tool: reconcileTool(value.request.spec.subject) } }

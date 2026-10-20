@@ -29,6 +29,22 @@ describe('tooldef', () => {
   it('accepts the base read tool', () => {
     const r = validateToolDef(def)
     expect(r.ok, r.ok ? '' : JSON.stringify(r.errors)).toBe(true)
+    expect(
+      validateToolDef({
+        ...def,
+        meta: {
+          ...meta,
+          presentation: {
+            title: 'Read document',
+            description: 'Inspect the selected document',
+            summary: 'Review requested source',
+          },
+        },
+      }).ok,
+    ).toBe(true)
+    expect(
+      validateToolDef({ ...def, meta: { ...meta, presentation: { title: '', description: 'Read' } } }).ok,
+    ).toBe(false)
   })
   it('rejects meta missing a required execution flag', () => {
     const { isConcurrencySafe: _flag, ...missingFlag } = meta

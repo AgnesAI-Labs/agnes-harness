@@ -65,6 +65,9 @@ export interface WorkspacePathArgument {
   nonWorkspaceSchemes?: readonly string[]
 }
 export interface ToolMeta {
+  /** Display text only; never changes authorization or substitutes for the raw arguments. */
+  presentation?: import('@agnes/protocol').ToolPresentation
+
   isReadOnly: boolean
   isDestructive: boolean
   isConcurrencySafe: boolean
@@ -464,6 +467,26 @@ export function checkToolMeta(meta: unknown): CheckResult {
   for (const k of ['isReadOnly', 'isDestructive', 'isConcurrencySafe', 'isOpenWorld'] as const)
     if (typeof m[k] !== 'boolean') problems.push(`${k}: expected boolean`)
   if (!REPLAY.has(String(m.replay))) problems.push('replay: expected safe | never | idempotent')
+  if (m.presentation !== undefined) {
+    const view = m.presentation
+    if (!view || typeof view !== 'object' || Array.isArray(view))
+      problems.push('presentation: expected title and description')
+    else {
+      const fields = view as Record<string, unknown>
+      for (const [key, max] of [
+        ['title', 256],
+        ['description', 4096],
+        ['summary', 1024],
+      ] as const) {
+        const text = fields[key]
+        if (key === 'summary' && text === undefined) continue
+        if (typeof text !== 'string' || !text.trim() || text.length > max)
+          problems.push(`presentation.${key}: expected nonempty text up to ${max} characters`)
+      }
+      if (Object.keys(fields).some((key) => !['title', 'description', 'summary'].includes(key)))
+        problems.push('presentation: unknown key')
+    }
+  }
   // costHint feeds the budget estimate directly, and this function is the only runtime gate it
   // passes through, so the check is per-key rather than a bare typeof: `[]` and
   // `{ credits: 'lots' }` are both objects. Both keys are optional finite numbers and no other

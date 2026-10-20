@@ -8,11 +8,11 @@ When checking an answer or a deliverable, follow the recorded facts rather than 
 
 ## Open the evidence panel
 
-Select **View execution evidence** on a model trace, **View execution record** on a tool, **View source** on a deliverable, or **View drafting session** in plugin provenance. These entries open one workspace panel. Review the recorded request, returned result and linked artifact or candidate; expand **Technical details** for identifiers and hashes. Escape closes the panel and returns focus.
+Select **View execution evidence** on a model trace, **View execution record** on a tool, **View source** on a deliverable, or **View drafting session** in plugin provenance. These entries open one workspace panel. The source view starts with a short summary. Expand **Full provenance and technical details** for the recorded request, returned result, linked artifact or candidate, identifiers and gaps. Unknown action outcomes remain visible before expansion. Escape closes the panel and returns focus.
 
 The panel is read only. It never runs a tool, imports old plugin code, changes trust or migrates a session. Reads use the authenticated session owner and exact anchor. A request uses its captured plugin generation, even if the session was later migrated. See [capture privacy and retention](system-prompt-trace.md).
 
-To download a presented file, open **View execution record** on its `present` tool and select **Download artifact** on the linked artifact. The download reads the retained reference through session authorization and checks its digest; it does not read the current workspace file. Downloads up to 32 MiB are supported. Text files use a digest-based `.txt` filename, PDF files use `.pdf`, and other formats use `.bin`. Unavailable or reclaimed artifacts report an error.
+To download a presented file, open **View execution record** on its `present` tool and expand **Full provenance and technical details**, then select **Download artifact** on the linked artifact. The download reads the retained reference through session authorization and checks its digest; it does not read the current workspace file. Downloads up to 32 MiB are supported. Text files use a digest-based `.txt` filename, PDF files use `.pdf`, and other formats use `.bin`. Unavailable or reclaimed artifacts report an error.
 
 ## Read gaps honestly
 

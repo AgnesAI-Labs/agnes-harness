@@ -44,9 +44,7 @@ for (const locale of ['en', 'zh-CN'])
         locale === 'en' ? 'Completed' : '已完成',
       )
       await expect(facts.getByTestId('trace-readonly')).toContainText(
-        locale === 'en'
-          ? 'cannot prove an external action ran exactly once'
-          : '不能证明外部操作恰好执行了一次',
+        locale === 'en' ? 'Saved execution record' : '已保存的执行记录',
       )
       await expect(facts.getByTestId('trace-provenance')).not.toContainText(/[a-f0-9]{64}/)
       await translated(page)
@@ -85,6 +83,13 @@ for (const locale of ['en', 'zh-CN'])
       await tool.getByTestId('tool-detail-toggle').click()
       await tool.getByTestId('tool-fact-chain').click()
       await expect(facts).toHaveAttribute('data-kind', 'tool')
+      await expect(facts.getByTestId('trace-artifact')).toBeHidden()
+      await facts
+        .getByRole('button', {
+          name: locale === 'en' ? 'Full provenance and technical details' : '完整来源与技术详情',
+          exact: true,
+        })
+        .click()
       await expect(facts.getByTestId('trace-artifact')).toContainText('text/')
       await expect(facts.locator('[data-link="receipt"]')).toBeVisible()
       const download = page.waitForEvent('download')

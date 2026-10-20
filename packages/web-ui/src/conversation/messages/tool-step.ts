@@ -1,4 +1,5 @@
 import type { Translate } from '../../locales/index.js'
+import { baseToolTitle } from '../../tool-presentation.js'
 import type { ToolNode } from './context.js'
 
 /** What a step did, in the reader's terms. It names the row and counts toward the group summary. */
@@ -32,13 +33,13 @@ export function toolKind(name: string): ActivityKind {
 
 // Which argument says what the step acted on, most telling first.
 const TARGET_KEYS: Record<ActivityKind, readonly string[]> = {
-  command: ['description', 'title', 'command', 'cmd', 'script'],
+  command: ['description', 'title'],
   read: ['path', 'file_path', 'filePath', 'file', 'filename', 'uri'],
   edit: ['path', 'file_path', 'filePath', 'file', 'filename'],
   list: ['path', 'dir', 'directory', 'pattern'],
   search: ['pattern', 'query', 'queries', 'q', 'regex', 'name', 'path'],
   web: ['url', 'query', 'queries', 'q'],
-  tool: ['description', 'title', 'name', 'path', 'query', 'command', 'prompt', 'message', 'id'],
+  tool: ['description', 'title', 'path', 'object', 'scope'],
   thinking: [],
   approval: [],
   step: [],
@@ -100,12 +101,28 @@ export interface ToolStep {
   /** The untruncated target, for the tooltip. */
   full: string
   /** The command line itself, when the call ran one. */
+  mono?: boolean
   command?: string
 }
 
 /** Names one tool call as a step: a verb for its kind and the one thing it acted on. */
 export function toolStep(node: ToolNode, t: Translate, presentation?: { name: string }): ToolStep {
-  if (presentation) return { kind: 'tool', verb: presentation.name, target: '', full: '' }
+  if (node.presentation) {
+    const view = node.presentation
+    const scope = argument(node.argsPreview, ['path', 'file_path', 'object', 'batch', 'scope'])
+    const target = [...new Set([scope, view.summary, view.description].filter(Boolean))].join(' · ')
+    const command =
+      toolKind(node.name) === 'command' ? argument(node.argsPreview, ['command', 'cmd', 'script']) : undefined
+    return {
+      kind: 'tool',
+      verb: baseToolTitle(node.name, t) ?? view.title,
+      target,
+      full: target,
+      ...(command ? { command } : {}),
+    }
+  }
+  if (presentation)
+    return { kind: 'tool', verb: baseToolTitle(node.name, t) ?? presentation.name, target: '', full: '' }
   const kind = toolKind(node.name)
   const raw = argument(node.argsPreview, TARGET_KEYS[kind]) ?? ''
   const full =
@@ -114,12 +131,14 @@ export function toolStep(node: ToolNode, t: Translate, presentation?: { name: st
   return {
     ...(command ? { command } : {}),
     kind,
+    mono: ['read', 'edit', 'list'].includes(kind) && Boolean(full),
     verb:
-      kind === 'tool'
-        ? t('activity.verb.tool', { name: node.name })
+      baseToolTitle(node.name, t) ??
+      (kind === 'tool'
+        ? t('activity.verb.generic')
         : kind === 'web' && /search/i.test(node.name)
           ? t('activity.verb.webSearch')
-          : t(`activity.verb.${kind}`),
+          : t(`activity.verb.${kind}`)),
     target: firstLine(full),
     full,
   }

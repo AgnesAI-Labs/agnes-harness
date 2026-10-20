@@ -1,3 +1,4 @@
+import { baseToolTitle, localizeToolSummary } from '@agnes/web-ui'
 // What the live approval card says about a tool call: what it will do, the arguments it will run with,
 // and what the session-wide choice covers. Pure, so the wording and the "can everything be seen"
 // rule are tested without a page.
@@ -82,16 +83,23 @@ export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate
       preview: JSON.stringify(input, null, 2),
     }
   const impact = impactOf(tool, toolCall.kind, input, t)
-  const sessionLabel = tool ? t('app.approval.session.all', { tool }) : t('app.approval.session.tool')
-  if (input === undefined) return { impact, sessionLabel }
+  const title = typeof toolCall.title === 'string' ? toolCall.title.trim() : ''
+  const humanTitle = title && (!tool || (title !== tool && !title.startsWith(`${tool} `))) ? title : undefined
+  const summary =
+    isRecord(input) && typeof input.description === 'string' && input.description.trim()
+      ? [baseToolTitle(tool ?? '', t), input.description].filter(Boolean).join(' · ')
+      : (humanTitle ? localizeToolSummary(humanTitle, t, tool) : baseToolTitle(tool ?? '', t)) || impact
+  const sessionLabel = t('app.approval.session.tool')
+  if (input === undefined) return { summary, impact, sessionLabel }
   const text = JSON.stringify(leadingFirst(input), null, 2) ?? String(input)
   if (tool === 'exit_plan_mode' || text.length <= PREVIEW_LIMIT)
-    return { impact, preview: text, sessionLabel }
+    return { summary, impact, preview: text, sessionLabel }
   let shown = PREVIEW_LIMIT
   const last = text.charCodeAt(shown - 1)
   if (last >= 0xd800 && last <= 0xdbff) shown -= 1
   const count = t('app.approval.truncatedCount', { shown, total: text.length })
   return {
+    summary,
     impact,
     preview: `${text.slice(0, shown)}\n…[${count}]`,
     warning: t('app.approval.truncatedWarning', { count }),

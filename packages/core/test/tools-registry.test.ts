@@ -269,7 +269,8 @@ describe('ToolRegistry', () => {
 
   it('snapshots tool and source metadata once before validating or fingerprinting it', () => {
     let metaReads = 0
-    const changingMeta = { ...meta } as Record<string, unknown>
+    const presentation = { title: 'Review document', description: 'Verify the selected source' }
+    const changingMeta = { ...meta, presentation } as Record<string, unknown>
     Object.defineProperty(changingMeta, 'isReadOnly', {
       enumerable: true,
       get: () => ++metaReads === 1,
@@ -289,6 +290,8 @@ describe('ToolRegistry', () => {
     expect(r.resolve('read')?.meta.isReadOnly).toBe(true)
     expect(r.resolve('read')?.source.source).toBe('first')
     expect(r.registrations('first')).toEqual(['tool:read'])
+    presentation.title = 'changed later'
+    expect(r.resolve('read')?.meta.presentation?.title).toBe('Review document')
   })
 
   it('hashes names and parameter schemas, independent of registration order', () => {

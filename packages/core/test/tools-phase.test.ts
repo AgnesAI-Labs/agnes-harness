@@ -367,8 +367,8 @@ describe('tools phase', () => {
     const asked = await ok.session.decisions.list()
     expect(asked).toHaveLength(1)
     expect(asked[0]?.request.spec.purpose).toBe('tool.permission')
-    // The line the approver reads is built by summarizeCall: command in front, nothing cut silently.
-    expect(asked[0]?.request.spec.prompt).toBe('shell rm')
+    // The human header is separate from the complete authorization subject.
+    expect(asked[0]?.request.spec.prompt).toBe('Run command')
     expect(asked[0]?.result).toMatchObject({ reason: 'answered', response: { option: 'allowed-once' } })
     const no = await atTools(
       [toolTurn('shell', { command: 'rm' })],
@@ -443,7 +443,7 @@ describe('tools phase', () => {
           argv: { command: 'rm' },
           risk: 'destructive',
           actor: expect.objectContaining({ id: 'u' }),
-          summary: expect.stringContaining('shell'),
+          summary: 'Run command',
         })
         return {
           request: { risk: 'always', summary: 'operator flagged this' },
@@ -458,13 +458,13 @@ describe('tools phase', () => {
     // The platform's own summary stays on the question beside the rewrite, with who rewrote it.
     expect(spec?.subject).toMatchObject({
       risk: 'always',
-      rewrite: { by: ['agnes/reviewer'], summary: expect.stringContaining('shell') },
+      rewrite: { by: ['agnes/reviewer'], summary: 'Run command' },
     })
     // The approval card is built from the same record, so the person is shown both.
     expect((await s.session.projectUI()).nodes.find((node) => node.kind === 'approval')).toMatchObject({
       summary: 'operator flagged this',
       risk: 'always',
-      rewrite: { by: ['agnes/reviewer'], summary: expect.stringContaining('shell') },
+      rewrite: { by: ['agnes/reviewer'], summary: 'Run command' },
     })
   })
 

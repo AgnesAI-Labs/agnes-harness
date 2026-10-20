@@ -3499,6 +3499,7 @@
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
           "properties": {
+            "presentation": { "$ref": "session-v1.json#/$defs/ToolPresentation" },
             "permissionDecision": {
               "type": "object",
               "additionalProperties": false,
@@ -3598,6 +3599,8 @@
             "kind": {
               "const": "approval"
             },
+            "toolName": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "toolUseId": { "type": "string", "maxLength": 128 },
             "category": { "enum": ["permission", "question"] },
             "purpose": {
               "type": "string",

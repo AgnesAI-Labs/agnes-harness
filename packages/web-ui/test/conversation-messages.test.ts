@@ -363,9 +363,9 @@ describe('W3b projected message DOM', () => {
     expect(item('tool')?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
     expect(item('tool')?.getAttribute('aria-label')).toContain('正在执行')
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBeNull()
-    expect(item('tool')?.querySelector('.tool-detail-inner .tool-detail-text')?.textContent).toContain(
-      '执行参数',
-    )
+    expect(
+      item('tool')?.querySelector('.tool-detail-inner [data-testid="tool-detail-text"]')?.textContent,
+    ).toContain('原始参数')
     expect(item('approval')?.textContent).toContain('需要你确认')
     expect(item('cost')?.textContent).toContain('费用未提供')
     expect(item('artifact')?.textContent).toContain('report.md')
@@ -571,22 +571,22 @@ describe('W3b projected message DOM', () => {
       ],
     })
     await mount(store)
-    const detail = (id: string) => item(id)?.querySelector('.tool-detail-text')?.textContent
-    expect(item('exit')?.getAttribute('aria-label')).toBe('工具 shell：退出码 1')
+    const detail = (id: string) => item(id)?.querySelector('[data-testid="tool-detail-text"]')?.textContent
+    expect(item('exit')?.getAttribute('aria-label')).toBe('工具 运行命令：退出码 1')
     expect(item('exit')?.querySelector('.tool-status')?.textContent).toBe('退出码 1')
-    expect(detail('exit')).toContain('执行结果\nhello')
+    expect(detail('exit')).toContain('标准输出hello')
     expect(detail('exit')).not.toContain('[exit 1]')
     expect(detail('exit')).not.toContain('错误详情')
-    expect(detail('silent')).toContain('执行结果\n（无输出）')
-    expect(item('silent')?.getAttribute('aria-label')).toBe('工具 shell：退出码 2')
-    expect(item('cut')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
-    expect(detail('cut')).toContain('错误详情\npartial output')
-    expect(item('other')?.getAttribute('aria-label')).toBe('工具 read：执行失败')
-    expect(item('timeout')?.getAttribute('aria-label')).toBe('工具 shell：执行失败')
-    expect(detail('timeout')).toContain('错误详情\npart')
+    expect(detail('silent')).toContain('（无输出）')
+    expect(item('silent')?.getAttribute('aria-label')).toBe('工具 运行命令：退出码 2')
+    expect(item('cut')?.getAttribute('aria-label')).toBe('工具 运行命令：执行失败')
+    expect(detail('cut')).toContain('标准输出partial output')
+    expect(item('other')?.getAttribute('aria-label')).toBe('工具 读取：执行失败')
+    expect(item('timeout')?.getAttribute('aria-label')).toBe('工具 运行命令：执行失败')
+    expect(detail('timeout')).toContain('标准输出part')
     expect(detail('timeout')).toContain('[timed out after 118000ms')
-    expect(item('done')?.getAttribute('aria-label')).toBe('工具 shell：执行完成')
-    expect(detail('done')).toContain('执行结果\nfine\n[exit 0]')
+    expect(item('done')?.getAttribute('aria-label')).toBe('工具 运行命令：执行完成')
+    expect(detail('done')).toContain('标准输出fine退出码 0')
   })
 
   it('shows lost output, terminal failure and expiry without inventing authorization controls', async () => {
@@ -864,4 +864,67 @@ it('shows a missing/reclaimed referenced image as unavailable without creating i
   expect(host.textContent).toContain('图片无法显示')
   expect(host.querySelector('img')).toBeNull()
   vi.unstubAllGlobals()
+})
+
+it('uses declared tool intent and scope while keeping commands, identifiers and JSON behind details', async () => {
+  const node: UINode = {
+    kind: 'tool',
+    id: 'human',
+    seq: 1,
+    toolUseId: 'human',
+    name: 'plain_release',
+    status: 'completed',
+    summary: 'plain_release',
+    presentation: { title: '审阅报告', description: '检查来源后提交', summary: '准备签署' },
+    argsPreview: JSON.stringify({ object: 'Record-1', command: 'echo secret', cwd: '/private' }),
+    resultPreview: 'done',
+  }
+  await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [node] }))
+  const row = item('human')?.querySelector('[data-testid="tool-detail-toggle"]')
+  expect(row?.textContent).toContain('审阅报告')
+  expect(row?.textContent).toContain('Record-1 · 准备签署')
+  expect(row?.textContent).not.toContain('plain_release')
+  expect(row?.textContent).not.toContain('secret')
+  expect(item('human')?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('true')
+  expect(item('human')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+    'echo secret',
+  )
+})
+
+it('separates successful shell environment diagnostics, preserving real stderr and failed output', async () => {
+  const { shellOutput } = await import('../src/conversation/messages/shell-output.js')
+  const noise = "xcrun: error: couldn't create cache file '/tmp/xcrun_db-1' (errno=Operation not permitted)"
+  const text = `count 20\n[stderr]\n${noise}\nscript warning: incomplete row\n[exit 0]`
+  expect(
+    shellOutput(
+      '[stderr]\npython3: warning: confstr() failed with code 5: could not get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n[exit 0]',
+    ).environment,
+  ).toContain('DARWIN_USER_TEMP_DIR')
+  expect(shellOutput(text)).toEqual({
+    text: 'count 20\n[stderr]\nscript warning: incomplete row\n[exit 0]',
+    environment: noise,
+  })
+  expect(shellOutput(text.replace('[exit 0]', '[exit 1]'))).toEqual({
+    text: text.replace('[exit 0]', '[exit 1]'),
+  })
+  expect(shellOutput('failure mentions DARWIN_USER_TEMP_DIR\n[exit 0]').environment).toBeUndefined()
+  const node: UINode = {
+    kind: 'tool',
+    id: 'noise',
+    seq: 1,
+    toolUseId: 'noise',
+    name: 'shell',
+    status: 'completed',
+    summary: 'shell',
+    resultPreview: text,
+  }
+  await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [node] }))
+  await act(async () =>
+    item('noise')?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')?.click(),
+  )
+  expect(item('noise')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+    'script warning: incomplete row',
+  )
+  expect(item('noise')?.querySelector('[data-testid="tool-stderr"]')?.textContent).not.toContain('xcrun_db')
+  expect(item('noise')?.querySelector('[data-open]')?.getAttribute('data-open')).toBe('false')
 })

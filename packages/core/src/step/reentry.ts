@@ -22,6 +22,7 @@ import type {
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
 import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
+import { toolCallPayload } from './tool-call.js'
 import { approveAndExecute, type PlannedCall, refuse } from './tools.js'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
@@ -124,17 +125,14 @@ export function toolCallRows(
   o: { depth: number; parentEffectId?: string; invocationId?: string },
 ): EventInput[] {
   const { toolUseId, name, args, ordinal, policy } = call
+  const presentation = s.turn?.snapshot.byName.get(name)?.meta.presentation
   return [
     s.ev(
       'tool/call',
       {
-        toolUseId,
-        name,
-        args,
-        ordinal,
+        ...toolCallPayload({ toolUseId, name, args, ordinal }, presentation, policy),
         depth: o.depth,
         ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-        ...policy,
       },
       { origin: 'model' },
     ),

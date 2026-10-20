@@ -1,19 +1,32 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { Actor, UINode } from '@agnes/protocol'
+import { clipUtf16 } from './clip.js'
 
 export type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
 /**
- * What an approval card reads off the decision's subject: the risk, and the platform's own summary
- * of a question a hook rewrote, as Core recorded both.
+ * What a card reads off the recorded decision subject: technical content, risk and the platform's
+ * summary of a question a hook rewrote. The original subject stays in the decision record.
  */
-export function approvalSubject(subject: unknown): Pick<ApprovalNode, 'risk' | 'rewrite'> {
+export function approvalSubject(
+  subject: unknown,
+): Pick<ApprovalNode, 'risk' | 'rewrite' | 'subjectText' | 'toolName'> {
   const facts = subject as {
+    call?: { name?: unknown }
     risk?: ApprovalNode['risk']
     rewrite?: { by?: unknown; summary?: unknown }
   } | null
   const rewrite = facts?.rewrite
+  const raw = canonicalJson(subject)
   return {
     risk: facts?.risk ?? 'always',
+    ...(typeof facts?.call?.name === 'string' && facts.call.name
+      ? { toolName: clipUtf16(facts.call.name, 256) }
+      : {}),
+    subjectText:
+      raw.length <= 400_000
+        ? raw
+        : `${clipUtf16(raw, 399_900)}\n…[showing first 399900 of ${raw.length} chars]`,
     ...(rewrite && typeof rewrite.summary === 'string' && Array.isArray(rewrite.by)
       ? {
           rewrite: {
@@ -37,3 +50,8 @@ export const automaticToolPermission = (decisionId: string, actor: Actor) => ({
   decisionId,
   actor,
 })
+
+/** Identity comes only from the recorded operation's tool call, never transcript position. */
+export function approvalToolReference(tool: { name: string; toolUseId: string } | undefined) {
+  return tool ? { toolName: tool.name, toolUseId: tool.toolUseId } : {}
+}

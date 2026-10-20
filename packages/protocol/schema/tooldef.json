@@ -131,6 +131,10 @@
           "type": "boolean",
           "description": "Optional, defaults to false. Only a model with native image input can discover or execute this tool."
         },
+        "presentation": {
+          "$ref": "session-v1.json#/$defs/ToolPresentation",
+          "description": "Optional human-readable action and purpose for cards and approvals. Display only; exact arguments and authorization remain unchanged."
+        },
         "commandArg": {
           "type": "string",
           "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",

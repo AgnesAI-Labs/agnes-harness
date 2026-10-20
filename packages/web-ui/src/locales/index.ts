@@ -16,6 +16,7 @@ export const fallbackT: Translate = (key, vars) => {
   return value.replace(/\{([^}]+)\}/g, (match, name: string) => String(vars?.[name] ?? match))
 }
 
+import { baseToolCatalog } from './base-tools.js'
 import { conversationLocaleCatalog } from './conversation.js'
 import { firstRunCatalog } from './first-run.js'
 import { modelSettingsLocaleCatalog } from './model-settings.js'
@@ -128,6 +129,7 @@ const primitiveCatalog: LocaleCatalog = {
 }
 const DICTS = [
   firstRunCatalog,
+  baseToolCatalog,
   conversationLocaleCatalog,
   modelSettingsLocaleCatalog,
   primitiveCatalog,

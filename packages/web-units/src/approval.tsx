@@ -52,7 +52,7 @@ export interface ApprovalProps {
 function focusApproval(content: HTMLDivElement | null): void {
   const card = content?.querySelector<HTMLElement>('[data-approval-key]')
   card?.scrollIntoView?.({ block: 'nearest' })
-  ;(card?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? card)?.focus()
+  ;(card?.querySelector<HTMLButtonElement>('[data-approval-action]:not(:disabled)') ?? card)?.focus()
 }
 
 export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Approval(
@@ -140,17 +140,14 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           <p className="approval-impact">{view.impact}</p>
           {detail}
           {view.warning !== undefined && <p className="approval-warning">{view.warning}</p>}
-          {view.preview !== undefined &&
-            (view.presentation ? (
-              <Disclosure summary={fallbackT('ui.technicalDetails')}>
-                <pre data-testid="approval-preview">{view.preview}</pre>
-              </Disclosure>
-            ) : (
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the argument preview.
+          {view.preview !== undefined && (
+            <Disclosure variant="plain" summary={fallbackT('ui.technicalDetails')}>
+              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the full arguments. */}
               <pre tabIndex={0} data-testid="approval-preview">
                 {view.preview}
               </pre>
-            ))}
+            </Disclosure>
+          )}
           <div className="approval-actions">
             {view.actions.map((action) => (
               <Button

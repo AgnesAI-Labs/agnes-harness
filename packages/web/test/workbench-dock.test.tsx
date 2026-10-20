@@ -7,6 +7,7 @@ import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { registerJobsClientContribution } from '../src/client-modules/jobs.js'
 import { Dock, renderWorkbench, unmountWorkbench } from '../src/workbench/dock.js'
+import { RIGHT_DEFAULT } from '../src/workbench/dock-size.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
 import { mentionPanelPath } from '../src/workbench/mention-path.js'
 
@@ -87,10 +88,13 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     expect(dock.textContent).toContain('Second panel actual.txt')
     flushSync(() => (dock.querySelector('[role="tab"]') as HTMLButtonElement).click())
     const resize = dock.querySelector('hr') as HTMLElement
+    expect(resize.getAttribute('aria-valuenow')).toBe(
+      String(Math.min(RIGHT_DEFAULT, window.innerWidth - 420)),
+    )
     flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     expect(
       document.querySelector<HTMLElement>('.workbench-split')?.style.getPropertyValue('--workbench-width'),
-    ).toBe('304px')
+    ).toBe(`${Math.min(RIGHT_DEFAULT, window.innerWidth - 420) - 16}px`)
     // The limit comes from the window (happy-dom: 1024px wide), not from a fixed 480px ceiling.
     const width = () =>
       document.querySelector<HTMLElement>('.workbench-split')?.style.getPropertyValue('--workbench-width')
@@ -103,9 +107,9 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
       window.innerWidth - 420,
     )
     flushSync(() => resize.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
-    expect(width()).toBe('320px')
+    expect(width()).toBe(`${Math.min(RIGHT_DEFAULT, window.innerWidth - 420)}px`)
     flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
-    expect(width()).toBe('304px')
+    expect(width()).toBe(`${Math.min(RIGHT_DEFAULT, window.innerWidth - 420) - 16}px`)
     const selected = dock.querySelector('[aria-selected="true"]') as HTMLButtonElement
     selected.focus()
     flushSync(() =>

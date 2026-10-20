@@ -1,11 +1,13 @@
 import type { UITurn } from '@agnes/protocol'
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import { ActivityRow, type ActivityState } from './activity-row.js'
 import { fallbackT, type ToolNode } from './context.js'
+import { shellOutput } from './shell-output.js'
+import { ToolOutput } from './tool-output.js'
 import { toolStep } from './tool-step.js'
 import { WebSourceList, webSources } from './web-sources.js'
 
@@ -82,19 +84,13 @@ export function ConversationToolCard({
   const notRun = node.status === 'planned' && turnStatus !== undefined && turnStatus !== 'running'
   const outcome = toolOutcome(node, t)
   const step = toolStep(node, t, interaction)
-  // The row already names the tool and how it ended; the detail is what went in and what came out.
-  const nextDetail = [
-    ...(node.permissionDecision ? [t('timeline.reason.fullAccess')] : []),
-    ...(step.command
-      ? [`$ ${step.command}`]
-      : node.argsPreview
-        ? [t('tool.detail.args'), node.argsPreview]
-        : []),
-    ...(outcome.text ? ['', outcome.section, outcome.text] : []),
-    ...(resultAppendix ? ['', resultAppendix] : []),
-  ]
-    .join('\n')
-    .trim()
+  const nextDetail = useMemo(() => {
+    const output =
+      node.name === 'shell' && node.status === 'completed'
+        ? shellOutput(node.resultPreview)
+        : { text: node.resultPreview }
+    return { node, output, command: step.command, appendix: resultAppendix }
+  }, [node, step.command, resultAppendix])
   const detail = useInteractionSnapshot(detailHost, nextDetail)
   const toggle = () => {
     const next = !expanded
@@ -121,7 +117,7 @@ export function ConversationToolCard({
       : node.permissionDecision
         ? t('timeline.reason.fullAccess')
         : undefined
-  const target = step.target || (meaningful ? summary : '')
+  const target = step.target || (meaningful && step.kind !== 'command' ? summary : '')
   return (
     <div
       ref={cardHost}
@@ -137,26 +133,27 @@ export function ConversationToolCard({
         verb={<span className="tool-name">{step.verb}</span>}
         target={target}
         tooltip={step.full || target || (expanded ? t('tool.detail.collapse') : t('tool.detail.expand'))}
-        mono={step.kind !== 'tool' && Boolean(step.target)}
+        mono={step.mono ?? false}
         state={state}
         note={note}
         expanded={expanded}
         onToggle={toggle}
       />
-      <div className="tool-detail-body" aria-hidden={!expanded}>
+      <div className="tool-detail-body" aria-hidden={!expanded} hidden={!expanded}>
         <div className="tool-detail-inner">
           {sources.length > 0 && expanded && (
             <WebSourceList sources={sources} label={t('activity.sources', { n: sources.length })} />
           )}
-          <div
-            ref={detailHost}
-            className="tool-detail-text"
-            hidden={sources.length > 0}
-            data-testid="tool-detail-text"
-            tabIndex={expanded ? 0 : -1}
-          >
-            {detail}
-          </div>
+          <ToolOutput
+            host={detailHost}
+            node={detail.node}
+            command={detail.command}
+            output={sources.length ? undefined : detail.output.text}
+            environment={'environment' in detail.output ? detail.output.environment : undefined}
+            appendix={detail.appendix}
+            section={outcome.section}
+            t={t}
+          />
         </div>
       </div>
     </div>

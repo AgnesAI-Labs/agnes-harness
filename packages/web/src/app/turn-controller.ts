@@ -12,7 +12,7 @@ import {
   approvalOutsideWindow,
   findApproval,
 } from '@agnes/web-conversation/live-projection'
-import { decisionPresentation } from '@agnes/web-ui'
+import { approvalSummary, decisionPresentation } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { openSessionMode, sessionPermissionLevel } from '../session-permission.js'
@@ -265,7 +265,7 @@ export function createTurnController(
           ? context.t(ran ? 'app.reconcile.answeredRan' : 'app.reconcile.answeredNotRan', {
               tool: answered.reconcile.tool,
             })
-          : answered.summary,
+          : approvalSummary(answered, context.t),
         impact: context.t('app.approval.answeredImpact'),
         actions: [],
         disabled: true,
@@ -319,7 +319,8 @@ export function createTurnController(
         ? liveTitle
         : reconcile
           ? context.t('app.reconcile.summary', { tool: reconcile.tool })
-          : (presentation?.title ?? durable?.summary ?? context.t('app.approval.defaultSummary'))
+          : (presentation?.title ??
+            (durable ? approvalSummary(durable, context.t) : context.t('app.approval.defaultSummary')))
     const risks = {
       destructive: context.t('app.risk.destructive'),
       always: context.t('app.risk.always'),

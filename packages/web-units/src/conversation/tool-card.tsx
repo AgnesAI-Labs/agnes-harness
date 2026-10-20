@@ -1,5 +1,5 @@
 import type { UINode } from '@agnes/protocol'
-import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
+import { baseToolTitle, createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/conversation'
 import type { ElementType, ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -60,7 +60,7 @@ export function createConversationToolCard(
     element.setAttribute(
       'aria-label',
       options.translate('tool.card.aria', {
-        name: next.name,
+        name: baseToolTitle(next.name, options.translate) ?? next.presentation?.title ?? next.name,
         status: toolOutcome(next, options.translate).label,
       }),
     )

@@ -1,3 +1,5 @@
+export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
+export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
@@ -10,6 +12,7 @@ export {
   validIntelligentSurfaceProjection,
   validUiComponentDeclaration,
 } from './ui-surface-validation.js'
+export { readWorkbenchEvidence, WorkbenchEvidenceItem } from './workbench-evidence.js'
 
 // ── What belongs on the root export surface ──────────────────────────────────────────────────
 // This surface used to have no discernible rule. Only 8 of the 11 event data types were exported

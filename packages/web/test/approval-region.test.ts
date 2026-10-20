@@ -62,6 +62,7 @@ describe('rendered approval region', () => {
       expect(approval?.querySelector('[data-testid="approval-rewritten"]')?.textContent).toBe(
         '此摘要由 plugin/reviewer 改写。原始请求：read README.md',
       )
+      expect(approval?.querySelector('pre')?.closest('[data-open]')?.getAttribute('data-open')).toBe('false')
       expect(approval?.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
       expect(approval?.querySelectorAll<HTMLButtonElement>('.approval-actions button')).toHaveLength(2)
     }, committed)

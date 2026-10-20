@@ -8,7 +8,15 @@ import type {
   ToolMeta,
   ToolResult,
 } from '@agnes/extension-api'
-import type { Action, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
+import type {
+  Action,
+  Decision,
+  JobSpec,
+  JobStatus,
+  JsonValue,
+  Target,
+  ToolPresentation,
+} from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expectTypeOf, it } from 'vitest'
 import { defineTool } from '../src/index.js'
@@ -115,6 +123,7 @@ describe('tool types', () => {
   })
   it('ToolMeta requires safety keys and permits omitted hints', () => {
     expectTypeOf<keyof ToolMeta>().toEqualTypeOf<
+      | 'presentation'
       | 'isReadOnly'
       | 'isDestructive'
       | 'isConcurrencySafe'
@@ -131,6 +140,7 @@ describe('tool types', () => {
       | 'requiresImageInput'
       | 'invalidArgumentLimit'
     >()
+    expectTypeOf<ToolMeta['presentation']>().toEqualTypeOf<ToolPresentation | undefined>()
     const m: ToolMeta = {
       isReadOnly: true,
       isDestructive: false,

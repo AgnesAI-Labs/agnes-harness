@@ -31,6 +31,7 @@ export default defineConfig({
     'candidate-review.spec.ts',
     'first-run.spec.ts',
     'business-agents.spec.ts',
+    'base-conversation.spec.ts',
     'agent-sweep.spec.ts',
     'workbench.spec.ts',
     'narrow.spec.ts',
