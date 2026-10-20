@@ -3,21 +3,11 @@
     flex: none;
     display: grid;
     gap: var(--s4);
-    padding: 0 var(--s8) var(--s8);
+    padding: 0 0 var(--s8);
   }
   .application-footer-item {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--s8);
-    min-height: 36px;
-    padding: var(--s8);
-    border: 0;
-    border-radius: var(--radius-control);
     background: transparent;
     color: var(--agnes-text-secondary);
-    font: inherit;
-    font-size: var(--font-size-body);
     text-align: start;
     text-decoration: none;
     cursor: pointer;
@@ -33,11 +23,6 @@
   .application-footer-item:disabled {
     opacity: 0.5;
     cursor: wait;
-  }
-  .application-footer-item svg {
-    width: 16px;
-    height: 16px;
-    flex: none;
   }
   .application-footer > p {
     margin: 0;

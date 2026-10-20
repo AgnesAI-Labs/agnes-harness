@@ -203,17 +203,26 @@
     flex: none;
     margin-top: var(--s8);
   }
-  /* Footer actions share the session rows' height, radius and type size. */
-  .sidebar-footer button {
+  /* Settings and the host-owned application actions share one icon column and type scale. */
+  :is(.sidebar-footer button, .application-footer-item) {
+    display: flex;
+    align-items: center;
     width: 100%;
     justify-content: flex-start;
-    min-height: 2rem;
+    gap: var(--s8);
+    min-height: var(--control-height);
     padding: 0 var(--s8);
-    border-color: transparent;
+    border: 1px solid transparent;
     border-radius: var(--radius-control);
+    font-family: var(--font-sans);
     font-size: var(--font-size-sm);
     font-weight: 400;
     line-height: 1.25rem;
+  }
+  :is(.sidebar-footer button, .application-footer-item) svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
   }
 
   /* 设置 › 运行时与诊断 › 近期错误: summary, kind filters, day groups and one row per kind. */
