@@ -62,6 +62,7 @@ export async function isolatedRuntime(
     AGNES_WEB_ORIGIN: url,
   }
   let web: ChildProcess | undefined
+  const starts: { start: number; ready: number }[] = []
   let log = ''
   const clients = new Set<NodeClient>()
   const requests: { method: string; durationMs: number; code?: unknown }[] = []
@@ -145,6 +146,7 @@ export async function isolatedRuntime(
     if (failures.length) throw new AggregateError(failures, 'SDK cleanup failed after stopping the runtime')
   }
   const start = async () => {
+    const started = Date.now()
     const command = launcher === 'installed' ? resolve('packages/cli/bin/agh') : process.execPath
     const args = [
       ...(launcher === 'root' ? [resolve('agnes.mjs')] : []),
@@ -170,7 +172,10 @@ export async function isolatedRuntime(
     while (Date.now() < deadline) {
       if (web.exitCode !== null) throw new Error(`serve exited: ${log}`)
       try {
-        if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) return
+        if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) {
+          starts.push({ start: started, ready: Date.now() })
+          return
+        }
       } catch {
         /* Wait for the real daemon and BFF. */
       }
@@ -184,6 +189,7 @@ export async function isolatedRuntime(
     url,
     cli,
     start,
+    starts: () => starts,
     connect: async (transport: 'local' | 'web' = 'local', registerWorkspace = true) => {
       let ws = ''
       let socketPath = ''

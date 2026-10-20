@@ -142,7 +142,8 @@ export type CheckpointPrefix = { throughSeq: Seq; headDigest: string; legacyThro
  * With a `checkpoint`, the rows up to its `throughSeq` are handed to `onPage` without being hashed, and
  * the chain is verified onward from the head it names. Contiguity is still checked row by row there: a
  * missing row fails exactly as in a full verify. The prefix is only trusted until the caller's
- * background verification has hashed it again.
+ * background verification has hashed it again. Without an `onPage` consumer, the vouched prefix
+ * need not be read at all; only the tail is verified here.
  */
 export async function verifyLedger(
   storage: StorageAdapter,
@@ -153,9 +154,16 @@ export async function verifyLedger(
   options: VerificationOptions = {},
   checkpoint?: CheckpointPrefix,
 ): Promise<IntegrityState> {
-  let state = { ...EMPTY_STATE }
+  let state: IntegrityState =
+    checkpoint && !onPage
+      ? {
+          lastSeq: checkpoint.throughSeq,
+          headDigest: checkpoint.headDigest,
+          legacyThroughSeq: checkpoint.legacyThroughSeq,
+        }
+      : { ...EMPTY_STATE }
   // The last seq handled. It runs ahead of `state` while the checkpointed prefix is folded unhashed.
-  let at = 0
+  let at = state.lastSeq
   const foldUntil = checkpoint?.throughSeq ?? 0
   const idle = options.idleTimeoutMs ?? 30_000
   const hard = options.hardTimeoutMs ?? 600_000

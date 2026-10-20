@@ -13,13 +13,19 @@ import {
 import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
 import { type ForkBase, forkBaseProviders, forkPaths, pageYield, seededLogs } from './fork-seed.js'
 import {
+  type FullVerifyReport,
+  verifyCheckpointHistory,
+  verifyCheckpointPrefix,
+  waitForVerification,
+} from './history-verification.js'
+
+import {
   INTEGRITY_PAGE_SIZE,
   type IntegrityState,
   LEDGER_INTEGRITY_ALGORITHM,
   LedgerIntegrityFailure,
   prepareIntegrity,
   verifyIntegrityRows,
-  verifyLedger,
 } from './integrity.js'
 import {
   type CommitReceipt,
@@ -33,7 +39,9 @@ import {
   type StorageAdapter,
 } from './storage.js'
 import { prepareEvents } from './validate.js'
-import { decideCheckpoint, makeVerifiedHead, type VerifiedHead } from './verified-head.js'
+import { makeVerifiedHead, type VerifiedHead } from './verified-head.js'
+
+export type { FullVerifyReport } from './history-verification.js'
 
 export type AppendOptions = {
   /** Backend command authority recheck after queued writes, immediately before storage commit. */
@@ -46,7 +54,7 @@ export type AppendOptions = {
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
   opState?: OpWrite
   /**
-   * `'allow'` lets the batch through while the history this log opened with is still being verified
+   * `'allow'` lets the batch through while this log's history is being verified on open or recheck
    * in the background. Only appending user input may ask for it; every other write waits.
    */
   beforeFullVerify?: 'allow'
@@ -82,16 +90,8 @@ export type OpenLogOptions = {
   replay?: {
     page(events: Event[]): void
   }
-  /** Called once when the background verification of an open from a checkpoint finishes. */
+  /** Called once per background checkpoint verification, including live rechecks. */
   onFullVerify?: (r: FullVerifyReport) => void
-}
-
-/** One background full verification: its duration, the rows it hashed and the stored size. */
-export type FullVerifyReport = {
-  ms: number
-  rows: number
-  outcome: 'ok' | 'failed'
-  seq?: Seq
 }
 
 /** What opening a session did, for diagnostics and tests: sizes carry no content. */
@@ -99,16 +99,6 @@ export type SessionOpenStats = {
   lastSeq: Seq
   checkpoint: { used: boolean; throughSeq?: Seq; reason?: string }
 }
-
-/** Rows per read of the background verification; see `startBackgroundVerify`. */
-const BACKGROUND_VERIFY_ROWS = 32
-
-/** A macrotask turn that lets pending I/O run first where the platform has one for that. */
-const idleTurn = (): Promise<void> =>
-  new Promise<void>((resolve) => {
-    if (typeof globalThis.setImmediate === 'function') globalThis.setImmediate(resolve)
-    else globalThis.setTimeout(resolve, 0)
-  })
 
 /**
  * The ledger facade: one writer, one session. It validates a batch before it is offered to storage,
@@ -224,18 +214,13 @@ export class SessionLogImpl {
       // being hashed, so history can be shown at once, and the full chain is verified in the
       // background before anything but user input is written (see `append`).
       const replay = o.replay
-      // A checkpoint that cannot even be read is one not used: the open verifies everything instead.
-      const decision = await decideCheckpoint(o.storage, o.key, opened.lastSeq).catch(
-        () => ({ use: false, reason: 'unsupported' }) as const,
-      )
-      const integrityState = await verifyLedger(
+      const { decision, state: integrityState } = await verifyCheckpointHistory(
         o.storage,
         o.key,
         opened.lastSeq,
-        pageYield,
-        replay ? (events) => replay.page(events) : undefined,
-        o.verification,
-        decision.use ? decision.head : undefined,
+        o.verification ?? {},
+        // Cold opens still read every row and check contiguity, even without a replay consumer.
+        (events) => replay?.page(events),
       )
       const rows = await o.storage.registers(o.key)
       // Opening observers belong to the caller, not to the lifetime of the cached session.
@@ -255,7 +240,7 @@ export class SessionLogImpl {
           ? { used: true, throughSeq: decision.head.throughSeq }
           : { used: false, reason: decision.reason },
       }
-      if (decision.use) log.startBackgroundVerify(decision.head)
+      if (decision.use) log.fullVerifyPromise = log.startBackgroundVerify(decision.head)
       // Everything was verified just now, under this writer's lease, so the head is a verified head.
       // It replaces a checkpoint the open could not use: one past the head would otherwise stay.
       else void log.writeHead(true).catch(() => undefined)
@@ -331,41 +316,68 @@ export class SessionLogImpl {
     return this.closed
   }
 
-  /** Recheck a live session before exporting it: a cached open is not proof of current stored bytes. */
+  /** Recheck the tail now and the checkpointed prefix behind the execution gate, as on cold open. */
   async verifyHistory(options: import('./integrity.js').VerificationOptions = {}): Promise<number> {
-    await this.drain
+    // Serialize verification cycles too: a previous completion must never release a newer gate.
+    while (this.fullVerifyState === 'pending')
+      await waitForVerification(this.fullVerifyPromise, options.signal)
+    if (options.signal?.aborted) throw new CoreError('E_CLOSED', 'ledger verification cancelled')
     this.guard()
-    const expected = { ...this.integrityState }
-    try {
-      const actual = await verifyLedger(
-        this.o.storage,
-        this.key,
-        expected.lastSeq,
-        pageYield,
-        undefined,
-        options,
+    const drain = this.drain
+    // Set the gate before the first await, so no step/fork/non-input append can pass during the tail read.
+    this.fullVerifyState = 'pending'
+    const foreground = (async () => {
+      await drain
+      this.guard()
+      const expected = { ...this.integrityState }
+      const result = await verifyCheckpointHistory(this.storage, this.key, expected.lastSeq, {
+        ...options,
+        signal: this.verifyAbort.signal,
+        onProgress: (progress) => {
+          if (!options.signal?.aborted) options.onProgress?.(progress)
+        },
+      })
+      if (
+        result.state.headDigest !== expected.headDigest ||
+        result.state.legacyThroughSeq !== expected.legacyThroughSeq
       )
-      if (actual.headDigest !== expected.headDigest || actual.legacyThroughSeq !== expected.legacyThroughSeq)
         throw new LedgerIntegrityFailure('stored history differs from the live verified head')
       this.guard()
-      return expected.lastSeq
-    } catch (error) {
-      if (error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY') this.markFaulted(error)
-      throw error
-    }
+      return { ...result, lastSeq: expected.lastSeq }
+    })()
+    this.fullVerifyPromise = foreground.then(
+      async ({ decision }) => {
+        if (this.closed) return this.failVerification(new CoreError('E_CLOSED', 'session closed'))
+        if (decision.use) {
+          await this.startBackgroundVerify(decision.head)
+        } else {
+          this.fullVerifyState = 'done'
+          this.verifiedFullAtMs = this.o.clock()
+          await this.writeHead(true).catch(() => undefined)
+        }
+      },
+      (error: unknown) => this.failVerification(error),
+    )
+    this.fullVerifyPromise.catch(() => undefined)
+    return waitForVerification(
+      foreground.then(({ lastSeq }) => lastSeq),
+      options.signal,
+    )
   }
 
   /**
-   * Settles once every row this log opened with has been hashed: at once when the open verified them
-   * all itself. Rejects with the integrity failure that sealed the log, or with E_CLOSED when the log
+   * Settles once the current history verification finishes, including a newer live recheck that
+   * started while waiting. Rejects with the integrity failure that sealed the log, or with E_CLOSED when the log
    * closed before the background verification finished.
    */
-  fullVerified(): Promise<void> {
-    return this.fullVerifyPromise
+  async fullVerified(): Promise<void> {
+    do {
+      await this.fullVerifyPromise
+    } while (this.fullVerifyState === 'pending')
   }
 
   /**
-   * Whether every row this log opened with has been verified. False while the background
+   * Whether the current history verification has finished. False while a foreground or background
    * verification runs, and for good once it failed or the log closed before it finished.
    */
   get historyVerified(): boolean {
@@ -377,84 +389,54 @@ export class SessionLogImpl {
    * other work, and checks it ends at the digest the checkpoint named. Failing seals the log; an
    * integrity failure also drops the checkpoint, so the next open verifies from the first row.
    */
-  private startBackgroundVerify(head: VerifiedHead): void {
+  private startBackgroundVerify(head: VerifiedHead): Promise<void> {
     this.fullVerifyState = 'pending'
-    const started = performance.now()
-    let rows = 0
-    const idle = async (): Promise<void> => {
-      await idleTurn()
-      await pageYield()
-      if (this.verifyAbort.signal.aborted) throw new CoreError('E_CLOSED', 'session closed')
-    }
-    const report = (r: Pick<FullVerifyReport, 'outcome' | 'seq'>): void => {
+    let measured: FullVerifyReport | undefined
+    const report = () => {
       try {
-        this.o.onFullVerify?.({ ms: performance.now() - started, rows, ...r })
+        if (measured) this.o.onFullVerify?.(measured)
       } catch {
-        /* a report must not change the outcome */
+        /* advisory only */
       }
     }
-    const verified = (async () => {
-      // Small pages, and a yield between rows: a page of large rows read and hashed in one go would
-      // hold the event loop for the whole verification and stall the rest of the open behind it.
-      let state: IntegrityState = { lastSeq: 0, legacyThroughSeq: 0, headDigest: null }
-      while (state.lastSeq < head.throughSeq) {
-        await idle()
-        const page = await this.o.storage.scanIntegrity(this.o.key, {
-          fromSeq: state.lastSeq + 1,
-          toSeq: head.throughSeq,
-          limit: BACKGROUND_VERIFY_ROWS,
-        })
-        if (page.length === 0)
-          throw new LedgerIntegrityFailure('ledger ended before advertised sequence', {
-            seq: state.lastSeq + 1,
-          })
-        for (const row of page) {
-          state = verifyIntegrityRows([row], state)
-          rows++
-          await pageYield()
-          if (this.verifyAbort.signal.aborted) throw new CoreError('E_CLOSED', 'session closed')
-        }
-      }
-      if (
-        state.lastSeq !== head.throughSeq ||
-        state.headDigest !== head.headDigest ||
-        state.legacyThroughSeq !== head.legacyThroughSeq
-      )
-        throw new LedgerIntegrityFailure('ledger head differs from its checkpoint', { seq: head.throughSeq })
-    })()
-    this.fullVerifyPromise = verified.then(
+    const verified = verifyCheckpointPrefix(this.storage, this.key, head, this.verifyAbort.signal, (r) => {
+      measured = r
+    })
+    const completion = verified.then(
       async () => {
         this.fullVerifyState = 'done'
         this.verifiedFullAtMs = this.o.clock()
-        report({ outcome: 'ok' })
+        report()
         // A log that closed meanwhile has handed its lease back; it writes nothing more.
         if (!this.closed) await this.writeHead().catch(() => undefined)
       },
-      async (error: unknown) => {
-        const integrity = error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY'
-        if (!integrity && this.verifyAbort.signal.aborted) {
-          this.fullVerifyState = 'stopped'
-          throw new CoreError('E_CLOSED', 'session closed before its history was verified')
-        }
-        // Sealed before anything else is awaited, so no write slips in behind a known failure.
-        this.fullVerifyState = 'failed'
-        const failure = integrity
-          ? (error as CoreError)
-          : error instanceof CoreError
-            ? error
-            : new CoreError('E_STORAGE_FAULT', 'background ledger verification could not finish')
-        this.markFaulted(failure)
-        const seq = failure.detail?.seq
-        report({ outcome: 'failed', ...(typeof seq === 'number' ? { seq } : {}) })
-        // Only a real integrity failure drops the checkpoint; a storage error leaves the outcome unknown,
-        // and keeping the checkpoint saves the next open a full verification. Removing one can only
-        // cost time, never let a bad row through.
-        if (integrity) await this.o.storage.deleteVerifiedHead?.(this.o.key).catch(() => undefined)
-        throw failure
+      (error: unknown) => {
+        const failed = this.failVerification(error)
+        report()
+        return failed
       },
     )
     // Waiters see the rejection; this keeps an unobserved one from being reported as unhandled.
-    this.fullVerifyPromise.catch(() => undefined)
+    completion.catch(() => undefined)
+    return completion
+  }
+
+  private async failVerification(error: unknown): Promise<never> {
+    const integrity = error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY'
+    if (!integrity && (this.closed || this.verifyAbort.signal.aborted)) {
+      this.fullVerifyState = 'stopped'
+      throw new CoreError('E_CLOSED', 'session closed before its history was verified')
+    }
+    this.fullVerifyState = 'failed'
+    const failure =
+      error instanceof CoreError
+        ? error
+        : new CoreError('E_STORAGE_FAULT', 'ledger verification could not finish')
+    // Seal before awaiting cleanup, so even queued input is refused after a known failure.
+    this.markFaulted(failure)
+    // Storage outages leave integrity unknown; only a proven integrity failure drops the checkpoint.
+    if (integrity) await this.storage.deleteVerifiedHead?.(this.key).catch(() => undefined)
+    throw failure
   }
 
   /**
@@ -488,7 +470,7 @@ export class SessionLogImpl {
    */
   private async awaitFullVerify(): Promise<void> {
     // Resolves only once the state is 'done'; every other outcome rejects.
-    await this.fullVerifyPromise
+    await this.fullVerified()
     this.guard()
   }
 
@@ -602,7 +584,7 @@ export class SessionLogImpl {
     this.guard()
     // Before the batch is prepared or queued: an allowed batch behind it takes the next seq. Only
     // awaited while pending, so a verified log admits a batch in the same turn as before.
-    if (opts.beforeFullVerify !== 'allow' && this.fullVerifyState !== 'done') await this.awaitFullVerify()
+    while (opts.beforeFullVerify !== 'allow' && this.fullVerifyState !== 'done') await this.awaitFullVerify()
     const events = prepareEvents(tx, {
       ids: this.o.ids,
       clock: this.o.clock,
@@ -795,7 +777,7 @@ export class SessionLogImpl {
     this.guard()
     // A child starts from this log's chain state, so it may only start from a verified one. Only
     // awaited while pending: the fork point below is otherwise still taken in the caller's turn.
-    if (this.fullVerifyState !== 'done') await this.awaitFullVerify()
+    while (this.fullVerifyState !== 'done') await this.awaitFullVerify()
     if (!Number.isSafeInteger(boundarySeq) || boundarySeq < 1 || boundarySeq > this.lastSeqValue)
       throw new CoreError('E_SURFACE_RANGE', 'fork boundary out of range', {
         boundarySeq,

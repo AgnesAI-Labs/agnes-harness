@@ -194,11 +194,29 @@ export interface PersistenceLedgerPort {
   discardNewSession?(key: string, expectedWriterRunId: string, claim?: PersistenceLeaseClaim): Promise<void>
 }
 
+/** Existing ledger checkpoint format; never an execution authorization or a replacement for verification. */
+export interface PersistenceVerifiedHead {
+  sessionKey: string
+  throughSeq: number
+  headDigest: string
+  legacyThroughSeq: number
+  algorithm: 'agnes-ledger-jcs-sha256-v1'
+  verifiedFullAtMs: number
+  writtenAtMs: number
+  checkpointDigest: string
+}
+
 export interface PersistenceIntegrityPort {
   scanIntegrity(
     key: string,
     query: { fromSeq: number; toSeq: number; limit: number },
   ): Promise<PersistenceIntegrityRow[]>
+  /** Optional verified-head optimization. Without it Core verifies the complete history in the foreground. */
+  readVerifiedHead?(key: string): Promise<PersistenceVerifiedHead | undefined>
+  writeVerifiedHead?(head: PersistenceVerifiedHead, options?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead?(key: string): Promise<void>
+  integrityDigestAt?(key: string, seq: number): Promise<string | null | undefined>
+  ledgerStats?(key: string): Promise<{ storedBytes: number; maxRowBytes: number }>
 }
 
 export interface PersistenceSessionStore extends PersistenceLedgerPort, Partial<PersistenceIntegrityPort> {

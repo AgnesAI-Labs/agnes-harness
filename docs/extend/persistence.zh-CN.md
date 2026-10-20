@@ -10,6 +10,8 @@
 
 提供器可以返回可选 `open().recovery: { diagnosticId, quarantineFile, validThroughSeq }`，但必须先持久隔离损坏字节并保留有效前缀。在同一恢复事务内持久保存禁止重放的取消/失败围栏：即使 Host 处理报告前崩溃，在途副作用也不得重新执行。Host 关闭在途操作并记录本地化恢复诊断。不得丢弃校验有效的后续事件，也不得将此入口用于格式迁移。
 
+Provider 可在 integrity port 上按 `PersistenceVerifiedHead` 合同提供可选的 `readVerifiedHead`、`writeVerifiedHead`、`deleteVerifiedHead` 和 `integrityDigestAt`。Core 只用它们在前台校验尾部，并在现有执行门禁之后重新哈希前缀；缺少这些方法时仍在前台全量验证。检查点默认只能前进，只有显式 `force` 才可替换；分叉子会话的摘要查询必须覆盖父前缀，丢弃会话时也须清理检查点。`ledgerStats` 是独立的可选诊断读取。这些方法不授予权限，也不替代追加水位。
+
 ## 包存储与兼容
 
 默认用量计费、refine 提案、MCP 索引、审批授权和锁定包操作回执均使用按所有者隔离的 metadata。包 seam 使用 `adapters.storage.namespace(name)`；Host 绑定所有者，包不能通过该句柄选择其他所有者。值必须可序列化为 JSON，读取返回独立副本。`transaction(fn)` 同步且原子，抛错或返回 Promise 会回滚。子任务身份和树预算仍归 `childControl`，过期租约及操作状态检查归 `reclaim`。

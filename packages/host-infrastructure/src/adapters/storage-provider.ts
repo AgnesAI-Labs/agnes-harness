@@ -232,6 +232,11 @@ function bridge(
     })
   const discardNewSession = store.discardNewSession?.bind(store)
   const scanLean = store.scanLean?.bind(store)
+  const readVerifiedHead = store.readVerifiedHead?.bind(store)
+  const writeVerifiedHead = store.writeVerifiedHead?.bind(store)
+  const deleteVerifiedHead = store.deleteVerifiedHead?.bind(store)
+  const integrityDigestAt = store.integrityDigestAt?.bind(store)
+  const ledgerStats = store.ledgerStats?.bind(store)
   const ledger = {
     capabilities: provider.capabilities,
     ...(store.sqlite ? { sqlite: store.sqlite } : {}),
@@ -261,6 +266,22 @@ function bridge(
       : {}),
     scanIntegrity: (key: string, query: { fromSeq: number; toSeq: number; limit: number }) =>
       call(async () => (await store.scanIntegrity(key, query)) as IntegrityRow[]),
+    ...(readVerifiedHead ? { readVerifiedHead: (key: string) => call(() => readVerifiedHead(key)) } : {}),
+    ...(writeVerifiedHead
+      ? {
+          writeVerifiedHead: (...args: Parameters<typeof writeVerifiedHead>) =>
+            call(() => writeVerifiedHead(...args)),
+        }
+      : {}),
+    ...(deleteVerifiedHead
+      ? { deleteVerifiedHead: (key: string) => call(() => deleteVerifiedHead(key)) }
+      : {}),
+    ...(integrityDigestAt
+      ? {
+          integrityDigestAt: (key: string, seq: number) => call(() => integrityDigestAt(key, seq)),
+        }
+      : {}),
+    ...(ledgerStats ? { ledgerStats: (key: string) => call(() => ledgerStats(key)) } : {}),
     registers: (key: string) => call(() => store.registers(key)),
     createChild: (parent: string, seq: number, child: string) =>
       call(() => store.createChild(parent, seq, child)),
@@ -338,6 +359,11 @@ class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> 
               'scanIntegrity',
               'createChild',
               'discardNewSession',
+              'readVerifiedHead',
+              'writeVerifiedHead',
+              'deleteVerifiedHead',
+              'integrityDigestAt',
+              'ledgerStats',
             ])
             // Preserve optional provider methods and SQLite's extra host ports without inventing them.
             const view = new Proxy(store, {
