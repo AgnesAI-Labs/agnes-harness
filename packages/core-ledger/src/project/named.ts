@@ -123,6 +123,31 @@ export class ProjectionRegistry {
     return this.snapshotEntries(sessionKey, events, [entry], asOfSeq).units[key] ?? { error: 'unavailable' }
   }
 
+  /**
+   * The unit `snapshotOne` returns over every row through `asOfSeq`, given only the rows after
+   * `afterSeq`. It folds them only while the live entry's line for this session still ends exactly at
+   * `afterSeq` and a full read would resume from that line; otherwise it changes nothing and returns
+   * undefined, and the caller reads from the first row.
+   */
+  snapshotOneAfter(
+    sessionKey: string,
+    key: string,
+    afterSeq: Seq,
+    events: Iterable<Event>,
+    asOfSeq: Seq,
+  ): Unit | undefined {
+    const entry = this.entries.get(key)
+    if (!entry) return undefined
+    if (
+      entry.cache.get(sessionKey)?.seq !== afterSeq ||
+      afterSeq > asOfSeq ||
+      entry.quarantine.has(sessionKey)
+    )
+      return undefined
+    const rows = cut(events, asOfSeq)
+    return this.foldEntry(sessionKey, entry, rows, rows.at(-1)?.seq ?? afterSeq, true)
+  }
+
   failures(): ProjectionFailure[] {
     return this.failed.map((failure) => ({ ...failure }))
   }
@@ -141,65 +166,80 @@ export class ProjectionRegistry {
     entries: Iterable<Entry>,
     asOfSeq?: Seq,
   ): ProjectionSnapshot {
-    const rows = [...events]
-      .filter((event) => asOfSeq === undefined || event.seq <= asOfSeq)
-      .sort((a, b) => a.seq - b.seq)
+    const rows = cut(events, asOfSeq)
     const upto = rows.at(-1)?.seq ?? 0
     const units = Object.create(null) as ProjectionSnapshot['units']
-    for (const { key, def, cache, quarantine, owner } of entries) {
-      const failure = quarantine.get(sessionKey)
-      if (failure && failure.seq <= upto) {
-        units[key] = { error: owner === undefined ? failure.message : 'unavailable' }
-        continue
-      }
-      let line = cache.get(sessionKey)
-      let state = line?.state
-      let seq = line?.seq ?? 0
-      try {
-        if (
-          line &&
-          (line.ver !== def.stateVersion ||
-            line.seq > upto ||
-            (def.stateSchema !== undefined && !def.stateSchema(line.state)))
-        ) {
-          cache.delete(sessionKey)
-          line = undefined
-          state = undefined
-          seq = 0
-        }
-        if (!line) state = def.init()
-        for (const event of rows) {
-          if (event.seq <= seq) continue
-          seq = event.seq
-          const next = def.apply(state, event)
-          if (!Object.is(next, state) && canonicalJson(next) === canonicalJson(state))
-            throw new Error(
-              `apply returned a new reference with unchanged content at seq ${seq} (Object.is violated)`,
-            )
-          state = next
-        }
-        cache.set(sessionKey, { key, seq, ver: def.stateVersion, state })
-        units[key] = {
-          state,
-          ...(def.view ? { view: def.view(state) } : {}),
-          stateVersion: def.stateVersion,
-        }
-      } catch (error) {
-        let message = 'unavailable'
-        if (owner === undefined) {
-          try {
-            message = error instanceof Error ? error.message : String(error)
-          } catch {
-            /* hostile thrown value */
-          }
-        }
-        const record = { key, seq, message }
-        this.failed.push(record)
-        quarantine.set(sessionKey, record)
-        cache.delete(sessionKey)
-        units[key] = { error: owner === undefined ? record.message : 'unavailable' }
-      }
-    }
+    for (const entry of entries) units[entry.key] = this.foldEntry(sessionKey, entry, rows, upto, false)
     return { asOfSeq: upto, units }
   }
+
+  /** `resume` folds onto the existing line or returns undefined; it never discards the line itself. */
+  private foldEntry(
+    sessionKey: string,
+    entry: Entry,
+    rows: Event[],
+    upto: Seq,
+    resume: true,
+  ): Unit | undefined
+  private foldEntry(sessionKey: string, entry: Entry, rows: Event[], upto: Seq, resume: false): Unit
+  private foldEntry(sessionKey: string, entry: Entry, rows: Event[], upto: Seq, resume: boolean) {
+    const { key, def, cache, quarantine, owner } = entry
+    const failure = quarantine.get(sessionKey)
+    if (failure && failure.seq <= upto)
+      return { error: owner === undefined ? failure.message : 'unavailable' }
+    let line = cache.get(sessionKey)
+    let state = line?.state
+    let seq = line?.seq ?? 0
+    try {
+      if (
+        line &&
+        (line.ver !== def.stateVersion ||
+          line.seq > upto ||
+          (def.stateSchema !== undefined && !def.stateSchema(line.state)))
+      ) {
+        if (resume) return undefined
+        cache.delete(sessionKey)
+        line = undefined
+        state = undefined
+        seq = 0
+      }
+      if (!line) state = def.init()
+      for (const event of rows) {
+        if (event.seq <= seq) continue
+        seq = event.seq
+        const next = def.apply(state, event)
+        if (!Object.is(next, state) && canonicalJson(next) === canonicalJson(state))
+          throw new Error(
+            `apply returned a new reference with unchanged content at seq ${seq} (Object.is violated)`,
+          )
+        state = next
+      }
+      cache.set(sessionKey, { key, seq, ver: def.stateVersion, state })
+      return {
+        state,
+        ...(def.view ? { view: def.view(state) } : {}),
+        stateVersion: def.stateVersion,
+      }
+    } catch (error) {
+      let message = 'unavailable'
+      if (owner === undefined) {
+        try {
+          message = error instanceof Error ? error.message : String(error)
+        } catch {
+          /* hostile thrown value */
+        }
+      }
+      const record = { key, seq, message }
+      this.failed.push(record)
+      quarantine.set(sessionKey, record)
+      cache.delete(sessionKey)
+      return { error: owner === undefined ? record.message : 'unavailable' }
+    }
+  }
+}
+
+function cut(events: Iterable<Event>, asOfSeq: Seq | undefined): Event[] {
+  return [...events]
+    .filter((event) => asOfSeq === undefined || event.seq <= asOfSeq)
+    .sort((a, b) => a.seq - b.seq)
 }
