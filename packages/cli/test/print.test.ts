@@ -172,7 +172,7 @@ describe('runPrint in text mode', () => {
       })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
       expect(o.err()).toBe(
-        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT: The provider connection failed. Check connectivity and inspect the request status before retrying.\n`,
+        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT: The provider could not be reached, or it answered with a server error. Check connectivity and try again later. If it keeps happening, the provider may be down.\n`,
       )
     },
   )
