@@ -691,6 +691,34 @@ export class DecisionCommands {
       ]
     })
   }
+  /**
+   * `withdraw` as rows, for a caller that closes the requesting operation in the same commit. Called
+   * inside the writer lock; a decision already closed is left as it is.
+   */
+  withdrawnEvents(handles: readonly DecisionHandle[], code: string): EventInput[] {
+    const at = new Date(this.s.clock()).toISOString()
+    return handles.flatMap((handle) => {
+      const value = this.s.readDecisions().get(handle.id)?.value
+      if (
+        !value ||
+        !this.owns(value.handle) ||
+        value.request.lane !== this.s.lane ||
+        value.consumption ||
+        value.invalidation ||
+        (value.result && value.result.reason !== 'answered')
+      )
+        return []
+      return [
+        this.event({
+          ...value,
+          revision: value.revision + 1,
+          ...(value.result
+            ? { invalidation: { at, code } }
+            : { result: { reason: 'unavailable', at, code } }),
+        }),
+      ]
+    })
+  }
   /** Backend-only: callers append these rows beside the original effect intent or next checkpoint. */
   consumptionEvents(
     handles: readonly DecisionHandle[],

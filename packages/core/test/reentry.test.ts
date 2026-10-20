@@ -414,6 +414,96 @@ describe('re-entry and slots', () => {
     expect(nestedIntent?.data).not.toHaveProperty('parentEffectId')
   })
 
+  it('two concurrent nested approvals leave one pending decision', async () => {
+    const r = new ToolRegistry()
+    const ran: string[] = []
+    r.add(
+      shellTool(async (args) => {
+        ran.push((args as { command: string }).command)
+        return { content: [{ type: 'text' as const, text: 'ran' }] }
+      }),
+      { source: 's', trust: 'builtin' },
+    )
+    const outer = vi.fn(
+      async (_args: unknown, ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } }) => {
+        // Like a code cell: both calls run, and their errors come back as the cell's output.
+        const codes = await Promise.all(
+          ['a', 'b'].map((command) =>
+            ctx.tools.invoke('shell', { command }).then(
+              () => 'ok',
+              (error) => String((error as { code?: string }).code),
+            ),
+          ),
+        )
+        return { content: [{ type: 'text' as const, text: codes.join(',') }] }
+      },
+    )
+    r.add(
+      { name: 'run_code', description: 'x', parameters: Type.Object({}), meta, execute: outer } as never,
+      {
+        source: 's',
+        trust: 'builtin',
+      },
+    )
+    const seams = fakeSeams({
+      approval: { ask: async () => ({ ticket: 'nested-ticket', expiresAt: '2999-01-01T00:00:00.000Z' }) },
+    })
+    const h = await openSession({
+      provider: fakeProvider([toolTurn('run_code', {}), textTurn('done')]),
+      registry: r,
+      seams,
+      preset: { ...presetDefaults(), disclosure: 'code' },
+    })
+    // The batch as the turn parks on it: the op is released once the turn has ended.
+    let parkedBatch: Array<{ toolUseId: string; status: string }> = []
+    const endTurn = h.session.endTurn.bind(h.session)
+    vi.spyOn(h.session, 'endTurn').mockImplementation((reason, extra) => {
+      const op = h.session.op()
+      if (reason === 'parked' && op?.phase.kind === 'tools') parkedBatch = op.phase.batch.calls
+      return endTurn(reason, extra)
+    })
+    await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'parked',
+    )
+    const open = (await h.session.decisions.list()).filter(
+      (d) => d.request.owner === 'core/tool-permission' && !d.result && !d.invalidation && !d.consumption,
+    )
+    expect(open).toHaveLength(1)
+    const [pending] = open
+    if (!pending) throw new Error('missing the pending decision')
+    const kept = (pending.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId
+    const shellCalls = (await h.log.scan({ type: 'tool/call', limit: 20 }))
+      .map((row) => row.data as { toolUseId: string; name: string })
+      .filter((call) => call.name === 'shell')
+    expect(shellCalls).toHaveLength(2)
+    const other = shellCalls.find((call) => call.toolUseId !== kept)
+    if (!other) throw new Error('missing the second nested call')
+    const results = (await h.log.scan({ type: 'tool/result', limit: 20 })).map(
+      (row) => row.data as { toolUseId: string; code?: string; isError?: boolean; content: unknown },
+    )
+    expect(results.filter((row) => row.toolUseId === other.toolUseId)).toEqual([
+      expect.objectContaining({
+        isError: true,
+        code: 'APPROVAL_PENDING',
+        content: [
+          {
+            type: 'text',
+            text: 'approval is pending for another call from the same tool; call this again after that approval is settled',
+          },
+        ],
+      }),
+    ])
+    expect(parkedBatch.find((call) => call.toolUseId === kept)?.status).toBe('awaiting_approval')
+    expect(parkedBatch.find((call) => call.toolUseId === other.toolUseId)?.status).toBe('completed')
+    expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(ran).toHaveLength(1)
+  })
+
   it('closes a persisted nested call as not-started before replaying its safe parent after a crash', async () => {
     let hookEntered!: () => void
     let releaseHook!: () => void

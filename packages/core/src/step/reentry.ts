@@ -76,7 +76,7 @@ type InvokeOptions = {
   parentEffectId?: string
   invocationId?: string
   nestedLease?: NestedToolLease
-  onPark?: (event: EventInput) => void
+  onPark?: (event: EventInput, toolUseId: string) => void
   onAttachmentRead?: () => void
 }
 type CallPlan = {
@@ -211,7 +211,7 @@ export async function runPlannedTool(
         },
       })
     })
-    o.onPark?.(park)
+    o.onPark?.(park, toolUseId)
     throw Object.assign(new Error('PARKED'), { code: 'PARKED' })
   }
   return result

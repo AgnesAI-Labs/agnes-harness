@@ -326,6 +326,66 @@ export async function refuse(
   return result
 }
 
+/** A nested call that parked, and the question it left open. */
+type NestedPark = { event: EventInput; toolUseId: string }
+
+const APPROVAL_PENDING_TEXT =
+  'approval is pending for another call from the same tool; call this again after that approval is settled'
+
+/**
+ * The park a tool's nested calls leave the turn on. A turn waits on one approval, so when several
+ * nested calls parked at once the first is kept and every later one still awaiting approval is
+ * closed here: an `APPROVAL_PENDING` result, its question withdrawn and its batch entry completed,
+ * in one commit. An uncertain call already has its result and is left alone.
+ */
+async function parkOutcome(
+  s: SessionImpl,
+  nestedParks: readonly NestedPark[],
+): Promise<{ park?: EventInput }> {
+  const [kept, ...later] = nestedParks
+  if (!kept) return {}
+  const awaiting = (p: NestedPark) => {
+    const op = s.op()
+    return (
+      op?.phase.kind === 'tools' &&
+      op.phase.batch.calls.some((c) => c.toolUseId === p.toolUseId && c.status === 'awaiting_approval')
+    )
+  }
+  if (later.some(awaiting)) {
+    let closing: NestedPark[] = []
+    await s.transition(
+      () => {
+        closing = later.filter(awaiting)
+        const handles = closing.flatMap((p) =>
+          p.event.type === 'x/core/decision-delivery'
+            ? [(p.event.data as { handle: DecisionHandle }).handle]
+            : [],
+        )
+        return [
+          ...closing.map((p) => {
+            const callSeq = s.state.toolCalls.get(p.toolUseId)?.seq
+            return s.ev(
+              'tool/result',
+              {
+                toolUseId: p.toolUseId,
+                content: [{ type: 'text', text: APPROVAL_PENDING_TEXT }],
+                isError: true,
+                code: 'APPROVAL_PENDING',
+                enforcement: s.d.runtime.enforcement(),
+                authz: { decisionId: 'n/a' },
+              },
+              callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
+            )
+          }),
+          ...s.decisions.withdrawnEvents(handles, 'approval-pending'),
+        ]
+      },
+      (cur) => closing.reduce((op, p) => updateCall(op, p.toolUseId, { status: 'completed' }), cur),
+    )
+  }
+  return { park: kept.event }
+}
+
 export async function approveAndExecute(
   s: SessionImpl,
   call: PlannedCall,
@@ -1136,7 +1196,7 @@ export async function approveAndExecute(
   // return its own result (partial output, the cause) before the kernel cuts the call off.
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
-  const nestedParks: EventInput[] = []
+  const nestedParks: NestedPark[] = []
   // A synthesized failure no running code reads: for a nested call, its own outcome; for an outer
   // call, the nested calls that had already written under it.
   const notesFor = (code: string) =>
@@ -1164,7 +1224,7 @@ export async function approveAndExecute(
         ...io,
         parentEffectId: effect.effectId,
         ...(o.nestedLease ? { nestedLease: o.nestedLease } : {}),
-        onPark: (event) => nestedParks.push(event),
+        onPark: (event, toolUseId) => nestedParks.push({ event, toolUseId }),
         onAttachmentRead: markAttachmentRead,
       })
     }
@@ -1435,7 +1495,7 @@ export async function approveAndExecute(
           )
           return {
             result,
-            ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+            ...(await parkOutcome(s, nestedParks)),
           }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
@@ -1468,7 +1528,7 @@ export async function approveAndExecute(
         })
         return {
           result,
-          ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+          ...(await parkOutcome(s, nestedParks)),
         }
       }
       result = errorResult(
@@ -1661,7 +1721,7 @@ export async function approveAndExecute(
     }
     return {
       result: recordedResult,
-      ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+      ...(await parkOutcome(s, nestedParks)),
       ...(deferred ? { deferred: { jobId: deferred, toolUseId: call.toolUseId } } : {}),
     }
   } finally {
