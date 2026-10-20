@@ -4,6 +4,8 @@ English | [简体中文](tool-runtime.zh-CN.md)
 
 [Plugin author kit](README.md) · [Loop events](loop-events.md)
 
+Completion checks preserve an explicit `RepairSeam.decide` result of `complete` without changing the recorded verdict. Core bounds further repair/escalation requests to one correction. Verifier or repair infrastructure failures end the turn with a trusted audit that verification could not be completed; content rejection remains distinct. The retired verifier `park` path no longer creates an unknown-outcome human acceptance request (including its former `always`/`budget` risks). Operation reviews, unknown-effect reconciliation and budget quotes keep their existing decision channels.
+
 `@agnes/extension-api` provides two contracts:
 
 - `ToolRuntimeProvider.create({ maxParallel }): ToolRuntime` creates a session-owned instance with `execute(call, execution, signal)`, `batch(calls, execution, signal)`, `cancel()` and `dispose()`.

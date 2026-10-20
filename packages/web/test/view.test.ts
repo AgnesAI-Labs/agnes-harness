@@ -52,6 +52,54 @@ describe('web projection adapter', () => {
     const failure = recordRunEvent(active, event(10, 'turn/end', { reason: 'error', lastAssistantSeq: null }))
     expect(webView(timeline([]), failure, zhT).status).toBe('执行失败')
     expect(webView(timeline([]), undefined, zhT).status).toBe('准备就绪')
+    const current = {
+      id: 'turn:1',
+      turn: 1,
+      startSeq: 8,
+      endSeq: 10,
+      startedAt: '2026-10-01T00:00:00Z',
+      status: 'failed',
+      reason: 'blocked',
+      verification: 'blocked',
+      nodeIds: [],
+      inherited: false,
+      forkable: false,
+      usage: {
+        totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        calls: [],
+        reasoningComplete: true,
+        billingComplete: true,
+      },
+    } satisfies UITimeline['turns'][number]
+    const receipt = { startSeq: 8, endSeq: 10, reason: 'blocked' as const }
+    for (const [verification, reason, status, zh, en] of [
+      ['blocked', 'blocked', 'failed', '未通过校验', 'Not verified'],
+      ['unverified', 'completed', 'completed', '未通过校验', 'Not verified'],
+      ['unavailable', 'completed', 'completed', '未能完成校验', 'Could not complete verification'],
+    ] as const) {
+      const projection = { ...timeline([]), turns: [{ ...current, verification, reason, status }] }
+      const terminal = { ...receipt, reason }
+      expect(webView(projection, terminal, zhT)).toMatchObject({ status: zh, statusState: 'not-verified' })
+      expect(webView(projection, terminal, enT).status).toBe(en)
+      expect(
+        webView({ ...projection, opState: { turn: 2, step: 1, phase: 'inference' } }, terminal, zhT),
+      ).toMatchObject({ status: '生成回复' })
+      expect(webView(projection, { ...terminal, startSeq: 11 }, zhT).statusState).toBeUndefined()
+      expect(webView(projection, { ...terminal, endSeq: 12 }, zhT).statusState).toBeUndefined()
+      const failed = {
+        ...projection,
+        turns: [
+          {
+            ...current,
+            verification,
+            reason: 'error' as const,
+            error: { code: 'E_RUNTIME', message: 'failed' },
+          },
+        ],
+      }
+      expect(webView(failed, { ...receipt, reason: 'error' }, zhT)).toMatchObject({ status: '执行失败' })
+      expect(webView(failed, { ...receipt, reason: 'error' }, zhT).statusState).toBeUndefined()
+    }
   })
   it('renders literal conversation and tool content without HTML interpretation', () => {
     const nodes: UITimeline['nodes'] = [

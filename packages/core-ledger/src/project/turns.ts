@@ -261,6 +261,16 @@ export class TurnProjection {
         changed.add(turn.id)
         break
       }
+      case 'x/core/verifier-recovery': {
+        const turn = this.current ? this.byId.get(this.current) : undefined
+        if (!turn || event.origin !== 'system' || event.trust !== 'trusted') break
+        const handling = data?.handling
+        if (handling === 'blocked' || handling === 'unavailable' || handling === 'complete') {
+          turn.verification = handling === 'complete' ? 'unverified' : handling
+          changed.add(turn.id)
+        }
+        break
+      }
       case 'x/core/tool-argument-recovery': {
         const fact = event.data as {
           name?: string

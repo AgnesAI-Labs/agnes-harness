@@ -194,7 +194,7 @@ export function createTurnController(
             ? 'approval'
             : view.busy
               ? 'running'
-              : (receipt?.reason ?? 'idle'),
+              : (view.statusState ?? receipt?.reason ?? 'idle'),
         {
           sessionId: viewId,
           startedAt: turn?.startedAt,

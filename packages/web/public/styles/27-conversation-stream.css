@@ -101,6 +101,9 @@
   .turn-status {
     color: var(--agnes-text-tertiary);
   }
+  .conversation-turn[data-verification] :is(.turn-status, .process-label) {
+    color: var(--agnes-status-warning-text);
+  }
   .turn-node-flow {
     display: flex;
     flex-direction: column;

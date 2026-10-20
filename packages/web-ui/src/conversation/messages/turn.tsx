@@ -4,6 +4,7 @@ import { Disclosure } from '../../ui/disclosure.js'
 import { Bubble } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
+import { turnVerificationStatus } from '../turn-status.js'
 import { ActivityIcon, ActivityRow, type ActivityState } from './activity-row.js'
 import type { AssistantNode, ConversationMessagesProps, ToolNode } from './context.js'
 import { markdownState } from './markdown-state.js'
@@ -104,7 +105,9 @@ function TurnView({
   const latestStreaming = others
     .filter((node): node is AssistantNode => node.kind === 'assistant' && node.streaming === true)
     .sort((a, b) => b.seq - a.seq)[0]
-  let status = t(TURN_STATUS_KEYS[turn.status])
+  const verificationStatus = turnVerificationStatus(turn)
+  const verification = verificationStatus?.verification
+  let status = t(verificationStatus?.labelKey ?? TURN_STATUS_KEYS[turn.status])
   if (processActive) {
     if (pendingApproval || awaitingToolApproval) status = t('turn.status.awaitingApproval')
     else if (turn.status === 'waiting') status = t(TURN_STATUS_KEYS.waiting)
@@ -292,7 +295,7 @@ function TurnView({
           </span>
         }
       />
-      {turn.status === 'failed' && (
+      {turn.status === 'failed' && !verification && (
         <p className="turn-error" role="alert">
           {turn.error
             ? t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
@@ -300,6 +303,16 @@ function TurnView({
                 reason: turn.reason ?? t('turn.error.unknownReason'),
               })}
         </p>
+      )}
+      {verification && (
+        <Disclosure
+          variant="plain"
+          className="turn-recovery"
+          data-testid="turn-verification"
+          summary={t(`turn.verification.${verification}`)}
+        >
+          <p>{t(`turn.verification.${verification}.detail`)}</p>
+        </Disclosure>
       )}
       {recoveryFacts.length > 0 && (
         <Disclosure
@@ -378,7 +391,10 @@ function TurnView({
             )
           }
           const { node } = entry
-          const always = entry.type === 'final' || entry.type === 'attention'
+          const always =
+            entry.type === 'final' ||
+            entry.type === 'attention' ||
+            (verification === 'blocked' && entry.type === 'narration')
           return (
             <div
               key={node.id}
@@ -404,6 +420,7 @@ function TurnView({
       data-testid="conversation-turn"
       data-turn-id={turn.id}
       data-status={turn.status}
+      data-verification={verification}
       data-inherited={String(turn.inherited)}
       data-latest={latest ? 'true' : undefined}
     >

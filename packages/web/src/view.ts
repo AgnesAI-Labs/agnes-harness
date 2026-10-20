@@ -1,6 +1,7 @@
 import type { EventEnvelope, TurnEnd, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
+import { turnVerificationStatus } from '@agnes/web-ui'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -95,6 +96,7 @@ export type WebView = {
   nodes: UINode[]
   status: string
   statusLabel: string
+  statusState?: 'not-verified'
 }
 
 export function webView(
@@ -116,12 +118,21 @@ export function webView(
   const phase = timeline.opState?.phase
   const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]
   const phaseLabel = phaseKey ? t(phaseKey) : t('timeline.status.running')
+  const last = timeline.turns.at(-1)
+  const verification =
+    !phase &&
+    last?.startSeq === receipt?.startSeq &&
+    last?.endSeq === receipt?.endSeq &&
+    last?.reason === receipt?.reason
+      ? turnVerificationStatus(last)
+      : undefined
   return {
     busy: timeline.opState !== null,
     statusLabel: phaseKey ? t('timeline.status.runningPhase', { phase: phaseLabel }) : phaseLabel,
     ...(approval ? { approval } : {}),
     // WC9：slot 节点不再被丢弃；时间线为它保留稳定容器，认领未命中时显示占位。
     nodes: timeline.nodes,
+    ...(verification ? { statusState: 'not-verified' as const } : {}),
     status: approval
       ? t('timeline.status.awaitingApproval')
       : phase
@@ -129,7 +140,7 @@ export function webView(
           ? phaseLabel
           : t('timeline.status.running')
         : receipt?.reason && receipt.endSeq >= receipt.startSeq
-          ? t(TERMINAL_KEYS[receipt.reason])
+          ? t(verification?.labelKey ?? TERMINAL_KEYS[receipt.reason])
           : t('timeline.status.ready'),
   }
 }

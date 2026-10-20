@@ -1,14 +1,66 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it, vi } from 'vitest'
 import { domainDecisionSource } from '../src/step/domain-decision.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession } from './helpers/open-session.js'
+import { actor, immediateTimers, openSession, testWorkspaceInvocation } from './helpers/open-session.js'
 
 const run = (h: Awaited<ReturnType<typeof openSession>>) =>
   h.session.run({ until: 'turn-end', signal: new AbortController().signal })
 
 describe('automatic verifier recovery', () => {
+  it.each(['pass', 'complete', 'unavailable'] as const)(
+    'keeps Stop authoritative during after-core (%s)',
+    async (mode) => {
+      let enter: () => void = () => undefined
+      let release: () => void = () => undefined
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const h = await openSession({
+        provider: fakeProvider([textTurn('available answer')]),
+        seams: fakeSeams({
+          verifier: {
+            verify: async () => {
+              if (mode === 'unavailable') throw new Error('offline')
+              return { verdict: mode === 'pass' ? 'pass' : 'fail', reasons: [] }
+            },
+          },
+          repair: { decide: async () => 'complete' },
+        }),
+        operations: [
+          {
+            name: 'wait-at-completion',
+            slot: 'after-core',
+            replay: 'safe',
+            applicable: async () => 'applied',
+            run: async () => {
+              enter()
+              await held
+              return {}
+            },
+          },
+        ],
+      })
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+        const running = run(h)
+        await entered
+        await h.session.abort()
+        release()
+        expect((await running).reason).toBe('aborted')
+        expect((await h.session.projectUI()).turns[0]).toMatchObject({ reason: 'aborted' })
+      } finally {
+        release()
+        await h.session.close()
+      }
+    },
+  )
   it.each(['fail', 'needs_revision'] as const)(
     'repairs %s once without creating any approval',
     async (verdict) => {
@@ -54,14 +106,15 @@ describe('automatic verifier recovery', () => {
       }
     },
   )
-  it.each(['park', 'repair', 'escalate', 'complete'] as const)(
+  it.each(['park', 'repair', 'escalate'] as const)(
     'bounds a persistent failure even when repair policy returns %s',
     async (decision) => {
       const ask = vi.fn()
       const provider = fakeProvider([textTurn('unverified draft')])
       const storage = new MemoryStorage()
       const seams = fakeSeams({
-        verifier: { verify: async () => ({ verdict: 'fail', reasons: ['schema_invalid'] }) },
+        // A plugin's reason text is content evidence, not a runtime outage marker.
+        verifier: { verify: async () => ({ verdict: 'fail', reasons: ['verifier unavailable'] }) },
         repair: { decide: async () => decision },
         approval: { ask },
       })
@@ -73,6 +126,7 @@ describe('automatic verifier recovery', () => {
       expect(await h.session.decisions.list()).toEqual([])
       const audits = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 5 })
       expect(audits.map((e) => (e.data as { handling: string }).handling)).toEqual(['repair', 'blocked'])
+      expect((await h.session.projectUI()).turns[0]).toMatchObject({ verification: 'blocked' })
       expect(
         (await h.log.scan({ type: 'assistant/message', limit: 5 })).map((e) => JSON.stringify(e.data)),
       ).toEqual([expect.stringContaining('unverified draft'), expect.stringContaining('unverified draft')])
@@ -85,6 +139,87 @@ describe('automatic verifier recovery', () => {
         expect(await fresh.session.decisions.list()).toEqual([])
       } finally {
         await fresh.session.close()
+      }
+    },
+  )
+  it.each([false, true])(
+    'honors explicit completion after a repair=%s without claiming a pass',
+    async (repairFirst) => {
+      const provider = fakeProvider([textTurn('unverified answer')])
+      const h = await openSession({
+        provider,
+        seams: fakeSeams({
+          verifier: { verify: async () => ({ verdict: 'fail', reasons: ['content_incomplete'] }) },
+          repair: { decide: async ({ round }) => (repairFirst && round === 1 ? 'repair' : 'complete') },
+        }),
+      })
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+        expect((await run(h)).reason).toBe('completed')
+        expect(provider.requests).toHaveLength(repairFirst ? 2 : 1)
+        const audits = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 5 })
+        expect(audits.at(-1)?.data).toMatchObject({
+          verdict: { verdict: 'fail', reasons: ['content_incomplete'] },
+          proposed: 'complete',
+          handling: 'complete',
+        })
+        expect((await h.session.projectUI()).turns[0]).toMatchObject({ verification: 'unverified' })
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+  it.each(['verifier-timeout', 'verifier-throw', 'repair-throw'] as const)(
+    'completes honestly without another model call or approval on %s',
+    async (failure) => {
+      const preset = presetDefaults()
+      preset.verifier.timeoutMs = 5
+      const provider = fakeProvider([textTurn('available answer')])
+      const seams = fakeSeams({
+        verifier: {
+          verify: async () => {
+            if (failure === 'verifier-timeout') return new Promise(() => {})
+            if (failure === 'verifier-throw') throw new Error('private diagnostic')
+            return { verdict: 'fail', reasons: ['content_incomplete'] }
+          },
+        },
+        repair: {
+          decide: async () => {
+            throw new Error('private diagnostic')
+          },
+        },
+      })
+      const runtime = new SeamRuntime(seams, preset, {
+        clock: () => 0,
+        onFailure: () => undefined,
+        timers: immediateTimers,
+        workspaceInvocation: testWorkspaceInvocation(undefined, seams),
+      })
+      const h = await openSession({ provider, preset, seams, runtime })
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+        const running = run(h)
+        expect((await running).reason).toBe('completed')
+        expect(provider.requests).toHaveLength(1)
+        expect(await h.session.decisions.list()).toEqual([])
+        expect((await h.session.projectUI()).turns[0]).toMatchObject({ verification: 'unavailable' })
+        const [audit] = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 5 })
+        expect(audit?.data).toMatchObject({
+          handling: 'unavailable',
+          unavailable: failure.startsWith('verifier') ? 'verifier' : 'repair',
+        })
+        const storage = h.storage
+        await h.session.close()
+        const reopened = await openSession({ provider, storage })
+        try {
+          expect((await reopened.session.projectUI()).turns[0]).toMatchObject({ verification: 'unavailable' })
+          expect((await run(reopened)).reason).toBe('completed')
+          expect(provider.requests).toHaveLength(1)
+        } finally {
+          await reopened.session.close()
+        }
+      } finally {
+        await h.session.close()
       }
     },
   )

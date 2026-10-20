@@ -328,9 +328,10 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     disclosed: discloseTools(s),
     model: { slot: 'primary', route, model },
   }
-  const verdict = subject
+  const verdict: VerifierVerdict & { unavailable?: true } = subject
     ? { verdict: subject.verdict, reasons: subject.reasons }
     : await s.d.runtime.verify('turn', await turnVerifyInput(s, op.meta.triggerSeq), s.ac.signal)
+  if (s.ac.signal.aborted) return finishAborted(s)
   const signal = s.ev('verifier/signal', {
     scope: 'turn',
     tier: s.preset.verifier.defaultTier,
@@ -338,10 +339,31 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     reasons: verdict.reasons,
   })
   const verifiedAfterCoreCtx: OpContext = { ...afterCoreCtx, verifier: verdict }
-  if (verdict.verdict === 'pass') {
+  const finishCompleted = async (
+    events: EventInput[] | ((seq: Seq) => EventInput[]),
+  ): Promise<StepOutcome> => {
     await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', { events: [signal] })
+    if (s.ac.signal.aborted) return finishAborted(s)
+    await s.endTurn('completed', { events })
     return { phase: 'terminal', reason: 'completed' }
+  }
+  const finishUnavailable = async (unavailable: 'verifier' | 'repair'): Promise<StepOutcome> => {
+    return finishCompleted([
+      signal,
+      s.ev(
+        'x/core/verifier-recovery',
+        {
+          verdict,
+          handling: 'unavailable',
+          unavailable,
+        },
+        { ignorable: true },
+      ),
+    ])
+  }
+  if (verdict.unavailable) return finishUnavailable('verifier')
+  if (verdict.verdict === 'pass') {
+    return finishCompleted([signal])
   }
   const history = (
     await scanAll((q) => s.d.log.scan(q), {
@@ -354,17 +376,32 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
   const proposed = persisted
     ? 'park'
     : await s.d.runtime.repairDecide({ turn: op.meta.turn, round: history.length + 1, history }, verdict)
+  if (s.ac.signal.aborted) return finishAborted(s)
+  if (proposed === 'unavailable') return finishUnavailable('repair')
   const decision =
-    history.length >= 1 ? 'park' : proposed === 'park' || proposed === 'complete' ? 'repair' : proposed
+    proposed === 'complete'
+      ? 'complete'
+      : history.length >= 1
+        ? 'park'
+        : proposed === 'park'
+          ? 'repair'
+          : proposed
   const repairEvents = (verdictSeq: Seq): EventInput[] => [
     signal,
     s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
     s.ev(
       'x/core/verifier-recovery',
-      { verdict, proposed, handling: decision === 'park' ? 'blocked' : 'repair' },
+      {
+        verdict,
+        proposed,
+        handling: decision === 'park' ? 'blocked' : decision === 'complete' ? 'complete' : 'repair',
+      },
       { ignorable: true },
     ),
   ]
+  if (decision === 'complete') {
+    return finishCompleted(repairEvents)
+  }
   if (decision === 'park') {
     // Verification is a system judgment, never an authorization request. Preserve the rejected
     // evidence and stop after one automatic repair even if an extension keeps requesting retries.

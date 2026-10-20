@@ -443,7 +443,7 @@ describe('run loop', () => {
     expect(rounds).toEqual([1, 2])
   })
 
-  it('StopGate: a repair verdict of complete cannot waive a failed check', async () => {
+  it('StopGate: a repair verdict of complete ends the turn while preserving a failed check', async () => {
     const seams = fakeSeams({
       verifier: {
         verify: async (scope) =>
@@ -453,11 +453,14 @@ describe('run loop', () => {
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
-    expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(2)
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    expect(await log.scan({ type: 'step/start', limit: 5 })).toHaveLength(1)
     expect((await log.scan({ type: 'repair/decision', limit: 5 }))[0]?.data).toMatchObject({
-      decision: 'repair',
+      decision: 'complete',
       round: 1,
+    })
+    expect((await log.scan({ type: 'verifier/signal', limit: 5 })).at(-1)?.data).toMatchObject({
+      verdict: 'fail',
     })
   })
 

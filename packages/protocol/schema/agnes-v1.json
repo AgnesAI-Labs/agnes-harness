@@ -4564,6 +4564,10 @@
             }
           }
         },
+        "verification": {
+          "description": "Trusted Core completion-check recovery outcome; completion does not imply a passing verification.",
+          "enum": ["unavailable", "unverified", "blocked"]
+        },
         "finalAssistantId": {
           "type": "string"
         },
