@@ -748,7 +748,9 @@ describe('PiAdapter', () => {
       expect(waits[index]).toBeLessThanOrEqual(base * 1.1)
     }
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
+    // Its own retries are spent, so the failure is final: a caller asking again gets the same answer after
+    // the same waits.
+    expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: false })
   })
 
   it.each(['503 upstream', '429 Too Many Requests, retry-after: 0'])(
