@@ -22,7 +22,7 @@ Cold opens and reopening a live session use the same verified-head checkpoint. T
 
 Web can display an **unverified, read-only preview** while verification runs. Large stored payloads and inline media may appear as placeholders. The preview grants no execution authority; the live session replaces it only after verification succeeds. Recent-window and scan-budget markers identify omitted history. SDK `session.load(id, { onProgress })` reports verification and replay progress; `timeouts.loadIdle` (30 seconds) and `timeouts.loadHard` (10 minutes) independently bound a load. A timeout or disconnect cancels that connection's pending load. A live session's background integrity check continues independently.
 
-While opening, the preview uses a neutral status line and stays readable at normal contrast. The composer permits local text drafts while the session is being prepared; execution actions still wait for admission. A read-only warning with recovery actions appears only when opening is refused; it is not the ordinary loading state.
+While opening, the preview uses a neutral status line and stays readable at normal contrast. It remains visible after admission until the first formal projection replaces it; pending previews cannot overwrite that projection or change the admitted generation's readiness. The composer permits local text drafts while the session is being prepared; execution actions still wait for the formal opening and controls to be ready. A read-only warning with recovery actions appears only when opening is refused; it is not the ordinary loading state.
 
 The JSONL persistence example has its own diagnostic sidecars; it does not define SQLite recovery policy.
 

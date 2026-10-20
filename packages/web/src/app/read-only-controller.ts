@@ -47,6 +47,7 @@ export function createReadOnlyController(
     AppSessionContext,
     | 'client'
     | 'clientModules'
+    | 'current'
     | 'projection'
     | 'readOnly'
     | 'render'
@@ -85,9 +86,9 @@ export function createReadOnlyController(
       if (title) context.sessionTitles.set(id, title)
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
-      // Recorded views still need the session-scoped presentation seats, even though
-      // execution admission failed. This only binds the presentation identity.
-      context.clientModules.session.setSession(id, 'history-only')
+      // Before admission, recorded views bind only the presentation identity. Admission may
+      // finish before this read: retain its identity/readiness while displaying the preview.
+      if (!context.current) context.clientModules.session.setSession(id, 'history-only')
       context.projection = view.timeline
       context.windowAtStart = !view.history.hasEarlier
       return true
@@ -197,7 +198,8 @@ export function createReadOnlyController(
     if (!(await load(id, PAGE, epoch))) return
     const ticket = latest
     // A cold page still needs its profile-level conversation/composer presenters to display the
-    // preview. This roster has no admitted session generation; history-only readiness stays intact.
+    // preview. If admission raced this read, reconcile its current generation instead; load()
+    // never downgrades an admitted binding to history-only. The first live timeline clears us.
     await context.clientModules.reconciler.reconcileNow()
     if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return
     previewNotice(id)

@@ -1,5 +1,6 @@
 import { Context } from '@agnes/cordis'
 import { SESSION_VERSION_CODES } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk/browser'
 import { SessionService } from '@agnes/web-client'
 import { expect, it, vi } from 'vitest'
 import { createReadOnlyController } from '../src/app/read-only-controller.js'
@@ -52,6 +53,9 @@ function setup() {
     renderControls: vi.fn(),
     run: vi.fn(),
     sessionBinding: new SessionBindingOwner(),
+    get current(): Session | undefined {
+      return this.sessionBinding.session
+    },
     t: (key: string) => key,
     windowAtStart: false,
   }
@@ -183,7 +187,7 @@ it('states which rows a truncated record shows', async () => {
   )
 })
 
-it('labels opening history as unverified and ignores a preview that finishes after live admission', async () => {
+it('labels opening history as unverified and ignores a preview that finishes after the formal projection', async () => {
   const { context, controller, pending } = setup()
   const preview = controller.preview('A', context.sessionBinding.capture())
   await tick()
@@ -204,14 +208,42 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain(
     '正在加载已验证历史 500/1000',
   )
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: { id: 'A' } as Session })
+  context.clientModules.session.setSession('A', 'connecting')
+  expect(context.readOnly?.id).toBe('A')
+  expect(context.projection).toEqual({ sessionId: 'A' })
   controller.clear()
   expect(context.readOnly).toBeUndefined()
+  context.sessionBinding.begin('B')
   const late = controller.preview('B', context.sessionBinding.capture())
+  await tick()
+  context.sessionBinding.attach(context.sessionBinding.capture(), { session: { id: 'B' } as Session })
+  context.clientModules.session.setSession('B', 'connecting')
+  pending.get('B:200')?.(view('B'))
+  await late
+  expect(context.projection).toEqual({ sessionId: 'B' })
+  expect(context.readOnly?.id).toBe('B')
+  expect(context.clientModules.session.readiness.getSnapshot()).toMatchObject({
+    sessionId: 'B',
+    status: 'connecting',
+  })
+  const lateAfterOpening = controller.preview('B', context.sessionBinding.capture())
   await tick()
   controller.clear()
   context.projection = { sessionId: 'live' }
+  context.clientModules.session.setReadiness('ready', 'B')
   pending.get('B:200')?.(view('B'))
-  await late
+  await lateAfterOpening
+  expect(context.projection).toEqual({ sessionId: 'live' })
+  expect(context.readOnly).toBeUndefined()
+  expect(context.clientModules.session.readiness.getSnapshot().status).toBe('ready')
+  // Even another read for the same id cannot survive a switch away and back.
+  const obsolete = controller.preview('B', context.sessionBinding.capture())
+  await tick()
+  context.sessionBinding.begin('A')
+  context.sessionBinding.begin('B')
+  pending.get('B:200')?.(view('B'))
+  await obsolete
   expect(context.projection).toEqual({ sessionId: 'live' })
 })
 

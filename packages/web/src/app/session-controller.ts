@@ -171,8 +171,10 @@ export function createSessionController(
             },
           )
       if (!bindingOwner.attach(epoch, binding)) return
-      context.readOnlyController.clear()
       const loaded = binding.session
+      // Admission establishes execution identity, but the unverified preview remains on screen
+      // until the first authoritative opening commits. A late preview must not downgrade this.
+      context.clientModules.session.setSession(loaded.id, 'connecting')
       context.sessionIsolation = undefined
       void Promise.resolve()
         .then(() => context.client.session.runtime(loaded.id))
@@ -196,7 +198,6 @@ export function createSessionController(
         binding.offPermission?.()
         return
       }
-      context.clientModules.session.setSession(loaded.id, 'connecting')
       if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
         const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
         if (!context.sessionBinding.isCurrent(epoch)) return
@@ -255,6 +256,8 @@ export function createSessionController(
             context.approvalSearch = 'idle'
           if (!opened) {
             opened = true
+            // Retire pending preview reads before installing the live projection in this same turn.
+            context.readOnlyController.clear()
             // 首投影就绪后才换代：清空转录区、写入新会话内容、同步审批卡与控件，
             // 都发生在同一次同步序列里，旧→新之间没有空白帧。
             context.renderer.reset()

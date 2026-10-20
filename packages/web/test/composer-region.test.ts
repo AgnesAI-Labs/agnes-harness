@@ -249,36 +249,43 @@ describe('rendered composer region', () => {
     }
   })
 
-  it('edits a local draft while admission is pending and refuses keyboard submission and attachments', async () => {
-    const submitted = vi.fn()
-    runtime = await mountRenderedIndex({ composer: { onSubmit: submitted } })
-    const handle = runtime.composer
-    handle?.render({
-      ...readyView,
-      loading: true,
-      input: { ...readyView.input, disabled: false },
-      send: { ...readyView.send, disabled: true },
-    })
-    const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
-    if (!prompt) throw new Error('missing input')
-    expect(prompt.disabled).toBe(false)
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(prompt, 'Local draft')
-    prompt.dispatchEvent(new Event('input', { bubbles: true }))
-    prompt.dispatchEvent(
-      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }),
-    )
-    expect(handle?.getDraft()).toBe('Local draft')
-    expect(submitted).not.toHaveBeenCalled()
-    expect(document.querySelector<HTMLInputElement>('[data-testid="attachment-file-input"]')?.disabled).toBe(
-      true,
-    )
-    handle?.render(readyView)
-    expect(handle?.getDraft()).toBe('Local draft')
-    prompt.dispatchEvent(
-      new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }),
-    )
-    expect(submitted).toHaveBeenCalledOnce()
-  })
+  it.each([false, true])(
+    'edits a local draft while opening (read-only preview: %s) and refuses submission and attachments',
+    async (readOnly) => {
+      const submitted = vi.fn()
+      runtime = await mountRenderedIndex({ composer: { onSubmit: submitted } })
+      const handle = runtime.composer
+      handle?.render({
+        ...readyView,
+        loading: true,
+        readOnly,
+        input: { ...readyView.input, disabled: false },
+        send: { ...readyView.send, disabled: true },
+      })
+      const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
+      if (!prompt) throw new Error('missing input')
+      expect(prompt.disabled).toBe(false)
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+        prompt,
+        'Local draft',
+      )
+      prompt.dispatchEvent(new Event('input', { bubbles: true }))
+      prompt.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }),
+      )
+      expect(handle?.getDraft()).toBe('Local draft')
+      expect(submitted).not.toHaveBeenCalled()
+      expect(
+        document.querySelector<HTMLInputElement>('[data-testid="attachment-file-input"]')?.disabled,
+      ).toBe(true)
+      handle?.render(readyView)
+      expect(handle?.getDraft()).toBe('Local draft')
+      prompt.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }),
+      )
+      expect(submitted).toHaveBeenCalledOnce()
+    },
+  )
 
   it('restores the component and current draft after a composer shadow unloads', async () => {
     runtime = await mountRenderedIndex()
