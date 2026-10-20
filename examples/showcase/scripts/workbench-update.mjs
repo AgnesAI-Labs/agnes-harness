@@ -5,11 +5,11 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { chromium } from '@playwright/test'
-import { runtime } from '../pharma-gmp/scripts/runtime.mjs'
+import { runtime, until } from '../pharma-gmp/scripts/runtime.mjs'
 
 const browser = await chromium.launch({ headless: true })
 const baseline = process.env.AGH_SHOWCASE_OLD_REF ?? '955207c2bbedea45c8fd856edb7e5723622d9516'
-let rt, payload, backup
+let rt, payload, backup, activeOutput
 try {
   for (const app of ['aerospace-quality', 'pharma-gmp']) {
     rt = await runtime(false, app, { demoModel: true })
@@ -19,6 +19,7 @@ try {
       'workbench2',
     )
     await mkdir(output, { recursive: true })
+    activeOutput = output
     payload = resolve('packages/cli/dist/local/bundled-examples/showcase', app)
     backup = join(rt.root, 'current-payload')
     await cp(payload, backup, { recursive: true })
@@ -113,6 +114,7 @@ try {
       await page.getByTestId('plugin-versions-tab').click()
       const update = page.getByRole('button', { name: locale === 'en' ? /Review update/ : /审核更新/ })
       await update.waitFor()
+      await until(() => update.isEnabled(), Boolean, 'update review enabled', 30000)
       assert.equal(await update.isEnabled(), true)
       const file = `11-bundled-update-${locale}-${theme}.png`
       await page.screenshot({ path: join(output, file), fullPage: true, animations: 'disabled' })
@@ -131,6 +133,22 @@ try {
     await rt.dispose()
     rt = undefined
   }
+} catch (error) {
+  if (activeOutput) {
+    for (const context of browser.contexts())
+      for (const page of context.pages())
+        await page
+          .screenshot({ path: join(activeOutput, 'diagnostic-update-failure.png'), fullPage: true })
+          .catch(() => {})
+    await writeFile(
+      join(activeOutput, 'update-failure.json'),
+      JSON.stringify({ failure: String(error.stack ?? error), root: rt?.root }, null, 2).replaceAll(
+        homedir(),
+        '~',
+      ),
+    )
+  }
+  throw error
 } finally {
   if (backup) {
     await rm(payload, { recursive: true })
