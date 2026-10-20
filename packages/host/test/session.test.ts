@@ -449,6 +449,85 @@ describe('createSession', () => {
     },
   )
 
+  it('keeps an interrupted mutation unknown on cold reopen instead of replaying it as a current safe tool', async () => {
+    const dataDir = tmp()
+    const first = await createTestHost({
+      dataDir,
+      disableSessionTitle: true,
+      script: [
+        [
+          {
+            type: 'toolcall_end',
+            call: { toolUseId: '', name: 'read', args: { path: 'effect.txt' }, ordinal: 0 },
+            via: 'native',
+          },
+          { type: 'done', reason: 'toolUse' },
+        ],
+      ],
+    })
+    const session = await first.host.createSession({ cwd: dataDir })
+    let effects = 0
+    session.currentTools().add(
+      {
+        name: 'read',
+        description: 'Synthetic mutation whose external receipt is lost',
+        parameters: Type.Object({ path: Type.String() }),
+        meta: {
+          isReadOnly: false,
+          isDestructive: true,
+          isConcurrencySafe: false,
+          isOpenWorld: false,
+          replay: 'never',
+          costHint: {},
+          deferLoading: false,
+          requiresApproval: 'never',
+        },
+        execute: async (_args: unknown, ctx: ToolContext) => {
+          effects++
+          if (!ctx.signal.aborted)
+            await new Promise<void>((done) =>
+              ctx.signal.addEventListener('abort', () => done(), { once: true }),
+            )
+          return { content: [{ type: 'text', text: 'lost receipt' }] }
+        },
+      },
+      { source: 'test/interrupted-mutation', trust: 'builtin' },
+    )
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'perform synthetic effect' }],
+      actor: session.d.actor,
+    })
+    const running = session
+      .run({ until: 'turn-end', signal: new AbortController().signal })
+      .catch(() => undefined)
+    await vi.waitFor(() => expect(effects).toBe(1))
+    expect(await session.scan({ type: 'tool/result', limit: 10 })).toEqual([])
+    // Seal before abort, preserving the durable tail a killed worker leaves.
+    await session.d.log.close()
+    await first.host.close()
+    await running
+    const reopened = await createTestHost({ dataDir, disableSessionTitle: true })
+    try {
+      const recovery: SessionRecovery[] = []
+      const restored = await reopened.host.createSession({
+        cwd: dataDir,
+        onRecovered: (value) => recovery.push(value),
+      })
+      expect(recovery.flatMap((value) => value.actions.map((action) => action.action))).toContain('unknown')
+      expect((await restored.scan({ type: 'tool/result', limit: 10 })).map((row) => row.data)).toContainEqual(
+        expect.objectContaining({ code: 'TOOL_OUTCOME_UNKNOWN', isError: true }),
+      )
+      expect(effects).toBe(1)
+      // A second opening consumes the settled recovery fact, not another dispatch.
+      await restored.close()
+      const again = await reopened.host.createSession({ cwd: dataDir })
+      expect(await again.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+      expect(effects).toBe(1)
+    } finally {
+      await reopened.host.close()
+    }
+  })
+
   // The other side of the same wiring, and the one that has to hold for nearly every open there
   // will ever be: a ledger that ended cleanly is opened exactly as it was before recovery existed.
   it('appends nothing and reports nothing when the session needed no recovery', async () => {

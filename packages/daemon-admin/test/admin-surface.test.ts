@@ -650,6 +650,8 @@ it('gates migration through admin activation permission and reports a safe refus
         messageKey: 'appServer.errors.generation',
         diagnosticId: expect.any(String),
         cause: { code: 'E_GENERATION_SESSION_OPEN' },
+        publicReason: 'The pinned plugin generation is unavailable or incompatible.',
+        userAction: 'Review the plugin generation and session recovery options.',
       },
     },
   })
@@ -757,6 +759,7 @@ it('gates generic credential routes with permissions, live read-only state and m
   }
   let leak = false
   let errorLeak = false
+  let errorCode = 'SEMANTIC_REJECTED'
   const credentials = {
     call: vi.fn(async (action: string) => {
       if (errorLeak)
@@ -764,7 +767,7 @@ it('gates generic credential routes with permissions, live read-only state and m
           rpc: {
             code: -32011,
             message: 'canary',
-            data: { code: 'canary', value: 'canary', reason: 'CONFIG_CREDENTIAL_STORE' },
+            data: { code: errorCode, value: 'canary', reason: 'CONFIG_CREDENTIAL_STORE' },
           },
         }
       return action === 'list' ? { items: [metadata] } : leak ? { ...metadata, value: 'canary' } : metadata
@@ -802,6 +805,17 @@ it('gates generic credential routes with permissions, live read-only state and m
   const safeError = await refusedError.text()
   expect(safeError).not.toContain('canary')
   expect(safeError).toContain('CONFIG_CREDENTIAL_STORE')
+  // Unknown envelopes cannot borrow a known nested reason. Keep the original canary shape
+  // as a separate negative case as well as the legitimate legacy-category fixture above.
+  errorCode = 'canary'
+  const unknownError = await owner.selectionRequest('credentials/set', 'POST', {
+    id: metadata.id,
+    value: 'canary',
+  })
+  expect(unknownError.status).toBe(409)
+  const unknownText = await unknownError.text()
+  expect(unknownText).not.toContain('canary')
+  expect(unknownText).not.toContain('CONFIG_CREDENTIAL_STORE')
   errorLeak = false
   const reader = await server(undefined, undefined, {
     credentials,

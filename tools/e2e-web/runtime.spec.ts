@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { AGH_DIR, SESSION_VERSION_CODES } from '@agnes/protocol'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
@@ -7,6 +7,90 @@ import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
 import { command, complete, install, prompt, toolResult } from './sdk.js'
 import { preferences } from './ui.js'
+
+test('consented role takeover and host-only recovery hand back the same session without changing its pin', async ({
+  page,
+  runtime,
+}) => {
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  await session.attach()
+  await prompt(session, 'call present {"files":[{"path":"report.md","name":"Recovery evidence"}]}')
+  const result = await toolResult(session, 'present')
+  const before = await client.session.runtime(session.id)
+  expect(before.generation.id).toBeTruthy()
+  const application = () => client.request('_agnes/v1/applications.get', { profile: 'local-dev' })
+  const id = '@community/deliverables-gallery'
+  await install(client, resolve('examples/community/deliverables-gallery'))
+  await preferences(page)
+  const url = `${runtime.url}/?session=${session.id}`
+  await page.goto(url)
+  // Installation alone cannot take over a standard product role.
+  await expect(page.getByTestId('turn-deliverables')).toContainText('Recovery evidence')
+  await expect(page.getByTestId('deliverables-gallery')).toHaveCount(0)
+  const preview = await client.request('_agnes/v1/applications.preview', {
+    profile: 'local-dev',
+    packageId: id,
+  })
+  await client.request('_agnes/v1/applications.adopt', {
+    ...(await command(client)),
+    packageId: id,
+    expectedRevision: (await application()).revision,
+    consentDigest: preview.consentDigest,
+  })
+  // Also persist an explicit role choice: recovery must clear both kinds of selection.
+  const rolePreview = await client.request('_agnes/v1/applications.preview', {
+    profile: 'local-dev',
+    packageId: id,
+    role: 'deliverables',
+    targetClientId: 'gallery',
+  })
+  await client.request('_agnes/v1/applications.adopt', {
+    ...(await command(client)),
+    packageId: id,
+    role: 'deliverables',
+    targetClientId: 'gallery',
+    expectedRevision: (await application()).revision,
+    consentDigest: rolePreview.consentDigest,
+  })
+  await page.reload()
+  await expect(page.getByTestId('deliverables-gallery').first()).toContainText('Recovery evidence')
+  await expect(page.getByTestId('turn-deliverables')).toHaveCount(0)
+  await page.getByRole('textbox', { name: 'Task content', exact: true }).fill('Recovery draft')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  const pluginRequests: string[] = []
+  const record = (request: import('@playwright/test').Request) => {
+    if (new URL(request.url()).pathname.startsWith('/plugins/')) pluginRequests.push(request.url())
+  }
+  page.on('request', record)
+  await page.goto(`${runtime.url}/?admin`)
+  await expect(page.getByRole('heading', { name: 'Application recovery', exact: true })).toBeVisible()
+  await expect(page.getByRole('main')).toContainText(id)
+  await page.getByRole('button', { name: 'Clear application and interface choices', exact: true }).click()
+  await expect.poll(async () => (await application()).status).toBe('host')
+  const cleared = await application()
+  expect(cleared.selection).toBeNull()
+  expect(cleared.roleSelections ?? {}).toEqual({})
+  expect(pluginRequests).toEqual([])
+  page.off('request', record)
+  await page.goto(url)
+  await expect(page.getByTestId('deliverables-gallery')).toHaveCount(0)
+  await expect(page.getByTestId('turn-deliverables')).toContainText('Recovery evidence')
+  await page.getByRole('textbox', { name: 'Task content', exact: true }).fill('Handback draft')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  const after = await client.session.runtime(session.id)
+  expect(after.generation.id).toBe(before.generation.id)
+  expect(after.composition).toEqual(before.composition)
+  expect(after.policy).toEqual(before.policy)
+  expect(after.loop).toEqual(before.loop)
+  expect(after.seams).toEqual(before.seams)
+  expect((await toolResult(session, 'present'))?.artifactRefs).toEqual(result?.artifactRefs)
+})
 
 test('session admission keeps history readable, drafts editable and sending gated across a stale switch', async ({
   page,
@@ -141,6 +225,7 @@ for (const [issue, version, action] of [
   ['newer', 9, 'Reopen after upgrading'],
   ['older', 1, 'Start a new session'],
   ['corrupt', undefined, 'Start a new session'],
+  ['missing', undefined, 'Start a new session'],
 ] as const)
   test(`runtime information and ${issue} session history remain readable across locale changes`, async ({
     page,
@@ -151,7 +236,8 @@ for (const [issue, version, action] of [
     const session = await client.session.new({
       sessionKey: randomUUID(),
       cwd: runtime.workspace,
-      preset: 'full-access',
+      preset: 'standard',
+      permission: 'full-access',
     })
     await session.attach()
     await prompt(session, 'Historical browser regression conversation')
@@ -194,11 +280,12 @@ for (const [issue, version, action] of [
     if (version !== undefined) generation.version = version
     if (issue === 'older') delete generation.seams
     if (issue === 'corrupt') generation.compatibility = 42
-    await writeFile(file, JSON.stringify(generation))
+    if (issue === 'missing') await rm(file)
+    else await writeFile(file, JSON.stringify(generation))
     await runtime.restart()
     const restarted = await runtime.connect()
     await expect(restarted.session.load(session.id, { cwd: runtime.workspace })).rejects.toMatchObject({
-      data: { code: SESSION_VERSION_CODES[issue] },
+      data: { code: SESSION_VERSION_CODES[issue === 'missing' ? 'older' : issue] },
     })
     await page.goto(`${runtime.url}/?session=${session.id}`)
     const banner = page.getByTestId('session-read-only')
