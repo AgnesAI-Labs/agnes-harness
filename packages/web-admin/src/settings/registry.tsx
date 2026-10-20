@@ -8,9 +8,12 @@ import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import {
   Button,
+  Icon,
   SettingsBlock,
   SettingsDrill,
   SettingsExpand,
+  SettingsGroup,
+  SettingsItem,
   SettingsTechnicalDetails,
   scopedResourceKey,
   useResource,
@@ -211,7 +214,13 @@ const definitions: readonly [
     (c, t) => (
       <>
         <p className="agnes-settings-note">{t('runConfigIntro')}</p>
-        <Button onClick={() => c.navigate('examples')}>{t('agentGallery')}</Button>
+        <SettingsGroup>
+          <SettingsItem icon="bot" label={t('agentGallery')}>
+            <Button appearance="link" onClick={() => c.navigate('examples')}>
+              {t('open')} <Icon name="chevron-right" />
+            </Button>
+          </SettingsItem>
+        </SettingsGroup>
         <div id="settings-subsection-models" tabIndex={-1} className="agnes-settings-anchor">
           <SessionDefaultsPanel
             api={c.api}

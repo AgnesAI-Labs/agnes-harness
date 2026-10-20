@@ -622,7 +622,7 @@ it('opens the application adoption page in its stable group independently of the
     await act(async () =>
       root.render(createElement(SettingsPages, { admin: adminOf({ runtime, application }) })),
     )
-    await vi.waitFor(() => expect(host.textContent).toContain('Available application · 1.0.0'))
+    await vi.waitFor(() => expect(host.textContent).toContain('1.0.0'))
     expect(host.textContent).toContain('agh app clear')
     expect(application).toHaveBeenCalled()
     expect(host.querySelector('[data-testid="application-placeholder"]')).toBeNull()

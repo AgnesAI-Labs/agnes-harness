@@ -10,7 +10,6 @@ import {
   Banner,
   Button,
   Count,
-  Field,
   Icon,
   type MenuItem,
   PluginList,
@@ -22,7 +21,7 @@ import {
   terminal,
   usePushStack,
 } from '@agnes/web-ui'
-import { type ComponentProps, type ReactNode, useState } from 'react'
+import { type ComponentProps, type ReactNode, useId, useState } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
 import type { PluginView } from './admin-view.js'
@@ -277,9 +276,12 @@ export function PluginSourceFilter({
   onChange(value: PluginSource | ''): void
   t: Text
 }) {
+  const id = useId()
   return (
-    <Field label={t('source.label')}>
+    <label className="plugin-source-filter" htmlFor={id}>
+      <span className="visually-hidden">{t('source.label')}</span>
       <SettingsSelect
+        id={id}
         aria-label={t('source.label')}
         value={value}
         onChange={(event) => onChange(pluginSourceValue(event.target.value))}
@@ -291,6 +293,6 @@ export function PluginSourceFilter({
           </option>
         ))}
       </SettingsSelect>
-    </Field>
+    </label>
   )
 }

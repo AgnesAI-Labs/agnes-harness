@@ -58,7 +58,10 @@ const preview: PackagePreview = {
     serviceGrantsAdded: [],
   },
   dependencies: {},
-  warnings: [],
+  warnings: [
+    { code: 'unverified-provenance', safeMessage: 'Unverified publisher.' },
+    { code: 'capability-change', safeMessage: 'Capabilities changed.' },
+  ],
   blockers: [],
   capabilityHash,
   metadata: entry.metadata,
@@ -284,7 +287,12 @@ it('pushes the review page when the check is done, with the hashes under collaps
     '未声明（运行中的未声明活动会被记录）',
   )
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain('沿用当前策略')
-  expect(page.querySelector('[data-testid="install-review-unverified"]')).not.toBeNull()
+  expect(page.querySelectorAll('[data-testid="install-review-unverified"]')).toHaveLength(1)
+  expect(page.querySelector('[data-testid="install-review-warnings"]')).toBeNull()
+  expect(page.textContent).not.toContain('。；')
+  expect(page.querySelector('[data-testid=install-review-unverified]')?.textContent).not.toContain(
+    'Unverified publisher.',
+  )
   expect(page.querySelector('[data-testid="install-review-source"]')?.textContent).toContain(
     '示例 · dag-loop',
   )

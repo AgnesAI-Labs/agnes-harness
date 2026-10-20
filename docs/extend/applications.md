@@ -132,7 +132,7 @@ untrusted, removed, changed or has unavailable assets/references, its saved sele
 URL overrides take precedence over user preferences, application defaults and host defaults, in that
 order. Clearing removes application defaults and preserves user preferences. Effective-application changes immediately remove application CSS and tokens; late CSS from a revoked application cannot repaint. A browser image decode failure also falls back to the host.
 
-The host sidebar always keeps **Official UI / Switch application**, even when an application replaces navigation. Open it to review the application name, version and interface changes, or choose **Restore official interface**. Advanced interface references and recovery commands are collapsed under technical details.
+The host sidebar always keeps **Applications** (or **Return to official UI** and **Switch application** when an app is adopted), even when an application replaces navigation. Open **Applications / Switch application** to review the application name, version and interface changes, or choose **Restore official interface**. Advanced interface references and recovery commands are collapsed under technical details.
 
 Open **`/?admin`** for the separate host recovery bootstrap. It selects the host identity and skin
 before importing application JavaScript, CSS, roles or navigation. The URL grants no authority;

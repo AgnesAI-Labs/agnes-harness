@@ -1,9 +1,11 @@
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
-import { resolveApplicationBrand } from '@agnes/web-client'
 import {
   Button,
+  Icon,
   SettingsBlock,
+  SettingsGroup,
   SettingsPageDescription,
+  SettingsSection,
   SettingsTechnicalDetails,
   scopedResourceKey,
   setResource,
@@ -12,6 +14,7 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { ApplicationChoice } from './application-choice.js'
 import { ApplicationPreviewSummary } from './application-preview.js'
 import { ApplicationSummary } from './application-summary.js'
 import { captureRequest, useRequestScope } from './async-request.js'
@@ -86,38 +89,81 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           '应用会改变名称、首页、导航和可选智能体。已有对话保留原来的运行设置。',
         )}
       </SettingsPageDescription>
-      <SettingsBlock
-        state={!state ? (error || resource.error ? 'error' : 'loading') : undefined}
-        onReload={refresh}
-      >
+      <div className="application-settings">
+        {!state && <SettingsBlock state={error || resource.error ? 'error' : 'loading'} onReload={refresh} />}
         {error && state && <p role="alert">{error}</p>}
-        {resource.error && state ? (
+        {!!resource.error && state && (
           <p role="alert">{tr('Could not refresh applications. Retry.', '无法刷新应用，请重试。')}</p>
-        ) : null}
-        <Button disabled={!api || busy || resource.loading} onClick={refresh}>
-          {tr('Refresh candidates', '刷新候选')}
-        </Button>
-        <ApplicationSummary state={state} />
-        {state?.candidates.map((candidate) => (
-          <p key={candidate.packageId}>
-            <span>
-              <CandidateName api={api} candidate={candidate} revision={state.revision} /> ·{' '}
-              {candidate.version}
-            </span>{' '}
+        )}
+        {state && (
+          <ApplicationSummary
+            state={state}
+            restore={
+              <Button
+                appearance="primary"
+                disabled={
+                  busy ||
+                  resource.loading ||
+                  !canSave ||
+                  (!state.selection && !Object.keys(state.roleSelections ?? {}).length)
+                }
+                onClick={() =>
+                  void run(async (current) => {
+                    if (!api) return
+                    await api.clearApplication(state.revision)
+                    if (current()) location.reload()
+                  })
+                }
+              >
+                {tr('Restore official interface', '恢复官方界面')}
+              </Button>
+            }
+          />
+        )}
+        <SettingsSection
+          title={tr('Available applications', '可选应用')}
+          actions={
             <Button
-              disabled={busy || resource.loading || !candidate.available || !canSave}
-              onClick={() =>
-                void run(async (current) => {
-                  if (!api) return
-                  const preview = await api.previewApplication(candidate.packageId)
-                  if (current()) setPreview(preview)
-                })
-              }
+              appearance="ghost"
+              size="small"
+              icon={<Icon name="refresh-cw" />}
+              disabled={!api || busy || resource.loading}
+              onClick={refresh}
             >
-              {tr('Preview', '预览')}
+              {tr('Refresh', '刷新')}
             </Button>
-          </p>
-        ))}
+          }
+        >
+          {state?.candidates.length ? (
+            <SettingsGroup>
+              {state.candidates.map((candidate) => (
+                <ApplicationChoice
+                  key={candidate.packageId}
+                  api={api}
+                  state={state}
+                  candidate={candidate}
+                  disabled={busy || resource.loading || !canSave}
+                  onPreview={() =>
+                    void run(async (current) => {
+                      if (!api) return
+                      const preview = await api.previewApplication(candidate.packageId)
+                      if (current()) setPreview(preview)
+                    })
+                  }
+                />
+              ))}
+            </SettingsGroup>
+          ) : (
+            state && (
+              <p className="agnes-settings-note">
+                {tr(
+                  'Install an application from Plugins to see it here.',
+                  '在插件页安装应用后，可在这里选择。',
+                )}
+              </p>
+            )
+          )}
+        </SettingsSection>
         {preview && (
           <section aria-label={tr('Application consent preview', '应用采纳预览')}>
             <h3>{tr('Review application', '审阅应用')}</h3>
@@ -130,8 +176,8 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             </p>
             <p>
               {tr(
-                'The “Official UI / Switch application” entry always opens these settings.',
-                '工作台上的“官方界面 / 切换应用”入口可随时回到此页。',
+                'Use “Switch application” in the sidebar to return to these settings.',
+                '可随时通过侧栏的“切换应用”回到此页。',
               )}
             </p>
             <Button
@@ -150,29 +196,12 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             </Button>
           </section>
         )}
-        <Button
-          disabled={
-            busy ||
-            resource.loading ||
-            !canSave ||
-            (!state?.selection && !Object.keys(state?.roleSelections ?? {}).length)
-          }
-          onClick={() =>
-            void run(async (current) => {
-              if (!api || !state) return
-              await api.clearApplication(state.revision)
-              if (current()) location.reload()
-            })
-          }
-        >
-          {tr('Restore official interface', '恢复官方界面')}
-        </Button>
         <SettingsTechnicalDetails title={tr('Recovery tools', '恢复工具')}>
           <p>
             <a href="/?admin">{tr('Host recovery', '宿主恢复')}</a> · <code>{clearCommand}</code>
           </p>
         </SettingsTechnicalDetails>
-      </SettingsBlock>
+      </div>
       {state && (
         <SettingsTechnicalDetails title={tr('Advanced interface choices', '高级界面选择')}>
           <InterfaceImplementations
@@ -183,37 +212,6 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           />
         </SettingsTechnicalDetails>
       )}
-    </>
-  )
-}
-
-/** Preview is a read, so candidates can show the declared human name without changing adoption. */
-function CandidateName({
-  api,
-  candidate,
-  revision,
-}: {
-  api: PluginAdminApi | undefined
-  candidate: ApplicationState['candidates'][number]
-  revision: number
-}) {
-  const language = useDocumentLanguage()
-  const preview = useResource(
-    api && candidate.available
-      ? scopedResourceKey(api, `application-name:${candidate.packageId}:${candidate.version}:${revision}`)
-      : undefined,
-    async () => {
-      if (!api) throw new Error('Admin unavailable')
-      return api.previewApplication(candidate.packageId)
-    },
-  )
-  return (
-    <>
-      {preview.data
-        ? resolveApplicationBrand(preview.data.declaration, language).name
-        : language === 'zh-CN'
-          ? '可用应用'
-          : 'Available application'}
     </>
   )
 }

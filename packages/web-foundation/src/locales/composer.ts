@@ -48,11 +48,11 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.permission.workspaceDescription':
       'File tools can edit the workspace; commands need approval. Command isolation depends on the platform.',
     'composer.permission.fullDescription':
-      'Tool actions are allowed automatically; business sign-offs follow the application’s rules.',
+      'All actions are allowed automatically, including business sign-offs recorded as “Auto-confirmed under full access” with your identity. Questions that need your answer still ask.',
     'composer.permission.viewHint': 'Reads files and public pages; no file changes or commands.',
     'composer.permission.workspaceHint': 'Edits workspace files; asks before running commands.',
     'composer.permission.fullHint':
-      'Tool actions are allowed automatically; business sign-offs follow the application’s rules.',
+      'All actions are allowed automatically, including business sign-offs recorded as “Auto-confirmed under full access” with your identity. Questions that need your answer still ask.',
     'composer.agent.more': 'More',
     'composer.agent.chip': 'Running mode',
     'composer.agent.default': 'Default',
@@ -190,10 +190,12 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.permission.full': '完全访问',
     'composer.permission.viewDescription': '查看允许范围的文件和公开网页；修改与命令执行会被拒绝。',
     'composer.permission.workspaceDescription': '文件工具可改工作区；命令需审批。命令隔离取决于平台。',
-    'composer.permission.fullDescription': '工具操作自动允许；业务签署仍按应用规则确认。',
+    'composer.permission.fullDescription':
+      '所有操作自动允许，包括业务签署（以你的身份记录为“完全访问下自动确认”）；需要你回答的问题仍会询问。',
     'composer.permission.viewHint': '可读文件和公开网页；不改文件、不运行命令。',
     'composer.permission.workspaceHint': '可改工作区文件；运行命令前先询问。',
-    'composer.permission.fullHint': '工具操作自动允许；业务签署仍按应用规则确认。',
+    'composer.permission.fullHint':
+      '所有操作自动允许，包括业务签署（以你的身份记录为“完全访问下自动确认”）；需要你回答的问题仍会询问。',
     'composer.agent.more': '更多',
     'composer.agent.chip': '运行方式',
     'composer.agent.default': '默认',

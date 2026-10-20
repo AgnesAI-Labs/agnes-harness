@@ -3,6 +3,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const shellCatalog: LocaleCatalog = {
   en: {
     agentGallery: 'Choose who answers: Agents',
+    open: 'Open',
     copyId: 'Copy technical ID',
     copiedId: 'ID copied',
     runtimeDetails: 'Runtime details',
@@ -198,6 +199,7 @@ export const shellCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     agentGallery: '选择由谁回答：智能体',
+    open: '打开',
     copyId: '复制技术标识',
     copiedId: '已复制标识',
     runtimeDetails: '运行详情',

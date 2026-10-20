@@ -98,7 +98,7 @@ it.each([false, true])(
       )
       expect(host.querySelector('[data-testid="security-full-exceptions-toggle"]')).toBeNull()
       expect(host.textContent).toContain(
-        'Tool actions are allowed automatically; business sign-offs follow the application’s rules.',
+        'All actions are allowed automatically, including business sign-offs recorded as “Auto-confirmed under full access” with your identity. Questions that need your answer still ask.',
       )
       expect(pick('full-access').checked).toBe(false)
       expect(document.querySelector('[data-testid="security-full-confirm"]')).toBeNull()
@@ -159,7 +159,7 @@ it.each(['en', 'zh-CN'] as const)('describes default permission boundaries in %s
     locale === 'en' ? 'Asks you before running commands' : '运行命令前先问你',
   )
   expect(copy?.['full-accessHelp']).toContain(
-    locale === 'en' ? 'business sign-offs follow the application’s rules' : '业务签署仍按应用规则确认',
+    locale === 'en' ? 'business sign-offs recorded as' : '完全访问下自动确认',
   )
 })
 

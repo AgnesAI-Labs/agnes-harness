@@ -97,8 +97,11 @@ it.each(['known', 'unknown'])(
     expect(summary?.textContent).toContain(
       diffStatus === 'known' ? 'Removed dependencies: 1' : 'Changes are unknown',
     )
-    const css = readFileSync(resolve(import.meta.dirname, '../../web-ui/src/tokens.css'), 'utf8')
-    const rule = css.match(/\.agnes-settings-card p a[^{}]*\{[^}]*\}/)?.[0]
+    const css = readFileSync(
+      resolve(import.meta.dirname, '../../web/public/styles/31-plugins-page.css'),
+      'utf8',
+    )
+    const rule = css.match(/\.application-settings p a[^{}]*\{[^}]*\}/)?.[0]
     expect(rule).toBeDefined()
     const style = document.createElement('style')
     style.id = 'inline-link-test-style'
@@ -125,7 +128,7 @@ it.each(['known', 'unknown'])(
         finish = resolve
       }),
     )
-    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh candidates' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh' })))
     expect(getByRole(document.body, 'button', { name: 'Adopt this preview' }).hasAttribute('disabled')).toBe(
       true,
     )
@@ -242,7 +245,10 @@ it.each(['focus', 'agnes:plugins-invalidated', 'agnes:packages-changed', 'manual
       assets: {},
       candidates: [],
     }
-    const api = { application: vi.fn(async () => state) }
+    const api = {
+      application: vi.fn(async () => state),
+      previewApplication: async () => ({ declaration: { id: 'acme', brand: { name: { en: 'Acme' } } } }),
+    }
     const root = createRegionRenderer(document.body)
     stop = () => root.unmount()
     await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
@@ -270,14 +276,14 @@ it.each(['focus', 'agnes:plugins-invalidated', 'agnes:packages-changed', 'manual
         expect(document.body.textContent).not.toContain('Available application · 1.0.0')
         visibility.mockReturnValue('visible')
         document.dispatchEvent(new Event('visibilitychange'))
-      } else fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh candidates' }))
+      } else fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh' }))
     })
-    expect(document.body.textContent).toContain('Available application · 1.0.0')
+    expect(document.querySelector('[data-testid=application-choice]')?.textContent).toContain('Acme1.0.0')
     expect(document.body.textContent).toContain('community/gallery#ui')
-    expect(document.body.textContent).toContain('Current application: Agnes Harness')
+    expect(document.body.textContent).toContain('Agnes Harness')
     expect(document.querySelector('[data-testid="consent-summary"]')).toBeNull()
     api.application.mockRejectedValueOnce(new Error('temporarily offline'))
-    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh candidates' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh' })))
     expect(getByRole(document.body, 'alert').textContent).toContain('Could not refresh applications')
     expect(document.body.textContent).toContain('community/gallery#ui')
     await act(async () => root.unmount())
@@ -309,7 +315,7 @@ it('makes no periodic application requests while the mounted page is idle', asyn
   const root = createRegionRenderer(document.body)
   stop = () => root.unmount()
   await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
-  expect(document.body.textContent).toContain('Current application: Agnes Harness')
+  expect(document.body.textContent).toContain('Agnes Harness')
   expect(
     getByRole(document.body, 'heading', { name: 'Interface implementations', hidden: true }),
   ).toBeDefined()
@@ -356,14 +362,14 @@ it.each(['en', 'zh-CN'])(
     const root = createRegionRenderer(document.body)
     stop = () => root.unmount()
     await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
-    const main = [...document.querySelectorAll('p')]
-      .filter((node) => !node.closest('[hidden]'))
-      .map((node) => node.textContent)
-      .join(' ')
+    const main = document.querySelector('[data-testid="application-current"]')?.textContent ?? ''
     expect(main).toContain(language === 'zh-CN' ? '服务工作台' : 'Service desk')
     expect(main).toContain('2.0.1')
-    expect(main).toContain(
-      language === 'zh-CN' ? '隐藏导航: 智能体, 插件' : 'Hidden navigation: Agents, Plugins',
+    const changes = document.querySelector('[data-testid="application-changes"]')
+    expect(changes?.textContent).toContain(language === 'zh-CN' ? '智能体, 插件' : 'Agents, Plugins')
+    expect(changes?.querySelectorAll('.agnes-settings-item')).toHaveLength(3)
+    expect(document.querySelector('[data-testid="application-choice"]')?.textContent).toContain(
+      language === 'zh-CN' ? '服务工作台' : 'Service desk',
     )
     expect(main).not.toContain('acme/kit#')
     expect(main).not.toContain('machine-app')

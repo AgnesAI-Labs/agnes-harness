@@ -10,7 +10,7 @@ export const securityUxCatalog: LocaleCatalog = {
     'workspace-writeHelp': 'Can change files in the workspace. Asks you before running commands.',
     'full-access': 'Full access',
     'full-accessHelp':
-      'Tool actions are allowed automatically; business sign-offs follow the application’s rules.',
+      'All actions are allowed automatically, including business sign-offs recorded as “Auto-confirmed under full access” with your identity. Questions that need your answer still ask.',
     recommended: 'Recommended',
     noCommands: 'No commands',
     notIsolated: 'Commands not isolated',
@@ -18,7 +18,7 @@ export const securityUxCatalog: LocaleCatalog = {
     saving: 'Saving…',
     fullConfirm: 'Switch new sessions to full access?',
     fullConfirmBody:
-      'In new sessions, editing files and running commands no longer ask each time. Sessions in progress are not affected.',
+      'In new sessions, all actions, including business sign-offs, are allowed automatically and attributed to you. Questions still ask for your answer. Sessions in progress are not affected.',
     fullConfirmAction: 'Switch to full access',
     keepCurrent: 'Keep current level',
     lockedReadOnly:
@@ -71,14 +71,16 @@ export const securityUxCatalog: LocaleCatalog = {
     'workspace-write': '可修改工作区',
     'workspace-writeHelp': '可以改工作区里的文件。运行命令前先问你。',
     'full-access': '完全访问',
-    'full-accessHelp': '工具操作自动允许；业务签署仍按应用规则确认。',
+    'full-accessHelp':
+      '所有操作自动允许，包括业务签署（以你的身份记录为“完全访问下自动确认”）；需要你回答的问题仍会询问。',
     recommended: '推荐',
     noCommands: '不运行命令',
     notIsolated: '不隔离命令',
     isolationUnknown: '隔离状态未知',
     saving: '正在保存…',
     fullConfirm: '新会话改为完全访问？',
-    fullConfirmBody: '新建的会话里，改文件和运行命令不再逐次询问。正在进行的会话不受影响。',
+    fullConfirmBody:
+      '新建的会话里，所有操作及业务签署均自动允许，并保留你的身份记录；需要你回答的问题仍会询问。正在进行的会话不受影响。',
     fullConfirmAction: '改为完全访问',
     keepCurrent: '保持当前档',
     lockedReadOnly: '这是只读配置，默认权限不能在这里修改。当前值仍照常生效。',

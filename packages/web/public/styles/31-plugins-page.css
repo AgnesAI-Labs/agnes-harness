@@ -1,10 +1,75 @@
 @layer app {
-  .application-switch {
+  .application-footer {
     flex: none;
+    display: grid;
+    gap: var(--s4);
+    padding: 0 var(--s8) var(--s8);
+  }
+  .application-footer-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s8);
+    min-height: 36px;
     padding: var(--s8);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
     color: var(--agnes-text-secondary);
+    font: inherit;
+    font-size: var(--font-size-body);
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .application-footer-item:hover {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  .application-footer-item:focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: -2px;
+  }
+  .application-footer-item:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .application-footer-item svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+  }
+  .application-footer > p {
+    margin: 0;
+    padding: var(--s8);
     font-size: var(--font-size-xs);
-    overflow-wrap: anywhere;
+  }
+  .application-settings {
+    display: grid;
+    gap: var(--s24);
+    min-width: 0;
+  }
+  .application-settings .agnes-settings-item {
+    flex-wrap: wrap;
+  }
+  .application-settings p a {
+    text-decoration-line: underline;
+  }
+  .application-version {
+    margin-inline-start: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+  }
+  .plugin-source-filter {
+    flex: none;
+    display: flex;
+    align-items: center;
+  }
+  .plugin-source-filter > select {
+    width: auto;
+    min-width: 9rem;
+    padding-inline-end: 2.25rem;
   }
   .plugins-page-resources[data-resource-tab="skills"] {
     align-content: start;

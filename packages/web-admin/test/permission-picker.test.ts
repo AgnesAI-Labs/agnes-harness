@@ -89,8 +89,10 @@ it('shows the current mode on the trigger, lists the three modes and reports the
   expect(option('可修改工作区').getAttribute('aria-selected')).toBe('true')
   // Owner decision: full-access permission auto-allows; chosen modes and hard refusals remain.
   // The row carries one short line; the full explanation is its tooltip.
-  expect(option('完全访问').textContent).toBe('完全访问工具操作自动允许；业务签署仍按应用规则确认。')
-  expect(option('完全访问').getAttribute('title')).toContain('工具操作自动允许')
+  expect(option('完全访问').textContent).toBe(
+    '完全访问所有操作自动允许，包括业务签署（以你的身份记录为“完全访问下自动确认”）；需要你回答的问题仍会询问。',
+  )
+  expect(option('完全访问').getAttribute('title')).toContain('所有操作自动允许')
   expect(option('完全访问').getAttribute('title')).not.toContain('安装信任确认')
   expect(option('可修改工作区').getAttribute('title')).toContain('命令需审批。命令隔离取决于平台')
 
@@ -194,7 +196,7 @@ it('lists only the three modes', async () => {
   expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
     '可读文件和公开网页；不改文件、不运行命令。',
     '可改工作区文件；运行命令前先询问。',
-    '工具操作自动允许；业务签署仍按应用规则确认。',
+    '所有操作自动允许，包括业务签署（以你的身份记录为“完全访问下自动确认”）；需要你回答的问题仍会询问。',
   ])
   for (const row of rows) {
     expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
@@ -228,7 +230,7 @@ it.each([
     '可修改工作区',
     '命令需审批',
     '完全访问',
-    '业务签署仍按应用规则确认',
+    '完全访问下自动确认',
   ],
   [
     'en',
@@ -239,7 +241,7 @@ it.each([
     'Edit workspace',
     'commands need approval',
     'Full access',
-    'business sign-offs follow the application’s rules',
+    'business sign-offs recorded as',
   ],
 ] as const)(
   'explains all permission axes in %s',

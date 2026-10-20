@@ -175,9 +175,7 @@ describe('migrated sidebar region', () => {
       newDisabled: false,
     })
 
-    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
-      '官方界面 / 切换应用',
-    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('应用')
     expect(sidebar.querySelector('[data-testid=application-switch]')?.getAttribute('href')).toBe(
       '?settings=application',
     )
@@ -192,9 +190,7 @@ describe('migrated sidebar region', () => {
       () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
       committed,
     )
-    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
-      'Official UI / Switch application',
-    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('Applications')
     expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
     expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
     locale.setLocale('zh-CN')
@@ -208,11 +204,54 @@ describe('migrated sidebar region', () => {
     )
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
-      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
-        '官方界面 / 切换应用',
-      )
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('应用')
       expect(sidebar.querySelector('#new')).toBeNull()
     }, committed)
+    const { applicationIdentity } = await import('@agnes/web-client')
+    applicationIdentity.set({
+      revision: 2,
+      status: 'active',
+      selection: {
+        packageId: 'fixture/app',
+        applicationId: 'fixture',
+        integrity: `sha256-${'a'.repeat(64)}`,
+        declarationDigest: 'b'.repeat(64),
+        consentDigest: 'c'.repeat(64),
+        bindingDigest: 'd'.repeat(64),
+      },
+      effective: null,
+      candidates: [],
+      assets: {},
+    })
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain('返回官方界面')
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('切换应用')
+      expect(sidebar.querySelector('[data-testid=application-return] svg')).not.toBeNull()
+    }, committed)
+    const adminModule = await import('../src/pages/admin-api.js')
+    const clear = vi.fn(async (_revision: number) => {
+      throw new Error('CONFIG_REVISION_CONFLICT')
+    })
+    const connection = vi.spyOn(adminModule, 'homeAdmin').mockResolvedValue({
+      api: { clearApplication: clear },
+      context: { readOnly: false, permissions: ['packages.activate'] },
+    } as unknown as Awaited<ReturnType<typeof adminModule.homeAdmin>>)
+    sidebar.querySelector<HTMLButtonElement>('[data-testid=application-return]')?.click()
+    await vi.waitFor(() => {
+      expect(clear).toHaveBeenCalledWith(2)
+      expect(sidebar.querySelector('[role=alert]')?.textContent).toContain('未能恢复界面')
+      expect(sidebar.querySelector('[data-testid=application-return]')).not.toBeNull()
+    }, committed)
+    connection.mockResolvedValue({
+      api: { clearApplication: clear },
+      context: { readOnly: true, permissions: [] },
+    } as unknown as Awaited<ReturnType<typeof adminModule.homeAdmin>>)
+    clear.mockClear()
+    sidebar.querySelector<HTMLButtonElement>('[data-testid=application-return]')?.click()
+    await vi.waitFor(() => expect(connection).toHaveBeenCalledTimes(2), committed)
+    expect(clear).not.toHaveBeenCalled()
+    connection.mockRestore()
+    applicationIdentity.set(undefined)
     remove()
   })
 

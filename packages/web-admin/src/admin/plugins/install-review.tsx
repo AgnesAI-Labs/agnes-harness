@@ -38,6 +38,7 @@ export function InstallReview({
   verified,
   source,
   notices,
+  warnings = [],
   technical,
   error,
   retryLabel,
@@ -61,6 +62,7 @@ export function InstallReview({
   /** A short name for where it comes from, never an absolute path. */
   source: string
   notices?: ReactNode
+  warnings?: readonly string[]
   technical: ReactNode
   /** Why the last attempt stopped, with its retry beside it. */
   error?: ReactNode
@@ -96,9 +98,13 @@ export function InstallReview({
       </section>
       <section aria-labelledby={`${testId}-source`}>
         <h3 id={`${testId}-source`}>{t('review.source')}</h3>
-        {verified !== true && (
+        {(verified !== true || warnings.length > 0) && (
           <Banner tone="warning" data-testid="install-review-unverified">
-            {t('provenance.unverified')}
+            {[...new Set([...(verified !== true ? [t('provenance.unverified')] : []), ...warnings])].map(
+              (warning) => (
+                <p key={warning}>{warning}</p>
+              ),
+            )}
           </Banner>
         )}
         <SettingsGroup data-testid="install-review-source">
@@ -205,6 +211,12 @@ export function PluginInstallReview({
       getsNote={t('capability.community')}
       verified={preview.provenance.signatureVerified}
       source={[tier, shortSource(preview.source)].filter(Boolean).join(' · ')}
+      warnings={preview.warnings
+        .filter(
+          (warning) =>
+            warning.code !== 'unverified-provenance' || preview.provenance.signatureVerified === true,
+        )
+        .map((warning) => warningText(warning, t))}
       notices={
         <>
           {blocked && (
@@ -215,11 +227,6 @@ export function PluginInstallReview({
                   {t('update.dependents.review')}
                 </Button>
               )}
-            </Banner>
-          )}
-          {preview.warnings.length > 0 && (
-            <Banner tone="warning" data-testid="install-review-warnings">
-              {preview.warnings.map((warning) => warningText(warning, t)).join(t('review.separator'))}
             </Banner>
           )}
         </>

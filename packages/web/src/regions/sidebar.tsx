@@ -19,6 +19,7 @@ import type { ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { SessionNavigation } from '../navigation.js'
+import { ApplicationSwitch } from './application-switch.js'
 import {
   type EmptyStateRegionMount,
   rootStableRegistry,
@@ -105,15 +106,6 @@ export function SidebarDshFrame({
 
 /** Render the built-in sidebar behind the root-scoped slot ledger without replacing its outer landmark. */
 export interface SidebarRegionMount extends EmptyStateRegionMount, SidebarHandle {}
-
-function ApplicationSwitch({ locale }: { locale: LocaleService }) {
-  const language = useSyncExternalStore(locale.subscribe, locale.getSnapshot)
-  return (
-    <a className="application-switch" href="?settings=application" data-testid="application-switch">
-      {language === 'zh-CN' ? '官方界面 / 切换应用' : 'Official UI / Switch application'}
-    </a>
-  )
-}
 
 export function mountSidebarRegion(
   registry: SlotRegistry,
