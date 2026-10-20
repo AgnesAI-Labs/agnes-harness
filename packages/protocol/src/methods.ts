@@ -150,6 +150,7 @@ export type MethodName =
   | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.workspace.changes'
   | '_agnes/v1/session.readToolDetail'
+  | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
@@ -393,6 +394,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
   ),
+  '_agnes/v1/session.deliverables': clientRequest(A.SessionDeliverablesParams, A.SessionDeliverablesResult),
   '_agnes/v1/session.fork': {
     kind: 'request',
     direction: 'c2s',
