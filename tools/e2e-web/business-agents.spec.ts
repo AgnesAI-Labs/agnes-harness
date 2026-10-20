@@ -13,7 +13,7 @@ test('showcase full access business signature records the human principal withou
   const session = await client.session.new({
     cwd: runtime.workspace,
     sessionKey: crypto.randomUUID(),
-    bundles: ['@agnes-showcase/pharma-gmp#qa'],
+    bundles: ['@agnes-showcase/pharma-gmp#investigator'],
     preset: 'standard',
     permission: 'full-access',
   })
