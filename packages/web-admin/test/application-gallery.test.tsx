@@ -160,7 +160,7 @@ it.each(['adopt', 'stale', 'readonly', 'denied', 'cancel'] as const)(
       expect(mutations).toEqual(['install', 'trust', 'enable'])
       expect(api.adoptApplication).not.toHaveBeenCalled()
       expect(host.textContent).toContain('Trusted JavaScript is not a sandbox')
-      await click('Adopt this preview')
+      await click('Adopt')
       await vi.waitFor(() => expect(api.adoptApplication).toHaveBeenCalledWith(entry.id, 7, 'c'.repeat(64)))
       if (outcome === 'stale') {
         expect(host.textContent).toContain('CONFIG_REVISION_CONFLICT')

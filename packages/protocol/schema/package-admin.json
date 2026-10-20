@@ -4310,6 +4310,11 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "adoptionGeneration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "consentSnapshot": {
           "$ref": "#/$defs/ApplicationPreview"
         }
@@ -4411,6 +4416,16 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "pageNames": {
+          "type": "array",
+          "items": { "$ref": "session-v1.json#/$defs/JsonValue" },
+          "maxItems": 256
+        },
+        "agentLaunches": {
+          "type": "array",
+          "items": { "$ref": "session-v1.json#/$defs/JsonValue" },
+          "maxItems": 64
         },
         "dependencies": {
           "type": "array",

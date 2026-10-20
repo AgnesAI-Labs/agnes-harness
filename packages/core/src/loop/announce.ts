@@ -265,9 +265,9 @@ async function announceNew(
   const op = s.op()
   if (!op) throw new Error('Loop operation requires an accepted input')
   if (!s.turn) await s.rehydrateTurn(op)
-  // Everything is checked before the first row, so a refused batch leaves nothing behind.
+  // Check before execution rows; refused batches retain only validation diagnostics.
   const content = announcedContent(announce)
-  const policies = checkedPolicies(s, calls)
+  const policies = await checkedPolicies(s, calls)
   await deps.prepareTools(signal)
   assertQuiet(s, s.op())
   for (const call of calls)
@@ -501,13 +501,16 @@ function announcedContent(announce: Announce) {
 }
 
 /** The checks `tools.invoke` makes before it writes a call, made for every call up front. */
-function checkedPolicies(s: SessionImpl, calls: readonly Call[]) {
+async function checkedPolicies(s: SessionImpl, calls: readonly Call[]) {
   const t = s.turn
   if (!t) throw new CoreError('E_RELATION', 'Announced tool calls require an accepted input')
   const cap = s.turnBudgetCap()
   if (cap !== null && s.state.creditsUsed > cap)
     throw Object.assign(new Error('BUDGET_EXCEEDED'), { code: 'BUDGET_EXCEEDED' })
-  return calls.map((call) => validatedCallPolicy(callableTool(s, t, call.name), call.args))
+  const policies = []
+  for (const call of calls)
+    policies.push(await validatedCallPolicy(s, callableTool(s, t, call.name), call.args))
+  return policies
 }
 
 /** A new assistant message opens a new batch, so nothing from the previous one may still be open. */

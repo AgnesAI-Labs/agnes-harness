@@ -27,6 +27,7 @@ export * from './config-schema.js'
 export * from './confirm.js'
 export { ConversationCardLayout } from './conversation/card-layout.js'
 export { shortenHome } from './conversation/messages/tool-step.js'
+export { turnVerificationStatus } from './conversation/turn-status.js'
 export {
   clearResources,
   invalidateResource,

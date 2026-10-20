@@ -84,6 +84,7 @@
 - `_agnes/v1/session.runtime`
 - `_agnes/v1/session.tools`
 - `_agnes/v1/session.readToolDetail`
+- `_agnes/v1/session.deliverables`
 - `_agnes/v1/session.jobs.read`
 - `_agnes/v1/session.jobs.control`
 - `_agnes/v1/session.workspace.list`

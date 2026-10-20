@@ -437,7 +437,7 @@ describe('SeamRuntime', () => {
     expect(release).toHaveBeenCalledTimes(3)
   })
 
-  it('verifier failure is fail, repair failure is park, ledger failure is false and an infinite projection', async () => {
+  it('verifier and repair failures report unavailability, ledger failure is false and an infinite projection', async () => {
     const boom = () => {
       throw new Error('x')
     }
@@ -447,9 +447,13 @@ describe('SeamRuntime', () => {
       billing: { record: async () => boom(), projected: async () => boom() },
     })
     const rt = new SeamRuntime(seams, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
-    expect(await rt.verify('tool', {}, sig())).toEqual({ verdict: 'fail', reasons: ['verifier unavailable'] })
+    expect(await rt.verify('tool', {}, sig())).toEqual({
+      verdict: 'fail',
+      reasons: ['verifier unavailable'],
+      unavailable: true,
+    })
     expect(await rt.repairDecide({ turn: 1, round: 1, history: [] }, { verdict: 'fail', reasons: [] })).toBe(
-      'park',
+      'unavailable',
     )
     expect(
       await rt.billingRecord({

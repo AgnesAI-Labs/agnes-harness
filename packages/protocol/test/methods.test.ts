@@ -304,6 +304,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.attach',
         '_agnes/v1/session.bookmarks.set',
         '_agnes/v1/session.budget',
+        '_agnes/v1/session.deliverables',
         '_agnes/v1/session.detach',
         '_agnes/v1/session.event',
         '_agnes/v1/session.loading',
@@ -367,7 +368,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(213)
+    expect(Object.keys(METHODS)).toHaveLength(214)
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
       kind: 'notification',
@@ -421,6 +422,56 @@ describe('methods (I1 set)', () => {
         }),
       ),
     ).toContainEqual(expect.objectContaining({ path: '/data', code: 'PATTERN' }))
+  })
+
+  it('bounds deliverable source pages and keeps each item closed', () => {
+    const method = '_agnes/v1/session.deliverables'
+    expect(validateMethod(method, 'params', { sessionId: 'session-a', afterSeq: 0, limit: 200 }).ok).toBe(
+      true,
+    )
+    expect(validateMethod(method, 'params', { sessionId: 'session-a' }).ok).toBe(true)
+    expect(errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', limit: 201 }))).toContainEqual(
+      expect.objectContaining({ path: '/limit', code: 'RANGE' }),
+    )
+    expect(
+      errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', afterSeq: -1 })),
+    ).toContainEqual(expect.objectContaining({ path: '/afterSeq', code: 'RANGE' }))
+    const item = {
+      callSeq: 3,
+      resultSeq: 5,
+      toolUseId: 'call-1',
+      turnId: 'turn:1',
+      structured: { deliverables: [] },
+    }
+    expect(
+      validateMethod(method, 'result', { sessionId: 'session-a', upto: 5, items: [item], nextAfterSeq: 5 })
+        .ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', {
+        sessionId: 'session-a',
+        upto: 5,
+        items: [{ ...item, structured: null }],
+      }).ok,
+    ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod(method, 'result', {
+          sessionId: 'session-a',
+          upto: 5,
+          items: [{ ...item, args: { files: [] } }],
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ code: 'UNKNOWN_KEY' }))
+    expect(
+      errorsOf(
+        validateMethod(method, 'result', {
+          sessionId: 'session-a',
+          upto: 5,
+          items: Array.from({ length: 201 }, () => item),
+        }),
+      ),
+    ).not.toEqual([])
   })
 
   it('binds artifact reads to a complete ref and one bounded range without path or owner authority', () => {

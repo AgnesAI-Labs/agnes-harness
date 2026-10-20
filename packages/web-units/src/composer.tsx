@@ -395,7 +395,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             classNames={SENDER_CLASSES}
             inputAttributes={INPUT_ATTRIBUTES}
             value={draft}
-            disabled={view.readOnly || view.input.disabled}
+            disabled={view.input.disabled || (!!view.readOnly && !view.loading)}
             placeholder={view.readOnly ? t('composer.hint.readOnly') : view.input.placeholder}
             autoSize={nativeSizing ? false : AUTO_SIZE}
             {...(nativeSizing ? { styles: NATIVE_INPUT_STYLES } : {})}

@@ -7,6 +7,7 @@ import type {
   PageSessionMeta,
   SessionGroupsResult,
   SessionListParams,
+  SessionRuntimeDescriptor,
   UIOpeningResult,
   UIProjectionUpdate,
   UITimeline,
@@ -15,7 +16,7 @@ import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protoc
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { flushSync } from 'react-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
 let mountRelease: () => Promise<void>
@@ -42,6 +43,8 @@ const traceBridge = vi.hoisted(() => ({
   transcriptOptions: undefined as unknown,
   claim: undefined as unknown,
   metas: [] as unknown[],
+  // The session readiness at each full transcript render.
+  paints: [] as (string | undefined)[],
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/client-modules/boot.js')>()
@@ -63,6 +66,13 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
         const render = runtime.trace.render.bind(runtime.trace)
         runtime.trace.render = (nodes, turns, meta) => {
           traceBridge.metas.push(meta)
+          render(nodes, turns, meta)
+        }
+      }
+      if (runtime.transcript) {
+        const render = runtime.transcript.render.bind(runtime.transcript)
+        runtime.transcript.render = (nodes, turns, meta) => {
+          traceBridge.paints.push(runtime.session.readiness.getSnapshot()?.status)
           render(nodes, turns, meta)
         }
       }
@@ -410,6 +420,7 @@ afterEach(async () => {
   traceBridge.transcriptOptions = undefined
   traceBridge.claim = undefined
   traceBridge.metas.length = 0
+  traceBridge.paints.length = 0
   vi.unstubAllGlobals()
   if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
   else Reflect.deleteProperty(URL, 'createObjectURL')
@@ -629,7 +640,7 @@ describe('web permission synchronization', () => {
         },
       }),
     }))
-    const publish = (enabled: boolean) => {
+    const publish = (enabled: boolean, type = 'x/core/yolo-switch', data = { to: enabled }) => {
       timeline.yolo = enabled
       timeline.upto++
       const next = receive
@@ -638,8 +649,8 @@ describe('web permission synchronization', () => {
         seq: timeline.upto,
         ts: '2026-10-01T00:00:00.000Z',
         id: String(timeline.upto).padStart(26, '0'),
-        type: 'x/core/yolo-switch',
-        data: { to: enabled },
+        type,
+        data,
         actor: { id: 'test', org: '', role: 'user', deptPath: [], attrs: {} },
         origin: 'principal',
         trust: 'trusted',
@@ -690,7 +701,7 @@ describe('web permission synchronization', () => {
       client.connectionState = event === 'reconnected' ? 'connected' : 'reconnecting'
       for (const listener of [...(listeners.get(event) ?? [])]) listener()
     }
-    return { old, publish, timeline, connect }
+    return { old, publish, timeline, connect, client }
   }
 
   const startupRaces = ['ordinary', 'start link', 'settings close', 'settings cancel', 'settings backdrop']
@@ -908,6 +919,62 @@ describe('web permission synchronization', () => {
       const notice = document.getElementById('notice')?.textContent ?? ''
       if (choice === shown) expect(notice).not.toContain('只对新会话生效')
       else expect(notice).toContain(`权限档只对新会话生效。本会话仍为「${shown}」`)
+    },
+    40_000,
+  )
+
+  it.each([true, false])(
+    'refreshes an open child composer and runtime from Core after parent changes (full: %s)',
+    async (before) => {
+      const { old, publish, timeline, client } = await boot(before, {
+        permission: before ? 'workspace-write' : 'full-access',
+      })
+      const runtime = vi.fn(
+        async (): Promise<SessionRuntimeDescriptor> => ({
+          sessionKey: 'old',
+          loaded: true,
+          generation: { current: false, state: 'historical' },
+          providers: [],
+          seams: [],
+          restartRequired: [],
+          policy: {
+            approvalMode: 'manual',
+            toolPolicy: 'default',
+            toolRuntime: 'default',
+            readOnly: false,
+            sandbox: { provider: 'local', onUnavailable: 'deny' },
+            permission: {
+              policy: timeline.yolo ? 'full-access' : 'workspace-write',
+              principal: 'core-parent',
+            },
+          },
+        }),
+      )
+      Object.assign(client.session, { runtime })
+      Object.assign(client, {
+        approval: { sessionGrants: async () => ({ grants: [] }) },
+        call: async () => ({ items: [], tools: [], resources: [] }),
+      })
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click(),
+      )
+      const runtimeAction = await vi.waitFor(() => {
+        const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
+          button.textContent?.includes('运行信息'),
+        )
+        expect(item).toBeDefined()
+        return item!
+      })
+      runtimeAction.click()
+      const summary = () =>
+        document.querySelector('[data-testid="session-runtime-summary"]')?.textContent ?? ''
+      await vi.waitFor(() => expect(summary()).toContain('core-parent'))
+      // The notification deliberately lies; both labels must use the backend reads instead.
+      publish(!before, 'x/core/permission-projection-invalidated', { to: before })
+      await vi.waitFor(() => expect(label()).toBe(before ? '可修改工作区' : '完全访问'))
+      await vi.waitFor(() => expect(summary()).toContain(before ? '可修改工作区' : '完全访问'))
+      expect(runtime).toHaveBeenLastCalledWith('old')
+      expect(old.setYolo).not.toHaveBeenCalled()
     },
     40_000,
   )
@@ -3496,6 +3563,140 @@ describe('incremental opening', () => {
     expect(old.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 4, generation: 1 } })
   })
 
+  const controlState = (facts: unknown[] = []) => ({
+    controls: { steer: true, interrupt: true, pause: true, cancel: true },
+    paused: false,
+    facts,
+    pending: [],
+  })
+
+  it('reads session controls while the opening is out and applies them only after it', async () => {
+    const opening = deferred<UITimeline>()
+    const returned = {
+      seq: 3,
+      action: 'cancel',
+      outcome: 'requested',
+      details: { returned: [{ content: [{ type: 'text', text: 'Returned draft' }] }] },
+    }
+    const { old } = await bootWith(
+      () => opening.promise,
+      true,
+      (old) => old.controls.mockImplementation(async () => controlState([returned])),
+    )
+    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+    await vi.waitFor(() => expect(old.projectUIOpening).toHaveBeenCalled())
+    await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(prompt.value).not.toContain('Returned draft')
+    expect(document.body.textContent).toContain('正在准备会话')
+    opening.resolve({ ...idleTimeline('old'), upto: 4 })
+    await vi.waitFor(() => expect(prompt.value).toContain('Returned draft'))
+    await vi.waitFor(() =>
+      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+    )
+  })
+
+  it('keeps the composer preparing until the session controls arrive after the opening', async () => {
+    const controls = deferred<ReturnType<typeof controlState>>()
+    const { old } = await bootWith(
+      async () => ({ ...idleTimeline('old'), upto: 4 }),
+      true,
+      (old) => old.controls.mockImplementation(() => controls.promise),
+    )
+    await vi.waitFor(() => expect(old.events).toHaveBeenCalled())
+    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+    const send = document.getElementById('send') as HTMLButtonElement
+    prompt.value = 'Next message'
+    prompt.dispatchEvent(new Event('input', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(send.disabled).toBe(true)
+    expect(document.body.textContent).toContain('正在准备会话')
+    controls.resolve(controlState())
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+  })
+
+  it('renders an opened session once after its controls, together with its readiness', async () => {
+    const controls = deferred<ReturnType<typeof controlState>>()
+    const { old } = await bootWith(
+      async () => ({ ...idleTimeline('old'), upto: 4 }),
+      true,
+      (old) => old.controls.mockImplementation(() => controls.promise),
+    )
+    await vi.waitFor(() => expect(old.events).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const opened = traceBridge.paints.length
+    expect(opened).toBeGreaterThan(0)
+    controls.resolve(controlState())
+    await vi.waitFor(() => expect(releaseRuntime?.session.readiness.getSnapshot()?.status).toBe('ready'))
+    await vi.waitFor(() => expect(traceBridge.paints.length).toBeGreaterThan(opened))
+    expect(traceBridge.paints.slice(opened).filter((status) => status !== 'ready')).toEqual([])
+  })
+
+  it('still renders a later controls refresh by itself', async () => {
+    const child = (status: string) => ({
+      id: 'child-1',
+      status,
+      totalTokens: 10,
+      durationMs: 1000,
+      controls: { stop: true, continue: true },
+    })
+    const { old } = await bootWith(
+      async () => ({ ...idleTimeline('old'), upto: 4 }),
+      true,
+      (old) =>
+        old.controls
+          .mockImplementationOnce(async () => ({ ...controlState(), children: [child('running')] }))
+          .mockImplementation(async () => ({ ...controlState(), children: [child('completed')] })),
+    )
+    const status = () => document.querySelector('[data-testid="child-control-row"] [role="status"]')
+    await vi.waitFor(() => expect(status()?.textContent).toBe('运行中'))
+    // The periodic child refresh reads the controls again without any projection change.
+    await vi.waitFor(() => expect(status()?.textContent).toBe('已完成'), { timeout: 4000 })
+    expect(old.controls.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it.each(['persistent', 'transient'] as const)(
+    'reads %s session control failures during the opening again after it, as before',
+    async (failure) => {
+      // The early read fails while nothing awaits it yet; that must not surface as unhandled.
+      const unhandled: unknown[] = []
+      const record = (reason: unknown) => unhandled.push(reason)
+      process.on('unhandledRejection', record)
+      onTestFinished(() => {
+        process.off('unhandledRejection', record)
+      })
+      const opening = deferred<UITimeline>()
+      const { old } = await bootWith(
+        () => opening.promise,
+        true,
+        (old) =>
+          failure === 'persistent'
+            ? old.controls.mockRejectedValue(new Error('controls unavailable'))
+            : old.controls
+                .mockRejectedValueOnce(new Error('connection lost'))
+                .mockImplementation(async () => controlState()),
+      )
+      await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(unhandled).toEqual([])
+      opening.resolve(idleTimeline('old'))
+      const notice = document.getElementById('notice') as HTMLElement
+      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      if (failure === 'persistent') {
+        await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+        expect(old.detach).toHaveBeenCalled()
+      } else {
+        prompt.value = 'Next message'
+        prompt.dispatchEvent(new Event('input', { bubbles: true }))
+        await vi.waitFor(() =>
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+        )
+        expect(notice.dataset.kind).not.toBe('session-recovery')
+      }
+      expect(old.controls).toHaveBeenCalledTimes(2)
+    },
+  )
+
   it('asks for a title once when the seeded last turn completed and the session has none', async () => {
     const { list } = await bootWith(
       async () => ({ ...idleTimeline('old'), upto: 4, turns: [finishedTurn] }),
@@ -3740,6 +3941,49 @@ describe('incremental opening', () => {
   })
 })
 
+it('reads the plugin roster, skins and models once per burst of package notices', async () => {
+  installPublicFixture()
+  const on = vi.fn()
+  const old = session('old', async () => idleTimeline('old'))
+  const request = vi.fn(async (_method: string) => undefined)
+  const config = vi.fn(async () => ({ configured: true, profile: 'local-dev' }))
+  const skins = vi.fn(async () => ({ revision: 'r1', skins: [] }))
+  sdk.createClient.mockReturnValue({
+    initialize: vi.fn(initialized),
+    on,
+    close: vi.fn(async () => undefined),
+    request,
+    apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+    config: { get: config, providers: vi.fn(async () => ({ providers: [] })) },
+    clientModules: { list: vi.fn(async () => ({ revision: 'r1', modules: [], statuses: [], rows: [] })) },
+    skins: { list: skins },
+    workspace: { list: vi.fn(async () => ({ items: [] })) },
+    session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })) },
+    approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
+  })
+  binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+  await bootApp()
+  await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const rosters = () =>
+    request.mock.calls.filter(([method]) => method === '_agnes/v1/applications.get').length
+  const reads = { rosters: rosters(), configs: config.mock.calls.length, skins: skins.mock.calls.length }
+  const notice = (kind: string) => {
+    for (const [name, listener] of on.mock.calls)
+      if (name === 'notice') listener({ kind, detail: { profile: 'local-dev' } })
+  }
+  for (const kind of ['tree_changed', 'tree_changed', 'packages_changed']) notice(kind)
+  await vi.waitFor(() => expect(rosters()).toBeGreaterThan(reads.rosters))
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(rosters()).toBe(reads.rosters + 1)
+  expect(config).toHaveBeenCalledTimes(reads.configs + 1)
+  expect(skins).toHaveBeenCalledTimes(reads.skins + 1)
+  notice('packages_changed')
+  await vi.waitFor(() => expect(rosters()).toBe(reads.rosters + 2))
+  await vi.waitFor(() => expect(config).toHaveBeenCalledTimes(reads.configs + 2))
+  await vi.waitFor(() => expect(skins).toHaveBeenCalledTimes(reads.skins + 2))
+})
+
 it('renders Computer Use in the application and retires its late operation reply on pagehide', async () => {
   installPublicFixture()
   history.replaceState(null, '', '/?page=plugins&tab=plugins.computer-use#test-launcher-token')
@@ -3965,14 +4209,15 @@ describe('session that cannot continue on this build', () => {
       expect(document.getElementById('transcript')?.textContent).toContain('History of old'),
     )
     expect(document.body.classList.contains('session-switching')).toBe(false)
-    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
     expect(document.querySelector('[data-testid="session-history-preview"]')).not.toBeNull()
     expect(document.body.textContent).toContain('正在准备会话')
     opening.resolve({ session: old, offPermission: vi.fn() })
     await vi.waitFor(() =>
-      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+      expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull(),
     )
-    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect(document.body.classList.contains('session-switching')).toBe(false)
 
     const next = session('next', async () => timeline('next'))
@@ -3985,7 +4230,8 @@ describe('session that cannot continue on this build', () => {
       expect(document.getElementById('transcript')?.textContent).toContain('History of next'),
     )
     expect(document.body.classList.contains('session-switching')).toBe(false)
-    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
     nextOpening.resolve({ session: next, offPermission: vi.fn() })
     await switched
     expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
@@ -4063,7 +4309,8 @@ describe('session that cannot continue on this build', () => {
         '待校验',
       )
       expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
-      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
       expect(document.body.textContent).not.toContain('这个会话在这里只读')
       opening.reject(error)
       const banner = await vi.waitFor(() => {

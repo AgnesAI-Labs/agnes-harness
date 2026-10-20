@@ -466,7 +466,6 @@ export async function createCompositionHost(
       activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
     )
   const prepareAgent = createAgentResolver({
-    profile,
     admission,
     host: initial.host,
     packageDirs: options.packageDirs ?? new Map(),

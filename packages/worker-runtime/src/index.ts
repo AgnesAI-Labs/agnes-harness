@@ -1,5 +1,6 @@
 export * from './boot-failure.js'
 export * from './commands.js'
+export * from './deliverables.js'
 export * from './file-upload.js'
 export * from './frames.js'
 export * from './framing.js'

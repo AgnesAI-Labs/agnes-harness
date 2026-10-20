@@ -21,6 +21,7 @@ import type {
   SlotOperation,
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
+import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
 import { toolCallPayload } from './tool-call.js'
 import { approveAndExecute, type PlannedCall, refuse } from './tools.js'
 
@@ -56,7 +57,7 @@ export async function invokeTool(
   const def = callableTool(s, t, name)
   const ordinal = t.ordinal++
   const toolUseId = s.d.ids.toolUseId(ordinal)
-  const policy = validatedCallPolicy(def, args)
+  const policy = await validatedCallPolicy(s, def, args)
   const call = { toolUseId, name, args, ordinal, policy }
   const seqs = await s.transition(toolCallRows(s, call, o), (cur, argsSeq) => {
     if (cur?.phase.kind !== 'tools')
@@ -101,11 +102,15 @@ export function callableTool(s: SessionImpl, t: Turn, name: string) {
 }
 
 /** The policy of a call whose arguments match the tool's parameters. */
-export function validatedCallPolicy(
+export async function validatedCallPolicy(
+  s: SessionImpl,
   def: ReturnType<typeof callableTool>,
   args: unknown,
-): ResolvedToolPolicyEnvelope {
-  const argumentError = toolArgumentError(def.parameters, args)
+): Promise<ResolvedToolPolicyEnvelope> {
+  await restoreToolArgumentRecovery(s)
+  const check = recordToolArgumentCheck(s, def, toolArgumentError(def.parameters, args))
+  if (check.events.length) await s.d.log.append(check.events)
+  const argumentError = check.error
   if (argumentError)
     throw Object.assign(new Error(argumentError), {
       code: 'TOOL_ARGS_INVALID',

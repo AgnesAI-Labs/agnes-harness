@@ -187,29 +187,111 @@ it('keeps direct extension callbacks inside the activation quiescence boundary',
   expect(switched).toBe(true)
 })
 
-it('folds a projection over every row of a session longer than one scan page', async () => {
-  const { a, scope } = await setup()
-  // Extension events outside a turn carry no per-turn quota, so they fill the SQLite ledger quickly.
-  for (let n = 0; n < 1_234; n++) await scope.run(a, a.ac.signal, () => scope.append(type, { n }, meta))
-  const registry = new ProjectionRegistry()
-  registry.register(
-    {
-      key: `${meta.source}/count`,
-      stateVersion: 1,
-      init: () => ({ notes: 0, lastSeq: 0 }),
-      apply: (state: { notes: number; lastSeq: number }, event) => ({
-        notes: state.notes + (event.type === type ? 1 : 0),
-        lastSeq: event.seq,
-      }),
+const key = `${meta.source}/count`
+const counting = () => ({
+  key,
+  stateVersion: 1,
+  init: () => ({ notes: 0, lastSeq: 0 }),
+  apply: (state: { notes: number; lastSeq: number }, event: { type: string; seq: number }) => ({
+    notes: state.notes + (event.type === type ? 1 : 0),
+    lastSeq: event.seq,
+  }),
+})
+/** A projection reader over one real session, counting the ledger rows each read takes. */
+function projectionReads(session: Awaited<ReturnType<typeof setup>>['a'], scope: ExtensionInvocation) {
+  const scan = session.scan.bind(session)
+  let rows = 0,
+    calls = 0
+  session.scan = async (query) => {
+    const page = await scan(query)
+    rows += page.length
+    calls++
+    return page
+  }
+  const read = async (registry: ProjectionRegistry) => {
+    rows = 0
+    calls = 0
+    const result = await scope.run(
+      session,
+      session.ac.signal,
+      () => scope.readProjection(registry, key, meta, () => undefined),
+      meta.source,
+    )
+    return { ...result, rows, calls }
+  }
+  return {
+    read,
+    /** What a registry with no cache line reads at the same seq. */
+    fresh: async () => {
+      const registry = new ProjectionRegistry()
+      registry.register(counting(), { owner: meta.source })
+      return read(registry)
     },
-    { owner: meta.source },
-  )
-  const { asOfSeq, unit } = await scope.run(
-    a,
-    a.ac.signal,
-    () => scope.readProjection(registry, `${meta.source}/count`, meta, () => undefined),
-    meta.source,
-  )
-  expect(asOfSeq).toBe(a.lastSeq)
-  expect(unit).toMatchObject({ state: { notes: 1_234, lastSeq: a.lastSeq } })
+    append: async (count: number) => {
+      for (let n = 0; n < count; n++)
+        await scope.run(session, session.ac.signal, () => scope.append(type, { n }, meta))
+    },
+  }
+}
+
+it('folds a projection over every row of a session longer than one scan page, then only new rows', async () => {
+  const { a, scope } = await setup()
+  const reads = projectionReads(a, scope)
+  // Extension events outside a turn carry no per-turn quota, so they fill the SQLite ledger quickly.
+  await reads.append(1_234)
+  const registry = new ProjectionRegistry()
+  registry.register(counting(), { owner: meta.source })
+  const first = await reads.read(registry)
+  expect(first.asOfSeq).toBe(a.lastSeq)
+  expect(first.unit).toMatchObject({ state: { notes: 1_234, lastSeq: a.lastSeq } })
+  expect(first.rows).toBe(a.lastSeq)
+  await reads.append(7)
+  const next = await reads.read(registry)
+  const full = await reads.fresh()
+  expect(next.rows).toBe(7)
+  expect({ asOfSeq: next.asOfSeq, unit: next.unit }).toEqual({ asOfSeq: full.asOfSeq, unit: full.unit })
+  expect(next.unit).toMatchObject({ state: { notes: 1_241, lastSeq: a.lastSeq } })
+  const idle = await reads.read(registry)
+  expect({ rows: idle.rows, calls: idle.calls }).toEqual({ rows: 0, calls: 0 })
+  expect(idle.unit).toEqual(full.unit)
+  await reads.append(1)
+  const single = await reads.read(registry)
+  expect(single.rows).toBe(1)
+  expect(single.unit).toEqual((await reads.fresh()).unit)
+  expect(single.unit).toMatchObject({ state: { notes: 1_242, lastSeq: a.lastSeq } })
 }, 60_000)
+
+it.each(['dropped', 'advanced'] as const)(
+  'reads from the first row when the cached line is %s while the newer rows are read',
+  async (race) => {
+    const { a, scope } = await setup()
+    const reads = projectionReads(a, scope)
+    await reads.append(20)
+    const registry = new ProjectionRegistry()
+    let dispose = registry.register(counting(), { owner: meta.source })
+    await reads.read(registry)
+    await reads.append(5)
+    const scan = a.scan.bind(a)
+    let raced = false
+    a.scan = async (query) => {
+      if (!raced && (query.fromSeq ?? 1) > 1) {
+        raced = true
+        if (race === 'dropped') {
+          // A reload registers the projection again; its new entry has no line yet.
+          dispose()
+          dispose = registry.register(counting(), { owner: meta.source })
+        } else {
+          // A concurrent read of newer rows moves the line past this read's cut.
+          await reads.append(3)
+          await reads.read(registry)
+        }
+      }
+      return scan(query)
+    }
+    const read = await reads.read(registry)
+    expect(raced).toBe(true)
+    expect(read.unit).toEqual({ state: { notes: 25, lastSeq: read.asOfSeq }, stateVersion: 1 })
+    expect(read.asOfSeq).toBe(race === 'dropped' ? a.lastSeq : a.lastSeq - 3)
+    expect(registry.cacheLine(a.key, key)).toMatchObject({ seq: read.asOfSeq })
+  },
+)

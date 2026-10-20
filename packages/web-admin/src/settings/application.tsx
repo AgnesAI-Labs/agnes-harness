@@ -168,32 +168,32 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           <section aria-label={tr('Application consent preview', '应用采纳预览')}>
             <h3>{tr('Review application', '审阅应用')}</h3>
             <ApplicationPreviewSummary preview={preview} application />
-            <p>
+            <p className="agnes-settings-note">
               {tr(
-                'Applies to product identity, navigation, presentation and the agent catalogue. Trusted JavaScript is not a sandbox.',
-                '作用于产品身份、导航、展示和智能体目录。受信 JavaScript 并非沙箱。',
-              )}
-            </p>
-            <p>
-              {tr(
-                'Use “Switch application” in the sidebar to return to these settings.',
+                'You can switch applications again from the sidebar.',
                 '可随时通过侧栏的“切换应用”回到此页。',
               )}
             </p>
-            <Button
-              disabled={busy || resource.loading || !canSave || !state}
-              onClick={() =>
-                void run(async (current) => {
-                  if (!api || !state) return
-                  await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
-                  if (!current()) return
-                  setPreview(undefined)
-                  location.reload()
-                })
-              }
-            >
-              {tr('Adopt this preview', '采纳此预览')}
-            </Button>
+            <div className="home-push-actions">
+              <Button disabled={busy} onClick={() => setPreview(undefined)}>
+                {tr('Cancel', '取消')}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={busy || resource.loading || !canSave || !state}
+                onClick={() =>
+                  void run(async (current) => {
+                    if (!api || !state) return
+                    await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
+                    if (!current()) return
+                    setPreview(undefined)
+                    location.reload()
+                  })
+                }
+              >
+                {tr('Adopt', '采用')}
+              </Button>
+            </div>
           </section>
         )}
         <SettingsTechnicalDetails title={tr('Recovery tools', '恢复工具')}>

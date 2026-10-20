@@ -25,6 +25,7 @@ export function createSessionController(
     | 'draftingNew'
     | 'initialModelPending'
     | 'initialPermissionPending'
+    | 'invalidateSessionRuntime'
     | 'knownSessionModel'
     | 'list'
     | 'live'
@@ -63,6 +64,7 @@ export function createSessionController(
     | 'topbarRuntime'
     | 'transcriptMeta'
     | 'readOnlyController'
+    | 'readSessionControls'
     | 'windowAtStart'
     | 'workspaceRows'
   >,
@@ -170,8 +172,13 @@ export function createSessionController(
             },
           )
       if (!bindingOwner.attach(epoch, binding)) return
-      context.readOnlyController.clear()
       const loaded = binding.session
+      // Admission establishes execution identity, but the unverified preview remains on screen
+      // until the first authoritative opening commits. A late preview must not downgrade this.
+      context.clientModules.session.setSession(loaded.id, 'connecting')
+      // Controls need only the admitted session: read them alongside the opening, apply them after it.
+      const controls = context.readSessionControls(loaded)
+      controls.catch(() => undefined)
       context.sessionIsolation = undefined
       void Promise.resolve()
         .then(() => context.client.session.runtime(loaded.id))
@@ -195,7 +202,6 @@ export function createSessionController(
         binding.offPermission?.()
         return
       }
-      context.clientModules.session.setSession(loaded.id, 'connecting')
       if (!options.created && !context.sessionRows.some((row) => row.sessionId === id)) {
         const page = await context.client.session.list({ q: { prefix: id }, limit: 100 })
         if (!context.sessionBinding.isCurrent(epoch)) return
@@ -254,6 +260,8 @@ export function createSessionController(
             context.approvalSearch = 'idle'
           if (!opened) {
             opened = true
+            // Retire pending preview reads before installing the live projection in this same turn.
+            context.readOnlyController.clear()
             // 首投影就绪后才换代：清空转录区、写入新会话内容、同步审批卡与控件，
             // 都发生在同一次同步序列里，旧→新之间没有空白帧。
             context.renderer.reset()
@@ -296,7 +304,10 @@ export function createSessionController(
       })
       bindingOwner.watch(epoch, liveProjection)
       await liveProjection.start()
-      await context.refreshSessionControls(loaded)
+      // A read lost while the opening was out (a dropped connection) is made again, as before.
+      const applyControls = await controls.catch(() => context.readSessionControls(loaded))
+      // The readiness render below paints the applied controls in the same task.
+      await applyControls({ render: false })
       if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false
@@ -384,6 +395,8 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+    if (['x/core/permission-projection-invalidated', 'x/core/yolo-switch'].includes(event.type))
+      context.invalidateSessionRuntime(session.id)
     const epoch = context.sessionBinding.capture()
     const showError = (error: unknown) => {
       if (context.sessionBinding.isCurrent(epoch, session)) context.showError(error)

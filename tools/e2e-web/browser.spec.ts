@@ -298,6 +298,11 @@ test('built-in browser displays the agent page, admits human input and refuses c
     ).toBe(403)
     await page.getByRole('button', { name: 'Return to AGH', exact: true }).click()
     await expect(typing).toBeDisabled({ timeout: 30_000 })
+    // Input can stop before the handover is acknowledged (for example during lease renewal).
+    // Wait for the completed native handover before asking the agent to target another page.
+    await expect(page.getByRole('button', { name: 'Take control', exact: true })).toBeEnabled({
+      timeout: 30_000,
+    })
     const secondTab = await callBrowser({ action: 'open', url: url + '/second' })
     const tabs = page.locator('.agh-browser-tabs').getByRole('tab')
     await expect(tabs).toHaveCount(2)

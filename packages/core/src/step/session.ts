@@ -177,6 +177,7 @@ import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.j
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
+import { invalidatePermissionProjection } from './session-permission-projection.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { settleParkedCompletion } from './verifier-continuation.js'
@@ -698,8 +699,15 @@ export class SessionImpl {
   inheritAutomaticPermissions(parent: SessionImpl | undefined): void {
     this.authorization.inherit(
       parent ? () => parent.permissionContext : undefined,
-      parent ? (listener) => parent.onPermissionChange(listener) : undefined,
+      parent
+        ? (listener) =>
+            parent.onPermissionChange(() => {
+              listener()
+              invalidatePermissionProjection(this)
+            })
+        : undefined,
     )
+    invalidatePermissionProjection(this)
   }
 
   constructor(deps: SessionDeps) {
@@ -1923,7 +1931,7 @@ export class SessionImpl {
     // Every model request, tool run and step hook starts in a step, so none starts on history that an
     // open folded from a checkpoint until the background verification has hashed all of it, and none
     // at all once that verification failed: `fullVerified()` then rejects with the failure.
-    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
+    while (!this.d.log.historyVerified) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())

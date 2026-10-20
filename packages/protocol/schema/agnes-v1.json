@@ -3360,6 +3360,51 @@
         }
       }
     },
+    "SessionDeliverablesParams": {
+      "description": "Read one page of present-tool deliverable sources whose result was recorded after afterSeq, without the full UI projection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "afterSeq": {
+          "description": "Exclusive ledger seq; pass the previous page's nextAfterSeq, or its upto to read later changes.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 }
+      }
+    },
+    "SessionDeliverableSource": {
+      "description": "One present call and the result the UI projection pairs with it on the session's main lane. turnId is the projection turn whose seq range holds the call; structured is the result's structured data as recorded, absent when the result has none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callSeq", "resultSeq", "toolUseId"],
+      "properties": {
+        "callSeq": { "type": "integer", "minimum": 1 },
+        "resultSeq": { "type": "integer", "minimum": 1 },
+        "toolUseId": { "type": "string", "maxLength": 128 },
+        "turnId": { "type": "string", "maxLength": 128 },
+        "structured": { "$ref": "#/$defs/JsonValue" }
+      }
+    },
+    "SessionDeliverablesResult": {
+      "description": "Items in ascending resultSeq after the requested afterSeq, at most limit of them and 262144 bytes of JSON. upto is the ledger seq the page covers; nextAfterSeq, equal to upto, is present only when more items remain.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "upto", "items"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "upto": { "type": "integer", "minimum": 0 },
+        "items": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/SessionDeliverableSource" }
+        },
+        "nextAfterSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
     "SlotFillView": {
       "type": "object",
       "additionalProperties": false,
@@ -3538,6 +3583,16 @@
             "argsPreview": {
               "type": "string",
               "maxLength": 2048
+            },
+            "argumentRecovery": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["disabled", "presentational"],
+              "properties": {
+                "disabled": { "type": "boolean" },
+                "presentational": { "type": "boolean" }
+              },
+              "description": "Core's argument rejection fact. Render failed attempts in one collapsed technical record."
             },
             "resultPreview": {
               "type": "string",
@@ -4536,6 +4591,27 @@
           "items": {
             "type": "string"
           }
+        },
+        "argumentRecovery": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "Bounded diagnostic attempts without a tool-call node (nested/announced validation refusals). Full history stays in the ledger.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "seq", "disabled", "presentational", "hint"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 64 },
+              "seq": { "type": "integer", "minimum": 1 },
+              "disabled": { "type": "boolean" },
+              "presentational": { "type": "boolean" },
+              "hint": { "type": "string", "maxLength": 2000 }
+            }
+          }
+        },
+        "verification": {
+          "description": "Trusted Core completion-check recovery outcome; completion does not imply a passing verification.",
+          "enum": ["unavailable", "unverified", "blocked"]
         },
         "finalAssistantId": {
           "type": "string"

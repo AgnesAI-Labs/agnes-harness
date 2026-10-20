@@ -210,6 +210,7 @@ export function localClientExamples(
         }
       },
       resolve: (ref) => client.agents.resolve(ref),
+      application: () => client.call('_agnes/v1/applications.get', { profile }),
       async open(plan, sessionKey) {
         return (
           await client.session.new({

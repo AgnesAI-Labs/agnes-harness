@@ -1,11 +1,11 @@
-import type { ArtifactRef, UITimeline, UITurn } from '@agnes/protocol'
+import type { ArtifactRef, SessionDeliverableSource, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import {
   UiArtifactFileData,
   type UiArtifactStatus,
   type UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
-import type { Client, Session } from '@agnes/sdk/browser'
+import { applyUITimelinePatch, type Client, type Session } from '@agnes/sdk/browser'
 import type { SessionService } from './services-session.js'
 
 /** Read-only display contract. A ref names immutable bytes, never a mutable workspace path. */
@@ -89,7 +89,53 @@ export function deliveredFiles(
   })
 }
 
-/** Authorized SDK reads only. No attach/filter mutation, filesystem reads or retained content cache. */
+type PresentResult = {
+  surfaceId: string
+  rows: ReturnType<typeof deliveredFiles>
+  laneId?: string
+  owner?: string
+}
+
+/** One durable present call with a result, in the order the projection lists tool calls. */
+type PresentSource = Readonly<{
+  callSeq: number
+  toolUseId: string
+  turnId?: string
+  read: () => Promise<PresentResult>
+}>
+
+const DELIVERABLES_METHOD = '_agnes/v1/session.deliverables'
+
+/** A listed file surface the deliverables read cannot file under a turn; the projection can. */
+class SurfaceTurnUnknown extends Error {}
+
+/** Between refreshes only node identity, turn bounds and present calls are needed to apply patches. */
+function retained(timeline: UITimeline): UITimeline {
+  const { sessionId, generation, upto, opState } = timeline
+  return {
+    sessionId,
+    generation,
+    upto,
+    opState,
+    nodes: timeline.nodes.map((node) =>
+      node.kind === 'tool' && node.name === 'present'
+        ? ({
+            id: node.id,
+            kind: node.kind,
+            name: node.name,
+            seq: node.seq,
+            toolUseId: node.toolUseId,
+            ...(node.resultSeq === undefined ? {} : { resultSeq: node.resultSeq }),
+          } as UINode)
+        : ({ id: node.id } as UINode),
+    ),
+    turns: timeline.turns.map(
+      ({ id, startSeq, endSeq }) => ({ id, startSeq, ...(endSeq === undefined ? {} : { endSeq }) }) as UITurn,
+    ),
+  }
+}
+
+/** Authorized SDK reads only. No attach/filter mutation, filesystem reads or retained file content. */
 export class DeliverablesStore {
   private snapshot: DeliverablesSnapshot = { files: [], loading: true }
   private readonly listeners = new Set<() => void>()
@@ -99,12 +145,21 @@ export class DeliverablesStore {
   private disposed = false
   private running = false
   private requested = false
+  // This connection's projection baseline. Durable present results are immutable per ledger
+  // generation and are kept for the readiness epoch that read them.
+  private timeline: UITimeline | undefined
+  private baseline = 0
+  // Per baseline: whether present results come from session.deliverables or from the projection.
+  private source: 'query' | 'projection' | undefined
+  private presents = new Map<string, PresentResult>()
   constructor(
     private readonly client: Client,
     private readonly session: SessionService,
   ) {
     const switchSession = () => {
       this.generation++
+      this.dropBaseline()
+      this.presents = new Map()
       this.detach?.()
       const id = session.sessionId
       const readiness = session.readiness.getSnapshot()
@@ -126,9 +181,11 @@ export class DeliverablesStore {
     // A cold history preview and the admitted session share an id. Readiness epochs,
     // rather than identity changes alone, retire old reads and bind the ready handle.
     this.stops.push(session.readiness.subscribe(switchSession))
+    // Daemon baselines belong to one connection and generation: start over with a full projection.
     for (const name of ['reconnected', 'gap', 'generationChanged'] as const)
       this.stops.push(
         client.on(name, () => {
+          this.dropBaseline()
           void this.refresh()
         }),
       )
@@ -153,13 +210,13 @@ export class DeliverablesStore {
       while (this.requested && !this.disposed) {
         this.requested = false
         const generation = this.generation,
-          sessionId = this.session.sessionId
+          sessionId = this.session.sessionId,
+          presents = this.presents
         if (!sessionId || this.session.readiness.getSnapshot().status !== 'ready') continue
         try {
           const session = this.client.sessions.get(sessionId)
           if (!session) throw new Error('Session unavailable')
-          const timeline = await session.projectUI()
-          const files = await readDeliverables(session, timeline)
+          const files = await this.read(session, presents)
           if (!this.disposed && generation === this.generation) this.set({ sessionId, files, loading: false })
         } catch {
           if (!this.disposed && generation === this.generation)
@@ -170,6 +227,52 @@ export class DeliverablesStore {
       this.running = false
     }
   }
+  private dropBaseline() {
+    this.baseline++
+    this.timeline = undefined
+    this.source = undefined
+  }
+  /** Announced in apis.list, as optional methods are; an older daemon or a failed listing is not. */
+  private async offered(): Promise<boolean> {
+    try {
+      const apis = await this.client.apis()
+      return apis.families.some((family) => family.methods.includes(DELIVERABLES_METHOD))
+    } catch {
+      return false
+    }
+  }
+  /** A daemon that announces session.deliverables answers without a projection; otherwise project. */
+  private async read(session: Session, presents: Map<string, PresentResult>): Promise<DeliverableRecord[]> {
+    const baseline = this.baseline
+    if (this.source === undefined) {
+      const offered = await this.offered()
+      if (baseline === this.baseline) this.source ??= offered ? 'query' : 'projection'
+    }
+    if (this.source === 'query' && baseline === this.baseline)
+      try {
+        return await readQueried(session)
+      } catch {
+        // A refused or oversized page, or a surface only the projection can file: stay on the projection.
+        if (baseline === this.baseline) this.source = 'projection'
+      }
+    return readDeliverables(session, await this.project(session), presents)
+  }
+  /** The first read per baseline is a full projection; later reads patch it. */
+  private async project(session: Session): Promise<UITimeline> {
+    const baseline = this.baseline,
+      current = this.timeline
+    let next: UITimeline | undefined
+    if (current)
+      try {
+        const update = await session.projectUIPatch(current.upto)
+        next = update.kind === 'patch' ? applyUITimelinePatch(current, update.patch) : update.timeline
+      } catch {
+        /* Resync required, cursor mismatch or no patch support: fall back to a full projection. */
+      }
+    next = retained(next ?? (await session.projectUI()))
+    if (baseline === this.baseline) this.timeline = next
+    return next
+  }
   dispose = () => {
     this.disposed = true
     this.generation++
@@ -179,51 +282,136 @@ export class DeliverablesStore {
   }
 }
 
-async function readDeliverables(session: Session, timeline: UITimeline): Promise<DeliverableRecord[]> {
+async function readPresent(
+  session: Session,
+  node: Extract<UINode, { kind: 'tool' }>,
+  resultSeq: number,
+): Promise<PresentResult> {
+  const detail = await session.readToolDetail(node.seq, resultSeq)
+  return presentResult(detail.result?.structured, node.toolUseId)
+}
+
+/** The display data a present result recorded; older results keep it only in their surface. */
+async function presentResult(
+  structured: SessionDeliverableSource['structured'],
+  toolUseId: string,
+): Promise<PresentResult> {
+  const data = structured && typeof structured === 'object' && !Array.isArray(structured) ? structured : {}
+  const surfaceId =
+    typeof data.surfaceId === 'string'
+      ? data.surfaceId
+      : 'card-' +
+        Array.from(
+          new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(toolUseId))),
+          (byte) => byte.toString(16).padStart(2, '0'),
+        )
+          .join('')
+          .slice(0, 48)
+  return {
+    surfaceId,
+    rows: deliveredFiles(data.deliverables),
+    ...(typeof data.laneId === 'string' ? { laneId: data.laneId } : {}),
+    ...(typeof data.owner === 'string' ? { owner: data.owner } : {}),
+  }
+}
+
+async function readDeliverables(
+  session: Session,
+  timeline: UITimeline,
+  presents: Map<string, PresentResult>,
+): Promise<DeliverableRecord[]> {
+  const sources = timeline.nodes.flatMap((node): PresentSource[] => {
+    if (node.kind !== 'tool' || node.name !== 'present' || !node.resultSeq) return []
+    const key = `${timeline.generation}:${node.seq}:${node.resultSeq}`
+    const resultSeq = node.resultSeq
+    const turnId = turnOf(timeline.turns, node.seq)
+    const read = async () => {
+      const present = presents.get(key) ?? (await readPresent(session, node, resultSeq))
+      presents.set(key, present)
+      return present
+    }
+    return [{ callSeq: node.seq, toolUseId: node.toolUseId, ...(turnId ? { turnId } : {}), read }]
+  })
+  return assemble(session, sources, () => timeline.turns)
+}
+
+/**
+ * Every page of session.deliverables from the start. A present call's own surface is rendered while
+ * the call runs, so it is filed under the call's turn; any other file surface needs the projection.
+ */
+async function readQueried(session: Session): Promise<DeliverableRecord[]> {
+  const items = new Map<number, SessionDeliverableSource>()
+  for (let afterSeq: number | undefined = 0; afterSeq !== undefined; ) {
+    const page = await session.deliverables({ afterSeq })
+    for (const item of page.items) items.set(item.callSeq, item)
+    afterSeq = page.nextAfterSeq
+  }
+  const sources: PresentSource[] = []
+  const surfaceTurns = new Map<string, string | undefined>()
+  for (const item of [...items.values()].sort((a, b) => a.callSeq - b.callSeq)) {
+    const present = await presentResult(item.structured, item.toolUseId)
+    const known = surfaceTurns.has(present.surfaceId)
+    surfaceTurns.set(
+      present.surfaceId,
+      known && surfaceTurns.get(present.surfaceId) !== item.turnId ? undefined : item.turnId,
+    )
+    sources.push({
+      callSeq: item.callSeq,
+      toolUseId: item.toolUseId,
+      ...(item.turnId === undefined ? {} : { turnId: item.turnId }),
+      read: async () => present,
+    })
+  }
+  return assemble(session, sources, (record) => {
+    const turnId = surfaceTurns.get(record.surface.id)
+    // A turn spanning only the record's seq files it under the call's turn.
+    return turnId === undefined
+      ? undefined
+      : [{ id: turnId, startSeq: record.createdSeq, endSeq: record.createdSeq } as UITurn]
+  })
+}
+
+/** Surface copies first, then each present result in call order, merged into its enhanced copy. */
+async function assemble(
+  session: Session,
+  sources: readonly PresentSource[],
+  surfaceTurns: (record: UiSurfaceRecord) => readonly UITurn[] | undefined,
+): Promise<DeliverableRecord[]> {
   const files: DeliverableRecord[] = []
+  const fromSurface = (record: UiSurfaceRecord) => {
+    const turns = surfaceTurns(record)
+    const found = surfaceDeliverables(session.id, record, turns ?? [])
+    if (!turns && found.length > 0) throw new SurfaceTurnUnknown()
+    return found
+  }
   // Surfaces are an optional enhancement. Durable tool results work when Intelligent UI is off.
   try {
     let cursor: string | undefined
     const seen = new Set<string>()
     do {
       const page = await session.uiRead(cursor ? { cursor } : {})
-      for (const record of page.surfaces)
-        files.push(...surfaceDeliverables(session.id, record, timeline.turns))
+      for (const record of page.surfaces) files.push(...fromSurface(record))
       cursor = page.nextCursor
       if (cursor && seen.has(cursor)) throw new Error('Repeated UI cursor')
       if (cursor) seen.add(cursor)
     } while (cursor)
-  } catch {
+  } catch (error) {
+    if (error instanceof SurfaceTurnUnknown) throw error
     /* Optional UI provider unavailable: use the durable present result below. */
   }
-  for (const node of timeline.nodes) {
-    if (node.kind !== 'tool' || node.name !== 'present' || !node.resultSeq) continue
-    const detail = await session.readToolDetail(node.seq, node.resultSeq)
-    const result = detail.result
-    const structured = result?.structured
-    const data = structured && typeof structured === 'object' && !Array.isArray(structured) ? structured : {}
-    const surfaceId =
-      typeof data.surfaceId === 'string'
-        ? data.surfaceId
-        : 'card-' +
-          Array.from(
-            new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(node.toolUseId))),
-            (byte) => byte.toString(16).padStart(2, '0'),
-          )
-            .join('')
-            .slice(0, 48)
+  for (const source of sources) {
+    const { surfaceId, rows, laneId, owner } = await source.read()
     // Older present results kept display metadata only in the durable UI surface. Read closed ones by id too.
     if (!files.some((file) => file.source.surfaceId === surfaceId)) {
       try {
         const page = await session.uiRead({ surfaceId })
-        for (const record of page.surfaces)
-          files.push(...surfaceDeliverables(session.id, record, timeline.turns))
-      } catch {
+        for (const record of page.surfaces) files.push(...fromSurface(record))
+      } catch (error) {
+        if (error instanceof SurfaceTurnUnknown) throw error
         /* The optional UI provider may be absent. New results below remain sufficient. */
       }
     }
-    const rows = deliveredFiles(data.deliverables)
-    const turnId = turnOf(timeline.turns, node.seq)
+    const { turnId } = source
     // A surface inside this exact call is the enhanced copy of the same presentation.
     const enhanced = files.filter((file) => file.source.surfaceId === surfaceId)
     rows.forEach((file, index) => {
@@ -240,16 +428,16 @@ async function readDeliverables(session: Session, timeline: UITimeline): Promise
       }
       files.push({
         ...file,
-        id: `${session.id}:${typeof data.laneId === 'string' ? data.laneId : (match?.laneId ?? 'main')}:${node.toolUseId}:${index}`,
+        id: `${session.id}:${laneId ?? match?.laneId ?? 'main'}:${source.toolUseId}:${index}`,
         sessionId: session.id,
-        laneId: typeof data.laneId === 'string' ? data.laneId : (match?.laneId ?? 'main'),
+        laneId: laneId ?? match?.laneId ?? 'main',
         source: {
-          owner: typeof data.owner === 'string' ? data.owner : (match?.source.owner ?? 'present'),
-          toolUseId: node.toolUseId,
-          callSeq: node.seq,
+          owner: owner ?? match?.source.owner ?? 'present',
+          toolUseId: source.toolUseId,
+          callSeq: source.callSeq,
         },
         ...(turnId ? { turnId } : {}),
-        seq: node.seq,
+        seq: source.callSeq,
         inline: match?.inline ?? true,
         workbench: match?.workbench ?? true,
         ...(match?.artifactStatus ? { artifactStatus: match.artifactStatus } : {}),

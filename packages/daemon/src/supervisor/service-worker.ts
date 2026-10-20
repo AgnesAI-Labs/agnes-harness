@@ -264,3 +264,18 @@ export function createClientServiceDispatcher(
     return await callService(params, credential)
   }
 }
+
+/** One set of Host service adapters for the shared worker and its private web dispatcher. */
+export function workerClientServices(
+  pool: Pick<WorkerPool, 'acquireSharedWorker'>,
+  profile: () => ResolvedProfile,
+) {
+  const callService = workerServiceCaller(pool, profile)
+  const inspectService = workerServiceInspector(pool, profile)
+  return {
+    callService,
+    inspectService,
+    resolveService: workerServiceResolver(pool),
+    dispatchClientService: createClientServiceDispatcher(callService, inspectService),
+  }
+}

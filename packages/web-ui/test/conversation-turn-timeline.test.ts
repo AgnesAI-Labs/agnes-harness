@@ -172,6 +172,161 @@ describe('turn timeline', () => {
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
 
+  it.each(['zh-CN', 'en'] as const)(
+    'keeps blocked answers visible with one collapsed explanation (%s)',
+    async (locale) => {
+      const retry = vi.fn()
+      const nodes = [
+        user,
+        say('draft', 'Available evidence.'),
+        say('answer', 'Still needs an independent check.'),
+      ]
+      await render(
+        nodes,
+        turn(nodes, {
+          status: 'failed',
+          reason: 'blocked',
+          verification: 'blocked',
+          finalAssistantId: 'answer',
+          endedAt: '2026-10-01T00:00:01.000Z',
+        }),
+        {
+          t: translate(locale),
+          renderTurnActions: (_turn, _text, settled) =>
+            settled ? createElement('button', { type: 'button', onClick: retry }, 'Retry') : null,
+        },
+      )
+      expect(wrapper('draft')?.hidden).toBe(false)
+      expect(wrapper('answer')?.hidden).toBe(false)
+      const notes = host.querySelectorAll('[data-testid="turn-verification"]')
+      expect(notes).toHaveLength(1)
+      expect(notes[0]?.getAttribute('data-open')).toBe('false')
+      expect(notes[0]?.getAttribute('data-variant')).toBe('plain')
+      expect(notes[0]?.querySelector('.agh-disclosure-chevron')).not.toBeNull()
+      expect(notes[0]?.querySelector('.agh-disclosure-marker')).toBeNull()
+      expect(host.querySelector('[data-testid="turn-timing"]')?.textContent).toContain(
+        locale === 'en' ? 'Not verified' : '未通过校验',
+      )
+      expect(host.textContent).not.toContain(locale === 'en' ? 'Failed' : '执行失败')
+      expect(notes[0]?.textContent).toContain(
+        locale === 'en' ? 'automatic correction has stopped' : '回答仍未通过校验',
+      )
+      expect(host.querySelector('.turn-error')).toBeNull()
+      expect(host.textContent).not.toContain('blocked')
+      const retryButton = [...host.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Retry',
+      )
+      expect(retryButton?.disabled).toBe(false)
+      await click(retryButton)
+      expect(retry).toHaveBeenCalled()
+    },
+  )
+  it.each(['unavailable', 'unverified'] as const)(
+    'distinguishes completed answers whose verification is %s',
+    async (verification) => {
+      const nodes = [user, say('answer', 'Available answer.')]
+      await render(
+        nodes,
+        turn(nodes, {
+          status: 'completed',
+          reason: 'completed',
+          verification,
+          finalAssistantId: 'answer',
+          endedAt: '2026-10-01T00:00:01.000Z',
+        }),
+      )
+      const note = host.querySelector('[data-testid="turn-verification"]')
+      expect(note?.getAttribute('data-open')).toBe('false')
+      expect(note?.getAttribute('data-variant')).toBe('plain')
+      expect(host.querySelector('[data-testid="turn-timing"]')?.textContent).toContain(
+        verification === 'unavailable' ? '未能完成校验' : '未通过校验',
+      )
+      expect(note?.textContent).toContain(verification === 'unavailable' ? '未能完成校验' : '完成校验未通过')
+      expect(wrapper('answer')?.hidden).toBe(false)
+      expect(host.querySelector('.turn-error')).toBeNull()
+    },
+  )
+
+  it.each(['blocked', 'unavailable'] as const)(
+    'keeps real execution errors visible after a prior %s verification fact',
+    async (verification) => {
+      const nodes = [user, say('answer', 'Available answer.')]
+      await render(
+        nodes,
+        turn(nodes, {
+          status: 'failed',
+          reason: 'error',
+          verification,
+          error: { code: 'E_RUNTIME', message: 'Execution stopped unexpectedly' },
+          finalAssistantId: 'answer',
+          endedAt: '2026-10-01T00:00:01.000Z',
+        }),
+      )
+      expect(host.querySelector('[data-testid="turn-timing"]')?.textContent).toContain('执行失败')
+      expect(host.querySelector('.turn-error')?.textContent).toContain('E_RUNTIME')
+      expect(host.querySelector('[data-testid="turn-verification"]')).toBeNull()
+      expect(host.querySelector('.conversation-turn')?.hasAttribute('data-verification')).toBe(false)
+    },
+  )
+
+  it.each([true, false])(
+    'shows one collapsed recovery note and retains raw attempts (visual=%s)',
+    async (visual) => {
+      const attempts = [false, true].map((disabled, i) =>
+        tool(
+          `invalid-${i}`,
+          visual ? 'ui_render' : 'fixture_lookup',
+          {},
+          {
+            status: 'failed',
+            resultPreview: 'TOOL_ARGS_INVALID: /surface/revision minimum=1',
+            argumentRecovery: { disabled, presentational: visual },
+          },
+        ),
+      )
+      const nodes = [user, ...attempts, say('answer', '调查结论：继续检查试验数据。')]
+      await render(
+        nodes,
+        turn(nodes, { status: 'completed', finalAssistantId: 'answer', endedAt: '2026-10-01T00:00:01.000Z' }),
+      )
+      const notes = host.querySelectorAll('[data-testid="tool-argument-recovery"]')
+      expect(notes).toHaveLength(1)
+      const note = notes[0]!
+      expect(note.textContent).toContain(visual ? '界面组件生成失败，已改用文字回答' : '一项操作暂未完成')
+      expect(note.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false')
+      expect(host.querySelector('.turn-final')?.textContent).toContain('调查结论')
+      expect(host.querySelector('.turn-final')?.textContent).not.toContain('TOOL_ARGS_INVALID')
+      await click(note.querySelector('button[aria-expanded]'))
+      expect(note.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+      expect(note.textContent).toContain('TOOL_ARGS_INVALID')
+      expect(note.textContent).toContain(visual ? 'ui_render' : 'fixture_lookup')
+    },
+  )
+
+  it('includes nested validation failures in the same collapsed technical record', async () => {
+    const nodes = [user, say('answer', '文字结论')]
+    await render(
+      nodes,
+      turn(nodes, {
+        status: 'completed',
+        finalAssistantId: 'answer',
+        argumentRecovery: [
+          {
+            name: 'recovery_probe',
+            seq: 2,
+            disabled: true,
+            presentational: false,
+            hint: 'Disabled for the rest of this turn',
+          },
+        ],
+      }),
+    )
+    const note = host.querySelector('[data-testid="tool-argument-recovery"]')
+    expect(note?.textContent).toContain('一项操作暂未完成')
+    expect(note?.textContent).toContain('recovery_probe')
+    expect(note?.getAttribute('data-open')).toBe('false')
+  })
+
   it.each([false, true])(
     'shows workflow prose and tool results without a final assistant reference (live=%s)',
     async (live) => {

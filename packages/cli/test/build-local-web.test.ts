@@ -27,8 +27,12 @@ it('builds local web assets with the shared platform vendor modules', async () =
     const imports: Record<string, string> = JSON.parse(
       pageHtml.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1] ?? '{}',
     ).imports
+    // bootstrap chooses recovery or the normal workbench with import(). The workbench is
+    // mandatory on a normal cold load even though that first edge is dynamic.
+    const workbench = [...emitted].find(([, metadata]) => metadata.entryPoint === 'src/app.ts')
+    expect(workbench, 'normal workbench entry').toBeDefined()
     const cold = new Set<string>()
-    const pending = [join(output, 'app.js'), join(output, 'theme.js')]
+    const pending = [join(output, 'app.js'), join(output, 'theme.js'), workbench?.[0] ?? '']
     while (pending.length) {
       const file = pending.pop()
       if (!file || cold.has(file)) continue

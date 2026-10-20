@@ -28,6 +28,7 @@ import {
   type WorkerResourceBootstrapInput,
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
+import { readDeliverablesPage } from './deliverables.js'
 import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
@@ -457,6 +458,8 @@ export async function handleCommand(
         offset: Number(p.offset),
         maxBytes: Number(p.maxBytes),
       })
+    case 'readDeliverables':
+      return readDeliverablesPage(session, { afterSeq: Number(p.afterSeq), limit: Number(p.limit) })
     case 'previewSnapshot':
       return session.previewSnapshot()
     case 'latest':

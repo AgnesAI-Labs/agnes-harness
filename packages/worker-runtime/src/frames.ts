@@ -32,6 +32,7 @@ export type SessionMethod =
   | 'approvalGrants'
   | 'revokeApprovalGrant'
   | 'readToolDetail'
+  | 'readDeliverables'
   | 'feedback.draft'
   | 'ui.action'
   | 'ui.read'

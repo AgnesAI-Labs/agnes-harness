@@ -2,6 +2,8 @@
 
 [English](tool-runtime.md) | 简体中文
 
+完成校验保留 `RepairSeam.decide` 明确返回的 `complete`，不会把未通过的校验改记为通过。Core 将继续修正或升级的请求限制为一次自动修正。校验或修复基础设施故障会结束本轮，并以可信恢复审计记录未能完成校验；内容拒绝与此分开。已移除校验器 `park` 创建的未知结果人工接受请求（包括原来的 `always`/`budget` 风险）；操作审阅、未知业务副作用核对和预算报价仍使用原有决策通道。
+
 `@agnes/extension-api` 提供两个合同：`ToolRuntimeProvider.create({ maxParallel })` 创建会话级运行时，支持单次执行、批量执行、取消和销毁；`ToolPolicy.decide(input, signal, ports?)` 返回带原因的 `allow`、`ask` 或 `deny`。
 
 普通 Cordis 插件注入 `providers`，通过 `providers.register(toolRuntimeKind, provider)` 或 `providers.register(toolPolicyKind, policy)` 注册，注册由调用插件的 fiber 所有。读取 `providers.catalog()` 并按 `kind` 筛选；目录包含 id、版本、来源包、能力和选型/生命周期元数据。卸载选中的提供方会取消其生命周期，后续调用明确失败。
@@ -17,6 +19,8 @@ tools:
 预设在 `providers` 表里配置 `tool-runtime: { provider: default }` 和 `tool-policy: { provider: default }`，并用 `tools.max_parallel: 4` 设置并发。省略字段保持默认行为；并发上限为 1–64。默认运行时并行执行相邻的并发安全工具，独占工具等待前面的调用完成，返回结果保持输入顺序。取消或失败会停止启动新调用并等待已经启动的调用结束。
 
 Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢复；单次执行端口不允许修改已授权的参数或重复派发。策略的硬拒绝仍生效；完全访问预设会自动允许权限裁决，不交付人工审批。默认策略由现有审批扩展注册，命令规则和人工审批沿用审批 seam。实例保留到会话关闭，避免预设切换销毁正在执行的批次。
+
+Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指出字段与允许值的简短提示。同一工具连续两次参数错误后，本轮停用，包括嵌套调用和自定义 Loop 请求。达到上限之前，参数验证通过会重置该工具的计数。可用 `meta.invalidArgumentLimit` 指定 1 至 5 的整数，覆盖默认值 2。不同工具分别计数，压缩或重开会话不会清除本轮计数，新一轮则重新开始。恢复设置不绕过验证，也不授予权限。
 
 发现工具可读取 `ctx.tools.availability?.(name)`，得到产生本次调用的模型请求的只读 `{ status, reason?, message }` 投影。`offered` 表示已发送 schema；`deferred` 表示需先调用 `tool_describe`，供后续请求使用；`unavailable` 提供安全的原因类别和下一步。类别区分模式、策略、模型能力、显式请求选择、不在目录及请求状态未知。目录成员身份和 `deferLoading` 不能单独证明已披露。没有投影时（例如作者测试宿主，或恢复后缺少请求快照）必须视为未知。加载 schema 不授予权限。当前预算只准入或拒绝整次请求，不会静默删掉单个工具。
 

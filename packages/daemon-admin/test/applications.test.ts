@@ -16,8 +16,9 @@ import {
   parseSource,
   writeLock,
 } from '@agnes/package-manager'
-import { validatePackageAdminCall } from '@agnes/protocol'
+import { type AgentPlan, validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { createAgentLaunches } from '../src/packages/agent-launches.js'
 import { Applications } from '../src/packages/applications.js'
 import { contributionProjection } from '../src/packages/contribution-roster.js'
 import { requirePackageAdmin } from '../src/packages/permissions.js'
@@ -26,7 +27,7 @@ const homes: string[] = []
 afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true })
 })
-async function fixture() {
+async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<AgentPlan>) {
   const home = await mkdtemp(join(tmpdir(), 'agh-applications-'))
   homes.push(home)
   const directory = join(home, 'profiles', 'local-dev')
@@ -56,6 +57,7 @@ async function fixture() {
   let packages = [make('a'), make('b')]
   const inactive = new Set<string>()
   const applications = new Applications({
+    ...(resolveAgent ? { resolveAgent } : {}),
     manager: { inventory: async () => ({ profile: 'local-dev', hash: '', packages }) },
     profileDirectory: async () => directory,
     active: async (_profile, id) => !inactive.has(id),
@@ -679,3 +681,163 @@ it('retains unresolved role identity without choosing another plugin and binds d
       .consentDigest,
   ).not.toBe(preview.consentDigest)
 })
+
+it('retains the reviewed Host launch plans, refuses drift at adoption and keeps presentation active on launch-policy changes', async () => {
+  let plan: AgentPlan = {
+    ref: 'a#work',
+    launch: { title: { en: 'Reviewer' }, description: { en: 'Review' }, preset: 'safe' },
+    loop: { id: 'work', version: '1.0.0' },
+    bundles: ['a#work'],
+    preset: 'safe',
+    pages: [],
+    digest: 'original',
+    compositionHash: 'tree',
+    presetHash: 'preset',
+    effectivePresetHash: 'effective',
+    model: { route: 'demo', model: 'demo' },
+    models: {},
+    permission: { readOnly: true, tools: ['read'], allow: [], deny: [] },
+    sources: [{ id: 'a', version: '1.0.0', integrity: 'hash', source: 'runtime-snapshot' }],
+  }
+  const f = await fixture(async (profile, ref) => {
+    expect(profile).toBe('local-dev')
+    expect(ref).toBe(plan.ref)
+    return structuredClone(plan)
+  })
+  const a = f.packages()[0]!
+  a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+  a.entry.application = { ...a.entry.application!, agents: [plan.ref], defaultAgent: plan.ref }
+  const preview = await f.applications.preview('local-dev', 'a')
+  expect(preview.agentLaunches).toEqual([plan])
+  plan = { ...plan, digest: 'new-policy', permission: { ...plan.permission, readOnly: false } }
+  await expect(f.applications.adopt('local-dev', 'a', 0, preview.consentDigest)).rejects.toMatchObject({
+    data: { reason: 'APPLICATION_PREVIEW_STALE' },
+  })
+  const current = await f.applications.preview('local-dev', 'a')
+  const adopted = await f.applications.adopt('local-dev', 'a', 0, current.consentDigest)
+  expect(adopted.selection?.consentSnapshot?.agentLaunches).toEqual([plan])
+  plan = { ...plan, digest: 'another-policy' }
+  expect((await f.applications.get('local-dev')).status).toBe('active')
+})
+
+it('launch-review: LD1 clearing and re-adopting invalidates an earlier direct-launch ticket', async () => {
+  const plan = launchReviewPlan()
+  const f = await fixture(async () => structuredClone(plan)),
+    a = f.packages()[0]!
+  a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+  a.entry.application = { ...a.entry.application!, agents: [plan.ref] }
+  const adopted = await f.adopt('a')
+  expect(adopted.selection?.adoptionGeneration).toMatch(/^[a-f0-9-]{36}$/)
+  let opened = false
+  const facade = createAgentLaunches({
+    directory: join(f.home, 'launches'),
+    backend: {
+      caller: async () => ({
+        principal: 'human',
+        profile: 'local-dev',
+        workspace: '/synthetic',
+        activation: 'a1',
+      }),
+      resolve: async () => structuredClone(plan),
+      application: () => f.applications.get('local-dev'),
+      open: async () => {
+        opened = true
+        return 'session'
+      },
+    },
+  })
+  const before = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    consent: string
+    launchTicket: string
+  }
+  expect(before.consent).toBe('covered')
+  await f.applications.clear('local-dev', adopted.revision)
+  await expect(
+    facade.call({ action: 'start', launchTicket: before.launchTicket, operationId: 'while-cleared' }),
+  ).rejects.toThrow('STALE')
+  const readopted = await f.adopt('a')
+  expect(readopted.revision).toBeGreaterThan(adopted.revision)
+  expect(readopted.selection?.adoptionGeneration).not.toBe(adopted.selection?.adoptionGeneration)
+  const fresh = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    consent: string
+    launchTicket: string
+  }
+  expect(fresh.consent).toBe('covered')
+  await expect(
+    facade.call({ action: 'start', launchTicket: before.launchTicket, operationId: 'old-ticket' }),
+  ).rejects.toThrow('STALE')
+  expect(opened).toBe(false)
+  // Unrelated presentation changes retain this adoption's generation, even as the CAS revision advances.
+  await f.config.saveApplication({
+    revision: readopted.revision,
+    selection: readopted.selection,
+    roleSelections: {},
+  })
+  await expect(
+    facade.call({ action: 'start', launchTicket: fresh.launchTicket, operationId: 'fresh-ticket' }),
+  ).resolves.toMatchObject({ sessionId: 'session' })
+  const beforeReadopt = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    launchTicket: string
+  }
+  const again = await f.adopt('a')
+  expect(again.selection?.adoptionGeneration).not.toBe(readopted.selection?.adoptionGeneration)
+  await expect(
+    facade.call({ action: 'start', launchTicket: beforeReadopt.launchTicket, operationId: 're-adopted' }),
+  ).rejects.toThrow('STALE')
+})
+
+function launchReviewPlan(): AgentPlan {
+  return {
+    ref: 'a#work',
+    launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    loop: { id: 'work', version: '1.0.0' },
+    bundles: ['a#work'],
+    preset: 'safe',
+    pages: [],
+    digest: 'sha256-private-runtime',
+    compositionHash: 'tree',
+    presetHash: 'preset',
+    effectivePresetHash: 'effective',
+    model: { route: 'demo', model: 'demo' },
+    models: {},
+    permission: { readOnly: true, tools: ['read'], allow: [], deny: [] },
+    sources: [{ id: 'a', version: '1.0.0', integrity: 'hash', source: 'runtime-snapshot' }],
+  }
+}
+
+it.each(['snapshot', 'selection', 'launch-plan'] as const)(
+  'launch-review: alteration of the persisted %s cannot manufacture covered consent',
+  async (change) => {
+    const plan = launchReviewPlan()
+    const f = await fixture(async () => structuredClone(plan)),
+      a = f.packages()[0]!
+    a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+    a.entry.application = { ...a.entry.application!, agents: [plan.ref] }
+    await f.adopt('a')
+    const saved = await f.config.application()
+    if (change === 'snapshot') saved.selection!.consentSnapshot!.version = 'tampered'
+    if (change === 'selection') saved.selection!.consentDigest = 'f'.repeat(64)
+    if (change === 'launch-plan')
+      saved.selection!.consentSnapshot!.agentLaunches = [{ ...plan, digest: 'tampered' }]
+    await f.config.saveApplication(saved)
+    const facade = createAgentLaunches({
+      directory: join(f.home, 'launches'),
+      backend: {
+        caller: async () => ({
+          principal: 'human',
+          profile: 'local-dev',
+          workspace: '/synthetic',
+          activation: 'a',
+        }),
+        resolve: async () => structuredClone(plan),
+        application: () => f.applications.get('local-dev'),
+        open: async () => {
+          throw new Error('must not auto-start')
+        },
+      },
+    })
+    expect(await facade.call({ action: 'prepare', agent: plan.ref })).toMatchObject({
+      consent: 'unavailable',
+    })
+  },
+)

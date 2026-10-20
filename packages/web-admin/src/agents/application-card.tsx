@@ -271,53 +271,56 @@ export function ApplicationCard({
         {review && (
           <section aria-label={tr('Application consent preview', '应用采用预览')}>
             <h3>{tr('Review application', '审阅应用')}</h3>
-            <ApplicationPreviewSummary preview={review.preview} application />
-            <p>
+            <ApplicationPreviewSummary preview={review.preview} description={metadata?.summary} application />
+            <p className="agnes-settings-note">
               {tr(
-                'Applies to product identity, navigation, presentation and agent catalogue. Trusted JavaScript is not a sandbox.',
-                '作用于产品身份、导航、展示和智能体目录。受信 JavaScript 并非沙箱。',
+                'You can switch applications again from the sidebar.',
+                '可随时通过侧栏的“切换应用”回到设置。',
               )}
             </p>
-            <p>
-              {tr(
-                'Recovery: Settings → Application → Clear application and interface choices; or /?admin · agh app clear',
-                '恢复：设置 → 应用 → 清除应用与界面实现选择；或 /?admin · agh app clear',
-              )}
-            </p>
-            <Button
-              appearance="primary"
-              disabled={busy || !!denied}
-              onClick={() =>
-                void run(async (signal) => {
-                  const state = await data.api!.adoptApplication(
-                    entry.id,
-                    review.revision,
-                    review.preview.consentDigest,
-                  )
-                  signal.throwIfAborted()
-                  if (state.status !== 'active' || state.selection?.packageId !== entry.id)
-                    throw new Error(tr('Application unavailable; preview again.', '应用不可用，请重新预览。'))
-                  // A fresh bootstrap applies the new brand, skin, navigation and declared home together.
-                  location.assign('/')
-                })
-              }
-            >
-              {tr('Adopt this preview', '采用此预览')}
-            </Button>
+            <div className="home-push-actions">
+              <Button disabled={busy} onClick={() => nav.back()}>
+                {t('dialog.cancel')}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={busy || !!denied}
+                onClick={() =>
+                  void run(async (signal) => {
+                    const state = await data.api!.adoptApplication(
+                      entry.id,
+                      review.revision,
+                      review.preview.consentDigest,
+                    )
+                    signal.throwIfAborted()
+                    if (state.status !== 'active' || state.selection?.packageId !== entry.id)
+                      throw new Error(
+                        tr('Application unavailable; preview again.', '应用不可用，请重新预览。'),
+                      )
+                    // A fresh bootstrap applies the new brand, skin, navigation and declared home together.
+                    location.assign('/')
+                  })
+                }
+              >
+                {tr('Adopt', '采用')}
+              </Button>
+            </div>
           </section>
         )}
         {!busy && error && (
           <Button onClick={begin}>{tr('Refresh and review again', '刷新并重新审阅')}</Button>
         )}
-        <Button
-          disabled={busy}
-          onClick={() => {
-            controller.current?.abort()
-            nav.back()
-          }}
-        >
-          {t('dialog.cancel')}
-        </Button>
+        {!review && (
+          <Button
+            disabled={busy}
+            onClick={() => {
+              controller.current?.abort()
+              nav.back()
+            }}
+          >
+            {t('dialog.cancel')}
+          </Button>
+        )}
       </PushPage>
     </>
   )

@@ -89,6 +89,10 @@
     color: var(--agnes-status-danger-text);
     background: var(--agnes-status-danger-bg);
   }
+  #status[data-state="not-verified"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
   /* The connection bar above the main area is the one place connection state shows. The top bar
    keeps `#connection` as the machine-readable state only. */
   .connection-group {
@@ -544,6 +548,7 @@
   #status:not(
     :is(
       [data-state="running"],
+      [data-state="not-verified"],
       [data-state="stopping"],
       [data-state="error"],
       [data-state="failed"],

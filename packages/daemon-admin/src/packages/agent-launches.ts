@@ -2,12 +2,20 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PackageError, withLock } from '@agnes/package-manager'
-import { type AgentPlan, jcs, parseAgentRef } from '@agnes/protocol'
+import { type AgentPlan, type ApplicationState, jcs, parseAgentRef } from '@agnes/protocol'
+import { applicationLaunchChanges, applicationLaunchConsent } from './application-launch-consent.js'
 import { readReceiptDates, saveReceiptJournal } from './receipt-journal.js'
 import { OPERATION_CAPACITY, type RetainedOperation, sweepReceipts } from './receipt-retention.js'
 
 type Caller = { principal: string; profile: string; workspace: string; activation: string }
-type Review = { owner: string; activation: string; expires: number; plan: AgentPlan }
+type Review = {
+  owner: string
+  activation: string
+  expires: number
+  plan: AgentPlan
+  consentDigest?: string
+  adoptionGeneration?: string
+}
 type Operation = RetainedOperation & {
   payload: string
   review: Review
@@ -19,6 +27,7 @@ export interface AgentLaunchBackend {
   /** Host caller context, never an agent's own UI row or package-management authority. */
   caller(): Promise<Caller>
   resolve(ref: string): Promise<AgentPlan>
+  application?(): Promise<ApplicationState>
   /** Re-enters ordinary session/workspace authorization with strict Host admission. */
   open(plan: AgentPlan, sessionKey: string): Promise<string>
 }
@@ -65,6 +74,16 @@ export function createAgentLaunches(options: {
       deny()
     const current = await backend.resolve(review.plan.ref)
     if (current.digest !== review.plan.digest) deny()
+    if (review.consentDigest && !receipt) {
+      const state = await backend.application?.()
+      if (
+        !review.adoptionGeneration ||
+        state?.selection?.adoptionGeneration !== review.adoptionGeneration ||
+        state?.selection?.consentDigest !== review.consentDigest ||
+        applicationLaunchConsent(state, current) !== 'covered'
+      )
+        deny()
+    }
   }
   return {
     async call(request: Record<string, unknown>): Promise<unknown> {
@@ -124,8 +143,21 @@ export function createAgentLaunches(options: {
         if (sweepReceipts(state.operations, now())) await save(state)
         if (action === 'prepare') {
           const plan = await backend.resolve(parseAgentRef(request.agent))
+          const application = await backend.application?.()
+          const consent = applicationLaunchConsent(application, plan)
           // Caller activation may change while a container is being admitted.
-          const review = { owner, activation: caller.activation, expires: now() + 300_000, plan }
+          const review: Review = {
+            owner,
+            activation: caller.activation,
+            expires: now() + 300_000,
+            plan,
+            ...(consent === 'covered' && application?.selection?.adoptionGeneration
+              ? {
+                  consentDigest: application.selection.consentDigest,
+                  adoptionGeneration: application.selection.adoptionGeneration,
+                }
+              : {}),
+          }
           await check(review, await backend.caller())
           for (const [id, item] of Object.entries(state.reviews))
             if (item.expires <= now()) delete state.reviews[id]
@@ -133,7 +165,12 @@ export function createAgentLaunches(options: {
           const launchTicket = randomUUID()
           state.reviews[launchTicket] = review
           await save(state)
-          return { launchTicket, presentation: plan }
+          return {
+            launchTicket,
+            presentation: plan,
+            consent,
+            ...(consent === 'changed' ? { changes: applicationLaunchChanges(application, plan) } : {}),
+          }
         }
         const key = hash([owner, token(request.operationId)])
         let op = state.operations[key]
@@ -158,6 +195,8 @@ export function createAgentLaunches(options: {
         await save(state)
         try {
           await check(review, await backend.caller())
+          // Dispatch deadline: resolution and consent reads may have crossed the ticket's expiry.
+          if (review.expires <= now()) deny()
           op.sessionId = await backend.open(review.plan, `agent:${key}`)
           await check(review, await backend.caller(), true)
           op.state = 'completed'

@@ -1,6 +1,14 @@
 import type { ApplicationPreview, PresentationRole } from '@agnes/protocol'
 import { resolveApplicationBrand } from '@agnes/web-client'
-import { SettingsCode, SettingsTechnicalDetails, useDocumentLanguage } from '@agnes/web-ui'
+import {
+  Disclosure,
+  SettingsCode,
+  SettingsGroup,
+  SettingsItem,
+  SettingsSection,
+  SettingsTechnicalDetails,
+  useDocumentLanguage,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 
 export const PRESENTATION_ROLE_LABELS = {
@@ -21,9 +29,8 @@ const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-function PreviewBrand({ preview }: { preview: ApplicationPreview }) {
+function PreviewMark({ preview }: { preview: ApplicationPreview }) {
   const [mark, setMark] = useState<string>()
-  const language = useDocumentLanguage()
   useEffect(() => {
     const match = /^data:(image\/(?:png|jpeg|webp|gif|x-icon));base64,([A-Za-z0-9+/=]+)$/.exec(
       preview.assets.mark ?? '',
@@ -36,17 +43,18 @@ function PreviewBrand({ preview }: { preview: ApplicationPreview }) {
     const url = URL.createObjectURL(new Blob([bytes], { type: match[1] }))
     setMark(url)
     return () => URL.revokeObjectURL(url)
-  }, [preview])
-  const brand = resolveApplicationBrand(preview.declaration, language)
-  return (
-    <p>
-      {mark ? (
-        <img src={mark} alt="" width={32} height={32} onError={() => setMark(undefined)} />
-      ) : (
-        <span className="agnes-mark" aria-hidden="true" />
-      )}{' '}
-      {brand.name} · {brand.title} · {brand.assistantName}
-    </p>
+  }, [preview.assets.mark])
+  return mark ? (
+    <img
+      className="application-review-mark"
+      src={mark}
+      alt=""
+      width={40}
+      height={40}
+      onError={() => setMark(undefined)}
+    />
+  ) : (
+    <span className="agnes-mark application-review-mark" aria-hidden="true" />
   )
 }
 
@@ -59,7 +67,6 @@ const permissionLabels: Record<string, [string, string]> = {
   read: ['Read files', '读取文件'],
   write: ['Write files', '写入文件'],
   model: ['Model access', '模型访问'],
-  store: ['Store data', '存储数据'],
   device: ['Use devices', '使用设备'],
   wake: ['Run in background', '后台运行'],
   uiData: ['Interface data', '界面数据'],
@@ -70,23 +77,36 @@ const permissionLabels: Record<string, [string, string]> = {
   tools: ['Tools', '工具'],
   names: ['Names', '名称'],
   prefix: ['Prefix', '前缀'],
+  store: ['Application records', '应用记录'],
+  'tools.invoke': ['Use tools', '使用工具'],
 }
-function permissionLines(value: unknown, tr: Text, path = ''): string[] {
+type PermissionRow = { label: string; detail: string }
+function permissionRows(value: unknown, tr: Text, path = ''): PermissionRow[] {
+  if (path === tr('Tools', '工具'))
+    return [{ label: tr('Use declared business tools', '使用已声明的业务工具'), detail: '' }]
   if (Array.isArray(value))
-    return value.length
-      ? value.flatMap((item) => permissionLines(item, tr, path))
-      : [`${path}: ${tr('None declared', '未声明')}`]
+    return [
+      { label: path, detail: value.length ? value.map(String).join(', ') : tr('None declared', '未声明') },
+    ]
   const fields = object(value)
   if (fields)
     return Object.entries(fields).flatMap(([key, value]) =>
-      permissionLines(
+      permissionRows(
         value,
         tr,
         [path, tr(...(permissionLabels[key] ?? [key, key]))].filter(Boolean).join(' · '),
       ),
     )
   return [
-    `${path}: ${typeof value === 'boolean' ? (value ? tr('Allowed', '允许') : tr('Not requested', '未请求')) : String(value)}`,
+    {
+      label: path,
+      detail:
+        typeof value === 'boolean'
+          ? value
+            ? tr('Allowed', '允许')
+            : tr('Not requested', '未请求')
+          : String(value),
+    },
   ]
 }
 const partLabels: Record<string, [string, string]> = {
@@ -114,149 +134,208 @@ export const navigationLabels: Record<string, [string, string]> = {
 export function ApplicationPreviewSummary({
   preview,
   application = false,
+  description,
 }: {
   preview: ApplicationPreview
   application?: boolean
+  description?: string | undefined
 }) {
   const language = useDocumentLanguage()
   const tr: Text = (en, zh) => (language === 'zh-CN' ? zh : en)
   const { declaration } = preview
   const navigation = declaration.presentation?.navigation
   const none = tr('None', '无')
-  const host = tr('Host default', '宿主默认')
+  const host = tr('Official home page', '官方首页')
   const role = (name: string) => tr(...(PRESENTATION_ROLE_LABELS[name as PresentationRole] ?? [name, name]))
   const list = (values: readonly string[] | undefined, fallback = none) => values?.join(', ') || fallback
   const diff = object(preview.dependencyDiff)
   const raw = JSON.stringify(preview, null, 2)
+  const localized = (value: unknown, fallback: string) => {
+    const row = object(value)
+    return text(row?.[language]) || text(row?.en) || fallback
+  }
+  const launches = preview.agentLaunches?.map(object) ?? []
+  const agentName = (ref: string) =>
+    localized(
+      object(launches.find((plan) => plan?.ref === ref)?.launch)?.title,
+      tr('Application agent', '应用智能体'),
+    )
+  const pageName = (ref: string) => {
+    const page = preview.pageNames?.map(object).find((page) => page?.ref === ref)
+    return localized(page?.title, tr('Application page', '应用页面'))
+  }
+  const brand = resolveApplicationBrand(declaration, language)
+  const agents = declaration.agents ?? launches.map((plan) => text(plan?.ref))
+  const agentRows = (
+    <SettingsGroup>
+      {agents.map((ref) => (
+        <SettingsItem
+          key={ref}
+          icon="bot"
+          label={agentName(ref)}
+          description={localized(object(launches.find((plan) => plan?.ref === ref)?.launch)?.description, '')}
+        >
+          {ref === declaration.defaultAgent ? tr('Default', '默认') : undefined}
+        </SettingsItem>
+      ))}
+    </SettingsGroup>
+  )
+  // Group identical human summaries; each agent’s exact tool and policy scopes remain in technical details.
+  const access = new Map<string, { names: string[]; readOnly: boolean | undefined }>()
+  for (const plan of launches) {
+    const permission = object(plan?.permission)
+    const readOnly = permission ? permission.readOnly === true : undefined
+    const key = String(readOnly)
+    const group = access.get(key) ?? { names: [], readOnly }
+    group.names.push(agentName(text(plan?.ref)))
+    access.set(key, group)
+  }
+  const permissions = [
+    ...new Map(
+      preview.dependencies.flatMap((value) => {
+        const capabilities = object(object(value)?.capabilities)
+        const rows = capabilities
+          ? permissionRows(capabilities, tr)
+          : [
+              {
+                label: tr('Permission declaration unavailable', '权限声明不可用'),
+                detail: tr('Review technical details.', '请查看技术详情。'),
+              },
+            ]
+        return rows.map((row) => [JSON.stringify(row), row] as const)
+      }),
+    ).values(),
+  ]
   return (
-    <>
-      <div data-testid="consent-summary">
+    <div className="application-review">
+      <div className="agnes-settings-stack" data-testid="consent-summary">
         {application && (
-          <>
-            <h4>{tr('Brand', '品牌')}</h4>
-            <PreviewBrand preview={preview} />
-            <h4>{tr('Pages and navigation', '页面与导航')}</h4>
-            <p>
-              {tr('Home / skin', '主页 / 皮肤')}:{' '}
-              {declaration.presentation?.home ? tr('Application home page', '应用首页') : host} /{' '}
-              {declaration.presentation?.skin ? tr('Application theme', '应用主题') : host}
-            </p>
-            <p>
-              {tr('Navigation pages', '导航页面')}:{' '}
-              {navigation?.entries
-                ? tr(
-                    `${navigation.entries.length} application pages`,
-                    `${navigation.entries.length} 个应用页面`,
-                  )
-                : host}
-            </p>
-            <p>
-              {tr('Hidden host entries', '隐藏的宿主入口')}:{' '}
-              {list([
-                ...new Set(
-                  navigation?.hideBuiltin?.map((entry) => tr(...(navigationLabels[entry] ?? [entry, entry]))),
-                ),
-              ])}
-            </p>
-            <h4>{tr('Agents', '智能体')}</h4>
-            <p>
-              {tr('Visible agents', '可见智能体')}:{' '}
-              {declaration.agents
-                ? tr(
-                    `${declaration.agents.length} application agents`,
-                    `${declaration.agents.length} 个应用智能体`,
-                  )
-                : tr('All available agents', '全部可用智能体')}
-            </p>
-            <p>
-              {tr('Default agent', '默认智能体')}:{' '}
-              {declaration.defaultAgent
-                ? tr('Chosen by this application', '由应用指定')
-                : tr('General assistant', '通用助手')}
-            </p>
-          </>
+          <SettingsGroup>
+            <SettingsItem
+              className="application-review-brand"
+              leading={<PreviewMark preview={preview} />}
+              label={
+                <>
+                  {declaration.brand?.title ? brand.title : brand.name}
+                  <span className="application-version">{preview.version}</span>
+                </>
+              }
+              description={
+                description ||
+                localized(
+                  object(launches.find((plan) => plan?.ref === declaration.defaultAgent)?.launch)
+                    ?.description,
+                  tr('Application home page, navigation and role agents.', '应用首页、导航与角色智能体。'),
+                )
+              }
+            />
+          </SettingsGroup>
         )}
-        <h4>{tr('Interface changes', '界面变化')}</h4>
-        {preview.replacedRoles.length ? (
-          <ul>
+        <SettingsSection title={tr('Interface changes', '界面变化')}>
+          <SettingsGroup>
+            {application && (
+              <>
+                <SettingsItem
+                  label={tr('Home page', '首页')}
+                  description={
+                    declaration.presentation?.home ? pageName(declaration.presentation.home) : host
+                  }
+                />
+                <SettingsItem
+                  label={tr('Navigation shown', '显示的导航')}
+                  description={list(
+                    navigation?.entries?.map(pageName),
+                    navigation?.entries ? none : tr('Official navigation', '官方导航'),
+                  )}
+                />
+                <SettingsItem
+                  label={tr('Official entries hidden', '隐藏的官方入口')}
+                  description={list([
+                    ...new Set(
+                      navigation?.hideBuiltin?.map((entry) =>
+                        tr(...(navigationLabels[entry] ?? [entry, entry])),
+                      ),
+                    ),
+                  ])}
+                />
+              </>
+            )}
             {preview.replacedRoles.map((value) => {
               const item = object(value)
               return (
-                <li key={JSON.stringify(value)}>
-                  {role(text(item?.role))}
-                  {strings(item?.visibleParts).length > 0 && (
-                    <p>
-                      {tr('Visible parts replaced', '将替换的可见部分')}:{' '}
-                      {strings(item?.visibleParts)
-                        .map((part) => tr(...(partLabels[part] ?? [part, part])))
-                        .join(', ')}
-                    </p>
-                  )}
-                </li>
+                <SettingsItem
+                  key={JSON.stringify(value)}
+                  label={role(text(item?.role))}
+                  description={strings(item?.visibleParts)
+                    .map((part) => tr(...(partLabels[part] ?? [part, part])))
+                    .join(', ')}
+                />
               )
             })}
-          </ul>
-        ) : (
-          <p>{tr('No role replacements', '不替换接管角色')}</p>
+          </SettingsGroup>
+        </SettingsSection>
+        {application && (
+          <SettingsSection title={tr('Included agents', '包含的智能体')}>
+            {agents.length > 3 ? (
+              <Disclosure
+                variant="card"
+                summary={tr(`${agents.length} role agents`, `${agents.length} 个角色智能体`)}
+                description={
+                  declaration.defaultAgent
+                    ? tr(
+                        `Default: ${agentName(declaration.defaultAgent)}`,
+                        `默认：${agentName(declaration.defaultAgent)}`,
+                      )
+                    : undefined
+                }
+              >
+                {agentRows}
+              </Disclosure>
+            ) : agents.length ? (
+              agentRows
+            ) : (
+              <p>{tr('All available agents', '全部可用智能体')}</p>
+            )}
+          </SettingsSection>
         )}
-        <h4>{tr('Dependencies, permissions and changes', '依赖、权限和变化')}</h4>
-        {diff?.status === 'known' ? (
-          <>
-            <p>
-              {tr('Added dependencies', '新增依赖')}: {strings(diff.added).length}
-            </p>
-            <p>
-              {tr('Removed dependencies', '移除依赖')}: {strings(diff.removed).length}
-            </p>
-          </>
-        ) : (
-          <p role="status">
-            {diff?.status === 'not-applicable'
-              ? tr(
-                  'Dependency comparison is not applicable to an individual interface choice. Review its current permissions below.',
-                  '单独选择界面实现不适用依赖差异比较，请审阅下方当前权限。',
-                )
-              : tr(
-                  'The previously consented dependency closure is unavailable. Changes are unknown.',
-                  '无法恢复此前已同意的依赖闭包，依赖差异未知。',
-                )}
-          </p>
-        )}
-        {preview.dependencies.length ? (
-          <ul>
-            {preview.dependencies.map((value) => {
-              const item = object(value)
-              const capabilities = object(item?.capabilities)
-              const permissions = capabilities ? permissionLines(capabilities, tr) : []
-              return (
-                <li key={JSON.stringify(value)}>
-                  {tr('Required plugin', '所需插件')} · {text(item?.version)}
-                  <ul>
-                    {(capabilities
-                      ? permissions.length
-                        ? permissions
-                        : [tr('No capabilities requested.', '未请求额外能力。')]
-                      : [
-                          tr(
-                            'Permission declaration unavailable; review technical details.',
-                            '权限声明不可用，请查看技术详情。',
-                          ),
-                        ]
-                    ).map((permission) => (
-                      <li key={permission}>{permission}</li>
-                    ))}
-                  </ul>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p>{tr('No dependencies reported', '未报告依赖')}</p>
-        )}
-        <p>
-          {tr('Version', '版本')}: {preview.version}
-        </p>
-        <p>
+        <SettingsSection title={tr('Permissions', '权限')}>
+          <SettingsGroup>
+            {application &&
+              (access.size ? (
+                [...access].map(([key, group]) => (
+                  <SettingsItem
+                    key={key}
+                    label={
+                      group.readOnly === undefined
+                        ? tr('Launch access unavailable', '启动权限尚不可用')
+                        : group.readOnly
+                          ? tr('Read-only tools', '只读工具')
+                          : tr('Tools can read and change data', '工具可读取及修改数据')
+                    }
+                    description={group.names.join(', ')}
+                  />
+                ))
+              ) : (
+                <SettingsItem
+                  label={tr('Launch configuration unavailable', '启动配置尚不可用')}
+                  description={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
+                />
+              ))}
+            {permissions.map((permission) => (
+              <SettingsItem
+                key={JSON.stringify(permission)}
+                label={permission.label}
+                description={permission.detail}
+              />
+            ))}
+            <SettingsItem
+              icon="shield-check"
+              label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
+              description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
+            />
+          </SettingsGroup>
+        </SettingsSection>
+        <p className="agnes-settings-note">
           {preview.signature === 'verified'
             ? tr('Verified publisher', '发布者已验证')
             : tr(
@@ -266,10 +345,24 @@ export function ApplicationPreviewSummary({
         </p>
       </div>
       <SettingsTechnicalDetails title={tr('Technical details', '技术详情')} data-testid="consent-technical">
+        <p>{tr('Trusted JavaScript is not a sandbox.', '受信 JavaScript 并非沙箱。')}</p>
+        {diff?.status !== 'known' && (
+          <p role="status">
+            {diff?.status === 'not-applicable'
+              ? tr(
+                  'Dependency comparison is not applicable to an individual interface choice.',
+                  '单独选择界面实现不适用依赖差异比较。',
+                )
+              : tr(
+                  'The previously consented dependency closure is unavailable. Changes are unknown.',
+                  '无法恢复此前已同意的依赖闭包，依赖差异未知。',
+                )}
+          </p>
+        )}
         <SettingsCode label={tr('Reviewed payload and digests', '已审阅内容与摘要')} copy={raw}>
           {raw}
         </SettingsCode>
       </SettingsTechnicalDetails>
-    </>
+    </div>
   )
 }

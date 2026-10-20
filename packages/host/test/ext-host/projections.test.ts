@@ -344,6 +344,33 @@ describe('P4/P5 production Projection ports', () => {
       expect(init).not.toHaveBeenCalled()
     },
   )
+  it('reads only the rows written since its previous read of the real session', async () => {
+    const h = await setup(),
+      { api } = h.author()
+    api.registerProjection(counter())
+    const scan = h.session.scan.bind(h.session)
+    let rows = 0
+    vi.spyOn(h.session, 'scan').mockImplementation(async (query) => {
+      const page = await scan(query)
+      rows += page.length
+      return page
+    })
+    const reads: { value: unknown; rows: number; through: number }[] = []
+    api.registerSlot('status.line', async (ctx) => {
+      for (let n = 0; n < 3; n++) await api.events.append('count', {})
+      rows = 0
+      const read = await ctx.projections.readOwn('count')
+      reads.push({ value: read.status === 'available' ? read.value : read, rows, through: h.session.lastSeq })
+      return null
+    })
+    for (let n = 0; n < 3; n++) await h.runSlot()
+    vi.restoreAllMocks()
+    const [first, second, third] = reads
+    expect(reads.map((read) => read.value)).toEqual([3, 6, 9])
+    expect(first?.rows).toBe(first?.through)
+    expect(second?.rows).toBe((second?.through ?? 0) - (first?.through ?? 0))
+    expect(third?.rows).toBe((third?.through ?? 0) - (second?.through ?? 0))
+  })
   it('uses the same reader for actual Hook and Tool callbacks on the real session', async () => {
     const h = await setup(),
       { api, lease } = h.author(),

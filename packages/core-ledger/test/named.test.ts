@@ -242,6 +242,131 @@ describe('owned projections', () => {
   })
 })
 
+describe('resuming from a cached line', () => {
+  const ledger = () => {
+    seq = 0
+    return [
+      event('turn/start'),
+      event('turn/end'),
+      event('turn/start'),
+      event('turn/start'),
+      event('turn/end'),
+    ]
+  }
+  const fullRead = (rows: Event[], asOfSeq: number, definition = counter()) => {
+    const registry = new ProjectionRegistry()
+    registry.register(definition, { owner: 'acme/a' })
+    return registry.snapshotOne('s', definition.key, rows, asOfSeq)
+  }
+
+  it('folds only the rows after the line into the unit a full read returns', () => {
+    const rows = ledger()
+    const registry = new ProjectionRegistry()
+    registry.register(counter(), { owner: 'acme/a' })
+    registry.snapshotOne('s', 'turns', rows.slice(0, 2), 2)
+    expect(registry.snapshotOneAfter('s', 'turns', 2, rows.slice(2), 4)).toEqual(fullRead(rows, 4))
+    expect(registry.cacheLine('s', 'turns')).toMatchObject({ seq: 4 })
+    expect(registry.snapshotOneAfter('s', 'turns', 4, rows.slice(4), 5)).toEqual(fullRead(rows, 5))
+    // Nothing new since the line: the line is the answer.
+    expect(registry.snapshotOneAfter('s', 'turns', 5, [], 5)).toEqual(fullRead(rows, 5))
+    expect(registry.cacheLine('s', 'turns')).toMatchObject({ seq: 5, state: { n: 3 } })
+  })
+
+  it('declines without touching the cache unless a full read would resume from that exact line', () => {
+    const rows = ledger()
+    const registry = new ProjectionRegistry()
+    const dispose = registry.register(counter())
+    registry.snapshotOne('s', 'turns', rows.slice(0, 3), 3)
+    const line = registry.cacheLine('s', 'turns')
+    expect(registry.snapshotOneAfter('s', 'missing', 3, rows.slice(3), 5)).toBeUndefined()
+    expect(registry.snapshotOneAfter('other', 'turns', 3, rows.slice(3), 5)).toBeUndefined()
+    expect(registry.snapshotOneAfter('s', 'turns', 2, rows.slice(2), 5)).toBeUndefined()
+    expect(registry.snapshotOneAfter('s', 'turns', 4, rows.slice(4), 5)).toBeUndefined()
+    expect(registry.snapshotOneAfter('s', 'turns', 3, [], 2)).toBeUndefined()
+    expect(registry.cacheLine('s', 'turns')).toBe(line)
+    // A reused cache from an older state version is the full read's to discard.
+    dispose()
+    registry.register(counter(2))
+    expect(registry.snapshotOneAfter('s', 'turns', 3, rows.slice(3), 5)).toBeUndefined()
+    expect(registry.cacheLine('s', 'turns')).toBe(line)
+    expect(registry.snapshotOne('s', 'turns', rows, 5)).toMatchObject({ stateVersion: 2, view: 3 })
+  })
+
+  it('declines a cached state the schema rejects and leaves the refold to the full read', () => {
+    const rows = ledger()
+    const registry = new ProjectionRegistry()
+    registry.register(counter())
+    const cached = registry.snapshotOne('s', 'turns', rows.slice(0, 3), 3) as { state: { n: number } }
+    cached.state.n = Number.NaN
+    expect(registry.snapshotOneAfter('s', 'turns', 3, rows.slice(3), 5)).toBeUndefined()
+    expect(registry.snapshotOne('s', 'turns', rows, 5)).toEqual(fullRead(rows, 5))
+  })
+
+  it('quarantines a throwing cached-state validator exactly as a full read does', () => {
+    const rows = ledger()
+    const prepared = () => {
+      let throws = false
+      const registry = new ProjectionRegistry()
+      registry.register({
+        key: 'validated',
+        stateVersion: 1,
+        stateSchema: () => {
+          if (throws) throw new Error('schema boom')
+          return true
+        },
+        init: () => 0,
+        apply: (state: number) => state + 1,
+      })
+      registry.snapshotOne('s', 'validated', rows.slice(0, 3), 3)
+      throws = true
+      return registry
+    }
+    const resumed = prepared(),
+      full = prepared()
+    expect(resumed.snapshotOneAfter('s', 'validated', 3, rows.slice(3), 5)).toEqual(
+      full.snapshotOne('s', 'validated', rows, 5),
+    )
+    expect(resumed.failures()).toEqual(full.failures())
+    expect(resumed.cacheLine('s', 'validated')).toBeUndefined()
+  })
+
+  it('declines for a quarantined session even when an earlier cut left a line', () => {
+    const rows = ledger()
+    const registry = new ProjectionRegistry()
+    registry.register({
+      key: 'fragile',
+      stateVersion: 1,
+      init: () => 0,
+      apply: (state: number, row) => {
+        if (row.seq === 4) throw new Error('boom')
+        return state + 1
+      },
+    })
+    expect(registry.snapshotOne('s', 'fragile', rows, 5)).toEqual({ error: 'boom' })
+    registry.snapshotOne('s', 'fragile', rows.slice(0, 3), 3)
+    expect(registry.cacheLine('s', 'fragile')).toMatchObject({ seq: 3 })
+    expect(registry.snapshotOneAfter('s', 'fragile', 3, rows.slice(3), 5)).toBeUndefined()
+    expect(registry.snapshotOne('s', 'fragile', rows, 5)).toEqual({ error: 'boom' })
+  })
+
+  it('declines after an owner replacement commits and resumes the restored line', () => {
+    const rows = ledger()
+    const registry = new ProjectionRegistry()
+    registry.register(counter(), { owner: 'acme/a' })
+    registry.snapshotOne('s', 'turns', rows.slice(0, 3), 3)
+    const candidate = new ProjectionRegistry()
+    const replaced = { ...counter(), init: () => ({ n: 10 }) }
+    candidate.register(replaced, { owner: 'acme/a' })
+    const replacement = registry.prepareOwnerReplacement('acme/a', candidate)
+    expect(registry.snapshotOneAfter('s', 'turns', 3, rows.slice(3), 4)).toEqual(fullRead(rows, 4))
+    replacement.commit()
+    expect(registry.snapshotOneAfter('s', 'turns', 4, rows.slice(4), 5)).toBeUndefined()
+    expect(registry.snapshotOne('s', 'turns', rows, 5)).toEqual(fullRead(rows, 5, replaced))
+    replacement.restore()
+    expect(registry.snapshotOneAfter('s', 'turns', 4, rows.slice(4), 5)).toEqual(fullRead(rows, 5))
+  })
+})
+
 it('accepts projection methods on a prototype and preserves their receiver', () => {
   class Counter {
     key = 'prototype'

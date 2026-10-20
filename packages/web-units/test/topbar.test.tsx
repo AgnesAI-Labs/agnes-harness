@@ -110,6 +110,8 @@ describe('topbar run-status capsule', () => {
     ['failed', '执行失败', false, false],
     ['error', '执行失败', false, false],
     ['blocked', '已阻止', false, false],
+    ['not-verified', '未通过校验', false, false],
+    ['not-verified', '未能完成校验', false, false],
     ['budget', '预算耗尽', false, false],
     ['max_steps', '达到步数上限', false, false],
     ['idle', '准备就绪', false, false],

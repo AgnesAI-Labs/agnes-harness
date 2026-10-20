@@ -144,6 +144,7 @@ function fixture(
     lostWake = false,
     failDelivery = false,
     failAdmission = false,
+    scans = 0,
     invocation: string | undefined,
     admitted: Actor | undefined = actor,
     resolver: ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>) | undefined
@@ -234,6 +235,7 @@ function fixture(
       },
       ledger: {
         async scanOwn(query) {
+          scans++
           const names = new Set(query.names)
           return {
             events: rows.filter(
@@ -298,6 +300,7 @@ function fixture(
   restart()
   return {
     rows,
+    scans: () => scans,
     checkArtifact: (value: NonNullable<IntelligentUiCapabilities['checkArtifact']>) => {
       checker = value
     },
@@ -397,6 +400,11 @@ describe('preset surface contract and ledger lifecycle', () => {
         expect(tool.description).toContain('plain text/outlines/summaries stay in the reply')
         expect(tool.description).toContain('never a bilingual "A / B" title')
         expect(tool.description).toContain('never imitate system ids')
+        expect(tool.parameters.description).toContain('ONLY top-level field is surface')
+        const sample = String(tool.parameters.description)
+          .split('Minimal valid example: ')[1]
+          ?.split('. Use exactly')[0]
+        expect(validateAgainst(tool.parameters, JSON.parse(sample!)).ok).toBe(true)
       }
       const described = await describe.execute({ name }, ctx)
       const text = described.content[0] as { text: string }
@@ -426,7 +434,8 @@ describe('preset surface contract and ledger lifecycle', () => {
       // extension then fails to load; keep headroom for the shared data contracts to grow.
       expect(tool.description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_MAX_LENGTH - 100)
       expect(bytes(JSON.stringify(tool.parameters))).toBeLessThan(10000)
-      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(12000)
+      // The model-visible minimal example adds a bounded annotation; keep both individual limits.
+      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(12500)
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })
@@ -732,6 +741,44 @@ describe('preset surface contract and ledger lifecycle', () => {
     f.admissionFail(false)
     await f.service().read({ sessionId: 'session' }, signal)
     expect(f.calls.size).toBe(0)
+  })
+  it('folds once for a read that repairs nothing and returns the repaired state after recovery', async () => {
+    const f = await opened()
+    const scans = f.scans()
+    const quiet = await f.service().read({ sessionId: 'session' }, signal)
+    expect(f.scans() - scans).toBe(1)
+    expect(quiet).toMatchObject({ lastSeq: f.rows.length, surfaces: [{ status: 'open' }], actions: [] })
+    // An action that crashed between admission and its refusal is settled by the next read.
+    f.row('action.received', {
+      record: {
+        request: request('crashed'),
+        actor,
+        receivedAt: 100000,
+        receivedSeq: 0,
+        receipt: {
+          sessionId: 'session',
+          surfaceId: 'reconcile',
+          revision: 1,
+          actionId: 'confirm',
+          commandId: 'crashed',
+          status: 'received',
+          seq: 1,
+          duplicate: false,
+        },
+      },
+    })
+    const repaired = await f.service().read({ sessionId: 'session' }, signal)
+    const rejected = f.rows.find((row) => row.type === 'x/agnes/intelligent-ui/action.rejected')
+    expect(repaired.lastSeq).toBe(f.rows.length)
+    expect(repaired.actions).toEqual([
+      expect.objectContaining({
+        commandId: 'crashed',
+        status: 'rejected',
+        seq: rejected?.seq,
+        refusal: expect.any(Object),
+      }),
+    ])
+    expect(f.deliveries.size).toBe(1)
   })
   it('enforces data-only schemas, depth, malformed params, row identity and the durable rolling rate', async () => {
     const f = await opened()

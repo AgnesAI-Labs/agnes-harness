@@ -9,6 +9,7 @@ import {
   toolTurn,
 } from '@agnes/core/testkit'
 import type { ToolDef } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
 import { type VerifyInput, verifierT0 } from '../src/verifier.js'
@@ -94,56 +95,78 @@ describe('verifier T0', () => {
   })
 })
 
-// Use the actual Core projection and T0 seam together: a mock that passes on its second
-// verification hides both the read-only false positive and the approval loop.
-it.each([
-  { readOnly: true, verdict: 'allowed-once', reason: 'completed' },
-  { readOnly: false, verdict: 'allowed-once', reason: 'completed' },
-  { readOnly: false, verdict: 'allowed-session', reason: 'completed' },
-  { readOnly: false, verdict: 'rejected', reason: 'blocked' },
-] as const)(
-  'checks repeated calls and bounds $verdict to the current completion (readOnly=$readOnly)',
-  async ({ readOnly, verdict, reason }) => {
-    const registry = new ToolRegistry()
-    const tool = readTool() as ToolDef
-    registry.add(
-      { ...tool, name: 'device', meta: { ...tool.meta, isReadOnly: readOnly } },
-      { source: 's', trust: 'builtin' },
-    )
-    const round = [toolTurn('device', {}), toolTurn('device', {}), toolTurn('device', {}), textTurn('done')]
-    const provider = fakeProvider([...round, ...round])
-    let approvals = 0
-    const { session, log } = await openSession({
-      registry,
-      provider,
-      seams: fakeSeams({
-        verifier: await verifierT0(fakeSeamInit()),
-        repair: { decide: async () => 'park' },
-        approval: {
-          ask: async () => ({ verdict: ++approvals === 1 ? verdict : 'rejected', answeredBy: actor }),
+// Real Core + T0: refused arguments are diagnosed without poisoning the final answer.
+it.each([true, false])('keeps repeated-write verification automatic (readOnly=%s)', async (readOnly) => {
+  const registry = new ToolRegistry()
+  const tool = readTool() as ToolDef
+  registry.add(
+    { ...tool, name: 'device', meta: { ...tool.meta, isReadOnly: readOnly } },
+    { source: 's', trust: 'builtin' },
+  )
+  const provider = fakeProvider([
+    toolTurn('device', {}),
+    toolTurn('device', {}),
+    toolTurn('device', {}),
+    textTurn('done'),
+  ])
+  let approvals = 0
+  const { session, log } = await openSession({
+    registry,
+    provider,
+    seams: fakeSeams({
+      verifier: await verifierT0(fakeSeamInit()),
+      repair: { decide: async () => 'park' },
+      approval: {
+        ask: async () => {
+          approvals++
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-      }),
-    })
-    const run = () => session.run({ until: 'turn-end', signal: new AbortController().signal })
-    const enqueue = () => session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'check' }] })
-    try {
-      await enqueue()
-      expect((await run()).reason).toBe(reason)
-      expect(provider.calls).toBe(4)
-      const asks = (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate')
-      expect(asks).toHaveLength(readOnly ? 0 : 1)
-      if (!readOnly) expect(asks[0]?.request.spec.prompt).toBe('verifier failed: repeated_write:3')
-      if (!readOnly && reason === 'completed') {
-        // Even allowed-session does not waive a fresh set of repeated writes.
-        await enqueue()
-        expect((await run()).reason).toBe('blocked')
-        expect(
-          (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate'),
-        ).toHaveLength(2)
-        expect(await log.scan({ type: 'tool/call', limit: 100 })).toHaveLength(6)
-      }
-    } finally {
-      await session.close()
-    }
-  },
-)
+      },
+    }),
+  })
+  try {
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'check' }] })
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      readOnly ? 'completed' : 'blocked',
+    )
+    expect(approvals).toBe(0)
+    expect(await session.decisions.list()).toEqual([])
+    expect(await log.scan({ type: 'tool/call', limit: 100 })).toHaveLength(3)
+  } finally {
+    await session.close()
+  }
+})
+it('completes after invalid argument fallback with real T0 and keeps schema rejection evidence', async () => {
+  const registry = new ToolRegistry()
+  const tool = readTool() as ToolDef
+  registry.add(
+    {
+      ...tool,
+      name: 'checked',
+      parameters: Type.Object({ value: Type.String() }, { additionalProperties: false }),
+      meta: { ...tool.meta, isPresentational: true },
+    },
+    { source: 's', trust: 'builtin' },
+  )
+  const provider = fakeProvider([toolTurn('checked', {}), toolTurn('checked', {}), textTurn('文字结论')])
+  const { session, log } = await openSession({
+    registry,
+    provider,
+    seams: fakeSeams({ verifier: await verifierT0(fakeSeamInit()) }),
+  })
+  try {
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'check' }] })
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(provider.calls).toBe(3)
+    expect(await session.decisions.list()).toEqual([])
+    expect((await log.scan({ type: 'tool/result', limit: 10 })).map((r) => r.data)).toMatchObject([
+      { code: 'TOOL_ARGS_INVALID' },
+      { code: 'TOOL_ARGS_INVALID' },
+    ])
+    expect(provider.requests[2]?.tools.map((t) => t.name)).not.toContain('checked')
+  } finally {
+    await session.close()
+  }
+})

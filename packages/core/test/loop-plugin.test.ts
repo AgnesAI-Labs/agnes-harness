@@ -859,7 +859,10 @@ describe('loop plugins', () => {
     const loops = defaultLoops()
     loops.register('@test/echo', echo)
     const k = kernel(new MemoryStorage(), loops)
-    const session = await k.session('codec', { ...options, preset: { ...presetDefaults(), loop: echo } })
+    const session = await k.session('codec', {
+      ...options,
+      preset: { ...presetDefaults(), loop: { id: echo.id, version: echo.version } },
+    })
     expect(session.loop.id).toBe(echo.id)
     await session.d.log.append([
       session.ev(
@@ -1837,28 +1840,16 @@ describe('platform policy edges on the generic ports', () => {
     })
   }
 
-  it.each(
-    Object.keys(parkingLoops).flatMap((name) =>
-      (['allowed-once', 'rejected'] as const).flatMap((verdict) =>
-        [false, true].map((restart) => [name, verdict, restart] as const),
-      ),
-    ),
-  )(
-    'settles a completion of %s that parked at the stop gate (%s, restart: %s)',
-    async (name, verdict, restart) => {
-      const { loop, scripts, effects, before } = parkingLoops[name]!()
+  it.each(Object.keys(parkingLoops))(
+    'keeps %s verifier failures out of approvals and does not resume business work on reopen',
+    async (name) => {
+      const { loop, scripts, before } = parkingLoops[name]!()
       const verify = vi.fn(async (scope: string) =>
         scope === 'turn'
-          ? { verdict: 'fail' as const, reasons: ['no evidence'] }
+          ? { verdict: 'fail' as const, reasons: ['schema_invalid'] }
           : { verdict: 'pass' as const, reasons: [] },
       )
-      const seams = fakeSeams({
-        verifier: { verify },
-        repair: { decide: async () => 'park' },
-        approval: {
-          ask: async () => ({ ticket: 'review', expiresAt: new Date(Date.now() + 600_000).toISOString() }),
-        },
-      })
+      const seams = fakeSeams({ verifier: { verify }, repair: { decide: async () => 'park' } })
       const loops = defaultLoops()
       loops.register('@test/parks', loop)
       const provider = fakeProvider(scripts)
@@ -1872,41 +1863,24 @@ describe('platform policy edges on the generic ports', () => {
       }
       let { k, session } = await start()
       const run = () => session.run({ until: 'turn-end', signal: new AbortController().signal })
-      const done = async () => ({
-        tools: (await session.scan({ type: 'tool/result', limit: 50 })).length,
-        model: provider.calls,
-        stages: effects?.(),
-      })
       try {
         await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
         if (before) {
           expect((await run()).reason).toBe('parked')
           await before(session)
         }
-        expect((await run()).reason).toBe('parked')
-        const work = await done()
-        // Unanswered, the turn stays parked and nothing is written or run again.
-        const parkedAt = session.lastSeq
-        expect((await run()).reason).toBe('parked')
-        expect(session.lastSeq).toBe(parkedAt)
-        if (restart) {
-          await k.close()
-          ;({ k, session } = await start())
-        }
-        await answer(session, 'gate', verdict)
-        const reason = verdict === 'rejected' ? 'blocked' : 'completed'
-        expect((await run()).reason).toBe(reason)
-        expect(session.op()).toBeNull()
-        const ends = (await session.scan({ type: 'turn/end', limit: 50 })).map(
-          (row) => (row.data as { reason: string }).reason,
-        )
-        expect(ends.slice(-2)).toEqual(['parked', reason])
-        // The answer alone settled it: no business step, model request or verification ran twice.
-        expect(await done()).toEqual(work)
-        expect(verify.mock.calls.filter(([scope]) => scope === 'turn')).toHaveLength(1)
-        const settledAt = session.lastSeq
+        expect((await run()).reason).toBe('blocked')
+        expect((await session.decisions.list()).filter((d) => d.request.spec.purpose === 'gate')).toEqual([])
+        const seq = session.lastSeq,
+          calls = provider.calls
+        await k.close()
+        ;({ k, session } = await start())
         await run()
-        expect(session.lastSeq).toBe(settledAt)
+        expect(session.lastSeq).toBe(seq)
+        expect(provider.calls).toBe(calls)
+        expect(
+          (await session.projectUI()).nodes.some((n) => n.kind === 'approval' && n.state === 'pending'),
+        ).toBe(false)
       } finally {
         await k.close()
       }

@@ -311,25 +311,27 @@ export class SeamRuntime {
     scope: 'tool' | 'step' | 'turn' | 'task',
     input: unknown,
     signal: AbortSignal,
-  ): Promise<VerifierVerdict> {
+  ): Promise<VerifierVerdict & { unavailable?: true }> {
     try {
-      return await withTimeout(
+      const verdict = await withTimeout(
         this.#seams.verifier.verify(scope, input, { tier: this.preset.verifier.defaultTier, signal }),
         this.preset.verifier.timeoutMs,
         'verifier.verify',
         signal,
         this.o.timers,
       )
+      // Availability is runtime evidence, never a field supplied by a verifier plugin.
+      return { verdict: verdict.verdict, reasons: verdict.reasons }
     } catch (err) {
       this.fail('verifier', 'verify', err)
-      return { verdict: 'fail', reasons: ['verifier unavailable'] }
+      return { verdict: 'fail', reasons: ['verifier unavailable'], unavailable: true }
     }
   }
 
   async repairDecide(
     view: Parameters<RepairSeam['decide']>[0],
     verdict: VerifierVerdict,
-  ): Promise<'repair' | 'park' | 'escalate' | 'complete'> {
+  ): Promise<'repair' | 'park' | 'escalate' | 'complete' | 'unavailable'> {
     try {
       return await withTimeout(
         this.#seams.repair.decide(view, verdict),
@@ -340,7 +342,7 @@ export class SeamRuntime {
       )
     } catch (err) {
       this.fail('repair', 'decide', err)
-      return 'park'
+      return 'unavailable'
     }
   }
 

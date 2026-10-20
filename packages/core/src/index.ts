@@ -170,6 +170,7 @@ export {
   VERIFIED_HEAD_ALGORITHM,
   verifiedHeadDigest,
 } from '@agnes/core-ledger/log/verified-head'
+export { projectDeliverableSources } from '@agnes/core-ledger/project/deliverables'
 export { projectFactChain } from '@agnes/core-ledger/project/fact-chain'
 export type { ProjectionCacheLine, ProjectionDef, ProjectionSnapshot } from '@agnes/core-ledger/project/named'
 export { ProjectionRegistry } from '@agnes/core-ledger/project/named'

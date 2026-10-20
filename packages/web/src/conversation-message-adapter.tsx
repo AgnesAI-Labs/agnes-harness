@@ -163,11 +163,14 @@ function interactionEcho(
 type TurnContributionKind = 'renderTurnActions' | 'renderTurnDeliverables'
 type Presentation = Pick<ConversationMessagesProps, TurnContributionKind> & {
   answers: ReadonlyMap<string, Extract<UINode, { kind: 'assistant' }>>
+}
+type NodePresentation = {
   answerIds: ReadonlySet<string>
   echoIds: ReadonlySet<string>
   echoTexts: ReadonlyMap<string, readonly string[]>
   workRequests: ReadonlyMap<string, ApplicationWorkRequest>
 }
+const NodePresentationContext = createContext<NodePresentation | undefined>(undefined)
 const PresentationContext = createContext<Presentation | undefined>(undefined)
 function usePresentation(): Presentation {
   const current = useContext(PresentationContext)
@@ -181,11 +184,25 @@ function SelectedContribution<T>({
   select,
   render,
 }: {
-  select: (current: Presentation) => T
+  select: (current: NodePresentation) => T
   render: (value: T) => ReactNode
 }) {
-  const value = select(usePresentation())
+  const current = useContext(NodePresentationContext)
+  if (!current) throw new Error('Conversation node presentation unavailable')
+  const value = select(current)
   return useMemo(() => render(value), [render, value])
+}
+
+// Answer text changes do not invalidate the native nodes' membership/echo selections.
+function SelectedAnswer({
+  nodeId,
+  render,
+}: {
+  nodeId: string
+  render: (serialized: string | undefined) => ReactNode
+}) {
+  const serialized = JSON.stringify(usePresentation().answers.get(nodeId))
+  return useMemo(() => render(serialized), [render, serialized])
 }
 
 // These plugin contributions may read the entire window, so they receive every projection.
@@ -312,12 +329,19 @@ function ScopedConversationMessages({
           }),
         },
   )
+  const workKey = JSON.stringify([...workRequests])
+  const stableWorkRequests = useMemo(
+    () => new Map<string, ApplicationWorkRequest>(JSON.parse(workKey)),
+    [workKey],
+  )
+  // Streaming changes answers and whole-window plugin inputs on every frame. Native node
+  // selections change only when membership, echoes or application work requests change.
+  const nodePresentation = useMemo<NodePresentation>(
+    () => ({ answerIds, echoIds, echoTexts, workRequests: stableWorkRequests }),
+    [answerIds, echoIds, echoTexts, stableWorkRequests],
+  )
   const nextContributions: Presentation = {
-    workRequests,
     answers,
-    answerIds,
-    echoIds,
-    echoTexts,
     renderTurnDeliverables: (turn) => (
       <>
         <RegisteredConversationCard
@@ -505,8 +529,8 @@ function ScopedConversationMessages({
         />
       ),
       renderTurnActions: (turn, finalText, settled) => (
-        <SelectedContribution
-          select={(current) => JSON.stringify(current.answers.get(turn.finalAssistantId ?? ''))}
+        <SelectedAnswer
+          nodeId={turn.finalAssistantId ?? ''}
           render={(serialized) => {
             const answer =
               serialized === undefined
@@ -579,18 +603,20 @@ function ScopedConversationMessages({
   )
   return (
     <PresentationContext.Provider value={nextContributions}>
-      {registry ? (
-        <SlotsProvider
-          registry={registry}
-          {...(session ? { session } : {})}
-          {...(locale ? { locale } : {})}
-          {...(resources ? { resources } : {})}
-        >
-          {messages}
-        </SlotsProvider>
-      ) : (
-        messages
-      )}
+      <NodePresentationContext.Provider value={nodePresentation}>
+        {registry ? (
+          <SlotsProvider
+            registry={registry}
+            {...(session ? { session } : {})}
+            {...(locale ? { locale } : {})}
+            {...(resources ? { resources } : {})}
+          >
+            {messages}
+          </SlotsProvider>
+        ) : (
+          messages
+        )}
+      </NodePresentationContext.Provider>
     </PresentationContext.Provider>
   )
 }

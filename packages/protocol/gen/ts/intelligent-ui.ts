@@ -121,6 +121,9 @@ export const X_AGNES_UI_LIMITS = {
   "sourceParamDepth": 8,
   "textFallbackRows": 20
 } as const
+export const X_AGNES_UI_TOOL_GUIDANCE = {
+  "UiRenderParams": "ONLY top-level field is surface; no locale. Minimal valid example: {\"surface\":{\"id\":\"view\",\"revision\":1,\"title\":\"Summary\",\"placement\":{\"inline\":true,\"workbench\":false},\"components\":[{\"id\":\"t\",\"kind\":\"text\",\"dataKey\":\"t\"}],\"data\":{\"t\":\"Summary\"},\"actions\":[]}}. Use exactly the fields of the chosen component kind."
+} as const
 export const X_AGNES_UI_METHODS = {
   "_agnes/v1/ui.action": {
     "params": "UiActionParams",

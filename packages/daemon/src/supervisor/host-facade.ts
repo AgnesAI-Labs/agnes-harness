@@ -7,6 +7,7 @@ import {
   type ResolvedPreset,
   type ResolvedProfile,
 } from '@agnes/host'
+import { rpcError } from '@agnes/protocol'
 import { workerComputerUseStatusSource } from './service-worker.js'
 import type { WorkerPool } from './worker-pool.js'
 /**
@@ -26,6 +27,7 @@ export function supervisorHostFacade(
   pool: Pick<WorkerPool, 'acquireSharedWorker'>,
 ): {
   host: Host
+  resolveApplicationAgent(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
   update(profile: ResolvedProfile): void
 } {
   let profile = initial
@@ -90,6 +92,10 @@ export function supervisorHostFacade(
     },
   }
   return {
+    resolveApplicationAgent: async (requested, ref) => {
+      if (requested !== profile.name) throw rpcError('CAPABILITY_DENIED')
+      return facade.resolveAgent(ref)
+    },
     host: facade as unknown as Host,
     update(next: ResolvedProfile) {
       profile = next

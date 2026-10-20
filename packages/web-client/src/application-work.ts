@@ -33,7 +33,7 @@ export function applicationWorkRequest(
     ...(object ? { object: { type: object.type, id: object.id } } : {}),
   }
 }
-/** Uses the existing host launch review; the request stays editable and is never auto-sent. */
+/** Uses the existing host launch admission; the request stays editable and is never auto-sent. */
 export function openApplicationWork(actionId: string, object?: ApplicationWorkObject): void {
   homeNavigation.open('agents', { workAction: applicationWorkRequest(actionId, object) })
 }

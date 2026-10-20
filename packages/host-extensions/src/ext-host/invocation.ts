@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { type ProjectionRegistry, type SessionImpl, scanAll } from '@agnes/core'
 import { ExtensionError, type SessionRef } from '@agnes/extension-api'
+import type { EventEnvelope } from '@agnes/protocol'
 import type { ExtensionActivationBarrier } from './activation-barrier.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 
@@ -115,14 +116,35 @@ export class ExtensionInvocation {
       invocation.owner === meta.source &&
       key.startsWith(`${meta.source}/`)
     if (!invocation || !valid()) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
-    const asOfSeq = invocation.session.lastSeq
-    const rows = await scanAll((q) => invocation.session.scan(q), { toSeq: asOfSeq })
-    if (!valid()) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
-    beforeFold()
-    const failures = registry.failures().length
-    const unit = registry.snapshotOne(invocation.session.key, key, rows, asOfSeq)
-    if (registry.failures().length > failures)
-      await invocation.session.diag('projection-failed', { key, asOfSeq })
+    const { session } = invocation
+    const asOfSeq = session.lastSeq
+    const scan = (fromSeq?: number) =>
+      scanAll((q) => session.scan(q), { ...(fromSeq === undefined ? {} : { fromSeq }), toSeq: asOfSeq })
+    const fold = async <U>(
+      read: () => Promise<EventEnvelope[]>,
+      snapshot: (rows: EventEnvelope[]) => U,
+    ): Promise<U> => {
+      const rows = await read()
+      if (!valid()) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
+      beforeFold()
+      const failures = registry.failures().length
+      const unit = snapshot(rows)
+      if (registry.failures().length > failures) await session.diag('projection-failed', { key, asOfSeq })
+      return unit
+    }
+    // Rows up to the cached line are already folded. The registry takes only the newer rows, and
+    // only while that line is still where this read found it; otherwise the read starts over.
+    const after = registry.cacheLine(session.key, key)?.seq
+    const unit =
+      (after !== undefined &&
+        (await fold(
+          async () => (after < asOfSeq ? scan(after + 1) : []),
+          (rows) => registry.snapshotOneAfter(session.key, key, after, rows, asOfSeq),
+        ))) ||
+      (await fold(
+        () => scan(),
+        (rows) => registry.snapshotOne(session.key, key, rows, asOfSeq),
+      ))
     return { asOfSeq, unit }
   }
 
