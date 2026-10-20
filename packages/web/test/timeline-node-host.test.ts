@@ -125,7 +125,8 @@ describe('W4a opt-in transcript node host', () => {
         el.getAttribute('data-node-id'),
       ),
     ).toEqual(['user', 'slot', 'tool'])
-    expect(item(transcript, 'tool')?.textContent).toContain('failed')
+    expect(item(transcript, 'tool')?.dataset.status).toBe('failed')
+    expect(item(transcript, 'tool')?.getAttribute('aria-label')).toContain(zhT('tool.status.failed'))
     await act(async () => mount.render([user, slot(2)]))
     expect(item(transcript, 'tool')).toBeNull()
     await act(async () => mount.reset())

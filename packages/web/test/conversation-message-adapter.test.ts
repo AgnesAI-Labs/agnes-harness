@@ -3,11 +3,11 @@ import { conversationCards as testCards, workbenchPanels as testPanels } from '@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
+import { LocaleService, SessionService, type SlotEntry, SlotRegistry, ThemeService } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
-import { setDisclosureOpen } from '@agnes/web-ui'
+import { setDisclosureOpen, webUiLocaleCatalog } from '@agnes/web-ui'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
-import { act, createElement, useEffect, useState } from 'react'
+import { act, createElement, useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -246,10 +246,8 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     const card = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
     const button = card?.querySelector<HTMLButtonElement>('.tool-detail')
     expect(card?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('true')
-    expect(card?.querySelector<HTMLElement>('.tool-detail-text')?.tabIndex).toBe(-1)
     await act(async () => button?.click())
     expect(card?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
-    expect(card?.querySelector<HTMLElement>('.tool-detail-text')?.tabIndex).toBe(0)
     button?.focus()
     await update(store, [{ ...initial, name: 'web_search', status: 'completed' }])
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).toBe(card)
@@ -263,7 +261,7 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [initial] })
     await mount(store)
     await act(async () => item('tool')?.querySelector<HTMLButtonElement>('.tool-detail')?.click())
-    const detail = item('tool')?.querySelector<HTMLElement>('.tool-detail-text')
+    const detail = item('tool')?.querySelector<HTMLElement>('[data-testid=tool-raw-args]')
     if (!detail?.firstChild) throw new Error('missing tool detail text')
     const selection = document.getSelection()
     const range = document.createRange()
@@ -919,4 +917,106 @@ it('keeps completed workflow stage text and tool receipts readable without a fin
     'ACME-001 inspection-due',
   )
   expect(receipt?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
+})
+
+it('updates memoized history for streaming, decisions, locale catalogs and theme subscribers', async () => {
+  const locale = new LocaleService(ctx, 'en')
+  locale.register('web-ui', webUiLocaleCatalog)
+  const theme = new ThemeService(ctx, 'light')
+  function ThemeCard() {
+    const value = useSyncExternalStore(theme.subscribe, theme.getSnapshot)
+    return createElement('button', { type: 'button', 'data-testid': 'theme-card' }, value)
+  }
+  const off = registry.register('tool.card.inline', ThemeCard, { owner: 'plugin-a', id: 'theme' })
+  const approval: UINode = {
+    kind: 'approval',
+    id: 'decision',
+    seq: 4,
+    toolUseId: 'another-call',
+    summary: 'Read report',
+    state: 'pending',
+    risk: 'unknown',
+    options: ['allow_once', 'reject_once'],
+  }
+  let nodes: UINode[] = [
+    user,
+    tool('running'),
+    { kind: 'assistant', id: 'answer', seq: 3, text: 'First', streaming: true },
+    approval,
+    slot(1),
+  ]
+  const turns: UITurn[] = [
+    {
+      id: 'turn',
+      turn: 1,
+      startSeq: 1,
+      startedAt: '2026-10-01T00:00:00Z',
+      status: 'running',
+      nodeIds: nodes.map((node) => node.id),
+      finalAssistantId: 'answer',
+      inherited: false,
+      forkable: false,
+      usage: {
+        totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        reasoningComplete: true,
+        billingComplete: true,
+        calls: [],
+      },
+    },
+  ]
+  const claim = (entry: SlotEntry, extId: string) => entry.owner === extId
+  const render = () =>
+    act(async () =>
+      root.render(
+        createElement(WebConversationMessages, {
+          nodes: structuredClone(nodes),
+          turns: structuredClone(turns),
+          registry,
+          locale,
+          claim,
+        }),
+      ),
+    )
+  await render()
+  const answer = item('answer')
+  const decision = item('decision')
+  const toolArticle = item('tool')
+  const themeButton = host.querySelector<HTMLButtonElement>('[data-testid="theme-card"]')
+  themeButton?.focus()
+  nodes = nodes.map((node) =>
+    node.id === 'answer' && node.kind === 'assistant'
+      ? { ...node, text: 'First appended', streaming: true }
+      : node,
+  )
+  await render()
+  expect(item('answer')).toBe(answer)
+  expect(answer?.textContent).toContain('appended')
+  expect(answer?.dataset.streaming).toBe('true')
+  nodes = nodes.map((node) =>
+    node.id === 'tool' && node.kind === 'tool'
+      ? { ...node, status: 'failed', resultPreview: 'Denied' }
+      : node.id === 'decision' && node.kind === 'approval'
+        ? { ...node, state: 'decided', decision: { verdict: 'rejected', via: 'web' } }
+        : node,
+  )
+  await render()
+  expect(item('tool')).toBe(toolArticle)
+  expect(toolArticle?.dataset.status).toBe('failed')
+  expect(toolArticle?.textContent).toContain('Denied')
+  expect(item('decision')).toBe(decision)
+  expect(decision?.dataset.state).toBe('decided')
+  expect(decision?.textContent).toContain('Rejected')
+  await act(async () => locale.setLocale('zh-CN'))
+  expect(decision?.textContent).toContain('已拒绝')
+  expect(toolArticle?.getAttribute('aria-label')).toContain('失败')
+  await act(async () =>
+    locale.register('override', { 'zh-CN': { 'activity.approval.rejected': '新审批文案' } }),
+  )
+  expect(decision?.textContent).toContain('新审批文案')
+  await act(async () => theme.setTheme('dark'))
+  expect(host.querySelector('[data-testid="theme-card"]')).toBe(themeButton)
+  expect(themeButton?.textContent).toBe('dark')
+  expect(document.activeElement).toBe(themeButton)
+  expect(item('answer')).toBe(answer)
+  off()
 })

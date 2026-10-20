@@ -9,8 +9,8 @@ function timelineWithSlot(): UITimeline {
     id: 'n1',
     kind: 'slot',
     fill: { slot: 'tool.card.inline', extId: 'ext-1', payload: { hello: true } },
-  } as unknown as UINode
-  return { nodes: [slotNode] } as unknown as UITimeline
+  }
+  return { sessionId: 's', upto: 1, generation: 1, nodes: [slotNode], turns: [], opState: null }
 }
 
 describe('webView 保留 slot 节点（WC9）', () => {
