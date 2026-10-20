@@ -1504,9 +1504,6 @@
   .side-models-note code {
     color: var(--agnes-brand-primary);
   }
-  .side-models-empty {
-    border-style: dashed;
-  }
   .side-models-empty .agh-empty-state {
     max-width: none;
     justify-items: start;

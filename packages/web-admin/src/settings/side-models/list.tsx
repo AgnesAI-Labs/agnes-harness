@@ -54,7 +54,18 @@ export function SideModelList(props: SideModelListProps) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
   const { accounts, canSave, busy, editing } = props
   const empty = accounts.length === 0 && !editing
-  const addProps = { 'data-testid': 'side-model-add', disabled: !canSave || busy, onClick: props.onAdd }
+  const addRow = (
+    <Button
+      type="text"
+      className="config-account-add"
+      data-testid="side-model-add"
+      disabled={!canSave || busy}
+      onClick={props.onAdd}
+    >
+      <Icon name="plus" />
+      {t('side.add')}
+    </Button>
+  )
   return (
     <SettingsBlock
       bare
@@ -84,22 +95,15 @@ export function SideModelList(props: SideModelListProps) {
             icon={<Icon name="git-branch" />}
             title={t('side.emptyTitle')}
             description={t('side.emptyNote')}
-            actions={
-              <Button appearance="primary" icon={<Icon name="plus" />} {...addProps}>
-                {t('side.add')}
-              </Button>
-            }
           />
+          {addRow}
         </SettingsGroup>
       ) : (
         <SettingsGroup className="config-account-list">
           {accounts.map((account) => (
             <SideModelRow key={account.accountId} account={account} {...props} />
           ))}
-          <Button type="text" className="config-account-add" {...addProps}>
-            <Icon name="plus" />
-            {t('side.add')}
-          </Button>
+          {addRow}
         </SettingsGroup>
       )}
       {props.children}

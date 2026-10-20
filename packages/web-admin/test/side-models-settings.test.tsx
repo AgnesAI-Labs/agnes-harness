@@ -212,13 +212,20 @@ it('tags a missing credential and a disabled entry, and summarizes several model
   )
 })
 
-it('shows an empty state with its own add action and no route hint', async () => {
+it('shows an empty state with the shared dashed add row and no route hint', async () => {
   const { host } = await mount(client([chatAccount]), { accounts: [chatAccount] })
   const empty = host.querySelector('[data-testid="side-models-empty"]')
   expect(empty?.textContent).toContain('No side models yet')
   expect(empty?.textContent).toContain('Loop plugins (such as the Jev loop) call it')
-  // The add icon sits in the button's icon slot, beside the label rather than above it.
-  expect(empty?.querySelector('[data-testid="side-model-add"] .ant-btn-icon svg')).not.toBeNull()
+  // The add action is the same dashed row the account list uses, not a primary button.
+  const add = host
+    .querySelector('[data-testid="side-models-empty"]')
+    ?.closest('.side-models-empty')
+    ?.querySelector('[data-testid="side-model-add"]')
+  expect(add?.classList.contains('config-account-add')).toBe(true)
+  expect(add?.classList.contains('agh-btn--ghost')).toBe(true)
+  expect(add?.classList.contains('agh-btn--primary')).toBe(false)
+  expect(add?.querySelector('svg')).not.toBeNull()
   // The empty state's description replaces the group note instead of repeating it.
   expect(host.querySelector('[data-testid="side-models-note"]')).toBeNull()
   expect(host.querySelector('[data-testid="side-models-count"]')).toBeNull()
