@@ -144,6 +144,7 @@ function fixture(
     lostWake = false,
     failDelivery = false,
     failAdmission = false,
+    scans = 0,
     invocation: string | undefined,
     admitted: Actor | undefined = actor,
     resolver: ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>) | undefined
@@ -234,6 +235,7 @@ function fixture(
       },
       ledger: {
         async scanOwn(query) {
+          scans++
           const names = new Set(query.names)
           return {
             events: rows.filter(
@@ -298,6 +300,7 @@ function fixture(
   restart()
   return {
     rows,
+    scans: () => scans,
     checkArtifact: (value: NonNullable<IntelligentUiCapabilities['checkArtifact']>) => {
       checker = value
     },
@@ -738,6 +741,44 @@ describe('preset surface contract and ledger lifecycle', () => {
     f.admissionFail(false)
     await f.service().read({ sessionId: 'session' }, signal)
     expect(f.calls.size).toBe(0)
+  })
+  it('folds once for a read that repairs nothing and returns the repaired state after recovery', async () => {
+    const f = await opened()
+    const scans = f.scans()
+    const quiet = await f.service().read({ sessionId: 'session' }, signal)
+    expect(f.scans() - scans).toBe(1)
+    expect(quiet).toMatchObject({ lastSeq: f.rows.length, surfaces: [{ status: 'open' }], actions: [] })
+    // An action that crashed between admission and its refusal is settled by the next read.
+    f.row('action.received', {
+      record: {
+        request: request('crashed'),
+        actor,
+        receivedAt: 100000,
+        receivedSeq: 0,
+        receipt: {
+          sessionId: 'session',
+          surfaceId: 'reconcile',
+          revision: 1,
+          actionId: 'confirm',
+          commandId: 'crashed',
+          status: 'received',
+          seq: 1,
+          duplicate: false,
+        },
+      },
+    })
+    const repaired = await f.service().read({ sessionId: 'session' }, signal)
+    const rejected = f.rows.find((row) => row.type === 'x/agnes/intelligent-ui/action.rejected')
+    expect(repaired.lastSeq).toBe(f.rows.length)
+    expect(repaired.actions).toEqual([
+      expect.objectContaining({
+        commandId: 'crashed',
+        status: 'rejected',
+        seq: rejected?.seq,
+        refusal: expect.any(Object),
+      }),
+    ])
+    expect(f.deliveries.size).toBe(1)
   })
   it('enforces data-only schemas, depth, malformed params, row identity and the durable rolling rate', async () => {
     const f = await opened()

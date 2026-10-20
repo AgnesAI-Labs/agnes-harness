@@ -23,7 +23,16 @@ export interface LedgerEvent {
 
 /** Session I/O supplied by the host. This module only filters and refuses. */
 export interface OwnerLedgerSource {
-  scan(fromSeq: number, toSeq: number, lane: string): AsyncIterable<readonly LedgerEvent[]>
+  /**
+   * `types` lists every event type the read can accept, so storage may skip the rest. The rows are
+   * still checked here; a source that ignores it costs reads, not correctness.
+   */
+  scan(
+    fromSeq: number,
+    toSeq: number,
+    lane: string,
+    types: readonly string[],
+  ): AsyncIterable<readonly LedgerEvent[]>
   append(type: string, data: JsonValue, sourceSeq?: number): Promise<number>
   alive(): void
   readonly boundarySeq: number
@@ -164,7 +173,7 @@ export function createOwnerLedger(options: {
       let lastAccepted = after
       if (fromSeq <= asOfSeq) {
         let bytes = 0
-        for await (const page of source.scan(fromSeq, asOfSeq, source.lane)) {
+        for await (const page of source.scan(fromSeq, asOfSeq, source.lane, Object.freeze([...requested]))) {
           source.alive()
           for (const row of page) {
             if (!acceptRow(row, owner, requested, source.lane, fromSeq, asOfSeq)) continue

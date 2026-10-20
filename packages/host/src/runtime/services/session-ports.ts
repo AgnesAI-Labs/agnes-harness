@@ -19,7 +19,13 @@ export interface SessionLedgerSession {
     readonly log: { readonly parent?: { readonly boundarySeq?: number } }
     readonly loopFactory: { readonly controls?: { readonly steer?: boolean } }
   }
-  scan(query: { fromSeq?: number; toSeq?: number; lane?: string; limit?: number }): Promise<LedgerEvent[]>
+  scan(query: {
+    fromSeq?: number
+    toSeq?: number
+    lane?: string
+    type?: string | string[]
+    limit?: number
+  }): Promise<LedgerEvent[]>
   appendExtensionEvent(
     type: string,
     data: unknown,
@@ -62,8 +68,8 @@ export function createSessionLedger(
     get lane() {
       return session.lane
     },
-    scan(fromSeq, toSeq, lane) {
-      return scanPages((query) => session.scan(query), { fromSeq, toSeq, lane })
+    scan(fromSeq, toSeq, lane, types) {
+      return scanPages((query) => session.scan(query), { fromSeq, toSeq, lane, type: [...types] })
     },
     append(type: string, data: JsonValue, sourceSeq?: number) {
       return session.appendExtensionEvent(type, data, { source: input.owner, trust: input.trust }, sourceSeq)
