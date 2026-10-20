@@ -170,7 +170,7 @@ describe('delegated child creation on SQLite: what is still detected', () => {
 })
 
 describe('delegated child creation on SQLite: what is no longer detected (approved)', () => {
-  it('a tool call rewritten at or before the fork point: child and parent both read it; cold opens refuse it', async () => {
+  it('a tool call rewritten at or before the fork point: child and parent both read it; a cold open refuses it once the history is verified', async () => {
     const l = ledger()
     const storage = l.open()
     const provider = script()
@@ -188,16 +188,30 @@ describe('delegated child creation on SQLite: what is no longer detected (approv
     expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
     await k.close()
+    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
+    // is hashed again; the background verification refuses the row and seals the session.
     const reopened = l.open()
     const again = kernel(reopened, fakeProvider([]))
-    await expect(again.session('parent', { ...sessionOpts, writerRunId: 'r3' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(again.session(childKey, { ...sessionOpts, writerRunId: 'r4' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
+    for (const [key, writerRunId] of [
+      ['parent', 'r3'],
+      [childKey, 'r4'],
+    ] as const) {
+      const session = await again.session(key, { ...sessionOpts, writerRunId })
+      await expect(session.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    }
     await again.close()
     await reopened.close()
+    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
+    const fresh = l.open()
+    const third = kernel(fresh, fakeProvider([]))
+    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    await third.close()
+    await fresh.close()
   })
 })
 

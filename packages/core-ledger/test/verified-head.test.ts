@@ -37,6 +37,8 @@ async function seeded(rows: number, key = 'k') {
   const log = await SessionLogImpl.open(options(storage, key))
   for (let i = 0; i < rows; i++) await log.append([input(`m${i}`)])
   await log.close()
+  // Closing the log left a checkpoint of its own; these tests start from none and write theirs.
+  await storage.deleteVerifiedHead(key)
   const [last] = await storage.scanIntegrity(key, { fromSeq: rows, toSeq: rows, limit: 1 })
   const head = makeVerifiedHead({
     sessionKey: key,

@@ -1441,21 +1441,25 @@ export class SessionImpl {
         }
         const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
         if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
-        const r = await this.d.log.append([
-          nextInbox,
-          ...(item.kind === 'steer'
-            ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
-            : []),
-          ...(msg.budget !== undefined
-            ? [
-                budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                  itemId: item.itemId,
-                  creditsCap: msg.budget,
-                  ...(msg.hardBudget ? { hard: true as const } : {}),
-                }),
-              ]
-            : []),
-        ])
+        // Queuing input is the one write let through while the history is still being verified.
+        const r = await this.d.log.append(
+          [
+            nextInbox,
+            ...(item.kind === 'steer'
+              ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
+              : []),
+            ...(msg.budget !== undefined
+              ? [
+                  budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
+                    itemId: item.itemId,
+                    creditsCap: msg.budget,
+                    ...(msg.hardBudget ? { hard: true as const } : {}),
+                  }),
+                ]
+              : []),
+          ],
+          { beforeFullVerify: 'allow' },
+        )
         return r.firstSeq
       })
     })
@@ -1476,13 +1480,16 @@ export class SessionImpl {
         ])
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
       }
-      const written = await this.d.log.append([
-        inboxEvent(this.lane, this.d.actor, {
-          items: inbox.items.filter((item) => item.itemId !== itemId),
-        }),
-        this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
-        this.controls.fact('steer', 'withdrawn', by, { itemId, admissionId }),
-      ])
+      const written = await this.d.log.append(
+        [
+          inboxEvent(this.lane, this.d.actor, {
+            items: inbox.items.filter((item) => item.itemId !== itemId),
+          }),
+          this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
+          this.controls.fact('steer', 'withdrawn', by, { itemId, admissionId }),
+        ],
+        { beforeFullVerify: 'allow' },
+      )
       return written.firstSeq
     })
   }
@@ -1930,6 +1937,10 @@ export class SessionImpl {
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
   async step(): Promise<LoopStepOutcome> {
+    // Every model request, tool run and step hook starts in a step, so none starts on history that an
+    // open folded from a checkpoint until the background verification has hashed all of it, and none
+    // at all once that verification failed: `fullVerified()` then rejects with the failure.
+    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -2550,7 +2561,8 @@ export class SessionImpl {
   }
 
   private guardProjection(): void {
-    if (this.d.log.faulted) throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    // A history that failed verification is refused as such, so a client can say why.
+    this.d.log.sealCheck()
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 
