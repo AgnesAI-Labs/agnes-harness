@@ -4310,6 +4310,11 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "adoptionGeneration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "consentSnapshot": {
           "$ref": "#/$defs/ApplicationPreview"
         }

@@ -48,11 +48,15 @@ it.each(['known', 'unknown'])(
             hideBuiltin: ['agents', 'business-agents', 'automation'],
           },
         },
-        agents: ['acme/kit#desk'],
+        agents: Array.from({ length: 5 }, (_, i) => (i ? `acme/kit#desk${i}` : 'acme/kit#desk')),
         defaultAgent: 'acme/kit#desk',
       },
       pageNames: [{ ref: 'acme/kit#overview', title: { en: 'Overview', 'zh-CN': '总览' } }],
-      agentLaunches: [{ ref: 'acme/kit#desk', launch: { title: { en: 'Reviewer', 'zh-CN': '审核员' } } }],
+      agentLaunches: Array.from({ length: 5 }, (_, i) => ({
+        ref: i ? `acme/kit#desk${i}` : 'acme/kit#desk',
+        launch: { title: { en: `Reviewer${i || ''}`, 'zh-CN': `审核员${i || ''}` } },
+        permission: { readOnly: false, tools: [`private-tool-${i}`] },
+      })),
       declarationDigest: 'b'.repeat(64),
       consentDigest: 'c'.repeat(64),
       dependencies: [
@@ -84,29 +88,35 @@ it.each(['known', 'unknown'])(
       expect(getByRole(document.body, 'button', { name: 'Preview' }).hasAttribute('disabled')).toBe(false),
     )
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Preview' })))
-    expect(document.body.textContent).toContain('Ava')
+    expect(document.body.textContent).toContain('Acme')
     expect(document.body.textContent).toContain('Trusted JavaScript')
     const summary = document.querySelector('[data-testid="consent-summary"]')
-    expect(summary?.textContent).toContain('Ava')
+    expect(summary?.textContent).toContain('Acme')
     expect(summary?.textContent).toContain('Overview')
     expect(summary?.textContent).not.toContain('acme/kit#overview')
+    const hidden = [...summary!.querySelectorAll('.agnes-settings-item')].find((row) =>
+      row.textContent?.includes('Official entries hidden'),
+    )
+    expect(hidden?.textContent).toBe('Official entries hiddenAgents, Automation')
+    expect(summary?.querySelectorAll('.agnes-settings-item-label')).not.toHaveLength(0)
+    expect(summary?.textContent?.match(/Tools can read and change data/g)).toHaveLength(1)
     expect(
-      [...summary!.querySelectorAll('p')].find((p) => p.textContent?.startsWith('Hidden host entries'))
-        ?.textContent,
-    ).toBe('Hidden host entries: Agents, Automation')
+      getByRole(summary as HTMLElement, 'button', { name: /5 role agents/ }).getAttribute('aria-expanded'),
+    ).toBe('false')
+    expect(summary?.textContent).not.toContain('Added dependencies')
+    expect(summary?.textContent).not.toContain('Removed dependencies')
+    expect(summary?.textContent).not.toContain('No role replacements')
     expect(summary?.textContent).toContain('Reviewer')
     expect(summary?.textContent).not.toContain('acme/kit#desk')
+    expect(summary?.textContent).not.toContain('private-tool-')
     expect(summary?.textContent).toContain('Navigation')
-    expect(summary?.textContent).toContain('Read files: /synthetic/status')
-    expect(summary?.textContent).toContain('Network hosts: status.example')
+    expect(summary?.textContent).toContain('Read files/synthetic/status')
+    expect(summary?.textContent).toContain('Network hostsstatus.example')
     expect(summary?.textContent).not.toContain(preview.consentDigest)
     expect(summary?.textContent).not.toContain(preview.integrity)
     expect(summary?.textContent).not.toContain('private-entry.js')
     expect(summary?.textContent).not.toContain('acme/kit#')
     expect(summary?.querySelector('pre')).toBeNull()
-    expect(summary?.textContent).toContain(
-      diffStatus === 'known' ? 'Removed dependencies: 1' : 'Changes are unknown',
-    )
     const css = readFileSync(
       resolve(import.meta.dirname, '../../web/public/styles/31-plugins-page.css'),
       'utf8',
@@ -130,6 +140,13 @@ it.each(['known', 'unknown'])(
     expect(technical.textContent).toContain(preview.declarationDigest)
     expect(technical.textContent).toContain(preview.integrity)
     expect(technical.textContent).toContain('private-entry.js')
+    expect(technical.textContent).toContain('private-tool-4')
+    expect(technical.textContent).toContain(diffStatus === 'known' ? 'acme/old' : 'Changes are unknown')
+
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Cancel' })))
+    expect(document.querySelector('[data-testid="consent-summary"]')).toBeNull()
+    expect(api.adoptApplication).not.toHaveBeenCalled()
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Preview' })))
 
     // A background read must not allow confirmation against a stale revision or discard the review.
     let finish: ((value: ApplicationState) => void) | undefined
@@ -139,15 +156,13 @@ it.each(['known', 'unknown'])(
       }),
     )
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh' })))
-    expect(getByRole(document.body, 'button', { name: 'Adopt this preview' }).hasAttribute('disabled')).toBe(
-      true,
-    )
+    expect(getByRole(document.body, 'button', { name: 'Adopt' }).hasAttribute('disabled')).toBe(true)
     await act(async () => finish?.(state))
-    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Adopt this preview' })))
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Adopt' })))
     expect(api.adoptApplication).toHaveBeenCalledWith('acme/kit', 3, preview.consentDigest)
     expect(api.adoptApplication).toHaveBeenCalledTimes(1)
     expect(getByRole(document.body, 'alert').textContent).toContain('preview and confirm again')
-    expect(document.body.textContent).not.toContain('Adopt this preview')
+    expect(document.body.textContent).not.toContain('Adopt')
   },
 )
 
@@ -217,8 +232,8 @@ it('previews a declared role without adopting an application and resets stale co
   expect(document.body.textContent).toContain('仅影响展示，不改变执行')
   const summary = document.querySelector('[data-testid="consent-summary"]')
   expect(summary?.textContent).toContain('交付物卡片, 交付物工作区')
-  expect(summary?.textContent).toContain('界面: 允许')
-  expect(summary?.textContent).toContain('不适用依赖差异比较')
+  expect(summary?.textContent).toContain('界面允许')
+  expect(summary?.textContent).not.toContain('不适用依赖差异比较')
   expect(summary?.textContent).not.toContain(preview.consentDigest)
   expect(summary?.querySelector('pre')).toBeNull()
   const technical = document.querySelector<HTMLElement>('[data-testid="consent-technical"]')
@@ -227,6 +242,7 @@ it('previews a declared role without adopting an application and resets stale co
   expect(toggle.getAttribute('aria-expanded')).toBe('false')
   await act(async () => fireEvent.click(toggle))
   expect(technical.textContent).toContain('deliverables-workbench')
+  expect(technical.textContent).toContain('不适用依赖差异比较')
   expect(technical.textContent).toContain(preview.consentDigest)
   expect(technical.textContent).toContain(preview.declarationDigest)
 

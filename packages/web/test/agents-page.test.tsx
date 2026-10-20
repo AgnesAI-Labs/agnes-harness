@@ -590,6 +590,11 @@ it.each(['en', 'zh-CN'] as const)(
           ),
         )
         if (consent !== 'covered') {
+          const confirm = host.querySelector('[data-testid="agent-launch-confirm"]')
+          const cancel = host.querySelector('[data-testid="agent-launch-close"]')
+          expect(confirm?.classList.contains('agh-btn--primary')).toBe(true)
+          expect(cancel?.classList.contains('agh-btn--secondary')).toBe(true)
+          expect(confirm?.parentElement).toBe(cancel?.parentElement)
           await vi.waitFor(() =>
             expect(host.querySelector('[data-testid="agent-launch-review"]')).not.toBeNull(),
           )

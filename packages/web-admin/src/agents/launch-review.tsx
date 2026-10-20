@@ -13,6 +13,8 @@ import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 export function AgentLaunchReview({
   plan,
   onConfirm,
+  onCancel,
+  cancelTestId,
   draft,
   consent,
   object,
@@ -20,6 +22,8 @@ export function AgentLaunchReview({
 }: {
   plan: AgentPlan
   onConfirm(): void
+  onCancel(): void
+  cancelTestId?: string | undefined
   draft?: string | undefined
   consent?: 'covered' | 'changed' | 'unavailable' | undefined
   object?: string | undefined
@@ -99,9 +103,14 @@ export function AgentLaunchReview({
           {raw}
         </SettingsCode>
       </SettingsTechnicalDetails>
-      <Button data-testid="agent-launch-confirm" onClick={onConfirm}>
-        {t('action.session')}
-      </Button>
+      <div className="home-push-actions">
+        <Button data-testid={cancelTestId} onClick={onCancel}>
+          {t('dialog.cancel')}
+        </Button>
+        <Button appearance="primary" data-testid="agent-launch-confirm" onClick={onConfirm}>
+          {t('action.session')}
+        </Button>
+      </div>
     </section>
   )
 }

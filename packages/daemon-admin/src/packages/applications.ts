@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { type ConfigurationService, createConfigurationService } from '@agnes/host'
@@ -432,6 +432,7 @@ export class Applications {
           integrity: preview.integrity,
           declarationDigest: preview.declarationDigest,
           consentDigest: preview.consentDigest,
+          adoptionGeneration: randomUUID(),
           bindingDigest: bindingDigest(preview),
           consentSnapshot: preview,
         },

@@ -5,7 +5,7 @@ import { type AgentPlan, type ApplicationState, jcs } from '@agnes/protocol'
 export function applicationLaunchConsent(state: ApplicationState | undefined, plan: AgentPlan) {
   const selection = state?.selection
   const snapshot = selection?.consentSnapshot
-  if (!selection || !snapshot) return 'unavailable'
+  if (!selection?.adoptionGeneration || !snapshot) return 'unavailable'
   const { consentDigest, ...body } = snapshot
   if (
     consentDigest !== selection.consentDigest ||

@@ -40,6 +40,19 @@
   .application-settings p a {
     text-decoration-line: underline;
   }
+  .application-review {
+    display: grid;
+    gap: var(--s24);
+    min-width: 0;
+  }
+  .application-review-brand .agnes-settings-item-description {
+    max-width: none;
+  }
+  .application-review-mark {
+    flex: none;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+  }
   .application-version {
     margin-inline-start: var(--s8);
     color: var(--agnes-text-secondary);

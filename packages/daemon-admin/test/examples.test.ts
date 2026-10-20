@@ -633,6 +633,7 @@ it.each([
   'capability',
   'configuration',
   'legacy',
+  'legacy-generation',
   'tampered',
   'revoked',
   'unadopted',
@@ -677,6 +678,7 @@ it.each([
       integrity: snapshot.integrity,
       declarationDigest: snapshot.declarationDigest,
       consentDigest: snapshot.consentDigest,
+      ...(change === 'legacy-generation' ? {} : { adoptionGeneration: 'synthetic-adoption-1' }),
       bindingDigest: 'b'.repeat(64),
       consentSnapshot: snapshot,
     },
@@ -707,7 +709,7 @@ it.each([
   expect(prepared.consent).toBe(
     ['same', 'revoked'].includes(change)
       ? 'covered'
-      : ['legacy', 'tampered', 'unadopted'].includes(change)
+      : ['legacy', 'legacy-generation', 'tampered', 'unadopted'].includes(change)
         ? 'unavailable'
         : 'changed',
   )

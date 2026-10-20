@@ -113,7 +113,13 @@ At each role mount, the host matches the stored consent against the actual modul
 attested client/dependency binding. A stale selection response cannot admit a newer roster entry;
 missing or mismatched bindings remain unresolved until a matching reviewed implementation is available.
 
-Settings adoption previews first summarize brand, pages/navigation, agents, replaced roles and dependency permissions. Added and removed dependencies are separate; unverifiable previous consent is explicitly unknown. The complete JSON, client entry points, integrity and consent digests remain copyable in **Technical details**. Individual **Interface implementations** previews use the same summary for visible parts and current permissions; a backend result of not applicable is not presented as “no changes”. Application and interface candidates refresh on plugin change notifications and when returning to the window; an idle page does not poll. **Refresh candidates** updates them without a full page reload. Failed reads retain the last list and show an error; refreshing never adopts an application or interface choice.
+Settings adoption previews use grouped cards for the application identity, interface changes, included
+agents and permissions. Long agent lists are collapsed, and identical access summaries are grouped.
+Dependencies, implementation references, digests and the full payload are available in copyable
+**Technical details**. Individual **Interface implementations** previews show visible parts and current
+access; unknown or inapplicable dependency comparisons are identified in technical details. Application
+and interface candidates refresh on plugin-change notices and return to the window, without idle
+polling. Failed reads retain the last list; refreshing never adopts an application or interface choice.
 
 The consent preview binds source and signature status, package/version/integrity, brand and assets,
 hidden entries, home/skin, agents, role code sources, dependency permissions/diff, scope and recovery.
@@ -207,7 +213,12 @@ Installed applications keep their pages available through plugin and agent surfa
 Application actions reuse adoption consent when the backend confirms that the saved, digest-bound
 launch plan exactly matches the current admitted agent, sources (versions and content hashes),
 capabilities, models and permissions. They open a conversation with an editable request and object
-context; nothing is sent automatically. Older consent snapshots without launch plans, changed
+context; nothing is sent automatically. Older consent snapshots without launch plans or an adoption generation, changed
 configuration, and launches outside the adopted catalogue require a short review. Technical routes,
 hashes and exports are collapsed. The same ticket expiry, caller/workspace binding, drift checks and
-Host admission still apply; revoking adoption before a direct start invalidates its ticket.
+Host admission still apply. Each adoption has a backend-generated `adoptionGeneration`, independent
+of configuration revisions. Clearing removes that generation; re-adopting identical content creates a
+new one, so earlier direct-launch tickets remain stale. Unrelated configuration changes preserve it.
+The ticket must still be valid after the last asynchronous check and immediately before dispatch.
+Completed receipts remain readable after expiry or clear. Revoking adoption after dispatch does not
+yet cancel a pending session creation; it does not send the draft or widen the session's permissions.

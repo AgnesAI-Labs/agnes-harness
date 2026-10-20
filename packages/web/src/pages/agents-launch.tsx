@@ -183,6 +183,8 @@ export function useAgentLaunch(data: BusinessAgentsData) {
             {launch.phase === 'review' && launch.attempt && (
               <AgentLaunchReview
                 plan={launch.attempt.plan}
+                onCancel={close}
+                cancelTestId="agent-launch-close"
                 consent={launch.consent}
                 changes={launch.changes}
                 object={
@@ -235,11 +237,11 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                 )}
               </>
             )}
-            <Button data-testid="agent-launch-close" onClick={close}>
-              {t(
-                launch.phase === 'preparing' || launch.phase === 'review' ? 'dialog.cancel' : 'dialog.close',
-              )}
-            </Button>
+            {launch.phase !== 'review' && (
+              <Button data-testid="agent-launch-close" onClick={close}>
+                {t(launch.phase === 'preparing' ? 'dialog.cancel' : 'dialog.close')}
+              </Button>
+            )}
           </PushPage>
         )}
       </>

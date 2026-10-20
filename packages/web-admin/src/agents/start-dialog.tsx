@@ -423,6 +423,8 @@ export function useBusinessAgentStart(options: {
           {phase.kind === 'launch-review' && (
             <AgentLaunchReview
               plan={phase.target}
+              onCancel={close}
+              cancelTestId="agent-start-cancel"
               onConfirm={() => {
                 void launch(phase.agent, phase.plan, { target: phase.target, operationId: phase.operationId })
               }}
@@ -536,7 +538,7 @@ export function useBusinessAgentStart(options: {
               {phase.launch && <p>{t('launch.uncertain')}</p>}
             </div>
           )}
-          {phase.kind !== 'confirm' && (
+          {phase.kind !== 'confirm' && phase.kind !== 'launch-review' && (
             <div className="home-push-actions agent-start-actions">
               {phase.kind === 'running' ? (
                 <Button appearance="ghost" data-testid="agent-start-background" onClick={close}>
