@@ -210,3 +210,80 @@ describe('CoreError', () => {
     expect(new CoreError('E_CHILD_LIMIT', 'x')).toBeInstanceOf(Error)
   })
 })
+
+it('children inherit the full-access chooser and lose stale admissions when the parent switches or closes', async () => {
+  const k = kernel()
+  try {
+    const parent = await k.session('permission-parent', sessionOpts)
+    const principal = { ...actor, id: 'full-access-chooser' }
+    await parent.setYolo(true, principal)
+    const handle = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'sign' })
+    const child = k.get(handle.key)!
+    expect(child.yolo).toBe(true)
+    expect(child.permissionContext).toMatchObject({ policy: 'full-access', actor: principal })
+    const port = child.decisions.port({
+      owner: 'fixture/child',
+      sourcePackage: '@fixture/child',
+      packageVersion: '1',
+      operationId: 'sign',
+      alive() {},
+    })
+    const spec = {
+      key: 'signature',
+      purpose: 'business.confirm',
+      subject: { revision: 0 },
+      prompt: 'Sign?',
+      options: ['allowed-once', 'rejected'],
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+      responseSchema: { type: 'string', enum: ['I confirm.'] },
+    }
+    const decision = await port.request(spec)
+    expect((await port.get(decision)).result).toMatchObject({
+      code: 'full-access',
+      answeredBy: { id: principal.id },
+    })
+    const admission = await port.admit!(decision)
+    await parent.setYolo(false, actor)
+    expect(child.yolo).toBe(false)
+    expect(child.permissionContext.policy).not.toBe('full-access')
+    expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
+    await child.setYolo(true, principal)
+    expect(child.permissionContext.policy).not.toBe('full-access')
+    await parent.setYolo(true, principal)
+    expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
+    const fresh = await port.request({ ...spec, key: 'fresh' })
+    const active = await port.admit!(fresh)
+    await parent.close()
+    expect(() => active.assertActive()).toThrow()
+    expect(child.permissionContext.policy).not.toBe('full-access')
+  } finally {
+    await k.close()
+  }
+})
+
+it('reopened children cannot recover full access from a copied preset without their live parent', async () => {
+  const storage = new MemoryStorage()
+  const preset = {
+    ...presetDefaults(),
+    permission: 'full-access' as const,
+    treeBudgetCredits: 100,
+    generationLimit: 1,
+    maxFanOut: 2,
+  }
+  const first = kernel({ storage, preset })
+  const parent = await first.session('reopen-parent', sessionOpts)
+  await parent.setYolo(true, actor)
+  const handle = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'inspect' })
+  expect(first.get(handle.key)?.permissionContext.policy).toBe('full-access')
+  await first.close()
+  const second = kernel({ storage, preset })
+  try {
+    const orphan = await second.session(handle.key, { ...sessionOpts, writerRunId: 'reopen-child' })
+    expect(orphan.yolo).toBe(false)
+    expect(orphan.permissionContext.policy).not.toBe('full-access')
+    await orphan.setYolo(true, actor)
+    expect(orphan.permissionContext.policy).not.toBe('full-access')
+  } finally {
+    await second.close()
+  }
+})

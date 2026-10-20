@@ -25,6 +25,7 @@ export type SessionRuntimeInput = Readonly<{
     newerId?: string
   }>
   capabilities: SessionCapabilitySet
+  permission?: { policy: string; principal: string }
   /** The container the session runs in, and the one new sessions would open in. */
   running: ContainerView
   configured: ContainerView
@@ -156,6 +157,7 @@ export function describeSessionRuntime(input: SessionRuntimeInput): SessionRunti
       })),
     },
     policy: {
+      ...(input.permission ? { permission: input.permission } : {}),
       ...(permissions.approvalMode ? { approvalMode: permissions.approvalMode } : {}),
       toolPolicy: permissions.policy,
       toolRuntime: permissions.toolRuntime,
@@ -259,6 +261,7 @@ export function describeHostSession(
   }>,
 ): SessionRuntimeDescriptor {
   const workspace = host.securityStatus?.().workspaces.find((item) => item.sessionId === sessionKey)
+  const permission = host.kernel.get(sessionKey)?.permissionContext
   return describeSessionRuntime({
     sessionKey,
     generation: {
@@ -268,6 +271,7 @@ export function describeHostSession(
       ...(generation.newerId ? { newerId: generation.newerId } : {}),
     },
     capabilities: host.sessionCapabilities!(sessionKey),
+    ...(permission ? { permission: { policy: permission.policy, principal: permission.actor.id } } : {}),
     running: { catalog: host.providers.catalog(), seams: selectedProviders(host.profile.seams) },
     configured: { catalog: head.providers.catalog(), seams: selectedProviders(head.profile.seams) },
     ...(generation.pins?.length

@@ -102,13 +102,11 @@ import type {
   UITurn,
 } from '@agnes/protocol'
 import {
-  inspectJsonData,
   MAX_FRAME_BYTES,
   modelImageInputError,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_OPENING_DEFAULT_MAX_NODES,
   UI_PROJECTION_DEFAULT_MAX_BYTES,
-  validateActor,
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
@@ -178,7 +176,7 @@ import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
-import { SessionPermissionAuthority } from './session-permission-authority.js'
+import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { settleParkedCompletion } from './verifier-continuation.js'
@@ -598,7 +596,9 @@ export class SessionImpl {
   private readonly fallbackResources: ResourceRegistry
   compaction: CompactionPort
   preset: PresetView
-  yolo = false
+  get yolo(): boolean {
+    return !this.closing && this.permissionContext.policy === 'full-access'
+  }
   turn: TurnMemory | null = null
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
   // this: both are set while a crashed turn waits to be continued, with nothing running.
@@ -692,6 +692,14 @@ export class SessionImpl {
   }
   revokeAutomaticPermissions(): void {
     this.authorization.revoke()
+  }
+
+  /** Backend child admission binds permission to the live parent, including later revocation. */
+  inheritAutomaticPermissions(parent: SessionImpl | undefined): void {
+    this.authorization.inherit(
+      parent ? () => parent.permissionContext : undefined,
+      parent ? (listener) => parent.onPermissionChange(listener) : undefined,
+    )
   }
 
   constructor(deps: SessionDeps) {
@@ -1102,41 +1110,16 @@ export class SessionImpl {
    * corrupt or partially migrated revocation into an authorization grant.
    */
   private async restoreYolo(): Promise<void> {
-    this.yolo = false
     try {
       const [row] = await this.d.log.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
-      if (row?.origin !== 'system' || row.trust !== 'trusted' || row.lane !== this.lane) return
-      const inspectedActor = inspectJsonData(row.actor, 16 * 1024)
-      if (!inspectedActor.ok) return
-      const checkedActor = validateActor(inspectedActor.value)
-      if (!checkedActor.ok) return
-      const inspected = inspectJsonData(row.data, 16 * 1024)
-      if (!inspected.ok || !inspected.value || Array.isArray(inspected.value)) return
-      const data = inspected.value as Record<string, unknown>
-      if (
-        Reflect.ownKeys(data).length !== 7 ||
-        data.version !== 1 ||
-        typeof data.to !== 'boolean' ||
-        data.sessionKey !== this.key ||
-        data.lane !== this.lane ||
-        data.profileHash !== this.d.resolvedProfileHash ||
-        data.operatorId !== checkedActor.value.id
-      )
-        return
-      const owner = data.sessionOwner
-      if (
-        !owner ||
-        typeof owner !== 'object' ||
-        Array.isArray(owner) ||
-        Reflect.ownKeys(owner).length !== 2 ||
-        (owner as Record<string, unknown>).id !== this.d.actor.id ||
-        (owner as Record<string, unknown>).org !== this.d.actor.org
-      )
-        return
-      this.yolo = data.to
+      this.authorization.restore(row, {
+        key: this.key,
+        lane: this.lane,
+        profileHash: this.d.resolvedProfileHash,
+        owner: this.d.actor,
+      })
     } catch {
-      // A bypass is never required to open a session. Unreadable/corrupt history stays disabled.
-      this.yolo = false
+      this.authorization.select(false, this.d.actor)
     }
   }
 
@@ -2258,19 +2241,17 @@ export class SessionImpl {
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {
     if (typeof enabled !== 'boolean') throw new CoreError('E_ENVELOPE', 'invalid yolo state')
-    const inspected = inspectJsonData(operator, 16 * 1024)
-    if (!inspected.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
-    const checked = validateActor(inspected.value)
-    if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
-    const actor = checked.value
+    if (enabled && this.preset.permission === 'read-only')
+      throw new CoreError('E_ENVELOPE', 'full access requires a new session outside read-only isolation')
+    const actor = permissionOperator(operator)
     // A projection triggered by the committed event must wait for the matching live flag.
-    return this.exclusively(async () => {
+    const seq = await this.exclusively(async () => {
       const r = await this.d.log.append([
         sysEvent(
           { actor, lane: this.lane },
           'x/core/yolo-switch',
           {
-            version: 1,
+            version: 2,
             to: enabled,
             operatorId: actor.id,
             sessionKey: this.key,
@@ -2281,9 +2262,13 @@ export class SessionImpl {
           { ignorable: true },
         ),
       ])
-      this.yolo = enabled
+      this.authorization.select(enabled, actor)
+      const invalidations = this.decisions.revokedAutomaticEvents()
+      if (invalidations.length) await this.d.log.append(invalidations)
       return r.firstSeq
     })
+    await this.decisions.list()
+    return seq
   }
 
   append(tx: EventInput[]) {
@@ -2702,6 +2687,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    this.authorization.detach()
     this.decisions.detach()
     const draining = this.activeWork.size > 0
     unbindChildFactory(this.key)

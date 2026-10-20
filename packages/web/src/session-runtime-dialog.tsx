@@ -85,8 +85,13 @@ export function RuntimeInfo({
   const loop = runtime.loop ?? capabilities?.loop.value
   const model = capabilities?.modelRoutes.value?.primary.model
   const preset = capabilities?.permissions.preset ?? runtime.preset?.name
+  const effectiveLevel = policy?.permission ? policy.permission.policy || 'workspace-write' : level
   const levelId =
-    level && PERMISSION_KEYS[level] ? level : preset && PERMISSION_KEYS[preset] ? preset : undefined
+    effectiveLevel && PERMISSION_KEYS[effectiveLevel]
+      ? effectiveLevel
+      : preset && PERMISSION_KEYS[preset]
+        ? preset
+        : undefined
   const readOnly = capabilities?.permissions.readOnly ?? policy?.readOnly
   const permission =
     levelId || preset
@@ -108,7 +113,11 @@ export function RuntimeInfo({
           description={loopLabel ?? loop?.id ?? unknown}
         />
         <SettingsItem icon="sparkles" label={t('session.runtime.model')} description={model ?? unknown} />
-        <SettingsItem icon="shield" label={t('session.runtime.policy')} description={permission} />
+        <SettingsItem
+          icon="shield"
+          label={t('session.runtime.policy')}
+          description={[permission, policy?.permission?.principal].filter(Boolean).join(' · ')}
+        />
         {policy?.sandbox.provider === 'local' &&
           policy.sandbox.enforcement &&
           policy.sandbox.enforcement.level !== 'full' &&

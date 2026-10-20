@@ -85,6 +85,7 @@ describe('describeSessionRuntime', () => {
     const descriptor = describeSessionRuntime(
       input({
         modelRevision: 'fp-1',
+        permission: { policy: 'full-access', principal: 'full-access-chooser' },
         resourceRows: [
           { id: 'ext:agnes/skills', liveResources: ['skills'], liveResourceRevision: 'rev-skills' },
           { id: 'ext:agnes/jobs' },
@@ -99,6 +100,7 @@ describe('describeSessionRuntime', () => {
       preset: { name: 'default', bundles: ['office'] },
       loop: { id: 'default', version: '1.0.0' },
       policy: {
+        permission: { policy: 'full-access', principal: 'full-access-chooser' },
         approvalMode: 'auto-review',
         toolPolicy: 'default',
         sandbox: { provider: 'local', policyDigest: 'digest-1', enforcement: { level: 'full' } },

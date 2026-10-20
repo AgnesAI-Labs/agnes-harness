@@ -15,7 +15,9 @@ export const test = base.extend<{
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
       {
         localExamples: info.file.endsWith('/ui-gate.spec.ts'),
-        realModel: info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1',
+        realModel:
+          info.title.startsWith('application permission switch') ||
+          (info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1'),
       },
     )
     try {

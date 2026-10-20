@@ -632,7 +632,7 @@ export async function createSession(
   // session to the caller; see session-switch.ts. A session that never switched keeps its
   // session/start snapshot.
   await replaySwitchesOnOpen(session, profile, a)
-  if (session.preset.approval.policy === 'full-access') {
+  if (session.preset.permission === 'full-access') {
     const explicit = await session.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
     if (explicit.length === 0) await session.setYolo(true, actor)
   }

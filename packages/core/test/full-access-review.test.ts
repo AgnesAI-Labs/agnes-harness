@@ -53,7 +53,7 @@ async function fixture(name: string, extra: Partial<Parameters<typeof openSessio
   return { ...f, ctx, author }
 }
 
-it.each(['read-only', 'workspace-write', 'standard', 'custom', 'named-full-access', 'yolo', 'off'])(
+it.each(['read-only', 'workspace-write', 'standard', 'custom', 'named-full-access', 'mutated-yolo', 'off'])(
   'review: %s cannot forge effective policy or actor through decision subjects',
   async (name) => {
     const preset = presetDefaults()
@@ -71,7 +71,7 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom', 'named-full-acces
       toolPolicies,
       approvalMode: name === 'off' ? 'off' : 'manual',
     })
-    if (name === 'yolo') await f.session.setYolo(true, actor)
+    if (name === 'mutated-yolo') expect(Reflect.set(f.session, 'yolo', true)).toBe(false)
     try {
       for (const purpose of [
         'candidate.test',
@@ -217,22 +217,30 @@ it('review: narrowing the preset prevents consumption of an unused automatic all
   }
 })
 
-it('review: failure to persist an automatic decision fails closed', async () => {
-  const f = await fixture('full-access')
-  const append = f.log.append.bind(f.log)
-  const spy = vi.spyOn(f.log, 'append').mockImplementation((events, options) => {
-    if (events.some((event) => event.type === 'decision/state'))
-      return Promise.reject(new Error('synthetic disk failure'))
-    return append(events, options)
-  })
-  try {
-    await expect(f.ctx.decisions.request(spec)).rejects.toThrow('disk failure')
-    expect(await f.session.decisions.list()).toEqual([])
-  } finally {
-    spy.mockRestore()
-    await f.session.close()
-  }
-})
+it.each(['decision/state', 'x/core/yolo-switch'])(
+  'review: failure to persist %s fails closed',
+  async (eventType) => {
+    const f = await fixture(eventType === 'decision/state' ? 'full-access' : 'standard')
+    const append = f.log.append.bind(f.log)
+    const spy = vi.spyOn(f.log, 'append').mockImplementation((events, options) => {
+      if (events.some((event) => event.type === eventType))
+        return Promise.reject(new Error('synthetic disk failure'))
+      return append(events, options)
+    })
+    try {
+      if (eventType === 'decision/state')
+        await expect(f.ctx.decisions.request(spec)).rejects.toThrow('disk failure')
+      else {
+        await expect(f.session.setYolo(true, actor)).rejects.toThrow('disk failure')
+        expect(f.session.permissionContext.policy).not.toBe('full-access')
+      }
+      expect(await f.session.decisions.list()).toEqual([])
+    } finally {
+      spy.mockRestore()
+      await f.session.close()
+    }
+  },
+)
 
 it('review: plugin code cannot mutate the backend actor used by automatic decisions', async () => {
   const preset = presetDefaults()
@@ -410,14 +418,29 @@ const business: DecisionSpec = {
   },
   responseSchema: { type: 'string', enum: ['I confirm.', '我确认。'] },
 }
-it.each(['standard', 'workspace-write', 'full-access'])(
+it.each(['standard', 'workspace-write', 'full-access', 'yolo', 'pending-yolo', 'wake-yolo'])(
   'business consent: %s uses the human principal and exact declared meaning',
   async (permission) => {
     const f = await fixture(permission)
     try {
+      const switched = ['yolo', 'pending-yolo', 'wake-yolo'].includes(permission)
+      const principal = switched ? { ...actor, id: 'full-access-chooser' } : actor
+      if (permission === 'yolo' || permission === 'wake-yolo') await f.session.setYolo(true, principal)
+      if (permission === 'wake-yolo') {
+        await f.session.enqueue('next-turn', {
+          actor: { ...actor, id: 'scheduler', role: 'system' },
+          content: [{ type: 'text', text: 'Scheduled business signature' }],
+        })
+        await f.session.acceptInput()
+        expect(f.session.permissionContext.actor.id).toBe(principal.id)
+      }
       const handle = await f.author.request(business)
+      if (permission === 'pending-yolo') {
+        expect((await f.author.get(handle)).result).toBeNull()
+        await f.session.setYolo(true, principal)
+      }
       const value = await f.author.get(handle)
-      if (permission !== 'full-access') {
+      if (permission !== 'full-access' && !switched) {
         expect(value.result).toBeNull()
         return
       }
@@ -426,11 +449,11 @@ it.each(['standard', 'workspace-write', 'full-access'])(
         code: 'full-access',
         response: { option: 'allowed-once', value: 'I confirm.' },
         answeredBy: {
-          id: actor.id,
-          role: actor.role,
+          id: principal.id,
+          role: principal.role,
           attrs: { confirmationMode: 'auto-confirmed under full access' },
         },
-        authorization: { sessionId: f.session.permissionContext.sessionId, epoch: 0 },
+        authorization: { sessionId: f.session.permissionContext.sessionId, epoch: switched ? 1 : 0 },
       })
       expect(value.answerCommand).toBeNull()
       const admission = await f.author.admit!(handle)
@@ -444,11 +467,12 @@ it.each(['standard', 'workspace-write', 'full-access'])(
             kind: 'approval',
             purpose: 'business.confirm',
             state: 'decided',
-            decision: expect.objectContaining({ reason: 'full-access', byLabel: actor.id }),
+            decision: expect.objectContaining({ reason: 'full-access', byLabel: principal.id }),
           }),
         ]),
       )
-      await f.session.setPreset(presetDefaults())
+      if (switched) await f.session.setYolo(false, actor)
+      else await f.session.setPreset(presetDefaults())
       await expect(admission.verify()).rejects.toThrow('AUTHORITY_REVOKED')
       expect(() => admission.assertActive()).toThrow()
     } finally {
@@ -495,6 +519,29 @@ it.each(['expiry', 'cancel', 'close'] as const)(
       if (change === 'close') await f.session.close()
       await expect(admission.verify()).rejects.toThrow()
       expect(() => admission.assertActive()).toThrow()
+    } finally {
+      await f.session.close()
+    }
+  },
+)
+
+it.each(['standard', 'full-access'])(
+  'business consent: %s switch round trips cannot resurrect a lease from the prior switch',
+  async (baseline) => {
+    const f = await fixture(baseline)
+    try {
+      await f.session.setYolo(true, actor)
+      const pending = await f.author.request(business)
+      await f.session.setYolo(false, actor)
+      expect(f.session.permissionContext.policy === 'full-access').toBe(baseline === 'full-access')
+      expect(f.session.yolo).toBe(baseline === 'full-access')
+      await f.session.setYolo(true, actor)
+      await expect(f.author.admit!(pending)).rejects.toThrow('AUTHORITY_REVOKED')
+      const fresh = await f.author.request({ ...business, key: 'fresh-switch' })
+      const admission = await f.author.admit!(fresh)
+      await admission.verify()
+      await f.session.setYolo(false, actor)
+      expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
     } finally {
       await f.session.close()
     }

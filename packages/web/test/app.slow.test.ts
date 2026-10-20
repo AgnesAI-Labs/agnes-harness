@@ -645,7 +645,9 @@ describe('web permission synchronization', () => {
       else queued.push(event)
       return timeline.upto
     }
-    old.setYolo.mockImplementation(async (enabled: boolean) => ({ effectiveFromSeq: publish(enabled) }))
+    old.setYolo.mockImplementation(async (enabled: boolean) => ({
+      effectiveFromSeq: publish(enabled || row.permission === 'full-access'),
+    }))
     const listeners = new Map<string, Set<() => void>>()
     const client = {
       connectionState: 'connected',
@@ -856,9 +858,9 @@ describe('web permission synchronization', () => {
     ['full-access', '可修改工作区', false, '完全访问'],
     ['workspace-write', '完全访问', true, '完全访问'],
   ] as const)(
-    'keeps a %s session at its own level when %s is chosen, changing only approvals',
+    'uses the backend authority of a %s session after %s is chosen',
     async (level, choice, yolo, shown) => {
-      const { old } = await boot(false, { permission: level })
+      const { old } = await boot(level === 'full-access', { permission: level })
       const setPreset = vi.fn()
       Object.assign(old, { setPreset })
       await vi.waitFor(() => expect(label()).toBe(level === 'workspace-write' ? '可修改工作区' : shown))

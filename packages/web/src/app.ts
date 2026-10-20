@@ -1787,6 +1787,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
   renderControls()
   try {
     const applied = await session.setYolo(requestedYolo)
+    const actual = await session.projectUI(undefined, { surface: 'web' })
     if (
       !sessionBinding.isCurrent(epoch, session) ||
       sessionPending ||
@@ -1795,8 +1796,8 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
       return false
     permissionSelectionSeq = applied.effectiveFromSeq
     initialPermissionPending = undefined
-    sessionYoloEnabled = requestedYolo
-    permissionMode = openSessionMode(level, requestedYolo, permissionMode)
+    sessionYoloEnabled = actual.yolo ?? (requestedYolo || level === 'full-access')
+    permissionMode = openSessionMode(level, sessionYoloEnabled, permissionMode)
     if (permissionMode !== mode) {
       // A different level needs a new session. Say so, and offer the path that works.
       const label = permissionLabel(mode)

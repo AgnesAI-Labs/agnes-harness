@@ -1206,7 +1206,7 @@ it('reads an open session level from its row before guessing from its recipe', (
   // The yolo switch widens the display to full access, but never a read-only session.
   expect(openSessionMode('read-only', true, 'full')).toBe('view')
   expect(openSessionMode('workspace-write', true, 'workspace')).toBe('full')
-  expect(openSessionMode('full-access', false, 'workspace')).toBe('full')
+  expect(openSessionMode('full-access', false, 'full')).toBe('workspace')
   expect(openSessionMode('workspace-write', false, 'view')).toBe('workspace')
   expect(openSessionMode(undefined, false, 'view')).toBe('view')
 })
