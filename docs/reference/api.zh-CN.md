@@ -78,6 +78,8 @@ Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工
 
 读取完整工具记录时，使用 `_agnes/v1/session.readToolDetail` 按需读取工具调用及其匹配的结果。传入 `sessionId`，并把工具节点的 `seq` 作为 `callSeq`；有 `resultSeq` 时一并传入。可选的 `offset` 和 `maxBytes` 按 UTF-8 字节分页，单次响应最多 262,144 字节。响应包含 base64 编码的 `data`、`totalBytes` 和 `nextOffset`（最后一块为 `null`）。先解码并拼接各块，再解析 `{call, result?}` JSON。daemon 读取事件前会校验会话访问权限。RPC 和 SDK 的 `Session.readToolDetail(callSeq, resultSeq?)` 都将完整序列化记录限制在 64 MiB；分页不能读取更大的记录。超限时 RPC 返回 `INVALID_PARAMS`，原因是 `detail-too-large`。常规 UI 投影仍使用长度受限的预览，工具节点新增可选 `resultSeq`。
 
+读取已交付文件时，使用 `_agnes/v1/session.deliverables` 获取交付物视图所需的来源，而不必拉取完整 UI 投影：即已有结果的 `present` 工具调用。传入 `sessionId`、不含边界的 `afterSeq`（默认 0）和 `limit`（1–200，默认 100）。每一项包含 `callSeq`、`resultSeq`、`toolUseId`、序号范围包含该调用的投影回合 `turnId`（有时才返回），以及 `structured`，即结果中按原样记录的结构化数据（结果没有时省略）；请像校验 `readToolDetail` 的结果一样校验它。调用与结果的配对方式与 UI 投影在会话主 lane 上配对工具节点完全一致，包括续写回合和分叉继承的回合；daemon 只读取工具行和回合行来查找它们。各项按 `resultSeq` 升序排列，`upto` 是本页覆盖到的账本序号。单页最多 `limit` 项、JSON 不超过 262,144 字节；还有剩余时返回 `nextAfterSeq`（等于 `upto`），作为下一页的起点。要获取之后的新结果，把上一页的 `upto` 作为 `afterSeq` 传入：结果被替换的调用会带着新结果再次返回，因此请按 `callSeq` 保存各项。daemon 读取前会校验会话所有者。`afterSeq` 超过会话最后序号时返回 `INVALID_PARAMS`，原因是 `after-seq-out-of-range`；单项超过一页时原因是 `deliverable-too-large`，这类结果请改用 `readToolDetail` 读取。SDK 方法是 `Session.deliverables({ afterSeq?, limit? })`。
+
 写操作通常通过 clientId/commandId、expected revision/integrity 返回持久化 operation receipt，再查询最终状态。不要收到 receipt 就记录效果成功；不要未知结果后换 commandId 重做外部效果。
 
 ## Skills 写接口
