@@ -362,12 +362,12 @@ const PUBLIC_ERROR_COPY = {
   },
   "transport": {
     "en": {
-      "reason": "The provider connection failed.",
-      "action": "Check connectivity and inspect the request status before retrying."
+      "reason": "The provider could not be reached, or it answered with a server error.",
+      "action": "Check connectivity and try again later. If it keeps happening, the provider may be down."
     },
     "zh-CN": {
-      "reason": "提供方连接失败。",
-      "action": "请检查连接并确认请求状态后再重试。"
+      "reason": "无法连接提供方，或提供方返回了服务器错误。",
+      "action": "请检查网络后稍后再试；如果持续出现，可能是提供方暂时不可用。"
     }
   },
   "providerAuth": {
