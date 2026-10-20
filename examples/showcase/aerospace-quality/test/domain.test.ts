@@ -187,6 +187,43 @@ it('approved domain decisions hold hardware, invalidate verification, enforce do
   expect(() =>
     decide(store, { kind: 'configuration', id: 'ECR-016', expectedRevision: 4 }, approved),
   ).toThrow('not under review')
+  const complete = read(store)
+  for (const criterion of complete.zeroing[0]!.criteria) {
+    criterion.accepted = true
+    criterion.evidence = [`SYNTHETIC-REVIEWED-${criterion.id}`]
+  }
+  persist(store, complete)
+  const automatic = {
+    ...approved,
+    requestId: 'host-auto-closure',
+    signedMeaning: 'I confirm the complete reviewed evidence and approve quality closure.',
+    confirmationMode: 'auto-confirmed under full access',
+  }
+  expect(() => decide(store, { kind: 'zeroing', id: 'ZR-001', expectedRevision: 4 }, automatic)).toThrow(
+    'Host human approval',
+  )
+  decide(
+    store,
+    { kind: 'zeroing', id: 'ZR-001', expectedRevision: 4 },
+    {
+      ...automatic,
+      admission: { verify: async () => {}, assertActive() {} },
+    },
+  )
+  expect(read(store).zeroing[0]).toMatchObject({
+    status: 'closed',
+    closure: {
+      decisionId: 'host-auto-closure',
+      signer: 'human',
+      confirmationMode: 'auto-confirmed under full access',
+      meaning: automatic.signedMeaning,
+      reviewedRevision: 4,
+    },
+  })
+  for (const locale of ['en', 'zh-CN'] as const)
+    expect(report(read(store), 'zeroing', locale).markdown).toContain(
+      locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认',
+    )
 })
 it('traceability exposes orphan/design/untested gaps and reports preserve uncertainty, evidence and safe HTML', () => {
   const s = seed(),
@@ -261,8 +298,33 @@ it('retains manual signatures under standard/workspace-write and auto-confirms f
             audit: { signer: 'u', confirmationMode: 'auto-confirmed under full access' },
           },
         })
+        expect((await s.invoke('aero_rule_propose', { expectedRevision: 3 })).isError).not.toBe(true)
+        for (const [kind, id, expectedRevision] of [
+          ['rule', 'TVAC-LOT-001', 4],
+          ['configuration', 'ECR-016', 5],
+        ] as const) {
+          const signed = await s.invoke('aero_decide', { kind, id, expectedRevision })
+          expect(signed.isError, JSON.stringify(signed)).not.toBe(true)
+          expect(signed.structured).toMatchObject({
+            data: { signature: { signer: 'u', confirmationMode: 'auto-confirmed under full access' } },
+          })
+        }
+        // Full access cannot manufacture the seven missing closure evidence criteria.
+        expect(
+          (await s.invoke('aero_decide', { kind: 'zeroing', id: 'ZR-001', expectedRevision: 6 })).isError,
+        ).toBe(true)
         const signatures = (await s.decisions()).filter((d) => d.request.spec.purpose === 'business.confirm')
-        expect(signatures).toHaveLength(1)
+        expect(signatures).toHaveLength(4)
+        expect(
+          signatures.every(
+            (d) =>
+              d.result?.reason === 'answered' &&
+              d.result.code === 'full-access' &&
+              d.result.response.value === d.request.spec.presentation?.en?.responseValue &&
+              d.consumption,
+          ),
+        ).toBe(true)
+        expect(ordinaryReviews).toEqual([])
         expect(signatures[0]).toMatchObject({
           result: { code: 'full-access', answeredBy: { id: 'u' } },
           consumption: { operationId: expect.any(String) },

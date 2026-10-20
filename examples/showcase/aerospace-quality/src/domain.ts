@@ -254,7 +254,11 @@ export function propose(store: OwnedStore | undefined, expected: number) {
   })
 }
 export function decide(store: OwnedStore | undefined, input: DecisionInput, approval: Approval) {
-  if (!approval?.requestId || ['agent', 'system'].includes(approval.answeredBy.role))
+  if (
+    !approval?.requestId ||
+    ['agent', 'system'].includes(approval.answeredBy.role) ||
+    (approval.confirmationMode === 'auto-confirmed under full access' && !approval.admission)
+  )
     throw new Error('必须通过宿主人工审批 / Host human approval required')
   return update(store, input.expectedRevision, `${input.kind}-approve`, input.id, approval, (s) => {
     if (input.kind === 'mrb') {

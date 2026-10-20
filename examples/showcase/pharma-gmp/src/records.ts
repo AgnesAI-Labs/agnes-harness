@@ -92,7 +92,11 @@ function write(
   }, identity.approval?.admission)
 }
 export function change(store: OwnedStore | undefined, input: Change, who: Identity) {
-  if (!who.approval || ['agent', 'system'].includes(who.approval.answeredBy.role))
+  if (
+    !who.approval ||
+    ['agent', 'system'].includes(who.approval.answeredBy.role) ||
+    (who.approval.confirmationMode === 'auto-confirmed under full access' && !who.approval.admission)
+  )
     throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
   return write(
     store,
@@ -212,7 +216,11 @@ export function change(store: OwnedStore | undefined, input: Change, who: Identi
   )
 }
 export function release(store: OwnedStore | undefined, input: Release, who: Identity) {
-  if (!who.approval || ['agent', 'system'].includes(who.approval.answeredBy.role))
+  if (
+    !who.approval ||
+    ['agent', 'system'].includes(who.approval.answeredBy.role) ||
+    (who.approval.confirmationMode === 'auto-confirmed under full access' && !who.approval.admission)
+  )
     throw new Error('Human Host approval proof required / 需要宿主人工批准凭证')
   if (input.meaning !== SIGNATURE_MEANING)
     throw new Error('Exact signature meaning required / 签名含义不匹配')

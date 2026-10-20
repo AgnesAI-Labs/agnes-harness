@@ -59,6 +59,7 @@ export async function sign<T extends { expectedRevision: number }>(
   if (result.code === 'full-access' && !ctx.decisions.admit)
     throw new Error('Host signature admission unavailable')
   const admission = await ctx.decisions.admit?.(handle)
+  if (result.code === 'full-access' && !admission) throw new Error('Host signature admission unavailable')
   await admission?.verify()
   return {
     ...(admission ? { admission } : {}),
