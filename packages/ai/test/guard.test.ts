@@ -148,7 +148,7 @@ describe('normalizeError', () => {
       normalizeError({ type: 'error', reason: 'error', code: 'ABORTED', message: '', retryable: false })
         .reason,
     ).toBe('aborted')
-    expect(RETRYABLE.RATE_LIMIT).toBe(true)
+    expect(RETRYABLE.AUTH).toBe(false)
   })
 
   // TRANSPORT is the one code the table does not decide: whether a transport failure may be repeated
@@ -160,6 +160,38 @@ describe('normalizeError', () => {
           .retryable,
       ).toBe(retryable)
   })
+
+  // RATE_LIMIT and TIMEOUT are asked again by default, but an adapter that has already asked as often as
+  // it will says so, and its caller must not ask a second time over: that doubled the wait and the load.
+  it.each(['RATE_LIMIT', 'TIMEOUT'] as const)(
+    'leaves the adapter’s own verdict on %s alone, both ways',
+    (code) => {
+      for (const retryable of [true, false])
+        expect(
+          normalizeError({ type: 'error', reason: 'error', code, message: '', retryable }).retryable,
+        ).toBe(retryable)
+      // A wait is kept only on a failure that may be retried.
+      const spent = normalizeError({
+        type: 'error',
+        reason: 'error',
+        code,
+        message: '',
+        retryable: false,
+        retryAfterMs: 1000,
+      })
+      expect(spent.retryable).toBe(false)
+      expect(spent.retryAfterMs).toBeUndefined()
+    },
+  )
+
+  it.each(['AUTH', 'QUOTA', 'NO_MODEL', 'FORMAT', 'OVERFLOW', 'CONTRACT_MISMATCH'] as const)(
+    'still clamps the permanent failure %s to not retryable',
+    (code) => {
+      expect(
+        normalizeError({ type: 'error', reason: 'error', code, message: '', retryable: true }).retryable,
+      ).toBe(false)
+    },
+  )
 
   it('keeps the wait, the request id and the response on a failure that may be retried', () => {
     const e = normalizeError({
