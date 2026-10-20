@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import { applicationIdentity, homeNavigation } from '@agnes/web-client'
 import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -13,6 +14,7 @@ afterEach(() => {
   document.body.replaceChildren()
   history.replaceState(null, '', '/')
   clearResources()
+  applicationIdentity.set(undefined)
   vi.restoreAllMocks()
 })
 
@@ -165,6 +167,62 @@ it.each(['adopt', 'stale', 'readonly', 'denied', 'cancel'] as const)(
       } else expect(assign).toHaveBeenCalledWith('/')
       expect(api.prepareAgent).not.toHaveBeenCalled()
       expect(api.startAgent).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)
+
+it.each(['missing', 'installed', 'adopted', 'unresolved'] as const)(
+  'shows the generic card action for %s state and reacts to adoption',
+  async (state) => {
+    const entry = {
+      id: 'test/plain-app',
+      version: '1.0.0',
+      contributions: [],
+      source: { type: 'file', ref: 'file:./plain' },
+      integrity: 'sha256-' + 'a'.repeat(64),
+      license: 'MIT',
+      compatibility: 'supported',
+      sourceId: 'test',
+      retrievedAt: '2026-10-20T00:00:00Z',
+      application: { id: 'plain', brand: { title: { en: 'Plain application' } } },
+    } as PackageCatalogDescriptor
+    const data = {
+      api: {},
+      installed:
+        state === 'missing' ? [] : [{ ...entry, trusted: true, desired: 'enabled', actual: 'running' }],
+      refreshInstalled() {},
+    } as unknown as BusinessAgentsData
+    const application = {
+      revision: 1,
+      status: state === 'unresolved' ? 'unresolved' : 'active',
+      selection: { packageId: entry.id },
+      effective: entry.application,
+      assets: {},
+      candidates: [],
+    } as const
+    if (state === 'adopted' || state === 'unresolved') applicationIdentity.set(application as never)
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          <PushStack rootTitle="Applications" route={searchParamRoute('view')}>
+            <ApplicationCard entry={entry} data={data} />
+          </PushStack>,
+        ),
+      )
+      const primary = () => host.querySelector<HTMLButtonElement>('[data-application] footer button')
+      expect(primary()?.textContent).toBe(
+        state === 'missing' ? 'Install and adopt' : state === 'adopted' ? 'Open' : 'Adopt',
+      )
+      expect(host.querySelectorAll('[data-application] .agh-btn--primary')).toHaveLength(1)
+      await act(async () => applicationIdentity.set({ ...application, status: 'active' } as never))
+      expect(primary()?.textContent).toBe('Open')
+      homeNavigation.open('agents')
+      await act(async () => primary()?.click())
+      expect(homeNavigation.getSnapshot()).toBeUndefined()
     } finally {
       await act(async () => root.unmount())
     }

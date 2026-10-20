@@ -101,6 +101,9 @@ it('keeps setup inline, advances through the work folder and remembers completio
   h.click('first-run-next')
   await vi.waitFor(() => expect(wrap()?.style.display).not.toBe('none'))
   expect(guide()?.getAttribute('data-step')).toBe('ready')
+  expect(h.host.querySelector('[data-testid="first-run-examples"]')?.textContent).toBe(
+    'Explore demos in Agents',
+  )
   h.click('first-run-examples')
   await vi.waitFor(() => expect(homeNavigation.getSnapshot()?.id).toBe('agents'))
   await vi.waitFor(() => expect(wrap()?.style.display).toBe('none'))
@@ -116,3 +119,24 @@ it.each([0, 6, 8])('suppresses a dismissed doctor notice for seven days (%s days
   const h = await setup(String(Date.now() - days * 24 * 60 * 60 * 1000))
   expect(h.banner.querySelector('[data-testid="doctor-notice"]') !== null).toBe(days >= 7)
 })
+
+it.each(['en', 'zh-CN'])(
+  'explains the remaining Demo model choice on the finish step (%s)',
+  async (locale) => {
+    document.documentElement.lang = locale
+    const h = await setup()
+    h.click('first-run-demo')
+    h.click('first-run-next')
+    h.click('first-run-workspace-pick')
+    await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-workspace"]')).not.toBeNull())
+    h.click('first-run-next')
+    const text = h.host.querySelector('[data-testid="first-run-demo-next"]')?.textContent
+    expect(text).toContain(locale === 'en' ? 'choose Demo' : '选择 Demo')
+    expect(h.host.querySelector('[data-testid="first-run-examples"]')?.textContent).toBe(
+      locale === 'en' ? 'Explore demos in Agents' : '想看产品演示？打开智能体',
+    )
+    h.click('first-run-examples')
+    await vi.waitFor(() => expect(homeNavigation.getSnapshot()?.id).toBe('agents'))
+    document.documentElement.lang = ''
+  },
+)

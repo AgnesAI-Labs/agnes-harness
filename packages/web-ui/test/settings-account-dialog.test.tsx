@@ -12,7 +12,8 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
   const inline = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
   const translatedLabels: Record<string, string> = {
-    'accounts.providerLabel': 'Provider · translated',
+    'accounts.providerLabel': '服务商 · translated',
+    'accounts.connectNext': '填写密钥或登录，然后选择模型并保存。',
     'accounts.baseUrlLabel': '服务地址',
     'accounts.apiKeyLabel': 'API Key · translated',
     'accounts.keyPlaceholderNew': '粘贴 API Key · translated',
@@ -73,7 +74,8 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     ])
     expect(host.querySelectorAll('.agh-btn--primary')).toHaveLength(1)
     const labelOf = (id: string) => host.querySelector(`label[for="${id}"]`)?.textContent
-    expect(labelOf('config-provider')).toContain('Provider · translated')
+    expect(labelOf('config-provider')).toContain('服务商 · translated')
+    expect(host.textContent).toContain('填写密钥或登录，然后选择模型并保存。')
     expect(labelOf('config-base-url')).toContain('服务地址')
     expect(labelOf('config-api-key')).toContain('API Key · translated')
     expect(labelOf('config-thinking')).toContain('思考等级 · translated')

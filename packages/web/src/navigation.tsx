@@ -54,6 +54,28 @@ export function workspaceLabel(workspace: WorkspaceEntry): string {
   )
 }
 
+/** Keep both the action and the distinguishing suffix visible in a narrow navigation row. */
+export function NavigationLabel({ text }: { text: string }) {
+  const points = Array.from(text)
+  if (points.length <= 12) return <>{text}</>
+  const object = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+[A-Z0-9-]*\b/u.exec(text)
+  return (
+    <span className="navigation-label" title={text} data-identifier={object ? 'true' : undefined}>
+      <span className="navigation-label-start">
+        {object ? text.slice(0, object.index) : points.slice(0, -10).join('')}
+      </span>
+      {object ? (
+        <>
+          <span className="navigation-label-object">{object[0]}</span>
+          <span className="navigation-label-after">{text.slice(object.index + object[0].length)}</span>
+        </>
+      ) : (
+        <span className="navigation-label-end">{points.slice(-10).join('')}</span>
+      )}
+    </span>
+  )
+}
+
 const DAY_MS = 86_400_000
 
 /** The picker's recent workspaces: one click selects; a folder that is gone can only be removed. */
@@ -384,7 +406,9 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
             onClick={() => options.open(row.sessionId)}
           >
             {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
-            <span className="session-title">{title}</span>
+            <span className="session-title">
+              <NavigationLabel text={title} />
+            </span>
           </Button>
           {options.action && (
             <SessionMenu
@@ -459,7 +483,9 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                 >
                   <FolderIcon className="icon icon-folder icon-folder-closed" />
                   <FolderIcon open className="icon icon-folder icon-folder-open" />
-                  <span className="workspace-name">{name}</span>
+                  <span className="workspace-name">
+                    <NavigationLabel text={name} />
+                  </span>
                 </Button>
                 {workspace && (
                   <WorkspaceMenu

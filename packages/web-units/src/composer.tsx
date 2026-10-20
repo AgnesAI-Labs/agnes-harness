@@ -471,11 +471,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <div className="composer-controls">
                 {addButton}
                 {slots?.permission}
-                <dependencies.PermissionPicker
-                  state={view.permission}
-                  onError={onError}
-                  onSelect={onPermissionSelect}
-                />
+                {!view.readOnly && (
+                  <dependencies.PermissionPicker
+                    state={view.permission}
+                    onError={onError}
+                    onSelect={onPermissionSelect}
+                  />
+                )}
                 <p id="composer-hint" data-kind={view.hint.kind}>
                   {view.hint.text}
                 </p>
@@ -497,16 +499,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>
                   <dependencies.UsagePanel usage={view.usage} connected={view.connected} t={t} />
                 </section>
-                <div className="model-field">
-                  <dependencies.ModelPicker
-                    state={pickerState(view)}
-                    onError={onError}
-                    onSelect={onModelSelect}
-                    {...(onAuxiliaryRead ? { onAuxiliaryRead } : {})}
-                    {...(onAuxiliarySelect ? { onAuxiliarySelect } : {})}
-                    {...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {})}
-                  />
-                </div>
+                {!view.readOnly && (
+                  <div className="model-field">
+                    <dependencies.ModelPicker
+                      state={pickerState(view)}
+                      onError={onError}
+                      onSelect={onModelSelect}
+                      {...(onAuxiliaryRead ? { onAuxiliaryRead } : {})}
+                      {...(onAuxiliarySelect ? { onAuxiliarySelect } : {})}
+                      {...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {})}
+                    />
+                  </div>
+                )}
                 {view.controls ? (
                   // Pause and stop are a pair of same-size icon buttons; paused, this one turns into continue.
                   <Tooltip

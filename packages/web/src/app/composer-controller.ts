@@ -222,6 +222,7 @@ export function createComposerController(
       },
       connected: context.connected,
       configured: context.configured,
+      readOnly: !!context.readOnly,
       hasSession: context.current !== undefined || context.draftingNew || context.readOnly !== undefined,
       hint: context.sessionPending
         ? { kind: 'state', text: context.t('composer.action.preparing') }
@@ -448,7 +449,7 @@ export function createComposerController(
         ...(context.selectedWorkspace?.path
           ? { root: context.selectedWorkspace.path, path: shortenHome(context.selectedWorkspace.path) }
           : {}),
-        visible: !context.current || context.draftingNew,
+        visible: !context.readOnly && (!context.current || context.draftingNew),
         disabled: !available || context.submissions.sending || context.sessionPending,
         label:
           context.selectedWorkspace?.name ??

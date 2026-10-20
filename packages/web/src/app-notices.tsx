@@ -4,6 +4,7 @@ import {
   Banner,
   Button,
   createExternalStore,
+  Disclosure,
   FeedbackHost,
   installFeedbackSink,
   Notifications,
@@ -38,6 +39,7 @@ type ReadOnlyNoticeView = {
   kind?: 'preview'
   message: Readonly<{ en: string; 'zh-CN': string }>
   actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
+  sessionId?: string
   /** Present when the record was too large to read whole: the rows that are shown, and why the rest are not. */
   scan?: Readonly<{ fromSeq: number; throughSeq: number }>
 }
@@ -217,6 +219,11 @@ export function ReadOnlyNotice() {
       ))}
     >
       <strong>{t('app.readOnly.label')}</strong> {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
+      {view.sessionId && (
+        <Disclosure summary={t('app.readOnly.details')}>
+          <code>{view.sessionId}</code>
+        </Disclosure>
+      )}
       {view.scan && (
         <>
           {' '}

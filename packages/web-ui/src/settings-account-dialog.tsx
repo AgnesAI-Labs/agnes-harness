@@ -104,6 +104,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               </fieldset>
               <div id="config-provider-choices" />
               <div className="account-connection-step">
+                <p className="field-hint">{t('accounts.connectNext')}</p>
                 {/* The provider being connected; 换一个服务商 goes back to the tiles. */}
                 <div className="account-provider-card" id="config-provider-card">
                   <span className="agnes-settings-logo" id="config-provider-logo" aria-hidden="true" />

@@ -53,6 +53,7 @@ export function createReadOnlyController(
     | 'renderControls'
     | 'run'
     | 'sessionBinding'
+    | 'sessionTitles'
     | 't'
     | 'windowAtStart'
   >,
@@ -75,8 +76,13 @@ export function createReadOnlyController(
     const request = new AbortController()
     reading = request
     try {
-      const view = await context.client.session.view(id, { maxNodes }, { signal: request.signal })
+      const [view, metadata] = await Promise.all([
+        context.client.session.view(id, { maxNodes }, { signal: request.signal }),
+        context.client.session.list({ q: { prefix: id }, limit: 100 }).catch(() => undefined),
+      ])
       if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return false
+      const title = metadata?.items.find((row) => row.sessionId === id)?.title
+      if (title) context.sessionTitles.set(id, title)
       scan = view.history.scan
       context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
       // Recorded views still need the session-scoped presentation seats, even though
@@ -110,7 +116,12 @@ export function createReadOnlyController(
         id: 'new',
         onSelect: () => context.run(() => commands.beginNewDraft()),
       })
-    appReadOnly.show({ message: notice.localized, actions, ...(scan ? { scan } : {}) })
+    // Protocol notices retain identifiers for other clients; this surface puts them in details.
+    const localized = {
+      en: notice.localized.en.replace(`Session: ${id}.`, '').trim(),
+      'zh-CN': notice.localized['zh-CN'].replace(`会话：${id}。`, '').trim(),
+    }
+    appReadOnly.show({ message: localized, sessionId: id, actions, ...(scan ? { scan } : {}) })
   }
 
   /**

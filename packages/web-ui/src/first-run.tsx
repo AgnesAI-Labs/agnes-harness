@@ -141,6 +141,7 @@ export function FirstRunGuide({
         {step === 2 && (
           <>
             <p>{t('firstRun.prompt')}</p>
+            {demo && <p data-testid="first-run-demo-next">{t('firstRun.demoNext')}</p>}
             <Button appearance="link" data-testid="first-run-examples" onClick={onExamples} disabled={busy}>
               {t('firstRun.review')}
             </Button>

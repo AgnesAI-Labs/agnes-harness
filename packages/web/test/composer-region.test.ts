@@ -99,6 +99,11 @@ describe('rendered composer region', () => {
     expect(usage?.nextElementSibling?.classList.contains('model-field')).toBe(true)
     expect(usage?.querySelector('.usage-ring')).toBeTruthy()
     expect(document.querySelector('.usage-percent')?.textContent).toBe('2%')
+    handle?.render({ ...readyView, readOnly: true, workspace: { ...readyView.workspace, visible: false } })
+    expect(document.querySelector('.model-field')).toBeNull()
+    expect(document.querySelector('#composer-permission')).toBeNull()
+    expect(document.querySelector('#composer-workspace')?.hasAttribute('hidden')).toBe(true)
+    handle?.render(readyView)
 
     if (!prompt) throw new Error('missing composer input')
     // The draft is React state: write through the native setter so the input event reads as typing.

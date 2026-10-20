@@ -10,14 +10,14 @@ import { zhT } from './locale.js'
 describe('model thinking options', () => {
   it('offers the provider default plus the levels the model declares', () => {
     expect(modelThinkingOptions({ low: 'low', high: 'high' }, zhT)).toEqual([
-      { label: '自动（Provider 默认）', value: '' },
+      { label: '自动（服务商默认）', value: '' },
       { label: '低 · low', value: 'low' },
       { label: '高 · high', value: 'high' },
     ])
   })
 
   it('offers only the provider default when the model declares no levels', () => {
-    expect(modelThinkingOptions(undefined, zhT)).toEqual([{ label: '自动（Provider 默认）', value: '' }])
+    expect(modelThinkingOptions(undefined, zhT)).toEqual([{ label: '自动（服务商默认）', value: '' }])
   })
 })
 

@@ -250,6 +250,10 @@ it('lists where each task runs, filters by target, and links a session target', 
     '/?session=s1',
   )
   expect(host.querySelector('[data-testid="schedules-target-text"]')?.textContent).toBe('New session · app')
+  expect(host.querySelector('[data-testid="schedules-view-results"]')?.getAttribute('href')).toBe(
+    '/?session=s1',
+  )
+  expect(host.querySelectorAll('[data-testid="schedules-edit"]')).toHaveLength(2)
   expect(host.querySelector('[data-testid="schedules-row"]')?.textContent).toContain('Weekly Tue, Thu 14:30')
   await click('schedules-scope-new-session', host)
   expect(
@@ -332,9 +336,7 @@ it('opens a saved task with its values and archives it after confirmation', asyn
   })
   const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
-  )
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="schedules-edit"]')?.click())
   expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-kind-weekly"]')?.checked).toBe(
     true,
   )
@@ -495,9 +497,7 @@ it('keeps the saved loop, ordered bundles and model when only the title changes 
     }),
   )
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
-  )
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="schedules-edit"]')?.click())
   expect(document.querySelector('[data-testid="schedules-mode-saved"]')?.textContent).toContain(
     'saved, not available now',
   )
@@ -592,6 +592,7 @@ it('keeps run and approval states current while the page is open, and rests whil
     // «Run now» polls quickly until the run shows, even before the list says it is running.
     await click('schedules-actions')
     await click('schedules-run-now')
+    expect(document.querySelector('[data-testid="schedules-run-requested"] button')).toBeNull()
     const afterRun = list.mock.calls.length
     await act(async () => vi.advanceTimersByTimeAsync(SCHEDULE_ACTIVE_REFRESH_MS))
     expect(list).toHaveBeenCalledTimes(afterRun + 1)

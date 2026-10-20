@@ -24,6 +24,7 @@ import {
 import {
   Banner,
   Button,
+  Disclosure,
   Field,
   Icon,
   IconButton,
@@ -68,6 +69,7 @@ function AgentList({
   )
   const cards = applicationAgents(declared)
   const needle = query.trim().toLocaleLowerCase()
+  const showGeneral = !needle || `${t('general')} ${t('generalHelp')}`.toLocaleLowerCase().includes(needle)
   const products = new Map<string, PackageCatalogDescriptor | PackageInstalledDescriptor>()
   for (const agent of data.agents) products.set(agent.entry.id, agent.entry)
   for (const installed of data.installed) products.set(installed.id, installed)
@@ -132,7 +134,11 @@ function AgentList({
     linkHandled.current = linkedPage
     starter.start(linked)
   }, [linkedPage, linked, navigation, starter])
-  const initialLoop = loops.data && (defaultLoop(loops.data.defaults) ?? loops.data.loops[0])
+  const initialLoop =
+    loops.data &&
+    (loops.data.loops.find((item) => item.id === 'agnes.default') ??
+      defaultLoop(loops.data.defaults) ??
+      loops.data.loops[0])
   const chosenLoop = loops.data?.loops.find((item) =>
     loop === undefined
       ? item.id === initialLoop?.id && item.version === initialLoop.version
@@ -161,7 +167,7 @@ function AgentList({
         ))}
       </div>
       <div className="agent-gallery" data-testid="agents-gallery">
-        {(!needle || `${t('general')} ${t('generalHelp')}`.toLocaleLowerCase().includes(needle)) && (
+        {showGeneral && (
           <article className="agent-card" data-testid="general-agent">
             <header>
               <span className="agent-tile" data-tint={0} aria-hidden="true">
@@ -172,25 +178,28 @@ function AgentList({
               </div>
             </header>
             <p>{t('generalHelp')}</p>
-            <Loadable
-              loading={loops.loading}
-              error={loops.error}
-              hasData={!!loops.data}
-              onRetry={loops.reload}
-            >
-              <Field label={t('runningMode')}>
-                <Select
-                  value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
-                  aria-label={t('runningMode')}
-                  onChange={setLoop}
-                  options={(loops.data?.loops ?? []).map((item) => ({
-                    value: `${item.id}@${item.version}`,
-                    label: choiceName(item, t),
-                  }))}
-                />
-              </Field>
-            </Loadable>
+            <Disclosure summary={t('otherModes')}>
+              <Loadable
+                loading={loops.loading}
+                error={loops.error}
+                hasData={!!loops.data}
+                onRetry={loops.reload}
+              >
+                <Field label={t('runningMode')}>
+                  <Select
+                    value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
+                    aria-label={t('runningMode')}
+                    onChange={setLoop}
+                    options={(loops.data?.loops ?? []).map((item) => ({
+                      value: `${item.id}@${item.version}`,
+                      label: choiceName(item, t),
+                    }))}
+                  />
+                </Field>
+              </Loadable>
+            </Disclosure>
             <Button
+              appearance="primary"
               disabled={!chosenLoop}
               disabledReason={t('noRunningMode')}
               // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
@@ -199,7 +208,7 @@ function AgentList({
                 chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
               }
             >
-              {t('start')}
+              {t('generalStart')}
             </Button>
           </article>
         )}
@@ -239,7 +248,7 @@ function AgentList({
           )
         })}
       </div>
-      {!shown.length && !shownApplications.length && (
+      {!showGeneral && !shown.length && !shownApplications.length && (
         <p>
           {t('emptyTitle')} <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
         </p>

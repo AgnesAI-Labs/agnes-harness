@@ -26,12 +26,17 @@ it('keeps an opening preview neutral and reserves the warning and recovery actio
     expect(host.querySelector('button')).toBeNull()
     await act(async () =>
       appReadOnly.show({
+        sessionId: '11111111-2222-4333-8444-555555555555',
         message: { en: 'History failed verification', 'zh-CN': '历史校验失败' },
         actions: [{ id: 'new', onSelect: recover }],
       }),
     )
     expect(host.querySelector('[data-tone="warning"]')?.textContent).toContain('History failed verification')
-    await act(async () => host.querySelector('button')?.click())
+    expect(host.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
+    expect(host.querySelector('.agh-disclosure code')?.textContent).toBe(
+      '11111111-2222-4333-8444-555555555555',
+    )
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-read-only-action="new"]')?.click())
     expect(recover).toHaveBeenCalledOnce()
     await act(async () => appReadOnly.clear())
     expect(host.textContent).toBe('')

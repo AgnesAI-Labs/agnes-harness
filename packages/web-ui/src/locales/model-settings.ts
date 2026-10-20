@@ -138,7 +138,7 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.thinking.high': '高',
     'modelSettings.thinking.xhigh': '更高',
     'modelSettings.thinking.max': '最高',
-    'modelSettings.thinking.auto': '自动（Provider 默认）',
+    'modelSettings.thinking.auto': '自动（服务商默认）',
     'modelSettings.thinkingLabel': '思考强度',
     'modelSettings.savedThinkingUnavailable': '已保存的档位当前不可用：{value}',
     'modelSettings.detailAria': '所选模型的会话设置',

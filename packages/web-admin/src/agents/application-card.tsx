@@ -4,7 +4,7 @@ import {
   type PackageInstalledDescriptor,
   resolvePluginMetadata,
 } from '@agnes/protocol'
-import { resolveApplicationBrand } from '@agnes/web-client'
+import { applicationIdentity, homeNavigation, resolveApplicationBrand } from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -16,7 +16,7 @@ import {
   usePushStack,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { InstallReview, shortSource } from '../admin/plugins/install-review.js'
 import { ApplicationPreviewSummary } from '../settings/application-preview.js'
 import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
@@ -73,6 +73,8 @@ export function ApplicationCard({
   const tr = (en: string, zh: string) => (locale === 'zh-CN' ? zh : en)
   const brand = resolveApplicationBrand(entry.application, locale)
   const metadata = resolvePluginMetadata(entry.metadata, locale)
+  const application = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const adopted = application?.status === 'active' && application.selection?.packageId === entry.id
   const installed = data.installed.find((row) => row.id === entry.id)
   const nav = usePushStack()
   const pageId = `application-${encodeURIComponent(entry.id)}`
@@ -194,7 +196,8 @@ export function ApplicationCard({
             ))}
           </ul>
         </Disclosure>
-        {entry.application?.workbench &&
+        {adopted &&
+          entry.application?.workbench &&
           ready &&
           onStartAgent &&
           entry.application.defaultAgent &&
@@ -207,11 +210,15 @@ export function ApplicationCard({
         <footer>
           <Button
             appearance="primary"
-            disabled={!!denied || !data.api}
+            disabled={adopted ? false : !!denied || !data.api}
             {...(denied ? { disabledReason: t(denied) } : {})}
-            onClick={begin}
+            onClick={adopted ? () => homeNavigation.close() : begin}
           >
-            {tr('Install and adopt', '安装并采用')}
+            {adopted
+              ? tr('Open', '打开')
+              : installed
+                ? tr('Adopt', '采用')
+                : tr('Install and adopt', '安装并采用')}
           </Button>
         </footer>
       </article>
