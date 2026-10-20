@@ -132,9 +132,17 @@ export type VerificationOptions = {
   onProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
 }
 
+/** Where a verified-head checkpoint says a full verification reached. */
+export type CheckpointPrefix = { throughSeq: Seq; headDigest: string; legacyThroughSeq: Seq }
+
 /**
  * `yieldPage`, when given, is awaited between two pages; it is never called after the last one.
  * `onPage` receives each page's events in order, only after that page has been verified.
+ *
+ * With a `checkpoint`, the rows up to its `throughSeq` are handed to `onPage` without being hashed, and
+ * the chain is verified onward from the head it names. Contiguity is still checked row by row there: a
+ * missing row fails exactly as in a full verify. The prefix is only trusted until the caller's
+ * background verification has hashed it again.
  */
 export async function verifyLedger(
   storage: StorageAdapter,
@@ -143,8 +151,12 @@ export async function verifyLedger(
   yieldPage?: () => void | Promise<void>,
   onPage?: (events: Event[]) => void,
   options: VerificationOptions = {},
+  checkpoint?: CheckpointPrefix,
 ): Promise<IntegrityState> {
   let state = { ...EMPTY_STATE }
+  // The last seq handled. It runs ahead of `state` while the checkpointed prefix is folded unhashed.
+  let at = 0
+  const foldUntil = checkpoint?.throughSeq ?? 0
   const idle = options.idleTimeoutMs ?? 30_000
   const hard = options.hardTimeoutMs ?? 600_000
   if (![idle, hard].every((ms) => Number.isSafeInteger(ms) && ms > 0))
@@ -158,9 +170,11 @@ export async function verifyLedger(
   const progress = () => options.onProgress?.({ verifiedSeq: state.lastSeq, lastSeq })
   check()
   progress()
-  while (state.lastSeq < lastSeq) {
-    if (state.lastSeq > 0) await yieldPage?.()
+  while (at < lastSeq) {
+    if (at > 0) await yieldPage?.()
     check()
+    const folding = at < foldUntil
+    const toSeq = folding ? foldUntil : lastSeq
     const pageStarted = performance.now()
     let timer: ReturnType<typeof setTimeout> | undefined
     let abort: (() => void) | undefined
@@ -176,8 +190,8 @@ export async function verifyLedger(
     try {
       rows = await Promise.race([
         storage.scanIntegrity(key, {
-          fromSeq: state.lastSeq + 1,
-          toSeq: lastSeq,
+          fromSeq: at + 1,
+          toSeq,
           limit: INTEGRITY_PAGE_SIZE,
         }),
         stopped,
@@ -187,10 +201,24 @@ export async function verifyLedger(
       if (abort) options.signal?.removeEventListener('abort', abort)
     }
     check()
-    if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
-    if (rows.length > INTEGRITY_PAGE_SIZE || (rows.at(-1)?.event.seq ?? 0) > lastSeq)
+    if (rows.length === 0) fail('ledger ended before advertised sequence', at + 1)
+    if (rows.length > INTEGRITY_PAGE_SIZE || (rows.at(-1)?.event.seq ?? 0) > toSeq)
       fail('ledger exceeds advertised page or sequence')
-    state = verifyIntegrityRows(rows, state)
+    if (folding && checkpoint) {
+      for (const row of rows) {
+        if (row.event.seq !== at + 1) fail('ledger sequence is not contiguous', row.event.seq)
+        at = row.event.seq
+      }
+      if (at === foldUntil)
+        state = {
+          lastSeq: foldUntil,
+          legacyThroughSeq: checkpoint.legacyThroughSeq,
+          headDigest: checkpoint.headDigest,
+        }
+    } else {
+      state = verifyIntegrityRows(rows, state)
+      at = state.lastSeq
+    }
     if (performance.now() - pageStarted >= idle)
       throw new CoreError('E_STORAGE_FAULT', 'ledger verification idle timeout')
     check()
@@ -198,7 +226,7 @@ export async function verifyLedger(
     check()
     progress()
   }
-  if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
+  if (at !== lastSeq || state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', at)
   return state
 }
 

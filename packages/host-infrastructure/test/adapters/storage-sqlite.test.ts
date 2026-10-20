@@ -587,17 +587,27 @@ describe('storage-sqlite', () => {
       attacker.close()
 
       s = createSqliteStorage({ file, clock: () => now + 5000, tablesDir: join(dir, 'tables') })
-      await expect(
+      const reopen = (writerRunId: string) =>
         SessionLogImpl.open({
           storage: s,
           key: format === 'earlier' ? 'plain' : 'protected',
-          writerRunId: 'reader',
+          writerRunId,
           ttlMs: 1000,
           ids: defaultIds(),
           clock: () => now + 5000,
           timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-        }),
-      ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+        })
+      if (format === 'earlier') {
+        // A ledger from before the checkpoint existed has none, so the open verifies every row itself.
+        await expect(reopen('reader')).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      } else {
+        // The writer's close left a verified-head checkpoint, so this open starts from it; the background
+        // verification then finds the row, seals the session and drops the checkpoint.
+        const reader = await reopen('reader')
+        await expect(reader.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+        await reader.close()
+        await expect(reopen('second-reader')).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      }
     },
   )
 
@@ -753,7 +763,12 @@ describe('storage-sqlite', () => {
     await log.close()
     const db = new DatabaseSync(s.file)
     db.prepare("UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'middle' AND seq = 2").run()
-    await expect(SessionLogImpl.open({ ...options, writerRunId: 'reader' })).rejects.toMatchObject({
+    // The writer's close left a verified-head checkpoint, so this open starts from it; the background
+    // verification then finds the damaged row, seals the session and drops the checkpoint.
+    const reader = await SessionLogImpl.open({ ...options, writerRunId: 'reader' })
+    await expect(reader.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await reader.close()
+    await expect(SessionLogImpl.open({ ...options, writerRunId: 'second-reader' })).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
     })
     expect(db.prepare("SELECT COUNT(*) AS n FROM events WHERE session_key = 'middle'").get()).toMatchObject({
