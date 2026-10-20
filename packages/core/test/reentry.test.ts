@@ -577,22 +577,19 @@ describe('re-entry and slots', () => {
       ['shell', 2],
     ])
     const shell = calls.find((call) => call.name === 'shell')
-    expect((open[0]?.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId).toBe(
+    const [asked] = open
+    if (!asked) throw new Error('missing the pending decision')
+    expect((asked.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId).toBe(
       shell?.toolUseId,
     )
     expect(parkedBatch.find((call) => call.name === 'middle')?.status).toBe('completed')
     expect(parkedBatch.find((call) => call.name === 'shell')?.status).toBe('awaiting_approval')
     expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
     expect(ran).toEqual([])
-    await answerToolDecision(
-      h.session,
-      gates.indexOf(open[0] as (typeof gates)[number]) + 1,
-      'allowed-once',
-      {
-        ...actor,
-        id: 'approver',
-      },
-    )
+    await answerToolDecision(h.session, gates.indexOf(asked) + 1, 'allowed-once', {
+      ...actor,
+      id: 'approver',
+    })
     expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
