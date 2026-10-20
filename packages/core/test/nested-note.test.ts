@@ -243,15 +243,28 @@ describe('[nested result] notes', () => {
     ])
   })
 
-  it('crash recovery after a nested write writes the outer-failure note', async () => {
+  /**
+   * `outer` invokes `write`, which completes, then hangs -- in its own code, or inside a second
+   * nested call that never returns. The process dies there and a new one reopens the ledger.
+   */
+  async function crashedAfterNestedWrite(hangIn: 'outer' | 'nested') {
     let wrote!: () => void
     const written = new Promise<void>((resolve) => {
       wrote = resolve
     })
+    const hang: ToolDef = {
+      ...write(() => {
+        wrote()
+        return new Promise(() => undefined)
+      }),
+      name: 'hang',
+    }
     const registry = registryOf(
       write(),
+      hang,
       outer(async (ctx) => {
         await ctx.tools.invoke('write', {})
+        if (hangIn === 'nested') await ctx.tools.invoke('hang', {})
         wrote()
         await new Promise(() => undefined)
       }),
@@ -263,7 +276,7 @@ describe('[nested result] notes', () => {
     void original.session.runToolsPhase()
     await written
     const prefix = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq, limit: 10_000 })
-    const reopened = await openSession({
+    return openSession({
       provider: fakeProvider([]),
       registry,
       storage: MemoryStorage.fromEvents('k', prefix, {
@@ -271,12 +284,40 @@ describe('[nested result] notes', () => {
       }),
       writerRunId: 'reopen',
     })
+  }
+
+  it.each([
+    ['resumed', 'outer', 'continue', 'TOOL_OUTCOME_UNKNOWN'],
+    ['resumed with a nested child still pending', 'nested', 'continue', 'CHILD_INTERRUPTED'],
+    ['closed', 'outer', 'close', 'TOOL_OUTCOME_UNKNOWN'],
+  ] as const)(
+    'crash recovery after a nested write writes the outer-failure note when %s',
+    async (_case, hangIn, mode, code) => {
+      const reopened = await crashedAfterNestedWrite(hangIn)
+      try {
+        await reopened.session.resume({ mode })
+        const outerResult = (await reopened.log.scan({ type: 'tool/result', limit: 20 })).find(
+          (row) => (row.data as { code?: string }).code === code,
+        )
+        expect(outerResult).toBeDefined()
+        expect(await ledgerNotes(reopened.log)).toEqual([
+          [
+            `${PREFIX}outer ended with ${code} after these nested calls had results: write ok. Check the current state before running them again.`,
+          ],
+        ])
+      } finally {
+        await reopened.session.close()
+      }
+    },
+  )
+
+  it('closing a session with a nested call still running writes the unknown note', async () => {
+    const reopened = await crashedAfterNestedWrite('nested')
     try {
-      await reopened.session.resume()
-      expect(await ledgerNotes(reopened.log)).toEqual([
-        [
-          `${PREFIX}outer ended with TOOL_OUTCOME_UNKNOWN after these nested calls had results: write ok. Check the current state before running them again.`,
-        ],
+      await reopened.session.resume({ mode: 'close' })
+      const notes = await ledgerNotes(reopened.log)
+      expect(notes).toContainEqual([
+        `${PREFIX}The outcome of the nested call hang inside outer is unknown; check the current state before running it again.`,
       ])
     } finally {
       await reopened.session.close()
