@@ -194,6 +194,30 @@ export async function failureNotes(
 }
 
 /**
+ * `failureNotes` for a tool effect recovery closes, read from the call's `tool/call` row. A nested
+ * root is an approval continuation; one blocked on its decision is refused, and no running code
+ * reads that.
+ */
+export function recoveryNotes(
+  s: SessionImpl,
+  root: { effectId: string; tool?: { name: string } | undefined },
+  callData: unknown,
+  code: string,
+): Promise<EventInput[]> {
+  return failureNotes(
+    s,
+    {
+      name: root.tool?.name ?? 'a tool',
+      effectId: root.effectId,
+      nested: isNestedCall(callData),
+      unconsumed: code === 'DECISION_CONTINUATION_BLOCKED',
+      parentEffectId: (callData as { parentEffectId?: string } | undefined)?.parentEffectId,
+    },
+    code,
+  )
+}
+
+/**
  * `failureNotes` for a call being executed: a synthesized failure no running code reads. A nested call is one at depth > 0; an approval
  * continuation has no `parentEffectId` of its own, so it reads the one the batch runner passed.
  */

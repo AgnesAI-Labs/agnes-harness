@@ -1,5 +1,5 @@
 import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
-import { CoreError } from '@agnes/core-common/types'
+import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionSnapshot } from '@agnes/extension-api'
@@ -34,6 +34,45 @@ export async function approvalContinuation(
     typeof toolUseId === 'string'
     ? { requestId, toolUseId }
     : undefined
+}
+
+/**
+ * The rows a continuation the user rejected, or whose approval expired, opens with: the call's
+ * `APPROVAL_REJECTED` result and, for a nested call, its `[nested result]` note. No running code waits
+ * on a nested call's refusal any more; the note is how the model hears of it.
+ */
+async function refusedRows(
+  s: SessionImpl,
+  original: { name: string; depth?: number; parentEffectId?: string },
+  toolUseId: string,
+  callSeq: Seq,
+  rejected: boolean,
+): Promise<EventInput[]> {
+  const result = s.ev(
+    'tool/result',
+    {
+      toolUseId,
+      content: [
+        {
+          type: 'text',
+          text: rejected
+            ? 'the user rejected this action; do not retry the same call without asking'
+            : 'approval unavailable: deadline',
+        },
+      ],
+      isError: true,
+      code: 'APPROVAL_REJECTED',
+      enforcement: s.d.runtime.enforcement(),
+      authz: { decisionId: 'n/a' },
+    },
+    { sourceEventSeqs: [callSeq] },
+  )
+  if (!isNestedCall(original)) return [result]
+  const parent = await nestedParentName(s, original.parentEffectId)
+  return [
+    result,
+    nestedOutcomeNote(s, { name: original.name, parent, outcome: rejected ? 'rejected' : 'deadline' }),
+  ]
 }
 
 /** Opens the single-call continuation. Multi-call batch policy remains explicitly pending. */
@@ -220,35 +259,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     ]
     if (!allowed)
       events.push(
-        s.ev(
-          'tool/result',
-          {
-            toolUseId: toolUseId,
-            content: [
-              {
-                type: 'text',
-                text:
-                  snapshot.result?.reason === 'answered'
-                    ? 'the user rejected this action; do not retry the same call without asking'
-                    : 'approval unavailable: deadline',
-              },
-            ],
-            isError: true,
-            code: 'APPROVAL_REJECTED',
-            enforcement: s.d.runtime.enforcement(),
-            authz: { decisionId: 'n/a' },
-          },
-          { sourceEventSeqs: [call.seq] },
-        ),
-      )
-    // No running code waits on a nested call's refusal any more; the note is how the model hears of it.
-    if (!allowed && isNestedCall(original))
-      events.push(
-        nestedOutcomeNote(s, {
-          name: original.name,
-          parent: await nestedParentName(s, original.parentEffectId),
-          outcome: snapshot.result?.reason === 'answered' ? 'rejected' : 'deadline',
-        }),
+        ...(await refusedRows(s, original, toolUseId, call.seq, snapshot.result?.reason === 'answered')),
       )
     // A refusal is final: the answered decision ends with it, after the continuation that read it.
     if (snapshot.result?.reason === 'answered' && !allowed)

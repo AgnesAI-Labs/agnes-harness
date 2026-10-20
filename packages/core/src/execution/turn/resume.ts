@@ -13,7 +13,7 @@ import {
 import { closeTurn } from '../../step/control.js'
 import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
-import { failureNotes } from './nested-note.js'
+import { failureNotes, recoveryNotes } from './nested-note.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
 export type ResumeMode = 'continue' | 'close'
@@ -342,28 +342,11 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         ),
       )
       const nestedCallIds = new Set(nestedCalls.map((call) => call.toolUseId))
-      const callRow = (
-        await s.d.log.scan({
-          fromSeq: root.argsSeq ?? root.intentSeq,
-          toSeq: root.argsSeq ?? root.intentSeq,
-          lane: s.lane,
-        })
-      )[0]
+      const callSeq = root.argsSeq ?? root.intentSeq
+      const callRow = (await s.d.log.scan({ fromSeq: callSeq, toSeq: callSeq, lane: s.lane }))[0]
       // The `[nested result]` note a synthesized close of this call commits with. Read before the
-      // result lands, while the effect is still pending and bounds the scan. A nested root is an
-      // approval continuation; one blocked on its decision is refused, and no running code reads that.
-      const notesFor = (code: string) =>
-        failureNotes(
-          s,
-          {
-            name: root.tool?.name ?? 'a tool',
-            effectId: root.effectId,
-            nested: isNestedCall(callRow?.data),
-            unconsumed: code === 'DECISION_CONTINUATION_BLOCKED',
-            parentEffectId: (callRow?.data as { parentEffectId?: string } | undefined)?.parentEffectId,
-          },
-          code,
-        )
+      // result lands, while the effect is still pending and bounds the scan.
+      const notesFor = (code: string) => recoveryNotes(s, root, callRow?.data, code)
       // A parent whose own children are still unsettled: the process died somewhere inside the
       // call it made, and there is no way to tell from here whether the parent's own work finished
       // around them. Every descendant is closed as `unknown` and the parent is handed the list, so
@@ -503,10 +486,8 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         actions.push({ effectId: root.effectId, action: actionForDecision(decision, root.replay) })
         continue
       }
-      const code =
-        recoveryRefusal === 'decision-continuation-blocked'
-          ? 'DECISION_CONTINUATION_BLOCKED'
-          : 'TOOL_OUTCOME_UNKNOWN'
+      const blocked = recoveryRefusal === 'decision-continuation-blocked'
+      const code = blocked ? 'DECISION_CONTINUATION_BLOCKED' : 'TOOL_OUTCOME_UNKNOWN'
       const notes = await notesFor(code)
       await s.transition(
         [

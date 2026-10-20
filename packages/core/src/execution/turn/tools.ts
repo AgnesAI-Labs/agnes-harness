@@ -1454,10 +1454,7 @@ export async function approveAndExecute(
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
           notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
         })
-        return {
-          result,
-          ...(await parkOutcome(s, nestedParks, updateCall)),
-        }
+        return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
       }
       result = errorResult(
         observation.error instanceof Error ? observation.error.message : String(observation.error),
@@ -1708,11 +1705,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
           parks.push(
             s.ev(
               'x/core/tool-policy-binding-refused',
-              {
-                toolUseId: c.toolUseId,
-                name: c.name,
-                reason: bindingProblem,
-              },
+              { toolUseId: c.toolUseId, name: c.name, reason: bindingProblem },
               { ignorable: true, sourceEventSeqs: [c.argsSeq] },
             ),
           )
