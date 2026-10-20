@@ -134,6 +134,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ui.models.value,
       ui.thinking?.value,
       ui.contextWindow?.value,
+      isCompatible() ? compatible.models().map((model) => model.id) : [],
     ])
   let editingId: string | undefined
   let removingId: string | undefined

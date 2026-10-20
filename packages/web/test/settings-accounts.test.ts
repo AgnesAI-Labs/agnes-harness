@@ -493,6 +493,42 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   h.controller.close()
 })
 
+it('edits a saved OpenAI-compatible account: its models are part of the draft', async () => {
+  const compatible = {
+    id: 'openai-compatible',
+    label: 'OpenAI-compatible endpoint',
+    api: 'openai-completions',
+    baseUrl: 'https://endpoint.invalid/v1',
+  }
+  const model = (id: string) => ({ id, name: id, contextWindow: 128000, maxTokens: 8192 })
+  const relay: ConfigAccount = {
+    ...account('relay'),
+    providerId: 'openai-compatible',
+    baseUrl: 'http://relay.example/v1',
+    model: 'a',
+    models: [model('a'), model('b')],
+  }
+  const h = await setup([relay], [OPENAI, compatible])
+  const discardShown = () => !h.doc.getElementById('config-account-discard')?.hasAttribute('hidden')
+  await h.click('button[aria-label="编辑 relay"]')
+  const panel = h.doc.getElementById('config-compatible-models')
+  await vi.waitFor(() => expect(panel?.querySelector('button[aria-label="Remove b"]')).not.toBeNull())
+  // Dropping a model is a change worth confirming before it is thrown away.
+  ;(
+    h.doc.querySelector(
+      '#config-compatible-models button[aria-label="Remove b"]',
+    ) as unknown as HTMLButtonElement
+  ).click()
+  ;(h.doc.getElementById('account-dialog-close') as unknown as HTMLButtonElement).click()
+  expect(discardShown()).toBe(true)
+  ;(h.doc.getElementById('config-account-keep') as unknown as HTMLButtonElement).click()
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
+  expect(saved[0]).toMatchObject({ models: [model('a')] })
+  h.controller.close()
+})
+
 it('updates the empty state after saving the first account and removing the last one', async () => {
   const h = await setup([])
   expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
