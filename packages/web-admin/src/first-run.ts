@@ -84,8 +84,22 @@ export function createFirstRunController(options: {
       /* Setup remains skippable when storage is unavailable. */
     }
   }
+  // A hidden modal keeps (and freezes) its content, so the borrowed account form is handed back to
+  // Settings here when the guide closes; otherwise Settings' own account tiles would open nothing.
+  let release: (() => void) | undefined
+  const attachAccount = (host: HTMLElement) => {
+    release = options.attachAccount(host)
+    return () => {
+      release?.()
+      release = undefined
+    }
+  }
   const render = () => {
     if (disposed) return
+    if (!visible) {
+      release?.()
+      release = undefined
+    }
     const t = text()
     renderRegion(
       options.host,
@@ -96,7 +110,7 @@ export function createFirstRunController(options: {
         accountReady,
         demo,
         workspace,
-        attachAccount: options.attachAccount,
+        attachAccount,
         busy,
         error:
           error === undefined

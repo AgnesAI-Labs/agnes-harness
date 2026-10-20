@@ -28,7 +28,7 @@ it.each([
   expect(needsFirstRun(value)).toBe(expected)
 })
 
-async function setup(dismissed?: string) {
+async function setup(dismissed?: string, detach = () => {}) {
   const host = document.createElement('div'),
     banner = document.createElement('div')
   document.body.append(host, banner)
@@ -58,7 +58,7 @@ async function setup(dismissed?: string) {
         saved.set(key, value)
       },
     },
-    attachAccount: () => () => {},
+    attachAccount: () => detach,
     connectAccount: connect,
     selectDemo,
     chooseWorkspace: async () => 'project',
@@ -116,6 +116,15 @@ it('keeps setup inline, advances through the work folder and remembers completio
   expect(h.start).toHaveBeenCalled()
   expect(h.saved.get(`agh-first-run:${h.homeId}:local-dev`)).toBe('done')
   expect(await h.controller.initialize(snapshot, false)).toBe(false)
+})
+it('hands the account form back to Settings when setup is skipped mid-connection', async () => {
+  const detach = vi.fn()
+  const h = await setup(undefined, detach)
+  h.click('first-run-add')
+  await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-connection"]')).not.toBeNull())
+  h.click('first-run-skip')
+  // A hidden guide that kept the form would leave Settings' account tiles opening nothing.
+  await vi.waitFor(() => expect(detach).toHaveBeenCalled())
 })
 it.each([0, 6, 8])('suppresses a dismissed doctor notice for seven days (%s days)', async (days) => {
   const h = await setup(String(Date.now() - days * 24 * 60 * 60 * 1000))
