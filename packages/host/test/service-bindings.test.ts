@@ -985,6 +985,74 @@ describe('owner ledger', () => {
       events: [expect.objectContaining({ seq: 1 })],
     })
   })
+
+  it('asks the source for the requested types only and pages the same whether or not it filters', async () => {
+    const extra = `x/${owner}/extra`
+    const rows = [
+      ledgerRow(2),
+      ledgerRow(3, { type: 'tool/result' }),
+      ledgerRow(4, { type: extra }),
+      ledgerRow(5, { type: `x/${owner}/other` }),
+      ledgerRow(6, { lane: 'side' }),
+      ledgerRow(7, { origin: `ext:${otherOwner}` }),
+      ledgerRow(8, { type: extra, trust: 'trusted' }),
+      ledgerRow(9),
+      ledgerRow(10, { type: 'assistant/message' }),
+      ledgerRow(11, { type: extra }),
+      ledgerRow(12),
+    ]
+    const asked: (readonly string[] | undefined)[] = []
+    const served = { plain: 0, filtered: 0 }
+    const port = (filter: boolean) =>
+      createOwnerLedger({
+        kind: 'sample',
+        owner,
+        eventNames: ['note', 'extra', 'other'],
+        watermark: 12,
+        source: {
+          boundarySeq: 1,
+          lane: 'main',
+          alive() {},
+          async *scan(fromSeq: number, toSeq: number, _lane: string, types?: readonly string[]) {
+            if (filter) asked.push(types)
+            const page = rows.filter(
+              (row) =>
+                row.seq >= fromSeq && row.seq <= toSeq && (!filter || !types || types.includes(row.type)),
+            )
+            served[filter ? 'filtered' : 'plain'] += page.length
+            yield page
+          },
+          async append() {
+            return 13
+          },
+        },
+      })
+    const pages = async (ledger: ReturnType<typeof port>, names: string[], limit: number) => {
+      const out: Awaited<ReturnType<typeof ledger.scanOwn>>[] = []
+      let cursor: string | undefined
+      do {
+        const page = await ledger.scanOwn({ names, limit, ...(cursor === undefined ? {} : { cursor }) })
+        out.push(page)
+        cursor = page.nextCursor
+      } while (cursor)
+      return out
+    }
+    const plain = port(false),
+      filtered = port(true)
+    for (const limit of [1, 2, 5]) {
+      const expected = await pages(plain, ['note', 'extra'], limit)
+      expect(expected.flatMap((page) => page.events.map((event) => event.seq))).toEqual([2, 4, 9, 11, 12])
+      expect(await pages(filtered, ['extra', 'note'], limit)).toEqual(expected)
+      // A cursor issued on either side names the same position on the other.
+      for (const { nextCursor } of expected.slice(0, -1)) {
+        const query = { names: ['note', 'extra'], limit, ...(nextCursor ? { cursor: nextCursor } : {}) }
+        expect(await filtered.scanOwn(query)).toEqual(await plain.scanOwn(query))
+      }
+    }
+    expect(asked.length).toBeGreaterThan(0)
+    for (const types of asked) expect([...(types ?? [])].sort()).toEqual([extra, full].sort())
+    expect(served.filtered).toBeLessThan(served.plain)
+  })
 })
 
 function extensionActor(id: string): Actor {

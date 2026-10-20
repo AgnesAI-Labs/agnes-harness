@@ -223,7 +223,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
   }
   const recover = async (signal: AbortSignal) => {
     // Producer callbacks have their own serialization; do not notify while holding this serial lock.
-    const value = await state()
+    const through = requireSeq(ports.lastSeq)
+    const value = await state(through)
     for (const record of Object.values(value.actions)) {
       if (record.receipt.status === 'received') {
         if (record.invocation) await queue(record, signal)
@@ -231,7 +232,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       }
       if (terminal(record)) await delivery(record, signal)
     }
-    return state()
+    // Every repair appends, so this fold is still current while the session stays at `through`.
+    return { through, value }
   }
   const storeSurface = async (name: string, record: UiSurfaceRecord, value: UiState, reason?: string) => {
     // Projection byte budget includes current snapshots and a bounded receipt page.
@@ -518,7 +520,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
     read: async (input, signal) => {
       if (!validateAgainst(UiReadParams, input).ok) throw rpcError('INVALID_PARAMS')
       boundSession(input.sessionId)
-      await serial(() => recover(signal))
+      const recovered = await serial(() => recover(signal))
       await cap.queue.notify(signal)
       return serial(async () => {
         signal.throwIfAborted()
@@ -560,7 +562,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           offset = cursor.o
           expires = cursor.e
         }
-        const value = await state(watermark),
+        const value =
+            recovered.through === latest && watermark === latest ? recovered.value : await state(watermark),
           all = Object.values(value.surfaces)
             .filter((item) =>
               input.surfaceId ? item.surface.id === input.surfaceId : item.status === 'open',
