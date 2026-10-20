@@ -96,6 +96,8 @@ export type PlannedCall = {
 export type CallOutcome = {
   result: ToolResult
   park?: EventInput
+  /** The nested call whose question `park` is, when it is not this call's own. */
+  parkedToolUseId?: string
   deferred?: { jobId: string; toolUseId: string }
 }
 
@@ -326,7 +328,7 @@ export async function refuse(
   return result
 }
 
-/** A nested call that parked, and the question it left open. */
+/** A nested call that parked, at any depth below this one, and the question it left open. */
 type NestedPark = { event: EventInput; toolUseId: string }
 
 const APPROVAL_PENDING_TEXT =
@@ -341,12 +343,27 @@ const APPROVAL_PENDING_TEXT =
 async function parkOutcome(
   s: SessionImpl,
   nestedParks: readonly NestedPark[],
-): Promise<{ park?: EventInput }> {
+): Promise<{ park?: EventInput; parkedToolUseId?: string }> {
   const [kept, ...later] = nestedParks
   if (!kept) return {}
+  // Only the call that asked is closed, and never one that already has its result.
+  const callSeqs = later.flatMap((p) => s.state.toolCalls.get(p.toolUseId)?.seq ?? [])
+  const answered = new Set(
+    callSeqs.length
+      ? (
+          await scanAll((q) => s.d.log.scan(q), {
+            fromSeq: Math.min(...callSeqs) + 1,
+            toSeq: s.lastSeq,
+            type: 'tool/result',
+            lane: s.lane,
+          })
+        ).map((row) => (row.data as { toolUseId: string }).toolUseId)
+      : [],
+  )
   const awaiting = (p: NestedPark) => {
     const op = s.op()
     return (
+      !answered.has(p.toolUseId) &&
       op?.phase.kind === 'tools' &&
       op.phase.batch.calls.some((c) => c.toolUseId === p.toolUseId && c.status === 'awaiting_approval')
     )
@@ -383,7 +400,7 @@ async function parkOutcome(
       (cur) => closing.reduce((op, p) => updateCall(op, p.toolUseId, { status: 'completed' }), cur),
     )
   }
-  return { park: kept.event }
+  return { park: kept.event, parkedToolUseId: kept.toolUseId }
 }
 
 export async function approveAndExecute(

@@ -454,21 +454,22 @@ describe('re-entry and slots', () => {
       seams,
       preset: { ...presetDefaults(), disclosure: 'code' },
     })
-    // The batch as the turn parks on it: the op is released once the turn has ended.
+    // The batch as the first turn parks on it: the op is released once the turn has ended, and the
+    // run may reopen the kept call's continuation, which parks again on the same question.
     let parkedBatch: Array<{ toolUseId: string; status: string }> = []
     const endTurn = h.session.endTurn.bind(h.session)
     vi.spyOn(h.session, 'endTurn').mockImplementation((reason, extra) => {
       const op = h.session.op()
-      if (reason === 'parked' && op?.phase.kind === 'tools') parkedBatch = op.phase.batch.calls
+      if (reason === 'parked' && op?.phase.kind === 'tools' && !parkedBatch.length)
+        parkedBatch = op.phase.batch.calls
       return endTurn(reason, extra)
     })
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'parked',
     )
-    const open = (await h.session.decisions.list()).filter(
-      (d) => d.request.owner === 'core/tool-permission' && !d.result && !d.invalidation && !d.consumption,
-    )
+    const gates = (await h.session.decisions.list()).filter((d) => d.request.owner === 'core/tool-permission')
+    const open = gates.filter((d) => !d.result && !d.invalidation && !d.consumption)
     expect(open).toHaveLength(1)
     const [pending] = open
     if (!pending) throw new Error('missing the pending decision')
@@ -497,7 +498,115 @@ describe('re-entry and slots', () => {
     expect(parkedBatch.find((call) => call.toolUseId === kept)?.status).toBe('awaiting_approval')
     expect(parkedBatch.find((call) => call.toolUseId === other.toolUseId)?.status).toBe('completed')
     expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
-    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(h.session, gates.indexOf(pending) + 1, 'allowed-once', {
+      ...actor,
+      id: 'approver',
+    })
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(ran).toHaveLength(1)
+  })
+
+  it('two concurrent depth-2 approvals close the depth-2 call that asked, not its parent', async () => {
+    const r = new ToolRegistry()
+    const ran: string[] = []
+    r.add(
+      shellTool(async (args) => {
+        ran.push((args as { command: string }).command)
+        return { content: [{ type: 'text' as const, text: 'ran' }] }
+      }),
+      { source: 's', trust: 'builtin' },
+    )
+    r.add(
+      {
+        name: 'middle',
+        description: 'x',
+        parameters: Type.Object({}),
+        meta: { ...meta, isReadOnly: true, isConcurrencySafe: true, replay: 'safe' },
+        execute: async (
+          args: unknown,
+          ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } },
+        ) => {
+          await ctx.tools.invoke('shell', { command: (args as { command: string }).command })
+          return { content: [{ type: 'text', text: 'middle complete' }] }
+        },
+      } as never,
+      { source: 's', trust: 'builtin' },
+    )
+    r.add(
+      {
+        name: 'run_code',
+        description: 'x',
+        parameters: Type.Object({}),
+        meta: { ...meta, isReadOnly: true, isConcurrencySafe: true, replay: 'safe' },
+        execute: async (
+          _args: unknown,
+          ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } },
+        ) => {
+          const codes = await Promise.all(
+            ['a', 'b'].map((command) =>
+              ctx.tools.invoke('middle', { command }).then(
+                () => 'ok',
+                (error) => String((error as { code?: string }).code),
+              ),
+            ),
+          )
+          return { content: [{ type: 'text' as const, text: codes.join(',') }] }
+        },
+      } as never,
+      { source: 's', trust: 'builtin' },
+    )
+    const seams = fakeSeams({
+      approval: { ask: async () => ({ ticket: 'depth-2-ticket', expiresAt: '2999-01-01T00:00:00.000Z' }) },
+    })
+    const h = await openSession({
+      provider: fakeProvider([toolTurn('run_code', {}), textTurn('done')]),
+      registry: r,
+      seams,
+      preset: { ...presetDefaults(), disclosure: 'code' },
+    })
+    // The batch as the first turn parks on it (see the test above).
+    let parkedBatch: Array<{ toolUseId: string; status: string }> = []
+    const endTurn = h.session.endTurn.bind(h.session)
+    vi.spyOn(h.session, 'endTurn').mockImplementation((reason, extra) => {
+      const op = h.session.op()
+      if (reason === 'parked' && op?.phase.kind === 'tools' && !parkedBatch.length)
+        parkedBatch = op.phase.batch.calls
+      return endTurn(reason, extra)
+    })
+    await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'parked',
+    )
+    const gates = (await h.session.decisions.list()).filter((d) => d.request.owner === 'core/tool-permission')
+    const open = gates.filter((d) => !d.result && !d.invalidation && !d.consumption)
+    expect(open).toHaveLength(1)
+    const [pending] = open
+    if (!pending) throw new Error('missing the pending decision')
+    const kept = (pending.request.spec.subject as { call: { toolUseId: string } }).call.toolUseId
+    const shellCalls = (await h.log.scan({ type: 'tool/call', limit: 20 }))
+      .map((row) => row.data as { toolUseId: string; name: string; depth?: number })
+      .filter((call) => call.name === 'shell')
+    expect(shellCalls.map((call) => call.depth)).toEqual([2, 2])
+    const other = shellCalls.find((call) => call.toolUseId !== kept)
+    if (!other) throw new Error('missing the second depth-2 call')
+    const results = (await h.log.scan({ type: 'tool/result', limit: 50 })).map(
+      (row) => row.data as { toolUseId: string; code?: string },
+    )
+    expect(results.filter((row) => row.toolUseId === other.toolUseId)).toEqual([
+      expect.objectContaining({ isError: true, code: 'APPROVAL_PENDING' }),
+    ])
+    const perCall = new Map<string, number>()
+    for (const row of results) perCall.set(row.toolUseId, (perCall.get(row.toolUseId) ?? 0) + 1)
+    expect([...perCall.values()].filter((count) => count > 1)).toEqual([])
+    expect(parkedBatch.find((call) => call.toolUseId === kept)?.status).toBe('awaiting_approval')
+    expect(parkedBatch.find((call) => call.toolUseId === other.toolUseId)?.status).toBe('completed')
+    expect(parkedBatch.filter((call) => call.status === 'awaiting_approval')).toHaveLength(1)
+    await answerToolDecision(h.session, gates.indexOf(pending) + 1, 'allowed-once', {
+      ...actor,
+      id: 'approver',
+    })
     expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )

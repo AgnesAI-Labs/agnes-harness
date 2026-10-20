@@ -171,6 +171,8 @@ export async function runPlannedTool(
   const { toolUseId } = call
   let result: ToolResult
   let park: EventInput | undefined
+  // The call the park's question belongs to: this one, or a nested call of its own that parked.
+  let parked = toolUseId
   try {
     const outcome = await s.runNestedTool(
       call.resolvedPolicy.isConcurrencySafe === true,
@@ -187,6 +189,7 @@ export async function runPlannedTool(
     )
     result = outcome.result
     park = outcome.park
+    parked = outcome.parkedToolUseId ?? toolUseId
   } catch (error) {
     if (!(error instanceof NestedToolSchedulingError)) throw error
     const cancelled = error.reason === 'aborted'
@@ -199,8 +202,10 @@ export async function runPlannedTool(
   }
   if (park) {
     await s.transition([], (cur) => {
-      // An uncertain call is already completed; reconciliation must never make it dispatchable.
-      if (cur?.phase.kind !== 'tools' || park?.type === 'x/core/unknown-outcome') return cur
+      // An uncertain call is already completed; reconciliation must never make it dispatchable. A
+      // call whose nested call parked has its own result, and the nested call is the one awaiting.
+      if (cur?.phase.kind !== 'tools' || park?.type === 'x/core/unknown-outcome' || parked !== toolUseId)
+        return cur
       return withPhase(cur, {
         ...cur.phase,
         batch: {
@@ -211,7 +216,7 @@ export async function runPlannedTool(
         },
       })
     })
-    o.onPark?.(park, toolUseId)
+    o.onPark?.(park, parked)
     throw Object.assign(new Error('PARKED'), { code: 'PARKED' })
   }
   return result
