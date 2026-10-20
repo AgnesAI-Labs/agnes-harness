@@ -174,21 +174,35 @@ export function createCommandController(
   }
 
   async function refreshSessionControls(session: Session): Promise<void> {
+    await (await readSessionControls(session))()
+  }
+
+  /** Reads the controls now; the returned step applies them unless superseded in the meantime. */
+  async function readSessionControls(session: Session): Promise<() => Promise<void>> {
     const epoch = context.sessionBinding.capture()
     const request = ++controlsRefresh
+    const current = () => context.sessionBinding.isCurrent(epoch, session) && request === controlsRefresh
     const history = context.controlsHistory.get(session.id) ?? { through: 0, facts: [] }
     let through = history.through
     const facts = [...history.facts]
     let value: SessionControlStateResult
     do {
       value = await session.controls({ afterSeq: through })
-      if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
+      if (!current()) return async () => {}
       facts.push(...(value.facts ?? []))
       through = value.factsThrough ?? through
     } while (value.factsMore)
-    value = { ...value, facts }
+    const state = { ...value, facts }
     context.controlsHistory.set(session.id, { through, facts })
-    if (!context.sessionBinding.isCurrent(epoch, session) || request !== controlsRefresh) return
+    return () => applySessionControls(session, state, current)
+  }
+
+  async function applySessionControls(
+    session: Session,
+    value: SessionControlStateResult,
+    current: () => boolean,
+  ): Promise<void> {
+    if (!current()) return
     context.sessionControls = { sessionId: session.id, value }
     for (const fact of value.facts ?? []) {
       if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
@@ -272,6 +286,7 @@ export function createCommandController(
     handleComposerCancel,
     handleQueuedAction,
     refreshSessionControls,
+    readSessionControls,
     handleChildControl,
     handlePauseResume,
     handleEditQueued,

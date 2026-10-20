@@ -183,6 +183,7 @@ export interface AppSessionContext {
   recoveryDisabled: typeof recoveryDisabled
   references: typeof references
   refreshSessionControls: typeof refreshSessionControls
+  readSessionControls: typeof readSessionControls
   render: typeof render
   renderControls: typeof renderControls
   renderNewSessionControls(): void
@@ -476,6 +477,9 @@ const appSessionContext: AppSessionContext = {
   },
   get refreshSessionControls() {
     return refreshSessionControls
+  },
+  get readSessionControls() {
+    return readSessionControls
   },
   get render() {
     return render
@@ -2007,6 +2011,9 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | '
 
 function refreshSessionControls(session: Session): Promise<void> {
   return commandController.refreshSessionControls(session)
+}
+function readSessionControls(session: Session): Promise<() => Promise<void>> {
+  return commandController.readSessionControls(session)
 }
 function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
   return commandController.handleChildControl(id, action, text)
