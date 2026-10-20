@@ -176,7 +176,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.goal': 'Create, edit, pause, resume, complete or clear a persistent goal',
     'commands.plan': 'Turn plan mode on or off, or set the planning instruction',
     'commands.preset':
-      'Switch permissions: read-only denies changes/commands; workspace files editable, commands need approval and platform isolation; full skips routine approvals, with protected-path, plan/memory and installation exceptions (docs/guide/security.md#full-access-exceptions)',
+      'Switch permissions: read-only denies changes/commands; workspace files editable, commands need approval and platform isolation; full automatically allows permissions and business confirmations; content questions and hard refusals remain (docs/guide/security.md#full-access-exceptions)',
     'commands.theme': 'Switch this TUI to light, dark or mono theme',
     'commands.model':
       'List available models and select one, or switch a slot directly (optional thinking tier)',
@@ -326,7 +326,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'commands.goal': '创建、编辑、暂停、恢复、完成或清除持久目标',
     'commands.plan': '开启或关闭计划模式，或设置计划说明',
     'commands.preset':
-      '切换权限：只读拒绝修改与命令；工作区可改文件，命令需审批且隔离依平台；完全访问免普通逐次审批，保留保护目录、计划/记忆和安装确认（docs/guide/security.zh-CN.md#full-access-exceptions）',
+      '切换权限：只读拒绝修改与命令；工作区可改文件，命令需审批且隔离依平台；完全访问自动允许权限裁决与业务确认；内容问题与硬拒绝保持有效（docs/guide/security.zh-CN.md#full-access-exceptions）',
     'commands.theme': '切换当前 TUI 的明亮、深色或无色主题',
     'commands.model': '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',
     'commands.yolo': '本会话跳过普通审批；保留预设、隔离和领域确认',

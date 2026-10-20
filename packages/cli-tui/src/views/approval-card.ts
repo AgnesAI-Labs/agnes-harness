@@ -48,7 +48,10 @@ export class ApprovalCard implements Component {
     if (n.state === 'decided') {
       this.phase = 'decided'
       const by = n.decision?.byLabel ? ` by ${n.decision.byLabel}` : ''
-      this.note = `${n.decision?.verdict ?? 'decided'}${by}`
+      this.note =
+        n.purpose === 'business.confirm' && n.decision?.reason === 'full-access'
+          ? `${t('approval.fullAccessBusiness', o.locale ?? 'en')}${n.decision.byLabel ? ` · ${n.decision.byLabel}` : ''}`
+          : `${n.decision?.verdict ?? 'decided'}${by}`
     } else if (n.state === 'expired') {
       this.phase = 'failed'
       this.note = n.decision?.reason ?? n.decision?.verdict ?? 'expired'

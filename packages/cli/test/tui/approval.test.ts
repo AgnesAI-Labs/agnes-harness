@@ -98,6 +98,34 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
     expect(out).toHaveLength(1)
     expect(out[0]).toContain('rejected')
     expect(out[0]).not.toContain('[1]')
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const automatic = new ApprovalCard(
+        node({
+          state: 'decided',
+          purpose: 'business.confirm',
+          summary: 'QA',
+          decision: {
+            verdict: 'allowed-once',
+            via: 'full-access',
+            reason: 'full-access',
+            byLabel: 'human.qa',
+          },
+        }),
+        {
+          ansi: A,
+          locale,
+          onDecide: async () => {
+            throw new Error('Automatic records cannot ask')
+          },
+        },
+      )
+      const lines = automatic.render(140)
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain(locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认')
+      expect(lines[0]).toContain('human.qa')
+      expect(automatic.handleInput('1')).toBe(false)
+    }
+
     // decided nodes are inert: no ticket to decide against, and the phase is already terminal
     expect(card.handleInput('1')).toBe(false)
   })
