@@ -394,3 +394,60 @@ describe('shared parent objects', () => {
     await k.close()
   })
 })
+
+it('perf3-review: a delegated fork admitted before a recheck cannot publish child rows after the parent seals', async () => {
+  const storage = new MemoryStorage({ clock: () => CLOCK })
+  let entered!: () => void, release!: () => void
+  const reached = new Promise<void>((resolve) => {
+      entered = resolve
+    }),
+    gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+  const wrapped: StorageAdapter = Object.create(storage)
+  wrapped.createChild = async (parent, boundary, child) => {
+    entered()
+    await gate
+    return storage.createChild(parent, boundary, child)
+  }
+  const provider = script(),
+    { k, parent } = await parentReady(wrapped, provider)
+  try {
+    const pending = createChild(parent, 'fork', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'must not execute',
+    }).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    )
+    await reached
+    const before = provider.calls
+    const call = (await storage.scan('parent', { type: 'tool/call', limit: 1 }))[0] as Event
+    tamper(storage, 'parent', call.seq, (event) => ({
+      ...event,
+      data: { ...(event.data as object), args: { path: 'tampered-under-live-parent' } },
+    }))
+    await parent.verifyHistory().catch(() => undefined)
+    await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(parent.d.log.faulted).toBe(true)
+    release()
+    const result = await pending
+    if ('value' in result) await result.value.run('must not execute')
+    const children = await requireChildControl(storage).listByParent('parent')
+    const ownRows = await Promise.all(
+      children.map((row) => storage.scan(row.childKey, { fromSeq: row.boundarySeq + 1, limit: 100 })),
+    )
+    expect({
+      modelCallsAfterSeal: provider.calls - before,
+      childOwnRows: ownRows.flat().length,
+      childAdmitted: 'value' in result,
+      modelSawChangedBytes: JSON.stringify(provider.requests.slice(before)).includes(
+        'tampered-under-live-parent',
+      ),
+    }).toEqual({ modelCallsAfterSeal: 0, childOwnRows: 0, childAdmitted: false, modelSawChangedBytes: false })
+  } finally {
+    release()
+    await k.close()
+  }
+})
