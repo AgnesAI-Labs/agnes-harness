@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Context } from '@agnes/cordis'
 import type { UITimeline, UiSurfaceRecord } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
@@ -219,14 +220,17 @@ const diff = <T extends { id: string }>(before: readonly T[], after: readonly T[
   ]
 }
 
+const filedUnder = (turns: readonly Turn[], seq: number) =>
+  turns.find((turn) => seq >= turn.startSeq && (turn.endSeq === undefined || seq <= turn.endSeq))?.id
+
 /** One session ledger. Each connect() is one daemon connection with its own projection baseline. */
-function ledger(id = 's') {
+function ledger(id = 's', pageSize = 100) {
   const head = { sessionId: id, generation: 1, upto: 1, opState: null, nodes: [], turns: [] } as UITimeline
   const results = new Map<string, Record<string, unknown>>()
   const surfaces: { open: boolean; record: UiSurfaceRecord }[] = []
   const connect = () => {
     let served: UITimeline | undefined
-    const bytes = { full: 0, patch: 0 }
+    const bytes = { full: 0, patch: 0, query: 0 }
     const send = <T>(kind: keyof typeof bytes, value: T): T => {
       bytes[kind] += JSON.stringify(value).length
       return structuredClone(value)
@@ -259,6 +263,35 @@ function ledger(id = 's') {
       readToolDetail: vi.fn(async (callSeq: number, resultSeq?: number) => ({
         result: { structured: results.get(`${head.generation}:${callSeq}:${resultSeq}`) },
       })),
+      // The daemon's present sources: results after the cut in result order, turn by call seq.
+      deliverables: vi.fn(async ({ afterSeq = 0 }: { afterSeq?: number; limit?: number } = {}) => {
+        const items = head.nodes
+          .flatMap((node) =>
+            node.kind === 'tool' && node.name === 'present' && node.resultSeq && node.resultSeq > afterSeq
+              ? [{ ...node, resultSeq: node.resultSeq }]
+              : [],
+          )
+          .sort((a, b) => a.resultSeq - b.resultSeq)
+          .map((node) => {
+            const structured = results.get(`${head.generation}:${node.seq}:${node.resultSeq}`)
+            const turnId = filedUnder(head.turns, node.seq)
+            return {
+              callSeq: node.seq,
+              resultSeq: node.resultSeq,
+              toolUseId: node.toolUseId,
+              ...(turnId ? { turnId } : {}),
+              ...(structured === undefined ? {} : { structured }),
+            }
+          })
+        const page = items.slice(0, pageSize)
+        const last = page.at(-1)
+        return send(
+          'query',
+          page.length < items.length && last
+            ? { sessionId: id, upto: last.resultSeq, items: page, nextAfterSeq: last.resultSeq }
+            : { sessionId: id, upto: head.upto, items: page },
+        )
+      }),
       uiRead: vi.fn(async ({ surfaceId }: { cursor?: string; surfaceId?: string } = {}) => ({
         surfaces: surfaces
           .filter((entry) => (surfaceId ? entry.record.surface.id === surfaceId : entry.open))
@@ -274,8 +307,8 @@ function ledger(id = 's') {
 }
 type Connection = ReturnType<ReturnType<typeof ledger>['connect']>
 
-function mount(...connections: [Connection, ...Connection[]]) {
-  const selected = new SessionService(new Context(), connections[0].id)
+function mountWith(apis: (() => Promise<unknown>) | undefined, connections: Connection[]) {
+  const selected = new SessionService(new Context(), connections[0]?.id)
   const lifecycle = new Map<string, () => void>()
   const client = {
     sessions: { get: (id: string) => connections.find((connection) => connection.id === id) },
@@ -283,9 +316,21 @@ function mount(...connections: [Connection, ...Connection[]]) {
       lifecycle.set(name, listener)
       return () => lifecycle.delete(name)
     },
+    ...(apis ? { apis } : {}),
   } as unknown as Client
   selected.setReadiness('ready')
   return { store: new DeliverablesStore(client, selected), selected, lifecycle }
+}
+function mount(...connections: [Connection, ...Connection[]]) {
+  return mountWith(undefined, connections)
+}
+/** A daemon whose apis.list announces session.deliverables beside the other session reads. */
+function offering(
+  connection: Connection,
+  methods = ['_agnes/v1/session.projectUI', '_agnes/v1/session.deliverables'],
+) {
+  const apis = vi.fn(async () => ({ families: [{ name: 'session', methods }] }))
+  return { apis, mounted: () => mountWith(apis, [connection]) }
 }
 const loaded = async (store: DeliverablesStore) => {
   await vi.waitFor(() => expect(store.getSnapshot().loading).toBe(false))
@@ -598,5 +643,320 @@ it('derives the same records from patches as from full projections across a sess
       artifact,
     },
   ])
+  store.dispose()
+})
+
+const unprojected = (connection: Connection) => {
+  expect(connection.projectUI).not.toHaveBeenCalled()
+  expect(connection.projectUIPatch).not.toHaveBeenCalled()
+  expect(connection.readToolDetail).not.toHaveBeenCalled()
+}
+const cardOf = (toolUseId: string) =>
+  `card-${createHash('sha256').update(toolUseId).digest('hex').slice(0, 48)}`
+
+it('reads present results through session.deliverables with the projection records and no projection', async () => {
+  const source = seeded()
+  const connection = source.connect()
+  const { apis, mounted } = offering(connection)
+  const { store } = mounted()
+  expect(await loaded(store)).toEqual(await fullRead(source))
+  source.commit((timeline) => {
+    timeline.turns.push(turnOf(2, 401))
+    timeline.nodes.push(said(402), present(403, 'second'))
+  })
+  await store.refresh()
+  source.commit((timeline) => {
+    timeline.nodes[timeline.nodes.length - 1] = present(403, 'second', 404)
+    timeline.turns[1] = turnOf(2, 401, 405)
+  })
+  source.results.set('1:403:404', { deliverables: [{ ...file, name: 'second.txt' }], laneId: 'side' })
+  await store.refresh()
+  expect(store.getSnapshot().files).toEqual(await fullRead(source))
+  expect(store.getSnapshot().files.map((entry) => [entry.name, entry.turnId])).toEqual([
+    ['report.txt', 'turn-1'],
+    ['second.txt', 'turn-2'],
+  ])
+  // A replaced result is the one shown; every refresh reads from the start.
+  source.commit((timeline) => {
+    timeline.nodes[timeline.nodes.length - 1] = present(403, 'second', 406)
+  })
+  source.results.set('1:403:406', { deliverables: [{ ...file, name: 'second-v2.txt' }] })
+  await store.refresh()
+  expect(store.getSnapshot()).toEqual({ sessionId: 's', files: await fullRead(source), loading: false })
+  unprojected(connection)
+  expect(connection.deliverables.mock.calls.map(([params]) => params)).toEqual(
+    Array.from({ length: 4 }, () => ({ afterSeq: 0 })),
+  )
+  expect(apis).toHaveBeenCalledTimes(1)
+  // Four complete reads together stay far below one projection of this ledger.
+  expect(connection.bytes.query).toBeLessThan(JSON.stringify(source.head).length / 10)
+  store.dispose()
+})
+
+it('derives the same records as the projection across a session history', async () => {
+  const source = ledger()
+  const connection = source.connect()
+  const { store } = offering(connection).mounted()
+  const steps: ((timeline: UITimeline) => void)[] = [
+    (timeline) => {
+      timeline.turns.push(turnOf(1, 1, 20))
+      timeline.nodes.push(said(2), present(3, 'plain', 4))
+      source.results.set('1:3:4', { deliverables: [file], owner: 'plugin' })
+    },
+    (timeline) => {
+      // The call's own surface enhances the same presentation.
+      timeline.turns.push(turnOf(2, 21, 30))
+      timeline.nodes.push(present(22, 'enhanced', 25))
+      source.results.set('1:22:25', { deliverables: [file], surfaceId: 'card-22' })
+      source.surfaces.push({ open: true, record: surfaceOf('card-22', 23, 'report.txt', { presentedAt: 7 }) })
+    },
+    (timeline) => {
+      // Older results kept their files only in a surface, read by id once closed.
+      timeline.turns.push(turnOf(3, 31, 40))
+      timeline.nodes.splice(1, 1)
+      timeline.nodes.push(present(32, 'closed', 33))
+      source.results.set('1:32:33', { surfaceId: 'closed-card' })
+      source.surfaces.push({ open: false, record: surfaceOf('closed-card', 32, 'closed.txt') })
+    },
+    (timeline) => {
+      // No structured data at all: the surface is found by the id derived from the call.
+      timeline.turns.push(turnOf(4, 41, 49))
+      timeline.nodes.push(present(42, 'bare', 44), present(45, 'null', 46))
+      source.results.set('1:45:46', null as never)
+      source.surfaces.push({ open: true, record: surfaceOf(cardOf('bare'), 43, 'bare.txt') })
+    },
+    (timeline) => {
+      // A parked call finished by a continuation of its turn.
+      timeline.turns.push(turnOf(5, 50, 52))
+      timeline.nodes.push(present(51, 'parked'))
+    },
+    (timeline) => {
+      timeline.turns[4] = turnOf(5, 50, 60)
+      timeline.nodes[timeline.nodes.length - 1] = present(51, 'parked', 56)
+      source.results.set('1:51:56', { deliverables: [{ ...file, name: 'parked.txt' }] })
+    },
+  ]
+  await loaded(store)
+  for (const step of steps) {
+    source.commit(step)
+    await store.refresh()
+    expect(store.getSnapshot().files).toEqual(await fullRead(source))
+  }
+  expect(store.getSnapshot().files.map((entry) => [entry.id, entry.turnId, entry.seq])).toEqual([
+    ['s:side:enhanced:0', 'turn-2', 22],
+    ['s:side:closed-card:0', 'turn-3', 32],
+    [`s:side:${cardOf('bare')}:0`, 'turn-4', 43],
+    ['s:main:parked:0', 'turn-5', 51],
+  ])
+  unprojected(connection)
+  store.dispose()
+})
+
+it('follows nextAfterSeq pages and starts from the beginning on every refresh', async () => {
+  const source = ledger('s', 1)
+  source.commit((timeline) => {
+    timeline.turns.push(turnOf(1, 1, 30))
+    timeline.nodes.push(present(2, 'a', 9), present(3, 'b', 5), present(4, 'c', 7))
+    for (const [key, name] of [
+      ['1:2:9', 'a.txt'],
+      ['1:3:5', 'b.txt'],
+      ['1:4:7', 'c.txt'],
+    ] as const)
+      source.results.set(key, { deliverables: [{ ...file, name }] })
+  })
+  const connection = source.connect()
+  const { store } = offering(connection).mounted()
+  expect(await loaded(store)).toEqual(await fullRead(source))
+  expect(store.getSnapshot().files.map((entry) => entry.name)).toEqual(['a.txt', 'b.txt', 'c.txt'])
+  await store.refresh()
+  expect(connection.deliverables.mock.calls.map(([params]) => params?.afterSeq)).toEqual([0, 5, 7, 0, 5, 7])
+  unprojected(connection)
+  store.dispose()
+})
+
+const refused = (reason: string) =>
+  Object.assign(new Error(reason), { code: -32602, data: { code: 'INVALID_PARAMS', reason } })
+
+it.each([
+  ['the daemon does not announce it', 'unannounced'],
+  ['apis.list fails', 'apis'],
+  ['the read fails', 'read'],
+  ['one source is larger than a page', 'too-large'],
+] as const)(
+  'falls back to the projection when %s and keeps it for the connection',
+  async (_name, failure) => {
+    const source = seeded()
+    const connection = source.connect()
+    const offer = offering(
+      connection,
+      failure === 'unannounced'
+        ? ['_agnes/v1/session.projectUI']
+        : ['_agnes/v1/session.projectUI', '_agnes/v1/session.deliverables'],
+    )
+    if (failure === 'apis') offer.apis.mockRejectedValueOnce(new Error('closed'))
+    if (failure === 'read') connection.deliverables.mockRejectedValueOnce(new Error('closed'))
+    if (failure === 'too-large')
+      connection.deliverables.mockRejectedValueOnce(refused('deliverable-too-large'))
+    const { store, lifecycle } = offer.mounted()
+    expect(await loaded(store)).toEqual(await fullRead(source))
+    expect(store.getSnapshot().error).toBeUndefined()
+    expect(connection.projectUI).toHaveBeenCalledTimes(1)
+    const tried = connection.deliverables.mock.calls.length
+    expect(tried).toBe(failure === 'read' || failure === 'too-large' ? 1 : 0)
+    source.commit((timeline) => {
+      timeline.nodes.push(present(310, 'next', 311))
+    })
+    source.results.set('1:310:311', { deliverables: [{ ...file, name: 'next.txt' }] })
+    await store.refresh()
+    expect(store.getSnapshot().files).toEqual(await fullRead(source))
+    expect(connection.projectUIPatch).toHaveBeenCalledTimes(1)
+    expect(connection.deliverables).toHaveBeenCalledTimes(tried)
+    // A new connection asks again.
+    lifecycle.get('reconnected')?.()
+    await store.refresh()
+    expect(offer.apis).toHaveBeenCalledTimes(2)
+    expect(store.getSnapshot().files).toEqual(await fullRead(source))
+    if (failure === 'unannounced') expect(connection.projectUI).toHaveBeenCalledTimes(2)
+    else {
+      expect(connection.projectUI).toHaveBeenCalledTimes(1)
+      expect(connection.deliverables.mock.calls.length).toBeGreaterThan(tried)
+    }
+    store.dispose()
+  },
+)
+
+it.each([
+  ['a file surface no present result names', 'loose'],
+  ['the surface of a call still running', 'running'],
+  ['the closed surface of a call outside any turn', 'unfiled'],
+  ['a surface named by calls in different turns', 'shared'],
+] as const)('lets the projection file %s under its turn', async (_name, surface) => {
+  const source = seeded()
+  source.commit((timeline) => {
+    timeline.turns.push(turnOf(2, 401, 420), turnOf(3, 421, 440))
+    if (surface === 'running') timeline.nodes.push(present(402, 'running'))
+    if (surface === 'unfiled') timeline.nodes.push(present(450, 'unfiled', 451))
+    if (surface === 'shared') timeline.nodes.push(present(405, 'p1', 406), present(425, 'p2', 426))
+  })
+  source.results.set('1:450:451', { surfaceId: 'closed-unfiled' })
+  source.results.set('1:405:406', { surfaceId: 'shared' })
+  source.results.set('1:425:426', { surfaceId: 'shared' })
+  const id = { loose: 'loose', running: cardOf('running'), unfiled: 'closed-unfiled', shared: 'shared' }[
+    surface
+  ]
+  source.surfaces.push({ open: surface !== 'unfiled', record: surfaceOf(id, 403, 'surface.txt') })
+  const connection = source.connect()
+  const { store } = offering(connection).mounted()
+  expect(await loaded(store)).toEqual(await fullRead(source))
+  expect(store.getSnapshot().files.map((entry) => [entry.name, entry.turnId])).toEqual([
+    ['report.txt', 'turn-1'],
+    ['surface.txt', 'turn-2'],
+  ])
+  expect(connection.deliverables).toHaveBeenCalledTimes(1)
+  expect(connection.projectUI).toHaveBeenCalledTimes(1)
+  store.dispose()
+})
+
+it('merges present results in call order, as the projection lists them', async () => {
+  const source = ledger()
+  source.commit((timeline) => {
+    timeline.turns.push(turnOf(1, 1, 40))
+    // The earlier call finishes last; its closed surface shares a seq with the later call.
+    timeline.nodes.push(present(10, 'early', 30), present(20, 'late', 25))
+  })
+  source.results.set('1:10:30', { surfaceId: 'closed-early' })
+  source.results.set('1:20:25', { deliverables: [{ ...file, name: 'late.txt' }] })
+  source.surfaces.push({ open: false, record: surfaceOf('closed-early', 20, 'early.txt') })
+  const connection = source.connect()
+  const { store } = offering(connection).mounted()
+  expect(await loaded(store)).toEqual(await fullRead(source))
+  expect(store.getSnapshot().files.map((entry) => entry.name)).toEqual(['early.txt', 'late.txt'])
+  unprojected(connection)
+  store.dispose()
+})
+
+it('keeps the newest result of a call that a later page repeats', async () => {
+  const source = seeded()
+  source.commit((timeline) => {
+    timeline.nodes[timeline.nodes.length - 1] = present(300, 'first', 305)
+  })
+  source.results.set('1:300:305', { deliverables: [{ ...file, name: 'replaced.txt' }] })
+  const connection = source.connect()
+  // The result was replaced between two pages of the same read.
+  connection.deliverables
+    .mockResolvedValueOnce({
+      sessionId: 's',
+      upto: 301,
+      items: [
+        {
+          callSeq: 300,
+          resultSeq: 301,
+          toolUseId: 'first',
+          turnId: 'turn-1',
+          structured: { deliverables: [file] },
+        },
+      ],
+      nextAfterSeq: 301,
+    })
+    .mockResolvedValueOnce({
+      sessionId: 's',
+      upto: 305,
+      items: [
+        {
+          callSeq: 300,
+          resultSeq: 305,
+          toolUseId: 'first',
+          turnId: 'turn-1',
+          structured: { deliverables: [{ ...file, name: 'replaced.txt' }] },
+        },
+      ],
+    })
+  const { store } = offering(connection).mounted()
+  expect(await loaded(store)).toEqual(await fullRead(source))
+  expect(store.getSnapshot().files.map((entry) => entry.name)).toEqual(['replaced.txt'])
+  unprojected(connection)
+  store.dispose()
+})
+
+it('reports a failed read on both paths without discarding the published records', async () => {
+  const source = seeded()
+  const connection = source.connect()
+  const { store } = offering(connection).mounted()
+  const files = await loaded(store)
+  connection.deliverables.mockRejectedValueOnce(new Error('closed'))
+  connection.projectUI.mockRejectedValueOnce(new Error('closed'))
+  await store.refresh()
+  expect(store.getSnapshot()).toEqual({
+    sessionId: 's',
+    files,
+    loading: false,
+    error: 'Deliverables unavailable',
+  })
+  await store.refresh()
+  expect(store.getSnapshot()).toEqual({ sessionId: 's', files, loading: false })
+  store.dispose()
+})
+
+it('does not publish a deliverables read that a newer readiness epoch overtook', async () => {
+  const source = seeded()
+  const connection = source.connect()
+  const { store, selected } = offering(connection).mounted()
+  await loaded(store)
+  let release!: () => void
+  const original = connection.deliverables.getMockImplementation()
+  connection.deliverables.mockImplementationOnce(async (params) => {
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+    source.results.set('1:300:301', { deliverables: [{ ...file, name: 'stale.txt' }] })
+    return (original as NonNullable<typeof original>)(params)
+  })
+  const pending = store.refresh()
+  await vi.waitFor(() => expect(release).toBeDefined())
+  selected.setReadiness('connecting')
+  expect(store.getSnapshot().files).toEqual([])
+  release()
+  await pending
+  expect(store.getSnapshot().files).toEqual([])
   store.dispose()
 })
