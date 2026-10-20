@@ -112,6 +112,23 @@ it('states loop, model, permission and version in plain words before any identif
   expect(policy()).toContain(enT('session.runtime.permission.full'))
   await view.render(recipe())
   expect(policy()).toContain(enT('session.runtime.permission.preset').replace('{name}', 'ptc'))
+  runtime.policy = {
+    approvalMode: 'manual',
+    toolPolicy: 'default',
+    toolRuntime: 'default',
+    readOnly: false,
+    sandbox: { provider: 'local', onUnavailable: 'deny' },
+    permission: { policy: 'full-access', principal: 'chooser' },
+  }
+  await view.render(recipe('workspace-write'))
+  expect(policy()).toContain(enT('session.runtime.permission.full'))
+  expect(policy()).toContain('chooser')
+  runtime.policy.permission = { policy: 'workspace-write', principal: 'chooser' }
+  await view.render(recipe('full-access'))
+  expect(policy()).toContain(enT('session.runtime.permission.workspace'))
+  runtime.policy.permission = { policy: '', principal: 'chooser' }
+  await view.render(recipe('full-access'))
+  expect(policy()).toContain(enT('session.runtime.permission.workspace'))
   // Identifiers stay available, under technical details.
   expect(view.host.querySelector('[data-testid="session-runtime-technical"]')?.textContent).toContain(
     'fde.knowledge-qa 5.0.0',

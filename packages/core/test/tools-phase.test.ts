@@ -1197,7 +1197,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
-    s.session.yolo = true
+    await s.session.setYolo(true, actor)
     await s.session.runToolsPhase()
     expect(asks).toEqual([])
     expect(await s.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)

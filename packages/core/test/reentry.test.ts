@@ -1388,7 +1388,7 @@ describe('setYolo', () => {
       trust: 'trusted',
       lane: 'main',
       data: {
-        version: 1,
+        version: 2,
         to: true,
         operatorId: operator.id,
         sessionKey: 'k',
@@ -1481,9 +1481,22 @@ describe('setYolo', () => {
   it.each([
     ['legacy', { to: true }, 'main'],
     [
-      'corrupt metadata',
+      'legacy approval-only authority',
       {
         version: 1,
+        to: true,
+        operatorId: operator.id,
+        sessionKey: 'k',
+        lane: 'main',
+        profileHash: null,
+        sessionOwner: { id: actor.id, org: actor.org },
+      },
+      'main',
+    ],
+    [
+      'corrupt metadata',
+      {
+        version: 2,
         to: true,
         operatorId: operator.id,
         sessionKey: 'different-session',
@@ -1496,7 +1509,7 @@ describe('setYolo', () => {
     [
       'other-lane',
       {
-        version: 1,
+        version: 2,
         to: true,
         operatorId: operator.id,
         sessionKey: 'k',
@@ -1531,6 +1544,10 @@ describe('setYolo', () => {
         writerRunId: `invalid-yolo-${_name}`,
       })
       expect(reopened.session.yolo).toBe(false)
+      expect(reopened.session.permissionContext.policy).not.toBe('full-access')
+      await reopened.session.setYolo(true, operator)
+      expect(reopened.session.yolo).toBe(true)
+      expect(reopened.session.permissionContext.policy).toBe('full-access')
       await reopened.session.close()
     },
   )

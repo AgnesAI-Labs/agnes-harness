@@ -1,4 +1,11 @@
-import type { Actor, PermissionContext } from '@agnes/protocol'
+import { CoreError } from '@agnes/core-common/types'
+import {
+  type Actor,
+  type EventEnvelope,
+  inspectJsonData,
+  type PermissionContext,
+  validateActor,
+} from '@agnes/protocol'
 
 /** Backend lifetime and actor snapshot. Author-facing ports only receive detached views. */
 export class SessionPermissionAuthority {
@@ -6,6 +13,10 @@ export class SessionPermissionAuthority {
   private epoch = 0
   private readonly changes = new Set<() => void>()
   private readonly snapshot: Actor
+  private selection: { enabled: boolean; operator: Actor } | undefined
+  private parent: (() => Pick<PermissionContext, 'policy' | 'actor'>) | null | undefined
+  private releaseParent: (() => void) | undefined
+  private closed = false
 
   constructor(actor: Actor) {
     this.snapshot = structuredClone(actor)
@@ -16,7 +27,86 @@ export class SessionPermissionAuthority {
   }
 
   context(sessionKey: string, policy: string): PermissionContext {
-    return { sessionKey, sessionId: this.id, epoch: this.epoch, policy, actor: this.actor }
+    const inherited = this.parent?.()
+    const selected = this.selection
+    const effective = selected?.enabled ? 'full-access' : policy
+    return {
+      sessionKey,
+      sessionId: this.id,
+      epoch: this.epoch,
+      policy:
+        this.closed || this.parent === null
+          ? ''
+          : policy === 'read-only'
+            ? policy
+            : (inherited?.policy ?? effective),
+      actor: inherited?.actor ?? (selected?.enabled ? structuredClone(selected.operator) : this.actor),
+    }
+  }
+
+  /** Called only after the backend validates and persists an owner-bound switch. */
+  select(enabled: boolean, operator: Actor): void {
+    this.selection = { enabled, operator: structuredClone(operator) }
+    this.revoke()
+  }
+
+  /** v1 could be synthesized from a package policy, so it cannot attest a user's full-access choice.
+   * Only a complete v2 owner-bound backend row restores the new permission authority. */
+  restore(
+    row: Pick<EventEnvelope, 'origin' | 'trust' | 'lane' | 'actor' | 'data'> | undefined,
+    binding: { key: string; lane: string; profileHash: string | null; owner: Actor },
+  ): boolean {
+    if (!row) return false
+    this.select(false, binding.owner)
+    if (row.origin !== 'system' || row.trust !== 'trusted' || row.lane !== binding.lane) return false
+    const inspectedActor = inspectJsonData(row.actor, 16 * 1024)
+    if (!inspectedActor.ok) return false
+    const actor = validateActor(inspectedActor.value)
+    if (!actor.ok) return false
+    const inspected = inspectJsonData(row.data, 16 * 1024)
+    if (!inspected.ok || !inspected.value || Array.isArray(inspected.value)) return false
+    const data = inspected.value as Record<string, unknown>
+    if (
+      Reflect.ownKeys(data).length !== 7 ||
+      data.version !== 2 ||
+      typeof data.to !== 'boolean' ||
+      data.sessionKey !== binding.key ||
+      data.lane !== binding.lane ||
+      data.profileHash !== binding.profileHash ||
+      data.operatorId !== actor.value.id
+    )
+      return false
+    const owner = data.sessionOwner
+    if (
+      !owner ||
+      typeof owner !== 'object' ||
+      Array.isArray(owner) ||
+      Reflect.ownKeys(owner).length !== 2 ||
+      (owner as Record<string, unknown>).id !== binding.owner.id ||
+      (owner as Record<string, unknown>).org !== binding.owner.org
+    )
+      return false
+    this.select(data.to, actor.value)
+    return data.to
+  }
+
+  /** A descendant never acquires more authority than its live parent. */
+  inherit(
+    parent: (() => PermissionContext) | undefined,
+    subscribe?: (listener: () => void) => () => void,
+  ): void {
+    this.releaseParent?.()
+    this.parent = parent ?? null
+    this.releaseParent = subscribe?.(() => this.revoke())
+    this.revoke()
+  }
+
+  detach(): void {
+    this.closed = true
+    this.revoke()
+    this.releaseParent?.()
+    this.releaseParent = undefined
+    this.parent = undefined
   }
 
   subscribe(listener: () => void): () => void {
@@ -30,4 +120,13 @@ export class SessionPermissionAuthority {
     this.epoch++
     for (const listener of this.changes) listener()
   }
+}
+
+/** Validate without invoking author accessors before persisting a permission switch. */
+export function permissionOperator(operator: Actor): Actor {
+  const inspected = inspectJsonData(operator, 16 * 1024)
+  if (!inspected.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
+  const checked = validateActor(inspected.value)
+  if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
+  return checked.value
 }

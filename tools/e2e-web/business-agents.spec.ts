@@ -1,8 +1,8 @@
 import type { DecisionSnapshot } from '@agnes/protocol'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
-import { install, prompt, toolResult } from './sdk.js'
-import { expandActivityGroups, preferences, turn } from './ui.js'
+import { command, install, prompt, toolResult } from './sdk.js'
+import { chooseWorkspace, expandActivityGroups, preferences, turn } from './ui.js'
 
 test('showcase full access business signature records the human principal without a pending card', async ({
   page,
@@ -235,4 +235,100 @@ test('fresh gallery hides teaching examples until deliberately installed, then r
   })
   expect((await toolResult(session, 'present'))?.isError).not.toBe(true)
   expect((await client.config.get()).accounts).toHaveLength(0)
+})
+
+test('application permission switch governs a package-fixed role launched by a quick action', async ({
+  page,
+  runtime,
+}, info) => {
+  test.setTimeout(120_000)
+  const client = await runtime.connect()
+  await preferences(page, 'zh-CN')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'zh-CN')
+  await install(client, 'tools/e2e-web/fixtures/confirmation-app')
+  const packageId = '@fixture/confirmation-app'
+  const preview = await client.request('_agnes/v1/applications.preview', { profile: 'local-dev', packageId })
+  const state = await client.request('_agnes/v1/applications.get', { profile: 'local-dev' })
+  await client.request('_agnes/v1/applications.adopt', {
+    ...(await command(client)),
+    packageId,
+    expectedRevision: state.revision,
+    consentDigest: preview.consentDigest,
+  })
+  await page.reload()
+  await page.getByRole('button', { name: '新对话', exact: true }).click()
+  await page.getByRole('button', { name: '签署模拟记录', exact: true }).click()
+  await expect(page.getByTestId('agent-launch-review')).toBeVisible()
+  await page.getByTestId('agent-launch-confirm').click()
+  await expect(page).toHaveURL(/session=/)
+  const id = new URL(page.url()).searchParams.get('session')!
+  const session = await client.session.load(id, { cwd: runtime.workspace })
+  await session.attach()
+  const descriptor = await client.session.runtime(id)
+  expect(descriptor.preset?.bundles).toEqual(['@fixture/confirmation-app#desk'])
+  await page.locator('#composer-permission').click()
+  await page.locator('#permission-picker-popover [data-permission="full"]').click()
+  await expect(page.locator('#composer-permission')).toContainText('完全访问')
+  await page.evaluate(() => {
+    const w = window as typeof window & { signaturePrompts?: number }
+    w.signaturePrompts = 0
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid="approval-card"]')) w.signaturePrompts!++
+    }).observe(document.body, { childList: true, subtree: true })
+  })
+  const composer = page.getByRole('textbox', { name: '任务内容', exact: true })
+  await composer.fill('call acme_status synthetic')
+  await composer.press('Enter')
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
+    timeout: 15_000,
+  })
+  const automatic = await toolResult(session, 'acme_status')
+  expect(automatic?.structured).toMatchObject({
+    confirmationMode: 'auto-confirmed under full access',
+    signer: expect.any(String),
+    signedMeaning: 'I confirm this synthetic record.',
+  })
+  expect(
+    await page.evaluate(() => (window as typeof window & { signaturePrompts?: number }).signaturePrompts),
+  ).toBe(0)
+  const record = automatic?.structured
+  if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.signer !== 'string')
+    throw new Error('Missing signature principal')
+  const active = await client.session.runtime(id)
+  expect(active.policy?.permission).toEqual({ policy: 'full-access', principal: record.signer })
+  const current = page.getByTestId('conversation-turn').last()
+  const toggle = current.getByTestId('turn-process-toggle')
+  if (!(await toggle.evaluate((el) => el.parentElement?.getAttribute('data-open') === 'true')))
+    await toggle.click()
+  await expandActivityGroups(current)
+  await expect(page.getByTestId('approval-step').filter({ hasText: '完全访问下自动确认' })).toContainText(
+    record.signer,
+  )
+  await page.screenshot({
+    path: info.outputPath('app-full-access.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
+  await page.locator('#composer-permission').click()
+  await page.locator('#permission-picker-popover [data-permission="workspace"]').click()
+  await composer.fill('call acme_status synthetic')
+  await composer.press('Enter')
+  const approval = page.getByTestId('approval-card')
+  await expect(approval).toContainText('Synthetic signature')
+  await expect(approval.getByRole('button', { name: '仅允许这次', exact: true })).toBeEnabled()
+  await page.screenshot({
+    path: info.outputPath('app-standard-prompt.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
+  await approval.getByRole('button', { name: '仅允许这次', exact: true }).click()
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
+  const manual = await toolResult(session, 'acme_status')
+  expect(manual?.structured).toMatchObject({ confirmationMode: 'manual' })
+  expect(manual?.toolUseId).not.toBe(automatic?.toolUseId)
+  await info.attach('app-receipts.json', {
+    body: Buffer.from(JSON.stringify({ automatic, manual, descriptor, active }, null, 2)),
+    contentType: 'application/json',
+  })
 })

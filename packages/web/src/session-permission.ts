@@ -149,8 +149,7 @@ export function sessionPermissionLevel(
 }
 
 /**
- * What the permission control shows for an open session: its level, widened to full access while
- * the yolo switch is on. A read-only session stays read-only. Without a known level the previous
+ * What the permission control shows for an open session: the backend's effective full-access flag. A read-only session stays read-only. Without a known level the previous
  * display stands, as before levels were reported.
  */
 export function openSessionMode(
@@ -159,7 +158,7 @@ export function openSessionMode(
   previous: PermissionMode,
 ): PermissionMode {
   if (level === 'read-only') return 'view'
-  if (yolo || level === 'full-access') return 'full'
+  if (yolo) return 'full'
   if (level) return 'workspace'
   return previous === 'view' ? 'view' : 'workspace'
 }
