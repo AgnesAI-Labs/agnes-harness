@@ -15,7 +15,7 @@ import type {
 import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
 let mountRelease: () => Promise<void>
@@ -3543,6 +3543,13 @@ describe('incremental opening', () => {
   it.each(['persistent', 'transient'] as const)(
     'reads %s session control failures during the opening again after it, as before',
     async (failure) => {
+      // The early read fails while nothing awaits it yet; that must not surface as unhandled.
+      const unhandled: unknown[] = []
+      const record = (reason: unknown) => unhandled.push(reason)
+      process.on('unhandledRejection', record)
+      onTestFinished(() => {
+        process.off('unhandledRejection', record)
+      })
       const opening = deferred<UITimeline>()
       const { old } = await bootWith(
         () => opening.promise,
@@ -3555,6 +3562,8 @@ describe('incremental opening', () => {
                 .mockImplementation(async () => controlState()),
       )
       await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(unhandled).toEqual([])
       opening.resolve(idleTimeline('old'))
       const notice = document.getElementById('notice') as HTMLElement
       const prompt = document.getElementById('prompt') as HTMLTextAreaElement
