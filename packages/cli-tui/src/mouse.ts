@@ -48,7 +48,7 @@ export function copyToClipboard(
   text: string,
   write: (s: string) => void,
   env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = process.platform, // guards-allow-platform: owned terminal clipboard backend selects the native copy command.
 ): void {
   write(`\x1b]52;c;${Buffer.from(text).toString('base64')}\x07`)
   if (env.SSH_CONNECTION || env.SSH_TTY) return
