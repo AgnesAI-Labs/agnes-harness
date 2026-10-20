@@ -1,11 +1,11 @@
-import type { ArtifactRef, UITimeline, UITurn } from '@agnes/protocol'
+import type { ArtifactRef, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import {
   UiArtifactFileData,
   type UiArtifactStatus,
   type UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
-import type { Client, Session } from '@agnes/sdk/browser'
+import { applyUITimelinePatch, type Client, type Session } from '@agnes/sdk/browser'
 import type { SessionService } from './services-session.js'
 
 /** Read-only display contract. A ref names immutable bytes, never a mutable workspace path. */
@@ -89,7 +89,40 @@ export function deliveredFiles(
   })
 }
 
-/** Authorized SDK reads only. No attach/filter mutation, filesystem reads or retained content cache. */
+type PresentResult = {
+  surfaceId: string
+  rows: ReturnType<typeof deliveredFiles>
+  laneId?: string
+  owner?: string
+}
+
+/** Between refreshes only node identity, turn bounds and present calls are needed to apply patches. */
+function retained(timeline: UITimeline): UITimeline {
+  const { sessionId, generation, upto, opState } = timeline
+  return {
+    sessionId,
+    generation,
+    upto,
+    opState,
+    nodes: timeline.nodes.map((node) =>
+      node.kind === 'tool' && node.name === 'present'
+        ? ({
+            id: node.id,
+            kind: node.kind,
+            name: node.name,
+            seq: node.seq,
+            toolUseId: node.toolUseId,
+            ...(node.resultSeq === undefined ? {} : { resultSeq: node.resultSeq }),
+          } as UINode)
+        : ({ id: node.id } as UINode),
+    ),
+    turns: timeline.turns.map(
+      ({ id, startSeq, endSeq }) => ({ id, startSeq, ...(endSeq === undefined ? {} : { endSeq }) }) as UITurn,
+    ),
+  }
+}
+
+/** Authorized SDK reads only. No attach/filter mutation, filesystem reads or retained file content. */
 export class DeliverablesStore {
   private snapshot: DeliverablesSnapshot = { files: [], loading: true }
   private readonly listeners = new Set<() => void>()
@@ -99,12 +132,19 @@ export class DeliverablesStore {
   private disposed = false
   private running = false
   private requested = false
+  // This connection's projection baseline. Durable present results are immutable per ledger
+  // generation and are kept for the readiness epoch that read them.
+  private timeline: UITimeline | undefined
+  private baseline = 0
+  private presents = new Map<string, PresentResult>()
   constructor(
     private readonly client: Client,
     private readonly session: SessionService,
   ) {
     const switchSession = () => {
       this.generation++
+      this.dropBaseline()
+      this.presents = new Map()
       this.detach?.()
       const id = session.sessionId
       const readiness = session.readiness.getSnapshot()
@@ -126,9 +166,11 @@ export class DeliverablesStore {
     // A cold history preview and the admitted session share an id. Readiness epochs,
     // rather than identity changes alone, retire old reads and bind the ready handle.
     this.stops.push(session.readiness.subscribe(switchSession))
+    // Daemon baselines belong to one connection and generation: start over with a full projection.
     for (const name of ['reconnected', 'gap', 'generationChanged'] as const)
       this.stops.push(
         client.on(name, () => {
+          this.dropBaseline()
           void this.refresh()
         }),
       )
@@ -153,13 +195,14 @@ export class DeliverablesStore {
       while (this.requested && !this.disposed) {
         this.requested = false
         const generation = this.generation,
-          sessionId = this.session.sessionId
+          sessionId = this.session.sessionId,
+          presents = this.presents
         if (!sessionId || this.session.readiness.getSnapshot().status !== 'ready') continue
         try {
           const session = this.client.sessions.get(sessionId)
           if (!session) throw new Error('Session unavailable')
-          const timeline = await session.projectUI()
-          const files = await readDeliverables(session, timeline)
+          const timeline = await this.project(session)
+          const files = await readDeliverables(session, timeline, presents)
           if (!this.disposed && generation === this.generation) this.set({ sessionId, files, loading: false })
         } catch {
           if (!this.disposed && generation === this.generation)
@@ -170,6 +213,26 @@ export class DeliverablesStore {
       this.running = false
     }
   }
+  private dropBaseline() {
+    this.baseline++
+    this.timeline = undefined
+  }
+  /** The first read per baseline is a full projection; later reads patch it. */
+  private async project(session: Session): Promise<UITimeline> {
+    const baseline = this.baseline,
+      current = this.timeline
+    let next: UITimeline | undefined
+    if (current)
+      try {
+        const update = await session.projectUIPatch(current.upto)
+        next = update.kind === 'patch' ? applyUITimelinePatch(current, update.patch) : update.timeline
+      } catch {
+        /* Resync required, cursor mismatch or no patch support: fall back to a full projection. */
+      }
+    next = retained(next ?? (await session.projectUI()))
+    if (baseline === this.baseline) this.timeline = next
+    return next
+  }
   dispose = () => {
     this.disposed = true
     this.generation++
@@ -179,7 +242,37 @@ export class DeliverablesStore {
   }
 }
 
-async function readDeliverables(session: Session, timeline: UITimeline): Promise<DeliverableRecord[]> {
+async function readPresent(
+  session: Session,
+  node: Extract<UINode, { kind: 'tool' }>,
+  resultSeq: number,
+): Promise<PresentResult> {
+  const detail = await session.readToolDetail(node.seq, resultSeq)
+  const structured = detail.result?.structured
+  const data = structured && typeof structured === 'object' && !Array.isArray(structured) ? structured : {}
+  const surfaceId =
+    typeof data.surfaceId === 'string'
+      ? data.surfaceId
+      : 'card-' +
+        Array.from(
+          new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(node.toolUseId))),
+          (byte) => byte.toString(16).padStart(2, '0'),
+        )
+          .join('')
+          .slice(0, 48)
+  return {
+    surfaceId,
+    rows: deliveredFiles(data.deliverables),
+    ...(typeof data.laneId === 'string' ? { laneId: data.laneId } : {}),
+    ...(typeof data.owner === 'string' ? { owner: data.owner } : {}),
+  }
+}
+
+async function readDeliverables(
+  session: Session,
+  timeline: UITimeline,
+  presents: Map<string, PresentResult>,
+): Promise<DeliverableRecord[]> {
   const files: DeliverableRecord[] = []
   // Surfaces are an optional enhancement. Durable tool results work when Intelligent UI is off.
   try {
@@ -198,20 +291,10 @@ async function readDeliverables(session: Session, timeline: UITimeline): Promise
   }
   for (const node of timeline.nodes) {
     if (node.kind !== 'tool' || node.name !== 'present' || !node.resultSeq) continue
-    const detail = await session.readToolDetail(node.seq, node.resultSeq)
-    const result = detail.result
-    const structured = result?.structured
-    const data = structured && typeof structured === 'object' && !Array.isArray(structured) ? structured : {}
-    const surfaceId =
-      typeof data.surfaceId === 'string'
-        ? data.surfaceId
-        : 'card-' +
-          Array.from(
-            new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(node.toolUseId))),
-            (byte) => byte.toString(16).padStart(2, '0'),
-          )
-            .join('')
-            .slice(0, 48)
+    const key = `${timeline.generation}:${node.seq}:${node.resultSeq}`
+    const present = presents.get(key) ?? (await readPresent(session, node, node.resultSeq))
+    presents.set(key, present)
+    const { surfaceId, rows, laneId, owner } = present
     // Older present results kept display metadata only in the durable UI surface. Read closed ones by id too.
     if (!files.some((file) => file.source.surfaceId === surfaceId)) {
       try {
@@ -222,7 +305,6 @@ async function readDeliverables(session: Session, timeline: UITimeline): Promise
         /* The optional UI provider may be absent. New results below remain sufficient. */
       }
     }
-    const rows = deliveredFiles(data.deliverables)
     const turnId = turnOf(timeline.turns, node.seq)
     // A surface inside this exact call is the enhanced copy of the same presentation.
     const enhanced = files.filter((file) => file.source.surfaceId === surfaceId)
@@ -240,11 +322,11 @@ async function readDeliverables(session: Session, timeline: UITimeline): Promise
       }
       files.push({
         ...file,
-        id: `${session.id}:${typeof data.laneId === 'string' ? data.laneId : (match?.laneId ?? 'main')}:${node.toolUseId}:${index}`,
+        id: `${session.id}:${laneId ?? match?.laneId ?? 'main'}:${node.toolUseId}:${index}`,
         sessionId: session.id,
-        laneId: typeof data.laneId === 'string' ? data.laneId : (match?.laneId ?? 'main'),
+        laneId: laneId ?? match?.laneId ?? 'main',
         source: {
-          owner: typeof data.owner === 'string' ? data.owner : (match?.source.owner ?? 'present'),
+          owner: owner ?? match?.source.owner ?? 'present',
           toolUseId: node.toolUseId,
           callSeq: node.seq,
         },
