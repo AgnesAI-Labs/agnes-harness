@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AgentPlan,
+  type ApplicationPreview,
+  type ApplicationState,
   type ClientModuleRosterRow,
   jcs,
   type PackageCatalogDescriptor,
@@ -621,4 +623,101 @@ it('ordinary agent receipts remain readable during slow starts without leaking o
   }
   expect(await facade.call(request)).toEqual({ sessionId: 'session-1' })
   expect(f.sessions.size).toBe(1)
+})
+
+it.each([
+  'same',
+  'hash',
+  'version',
+  'permission',
+  'capability',
+  'configuration',
+  'legacy',
+  'tampered',
+  'revoked',
+  'unadopted',
+] as const)('reuses only intact adoption consent for an unchanged admitted launch (%s)', async (change) => {
+  const f = fixture()
+  const original = await f.backend.resolveAgent('acme/kit#work')
+  original.sources = [
+    {
+      id: 'acme/kit',
+      version: '1.0.0',
+      integrity: 'sha256-original',
+      source: 'runtime-snapshot',
+      capabilityHash: 'cap-original',
+    },
+  ]
+  const body = {
+    packageId: 'acme/kit',
+    version: '1.0.0',
+    integrity: 'sha256-original',
+    source: { type: 'file', ref: 'file:./synthetic' },
+    signature: 'unverified',
+    declaration: { id: 'acme', brand: { name: { en: 'Acme' } }, agents: [original.ref] },
+    declarationDigest: 'a'.repeat(64),
+    dependencies: [],
+    replacedRoles: [],
+    dependencyDiff: {},
+    scope: 'presentation-defaults-and-agent-catalogue',
+    recovery: '/?admin',
+    warning: 'trusted-code',
+    assets: {},
+    ...(change === 'legacy' ? {} : { agentLaunches: [original] }),
+  }
+  const snapshot = {
+    ...body,
+    consentDigest: createHash('sha256').update(jcs(body)).digest('hex'),
+  } as ApplicationPreview
+  let state: ApplicationState = {
+    revision: 1,
+    selection: {
+      packageId: snapshot.packageId,
+      applicationId: 'acme',
+      integrity: snapshot.integrity,
+      declarationDigest: snapshot.declarationDigest,
+      consentDigest: snapshot.consentDigest,
+      bindingDigest: 'b'.repeat(64),
+      consentSnapshot: snapshot,
+    },
+    status: 'active',
+    effective: snapshot.declaration,
+    assets: {},
+    candidates: [],
+  }
+  const plan = structuredClone(original)
+  if (change === 'hash') plan.sources[0]!.integrity = 'changed'
+  if (change === 'version') plan.sources[0]!.version = '2.0.0'
+  if (change === 'permission') plan.permission.allow.push('new.permission')
+  if (change === 'capability') plan.permission.tools.push('new.tool')
+  if (change === 'configuration') plan.effectivePresetHash = 'changed'
+  if (change === 'tampered') snapshot.version = 'forged'
+  if (change === 'unadopted') state = { ...state, selection: null, status: 'host', effective: null }
+  const backend = {
+    caller: async () => ({ principal: 'user', profile: 'test', workspace: '/synthetic', activation: 'a1' }),
+    resolve: async () => plan,
+    open: f.backend.open,
+    application: async () => state,
+  }
+  const facade = createAgentLaunches({ directory: f.directory, backend })
+  const prepared = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    launchTicket: string
+    consent: string
+  }
+  expect(prepared.consent).toBe(
+    ['same', 'revoked'].includes(change)
+      ? 'covered'
+      : ['legacy', 'tampered', 'unadopted'].includes(change)
+        ? 'unavailable'
+        : 'changed',
+  )
+  if (change === 'revoked') state = { ...state, selection: null, status: 'host', effective: null }
+  const launch = facade.call({ action: 'start', launchTicket: prepared.launchTicket, operationId: 'work' })
+  if (change === 'revoked') {
+    await expect(launch).rejects.toThrow('STALE')
+    expect(f.sessions.size).toBe(0)
+  } else {
+    await expect(launch).resolves.toMatchObject({ sessionId: 'session-1' })
+    expect(f.inputs.size).toBe(0)
+  }
 })

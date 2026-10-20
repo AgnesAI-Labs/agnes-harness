@@ -1,3 +1,4 @@
+import { deferredRuntimePins } from './deferred-runtime-pins.js'
 import { supervisorHostFacade } from './host-facade.js'
 import { permissionRequest } from './permission-requests.js'
 
@@ -239,12 +240,7 @@ import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from 
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
-import {
-  createClientServiceDispatcher,
-  workerServiceCaller,
-  workerServiceInspector,
-  workerServiceResolver,
-} from './service-worker.js'
+import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
@@ -668,6 +664,9 @@ export type StartSupervisorOptions = {
     operations: PackageOperationStore
     stateDirectory: string
     catalog?: LocalExamplesCatalog
+    bindAgentResolver?(
+      resolve: (profile: string, ref: string) => Promise<import('@agnes/protocol').AgentPlan>,
+    ): void
     bindReferences?(reader: PackageReferenceFactReader): void
     bindActivation?(adapter: PackageActivationAdapter): void
     bindRuntimePins?(adapter: RuntimePinsAdapter): void
@@ -1330,6 +1329,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       | undefined
     let stopClientModuleNotices: (() => void) | undefined
     let publishChildEngines: PublishChildEngines | undefined
+    const hostFacade = supervisorHostFacade(o.profile, activationBarrier, pool)
+    const host = hostFacade.host
     if (o.packageRuntime) {
       const packageRuntime = o.packageRuntime
       const packageProfileDirectory = await packageRuntime.profileDirectory(o.profile.name)
@@ -1686,6 +1687,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       void revertFailedDesired?.()
       effectivePackageAdmin ??= {
         service: createPackageAdminService({
+          resolveAgent: hostFacade.resolveApplicationAgent,
           authoringHome: ownerHome,
           manager: o.packageRuntime.manager,
           profileDirectory: o.packageRuntime.profileDirectory,
@@ -1725,14 +1727,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       await effectivePackageAdmin.service.rebuildClientModules(o.profile.name)
     }
     const supervisorRegistry = new SupervisorRegistry(registry, workspaces)
-    const hostFacade = supervisorHostFacade(o.profile, activationBarrier, pool)
-    const host = hostFacade.host
-    const callService = workerServiceCaller(pool, () => host.profile)
-    const inspectService = workerServiceInspector(pool, () => host.profile)
-    const resolveService = workerServiceResolver(pool)
-    const dispatchClientService = createClientServiceDispatcher(callService, inspectService)
-    clientServiceCall = dispatchClientService
-    o.packageRuntime?.bindClientService?.(dispatchClientService)
+    o.packageRuntime?.bindAgentResolver?.(hostFacade.resolveApplicationAgent)
+    const services = workerClientServices(pool, () => host.profile)
+    clientServiceCall = services.dispatchClientService
+    o.packageRuntime?.bindClientService?.(services.dispatchClientService)
     const dispatchClientEffect = async (
       input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
       authority: PackageAdminAuthority,
@@ -1759,13 +1757,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         throw error
       }
       return await invocation.run(async () => {
-        const inspection = await inspectService(params, credential)
+        const inspection = await services.inspectService(params, credential)
         if (inspection.kind !== 'effect') throw rpcError('CAPABILITY_DENIED')
         const serviceId = `service:client-web:${input.extension}/${input.service}`
         return await executeJournaledEffect({
           journal,
           commandQueue,
-          callService,
+          callService: services.callService,
           params,
           credential,
           signal: new AbortController().signal,
@@ -2025,9 +2023,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         activationBarrier,
         journal,
         commandQueue,
-        callService,
-        inspectService,
-        resolveService,
+        callService: services.callService,
+        inspectService: services.inspectService,
+        resolveService: services.resolveService,
       }),
       memory: async (input) => {
         const link = await pool.acquireSharedWorker()
@@ -2064,9 +2062,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           activationBarrier,
           journal,
           commandQueue,
-          callService,
-          inspectService,
-          resolveService,
+          callService: services.callService,
+          inspectService: services.inspectService,
+          resolveService: services.resolveService,
         },
         host,
         registry: supervisorRegistry,
@@ -2443,8 +2441,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         activationBarrier,
         journal,
         commandQueue,
-        callService,
-        inspectService,
+        callService: services.callService,
+        inspectService: services.inspectService,
         resolveServiceSession: async (sessionId, call) => {
           const userId = call.conn.credential?.userId
           const subjectPrincipal =
@@ -2935,6 +2933,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   // lazily at call time rather than the (still-undefined) value captured at construction.
   let packageRuntimePins: RuntimePinsAdapter | undefined
   let packagePluginTree: CompositeTargetStore | undefined
+  let packageAgentResolver:
+    | ((profile: string, ref: string) => Promise<import('@agnes/protocol').AgentPlan>)
+    | undefined
   let packageWorkerGeneration: (() => number | undefined) | undefined
   let packagePluginTreePublisher:
     | ((artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>)
@@ -2950,30 +2951,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
         authority: PackageAdminAuthority,
       ) => Promise<ExtensionCallResult>)
     | undefined
-  const deferredRuntimePins: RuntimePinsAdapter = {
-    async inspect(profileName) {
-      return (
-        packageRuntimePins?.inspect(profileName) ?? {
-          error: {
-            code: 'E_PACKAGE_STATE',
-            safeMessage: 'Package state does not allow this action.',
-            blockers: [],
-          },
-        }
-      )
-    },
-    async release(profileName, pinIds) {
-      return (
-        packageRuntimePins?.release(profileName, pinIds) ?? {
-          error: {
-            code: 'E_PACKAGE_STATE',
-            safeMessage: 'Package state does not allow this action.',
-            blockers: [],
-          },
-        }
-      )
-    },
-  }
+  const deferredPins = deferredRuntimePins(() => packageRuntimePins)
   const packageOperations = new FilePackageOperationStore(join(scope.daemonDir, 'package-operations'))
   const localExamplesCatalog = await discoverLocalExamples(scope.workspace)
   // An explicitly injected resource service owns its own durable recovery; the default store
@@ -2982,13 +2960,17 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   if (resourceService) await resourceService.recover()
   const defaultPackageAdmin = {
     service: createPackageAdminService({
+      resolveAgent: async (profile, ref) => {
+        if (!packageAgentResolver) throw rpcError('CAPABILITY_DENIED')
+        return packageAgentResolver(profile, ref)
+      },
       authoringHome: scope.home,
       manager: packageManager,
       profileDirectory: packageProfileDirectory,
       operations: packageOperations,
       ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
       activation: deferredActivation,
-      runtimePins: deferredRuntimePins,
+      runtimePins: deferredPins,
       pluginTree: () => packagePluginTree,
       pluginTreePublisher: async (artifact, liveConfig) => {
         const publish = packagePluginTreePublisher
@@ -3042,6 +3024,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
             operations: packageOperations,
             stateDirectory: join(scope.daemonDir, 'package-activation'),
             ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
+            bindAgentResolver(resolve) {
+              packageAgentResolver = resolve
+            },
             bindReferences(reader: PackageReferenceFactReader) {
               runtimeReferenceReader = reader
             },

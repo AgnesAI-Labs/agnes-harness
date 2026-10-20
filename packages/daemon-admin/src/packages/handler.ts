@@ -465,6 +465,7 @@ class Service implements PackageAdminService {
     private readonly options: {
       manager: PackageManager
       authoringTestRunner?: AuthoringTestRunner
+      resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
       authoringHome?: string
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
@@ -2116,6 +2117,7 @@ class Service implements PackageAdminService {
 export function createPackageAdminService(options: {
   manager: PackageManager
   authoringTestRunner?: AuthoringTestRunner
+  resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
   authoringHome?: string
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore

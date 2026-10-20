@@ -11,6 +11,7 @@ import {
 } from '@agnes/package-manager'
 import type { ApplicationRoleTarget, PackageAdminMethodName, PresentationRole } from '@agnes/protocol'
 import {
+  type AgentPlan,
   type ApplicationConfigSnapshot,
   type ApplicationPreview,
   type ApplicationState,
@@ -29,7 +30,13 @@ const fail = (reason: string): never => {
   throw rpcError('SEMANTIC_REJECTED', { reason })
 }
 const bindingDigest = (preview: ApplicationPreview) => {
-  const { consentDigest: _consent, dependencyDiff: _diff, ...identity } = preview
+  const {
+    consentDigest: _consent,
+    dependencyDiff: _diff,
+    agentLaunches: _launches,
+    pageNames: _names,
+    ...identity
+  } = preview
   return digest(identity)
 }
 const eligible = (p: InstalledPackage) => p.enabled && p.trusted && !p.blockers.length && !!p.directory
@@ -47,6 +54,7 @@ export class Applications {
       profileDirectory: PackageProfileDirectory
       home?: string
       configuration?(profile: string, directory: string): ConfigurationService
+      resolveAgent?(profile: string, ref: string): Promise<AgentPlan>
       active?(profile: string, packageId: string, integrity: string): Promise<boolean>
     },
   ) {}
@@ -73,6 +81,7 @@ export class Applications {
     packageId: string,
     packages: readonly InstalledPackage[],
     previous: ApplicationConfigSnapshot['selection'],
+    includeLaunches = false,
   ) {
     const row = packages.find((p) => p.id === packageId)
     if (!row?.entry.application || !eligible(row) || !row.directory) return fail('APPLICATION_UNAVAILABLE')
@@ -201,7 +210,46 @@ export class Applications {
     const checkedSource = validatePackageAdminData('PackageSource', row.entry.source)
     if (!checkedSource.ok) return fail('APPLICATION_SOURCE_INVALID')
     const source = checkedSource.value as ApplicationPreview['source']
+    const refs = [
+      ...new Set([
+        ...(declaration.agents ?? []),
+        ...(declaration.defaultAgent ? [declaration.defaultAgent] : []),
+        ...(declaration.workbench?.actions ?? []).flatMap((action) => (action.agent ? [action.agent] : [])),
+      ]),
+    ]
+    // A missing/unresolvable plan cannot authorize a direct launch. Adoption remains usable.
+    const resolveAgent = this.options.resolveAgent
+    const agentLaunches =
+      includeLaunches && resolveAgent
+        ? (await Promise.all(refs.map((ref) => resolveAgent(profile, ref).catch(() => null)))).filter(
+            (plan) => plan !== null,
+          )
+        : undefined
+    const pageRefs = new Set([
+      ...(declaration.presentation?.navigation?.entries ?? []),
+      ...(declaration.presentation?.home ? [declaration.presentation.home] : []),
+      ...(declaration.workbench?.tabs ?? []).flatMap((tab) => (tab.page ? [tab.page] : [])),
+    ])
+    const pageNames = packages
+      .filter((p) => required.has(p.id))
+      .flatMap((p) =>
+        p.contributions.flatMap((c) =>
+          'client' in c
+            ? (c.client?.homeEntries ?? []).flatMap((page) =>
+                page.navigation && pageRefs.has(`${p.id}#${page.id}`)
+                  ? [
+                      {
+                        ref: `${p.id}#${page.id}`,
+                        title: { en: page.navigation.title, ...page.navigation.titles },
+                      },
+                    ]
+                  : [],
+              )
+            : [],
+        ),
+      )
     const previewed = {
+      ...(agentLaunches ? { agentLaunches } : {}),
       packageId: row.id,
       version: row.entry.version,
       integrity: row.entry.integrity,
@@ -213,6 +261,7 @@ export class Applications {
       dependencies,
       replacedRoles,
       dependencyDiff,
+      pageNames,
       scope: 'presentation-defaults-and-agent-catalogue',
       recovery: '/?admin; agh app clear',
       warning: 'trusted-javascript-is-not-a-sandbox',
@@ -360,7 +409,7 @@ export class Applications {
     const { directory, config } = await this.context(profile)
     const saved = await config.application()
     const { packages } = await this.options.manager.inventory(directory)
-    return (await this.reviewed(profile, packageId, packages, saved.selection)).preview
+    return (await this.reviewed(profile, packageId, packages, saved.selection, true)).preview
   }
 
   async adopt(profile: string, packageId: string, expectedRevision: number, consentDigest: string) {
@@ -373,7 +422,7 @@ export class Applications {
       if ((await packageBoundary(directory)) !== boundary) return fail('APPLICATION_PREVIEW_STALE')
       const saved = await config.application()
       if (saved.revision !== expectedRevision) return fail('CONFIG_REVISION_CONFLICT')
-      const { preview } = await this.reviewed(profile, packageId, packages, saved.selection)
+      const { preview } = await this.reviewed(profile, packageId, packages, saved.selection, true)
       if (preview.consentDigest !== consentDigest) return fail('APPLICATION_PREVIEW_STALE')
       await config.saveApplication({
         revision: expectedRevision,
@@ -450,10 +499,12 @@ export function createApplications(options: {
   profileDirectory: PackageProfileDirectory
   authoringHome?: string
   activation?: PackageActivationAdapter
+  resolveAgent?(profile: string, ref: string): Promise<AgentPlan>
 }) {
   const activation = options.activation
   return new Applications({
     manager: options.manager,
+    ...(options.resolveAgent ? { resolveAgent: options.resolveAgent } : {}),
     profileDirectory: options.profileDirectory,
     ...(options.authoringHome ? { home: options.authoringHome } : {}),
     ...(activation

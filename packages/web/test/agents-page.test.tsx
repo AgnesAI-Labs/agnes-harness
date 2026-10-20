@@ -18,7 +18,7 @@ afterEach(() => {
   history.replaceState(null, '', '/')
 })
 
-it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inherited'] as const)(
+it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inherited', 'covered'] as const)(
   'lists explicit agents, starts the plain Loop and uses a reviewed AgentRef ticket (%s)',
   async (outcome) => {
     const loops = [
@@ -57,6 +57,7 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
         })
       return {
         launchTicket: 'reviewed-ticket',
+        ...(outcome === 'covered' ? { consent: 'covered' as const } : {}),
         presentation: outcome === 'wrong-ref' ? { ...plan, ref: 'acme/kit#triage' } : plan,
       }
     })
@@ -213,9 +214,17 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
         return
       }
       await vi.waitFor(() => expect(host.querySelector('[data-testid="agent-launch-review"]')).not.toBeNull())
+      const technical = host.querySelector('[data-testid="launch-technical"]')
+      expect(technical?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+      const human = host.querySelector('[data-testid="agent-launch-review"]')?.cloneNode(true) as HTMLElement
+      human.querySelector('[data-testid="launch-technical"]')?.remove()
+      expect(human.textContent).not.toContain('Backend editable draft')
+      expect(human.textContent).not.toContain('shared.tool')
+      if (outcome === 'covered') expect(human.textContent).toContain('already covers this configuration')
+      await act(async () => technical?.querySelector<HTMLButtonElement>('button')?.click())
       expect(host.textContent).toContain('reviewed-model')
       expect(host.textContent).toContain('shared.tool')
-      expect(host.textContent).toContain('shared/tools@2.0.0 sha512-reviewed')
+      expect(host.textContent).toContain('sha512-reviewed')
       expect(host.textContent).toContain('Backend editable draft')
       expect(assign).toHaveBeenCalledTimes(1)
       expect(startAgent).not.toHaveBeenCalled()
@@ -466,6 +475,157 @@ it.each(['en', 'zh-CN'])(
       await act(async () => root.unmount())
       localized.dispose()
       document.documentElement.lang = ''
+    }
+  },
+)
+
+it.each(['en', 'zh-CN'] as const)(
+  'starts covered application actions directly and summarizes changed launches (%s)',
+  async (locale) => {
+    document.documentElement.lang = locale
+    for (const consent of ['covered', 'changed', 'unavailable'] as const) {
+      clearResources()
+      history.replaceState(null, '', '/')
+      const plan: AgentPlan = {
+        ref: 'acme/kit#review',
+        launch: {
+          title: { en: 'Quality reviewer', 'zh-CN': '质量审核员' },
+          description: { en: 'Review a batch', 'zh-CN': '复核批次' },
+          preset: 'safe',
+        },
+        loop: { id: 'work', version: '1.0.0' },
+        bundles: ['acme/kit#review'],
+        preset: 'safe',
+        pages: [],
+        digest: 'digest',
+        compositionHash: 'composition',
+        presetHash: 'preset',
+        effectivePresetHash: 'effective',
+        model: { route: 'demo', model: 'demo' },
+        models: {},
+        permission: { readOnly: true, tools: [], allow: [], deny: [] },
+        sources: [],
+      }
+      const state: ApplicationState = {
+        revision: 1,
+        status: 'active',
+        assets: {},
+        candidates: [],
+        selection: {
+          packageId: 'acme/kit',
+          applicationId: 'acme',
+          integrity: 'hash',
+          declarationDigest: 'a'.repeat(64),
+          consentDigest: 'b'.repeat(64),
+          bindingDigest: 'c'.repeat(64),
+        },
+        effective: {
+          id: 'acme',
+          agents: [plan.ref],
+          defaultAgent: plan.ref,
+          workbench: {
+            actions: [
+              {
+                id: 'review',
+                title: { en: 'Review', 'zh-CN': '复核' },
+                agent: plan.ref,
+                prompt: { en: 'Review this batch.', 'zh-CN': '请复核此批次。' },
+              },
+            ],
+          },
+        },
+      }
+      applicationIdentity.set(state)
+      const startAgent = vi.fn(async () => ({ sessionId: `work-${locale}-${consent}` }))
+      mock.connect.mockResolvedValue({
+        context: { permissions: [], readOnly: false },
+        api: {
+          prepareAgent: vi.fn(async () => ({ launchTicket: 'ticket', presentation: plan, consent })),
+          startAgent,
+          catalog: async () => ({ items: [] }),
+          loops: async () => ({ loops: [], revision: 1, defaults: {} }),
+          runtime: async () => ({ bundles: [{ id: plan.ref, sourcePackage: 'acme/kit' }] }),
+          list: async () => ({
+            packages: [
+              {
+                id: 'acme/kit',
+                version: '1.0.0',
+                source: { type: 'file', ref: 'file:./kit' },
+                contributions: [],
+                trusted: true,
+                desired: 'enabled',
+                actual: 'running',
+                integrity: 'hash',
+                blockers: [],
+                agents: [{ ref: plan.ref, launch: plan.launch }],
+              },
+            ],
+          }),
+        },
+      })
+      const host = document.body.appendChild(document.createElement('div'))
+      const root = createRoot(host)
+      const localized = createDocumentLocaleSource({})
+      const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+      try {
+        await act(async () =>
+          root.render(
+            createElement(
+              UiLocaleProvider,
+              { source: localized.source },
+              createElement(AgentsPage, {
+                context: {
+                  t: (key) => key,
+                  selection: {
+                    workAction: {
+                      applicationId: 'acme',
+                      packageId: 'acme/kit',
+                      actionId: 'review',
+                      object: { type: 'batch', id: 'B-017' },
+                    },
+                  },
+                },
+              }),
+            ),
+          ),
+        )
+        if (consent !== 'covered') {
+          await vi.waitFor(() =>
+            expect(host.querySelector('[data-testid="agent-launch-review"]')).not.toBeNull(),
+          )
+          expect(startAgent).not.toHaveBeenCalled()
+          expect(host.textContent).toContain(locale === 'en' ? 'Quality reviewer' : '质量审核员')
+          expect(host.textContent).toContain('B-017')
+          expect(
+            host.querySelector('[data-testid="launch-technical"] button')?.getAttribute('aria-expanded'),
+          ).toBe('false')
+          expect(host.textContent).toContain(
+            consent === 'changed'
+              ? locale === 'en'
+                ? 'changed since adoption'
+                : '较采用时变化'
+              : locale === 'en'
+                ? 'not covered'
+                : '尚未被当前应用同意覆盖',
+          )
+          await act(async () =>
+            host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-confirm"]')?.click(),
+          )
+        }
+        await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+        expect(startAgent).toHaveBeenCalledWith('ticket', expect.any(String))
+        expect(host.querySelector('[data-testid="agent-launch-review"]')).toBeNull()
+        const { applicationWorkDraft } = await import('@agnes/web-client')
+        expect(applicationWorkDraft.read(`work-${locale}-${consent}`)?.object?.id).toBe('B-017')
+        expect(new URL(assign.mock.calls[0]![0], 'http://localhost').searchParams.get('prompt')).toBe(
+          locale === 'en' ? 'Review this batch.' : '请复核此批次。',
+        )
+      } finally {
+        await act(async () => root.unmount())
+        host.remove()
+        localized.dispose()
+        assign.mockRestore()
+      }
     }
   },
 )

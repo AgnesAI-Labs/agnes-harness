@@ -1,6 +1,7 @@
 import type { AgentPlan, AgentRef, BundleLaunch } from '@agnes/protocol'
 import {
   AGENTS_NAMESPACE,
+  AgentLaunchReview,
   agentsCatalog,
   type BusinessAgentsData,
   openStartedSession,
@@ -15,7 +16,6 @@ import {
 } from '@agnes/web-client'
 import { Banner, Button, Loadable, PushPage, usePushStack, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
-import { AgentLaunchReview } from './agents-launch-review.js'
 import type { AgentCard } from './agents-model.js'
 
 type Attempt = { plan: AgentPlan; launchTicket: string; operationId: string }
@@ -26,6 +26,8 @@ type Launch = {
   phase: 'preparing' | 'review' | 'starting' | 'failed'
   attempt?: Attempt
   error?: string
+  consent?: 'covered' | 'changed' | 'unavailable'
+  changes?: string[]
   work?: ApplicationWorkRequest
 }
 
@@ -67,15 +69,19 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       const result = await data.api.prepareAgent(card.ref)
       if (current.current !== pending) return
       if (result.presentation.ref !== card.ref) throw new Error(t('reason.changed'))
-      set({
+      const prepared: Launch = {
         ...pending,
+        consent: result.consent ?? 'unavailable',
+        ...(result.changes ? { changes: result.changes } : {}),
         phase: 'review',
         attempt: {
           plan: result.presentation,
           launchTicket: result.launchTicket,
           operationId: crypto.randomUUID(),
         },
-      })
+      }
+      set(prepared)
+      if (work && result.consent === 'covered') await start(prepared)
     } catch (error) {
       if (current.current === pending)
         set({
@@ -177,6 +183,11 @@ export function useAgentLaunch(data: BusinessAgentsData) {
             {launch.phase === 'review' && launch.attempt && (
               <AgentLaunchReview
                 plan={launch.attempt.plan}
+                consent={launch.consent}
+                changes={launch.changes}
+                object={
+                  launch.work ? resolveApplicationWork(launch.work, locale)?.request.object?.id : undefined
+                }
                 draft={launch.work ? resolveApplicationWork(launch.work, locale)?.prompt : undefined}
                 onConfirm={() => {
                   void start(launch)

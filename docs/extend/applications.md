@@ -181,8 +181,8 @@ The host resolves page ownership and readiness, removes tabs on clear/unresolve,
 failures. Files, Changes and Terminal remain reachable through the normal dock and overflow menu.
 
 Actions use `agent` or the application's `defaultAgent`, must target an allowed launchable agent,
-and may focus a declared tab. They open the existing launch review and fill an editable request,
-never submit it. From a business page, import `openApplicationWork` from `@agnes/web-client` and call
+and may focus a declared tab. They open a conversation directly when covered by adoption consent, or show a short launch review
+when fresh consent is needed. They fill an editable request and never submit it. From a business page, import `openApplicationWork` from `@agnes/web-client` and call
 `openApplicationWork('review', {type: 'ncr', id: record.id})`. The object is bounded structured request
 context, shown as a removable chip beside the editable human-readable prompt. Only submission serializes
 the context into durable user content; the transcript restores the chip, including after reload or in a
@@ -203,3 +203,11 @@ receipts and opens the existing execution records and report files. Gallery scen
 launch lists for workbench applications; role descriptions remain in collapsed details.
 
 Installed applications keep their pages available through plugin and agent surfaces. Only the adopted application contributes its pages to the main sidebar; ordinary non-application plugin navigation remains available.
+
+Application actions reuse adoption consent when the backend confirms that the saved, digest-bound
+launch plan exactly matches the current admitted agent, sources (versions and content hashes),
+capabilities, models and permissions. They open a conversation with an editable request and object
+context; nothing is sent automatically. Older consent snapshots without launch plans, changed
+configuration, and launches outside the adopted catalogue require a short review. Technical routes,
+hashes and exports are collapsed. The same ticket expiry, caller/workspace binding, drift checks and
+Host admission still apply; revoking adoption before a direct start invalidates its ticket.

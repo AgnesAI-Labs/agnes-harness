@@ -16,7 +16,7 @@ import {
   parseSource,
   writeLock,
 } from '@agnes/package-manager'
-import { validatePackageAdminCall } from '@agnes/protocol'
+import { type AgentPlan, validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { Applications } from '../src/packages/applications.js'
 import { contributionProjection } from '../src/packages/contribution-roster.js'
@@ -26,7 +26,7 @@ const homes: string[] = []
 afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true })
 })
-async function fixture() {
+async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<AgentPlan>) {
   const home = await mkdtemp(join(tmpdir(), 'agh-applications-'))
   homes.push(home)
   const directory = join(home, 'profiles', 'local-dev')
@@ -56,6 +56,7 @@ async function fixture() {
   let packages = [make('a'), make('b')]
   const inactive = new Set<string>()
   const applications = new Applications({
+    ...(resolveAgent ? { resolveAgent } : {}),
     manager: { inventory: async () => ({ profile: 'local-dev', hash: '', packages }) },
     profileDirectory: async () => directory,
     active: async (_profile, id) => !inactive.has(id),
@@ -678,4 +679,42 @@ it('retains unresolved role identity without choosing another plugin and binds d
     (await f.applications.previewRole('local-dev', 'deliverables', { packageId: 'b', clientId: 'ui' }))
       .consentDigest,
   ).not.toBe(preview.consentDigest)
+})
+
+it('retains the reviewed Host launch plans, refuses drift at adoption and keeps presentation active on launch-policy changes', async () => {
+  let plan: AgentPlan = {
+    ref: 'a#work',
+    launch: { title: { en: 'Reviewer' }, description: { en: 'Review' }, preset: 'safe' },
+    loop: { id: 'work', version: '1.0.0' },
+    bundles: ['a#work'],
+    preset: 'safe',
+    pages: [],
+    digest: 'original',
+    compositionHash: 'tree',
+    presetHash: 'preset',
+    effectivePresetHash: 'effective',
+    model: { route: 'demo', model: 'demo' },
+    models: {},
+    permission: { readOnly: true, tools: ['read'], allow: [], deny: [] },
+    sources: [{ id: 'a', version: '1.0.0', integrity: 'hash', source: 'runtime-snapshot' }],
+  }
+  const f = await fixture(async (profile, ref) => {
+    expect(profile).toBe('local-dev')
+    expect(ref).toBe(plan.ref)
+    return structuredClone(plan)
+  })
+  const a = f.packages()[0]!
+  a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+  a.entry.application = { ...a.entry.application!, agents: [plan.ref], defaultAgent: plan.ref }
+  const preview = await f.applications.preview('local-dev', 'a')
+  expect(preview.agentLaunches).toEqual([plan])
+  plan = { ...plan, digest: 'new-policy', permission: { ...plan.permission, readOnly: false } }
+  await expect(f.applications.adopt('local-dev', 'a', 0, preview.consentDigest)).rejects.toMatchObject({
+    data: { reason: 'APPLICATION_PREVIEW_STALE' },
+  })
+  const current = await f.applications.preview('local-dev', 'a')
+  const adopted = await f.applications.adopt('local-dev', 'a', 0, current.consentDigest)
+  expect(adopted.selection?.consentSnapshot?.agentLaunches).toEqual([plan])
+  plan = { ...plan, digest: 'another-policy' }
+  expect((await f.applications.get('local-dev')).status).toBe('active')
 })

@@ -59,7 +59,6 @@ const permissionLabels: Record<string, [string, string]> = {
   read: ['Read files', '读取文件'],
   write: ['Write files', '写入文件'],
   model: ['Model access', '模型访问'],
-  store: ['Store data', '存储数据'],
   device: ['Use devices', '使用设备'],
   wake: ['Run in background', '后台运行'],
   uiData: ['Interface data', '界面数据'],
@@ -70,8 +69,11 @@ const permissionLabels: Record<string, [string, string]> = {
   tools: ['Tools', '工具'],
   names: ['Names', '名称'],
   prefix: ['Prefix', '前缀'],
+  store: ['Application records', '应用记录'],
+  'tools.invoke': ['Use tools', '使用工具'],
 }
 function permissionLines(value: unknown, tr: Text, path = ''): string[] {
+  if (path === tr('Tools', '工具')) return [`${path}: ${tr('Declared business tools', '已声明的业务工具')}`]
   if (Array.isArray(value))
     return value.length
       ? value.flatMap((item) => permissionLines(item, tr, path))
@@ -128,6 +130,18 @@ export function ApplicationPreviewSummary({
   const list = (values: readonly string[] | undefined, fallback = none) => values?.join(', ') || fallback
   const diff = object(preview.dependencyDiff)
   const raw = JSON.stringify(preview, null, 2)
+  const localized = (value: unknown, fallback: string) => {
+    const row = object(value)
+    return text(row?.[language]) || text(row?.en) || fallback
+  }
+  const agentName = (ref: string) => {
+    const plan = preview.agentLaunches?.map(object).find((plan) => plan?.ref === ref)
+    return localized(object(plan?.launch)?.title, tr('Application agent', '应用智能体'))
+  }
+  const pageName = (ref: string) => {
+    const page = preview.pageNames?.map(object).find((page) => page?.ref === ref)
+    return localized(page?.title, tr('Application page', '应用页面'))
+  }
   return (
     <>
       <div data-testid="consent-summary">
@@ -138,17 +152,12 @@ export function ApplicationPreviewSummary({
             <h4>{tr('Pages and navigation', '页面与导航')}</h4>
             <p>
               {tr('Home / skin', '主页 / 皮肤')}:{' '}
-              {declaration.presentation?.home ? tr('Application home page', '应用首页') : host} /{' '}
-              {declaration.presentation?.skin ? tr('Application theme', '应用主题') : host}
+              {declaration.presentation?.home ? pageName(declaration.presentation.home) : host} /{' '}
+              {declaration.presentation?.skin ? tr('Application appearance', '应用外观') : host}
             </p>
             <p>
               {tr('Navigation pages', '导航页面')}:{' '}
-              {navigation?.entries
-                ? tr(
-                    `${navigation.entries.length} application pages`,
-                    `${navigation.entries.length} 个应用页面`,
-                  )
-                : host}
+              {list(navigation?.entries?.map(pageName), navigation?.entries ? none : host)}
             </p>
             <p>
               {tr('Hidden host entries', '隐藏的宿主入口')}:{' '}
@@ -161,18 +170,46 @@ export function ApplicationPreviewSummary({
             <h4>{tr('Agents', '智能体')}</h4>
             <p>
               {tr('Visible agents', '可见智能体')}:{' '}
-              {declaration.agents
-                ? tr(
-                    `${declaration.agents.length} application agents`,
-                    `${declaration.agents.length} 个应用智能体`,
-                  )
-                : tr('All available agents', '全部可用智能体')}
+              {list(
+                declaration.agents?.map(agentName),
+                declaration.agents ? none : tr('All available agents', '全部可用智能体'),
+              )}
             </p>
             <p>
               {tr('Default agent', '默认智能体')}:{' '}
               {declaration.defaultAgent
-                ? tr('Chosen by this application', '由应用指定')
+                ? agentName(declaration.defaultAgent)
                 : tr('General assistant', '通用助手')}
+            </p>
+            <h4>{tr('Agent access', '智能体权限')}</h4>
+            {preview.agentLaunches?.length ? (
+              <ul>
+                {preview.agentLaunches.map((value) => {
+                  const plan = object(value)
+                  const permission = object(plan?.permission)
+                  return (
+                    <li key={text(plan?.ref)}>
+                      {agentName(text(plan?.ref))}:{' '}
+                      {permission?.readOnly === true
+                        ? tr('Read-only tools', '只读工具')
+                        : tr('Tools may read and change data', '工具可读取及修改数据')}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <p>
+                {tr(
+                  'Launch configuration is unavailable; each action will need a separate review.',
+                  '启动配置尚不可用，每项动作仍需单独审阅。',
+                )}
+              </p>
+            )}
+            <p>
+              {tr(
+                'Existing runtime restrictions and approvals continue to apply.',
+                '继续遵循现有运行限制与审批。',
+              )}
             </p>
           </>
         )}
