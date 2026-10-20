@@ -1,10 +1,25 @@
 import { applicationIdentity, homeNavigation, openApplicationWork } from '@agnes/web-client'
 import { Button, EmptyState, Icon, Tag } from '@agnes/web-ui'
 import React from 'react'
+import { confirmationLabel } from './i18n.js'
 import { section, status } from './views.js'
 
 const h = React.createElement
 export const WorkOwner = React.createContext(undefined)
+function recordedConfirmations(data, record, t) {
+  const proofs = (record.approvals ?? []).map((id) => ({
+    ...data.audit.find((entry) => entry.approval === id),
+    decisionId: id,
+  }))
+  if (record.closure) proofs.push(record.closure)
+  return proofs.map((proof) =>
+    h(
+      'p',
+      { key: proof.decisionId, 'data-business-confirmation': true },
+      `${confirmationLabel(proof.confirmationMode, proof.signer ?? '—', t.zh ? 'zh-CN' : 'en')} · ${proof.decisionId}`,
+    ),
+  )
+}
 /** @returns {import('react').ReactElement} */
 export function WorkButton({ action, object, t, label, appearance }) {
   const owner = React.useContext(WorkOwner)
@@ -80,6 +95,7 @@ export function ObjectDossier({ data, t, context }) {
     record.hypothesis && h('p', null, t.value(record.hypothesis)),
     record.rationale && h('p', null, record.rationale),
     record.disposition && h('p', null, `${t.choose('处置', 'Disposition')}: ${t.status(record.disposition)}`),
+    ...recordedConfirmations(data, record, t),
     record.evidence &&
       section(t.evidence, h('ul', null, ...record.evidence.map((id) => h('li', { key: id }, id)))),
     record.criteria &&
@@ -145,6 +161,7 @@ export function Tasks({ data, t }) {
               h('strong', null, r.id),
               h('span', { className: 'aero-task-title' }, r.title ? t.value(r.title) : ''),
               status(t, r.status),
+              ...recordedConfirmations(data, r, t),
               h(WorkButton, { action, object: { type, id: r.id }, t }),
             ),
           ),

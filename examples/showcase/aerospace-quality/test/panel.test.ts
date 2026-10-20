@@ -7,7 +7,7 @@ import { createElement } from 'react'
 import { expect, it } from 'vitest'
 import { language } from '../client/i18n.js'
 import * as module from '../client/index.js'
-import { ObjectDossier } from '../client/workbench.js'
+import { ObjectDossier, Tasks } from '../client/workbench.js'
 import { coverage, health, impact, investigate } from '../src/domain.js'
 import { seed } from '../src/seed.js'
 
@@ -193,6 +193,41 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
             expect(host.container.textContent).not.toContain(
               locale === 'en' ? 'Signed by recorded.principal' : '已由真人签署: recorded.principal',
             )
+        }
+        const dossier = host.window.document.createElement('div')
+        host.window.document.body.append(dossier)
+        try {
+          for (const object of [
+            { type: 'ncr', id: 'NCR-018' },
+            { type: 'ecr', id: 'ECR-016' },
+            { type: 'zeroing', id: state.zeroing[0]!.id },
+          ]) {
+            renderRegion(
+              dossier as unknown as HTMLElement,
+              createElement(ObjectDossier, {
+                data: state,
+                t: language(locale),
+                context: { selection: { object } },
+              }),
+            )
+            expect(dossier.textContent).toContain(expected)
+            if (mode !== 'manual')
+              expect(dossier.textContent).not.toContain(
+                locale === 'en' ? 'Signed by recorded.principal' : '已由真人签署: recorded.principal',
+              )
+          }
+          renderRegion(
+            dossier as unknown as HTMLElement,
+            createElement(Tasks, { data: state, t: language(locale) }),
+          )
+          expect(dossier.textContent).toContain(expected)
+          if (mode !== 'manual')
+            expect(dossier.textContent).not.toContain(
+              locale === 'en' ? 'Signed by recorded.principal' : '已由真人签署: recorded.principal',
+            )
+        } finally {
+          unmountRegion(dossier as unknown as HTMLElement)
+          dossier.remove()
         }
       }
     } finally {
