@@ -191,6 +191,24 @@ describe('local package admin surface trust boundary', () => {
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
   })
 
+  it('returns one freshly verified inventory with the matching context and fails closed on recovery', async () => {
+    const s = await server()
+    const first = await s.request('overview')
+    expect(first.status).toBe(200)
+    expect(await first.json()).toMatchObject({ context: { readOnly: false }, inventory: { packages: [] } })
+    expect(s.invoke).toHaveBeenCalledTimes(1)
+    s.invoke.mockRejectedValueOnce(new Error('private backend path'))
+    const recovery = await s.request('overview')
+    expect(recovery.status).toBe(200)
+    const body = await recovery.json()
+    expect(body).toMatchObject({ context: { readOnly: true } })
+    expect(body).not.toHaveProperty('inventory')
+    expect(JSON.stringify(body)).not.toContain('private backend path')
+    const denied = await server(undefined, undefined, { permissions: [] })
+    expect((await denied.request('overview')).status).toBe(403)
+    expect(denied.invoke).not.toHaveBeenCalled()
+  })
+
   it('returns only validated live Surface links through the exact-origin BFF', async () => {
     const surfaceLinks = vi.fn(async () => [
       { packageId: 'agnes/demo-surface', surfaceId: 'demo', mount: '/demo' },

@@ -80,3 +80,25 @@ it('does not cache a read invalidated in flight or reuse a snapshot after its re
   await readInventorySnapshot(api, context, true)
   expect(list).toHaveBeenCalledTimes(6)
 })
+
+it('uses the overview inventory without a second package list read', async () => {
+  const context = {
+    profile: 'test',
+    clientId: 'web',
+    permissions: ['packages.read' as const],
+    readOnly: false,
+  }
+  const api = new PluginAdminApi(context)
+  const list = vi.spyOn(api, 'list').mockResolvedValue({ packages: [] } as never)
+  vi.spyOn(api, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  vi.spyOn(api, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+  vi.spyOn(api, 'runtime').mockResolvedValue({ providers: [] } as never)
+  vi.spyOn(api, 'composition').mockResolvedValue({} as never)
+  vi.spyOn(api, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+  const inventory = { packages: [] }
+  expect((await readInventorySnapshot(api, context, false, inventory)).list).toEqual(inventory)
+  expect(list).not.toHaveBeenCalled()
+  const updated = { packages: [], generations: { generations: [], plugins: [] } }
+  expect((await readInventorySnapshot(api, context, true, updated)).list).toEqual(updated)
+  expect(list).not.toHaveBeenCalled()
+})

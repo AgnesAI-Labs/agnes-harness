@@ -333,6 +333,7 @@ export async function createPackagedHost(
     | 'skillInstall'
     | 'runtimePluginSnapshots'
     | 'runtimePluginSources'
+    | 'deferInitialGeneration'
     | 'managedExtensionPackageIds'
     | 'serviceAuthority'
   >,

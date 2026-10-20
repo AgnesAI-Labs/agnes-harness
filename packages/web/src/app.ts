@@ -82,6 +82,7 @@ import {
   type NewSessionCatalog,
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
+import { businessAgentSuggestions } from './pages/business-agents.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
@@ -1118,13 +1119,10 @@ async function refreshSessionCatalog(): Promise<void> {
   loopCatalogPending = !newSessionCatalog
   renderControls()
   try {
-    const catalog = await loadNewSessionCatalog()
-    let runtime: typeof runtimeCatalog
-    try {
-      runtime = await loadRuntimeCatalog()
-    } catch {
-      runtime = undefined
-    }
+    const [catalog, runtime] = await Promise.all([
+      loadNewSessionCatalog(),
+      loadRuntimeCatalog().catch(() => undefined),
+    ])
     if (generation !== sessionCatalogGeneration) return
     newSessionCatalog = catalog
     runtimeCatalog = runtime
@@ -1614,6 +1612,7 @@ function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: Workspace
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || submissions.sending) return
+  void businessAgentSuggestions.refresh()
   selectComposerDraft()
   sessionPending = true
   workspaceController.resolveDraft(workspace)
@@ -2154,17 +2153,16 @@ run(async () => {
   accountProvider = snapshot.provider
   profileName = snapshot.profile
   void skinGroup.refresh()
-  // profile 就绪后做首次真实名册对账（此前名册源按空处理）。
-  scheduleClientRosterRead(true)
+  // A session selection reads its own roster. Defer the profile-only read until we know there
+  // is no session to open, so startup never verifies and imports the same modules twice.
   accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
-  // The sidebar can show usable sessions while models are slow. Navigation and draft defaults
-  // still wait for models, then workspaces; failures are isolated to their own read.
-  const [models, workspaces, sessions] = await Promise.allSettled([
-    refreshModels(),
-    client.workspace.list(),
-    list(),
-  ])
-  if (models.status === 'rejected') showError(models.reason)
+  // Existing conversations do not need a model catalog to open. Keep its read in flight while
+  // the session and workspace lists resolve; only new-draft defaults depend on its result.
+  const models = refreshModels().then(
+    () => ({ status: 'fulfilled' as const }),
+    (reason: unknown) => ({ status: 'rejected' as const, reason }),
+  )
+  const [workspaces, sessions] = await Promise.allSettled([client.workspace.list(), list()])
   if (workspaces.status === 'fulfilled') {
     workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
@@ -2194,11 +2192,20 @@ run(async () => {
   // A user choice also owns whether the account setup dialog may open.
   if (!sessionBinding.isCurrent(startupSelection)) return
   // Accounts without a usable model get a notice that leads to settings; a load never opens the dialog.
-  const modelNotice = needsModelNotice({
-    modelsRead: models.status === 'fulfilled',
-    models: runtimeModels.length,
-    accounts: snapshot.accounts?.length ?? 0,
-  })
+  let modelNotice = false
+  let modelsHandled = false
+  const awaitModels = async () => {
+    const result = await models
+    if (modelsHandled) return
+    modelsHandled = true
+    if (result.status === 'rejected') showError(result.reason)
+    modelNotice = needsModelNotice({
+      modelsRead: result.status === 'fulfilled',
+      models: runtimeModels.length,
+      accounts: snapshot.accounts?.length ?? 0,
+    })
+    if (modelNotice) renderControls()
+  }
   let missingSession = false
   const showModelNotice = () => {
     // A link to a session that is gone keeps its own notice.
@@ -2213,7 +2220,6 @@ run(async () => {
         }),
     })
   }
-  if (modelNotice) renderControls()
   const guided =
     empty &&
     !startupRequest.get('settings') &&
@@ -2224,6 +2230,8 @@ run(async () => {
   if (!sessionBinding.isCurrent(startupSelection)) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
+    await awaitModels()
+    scheduleClientRosterRead(true)
     requestNewSession()
     sessionPending = false
     await beginNewDraft(configured)
@@ -2276,11 +2284,14 @@ run(async () => {
       if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
     } else {
       missingSession = true
+      scheduleClientRosterRead(true)
       notice.setText(t('app.session.notFound'))
       renderControls()
     }
   } else if (first) await open(first.sessionId)
   else if (empty) {
+    await awaitModels()
+    scheduleClientRosterRead(true)
     await beginNewDraft(
       configured &&
         !startupSection &&
@@ -2290,9 +2301,11 @@ run(async () => {
         !guided,
     )
   } else {
+    scheduleClientRosterRead(true)
     sessionPending = false
     renderControls()
   }
+  await awaitModels()
   const factCandidate = startupRequest.get('factCandidate')
   if (
     selected &&

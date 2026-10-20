@@ -1360,3 +1360,17 @@ it('does not revive a withdrawn plugin from a late hot reload roster query', asy
   expect(reconciler.snapshot().get('withdrawn')?.phase).toBe('idle')
   expect(h.disposed).toContain('dispose:withdrawn')
 })
+
+it('reuses an unchanged module URL and advances it only for explicit hot reload', async () => {
+  const { createModuleImportUrls } = await import('../src/client-modules/reconcile.js')
+  const urls = createModuleImportUrls()
+  const url = '/plugins/example/sha256-revision/src/client.js'
+  expect(urls.resolve(url)).toBe(url)
+  expect(urls.resolve(url)).toBe(url)
+  urls.invalidate(url)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=1`)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=1`)
+  urls.invalidate(url)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=2`)
+  expect(urls.resolve(`${url}?source=local`)).toBe(`${url}?source=local`)
+})

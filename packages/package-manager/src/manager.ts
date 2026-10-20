@@ -76,7 +76,7 @@ import {
   resolveRuntimePinStore,
   runtimePinBlockers,
 } from './runtime-snapshots.js'
-import { readRuntimePluginSnapshots } from './runtime-source-read.js'
+import { createRuntimeSourceReader } from './runtime-source-read.js'
 import {
   type ExecFn,
   type FetchedSource,
@@ -275,6 +275,7 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 export function createPackageManager(options: ManagerOptions): PackageManager {
   const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
+  const readRuntimePluginSnapshots = createRuntimeSourceReader()
   const profileKey = (directory: string): string =>
     existsSync(directory) ? nativeRealpathSync(directory) : resolve(directory)
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
@@ -742,14 +743,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
     async runtimePluginSnapshots(profileDir) {
-      return withPackageVerification(() =>
-        readRuntimePluginSnapshots(profileDir, {
-          store: storeFor(profileDir),
-          load: () => load(profileDir),
-          ceiling,
-          verificationCache: inventoryVerifications,
-        }),
-      )
+      return readRuntimePluginSnapshots(profileDir, {
+        store: storeFor(profileDir),
+        load: () => load(profileDir),
+        ceiling,
+        verificationCache: inventoryVerifications,
+      })
     },
     async pinRuntimeSnapshot(profileDir, request) {
       const frozen = structuredClone(request)

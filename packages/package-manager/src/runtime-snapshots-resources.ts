@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { JsonValue } from '@agnes/protocol'
 import { mkdirDurablySync, syncTreeSync } from '@agnes/system-node'
+import { collectRead, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { hashDirectory } from './sources.js'
 
@@ -51,6 +52,13 @@ export function readGenerationResources(
   directory: string,
   expectedDigest: string,
 ): RuntimeGenerationResourceSnapshot {
+  return collectRead(readGenerationResourcesSteps(directory, expectedDigest))
+}
+
+export function* readGenerationResourcesSteps(
+  directory: string,
+  expectedDigest: string,
+): ReadSteps<RuntimeGenerationResourceSnapshot> {
   try {
     const text = readFileSync(join(directory, 'resources.json'), 'utf8')
     if (digest(text) !== expectedDigest) throw new Error('digest')
@@ -60,12 +68,21 @@ export function readGenerationResources(
       trees: { path: string; integrity: string }[]
     }
     if (record.version !== 1 || !Array.isArray(record.trees)) throw new Error('record')
-    const directories = record.trees.map((tree, index) => {
+    const directories: string[] = []
+    for (const [index, tree] of record.trees.entries()) {
       if (tree.path !== String(index)) throw new Error('path')
       const path = join(directory, tree.path)
-      if (hashDirectory(path, { exclude: [] }) !== tree.integrity) throw new Error('tree')
-      return path
-    })
+      // Composition and generation owners inspect the same archive in one admission. Share only
+      // its verified tree digest in that operation, bound to this exact resource manifest.
+      const integrity = yield* directoryDigestSteps(path, {
+        version: '1',
+        integrity: expectedDigest,
+        treeIntegrity: tree.integrity,
+        capabilityHash: '',
+      })
+      if (integrity !== tree.integrity) throw new Error('tree')
+      directories.push(path)
+    }
     return { data: record.data, directories }
   } catch {
     throw new Error('E_GENERATION_RESOURCE_MISSING: private resource snapshot is missing or changed')

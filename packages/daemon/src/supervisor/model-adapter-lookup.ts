@@ -26,7 +26,11 @@ export async function sharedSessionCatalog(pool: {
   acquireSharedWorker(): Promise<Pick<WorkerLink, 'command'>>
 }): Promise<SharedSessionCatalog> {
   const link = await pool.acquireSharedWorker()
-  return (await link.command('session.catalog', {}, { timeoutMs: 31_000 })) as SharedSessionCatalog
+  return (await link.command(
+    'session.catalog',
+    { selectionOnly: true },
+    { timeoutMs: 31_000 },
+  )) as SharedSessionCatalog
 }
 
 /** Model pickers need route declarations and registration descriptions, not session composition.
@@ -41,13 +45,15 @@ export function readModelSelectionCatalog(input: {
   return () =>
     withPackageVerification(async () => {
       const profile = input.profile()
-      const sources = await input.sources()
+      let reading: Promise<readonly RuntimePluginSnapshot[]> | undefined
+      const readSources = () => (reading ??= input.sources())
       const live = await readRunningModelCatalog(
         input.worker?.(),
-        sources,
+        readSources,
         builtinModelAdapterCatalog(profile),
       )
       if (live) return [...live]
+      const sources = await readSources()
       const published = readPublishedModelAdapters(input.profileDir, profile.hash, sources)
       const builtin = await builtinModelSelectionData(profile)
       const adapters = new Map(builtin.adapters.map((a) => [a.id, a]))

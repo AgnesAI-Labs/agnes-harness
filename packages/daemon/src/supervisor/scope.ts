@@ -16,7 +16,17 @@ import {
   readConfigurationProfileInputs,
   resolveProfile,
 } from '@agnes/host'
-import { createPackageManager } from '@agnes/package-manager'
+import { createPackageManager, withPackageVerification } from '@agnes/package-manager'
+
+// Retain byte-keyed static inspection metadata, not verified tree/trust verdicts. Each read still
+// hashes current bytes. A configuration service owns one bounded manager for its current data scope.
+const profilePackages = new WeakMap<
+  ConfigurationService,
+  {
+    key: string
+    manager: ReturnType<typeof createPackageManager>
+  }
+>()
 
 /** Inputs shared by every local daemon consumer (start, status, stop and clients). */
 export type DaemonScopeOptions = {
@@ -175,11 +185,18 @@ async function profileForScope(
   // initial loop. The worker resolves these exact lock identities from immutable snapshots.
   // Explicit package declarations (including disabled ones) still win over inventory defaults.
   const declared = new Set(inputs.user?.packages?.map((pkg) => pkg.id))
+  const packageKey = JSON.stringify([dataDir, input.agnesVersion])
+  let packageReader = profilePackages.get(configuration)
+  if (packageReader?.key !== packageKey) {
+    packageReader = {
+      key: packageKey,
+      manager: createPackageManager({ dataDir, agnesVersion: input.agnesVersion }),
+    }
+    profilePackages.set(configuration, packageReader)
+  }
   const snapshots =
     !input.ignorePackageLock && inputs.lock
-      ? await createPackageManager({ dataDir, agnesVersion: input.agnesVersion }).runtimePluginSnapshots(
-          join(home, 'profiles', profile),
-        )
+      ? await packageReader.manager.runtimePluginSnapshots(join(home, 'profiles', profile))
       : []
   const installed = Object.entries(inputs.lock?.packages ?? {})
     .filter(
@@ -297,18 +314,20 @@ export async function resolveDaemonProfile(
     'configuration' | 'agnesVersion' | 'now' | 'env' | 'ignorePackageLock' | 'adminBundles'
   > = {},
 ): Promise<{ profile: ResolvedProfile; configuration: ConfigurationService }> {
-  const resolved = await profileForScope({
-    home: scope.home,
-    profile: scope.profile,
-    workspace: scope.workspace,
-    dataDir: scope.dataDir,
-    osHome: nonempty(options.env?.HOME) ?? homedir(),
-    ...(options.env ? { env: options.env } : {}),
-    ...(options.configuration ? { configuration: options.configuration } : {}),
-    ...(options.ignorePackageLock ? { ignorePackageLock: true } : {}),
-    ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
-    agnesVersion: options.agnesVersion ?? '0.0.0',
-    now: options.now ?? new Date().toISOString(),
-  })
+  const resolved = await withPackageVerification(() =>
+    profileForScope({
+      home: scope.home,
+      profile: scope.profile,
+      workspace: scope.workspace,
+      dataDir: scope.dataDir,
+      osHome: nonempty(options.env?.HOME) ?? homedir(),
+      ...(options.env ? { env: options.env } : {}),
+      ...(options.configuration ? { configuration: options.configuration } : {}),
+      ...(options.ignorePackageLock ? { ignorePackageLock: true } : {}),
+      ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
+      agnesVersion: options.agnesVersion ?? '0.0.0',
+      now: options.now ?? new Date().toISOString(),
+    }),
+  )
   return { profile: resolved.profile, configuration: resolved.configuration }
 }

@@ -51,6 +51,7 @@ describe('CompositeRuntimeDelivery', () => {
     const boot = delivery.bootFor(4)
     expect(boot).toEqual({ artifact: lastGood, source: 'lastGood' })
     if (!boot) throw new Error('expected lastGood boot')
+    expect(delivery.desiredAfterBoot(boot)).toEqual(newer)
     const admission = delivery.beginBoot(4, boot)
     expect(
       delivery.handleWorkerFrame(4, {
@@ -171,8 +172,10 @@ describe('CompositeRuntimeDelivery', () => {
     const boot = delivery.bootFor(1)
     expect(boot?.source).toBe('bootstrap')
     if (!boot) throw new Error('expected bootstrap')
+    expect(delivery.desiredAfterBoot(boot)).toBeUndefined()
     delivery.beginBoot(1, boot)
     store.publishDesired(second)
+    expect(delivery.desiredAfterBoot(boot)).toEqual(second)
     expect(
       delivery.handleWorkerFrame(1, {
         type: 'runtime.apply_failed',

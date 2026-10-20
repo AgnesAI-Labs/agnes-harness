@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto'
 import type { PluginRow } from './plugin-row.js'
 import { isResourceOwnedRowId } from './resource-owned.js'
 
+// Only rows canonicalized here are deeply immutable. Foreign/frozen-only inputs still get copied.
+const canonicalRowObjects = new WeakSet<object>()
+
 export const ROW_STATES = Object.freeze([
   'pending',
   'loading',
@@ -106,6 +109,7 @@ function snapshotJson(value: unknown, path = 'config'): unknown {
 
 export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalidTree('row must be an object')
+  if (canonicalRowObjects.has(value)) return value as Readonly<PluginRow>
   const row = value as Record<string, unknown>
   if (typeof row.disabled !== 'boolean') invalidTree('row.disabled must be a boolean')
   if (row.runtime !== 'in-process' && row.runtime !== 'isolated') {
@@ -144,7 +148,9 @@ export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
       : { configReload: row.configReload as NonNullable<PluginRow['configReload']> }),
     ...(row.config === undefined ? {} : { config: snapshotJson(row.config) }),
   } satisfies PluginRow
-  return Object.freeze(snapshot)
+  Object.freeze(snapshot)
+  canonicalRowObjects.add(snapshot)
+  return snapshot
 }
 
 function canonicalRows(value: unknown): readonly Readonly<PluginRow>[] {

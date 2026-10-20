@@ -84,6 +84,30 @@ it('keeps an unresolved no-route profile empty, matching unresolvedProviderAssem
   expect(cold.models).toEqual([])
 })
 
+it('reads intrinsic live model metadata without verifying unrelated plugin trees', async () => {
+  const f = fixture()
+  f.profile.packages.push({
+    id: '@agnes/ai',
+    version: '0.0.0',
+    integrity: 'builtin:0.0.0',
+    source: 'builtin',
+    trust: 'builtin',
+    enabled: true,
+  })
+  const adapter = { ...builtinModelAdapterCatalog(f.profile)[0]!, models: [] }
+  const sources = vi.fn(async (): Promise<RuntimePluginSnapshot[]> => {
+    throw new Error('unrelated scan')
+  })
+  const read = readModelSelectionCatalog({
+    profile: () => f.profile,
+    profileDir: f.profileDir,
+    sources,
+    worker: () => ({ alive: true, command: async () => ({ modelAdapters: [adapter], sources: [] }) }),
+  })
+  expect(await read()).toEqual([adapter])
+  expect(sources).not.toHaveBeenCalled()
+})
+
 it('fails closed on missing, future-version, wrong-profile, disabled and untrusted persisted projections', () => {
   const f = fixture()
   const file = join(f.profileDir, '.agnes-published-model-adapters.json')

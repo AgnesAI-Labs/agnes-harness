@@ -75,7 +75,11 @@ import type {
   WorkerReplyFrame,
 } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
-import type { WorkerHostSkillResources } from './host-resources.js'
+import {
+  type WorkerHostSkillResources,
+  workerBootGenerationOptions,
+  workerBootPackageSnapshots,
+} from './host-resources.js'
 import {
   HostedSessions,
   SESSION_SCOPED_WORKER_METHODS,
@@ -399,19 +403,9 @@ export async function runWorker(
   // Explicit profile packages can supply presets at assembly time. Admit only active immutable
   // pins matching that profile's exact integrity; the Host still rejects any missing snapshot.
   // Like `computerUse` above, a profile file that lists no packages means there are none.
-  const bootPackages = new Map(
-    (profile.packages ?? [])
-      .filter((pkg) => pkg.enabled && pkg.trust !== 'builtin')
-      .map((pkg) => [pkg.id, pkg.integrity]),
-  )
-  const bootPackageSnapshots =
-    !resourceLifecycleWorker && bootPackages.size
-      ? {
-          runtimePluginSnapshots: (await assemble(runtimePluginSources())).filter(
-            (source) => bootPackages.get(source.snapshot.packageId) === source.snapshot.integrity,
-          ),
-        }
-      : {}
+  const bootPackageSnapshots = resourceLifecycleWorker
+    ? {}
+    : await assemble(workerBootPackageSnapshots(profile, runtimePluginSources))
   if (profile.adapters?.secrets?.kind === 'file') {
     const explicitHome = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || undefined
     resolveFileSecretsDirectory({
@@ -420,6 +414,10 @@ export async function runWorker(
       ...(explicitHome ? { home: explicitHome } : {}),
     })
   }
+  const bootGenerationOptions = workerBootGenerationOptions(
+    env.AGNES_RUNTIME_BOOT_SOURCE,
+    !!bootResources?.mcpEntries.length,
+  )
   const hostCandidate: Promise<WorkerHostLike | undefined> = resourceLifecycleWorker
     ? Promise.resolve(undefined)
     : deps.buildHost
@@ -433,6 +431,7 @@ export async function runWorker(
           pluginManage,
           requestMedia,
           runtimePluginSources,
+          ...bootGenerationOptions,
           ...bootPackageSnapshots,
           ...(bootResources ? { skillResources: bootResources.skillResources } : {}),
           ...(workerServiceAuthority ? { serviceAuthority: workerServiceAuthority } : {}),
@@ -480,6 +479,7 @@ export async function runWorker(
             extensionLoader: moduleLoader,
             ...(bootResources ?? {}),
             ...bootPackageSnapshots,
+            ...bootGenerationOptions,
             ...(skillContribution ? { skillContribution } : {}),
             ...(childEngineLayers ? { ordinaryPluginLayers: childEngineLayers } : {}),
             ...(deps.loader

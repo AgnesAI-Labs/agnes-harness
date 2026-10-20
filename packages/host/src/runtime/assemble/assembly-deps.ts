@@ -56,6 +56,8 @@ export type AssembleDeps = HostPaths &
     allowUnresolvedProvider?: boolean
     /** Host-only cold recovery: fit current models before the ledger restores its recorded selection. */
     retainedModelBootstrap?: boolean
+    /** Worker boot gate only: archive the first accepted target, not the temporary assembly tree. */
+    deferInitialGeneration?: boolean
     /** Package-backed ordinary plugin importer; receives only a restricted third-party factory. */
     pluginImporter?: HostPluginImporterFactory
     /** Host-owned authority for installed immutable package snapshots. */

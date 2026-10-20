@@ -11,6 +11,7 @@ export const HOST_MEMBER_SCOPES = {
   executionIdentity: 'session',
   sessionCapabilities: 'session',
   pluginGenerationStatus: 'deployment',
+  pluginGenerationStatusAsync: 'deployment',
   sessionGeneration: 'session',
   lastChange: 'deployment',
   containerHandle: 'deployment',

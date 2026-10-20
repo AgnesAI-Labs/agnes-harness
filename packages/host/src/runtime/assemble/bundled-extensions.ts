@@ -22,6 +22,28 @@ export function createBundledExtensions(
   const { dirs, modules } = pkgs
   const { extPorts, extensionPlatform, dispatchExtensionShutdown } = host
   const { rowExtensions } = rowHosts
+  // Builtin package layout is fixed for this assembly. Index it once instead of walking every
+  // bundled manifest again for each row, admission check and factory lookup (quadratic on disk).
+  const bundledDirectories = new Map<string, Map<string, string>>()
+  const directoriesFor = (packageDirectory: string) => {
+    const existing = bundledDirectories.get(packageDirectory)
+    if (existing) return existing
+    const indexed = new Map<string, string>()
+    try {
+      for (const directory of readBundledExtensionDirs(packageDirectory, true)) {
+        try {
+          const manifest = readAuthorManifest(directory)
+          if (!indexed.has(manifest.id)) indexed.set(manifest.id, directory)
+        } catch {
+          // An unreadable extension cannot claim an id; its admission remains fail-closed.
+        }
+      }
+    } catch {
+      // Packaged installations can supply embedded manifests without source directories.
+    }
+    bundledDirectories.set(packageDirectory, indexed)
+    return indexed
+  }
   // Builtin manifests remain descriptive input for verified Cordis rows. Packaged builds supply
   // the same manifests through embeddedExtensions when no package files exist beside the binary.
   const findBundledExtension = (
@@ -40,23 +62,11 @@ export function createBundledExtensions(
       const packageDirectory = dirs.get(pkg.id)
       if (!packageDirectory) continue
       // Source installations keep descriptive manifests beside builtin packages.
-      let extensionDirs: string[]
-      try {
-        extensionDirs = readBundledExtensionDirs(packageDirectory, pkg.trust === 'builtin')
-      } catch {
-        extensionDirs = []
-      }
-      for (const extensionDirectory of extensionDirs) {
-        let manifest: ReturnType<typeof readAuthorManifest>
-        try {
-          manifest = readAuthorManifest(extensionDirectory)
-        } catch {
-          continue
-        }
-        if (manifest.id !== id) continue
+      const extensionDirectory = directoriesFor(packageDirectory).get(id)
+      if (extensionDirectory) {
         return {
           spec: {
-            id: manifest.id,
+            id,
             package: pkg.id,
             packageVersion: pkg.version,
             dir: extensionDirectory,
@@ -118,7 +128,7 @@ export function createBundledExtensions(
     const directory = dirs.get(pkg.id)
     if (!directory) continue
     try {
-      for (const extensionDirectory of readBundledExtensionDirs(directory, true)) {
+      for (const extensionDirectory of directoriesFor(directory).values()) {
         const manifest = readAuthorManifest(extensionDirectory)
         if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
       }

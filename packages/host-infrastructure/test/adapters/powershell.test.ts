@@ -1,6 +1,9 @@
-import { win32 } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, win32 } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  createConfiguredPowerShellResolver,
   type PowerShellCandidate,
   type PowerShellDescriptor,
   powerShellCandidates,
@@ -96,6 +99,40 @@ it.each([{ version: '6.2.7' }, { edition: 'Desktop' }, { nativeArguments: 'unkno
 )
 
 describe.runIf(process.platform === 'win32')('real Windows PowerShell probes', () => {
+  it('shares shell facts across containers but re-probes a changed executable or selection', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-shell-facts-'))
+    const path = join(root, 'pwsh.exe')
+    const other = join(root, 'other.exe')
+    try {
+      writeFileSync(path, 'first')
+      writeFileSync(other, 'other')
+      const probe = vi.fn(async (selected: string) => ({ ...modern, path: selected }))
+      const resolve = createConfiguredPowerShellResolver(probe)
+      const env = { AGNES_POWERSHELL: path }
+      const [one, two] = await Promise.all([resolve(env), resolve(env)])
+      expect(one).toEqual({ ...modern, path })
+      expect(two).toBe(one)
+      expect(probe).toHaveBeenCalledTimes(1)
+      writeFileSync(path, 'replacement installation')
+      expect(await resolve(env)).toEqual(one)
+      expect(probe).toHaveBeenCalledTimes(2)
+      expect(await resolve({ AGNES_POWERSHELL: other })).toMatchObject({ path: other })
+      expect(probe).toHaveBeenCalledTimes(3)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  it('retries a failed probe instead of caching unavailability', async () => {
+    const probe = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporarily unavailable'))
+      .mockResolvedValue(modern)
+    const resolve = createConfiguredPowerShellResolver(probe)
+    const env = { AGNES_POWERSHELL: modern.path }
+    await expect(resolve(env)).rejects.toMatchObject({ code: 'E_POWERSHELL_UNAVAILABLE' })
+    expect(await resolve(env)).toEqual(modern)
+    expect(probe).toHaveBeenCalledTimes(2)
+  })
   it('reads PS5.1 metadata with the real system executable', async () => {
     const root = process.env.SystemRoot
     if (!root) throw new Error('Windows SystemRoot is missing')

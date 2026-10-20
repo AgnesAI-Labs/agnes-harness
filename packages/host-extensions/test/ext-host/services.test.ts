@@ -3,6 +3,7 @@ import type { ExtensionManifest, ServiceContext, ServiceDef } from '@agnes/exten
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import type { Actor, ExtensionCallParams, JsonValue } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { compileExtensionSchema } from '../../src/ext-host/json-schema.js'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import {
   isServicePreDispatchFailure,
@@ -225,6 +226,24 @@ describe('S3 Service registration and invocation', () => {
     ]) {
       expect(() => setup({ outputSchema })).toThrow(/schema/)
     }
+    const schema = { $id: 'urn:test:isolated-validator', type: 'string' }
+    const first = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    const same = compileExtensionSchema(structuredClone(schema), 'E_PROJECTION_DEF')
+    expect(first('valid')).toBe(true)
+    expect(same(1)).toBe(false)
+    schema.type = 'number'
+    const changed = compileExtensionSchema(schema, 'E_SERVICE_DEF')
+    expect(changed(1)).toBe(true)
+    expect(changed('invalid')).toBe(false)
+    expect(first(1)).toBe(false)
+    expect(same('valid')).toBe(true)
+    expect(() => compileExtensionSchema({ $ref: schema.$id }, 'E_PROJECTION_DEF')).toThrow(
+      expect.objectContaining({ code: 'E_PROJECTION_DEF' }),
+    )
+    Object.defineProperty(schema, 'type', { get: () => 'number' })
+    expect(() => compileExtensionSchema(schema, 'E_SERVICE_DEF')).toThrow(
+      expect.objectContaining({ code: 'E_SERVICE_DEF' }),
+    )
   })
 
   it('injects authenticated identity, authorizes first and returns a copied result', async () => {

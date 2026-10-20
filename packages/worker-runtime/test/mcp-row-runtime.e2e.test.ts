@@ -171,7 +171,19 @@ describe('createMcpRowRuntime against a real Host', () => {
     const host = await testHost()
     const builtin = host.extensionRows.current().map((row) => row.id)
     const { opener } = countingOpener()
-    const runtime = createMcpRowRuntime({ host, opener })
+    const beforeApply = vi.fn(async () => {})
+    const runtime = createMcpRowRuntime({ host, opener, beforeApply })
+    const publication = vi
+      .spyOn(host.extensionRows, 'apply')
+      .mockRejectedValue(new Error('empty set must not republish'))
+    try {
+      expect(await runtime.apply([])).toEqual({ rowIds: [], skipped: [], statuses: new Map() })
+      expect(host.extensionRows.current().map((row) => row.id)).toEqual(builtin)
+      expect(publication).not.toHaveBeenCalled()
+      expect(beforeApply).toHaveBeenCalledWith([])
+    } finally {
+      publication.mockRestore()
+    }
 
     const result = await runtime.apply([
       entry('alpha'),

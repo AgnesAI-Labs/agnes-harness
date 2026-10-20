@@ -138,7 +138,11 @@ it('lets a worker read validated active snapshots while a package effect owns th
   await withLock(profile, async () => {
     const hash = vi.spyOn(sourceModule, 'hashDirectory')
     const asyncHash = vi.spyOn(sourceModule, 'hashDirectoryAsync')
-    const sourcesRead = await m.runtimePluginSnapshots(profile)
+    const [sourcesRead, parallelRead] = await Promise.all([
+      m.runtimePluginSnapshots(profile),
+      m.runtimePluginSnapshots(profile),
+    ])
+    expect(parallelRead).toEqual(sourcesRead)
     expect(hash.mock.calls.length).toBe(0)
     expect(asyncHash.mock.calls.length).toBe(2)
     hash.mockRestore()
@@ -150,6 +154,16 @@ it('lets a worker read validated active snapshots while a package effect owns th
     expect(sources[0]?.snapshot.application).toEqual(application)
     expect(sources[0]?.snapshot.directory).not.toBe(packageDir(root, 'local-dev', id))
   })
+  const stateFile = join(profile, '.agnes-runtime-snapshots.json')
+  const original = readFileSync(stateFile, 'utf8')
+  const state = JSON.parse(original)
+  const snapshotId = Object.keys(state.snapshots)[0]
+  if (!snapshotId) throw new Error('missing snapshot metadata fixture')
+  state.snapshots[snapshotId].packageVersion = '9.0.0'
+  writeFileSync(stateFile, JSON.stringify(state))
+  await expect(m.runtimePluginSnapshots(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  writeFileSync(stateFile, original)
+  expect((await m.runtimePluginSnapshots(profile))[0]?.snapshot.packageId).toBe(id)
 })
 
 it.each([

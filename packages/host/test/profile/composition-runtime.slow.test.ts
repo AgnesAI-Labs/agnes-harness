@@ -217,69 +217,79 @@ ${
   return { ids, sources, options, row }
 }
 
-it('isolates bundle tools from default and other bundles while retaining general plugins', async () => {
-  const { ids, sources, options, row } = bundleFixture()
-  const fixture = await pluginHost(sources, options)
-  const dataDir = fixture.dataDir
-  const target = targetOf(ids.map((vendor) => row(vendor)))
-  try {
-    await fixture.host.applyRuntimeTarget(target)
-    const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
-    const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
-    const b = await fixture.host.createSession({ key: 'bundle-b', cwd: dataDir, bundles: ['acme/b#b'] })
-    for (const [session, expected] of [
-      [normal, ['fixture_2']],
-      [a, ['fixture_0', 'fixture_2']],
-      [b, ['fixture_1', 'fixture_2']],
-    ] as const) {
-      const tools = session.currentTools()
-      expect(
-        tools
-          .list()
-          .filter((tool) => tool.name.startsWith('fixture_'))
-          .map((tool) => tool.name)
-          .sort(),
-      ).toEqual(expected)
-      expect(
-        tools
-          .snapshot(0)
-          .defs.filter((tool) => tool.name.startsWith('fixture_'))
-          .map((tool) => tool.name)
-          .sort(),
-      ).toEqual(expected)
-      for (let i = 0; i < 3; i++)
-        expect(!!tools.resolve('fixture_' + i)).toBe(new Set<string>(expected).has('fixture_' + i))
-    }
-    expect(
-      fixture.host.compositionSessions?.().find((session) => session.sessionKey === a.key)?.toolGroups,
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          packageId: 'acme/a',
-          reason: 'bundle',
-          bundles: ['acme/a#a'],
-          tools: ['fixture_0'],
-        }),
-      ]),
-    )
-    const manifestFile = join(sources[0]!.snapshot.directory, 'package.json')
-    const manifestBytes = readFileSync(manifestFile, 'utf8')
+it.each([false, true])(
+  'isolates bundle tools from default and other bundles (boot snapshots=%s)',
+  async (bootSnapshots) => {
+    const { ids, sources, options, row } = bundleFixture()
+    const fixture = await pluginHost(sources, {
+      ...options,
+      ...(bootSnapshots ? { runtimePluginSnapshots: sources } : {}),
+    })
+    const dataDir = fixture.dataDir
+    const target = targetOf(ids.map((vendor) => row(vendor)))
     try {
-      writeFileSync(manifestFile, '{}')
-      await expect(fixture.host.createSession({ key: 'unverified-bundle', cwd: dataDir })).rejects.toThrow(
-        'E_COMPOSITION_BUNDLE_INTEGRITY',
+      await fixture.host.applyRuntimeTarget(target)
+      const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
+      // A default composition uses the same declared-source vocabulary as its control container.
+      if (bootSnapshots)
+        expect((await fixture.host.applyRuntimeTarget(target)).publication?.containers).toHaveLength(1)
+      const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
+      const b = await fixture.host.createSession({ key: 'bundle-b', cwd: dataDir, bundles: ['acme/b#b'] })
+      for (const [session, expected] of [
+        [normal, ['fixture_2']],
+        [a, ['fixture_0', 'fixture_2']],
+        [b, ['fixture_1', 'fixture_2']],
+      ] as const) {
+        const tools = session.currentTools()
+        expect(
+          tools
+            .list()
+            .filter((tool) => tool.name.startsWith('fixture_'))
+            .map((tool) => tool.name)
+            .sort(),
+        ).toEqual(expected)
+        expect(
+          tools
+            .snapshot(0)
+            .defs.filter((tool) => tool.name.startsWith('fixture_'))
+            .map((tool) => tool.name)
+            .sort(),
+        ).toEqual(expected)
+        for (let i = 0; i < 3; i++)
+          expect(!!tools.resolve('fixture_' + i)).toBe(new Set<string>(expected).has('fixture_' + i))
+      }
+      expect(
+        fixture.host.compositionSessions?.().find((session) => session.sessionKey === a.key)?.toolGroups,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            packageId: 'acme/a',
+            reason: 'bundle',
+            bundles: ['acme/a#a'],
+            tools: ['fixture_0'],
+          }),
+        ]),
       )
-      expect(a.currentTools().resolve('fixture_0')).toBeDefined()
+      const manifestFile = join(sources[0]!.snapshot.directory, 'package.json')
+      const manifestBytes = readFileSync(manifestFile, 'utf8')
+      try {
+        writeFileSync(manifestFile, '{}')
+        await expect(fixture.host.createSession({ key: 'unverified-bundle', cwd: dataDir })).rejects.toThrow(
+          'E_COMPOSITION_BUNDLE_INTEGRITY',
+        )
+        expect(a.currentTools().resolve('fixture_0')).toBeDefined()
+      } finally {
+        writeFileSync(manifestFile, manifestBytes)
+      }
+      await normal.close()
+      await a.close()
+      await b.close()
     } finally {
-      writeFileSync(manifestFile, manifestBytes)
+      await fixture.host.close()
     }
-    await normal.close()
-    await a.close()
-    await b.close()
-  } finally {
-    await fixture.host.close()
-  }
-}, 90_000)
+  },
+  90_000,
+)
 
 it('drains a disabled business bundle while existing sessions retain their code', async () => {
   const { ids, sources, options, row } = bundleFixture()
@@ -604,8 +614,15 @@ it('restores and migrates pinned preset and bundle compositions after a cold reo
     await writer.close()
     await host.close()
     host = (await createTestHost(options)).host
+    const retainedIds = host.pluginGenerationStatus!().generations.map((entry) => entry.id)
     const resumed = await host.createSession({ key: 'reader-session', cwd: root })
     expect(resumed.pluginGenerationId).toBe(generation)
+    // Cold admission restores retained code; it must not persist scratch/default generations.
+    expect(
+      host.pluginGenerationStatus!()
+        .generations.map((entry) => entry.id)
+        .sort(),
+    ).toEqual(retainedIds.sort())
     expect(resumed.currentTools().resolve('write')).toBeUndefined()
     expect(
       host

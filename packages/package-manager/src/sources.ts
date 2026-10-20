@@ -25,6 +25,7 @@ import {
 } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
+import { hashFileReads, mapFileChecks } from './file-read-pool.js'
 import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
 import { fetchNpmProvenance } from './provenance.js'
@@ -226,12 +227,18 @@ export async function hashDirectoryAsync(
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
   const files: { rel: string; file: string; observed: Stats }[] = []
   const walk = async (current: string): Promise<void> => {
-    for (const entry of await asyncFs.readdir(current, { withFileTypes: true })) {
+    const entries = await asyncFs.readdir(current, { withFileTypes: true })
+    const observed = await mapFileChecks(entries, async (entry) => {
       checkCancelled(opts.signal)
       const file = join(current, entry.name)
       const rel = relative(root, file).split(sep).join('/')
-      if (excluded(rel, rules)) continue
+      if (excluded(rel, rules)) return undefined
       const stat = await asyncFs.lstat(file)
+      return { file, rel, stat }
+    })
+    for (const item of observed) {
+      if (!item) continue
+      const { file, rel, stat } = item
       if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
       if (stat.isDirectory()) await walk(file)
       else if (stat.isFile()) files.push({ rel, file, observed: stat })
@@ -239,10 +246,8 @@ export async function hashDirectoryAsync(
     }
   }
   await walk(root)
-  // One bounded scratch buffer per traversal, reused only after each awaited read/hash completes.
-  const chunk = new Uint8Array(256 * 1024)
-  const outer = createHash('sha256')
-  for (const { rel, file, observed } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  const hashFile = async ({ rel, file, observed }: (typeof files)[number], chunk: Uint8Array) => {
     checkCancelled(opts.signal)
     if (!contained(root, await asyncFs.realpath(file)))
       throw sourceError('package file escapes its source tree', 'path-escape')
@@ -272,14 +277,15 @@ export async function hashDirectoryAsync(
         after.ctimeMs !== before.ctimeMs
       )
         throw sourceError('package file changed while hashing', 'tree-changed')
-      outer.update(inner.digest())
+      return inner.digest()
     } finally {
       await handle.close()
     }
   }
+  const digests = await hashFileReads(files, hashFile)
   // A previously closed file can change while a later file yields. Recheck the entire observation,
   // including ctime: same-size writes with a restored mtime must still refuse this traversal.
-  for (const { file, observed } of files) {
+  await mapFileChecks(files, async ({ file, observed }) => {
     checkCancelled(opts.signal)
     const current = await asyncFs.lstat(file)
     if (
@@ -288,7 +294,7 @@ export async function hashDirectoryAsync(
       !contained(root, await asyncFs.realpath(file))
     )
       throw sourceError('package file changed while hashing', 'tree-changed')
-  }
+  })
   const finalRoot = await asyncFs.lstat(dir)
   if (
     finalRoot.isSymbolicLink() ||
@@ -298,6 +304,8 @@ export async function hashDirectoryAsync(
   )
     throw sourceError('package directory changed while hashing', 'tree-changed')
   checkCancelled(opts.signal)
+  const outer = createHash('sha256')
+  for (const digest of digests) outer.update(digest)
   return `sha256-${outer.digest('hex')}`
 }
 

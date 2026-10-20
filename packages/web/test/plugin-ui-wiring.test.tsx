@@ -19,8 +19,17 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 it('loads exact new-session defaults and renders the selected/stale Loop accessibly', async () => {
   const loop = { id: 'workflow', version: '1.2.0', sourcePackage: '@acme/workflow', capabilities: ['resume'] }
-  const fetcher = vi.fn<typeof fetch>(async (url) =>
-    Response.json(
+  let release: () => void = () => {}
+  const allRequested = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const requested = new Set<string>()
+  const fetcher = vi.fn<typeof fetch>(async (url) => {
+    requested.add(String(url))
+    if (requested.size === 3) release()
+    // Independent catalog reads must start before any of their responses are available.
+    await allRequested
+    return Response.json(
       String(url).endsWith('/loops')
         ? {
             loops: [loop],
@@ -28,8 +37,8 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
             defaults: { providers: { loop: { provider: loop.id, version: loop.version } } },
           }
         : { modelAdapters: [] },
-    ),
-  )
+    )
+  })
   const catalog = await loadNewSessionCatalog(fetcher)
   expect(defaultLoop(catalog.defaults)).toEqual({ id: 'workflow', version: '1.2.0' })
   expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/api/loops')
@@ -117,7 +126,7 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
     await act(async () => {
       updateLoopPicker({
         visible: true,
-        disabled: false,
+        disabled: true,
         loops: [],
         label: 'Loop',
         inherited: '',
@@ -126,8 +135,21 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
       })
       root.render(createElement(LoopPicker))
     })
+    expect(source).toHaveBeenLastCalledWith({}, { enabled: false })
+    await act(async () => {
+      updateLoopPicker({
+        visible: true,
+        disabled: false,
+        loops: [],
+        label: 'Loop',
+        inherited: '',
+        unavailable: '',
+        onSelect() {},
+      })
+    })
     const trigger = host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')!
     expect(trigger.hidden).toBe(false)
+    expect(source).toHaveBeenLastCalledWith({}, { enabled: true })
     await act(async () => trigger.click())
     const picker = document.querySelector('[data-testid="new-session-agent"]')!
     await act(async () =>
@@ -140,6 +162,18 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
       id: 'agents',
       selection: { focus: 'acme/kit', agent: agent.ref, start: true },
     })
+    await act(async () =>
+      updateLoopPicker({
+        visible: false,
+        disabled: true,
+        loops: [],
+        label: 'Loop',
+        inherited: '',
+        unavailable: '',
+        onSelect() {},
+      }),
+    )
+    expect(source).toHaveBeenLastCalledWith({}, { enabled: false })
   } finally {
     source.mockRestore()
     localStorage.removeItem('agnes.settings.advanced')

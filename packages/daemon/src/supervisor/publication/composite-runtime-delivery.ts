@@ -135,6 +135,18 @@ export class CompositeRuntimeDelivery {
     return this.#store.desired()
   }
 
+  /** A bootstrap already mounted its target; only a newer desired needs another worker apply. */
+  desiredAfterBoot(boot: RuntimeBootDelivery): RuntimeTargetArtifact | undefined {
+    const desired = this.#store.desired()
+    if (!desired) return undefined
+    return desired.digest === boot.artifact.digest &&
+      desired.identity.treeHash === boot.artifact.identity.treeHash &&
+      desired.identity.resourceRevision === boot.artifact.identity.resourceRevision &&
+      desired.identity.compositeRevision === boot.artifact.identity.compositeRevision
+      ? undefined
+      : desired
+  }
+
   beginBoot(generation: number, boot: RuntimeBootDelivery): RuntimeAdmission {
     const admission = new RuntimeAdmission({
       workerKind: 'session',

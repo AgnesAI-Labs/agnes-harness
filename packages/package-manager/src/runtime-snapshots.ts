@@ -61,6 +61,10 @@ const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const PURPOSES = new Set<RuntimePinPurpose>(['active', 'candidate', 'recovery', 'rollback', 'turn'])
 const MAX_RECORDS = 4096
+// Parsing/shape/identity validation is pure for this complete JSON value. Disk, directory trees and
+// current trust are still read every time; callers receive a clone so writers cannot poison reuse.
+const decodedStates = new Map<string, RuntimeState>()
+let decodedStateBytes = 0
 const statePath = (s: RuntimeSnapshotStore) => join(s.profileDir, '.agnes-runtime-snapshots.json')
 const journalPath = (s: RuntimeSnapshotStore) => join(s.profileDir, '.agnes-runtime-transaction.json')
 const runtimeRoot = (s: RuntimeSnapshotStore) =>
@@ -200,6 +204,9 @@ function readState(s: RuntimeSnapshotStore): RuntimeState {
   if (!present(file)) return { version: 1, snapshots: {}, pins: {} }
   if (lstatSync(file).isSymbolicLink()) integrityFailure('runtime-state-symlink')
   const raw = readStaticJson(file)
+  const key = JSON.stringify(raw)
+  const cached = decodedStates.get(key)
+  if (cached) return structuredClone(cached)
   if (!exactKeys(raw, ['version', 'snapshots', 'pins']) || raw.version !== 1)
     integrityFailure('runtime-state-shape')
   if (
@@ -229,7 +236,16 @@ function readState(s: RuntimeSnapshotStore): RuntimeState {
       integrityFailure('pin-key')
     pins[key] = checked
   }
-  return { version: 1, snapshots, pins }
+  const state: RuntimeState = { version: 1, snapshots, pins }
+  while (decodedStates.size >= 4 || decodedStateBytes + key.length * 2 > 4 * 1024 * 1024) {
+    const oldest = decodedStates.keys().next().value
+    if (oldest === undefined) break
+    decodedStates.delete(oldest)
+    decodedStateBytes -= oldest.length * 2
+  }
+  decodedStates.set(key, freezeData(structuredClone(state)))
+  decodedStateBytes += key.length * 2
+  return state
 }
 function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   const file = statePath(s),

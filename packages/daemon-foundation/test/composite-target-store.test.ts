@@ -61,6 +61,20 @@ describe('CompositeTargetStore', () => {
     const second = artifact('ext:two')
     store.publishDesired(first)
     expect(store.desired()?.digest).toBe(first.digest)
+    const target = store.target(store.desired()!)
+    expect(Object.isFrozen(target.tree.rows)).toBe(true)
+    expect(() => (target.tree.rows as unknown[]).push({})).toThrow()
+    const handle = tables.table('composite')
+    handle.exec('UPDATE composite_targets SET desired_json = ? WHERE profile = ?', [
+      JSON.stringify({ ...first, canonicalBase64: second.canonicalBase64 }),
+      'default',
+    ])
+    expect(() => store.desired()).toThrow()
+    handle.exec('UPDATE composite_targets SET desired_json = ? WHERE profile = ?', [
+      JSON.stringify(first),
+      'default',
+    ])
+    expect(store.desired()?.digest).toBe(first.digest)
     expect(store.pending()).toBe(true)
     store.publishDesired(second)
     expect(store.desired()?.digest).toBe(second.digest)

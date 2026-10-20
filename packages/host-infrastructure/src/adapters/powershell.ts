@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { win32 } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -14,12 +15,50 @@ export type PowerShellCandidate = Readonly<{ path: string; family: '5.1' | '7' }
 type Probe = (path: string) => Promise<PowerShellDescriptor>
 
 /** Shared by runtime assembly and read-only diagnostics; callers provide the effective environment. */
-export function resolveConfiguredPowerShell(env: NodeJS.ProcessEnv): Promise<PowerShellDescriptor> {
-  const request = env.AGNES_POWERSHELL ?? 'auto'
-  return resolvePowerShell(
-    request === 'auto' || request === '5.1' || request === '7' ? request : { path: request },
-    powerShellCandidates(env),
-  )
+export const resolveConfiguredPowerShell = createConfiguredPowerShellResolver()
+
+/** Reuse process-local shell facts, not a running shell or a grant. Changed installations re-probe. */
+export function createConfiguredPowerShellResolver(probe: Probe = probePowerShell) {
+  let cached: { key: string; result: Promise<PowerShellDescriptor> } | undefined
+  return (env: NodeJS.ProcessEnv): Promise<PowerShellDescriptor> => {
+    const request = env.AGNES_POWERSHELL ?? 'auto'
+    const candidates = powerShellCandidates(env)
+    const paths = ['auto', '5.1', '7'].includes(request)
+      ? candidates
+          .filter((candidate) => request === 'auto' || candidate.family === request)
+          .map((c) => c.path)
+      : [request]
+    const key = JSON.stringify([
+      request,
+      paths.map((path) => {
+        try {
+          const file = statSync(path, { bigint: true })
+          return [
+            path,
+            String(file.dev),
+            String(file.ino),
+            String(file.size),
+            String(file.mtimeNs),
+            String(file.ctimeNs),
+          ]
+        } catch {
+          return [path, null]
+        }
+      }),
+    ])
+    if (cached?.key === key) return cached.result
+    const result = resolvePowerShell(
+      request === 'auto' || request === '5.1' || request === '7' ? request : { path: request },
+      candidates,
+      probe,
+    )
+    const entry = { key, result }
+    cached = entry
+    void result.catch(() => {
+      if (cached === entry) cached = undefined
+    })
+    return result
+  }
 }
 
 const execute = promisify(execFile)

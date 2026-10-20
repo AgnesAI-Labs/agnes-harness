@@ -1,4 +1,5 @@
 import type { ProviderCatalogEntry } from '@agnes/extension-api'
+import type { PluginGenerationSnapshot, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { SessionCapabilitySet, SessionRuntimeDescriptor } from '@agnes/protocol'
 import type { Host } from '../lifecycle/host.js'
 
@@ -330,4 +331,132 @@ export function mergeGenerationStatus(
     live: previous.live || item.live,
     ...(previous.sessions || item.sessions ? { sessions: [...sessions.values()] } : {}),
   }
+}
+
+type GenerationStatus = ReturnType<NonNullable<Host['pluginGenerationStatus']>>
+
+export function addBasePackageStatus(
+  plugins: Map<string, GenerationStatus['plugins'][number]>,
+  packages: Iterable<string>,
+  boundSessions: number,
+): void {
+  for (const id of packages)
+    if (!plugins.has(id))
+      plugins.set(id, {
+        id,
+        state: 'restart-required',
+        boundSessions,
+        drainingSessions: 0,
+        historicalSessions: 0,
+      })
+}
+
+/** Build the status snapshot view without importing or restoring a cold runtime. */
+export function generationStatusSnapshots(
+  ids: Iterable<string>,
+  live: ReadonlyMap<string, { snapshot: PluginGenerationSnapshot }>,
+  failed: ReadonlyMap<string, PluginGenerationSnapshot>,
+  errors: Map<string, string>,
+  read: (id: string) => PluginGenerationSnapshot,
+): Map<string, PluginGenerationSnapshot> {
+  const snapshots = new Map([
+    ...failed,
+    ...[...live].map(([id, generation]) => [id, generation.snapshot] as const),
+  ])
+  for (const id of ids) {
+    if (snapshots.has(id)) continue
+    try {
+      snapshots.set(id, read(id))
+    } catch (error) {
+      errors.set(id, String(error))
+    }
+  }
+  return snapshots
+}
+
+/** Freeze the public view and redact exception text identically for sync and cooperative reads. */
+export function freezeGenerationStatus(status: GenerationStatus): GenerationStatus {
+  const safe = <T extends { error?: string }>(item: T) => ({
+    ...item,
+    ...(item.error
+      ? { error: item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.' }
+      : {}),
+  })
+  return Object.freeze({
+    ...status,
+    ...(status.blocked ? { blocked: Object.freeze(status.blocked.slice(0, 256)) } : {}),
+    generations: Object.freeze(status.generations.map(safe)),
+    plugins: Object.freeze(status.plugins.map(safe)),
+  })
+}
+
+/** Show a draining composition without changing the underlying durable status. */
+export function projectGenerationStatus(
+  status: GenerationStatus,
+  draining: boolean | undefined,
+): GenerationStatus {
+  if (!draining) return status
+  return {
+    ...status,
+    generations: status.generations.map((item) => ({
+      ...item,
+      state: item.state === 'active' ? (item.openSessions > 0 ? 'draining' : 'historical') : item.state,
+    })),
+    plugins: status.plugins.map((item) => ({
+      ...item,
+      state:
+        item.state === 'active'
+          ? status.generations.some(
+              (generation) =>
+                generation.openSessions > 0 && generation.packages.some((pkg) => pkg.id === item.id),
+            )
+            ? 'draining'
+            : 'historical'
+          : item.state,
+      drainingSessions: item.boundSessions,
+      historicalSessions: status.generations
+        .filter((generation) => generation.packages.some((pkg) => pkg.id === item.id))
+        .reduce(
+          (count, generation) => count + Math.max(0, generation.boundSessions - generation.openSessions),
+          0,
+        ),
+    })),
+  }
+}
+
+/** Verify cold generations cooperatively without blocking unrelated worker requests. */
+export async function readGenerationStatusAsync(
+  store: Pick<RuntimeGenerationSnapshotStore, 'sessions' | 'readAsync'>,
+  describe: (
+    pins: ReturnType<RuntimeGenerationSnapshotStore['sessions']>,
+    read: (id: string) => PluginGenerationSnapshot,
+  ) => GenerationStatus,
+  loaded: readonly ReadonlyMap<string, unknown>[],
+): Promise<GenerationStatus> {
+  const pins = store.sessions()
+  const ids = [...new Set(pins.map((pin) => pin.generationId))].filter(
+    (id) => !loaded.some((snapshots) => snapshots.has(id)),
+  )
+  const snapshots = new Map<string, PluginGenerationSnapshot>()
+  const errors = new Map<string, unknown>()
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(4, ids.length) }, async () => {
+      while (next < ids.length) {
+        const id = ids[next]
+        next++
+        if (id === undefined) break
+        try {
+          snapshots.set(id, await store.readAsync(id))
+        } catch (error) {
+          errors.set(id, error)
+        }
+      }
+    }),
+  )
+  return describe(pins, (id) => {
+    const snapshot = snapshots.get(id)
+    if (!snapshot) throw errors.get(id) ?? new Error('E_GENERATION_SNAPSHOT_MISSING')
+    return snapshot
+  })
 }

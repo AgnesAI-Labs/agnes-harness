@@ -547,7 +547,7 @@ export class PluginAdminPage {
     this.render()
     let resolvedContext: AdminContext | undefined
     try {
-      const context = await PluginAdminApi.context()
+      const { context, inventory } = await PluginAdminApi.overview()
       if (generation !== this.#generation) return false
       resolvedContext = context
       if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api)
@@ -555,9 +555,14 @@ export class PluginAdminPage {
       // Context remains useful even when inventory cannot be read: its recovery flag must still
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
+      if (!inventory)
+        throw new AdminApiError({
+          code: 'E_ADMIN_READ_ONLY',
+          message: 'The package inventory could not be verified. Administration is read-only.',
+        })
       // Independent read models can load together. Optional feeds never block a valid inventory.
       const { list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog } =
-        await readInventorySnapshot(this.#api, context, reuse)
+        await readInventorySnapshot(this.#api, context, reuse, inventory)
       if (generation !== this.#generation) return false
       this.#bundledCatalog = bundledCatalog
       this.#presentationRuntime = runtimeCatalog

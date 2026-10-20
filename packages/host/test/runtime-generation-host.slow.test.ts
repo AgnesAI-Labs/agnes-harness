@@ -785,7 +785,16 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     expect(required(host.pluginGenerationStatus?.()).generations).toContainEqual(
       expect.objectContaining({ id: secondId, state: 'failed', boundSessions: 1 }),
     )
+    expect((await required(host.pluginGenerationStatusAsync)()).generations).toContainEqual(
+      expect.objectContaining({ id: secondId, state: 'failed', boundSessions: 1 }),
+    )
     writeFileSync(file, saved)
+    const recovered = await host.createSession({ key: 'session-b', cwd: root })
+    expect(recovered.pluginGenerationId).toBe(secondId)
+    expect(
+      required(host.pluginGenerationStatus?.()).generations.find((entry) => entry.id === secondId)?.state,
+    ).not.toBe('failed')
+    await recovered.close()
     await host.close()
     persistTrust(two, false)
     host = (await createTestHost(options)).host

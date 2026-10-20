@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { InstalledInventory, InstalledPackage, PackageManager } from '@agnes/package-manager'
@@ -197,6 +206,20 @@ describe('client module immutable snapshots', () => {
       const asset = await registry.read({ ...input, path: module.entryUrl })
       expect(asset.found).toBe(true)
       if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain('"v1"')
+      const archived = join(snapshot.sources[0]!.snapshot.directory, 'dist', 'index.js')
+      const saved = readFileSync(archived)
+      try {
+        writeFileSync(archived, 'tampered after the roster was read')
+        await expect(registry.list({ ...input, sessionId: 'old-session' })).rejects.toThrow(
+          'E_GENERATION_INTEGRITY',
+        )
+        await expect(registry.read({ ...input, path: module.entryUrl })).rejects.toThrow(
+          'E_GENERATION_INTEGRITY',
+        )
+      } finally {
+        writeFileSync(archived, saved)
+      }
+      expect((await registry.list({ ...input, sessionId: 'old-session' })).modules).toHaveLength(1)
       expect((await registry.list(input)).modules).toEqual([])
     } finally {
       registry.close()
@@ -587,6 +610,10 @@ describe('client module immutable snapshots', () => {
       },
     ])
     expect(events).toEqual(['rebuilt'])
+    const stateFile = join(files.snapshots, '_client-modules.json')
+    utimesSync(stateFile, new Date(0), new Date(0))
+    expect((await registry.list(input)).modules).toEqual(roster.modules)
+    expect(statSync(stateFile).mtimeMs).toBe(0)
     const module = roster.modules[0]
     if (!module) throw new Error('missing ready client module')
     expect(await registry.read({ ...input, path: module.entryUrl })).toEqual({

@@ -10,7 +10,42 @@ import {
   runtimePluginSnapshotsFromPins,
 } from './package-plugin-loader.js'
 import { listRuntimePinsStoreAsync, type RuntimeSnapshotStore } from './runtime-snapshots.js'
-import { invalidatePackageVerification } from './verification-operation.js'
+import { invalidatePackageVerification, withPackageVerification } from './verification-operation.js'
+
+/** Share only an unfinished read with the same policy/runtime boundary, never a completed verdict. */
+export function createRuntimeSourceReader() {
+  const pending = new Map<
+    string,
+    { boundary: string; promise: ReturnType<typeof readRuntimePluginSnapshots> }
+  >()
+  return (profileDir: string, input: Parameters<typeof readRuntimePluginSnapshots>[1]) =>
+    withPackageVerification(async () => {
+      const boundary = readBoundary(profileDir, [
+        'agnes-lock.json',
+        'plugin-capabilities.json',
+        'package-sources.json',
+        '.agnes-runtime-snapshots.json',
+      ])
+      const prior = pending.get(profileDir)
+      if (prior?.boundary === boundary) return prior.promise
+      let promise: ReturnType<typeof readRuntimePluginSnapshots>
+      const clear = () => {
+        if (pending.get(profileDir)?.promise === promise) pending.delete(profileDir)
+      }
+      promise = readRuntimePluginSnapshots(profileDir, input).then(
+        (value) => {
+          clear()
+          return value
+        },
+        (error) => {
+          clear()
+          throw error
+        },
+      )
+      pending.set(profileDir, { boundary, promise })
+      return promise
+    })
+}
 
 /** Retry torn reads, but keep unexplained byte/policy changes fatal. */
 export async function readRuntimePluginSnapshots(

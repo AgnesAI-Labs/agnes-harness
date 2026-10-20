@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { approvalKind } from '@agnes/extension-api/seams'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { decodeRuntimeTargetArtifact, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
@@ -370,10 +370,49 @@ it('starts a later worker on the recorded head instead of snapshotting the same 
   }
   const second = await createTestHost({ dataDir: root, disableSessionTitle: true })
   try {
-    await (await second.host.createSession({ key: 'second', cwd: root })).close()
+    const fresh = await second.host.createSession({ key: 'second', cwd: root })
+    await fresh.close()
     const store = snapshotsOf(root)
     expect(store.session('second')?.generationId).toBe(store.session('first')?.generationId)
     expect(readdirSync(store.root).filter((name) => /^[a-f0-9-]{36}$/.test(name))).toHaveLength(1)
+    const snapshot = store.read(store.session('second')!.generationId)
+    const duplicate = store.create(
+      decodeRuntimeTargetArtifact(snapshot.artifact),
+      snapshot.sources,
+      snapshot.compatibility,
+      snapshot.packages,
+      snapshot.resources,
+      snapshot.seams,
+    )
+    store.pin('equivalent', duplicate.id, store.session('second')!.seams!)
+    await store.collect(new Set())
+    const resumed = await second.host.createSession({ key: 'equivalent', cwd: root })
+    expect(resumed.pluginGenerationId).toBe(duplicate.id)
+    expect(resumed.d.provider).toBeDefined()
+    expect(resumed.d.provider).toBe(fresh.d.provider)
+    const child = await second.host.createSession({
+      key: 'equivalent-child',
+      cwd: root,
+      parent: { key: resumed.key, boundarySeq: resumed.lastSeq },
+    })
+    expect(child.pluginGenerationId).toBe(duplicate.id)
+    expect(store.session(child.key)?.generationId).toBe(duplicate.id)
+    await child.close()
+    await second.host.releaseSessionGeneration?.(child.key)
+    await resumed.close()
+    const file = join(store.root, duplicate.id, 'generation.json')
+    const saved = readFileSync(file, 'utf8')
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), compatibility: 'tampered' }))
+    await expect(second.host.createSession({ key: 'equivalent', cwd: root })).rejects.toMatchObject({
+      code: 'E_SESSION_CORRUPT',
+      detail: { cause: 'E_GENERATION_INTEGRITY' },
+    })
+    writeFileSync(file, saved)
+    const recovered = await second.host.createSession({ key: 'equivalent', cwd: root })
+    expect(recovered.pluginGenerationId).toBe(duplicate.id)
+    await recovered.close()
+    await second.host.releaseSessionGeneration?.('equivalent')
+    expect(() => store.read(duplicate.id)).toThrow('E_GENERATION_SNAPSHOT_MISSING')
   } finally {
     await second.host.close()
   }

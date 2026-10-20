@@ -45,11 +45,20 @@ import {
 import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
 import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
+import * as generationAliases from './aliases.js'
 import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf } from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { openGenerationStore } from './process-liveness.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
-import { describeColdSession, describeHostSession, generationSessions } from './runtime-descriptor.js'
+import {
+  addBasePackageStatus,
+  describeColdSession,
+  describeHostSession,
+  freezeGenerationStatus,
+  generationSessions,
+  generationStatusSnapshots,
+  readGenerationStatusAsync,
+} from './runtime-descriptor.js'
 import {
   assertPinsMatch,
   assertRepinConsented,
@@ -104,6 +113,7 @@ export async function createRuntimeGenerationHost(
   profile: ResolvedProfile,
   options: HostOptions,
   factory: Factory,
+  bootstrapGenerationId?: string,
 ): Promise<Host> {
   const store = await openGenerationStore(options.profileDir)
   const live = new Map<string, LiveGeneration>()
@@ -126,19 +136,21 @@ export async function createRuntimeGenerationHost(
   let lastChange: ChangeResult | undefined
   let initialBinding: ((key: string) => void) | undefined
   const initialSkills = createGenerationSkills(options.skillResources)
-  const initial = await factory(profile, {
-    ...options,
-    ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
-    profileAuthorityPublication: 'retained',
-    runtimePluginSources: runtimeSources,
-    ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
-    onGenerationBasePackages: (ids) => {
-      for (const id of ids) basePackages.add(id)
-      options.onGenerationBasePackages?.(ids)
-    },
-    onGenerationSessionBinding: (key) => initialBinding?.(key),
-    sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
-  })
+  let initial: Host
+  const createInitial = () =>
+    factory(profile, {
+      ...options,
+      ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
+      profileAuthorityPublication: 'retained',
+      runtimePluginSources: runtimeSources,
+      ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
+      onGenerationBasePackages: (ids) => {
+        for (const id of ids) basePackages.add(id)
+        options.onGenerationBasePackages?.(ids)
+      },
+      onGenerationSessionBinding: (key) => initialBinding?.(key),
+      sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
+    })
   let current: LiveGeneration | undefined
   let closed = false
   const calls = createHostCallQueue(() => closed)
@@ -176,6 +188,8 @@ export async function createRuntimeGenerationHost(
     const bound = pinnedBindings(host.seamBindings())
     if (existing) assertPinsMatch(key, existing.seams, bound)
     if (existing && live.get(existing.generationId)?.host === host) return
+    if (!existing)
+      id = generationAliases.inheritedGenerationId(key, id, host, live, (parent) => store.session(parent))
     const pin = store.pin(key, id, bound)
     if (pin.generationId !== id)
       throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
@@ -281,7 +295,7 @@ export async function createRuntimeGenerationHost(
           resources: archivedTarget.resource.resources,
         }).target
       : archivedTarget
-    const freshTarget = (current?.host ?? initial).runtimeTargetSnapshot?.() ?? pinnedTarget
+    const freshTarget = (current?.host ?? initial)?.runtimeTargetSnapshot?.() ?? pinnedTarget
     const target = buildCompleteRuntimeTarget({
       rows: [
         ...(refreshLiveConfig
@@ -290,7 +304,7 @@ export async function createRuntimeGenerationHost(
               freshTarget,
             )
           : targetRows(pinnedTarget).filter((row) => !liveResourceRow(row))),
-        ...(current?.host ?? initial).extensionRows.current().filter((row) => liveResourceRow(row)),
+        ...((current?.host ?? initial)?.extensionRows.current() ?? []).filter((row) => liveResourceRow(row)),
       ],
       resources: freshTarget.resource.resources,
     }).target
@@ -443,12 +457,22 @@ export async function createRuntimeGenerationHost(
   const resolve = async (id: string): Promise<LiveGeneration> => {
     const found = live.get(id)
     if (found) {
+      if (current && found.host === current.host && id !== current.snapshot.id)
+        generationAliases.assertGenerationAlias(await store.readAsync(id), found.snapshot)
       await authoring.assertTrust(found.snapshot.sources)
       return found
     }
     const pending = opening.get(id)
     if (pending) return pending
-    const started = Promise.resolve().then(() => build(store.read(id)))
+    const started = Promise.resolve().then(async () => {
+      const snapshot = await store.readAsync(id)
+      if (!current || !generationAliases.sameGenerationCode(snapshot, current.snapshot))
+        return build(snapshot)
+      await authoring.assertTrust(snapshot.sources)
+      const alias = { snapshot, host: current.host }
+      live.set(id, alias)
+      return alias
+    })
     opening.set(id, started)
     try {
       return await started
@@ -458,6 +482,14 @@ export async function createRuntimeGenerationHost(
     } finally {
       opening.delete(id)
     }
+  }
+  // A cold composition already knows its exact durable generation. Restore it directly rather
+  // than assembling and snapshotting a throwaway default container before restoring it again.
+  if (bootstrapGenerationId) {
+    current = await build(await store.readAsync(bootstrapGenerationId))
+    initial = current.host
+  } else {
+    initial = await createInitial()
   }
   const sessionBinding = (key: string) => sessionBindingOf(store.session(key))
   const openOwner = (key: string): Host | undefined => {
@@ -483,7 +515,15 @@ export async function createRuntimeGenerationHost(
     const errors: unknown[] = []
     const now = Date.now()
     let busy = false
-    const referenced = new Set(store.sessions().map((pin) => live.get(pin.generationId)?.host))
+    const pins = store.sessions()
+    generationAliases.collectGenerationAliases(
+      live,
+      current,
+      new Set(pins.map((pin) => pin.generationId)),
+      rowsByGeneration,
+      retired,
+    )
+    const referenced = new Set(pins.map((pin) => live.get(pin.generationId)?.host))
     const hosts = new Set([...live.values()].map((generation) => generation.host))
     for (const host of hosts) {
       if (host === current?.host || !hostIsIdle(host)) {
@@ -531,24 +571,12 @@ export async function createRuntimeGenerationHost(
     host.providers
       .catalog()
       .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
-  const status = (): PluginGenerationStatus => {
+  const status = (pins = store.sessions(), readSnapshot = store.read.bind(store)): PluginGenerationStatus => {
     const errors = new Map(failures)
     const counts = new Map<string, number>()
-    const pins = store.sessions()
     const pinsByKey = new Map(pins.map((pin) => [pin.sessionKey, pin.generationId]))
     for (const pin of pins) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
-    const snapshots = new Map([
-      ...failedSnapshots,
-      ...[...live].map(([id, generation]) => [id, generation.snapshot] as const),
-    ])
-    for (const id of counts.keys())
-      if (!snapshots.has(id)) {
-        try {
-          snapshots.set(id, store.read(id))
-        } catch (error) {
-          errors.set(id, String(error))
-        }
-      }
+    const snapshots = generationStatusSnapshots(counts.keys(), live, failedSnapshots, errors, readSnapshot)
     const active = new Set(current?.snapshot.packages.map((pkg) => pkg.id) ?? [])
     const plugins = new Map<string, PluginGenerationStatus['plugins'][number]>()
     const generations: PluginGenerationStatus['generations'][number][] = []
@@ -605,15 +633,7 @@ export async function createRuntimeGenerationHost(
         })
       }
     }
-    for (const id of basePackages)
-      if (!plugins.has(id))
-        plugins.set(id, {
-          id,
-          state: 'restart-required',
-          boundSessions: store.sessions().length,
-          drainingSessions: 0,
-          historicalSessions: 0,
-        })
+    addBasePackageStatus(plugins, basePackages, pins.length)
     for (const [id, error] of errors) {
       if (snapshots.has(id)) continue
       generations.push({
@@ -630,31 +650,11 @@ export async function createRuntimeGenerationHost(
       file: relative(options.profileDir, problem.file),
       reason: problem.reason.slice(0, 512),
     }))
-    return Object.freeze({
+    return freezeGenerationStatus({
       ...(current ? { currentGenerationId: current.snapshot.id } : {}),
-      ...(blocked.length ? { blocked: Object.freeze(blocked.slice(0, 256)) } : {}),
-      generations: Object.freeze(
-        generations.map((item) => ({
-          ...item,
-          ...(item.error
-            ? {
-                error:
-                  item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.',
-              }
-            : {}),
-        })),
-      ),
-      plugins: Object.freeze(
-        [...plugins.values()].map((item) => ({
-          ...item,
-          ...(item.error
-            ? {
-                error:
-                  item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.',
-              }
-            : {}),
-        })),
-      ),
+      ...(blocked.length ? { blocked } : {}),
+      generations,
+      plugins: [...plugins.values()],
     })
   }
   // Keep the public Kernel coordination view valid for sessions hosted in any generation.
@@ -874,6 +874,14 @@ export async function createRuntimeGenerationHost(
     return current.host.ordinaryConvergence()
   }
   const publishTarget: typeof publishTargetCore = async (target, skills, extensionRows) => {
+    if (!current && options.deferInitialGeneration && !skills && !extensionRows) {
+      const report = await initial.applyRuntimeTarget(target)
+      if (report.ok) {
+        const head = await ensureCurrent()
+        lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
+      }
+      return report
+    }
     const head = await ensureCurrent()
     const previous =
       head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
@@ -936,6 +944,7 @@ export async function createRuntimeGenerationHost(
     ),
     kernel,
     pluginGenerationStatus: status,
+    pluginGenerationStatusAsync: () => readGenerationStatusAsync(store, status, [live, failedSnapshots]),
     securityStatus: () => {
       const head = (current?.host ?? initial).securityStatus?.()
       if (!head) throw new Error('Security status is unavailable')
@@ -1349,7 +1358,7 @@ export async function createRuntimeGenerationHost(
     },
   }
   try {
-    await ensureCurrent()
+    if (!options.deferInitialGeneration) await ensureCurrent()
   } catch (error) {
     await initial.close().catch(() => undefined)
     throw error
