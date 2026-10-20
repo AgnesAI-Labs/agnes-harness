@@ -439,7 +439,7 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   expect(h.input('config-api-key').placeholder).toBe(zhT('accounts.keyOptional'))
   expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
   expect(h.doc.getElementById('config-provider-host')?.textContent).toBe('api.siliconflow.cn/v1')
-  const panel = h.doc.getElementById('config-compatible-models')
+  const panel = h.doc.getElementById('config-compatible-models') as HTMLElement | null
   expect(panel?.hidden).toBe(false)
   const fetchModels = () =>
     [...(panel?.querySelectorAll('button') ?? [])]
@@ -465,7 +465,7 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   fetchModels()
   await vi.waitFor(() => expect(panel?.textContent).toContain('Qwen/Qwen3-32B'))
   expect(panel?.textContent).not.toContain(zhT('accounts.compatible.error.http404'))
-  const chip = [...(panel?.querySelectorAll('button[aria-pressed]') ?? [])].find(
+  const chip = [...(panel?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? [])].find(
     (button) => button.textContent === 'Qwen/Qwen3-32B',
   )
   chip?.click()
@@ -487,7 +487,9 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   const advancedOpen = () => h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')
   expect(advancedOpen()).toBe('false')
   h.input('config-provider').value = 'openai-compatible'
-  h.input('config-provider').dispatchEvent(new (window as Window).Event('change', { bubbles: true }))
+  h.input('config-provider').dispatchEvent(
+    new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
+  )
   expect(advancedOpen()).toBe('true')
   expect(h.input('config-base-url').value).toBe('')
   h.controller.close()
@@ -529,7 +531,9 @@ it('edits a saved OpenAI-compatible account: its models are part of the draft, a
   // A new address saves without a key; the backend decides whether a stored key may follow.
   await h.click('button[aria-label="编辑 relay"]')
   h.input('config-base-url').value = 'http://moved.example/v1'
-  h.input('config-base-url').dispatchEvent(new (window as Window).Event('input', { bubbles: true }))
+  h.input('config-base-url').dispatchEvent(
+    new (window as Window).Event('input', { bubbles: true }) as unknown as Event,
+  )
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('a'))
   expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
   await h.click('#config-save')
