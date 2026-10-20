@@ -162,9 +162,10 @@ export async function nestedWritesUnder(
 
 /**
  * The note a synthesized failure of a call commits with, beside its `tool/result`. A nested call
- * whose outcome is unknown gets the unknown note; an approved nested call no running code reads
- * (`unconsumed`) that failed any other way gets the not-run note; an outer call that failed after
- * nested calls under it wrote gets the list of them. Anything else needs none.
+ * whose outcome is unknown (its code says so, or the caller knows it, `unknown`) gets the unknown
+ * note; an approved nested call no running code reads (`unconsumed`) that failed any other way gets
+ * the not-run note; an outer call that failed after nested calls under it wrote gets the list of
+ * them, under its real code. Anything else needs none.
  */
 export async function failureNotes(
   s: SessionImpl,
@@ -173,12 +174,13 @@ export async function failureNotes(
     effectId: string
     nested: boolean
     unconsumed?: boolean
+    unknown?: boolean
     parentEffectId?: string | undefined
   },
   code: string,
 ): Promise<EventInput[]> {
   if (call.nested) {
-    const unknown = code === 'TOOL_OUTCOME_UNKNOWN'
+    const unknown = call.unknown === true || code === 'TOOL_OUTCOME_UNKNOWN'
     if (!unknown && !call.unconsumed) return []
     const parent = await nestedParentName(s, call.parentEffectId)
     return [
@@ -195,8 +197,8 @@ export async function failureNotes(
 
 /**
  * `failureNotes` for a tool effect recovery closes, read from the call's `tool/call` row. A nested
- * root is an approval continuation; one blocked on its decision is refused, and no running code
- * reads that.
+ * root is an approval continuation. One blocked on its decision had been dispatched -- only its own
+ * code opens a decision -- and was running when the process died, so its outcome is unknown.
  */
 export function recoveryNotes(
   s: SessionImpl,
@@ -210,7 +212,7 @@ export function recoveryNotes(
       name: root.tool?.name ?? 'a tool',
       effectId: root.effectId,
       nested: isNestedCall(callData),
-      unconsumed: code === 'DECISION_CONTINUATION_BLOCKED',
+      unknown: code === 'DECISION_CONTINUATION_BLOCKED',
       parentEffectId: (callData as { parentEffectId?: string } | undefined)?.parentEffectId,
     },
     code,

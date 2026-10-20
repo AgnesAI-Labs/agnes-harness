@@ -237,6 +237,20 @@ function stopRequestedBy(s: SessionImpl): Actor | undefined {
   return control?.status === 'cancel_requested' ? control.by : undefined
 }
 
+type SyntheticFailure = {
+  code: string
+  message: string
+  structured?: JsonValue
+  reconciliation?: EventInput[]
+  outcome: EffectOutcome
+  cancelledBy?: Actor
+  partial?: boolean
+}
+
+/**
+ * A synthesized failure of a call that crossed its intent: the result, the settlement, and the
+ * `[nested result]` note the failure commits with, read from how the call was run (`o`).
+ */
 async function settleSyntheticDispatch(
   s: SessionImpl,
   call: PlannedCall,
@@ -244,22 +258,14 @@ async function settleSyntheticDispatch(
   attempt: ExecuteAttempt,
   phase: 'not_sent' | 'may_have_sent',
   decisionId: string,
-  input: {
-    code: string
-    message: string
-    structured?: JsonValue
-    reconciliation?: EventInput[]
-    /** `[nested result]` notes, committed with the result they describe. */
-    notes?: EventInput[]
-    outcome: EffectOutcome
-    cancelledBy?: Actor
-    partial?: boolean
-  },
+  input: SyntheticFailure,
+  o: ExecOpts,
 ): Promise<ToolResult> {
   const result = {
     ...dispatchErrorResult(input.code, input.message),
     ...(input.structured ? { structured: input.structured } : {}),
   }
+  const notes = await callFailureNotes(s, call.name, effect.effectId, o, input.code)
   await s.transition(
     [
       s.ev(
@@ -280,7 +286,7 @@ async function settleSyntheticDispatch(
       ),
       effect.settle(input.outcome),
       ...(input.reconciliation ?? []),
-      ...(input.notes ?? []),
+      ...notes,
     ],
     (cur) =>
       updateCall(cur, call.toolUseId, {
@@ -1029,6 +1035,7 @@ export async function approveAndExecute(
           message: 'host-computer-use dispatch is unavailable during recovered attempt',
           outcome: 'error',
         },
+        o,
       )
       return { result }
     }
@@ -1282,6 +1289,9 @@ export async function approveAndExecute(
         )
       return invoke(context(NO_WORKSPACE_FS), attempt)
     }
+    // Every synthesized failure of this call goes through here, so each commits its `[nested result]` note.
+    const settleFailed = (at: ExecuteAttempt, phase: 'not_sent' | 'may_have_sent', input: SyntheticFailure) =>
+      settleSyntheticDispatch(s, call, effect, at, phase, decisionId, input, o)
     let attempt: ExecuteAttempt = initialAttempt
     let observation: HostDispatchObservation
     let timedOut = false
@@ -1291,7 +1301,7 @@ export async function approveAndExecute(
     while (true) {
       if (ac.signal.aborted) {
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'CANCELLED',
             message: 'cancelled before dispatch',
             outcome: 'aborted',
@@ -1343,7 +1353,7 @@ export async function approveAndExecute(
       if (observation.phase === 'rejected_before_effect') {
         const diagnostic: JsonValue = { ...observation.error, effect: 'none' }
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'TOOL_REJECTED_BEFORE_EFFECT',
             message: `${observation.error.message}\n${JSON.stringify(diagnostic)}`,
             structured: diagnostic,
@@ -1362,7 +1372,7 @@ export async function approveAndExecute(
       )
       if (attempt === 2)
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'TOOL_DISPATCH_NOT_SENT',
             message: 'transport did not accept the tool call after two attempts',
             outcome: 'error',
@@ -1370,7 +1380,7 @@ export async function approveAndExecute(
         }
       if (parent.aborted)
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'CANCELLED',
             message: 'cancelled before dispatch retry',
             outcome: 'aborted',
@@ -1408,27 +1418,18 @@ export async function approveAndExecute(
         // a bare abort with no cancel on the ledger, a Host call, and a call still running when the wait ends.
         const stoppedBy = cancelled && call.executionDomain === 'workspace' ? stopRequestedBy(s) : undefined
         if (stoppedBy && dispatched && (await settlesWithin(dispatched, STOPPED_CALL_REST_MS))) {
-          const result = await settleSyntheticDispatch(
-            s,
-            call,
-            effect,
-            attempt,
-            'may_have_sent',
-            decisionId,
-            {
-              code: 'CANCELLED',
-              message: userStoppedMessage(call.name),
-              outcome: 'aborted',
-              partial: true,
-              cancelledBy: stoppedBy,
-              notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
-            },
-          )
+          const result = await settleFailed(attempt, 'may_have_sent', {
+            code: 'CANCELLED',
+            message: userStoppedMessage(call.name),
+            outcome: 'aborted',
+            partial: true,
+            cancelledBy: stoppedBy,
+          })
           return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)
-        const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
+        const result = await settleFailed(attempt, 'may_have_sent', {
           code: 'TOOL_OUTCOME_UNKNOWN',
           reconciliation: reconciliation.rows,
           message:
@@ -1438,7 +1439,6 @@ export async function approveAndExecute(
               timeoutMs,
             ) + reconciledMessage(reconciliation.answer),
           outcome: 'unknown',
-          notes: await callFailureNotes(s, call.name, effect.effectId, o, 'TOOL_OUTCOME_UNKNOWN'),
         })
         return {
           result,
@@ -1446,13 +1446,12 @@ export async function approveAndExecute(
         }
       }
       if (timedOut || cancelled) {
-        const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
+        const result = await settleFailed(attempt, 'may_have_sent', {
           code: 'CANCELLED',
           message: timedOut ? `timeout: ${call.name}` : `aborted: ${call.name}`,
           outcome: 'aborted',
           partial: true,
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
-          notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
         })
         return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
       }

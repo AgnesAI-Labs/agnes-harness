@@ -1,6 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { Actor } from '@agnes/protocol'
+import { refusalNotes } from '../execution/turn/nested-note.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
@@ -85,8 +86,10 @@ export async function drainAborted(s: SessionImpl): Promise<void> {
   if (op?.phase.kind !== 'tools') return
   const by = op.control.status === 'cancel_requested' ? op.control.by : s.d.actor
   const events: EventInput[] = []
-  const calls = op.phase.batch.calls.map((c) => {
-    if (c.status !== 'planned' && c.status !== 'awaiting_approval' && c.status !== 'approved') return c
+  const unstarted = new Set<string>()
+  for (const c of op.phase.batch.calls) {
+    if (c.status !== 'planned' && c.status !== 'awaiting_approval' && c.status !== 'approved') continue
+    unstarted.add(c.toolUseId)
     events.push(
       s.ev(
         'tool/result',
@@ -102,9 +105,13 @@ export async function drainAborted(s: SessionImpl): Promise<void> {
         },
         { sourceEventSeqs: [c.argsSeq] },
       ),
+      // An approved approval continuation the stop caught before it started: nothing reads that.
+      ...(await refusalNotes(s, c.toolUseId, 'CANCELLED')),
     )
-    return { ...c, status: 'completed' as const }
-  })
+  }
+  const calls = op.phase.batch.calls.map((c) =>
+    unstarted.has(c.toolUseId) ? { ...c, status: 'completed' as const } : c,
+  )
   if (events.length)
     await s.transition(events, withPhase(op, { ...op.phase, batch: { ...op.phase.batch, calls } }))
 }

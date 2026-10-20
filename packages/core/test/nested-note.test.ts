@@ -1,7 +1,9 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { CommitTx } from '@agnes/core-ledger/log/storage'
 import type { ToolContext, ToolDef } from '@agnes/extension-api'
-import type { RequestBody } from '@agnes/protocol'
+import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -57,23 +59,91 @@ const registryOf = (...tools: ToolDef[]) => {
   return r
 }
 
+/** A model that takes images, so a computer-use tool is offered. */
+const imageModel: ModelRecord = {
+  id: 'default',
+  name: 'default',
+  api: 'openai-completions',
+  route: 'default',
+  baseUrl: 'https://example.invalid/v1',
+  reasoning: false,
+  input: ['text', 'image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 8192,
+  maxTokens: 128,
+  toolCallFormats: ['native'],
+  thinkingReplay: 'native',
+  contract_id: null,
+  slot: 'primary',
+}
+
+/** A Host computer-use tool that always asks for approval, dispatched through `port`. */
+const computerUse = (): ToolDef =>
+  ({
+    name: 'computer_use',
+    description: 'computer use',
+    parameters: Type.Object({}),
+    meta: {
+      requiresImageInput: true,
+      isReadOnly: false,
+      isDestructive: true,
+      isConcurrencySafe: false,
+      isOpenWorld: false,
+      replay: 'never' as const,
+      costHint: undefined,
+      deferLoading: undefined,
+      requiresApproval: 'always' as const,
+    },
+    execute: async () => ({ content: [{ type: 'text' as const, text: 'clicked' }] }),
+  }) as never
+
+/** `outer` invokes `computer_use`, a Host call, which asks for approval. */
+const nestedComputerUse = (port: HostToolDispatchPort) => {
+  const registry = new ToolRegistry()
+  registry.add(computerUse() as never, {
+    source: 'agnes/computer-use',
+    trust: 'builtin',
+    packageIdentity: '@agnes/base',
+    packageVersion: '1.0.0-test',
+    executionDomain: 'host-computer-use',
+  })
+  registry.add(outer((ctx) => ctx.tools.invoke('computer_use', {})) as never, {
+    source: 's',
+    trust: 'builtin',
+  })
+  return { registry, images: true, open: { hostToolDispatch: port } }
+}
+
 /** `outer` invokes `shell`, which asks for approval; the turn parks on that question. */
-async function parkedOnNestedShell(shell: ToolDef = shellTool() as ToolDef) {
+async function parkedOnNestedShell(
+  shell: ToolDef = shellTool() as ToolDef,
+  more: {
+    registry?: ToolRegistry
+    images?: boolean
+    seams?: Parameters<typeof fakeSeams>[0]
+    open?: Partial<Parameters<typeof openSession>[0]>
+  } = {},
+) {
   let now = 1_757_203_200_000
   const clock = () => now
   const storage = new MemoryStorage()
   const provider = fakeProvider([toolTurn('outer', {}), textTurn('done')])
+  if (more.images) Object.assign(provider, { models: () => [imageModel] })
   const h = await openSession({
     provider,
     storage,
     clock,
-    registry: registryOf(
-      shell,
-      outer((ctx) => ctx.tools.invoke('shell', { command: 'click' })),
-    ),
+    registry:
+      more.registry ??
+      registryOf(
+        shell,
+        outer((ctx) => ctx.tools.invoke('shell', { command: 'click' })),
+      ),
     seams: fakeSeams({
+      ...more.seams,
       approval: { ask: async () => ({ ticket: 't', expiresAt: new Date(now + 1000).toISOString() }) },
     }),
+    ...more.open,
   })
   await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
   expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('parked')
@@ -324,9 +394,15 @@ describe('[nested result] notes', () => {
     }
   })
 
-  const notRun = (code: string) => [
-    `${PREFIX}The nested call shell inside outer was approved but did not run (${code}). Check the current state before trying it again.`,
+  const notRun = (code: string, name = 'shell') => [
+    `${PREFIX}The nested call ${name} inside outer was approved but did not run (${code}). Check the current state before trying it again.`,
   ]
+
+  /** Every settled effect's outcome, in order: `aborted` only where a call crossed its intent and was stopped. */
+  const settledOutcomes = async (log: Awaited<ReturnType<typeof openSession>>['log']) =>
+    (await log.scan({ type: 'effect/settled', limit: 100 })).map(
+      (row) => (row.data as { outcome: string }).outcome,
+    )
 
   it('an approved nested call refused at execution writes the not-run note', async () => {
     const h = await parkedOnNestedShell()
@@ -358,6 +434,151 @@ describe('[nested result] notes', () => {
     expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED')])
   })
 
+  it('an approved nested call stopped while its intent commits writes the not-run note', async () => {
+    const held: { s?: SessionImpl; stopOnRecheck?: boolean; reads: number } = { reads: 0 }
+    const h = await parkedOnNestedShell(undefined, {
+      open: {
+        // The resumed call reads its settings three times: to pick the policy, as the policy decides,
+        // and as its intent commits. The stop lands on the last, so the intent never commits and the
+        // cancelled turn answers the call.
+        toolPolicySettings: async () => {
+          if (held.stopOnRecheck && ++held.reads === 3) {
+            void held.s?.abort(stopper)
+            held.s?.ac.abort()
+          }
+          return undefined
+        },
+      },
+    })
+    held.s = h.session
+    held.stopOnRecheck = true
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    expect(held.reads).toBe(3)
+    const cancelled = (await h.log.scan({ type: 'tool/result', limit: 20 })).at(-1)
+    expect(cancelled?.data).toMatchObject({
+      code: 'CANCELLED',
+      content: [{ type: 'text', text: 'cancelled before start' }],
+    })
+    expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED')])
+    // The note commits with the result it describes.
+    const [note] = await h.log.scan({ type: 'user/message', fromSeq: (cancelled?.seq ?? 0) + 1, limit: 1 })
+    expect(note?.seq).toBe((cancelled?.seq ?? 0) + 1)
+  })
+
+  it('an approved nested Host call rejected before effect writes the not-run note', async () => {
+    const h = await parkedOnNestedShell(
+      undefined,
+      nestedComputerUse({
+        // The port sees every call; only the Host one is refused.
+        preflight: async ({ name }) =>
+          name === 'computer_use'
+            ? {
+                code: 'INVALID_PARAMS',
+                message: 'invalid synthetic input',
+                path: '$.status',
+                expected: 'done',
+              }
+            : undefined,
+        dispatch: async (input) => ({ phase: 'responded', result: await input.invoke() }),
+      }),
+    )
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    expect((await h.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
+      code: 'TOOL_REJECTED_BEFORE_EFFECT',
+    })
+    expect(await ledgerNotes(h.log)).toEqual([notRun('TOOL_REJECTED_BEFORE_EFFECT', 'computer_use')])
+  })
+
+  it('an approved nested Host call the transport never accepts writes the not-run note', async () => {
+    const h = await parkedOnNestedShell(
+      undefined,
+      nestedComputerUse({ dispatch: async () => ({ phase: 'not_sent', error: new Error('refused') }) }),
+    )
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    expect((await h.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
+      code: 'TOOL_DISPATCH_NOT_SENT',
+    })
+    expect(await ledgerNotes(h.log)).toEqual([notRun('TOOL_DISPATCH_NOT_SENT', 'computer_use')])
+  })
+
+  it.each([
+    // The stop lands as the first refused attempt is recorded: the retry is never made.
+    ['before its retry', '"dispatchPhase":"not_sent"', 'cancelled before dispatch retry'],
+    // The stop lands as the retry is recorded: the loop stops before dispatching it.
+    ['as its retry is recorded', '"dispatchAttempt":2', 'cancelled before dispatch'],
+  ] as const)(
+    'an approved nested Host call stopped %s writes the not-run note',
+    async (_case, row, message) => {
+      const held: { s?: SessionImpl } = {}
+      const storage = new MemoryStorage()
+      const stopping = new Proxy(storage, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver) as unknown
+          if (property === 'commit')
+            return (key: string, tx: CommitTx) => {
+              if (JSON.stringify(tx.opState ?? null).includes(row)) held.s?.ac.abort()
+              return (value as MemoryStorage['commit']).call(target, key, tx)
+            }
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+      const more = nestedComputerUse({
+        dispatch: async () => ({ phase: 'not_sent', error: new Error('refused') }),
+      })
+      const h = await parkedOnNestedShell(undefined, { ...more, open: { ...more.open, storage: stopping } })
+      held.s = h.session
+      await answerToolDecision(h.session, 1, 'allowed-once', approver)
+      await h.session.run({ until: 'turn-end', signal: signal() })
+      const cancelled = (await h.log.scan({ type: 'tool/result', limit: 20 })).at(-1)
+      expect(cancelled?.data).toMatchObject({ code: 'CANCELLED', content: [{ type: 'text', text: message }] })
+      expect(await settledOutcomes(h.log)).toContain('aborted')
+      expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED', 'computer_use')])
+    },
+  )
+
+  it('an approved nested Host call retried after a crash with no Host port writes the not-run note', async () => {
+    const storage = new MemoryStorage()
+    // The process dies as it records the retry, after the first attempt was refused unsent.
+    const dying = new Proxy(storage, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown
+        if (property === 'commit')
+          return (key: string, tx: CommitTx) =>
+            JSON.stringify(tx.opState ?? null).includes('"dispatchAttempt":2')
+              ? Promise.reject(new Error('injected'))
+              : (value as MemoryStorage['commit']).call(target, key, tx)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const more = nestedComputerUse({
+      dispatch: async () => ({ phase: 'not_sent', error: new Error('refused') }),
+    })
+    const h = await parkedOnNestedShell(undefined, { ...more, open: { ...more.open, storage: dying } })
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    await h.session.run({ until: 'turn-end', signal: signal() }).catch(() => undefined)
+    await h.log.close().catch(() => undefined)
+    const reopened = await openSession({
+      provider: fakeProvider([textTurn('done')]),
+      storage,
+      writerRunId: 'reopen',
+      registry: nestedComputerUse({ dispatch: async () => ({ phase: 'not_sent', error: new Error('x') }) })
+        .registry,
+    })
+    try {
+      expect((await reopened.session.resume()).actions.map((a) => a.action)).toEqual(['rerun'])
+      await reopened.session.run({ until: 'turn-end', signal: signal() })
+      expect((await reopened.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
+        code: 'TOOL_DISPATCH_NOT_SENT',
+      })
+      expect(await ledgerNotes(reopened.log)).toEqual([notRun('TOOL_DISPATCH_NOT_SENT', 'computer_use')])
+    } finally {
+      await reopened.session.close()
+    }
+  })
+
   it('an approved nested call the user stops while it runs writes the not-run note', async () => {
     const held: { s?: SessionImpl } = {}
     const h = await parkedOnNestedShell(
@@ -377,7 +598,7 @@ describe('[nested result] notes', () => {
     expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED')])
   })
 
-  it('an approved nested call blocked on recovery writes the not-run note', async () => {
+  it('an approved nested call blocked on its decision at recovery writes the unknown note', async () => {
     let entered!: () => void
     const called = new Promise<void>((resolve) => {
       entered = resolve
@@ -413,7 +634,12 @@ describe('[nested result] notes', () => {
       expect((await reopened.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
         code: 'DECISION_CONTINUATION_BLOCKED',
       })
-      expect(await ledgerNotes(reopened.log)).toEqual([notRun('DECISION_CONTINUATION_BLOCKED')])
+      // The continuation was running when the process died: what it did is unknown, not undone.
+      expect(await ledgerNotes(reopened.log)).toEqual([
+        [
+          `${PREFIX}The outcome of the nested call shell inside outer is unknown; check the current state before running it again.`,
+        ],
+      ])
     } finally {
       await reopened.session.close()
     }
