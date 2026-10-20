@@ -12,7 +12,7 @@ import { hashDirectory, preflightPackageBundles } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
 import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
-import { createTestHost } from '../../testkit/index.js'
+import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 import {
   packageDirs,
   pluginHost,
@@ -276,7 +276,9 @@ it.each(['route', 'model'])(
       provider: (profile: ResolvedProfile) =>
         new ScriptedProvider({
           scripts: [],
-          models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+          models: (profile.provider.routes ?? []).flatMap((route) =>
+            (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+          ),
         }),
     }
     let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
@@ -411,7 +413,9 @@ it('reviews the compiler final tree, strictly pins an agent and admits saved sch
     provider: (profile) =>
       new ScriptedProvider({
         scripts: [],
-        models: (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
       }),
     packageDirs: {
       ...packageDirs,
@@ -585,5 +589,102 @@ it('binds an agent review to published row config and the admitted tools without
     await current.close()
   } finally {
     await host.close()
+  }
+})
+
+it('uses the current admitted package catalogue for the same agent before and after startup learns an installed package', async () => {
+  const original = pluginSource('')
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = {
+    work: {
+      profile: { tools: ['read'] },
+      presets: { safe: { name: 'safe', extends: 'standard' } },
+      launch: { title: { en: 'Review' }, description: { en: 'Review' }, preset: 'safe' },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  const source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  let available: (typeof source)[] = []
+  const options = {
+    dataDir: scratch(),
+    profileInputs: { user: { name: 'local-dev', composition: {} } },
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
+      }),
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    runtimePluginCatalogue: [],
+    runtimePluginSources: async () => available,
+  } satisfies Partial<TestHostOptions>
+  const live = await pluginHost([source], options)
+  let before: Awaited<ReturnType<NonNullable<typeof live.host.resolveAgent>>>
+  try {
+    expect(live.host.profile.packages.some((p) => p.id === VENDOR)).toBe(false)
+    available = [source]
+    await live.host.applyRuntimeTarget(targetOf([pluginRow()]))
+    before = await live.host.resolveAgent!(`${VENDOR}#work`)
+  } finally {
+    await live.host.close()
+  }
+  const packages = Object.fromEntries(
+    ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
+      id,
+      {
+        version: '0.1.0',
+        source: { type: 'builtin' as const, ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin' as const,
+        enabled: true,
+      },
+    ]),
+  )
+  const startup = await pluginHost([source], {
+    ...options,
+    runtimePluginSnapshots: [source],
+    runtimePluginCatalogue: [source],
+    profileInputs: {
+      adminBundles: [],
+      user: {
+        name: 'local-dev',
+        composition: {},
+        packages: [{ id: VENDOR, source: 'installed', enabled: false }],
+      },
+    },
+    lock: {
+      packages: {
+        ...packages,
+        [VENDOR]: {
+          version: source.snapshot.version,
+          source: { type: 'file', ref: source.snapshot.directory },
+          integrity: source.snapshot.integrity,
+          trust: 'trusted',
+          enabled: false,
+        },
+      },
+    },
+  })
+  try {
+    expect(startup.host.profile.packages.some((p) => p.id === VENDOR)).toBe(true)
+    await startup.host.applyRuntimeTarget(targetOf([pluginRow()]))
+    const after = await startup.host.resolveAgent!(`${VENDOR}#work`)
+    expect(after.sources).toEqual(before.sources)
+    expect(after.permission).toEqual(before.permission)
+    expect(after.compositionHash).toBe(before.compositionHash)
+    expect(after.digest).toBe(before.digest)
+  } finally {
+    await startup.host.close()
   }
 })

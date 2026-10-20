@@ -274,8 +274,8 @@ export function ApplicationCard({
             <ApplicationPreviewSummary preview={review.preview} application />
             <p>
               {tr(
-                'Applies to product identity, navigation, presentation and agent catalogue. Trusted JavaScript is not a sandbox.',
-                '作用于产品身份、导航、展示和智能体目录。受信 JavaScript 并非沙箱。',
+                'Applies to product identity, navigation, presentation and reviewed agent launches. Trusted JavaScript is not a sandbox.',
+                '作用于产品身份、导航、展示和已审阅的智能体启动配置。受信 JavaScript 并非沙箱。',
               )}
             </p>
             <p>

@@ -43,11 +43,16 @@ it.each(['known', 'unknown'])(
         brand: { name: { en: 'Acme' }, assistantName: { en: 'Ava' } },
         presentation: {
           home: 'acme/kit#overview',
-          navigation: { entries: ['acme/kit#overview'], hideBuiltin: ['automation'] },
+          navigation: {
+            entries: ['acme/kit#overview'],
+            hideBuiltin: ['agents', 'business-agents', 'automation'],
+          },
         },
         agents: ['acme/kit#desk'],
         defaultAgent: 'acme/kit#desk',
       },
+      pageNames: [{ ref: 'acme/kit#overview', title: { en: 'Overview', 'zh-CN': '总览' } }],
+      agentLaunches: [{ ref: 'acme/kit#desk', launch: { title: { en: 'Reviewer', 'zh-CN': '审核员' } } }],
       declarationDigest: 'b'.repeat(64),
       consentDigest: 'c'.repeat(64),
       dependencies: [
@@ -83,9 +88,14 @@ it.each(['known', 'unknown'])(
     expect(document.body.textContent).toContain('Trusted JavaScript')
     const summary = document.querySelector('[data-testid="consent-summary"]')
     expect(summary?.textContent).toContain('Ava')
-    expect(summary?.textContent).toContain('Application home page')
-    expect(summary?.textContent).toContain('Automation')
-    expect(summary?.textContent).toContain('1 application agents')
+    expect(summary?.textContent).toContain('Overview')
+    expect(summary?.textContent).not.toContain('acme/kit#overview')
+    expect(
+      [...summary!.querySelectorAll('p')].find((p) => p.textContent?.startsWith('Hidden host entries'))
+        ?.textContent,
+    ).toBe('Hidden host entries: Agents, Automation')
+    expect(summary?.textContent).toContain('Reviewer')
+    expect(summary?.textContent).not.toContain('acme/kit#desk')
     expect(summary?.textContent).toContain('Navigation')
     expect(summary?.textContent).toContain('Read files: /synthetic/status')
     expect(summary?.textContent).toContain('Network hosts: status.example')

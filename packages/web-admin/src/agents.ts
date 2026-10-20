@@ -19,6 +19,7 @@ export {
   type BusinessAgentsSource,
   useBusinessAgents,
 } from './agents/gallery.js'
+export { AgentLaunchReview } from './agents/launch-review.js'
 export {
   type BusinessAgentStart,
   openStartedSession,

@@ -111,6 +111,8 @@ export async function sessionAdmission(
     throw new HostError('E_PRESET_UNSUPPORTED', 'ambiguous active package sources')
   const current = {
     ...modelProfile,
+    // Empty admin selection has the same authority before and after configuration is persisted.
+    adminBundles: modelProfile.adminBundles ?? [],
     packages: [
       ...profile.packages
         .filter((pkg) => !sourceIds.has(pkg.id))
@@ -142,22 +144,22 @@ export async function sessionAdmission(
 }
 
 export function createAgentResolver(deps: {
-  profile: ResolvedProfile
   admission(): ReturnType<typeof sessionAdmission>
   host: Host
   packageDirs: ReadonlyMap<string, string>
   adminLoop(): Promise<LoopSelection | undefined>
   open(binding: CompositionBinding): Promise<{ host: Host }>
 }) {
-  const { profile, admission, host, packageDirs, open } = deps
+  const { admission, host, packageDirs, open } = deps
   return async (ref: string) => {
     const { current, sources } = await admission()
     const identities = agentSources(current, sources, packageDirs)
     const selected = agentSelection(ref, current.bundleCatalog, identities)
     const admitted = admitSessionBundlePresets(current, host, { ...selected, strict: true })
     const adminLoop = await deps.adminLoop()
+    // A live install can outgrow the boot catalogue; compile against current admission.
     const tree = resolveComposition(
-      { ...profile, ...admitted.scope },
+      { ...current, ...admitted.scope },
       {
         preset: admitted.preset,
         packageCatalog: current.packages,

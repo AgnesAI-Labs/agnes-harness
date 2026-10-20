@@ -16,6 +16,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { InstallReview, shortSource } from '../admin/plugins/install-review.js'
 import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 import type { BusinessAgent } from './catalog.js'
+import { AgentLaunchReview } from './launch-review.js'
 import {
   planBlocked,
   planBusinessAgentStart,
@@ -420,44 +421,12 @@ export function useBusinessAgentStart(options: {
       >
         <div className="agent-start-page" data-testid="agent-start-dialog">
           {phase.kind === 'launch-review' && (
-            <section data-testid="agent-launch-review">
-              <SettingsGroup>
-                <SettingsItem
-                  label={phase.target.launch.title[locale] ?? phase.target.launch.title.en}
-                  description={phase.target.ref}
-                />
-                <SettingsItem label={t('launch.model')} description={JSON.stringify(phase.target.models)} />
-                <SettingsItem
-                  label={t('launch.permission')}
-                  description={JSON.stringify(phase.target.permission)}
-                />
-                <SettingsItem
-                  label={t('launch.sources')}
-                  description={phase.target.sources
-                    .map((source) => `${source.id}@${source.version} ${source.integrity}`)
-                    .join(', ')}
-                />
-                {phase.target.launch.prompt && (
-                  <SettingsItem
-                    label={t('launch.draft')}
-                    description={
-                      phase.target.launch.prompt.text[locale] ?? phase.target.launch.prompt.text.en
-                    }
-                  />
-                )}
-              </SettingsGroup>
-              <Button
-                data-testid="agent-launch-confirm"
-                onClick={() => {
-                  void launch(phase.agent, phase.plan, {
-                    target: phase.target,
-                    operationId: phase.operationId,
-                  })
-                }}
-              >
-                {t('action.session')}
-              </Button>
-            </section>
+            <AgentLaunchReview
+              plan={phase.target}
+              onConfirm={() => {
+                void launch(phase.agent, phase.plan, { target: phase.target, operationId: phase.operationId })
+              }}
+            />
           )}
           {phase.kind === 'planning' && <Loadable loading hasData={false} shape="rows" />}
           {phase.kind === 'confirm' && reviewed && (
