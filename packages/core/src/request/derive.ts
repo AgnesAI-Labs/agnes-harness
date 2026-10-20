@@ -644,8 +644,18 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
           },
         ]
       : blocksOf(d.content)
+    // A nested-result note may carry an untrusted result's trust for its preview; its header is
+    // still the harness's own words and is scrubbed, not enveloped.
+    const nestedHeader =
+      node.event.origin === 'system' &&
+      d.kind === 'runtime_context' &&
+      blocks[0]?.type === 'text' &&
+      String(blocks[0].text).startsWith(NESTED_RESULT_PREFIX)
+        ? blocks[0]
+        : undefined
     for (const b of blocks) {
-      if (b.type === 'text')
+      if (b === nestedHeader) content.push({ type: 'text', text: sanitize(String(b.text)) })
+      else if (b.type === 'text')
         content.push({ type: 'text', text: wrap(String(b.text), b.reference !== undefined) })
       else if (b.type === 'image') content.push(imageBlock(b))
       else if (b.type === 'resource_link' && b.attachment) {
@@ -703,6 +713,13 @@ const RUNTIME_CONTEXT_PREFIX = '[runtime context]\n'
 export const HOOK_CONTEXT_PREFIX = '[hook context]\n'
 export const SKILL_LOADED_PREFIX = '[skill loaded]\n'
 /**
+ * The first line of a note telling the model how a nested call ended when no running code read its
+ * result (an approval continuation, a refusal, a deferred job, an outer call that failed around it).
+ * Its first text block is the harness's header; a preview of the result rides in the blocks after
+ * it and carries the result row's trust.
+ */
+export const NESTED_RESULT_PREFIX = '[nested result]\n'
+/**
  * Every prefix a later derivation reads a Core note back by. A loop's note may not begin with one: a
  * committed note that did would be taken for the snapshot or note it imitates.
  */
@@ -710,6 +727,7 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   RUNTIME_CONTEXT_PREFIX,
   HOOK_CONTEXT_PREFIX,
   SKILL_LOADED_PREFIX,
+  NESTED_RESULT_PREFIX,
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */

@@ -82,6 +82,22 @@ describe('toSessionUpdate', () => {
     expect(toSessionUpdate(e, { replay: true })).toBeNull()
   })
 
+  it('does not emit a [nested result] note as a user_message_chunk', () => {
+    const e = ev('user/message', {
+      content: [
+        {
+          type: 'text',
+          text: '[nested result]\nThe nested call shell inside outer finished later (status: ok). Preview:',
+        },
+        { type: 'text', text: 'ran' },
+      ],
+      kind: 'runtime_context',
+    })
+    expect(toSessionUpdate(e)).toBeNull()
+    expect(toSessionUpdate(e, { replay: true })).toBeNull()
+    expect(toSessionUpdates(e, { replay: true })).toEqual([])
+  })
+
   it('projects a user message from its first content block', () => {
     expect(toSessionUpdate(ev('user/message', { content: [{ type: 'text', text: 'go' }] }))).toEqual({
       sessionUpdate: 'user_message_chunk',

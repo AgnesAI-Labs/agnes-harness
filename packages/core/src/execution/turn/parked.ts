@@ -1,5 +1,6 @@
 import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
 import { CoreError } from '@agnes/core-common/types'
+import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import type { ExecutionDomain, ResolvedToolCallPolicy } from '@agnes/protocol'
@@ -11,6 +12,7 @@ import {
 import { domainDecisionEvents, domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier, parkedGates } from '../../step/verifier-continuation.js'
+import { nestedOutcomeNote, nestedParentName } from './nested-note.js'
 import { TOOL_DECISION_OWNER, toolDecisionSource } from './tool-decision.js'
 
 export async function approvalContinuation(
@@ -238,6 +240,15 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
           },
           { sourceEventSeqs: [call.seq] },
         ),
+      )
+    // No running code waits on a nested call's refusal any more; the note is how the model hears of it.
+    if (!allowed && isNestedCall(original))
+      events.push(
+        nestedOutcomeNote(s, {
+          name: original.name,
+          parent: await nestedParentName(s, original.parentEffectId),
+          outcome: snapshot.result?.reason === 'answered' ? 'rejected' : 'deadline',
+        }),
       )
     // A refusal is final: the answered decision ends with it, after the continuation that read it.
     if (snapshot.result?.reason === 'answered' && !allowed)

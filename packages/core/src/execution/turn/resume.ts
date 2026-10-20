@@ -1,5 +1,6 @@
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import type { EventInput, Seq } from '@agnes/core-common/types'
+import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
 import { readSideCallBinding } from '../../orchestrator/side-call-effect-port.js'
@@ -12,6 +13,7 @@ import {
 import { closeTurn } from '../../step/control.js'
 import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
+import { failureNotes } from './nested-note.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
 export type ResumeMode = 'continue' | 'close'
@@ -483,6 +485,21 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         actions.push({ effectId: root.effectId, action: actionForDecision(decision, root.replay) })
         continue
       }
+      const code =
+        recoveryRefusal === 'decision-continuation-blocked'
+          ? 'DECISION_CONTINUATION_BLOCKED'
+          : 'TOOL_OUTCOME_UNKNOWN'
+      // Read before the result lands, while the effect is still pending and bounds the scan.
+      const notes = await failureNotes(
+        s,
+        {
+          name: root.tool.name,
+          effectId: root.effectId,
+          nested: isNestedCall(callRow?.data),
+          parentEffectId: (callRow?.data as { parentEffectId?: string } | undefined)?.parentEffectId,
+        },
+        code,
+      )
       await s.transition(
         [
           ...undispatchedNestedEvents,
@@ -497,15 +514,13 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
                 },
               ],
               isError: true,
-              code:
-                recoveryRefusal === 'decision-continuation-blocked'
-                  ? 'DECISION_CONTINUATION_BLOCKED'
-                  : 'TOOL_OUTCOME_UNKNOWN',
+              code,
               enforcement: s.d.runtime.enforcement(),
               authz: { decisionId: 'n/a' },
             },
             { sourceEventSeqs: [root.argsSeq ?? root.intentSeq] },
           ),
+          ...notes,
           s.ev('effect/settled', { effectId: root.effectId, outcome: 'unknown' }),
         ],
         setCallsCompleted(setCallCompleted(cur, root.tool.toolUseId), nestedCallIds),

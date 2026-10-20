@@ -12,6 +12,7 @@ import {
 import { deferredEffectId } from '../../step/deferred.js'
 import type { SessionImpl, StepOutcome } from '../../step/session.js'
 import { stepVerifyInput } from '../../step/verify-input.js'
+import { deferredNestedNote } from './nested-note.js'
 
 /** Polls external artifact jobs without closing their owning step until every result is known. */
 export async function runDeferred(s: SessionImpl): Promise<StepOutcome> {
@@ -71,6 +72,8 @@ export async function runDeferred(s: SessionImpl): Promise<StepOutcome> {
             authz: { decisionId: 'n/a' },
           }
     events.push(s.ev('tool/result', data, source))
+    const note = await deferredNestedNote(s, pending.toolUseId, data, provenance.trust)
+    if (note) events.push(note)
   }
   if (remaining.length > 0) {
     if (events.length > 0) await s.transition(events, withPhase(op, { ...op.phase, jobs: remaining }))

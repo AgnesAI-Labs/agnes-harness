@@ -44,6 +44,7 @@ import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
+import { failureNotes, nestedOutcomeNote, nestedParentName, resultPreview } from './nested-note.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { preflightError } from './preflight-error.js'
@@ -73,6 +74,12 @@ export type ExecOpts = {
   onAttachmentRead?: () => void
   /** A crash-recovered second dispatch of the already-durable effect. */
   resumeDispatch?: { effectId: string; startSeq: Seq; attempt: 2 }
+  /**
+   * Set by the batch runner for a nested call it runs itself, which only an approval continuation
+   * does. No running code reads that result, so it commits with a `[nested result]` note naming the
+   * tool the call was made inside.
+   */
+  unconsumed?: { parentEffectId?: string }
 }
 export type PlannedCall = {
   toolUseId: string
@@ -239,6 +246,8 @@ async function settleSyntheticDispatch(
     message: string
     structured?: JsonValue
     reconciliation?: EventInput[]
+    /** `[nested result]` notes, committed with the result they describe. */
+    notes?: EventInput[]
     outcome: EffectOutcome
     cancelledBy?: Actor
     partial?: boolean
@@ -268,6 +277,7 @@ async function settleSyntheticDispatch(
       ),
       effect.settle(input.outcome),
       ...(input.reconciliation ?? []),
+      ...(input.notes ?? []),
     ],
     (cur) =>
       updateCall(cur, call.toolUseId, {
@@ -1127,6 +1137,19 @@ export async function approveAndExecute(
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
   const nestedParks: EventInput[] = []
+  // A synthesized failure no running code reads: for a nested call, its own outcome; for an outer
+  // call, the nested calls that had already written under it.
+  const notesFor = (code: string) =>
+    failureNotes(
+      s,
+      {
+        name: call.name,
+        effectId: effect.effectId,
+        nested: o.depth > 0,
+        parentEffectId: o.parentEffectId ?? o.unconsumed?.parentEffectId,
+      },
+      code,
+    )
   const onAbort = () => ac.abort()
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
@@ -1407,6 +1430,7 @@ export async function approveAndExecute(
               outcome: 'aborted',
               partial: true,
               cancelledBy: stoppedBy,
+              notes: await notesFor('CANCELLED'),
             },
           )
           return {
@@ -1426,6 +1450,7 @@ export async function approveAndExecute(
               timeoutMs,
             ) + reconciledMessage(reconciliation.answer),
           outcome: 'unknown',
+          notes: await notesFor('TOOL_OUTCOME_UNKNOWN'),
         })
         return {
           result,
@@ -1439,6 +1464,7 @@ export async function approveAndExecute(
           outcome: 'aborted',
           partial: true,
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
+          notes: await notesFor('CANCELLED'),
         })
         return {
           result,
@@ -1561,6 +1587,20 @@ export async function approveAndExecute(
               ]
             : []),
         ]
+    const resultRow = resultRows[0]
+    if (o.unconsumed && !deferred && resultRow) {
+      const data = resultRow.data as { content: unknown; isError: boolean }
+      resultRows.push(
+        nestedOutcomeNote(s, {
+          name: call.name,
+          parent: await nestedParentName(s, o.unconsumed.parentEffectId),
+          outcome: 'executed',
+          isError: data.isError,
+          preview: resultPreview(data.content),
+          trust: resultRow.trust,
+        }),
+      )
+    }
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
       tier: s.preset.verifier.defaultTier,
@@ -1738,6 +1778,9 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
                 // but do not attach its new effect to the already-settled parent effect from the old turn.
                 ...(c.toolUseId !== continuation?.toolUseId && c.parentEffectId
                   ? { parentEffectId: c.parentEffectId }
+                  : {}),
+                ...((c.depth ?? 0) > 0
+                  ? { unconsumed: c.parentEffectId ? { parentEffectId: c.parentEffectId } : {} }
                   : {}),
                 ...(recovered
                   ? {
