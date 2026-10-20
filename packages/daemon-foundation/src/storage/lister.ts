@@ -295,6 +295,49 @@ function loopPin(value: unknown): SessionWorkspaceMeta['loop'] {
     : undefined
 }
 
+type WorkspaceRow = {
+  createdAt: string | null
+  lastSeq: number | null
+  generation: number | null
+  preset: string | null
+  profileHash: string | null
+  title: string | null
+  lastActiveAt: string | null
+  loopPin: string | null
+  messageAt: number | null
+  messageSeq: number
+  sortAt: number
+}
+
+function workspaceMeta(row: WorkspaceRow): SessionWorkspaceMeta {
+  const loop = row.loopPin ? loopPin(JSON.parse(row.loopPin)) : undefined
+  return {
+    ...(loop ? { loop } : {}),
+    createdAt: row.createdAt ?? '',
+    lastSeq: row.lastSeq ?? 0,
+    generation: row.generation ?? 0,
+    preset: row.preset ?? null,
+    profileHash: row.profileHash ?? null,
+    ...(row.title ? { title: row.title } : {}),
+    ...(row.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
+    ...(row.messageAt !== null ? { lastMessageAt: new Date(row.messageAt).toISOString() } : {}),
+  }
+}
+
+/** True when folding `event` would write every column of `row` back unchanged: the event is at or
+ * below both projected sequences, the generation does not advance, and no stored value is one the
+ * fold normalises (an empty string becomes NULL, the sort key is recomputed from its inputs). */
+function alreadyFolded(row: WorkspaceRow, event: EventEnvelope, generation: number): boolean {
+  if (!row.createdAt || row.title === '' || row.lastActiveAt === '') return false
+  const created = Date.parse(row.createdAt)
+  return (
+    event.seq <= (row.lastSeq ?? 0) &&
+    event.seq <= row.messageSeq &&
+    generation <= (row.generation ?? 0) &&
+    row.sortAt === (row.messageAt ?? (Number.isFinite(created) ? created : 0))
+  )
+}
+
 /** Adds one nullable projection column to an existing table by direct probe; PRAGMA is outside
  * Host's owner SQL allow-list. A concurrent opener adding it first is not an error. */
 function ensureColumn(t: TableHandle, column: string, definition: string): void {
@@ -403,29 +446,28 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
     )
   }
 
-  metadata(sessionKey: string): SessionWorkspaceMeta | undefined {
-    const row = this.t.get<SessionWorkspaceMeta & { loopPin: string | null; messageAt: number | null }>(
-      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, loop_pin AS loopPin, message_at AS messageAt FROM session_workspaces WHERE session_key = ?',
+  private row(sessionKey: string): WorkspaceRow | undefined {
+    return this.t.get<WorkspaceRow>(
+      'SELECT created_at AS createdAt, last_seq AS lastSeq, generation, preset, profile_hash AS profileHash, title, last_active_at AS lastActiveAt, loop_pin AS loopPin, message_at AS messageAt, message_seq AS messageSeq, sidebar_sort_at AS sortAt FROM session_workspaces WHERE session_key = ?',
       [sessionKey],
     )
-    if (!row) return undefined
-    const loop = row.loopPin ? loopPin(JSON.parse(row.loopPin)) : undefined
-    return {
-      ...(loop ? { loop } : {}),
-      createdAt: row.createdAt ?? '',
-      lastSeq: row.lastSeq ?? 0,
-      generation: row.generation ?? 0,
-      preset: row.preset ?? null,
-      profileHash: row.profileHash ?? null,
-      ...(row.title ? { title: row.title } : {}),
-      ...(row.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
-      ...(row.messageAt !== null ? { lastMessageAt: new Date(row.messageAt).toISOString() } : {}),
-    }
+  }
+
+  metadata(sessionKey: string): SessionWorkspaceMeta | undefined {
+    const row = this.row(sessionKey)
+    return row && workspaceMeta(row)
   }
 
   observe(sessionKey: string, event: EventEnvelope, generation = 0): void {
-    const current = this.metadata(sessionKey)
-    if (!current) return
+    const row = this.row(sessionKey)
+    if (!row) return
+    // Opening a session replays its whole history through here. Skip events the row has already
+    // folded instead of rewriting it to the same values, each under the database write lock.
+    if (alreadyFolded(row, event, generation)) return
+    this.fold(sessionKey, workspaceMeta(row), event, generation)
+  }
+
+  private fold(sessionKey: string, current: SessionWorkspaceMeta, event: EventEnvelope, generation: number) {
     let createdAt = current.createdAt
     let preset = current.preset
     let profileHash = current.profileHash
