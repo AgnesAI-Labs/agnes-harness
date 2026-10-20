@@ -1509,6 +1509,24 @@ describe('assemble', () => {
     expect(a.presets.standard?.telemetry).toMatchObject({ consent: 'ANON' })
     await a.rollback.unwind()
   })
+  it('keeps the profile consent out of permission overlays, so a profile that gave consent still assembles', async () => {
+    const p = await profileFor()
+    const code: PackageModule = {
+      ...codeModule,
+      presets: {
+        ...codeModule.presets,
+        'permission-workspace-write': { name: 'permission-workspace-write', sandbox: { level: 'L1' } },
+      },
+    }
+    const d = deps({ '@agnes/base': baseModule(), '@agnes/code': code, '@agnes/ai': aiModule })
+    mkdirSync(d.profileDir, { recursive: true })
+    writeFileSync(join(d.profileDir, 'consent.yaml'), 'telemetry:\n  consent: LOCAL\n')
+    const a = await assemble(p, d)
+    expect(a.presets['permission-workspace-write']).not.toHaveProperty('telemetry')
+    expect(a.presets.standard?.telemetry).toMatchObject({ consent: 'LOCAL' })
+    expect(a.defaultPreset.hash).toMatch(/^sha256-/)
+    await a.rollback.unwind()
+  })
   it('gives each seam a context bound to its own package and the seven profile fields base reads', async () => {
     const p = await profileFor()
     const seen: Array<Record<string, unknown>> = []
