@@ -28,7 +28,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.keyHelpText':
       'Create an API key in your provider’s account dashboard, copy it and paste it here. It is tested as soon as you paste it.',
     'accounts.chooseProvider': 'Choose a provider',
-    'accounts.custom': 'Custom address',
+    'accounts.custom': 'OpenAI-compatible endpoint',
     'accounts.saved': 'Account saved.',
     'settings-shell.advanced': 'Advanced',
     'settings-shell.jobs': 'Jobs',
@@ -159,7 +159,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.keyHelp': '在哪里获取？',
     'accounts.keyHelpText': '在服务商的账户控制台创建 API Key，复制后粘贴到这里。粘贴后会自动测试。',
     'accounts.chooseProvider': '选择提供商',
-    'accounts.custom': '自定义地址',
+    'accounts.custom': '兼容 OpenAI 的接口',
     'accounts.saved': '账户已保存。',
     'settings-shell.advanced': '高级',
     'settings-shell.jobs': '作业',

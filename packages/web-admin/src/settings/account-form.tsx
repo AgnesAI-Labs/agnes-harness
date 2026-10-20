@@ -18,7 +18,7 @@ import {
   setDisclosureOpen,
   setSettingsSelectOptions,
 } from '@agnes/web-ui'
-import { syncAccountHeading } from './account-tiles.js'
+import { COMPATIBLE_PROVIDER, syncAccountHeading } from './account-tiles.js'
 import { configurationField, optionalElement, type SettingsElements } from './dialog.js'
 
 /** The account form's fields that can be wrong: each names its control and the line under it. */
@@ -155,6 +155,9 @@ export function accountForm(ui: SettingsElements) {
     },
     sync(state: AccountFormState): void {
       provider = state.provider
+      // A compatible endpoint has no default address to show, offer back or fall back to.
+      const compatible = provider?.id === COMPATIBLE_PROVIDER
+      const defaultUrl = compatible ? '' : (provider?.baseUrl ?? '')
       syncAccountHeading(
         optionalElement('config-detail-title', 'h3'),
         state.step,
@@ -171,7 +174,7 @@ export function accountForm(ui: SettingsElements) {
       const title = byId('config-provider-name')
       if (title) title.textContent = provider?.label ?? ''
       const host = byId('config-provider-host')
-      if (host) host.textContent = endpoint(ui.baseUrl.value || provider?.baseUrl || '')
+      if (host) host.textContent = endpoint(ui.baseUrl.value || defaultUrl)
       const change = byId('config-provider-change')
       if (change) change.hidden = state.editing
       const auth = byId('config-auth-choice')
@@ -193,7 +196,13 @@ export function accountForm(ui: SettingsElements) {
             }}
           />,
         )
-      ui.apiKey.placeholder = tr(state.editing ? 'accounts.keyPlaceholder' : 'accounts.keyPlaceholderNew')
+      ui.apiKey.placeholder = tr(
+        compatible
+          ? 'accounts.keyOptional'
+          : state.editing
+            ? 'accounts.keyPlaceholder'
+            : 'accounts.keyPlaceholderNew',
+      )
       const locked = !state.tested?.models.length || (!state.oauth && !state.tested.verified)
       const group = byId('config-model-fields')
       if (group) group.dataset.locked = String(locked)
@@ -206,12 +215,16 @@ export function accountForm(ui: SettingsElements) {
       if (lockTest) lockTest.hidden = !state.editing || state.oauth
       if (advanced) advanced.hidden = state.step !== 'connection'
       const address = ui.baseUrl.value.trim().replace(/\/+$/, '')
-      const custom =
-        !state.oauth && !!provider && !!address && address !== provider.baseUrl.replace(/\/+$/, '')
+      const custom = !state.oauth && !!provider && !!address && address !== defaultUrl.replace(/\/+$/, '')
       const reset = byId('config-base-url-reset')
-      if (reset) reset.hidden = !custom
+      if (reset) reset.hidden = !custom || compatible
       const hint = byId('config-base-url-hint')
-      if (hint) hint.textContent = provider ? tr('accounts.baseUrlHint', { url: provider.baseUrl }) : ''
+      if (hint)
+        hint.textContent = compatible
+          ? tr('accounts.compatible.urlHint')
+          : provider
+            ? tr('accounts.baseUrlHint', { url: provider.baseUrl })
+            : ''
       const meta = byId('config-account-advanced-meta')
       if (meta) renderRegion(meta, summary(state, custom))
     },

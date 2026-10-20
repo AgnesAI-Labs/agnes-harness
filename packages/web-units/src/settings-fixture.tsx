@@ -93,6 +93,7 @@ function SettingsFixture() {
                 </div>
                 <p id="config-key-hint" className="field-hint form-field-wide" />
                 <div id="config-oauth-controls" className="form-field-wide" />
+                <div id="config-compatible-models" className="form-field-wide" hidden />
                 <div className="account-status" id="config-account-status">
                   <p id="config-state" aria-live="polite" />
                   <p id="config-error" role="alert" />

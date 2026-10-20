@@ -48,7 +48,16 @@ const account = (id: string): ConfigAccount => ({
   credentialConfigured: true,
   authType: 'api-key',
 })
-async function setup(accounts: ConfigAccount[] = [account('work'), account('personal')]) {
+const OPENAI = {
+  id: 'openai',
+  label: 'OpenAI',
+  api: 'openai-completions',
+  baseUrl: 'https://api.openai.com/v1',
+}
+async function setup(
+  accounts: ConfigAccount[] = [account('work'), account('personal')],
+  providers = [OPENAI],
+) {
   window = new Window()
   window.document.write('<!doctype html><html><head></head><body><dialog id="config"></dialog></body></html>')
   vi.stubGlobal('document', window.document)
@@ -76,11 +85,7 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
   }
   const config = {
     get: vi.fn(async () => snapshot),
-    providers: vi.fn(async () => ({
-      providers: [
-        { id: 'openai', label: 'OpenAI', api: 'openai-completions', baseUrl: 'https://api.openai.com/v1' },
-      ],
-    })),
+    providers: vi.fn(async () => ({ providers })),
     test: vi.fn(async () => ({ verified: true, models: account('work').models })),
     save: vi.fn(async () => snapshot),
     account: vi.fn(
@@ -413,6 +418,78 @@ it('names the provider, explains the locked model group and tells each error und
   expect(text('config-error')).toBe('')
   // The connection's own result is untouched by a field's error.
   expect(text('config-state')).toBe(zhT('settings.step.third', { count: '1' }))
+  h.controller.close()
+})
+
+it('connects a relay through the OpenAI-compatible form: listed or typed models, no key needed', async () => {
+  const compatible = {
+    id: 'openai-compatible',
+    label: 'OpenAI-compatible endpoint',
+    api: 'openai-completions',
+    baseUrl: 'https://endpoint.invalid/v1',
+  }
+  const h = await setup(undefined, [OPENAI, compatible])
+  await h.click('#config-add-account')
+  await h.click('[data-provider="preset:siliconflow"]')
+  // The preset fills the address and the name; the address section opens; the key may stay empty.
+  expect(h.input('config-provider').value).toBe('openai-compatible')
+  expect(h.input('config-base-url').value).toBe('https://api.siliconflow.cn/v1')
+  expect(h.input('config-account-name').value).toBe(zhT('accounts.preset.siliconflow'))
+  expect(h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')).toBe('true')
+  expect(h.input('config-api-key').placeholder).toBe(zhT('accounts.keyOptional'))
+  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
+  expect(h.doc.getElementById('config-provider-host')?.textContent).toBe('api.siliconflow.cn/v1')
+  const panel = h.doc.getElementById('config-compatible-models')
+  expect(panel?.hidden).toBe(false)
+  const fetchModels = () =>
+    [...(panel?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent === zhT('accounts.compatible.fetch'))
+      ?.click()
+  // A failed listing says why, and is not an error.
+  h.config.test.mockResolvedValueOnce({
+    models: [],
+    verified: false,
+    catalogueError: { reason: 'http', status: 404 },
+  } as never)
+  fetchModels()
+  await vi.waitFor(() => expect(panel?.textContent).toContain(zhT('accounts.compatible.error.http404')))
+  expect(h.config.test).toHaveBeenLastCalledWith({
+    providerId: 'openai-compatible',
+    accountId: expect.any(String),
+    baseUrl: 'https://api.siliconflow.cn/v1',
+  })
+  expect(h.doc.getElementById('config-error')?.textContent).toBe('')
+  // Listed models are picked by hand; the default model comes from the picked ones.
+  const listed = (id: string) => ({ id, name: id, contextWindow: 32768, maxTokens: 8192 })
+  h.config.test.mockResolvedValueOnce({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
+  fetchModels()
+  await vi.waitFor(() => expect(panel?.textContent).toContain('Qwen/Qwen3-32B'))
+  expect(panel?.textContent).not.toContain(zhT('accounts.compatible.error.http404'))
+  const chip = [...(panel?.querySelectorAll('button[aria-pressed]') ?? [])].find(
+    (button) => button.textContent === 'Qwen/Qwen3-32B',
+  )
+  chip?.click()
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
+  expect(saved[0]).toMatchObject({
+    providerId: 'openai-compatible',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    label: zhT('accounts.preset.siliconflow'),
+    model: 'Qwen/Qwen3-32B',
+    models: [listed('Qwen/Qwen3-32B')],
+  })
+  expect(saved[0]).not.toHaveProperty('apiKey')
+  // Choosing it from the provider list (as the first-run guide does) opens the address too.
+  await h.click('#config-add-account')
+  await h.click('[data-provider="openai"]')
+  const advancedOpen = () => h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')
+  expect(advancedOpen()).toBe('false')
+  h.input('config-provider').value = 'openai-compatible'
+  h.input('config-provider').dispatchEvent(new (window as Window).Event('change', { bubbles: true }))
+  expect(advancedOpen()).toBe('true')
+  expect(h.input('config-base-url').value).toBe('')
   h.controller.close()
 })
 
