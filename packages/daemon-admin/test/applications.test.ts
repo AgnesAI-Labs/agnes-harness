@@ -18,6 +18,7 @@ import {
 } from '@agnes/package-manager'
 import { type AgentPlan, validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { createAgentLaunches } from '../src/packages/agent-launches.js'
 import { Applications } from '../src/packages/applications.js'
 import { contributionProjection } from '../src/packages/contribution-roster.js'
 import { requirePackageAdmin } from '../src/packages/permissions.js'
@@ -718,3 +719,104 @@ it('retains the reviewed Host launch plans, refuses drift at adoption and keeps 
   plan = { ...plan, digest: 'another-policy' }
   expect((await f.applications.get('local-dev')).status).toBe('active')
 })
+
+it('launch-review: LD1 clearing and re-adopting invalidates an earlier direct-launch ticket', async () => {
+  const plan = launchReviewPlan()
+  const f = await fixture(async () => structuredClone(plan)),
+    a = f.packages()[0]!
+  a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+  a.entry.application = { ...a.entry.application!, agents: [plan.ref] }
+  const adopted = await f.adopt('a')
+  let opened = false
+  const facade = createAgentLaunches({
+    directory: join(f.home, 'launches'),
+    backend: {
+      caller: async () => ({
+        principal: 'human',
+        profile: 'local-dev',
+        workspace: '/synthetic',
+        activation: 'a1',
+      }),
+      resolve: async () => structuredClone(plan),
+      application: () => f.applications.get('local-dev'),
+      open: async () => {
+        opened = true
+        return 'session'
+      },
+    },
+  })
+  const before = (await facade.call({ action: 'prepare', agent: plan.ref })) as {
+    consent: string
+    launchTicket: string
+  }
+  expect(before.consent).toBe('covered')
+  await f.applications.clear('local-dev', adopted.revision)
+  await expect(
+    facade.call({ action: 'start', launchTicket: before.launchTicket, operationId: 'while-cleared' }),
+  ).rejects.toThrow('STALE')
+  const readopted = await f.adopt('a')
+  expect(readopted.revision).toBeGreaterThan(adopted.revision)
+  expect(((await facade.call({ action: 'prepare', agent: plan.ref })) as { consent: string }).consent).toBe(
+    'covered',
+  )
+  await expect(
+    facade.call({ action: 'start', launchTicket: before.launchTicket, operationId: 'old-ticket' }),
+  ).rejects.toThrow('STALE')
+  expect(opened).toBe(false)
+})
+
+function launchReviewPlan(): AgentPlan {
+  return {
+    ref: 'a#work',
+    launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    loop: { id: 'work', version: '1.0.0' },
+    bundles: ['a#work'],
+    preset: 'safe',
+    pages: [],
+    digest: 'sha256-private-runtime',
+    compositionHash: 'tree',
+    presetHash: 'preset',
+    effectivePresetHash: 'effective',
+    model: { route: 'demo', model: 'demo' },
+    models: {},
+    permission: { readOnly: true, tools: ['read'], allow: [], deny: [] },
+    sources: [{ id: 'a', version: '1.0.0', integrity: 'hash', source: 'runtime-snapshot' }],
+  }
+}
+
+it.each(['snapshot', 'selection', 'launch-plan'] as const)(
+  'launch-review: alteration of the persisted %s cannot manufacture covered consent',
+  async (change) => {
+    const plan = launchReviewPlan()
+    const f = await fixture(async () => structuredClone(plan)),
+      a = f.packages()[0]!
+    a.entry.agents = [{ ref: plan.ref, launch: plan.launch }]
+    a.entry.application = { ...a.entry.application!, agents: [plan.ref] }
+    await f.adopt('a')
+    const saved = await f.config.application()
+    if (change === 'snapshot') saved.selection!.consentSnapshot!.version = 'tampered'
+    if (change === 'selection') saved.selection!.consentDigest = 'f'.repeat(64)
+    if (change === 'launch-plan')
+      saved.selection!.consentSnapshot!.agentLaunches = [{ ...plan, digest: 'tampered' }]
+    await f.config.saveApplication(saved)
+    const facade = createAgentLaunches({
+      directory: join(f.home, 'launches'),
+      backend: {
+        caller: async () => ({
+          principal: 'human',
+          profile: 'local-dev',
+          workspace: '/synthetic',
+          activation: 'a',
+        }),
+        resolve: async () => structuredClone(plan),
+        application: () => f.applications.get('local-dev'),
+        open: async () => {
+          throw new Error('must not auto-start')
+        },
+      },
+    })
+    expect(await facade.call({ action: 'prepare', agent: plan.ref })).toMatchObject({
+      consent: 'unavailable',
+    })
+  },
+)

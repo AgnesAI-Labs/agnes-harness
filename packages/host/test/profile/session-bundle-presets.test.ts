@@ -11,6 +11,7 @@ import { CompositionSessionStore } from '@agnes/host-providers/profile/compositi
 import { hashDirectory, preflightPackageBundles } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
+import { sessionAdmission } from '../../src/runtime/profile/agent-plan.js'
 import { admitSessionBundlePresets } from '../../src/runtime/profile/session-bundle-presets.js'
 import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 import {
@@ -686,5 +687,188 @@ it('uses the current admitted package catalogue for the same agent before and af
     expect(after.digest).toBe(before.digest)
   } finally {
     await startup.host.close()
+  }
+})
+
+it.each([
+  'tampered-local-bytes',
+  'untrusted',
+  'same-version-new-bytes',
+  'version',
+  'capability',
+  'tool',
+  'os-isolation',
+  'model',
+] as const)('launch-review: real Host admission detects %s', async (change) => {
+  const original = pluginSource('')
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = {
+    work: {
+      profile: { tools: ['read'] },
+      presets: { safe: { name: 'safe', extends: 'standard' } },
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    },
+  }
+  writeFileSync(file, JSON.stringify(manifest))
+  let source = {
+    ...original,
+    enabled: true,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost([source], {
+    script: [],
+    disableSessionTitle: true,
+    platformCaps: { 'sandbox.l1': 'unavailable' },
+    packageDirs: { ...packageDirs, '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)) },
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
+      }),
+    runtimePluginSources: async () => [source],
+  })
+  try {
+    const ref = `${VENDOR}#work`,
+      before = await host.resolveAgent!(ref)
+    const unchanged = await host.createSession({
+      key: 'review-unchanged',
+      cwd: dataDir,
+      agent: ref,
+      agentDigest: before.digest,
+    })
+    expect(unchanged.currentTools().resolve('read')).toBeDefined()
+    expect(unchanged.currentTools().resolve('write')).toBeUndefined()
+    expect((await unchanged.scan({ type: 'user/message', limit: 1 })).length).toBe(0)
+    await unchanged.close()
+    if (change === 'tampered-local-bytes')
+      writeFileSync(join(source.snapshot.directory, 'added.txt'), 'unreviewed bytes')
+    else if (change === 'untrusted') source = { ...source, trusted: false }
+    else if (change === 'model') {
+      const profile = host.profile,
+        route = profile.provider.routes![0]!,
+        model = route.models![0]!
+      const next = {
+        ...profile,
+        provider: {
+          ...profile.provider,
+          routes: [{ ...route, models: [{ ...model, id: 'review-new-model' }] }],
+        },
+      }
+      expect(await host.applyModelProfile!(next)).toMatchObject({ ok: true })
+    } else {
+      if (change === 'tool') manifest.agnes.bundles.work.profile.tools.push('write')
+      if (change === 'os-isolation') manifest.agnes.bundles.work.presets.safe.sandbox = { required: true }
+      if (change === 'same-version-new-bytes')
+        writeFileSync(join(source.snapshot.directory, 'added.txt'), 'reviewed new bytes')
+      if (change === 'version') manifest.version = '2.3.5'
+      writeFileSync(file, JSON.stringify(manifest))
+      source = {
+        ...source,
+        snapshot: {
+          ...source.snapshot,
+          ...(change === 'version' ? { version: '2.3.5' } : {}),
+          ...(change === 'capability' ? { capabilityHash: 'new-capability' } : {}),
+          treeIntegrity: hashDirectory(source.snapshot.directory, { exclude: [] }),
+        },
+      }
+    }
+    if (change === 'tampered-local-bytes' || change === 'untrusted' || change === 'os-isolation') {
+      await expect(host.resolveAgent!(ref)).rejects.toThrow()
+    } else {
+      const after = await host.resolveAgent!(ref)
+      expect(after.digest).not.toBe(before.digest)
+      if (change === 'same-version-new-bytes')
+        expect(after.sources.find((row) => row.id === VENDOR)!.version).toBe(
+          before.sources.find((row) => row.id === VENDOR)!.version,
+        )
+    }
+    await expect(
+      host.createSession({ key: 'review-stale', cwd: dataDir, agent: ref, agentDigest: before.digest }),
+    ).rejects.toThrow()
+    expect(host.kernel.sessions.has('review-stale')).toBe(false)
+  } finally {
+    await host.close()
+  }
+})
+
+it('launch-review: adminBundles normalization preserves a real selection and the current policy', async () => {
+  const { host } = await createTestHost({ dataDir: scratch(), script: [], disableSessionTitle: true })
+  try {
+    const base = host.profile
+    const options = {
+      dataDir: scratch(),
+      profileDir: scratch(),
+      workspaceRoot: scratch(),
+      hostRoot: process.cwd(),
+      log: { debug() {}, info() {}, warn() {}, error() {} },
+    }
+    const { adminBundles: _adminBundles, ...withoutAdmin } = base
+    const absent = await sessionAdmission(base, withoutAdmin, options, undefined)
+    const empty = await sessionAdmission(base, { ...base, adminBundles: [] }, options, undefined)
+    expect(absent.current).toEqual(empty.current)
+    const selected = await sessionAdmission(
+      base,
+      { ...base, adminBundles: ['@agnes/code#permission-read-only'] },
+      options,
+      undefined,
+    )
+    expect(selected.current.adminBundles).toEqual(['@agnes/code#permission-read-only'])
+    expect(selected.current).not.toEqual(empty.current)
+    const changed = await sessionAdmission(
+      base,
+      { ...base, composition: { tools: ['read'], toolPolicy: { readOnly: true } } },
+      options,
+      undefined,
+    )
+    expect(changed.current.composition).toEqual({ tools: ['read'], toolPolicy: { readOnly: true } })
+    expect(changed.current).not.toEqual(empty.current)
+  } finally {
+    await host.close()
+  }
+})
+
+it('launch-review: another profile has a different Host-private launch digest', async () => {
+  const bundles = {
+    work: {
+      profile: { tools: ['read'] },
+      presets: { safe: { name: 'safe', extends: 'standard' } },
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    },
+  }
+  const options = {
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
+      }),
+    script: [],
+    disableSessionTitle: true,
+    profileInputs: { bundleCatalog: parsePackageBundles('@agnes/code', bundles) },
+    packageDirs: { ...packageDirs, '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)) },
+  } satisfies Partial<TestHostOptions>
+  const a = await createTestHost({ ...options, dataDir: scratch() })
+  const b = await createTestHost({
+    ...options,
+    dataDir: scratch(),
+    profileInputs: { ...options.profileInputs, user: { name: 'other-profile' } },
+  })
+  try {
+    const before = await a.host.resolveAgent!('@agnes/code#work')
+    const after = await b.host.resolveAgent!('@agnes/code#work')
+    expect(after.digest).not.toBe(before.digest)
+    await expect(
+      b.host.createSession({ key: 'transferred', agent: before.ref, agentDigest: before.digest }),
+    ).rejects.toThrow('review drift')
+  } finally {
+    await a.host.close()
+    await b.host.close()
   }
 })
