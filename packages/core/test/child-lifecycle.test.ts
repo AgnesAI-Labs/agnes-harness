@@ -3,8 +3,11 @@ import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
+import { defaultLoopFactory } from '@agnes/loop-default'
+import type { DecisionSnapshot } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
+import { noopHooks } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 
@@ -286,4 +289,103 @@ it('reopened children cannot recover full access from a copied preset without th
   } finally {
     await second.close()
   }
+})
+
+it('apps-review: rebinding a child revokes old leases and detaches the previous parent', async () => {
+  const k = kernel()
+  try {
+    const a = await k.session('apps-parent-A', sessionOpts)
+    const b = await k.session('apps-parent-B', sessionOpts)
+    await a.setYolo(true, { ...actor, id: 'chooser-A' })
+    await b.setYolo(true, { ...actor, id: 'chooser-B' })
+    const handle = await a.d.children.create({ parent: a.key, cwd: '/w', input: 'sign' })
+    const child = k.get(handle.key)!
+    const port = child.decisions.port({
+      owner: '@fixture/apps-child', sourcePackage: '@fixture/apps-child', packageVersion: '1',
+      operationId: 'sign', alive() {},
+    })
+    const spec = {
+      key: 'old', purpose: 'business.confirm', subject: { revision: 1 }, prompt: 'Sign?',
+      options: ['allowed-once', 'rejected'], responseSchema: { type: 'string', const: 'I confirm.' },
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+    }
+    const old = await port.admit!(await port.request(spec))
+    child.inheritAutomaticPermissions(b)
+    expect(() => old.assertActive()).toThrow()
+    const fresh = await port.request({ ...spec, key: 'fresh' })
+    expect((await port.get(fresh)).result).toMatchObject({ answeredBy: { id: 'chooser-B' } })
+    const current = await port.admit!(fresh)
+    await a.setYolo(false, actor)
+    await current.verify()
+    await b.setYolo(false, actor)
+    expect(() => current.assertActive()).toThrow()
+    expect((await port.get(await port.request({ ...spec, key: 'after-off' }))).result).toBeNull()
+    await child.setYolo(true, actor)
+    await child.setPreset({ ...presetDefaults(), permission: 'full-access' })
+    expect(child.yolo).toBe(false)
+    expect((await port.get(await port.request({ ...spec, key: 'cannot-widen' }))).result).toBeNull()
+  } finally { await k.close() }
+})
+
+it('apps-review: read-only child isolation wins over its full-access parent', async () => {
+  const k = kernel()
+  try {
+    const parent = await k.session('apps-readonly-parent', sessionOpts)
+    await parent.setYolo(true, { ...actor, id: 'chooser' })
+    const handle = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'inspect' })
+    const child = k.get(handle.key)!
+    await child.setPreset({ ...presetDefaults(), permission: 'read-only' })
+    expect(child.permissionContext.policy).toBe('read-only')
+    expect(child.yolo).toBe(false)
+    await expect(child.setYolo(true, actor)).rejects.toThrow('read-only')
+  } finally { await k.close() }
+})
+
+it.each([false, true])('apps-review: parent enabled=%s is bound before child Loop creation and hook entry', async (enabled) => {
+  const loops = defaultLoops()
+  const observations: Array<{ where: string; chooser: string | undefined }> = []
+  const signatory = (result: DecisionSnapshot['result']) => {
+    if (result === null) return undefined
+    if (result.reason !== 'answered') throw new Error('Unexpected non-answer at startup')
+    return result.answeredBy.id
+  }
+  const spec = { key: 'startup', purpose: 'business.confirm', subject: { revision: 1 }, prompt: 'Sign?',
+    options: ['allowed-once', 'rejected'], responseSchema: { type: 'string', const: 'I confirm.' },
+    presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+  }
+  const selection = { id: 'apps-review.startup', version: '1.0.0' }
+  loops.register('@fixture/apps-startup', {
+    ...defaultLoopFactory, ...selection,
+    async create(ctx) {
+      const handle = await ctx.decisions.request(spec)
+      observations.push({ where: 'loop', chooser: signatory((await ctx.decisions.get(handle)).result) })
+      return defaultLoopFactory.create(ctx)
+    },
+  })
+  const k = kernel({ loops, hooksFactory: (session) => ({
+    ...noopHooks,
+    async sessionStart() {
+      if (!session.d.log.parent) return
+      const port = session.decisions.port({ owner: '@fixture/apps-hook', sourcePackage: '@fixture/apps-hook',
+        packageVersion: '1', operationId: 'startup', alive() {},
+      })
+      const handle = await port.request(spec)
+      observations.push({ where: 'hook', chooser: signatory((await port.get(handle)).result) })
+    },
+  }) })
+  try {
+    const parent = await k.session('apps-startup-parent', sessionOpts)
+    if (enabled) await parent.setYolo(true, { ...actor, id: 'startup-chooser' })
+    const child = await k.session('apps-startup-child', {
+      ...sessionOpts, loop: selection,
+      // Even a full-access child preset cannot widen the parent's standard authority.
+      preset: { ...presetDefaults(), permission: 'full-access' },
+      parent: { key: parent.key, boundarySeq: parent.lastSeq },
+    })
+    expect(observations).toEqual([
+      { where: 'loop', chooser: enabled ? 'startup-chooser' : undefined },
+      { where: 'hook', chooser: enabled ? 'startup-chooser' : undefined },
+    ])
+    expect(child.yolo).toBe(enabled)
+  } finally { await k.close() }
 })

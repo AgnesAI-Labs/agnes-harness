@@ -852,6 +852,13 @@ describe('web permission synchronization', () => {
     expect(old.projectUIPatch).toHaveBeenCalled()
   }, 40_000)
 
+  it.each([false, true])('apps-review: the composer follows backend authority rather than stale full-access metadata (%s)', async (effective) => {
+    const { publish } = await boot(effective, { permission: 'full-access' })
+    await vi.waitFor(() => expect(label()).toBe(effective ? '完全访问' : '可修改工作区'))
+    publish(!effective)
+    await vi.waitFor(() => expect(label()).toBe(effective ? '可修改工作区' : '完全访问'))
+  }, 40_000)
+
   it.each([
     ['read-only', '完全访问', false, '只读'],
     ['workspace-write', '只读', false, '可修改工作区'],

@@ -1,10 +1,12 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { DecisionSpec, LoopContext, LoopFactory } from '@agnes/extension-api'
 import { loopCheckpointCodec } from '@agnes/extension-api'
 import { expect, it, vi } from 'vitest'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
-import { actor, openSession, readTool } from './helpers/open-session.js'
+import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
+import { fakeSeams } from './helpers/fake-seams.js'
 
 const spec: DecisionSpec = {
   key: 'permission',
@@ -547,3 +549,295 @@ it.each(['standard', 'full-access'])(
     }
   },
 )
+
+// Independent application-authority review: exercise backend contracts and durable receipts.
+const appsPort = (session: Awaited<ReturnType<typeof fixture>>['session']) =>
+  session.decisions.port({
+    owner: '@fixture/apps-review', sourcePackage: '@fixture/apps-review', packageVersion: '1',
+    operationId: 'sign', alive() {},
+  })
+
+it.each([1, 2])('apps-review: author event emission cannot forge a v%s owner switch', async (version) => {
+  const f = await fixture('standard')
+  try {
+    await expect(f.ctx.events.emit('x/core/yolo-switch', {
+      version, to: true, operatorId: actor.id, sessionKey: f.session.key, lane: 'main',
+      profileHash: null, sessionOwner: { id: actor.id, org: actor.org },
+    })).rejects.toThrow()
+    expect(await f.log.scan({ type: 'x/core/yolo-switch', limit: 10 })).toEqual([])
+    expect((await appsPort(f.session).get(await appsPort(f.session).request(business))).result).toBeNull()
+  } finally { await f.session.close() }
+})
+
+it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
+  'apps-review: %s and an author full-access policy name confer no business authority', async (permission) => {
+    const preset = presetDefaults()
+    preset.name = 'full-access'
+    if (permission === 'read-only' || permission === 'workspace-write') preset.permission = permission
+    preset.approval.policy = 'full-access'
+    const toolPolicies = new ToolPolicyRegistry()
+    toolPolicies.register('@fixture/apps-review', {
+      id: 'full-access', version: '1.0.0', decide: () => ({ effect: 'allow', reason: 'package recipe' }),
+    })
+    const f = await fixture(permission, { preset, toolPolicies })
+    try {
+      const port = appsPort(f.session)
+      const handle = await port.request({ ...business, subject: {
+        permission: 'full-access', yolo: true, operatorId: 'forged',
+        actor: { ...actor, id: 'forged' }, sessionMeta: { yolo: true, permission: 'full-access' },
+      } })
+      expect((await port.get(handle)).result).toBeNull()
+      expect(f.session.yolo).toBe(false)
+      if (permission === 'read-only') await expect(f.session.setYolo(true, actor)).rejects.toThrow()
+      else {
+        await f.session.setYolo(true, { ...actor, id: 'real-chooser' })
+        expect((await port.get(handle)).result).toMatchObject({ answeredBy: { id: 'real-chooser' } })
+        await f.session.setYolo(false, actor)
+        expect((await port.get(await port.request({ ...business, key: 'after-off' }))).result).toBeNull()
+      }
+    } finally { await f.session.close() }
+  },
+)
+
+it.each(['owner', 'system', 'agent'])(
+  'apps-review: a later %s delivery cannot replace the human full-access chooser', async (role) => {
+    const f = await fixture('custom')
+    try {
+      const chooser = { ...actor, id: 'chooser-A', attrs: { selection: 'original' } }
+      const switching = f.session.setYolo(true, chooser)
+      chooser.id = 'mutated-input'; chooser.attrs.selection = 'mutated-input'
+      await switching
+      const exposed = f.session.permissionContext
+      exposed.actor.id = 'mutated-view'; exposed.actor.attrs.selection = 'mutated-view'
+      await f.session.enqueue('next-turn', {
+        actor: { ...actor, id: 'delivery-B', role }, content: [{ type: 'text', text: 'sign' }],
+      })
+      await f.session.acceptInput()
+      const port = appsPort(f.session)
+      const handle = await port.request(business)
+      expect((await port.get(handle)).result).toMatchObject({
+        code: 'full-access', response: { option: 'allowed-once', value: 'I confirm.' },
+        answeredBy: { id: 'chooser-A', role: 'owner', attrs: {
+          selection: 'original', confirmationMode: 'auto-confirmed under full access',
+        } },
+      })
+      await (await port.admit!(handle)).verify()
+    } finally { await f.session.close() }
+  },
+)
+
+it.each(['ask_user', 'ask_user_question', 'plan.exit', 'fact-check', 'unknown-outcome', 'unknown'])(
+  'apps-review: live full access does not answer %s', async (purpose) => {
+    const f = await fixture('custom')
+    try {
+      await f.session.setYolo(true, actor)
+      const port = appsPort(f.session)
+      expect((await port.get(await port.request({ ...business, purpose }))).result).toBeNull()
+    } finally { await f.session.close() }
+  },
+)
+
+it.each([
+  { name: 'ambiguous approval', change: { options: ['allowed-once', 'allowed-session', 'rejected'] } },
+  { name: 'missing declared response', change: { presentation: { en: { title: 'Sign', fields: [] } } } },
+  { name: 'schema mismatch', change: { responseSchema: { type: 'string', const: 'different meaning' } } },
+])('apps-review: a runtime switch preserves $name refusal', async ({ change }) => {
+  const f = await fixture('custom')
+  try {
+    await f.session.setYolo(true, actor)
+    const port = appsPort(f.session)
+    expect((await port.get(await port.request({ ...business, ...change }))).result).toBeNull()
+  } finally { await f.session.close() }
+})
+
+it.each(['off', 'round-trip', 'close', 'rebind'])(
+  'apps-review: %s revokes both unused receipts and an already-consumed business admission', async (loss) => {
+    const f = await fixture('custom')
+    const parent = await fixture('standard', { key: 'other-parent' })
+    try {
+      await f.session.setYolo(true, { ...actor, id: 'chooser-A' })
+      const port = appsPort(f.session)
+      const unused = await port.request({ ...business, key: 'unused' })
+      const consumed = await port.request({ ...business, key: 'consumed' })
+      const admission = await port.admit!(consumed)
+      await admission.verify()
+      if (loss === 'close') await f.session.close()
+      else if (loss === 'rebind') f.session.inheritAutomaticPermissions(parent.session)
+      else {
+        await f.session.setYolo(false, actor)
+        if (loss === 'round-trip') await f.session.setYolo(true, { ...actor, id: 'chooser-C' })
+      }
+      expect(() => admission.assertActive()).toThrow()
+      await expect(admission.verify()).rejects.toThrow()
+      await expect(port.admit!(unused)).rejects.toThrow()
+      if (loss !== 'close') {
+        const old = await port.get(consumed)
+        if (old.result?.reason !== 'answered') throw new Error('Expected original answered receipt')
+        expect(old.consumption).not.toBeNull()
+        expect(old.result?.answeredBy.id).toBe('chooser-A')
+        expect(old.result?.answeredBy.attrs.confirmationMode).toBe('auto-confirmed under full access')
+      }
+    } finally { await f.session.close(); await parent.session.close() }
+  },
+)
+
+it.each([true, false])(
+  'apps-review: crash after the v2 switch commit but before its live update restores enabled=%s', async (enabled) => {
+    const f = await fixture('custom')
+    if (!enabled) await f.session.setYolo(true, { ...actor, id: 'previous-chooser' })
+    let committed = false
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    const append = f.log.append.bind(f.log)
+    const spy = vi.spyOn(f.log, 'append').mockImplementation(async (events, options) => {
+      const result = await append(events, options)
+      if (events.some((row) => row.type === 'x/core/yolo-switch')) { committed = true; await hold }
+      return result
+    })
+    const switching = f.session.setYolo(enabled, { ...actor, id: 'cut-chooser' })
+    try {
+      await vi.waitFor(() => expect(committed).toBe(true))
+      expect(f.session.yolo).toBe(!enabled)
+      const events = await f.log.scan({ fromSeq: 1, limit: 1000 })
+      const reopened = await fixture('custom', {
+        storage: MemoryStorage.fromEvents(f.session.key, events), writerRunId: 'after-switch-crash',
+      })
+      try {
+        expect(reopened.session.yolo).toBe(enabled)
+        const port = appsPort(reopened.session)
+        const result = (await port.get(await port.request(business))).result
+        if (enabled) expect(result).toMatchObject({ code: 'full-access', answeredBy: { id: 'cut-chooser' } })
+        else expect(result).toBeNull()
+      } finally { await reopened.session.close() }
+    } finally { release(); await switching; spy.mockRestore(); await f.session.close() }
+  },
+)
+
+it('apps-review: a consumed receipt survives crash honestly but never gains a second effect admission', async () => {
+  const f = await fixture('custom')
+  const port = appsPort(f.session)
+  await f.session.setYolo(true, { ...actor, id: 'persistent-chooser' })
+  const handle = await port.request(business)
+  const admission = await port.admit!(handle)
+  const events = await f.log.scan({ fromSeq: 1, limit: 1000 })
+  await f.session.close()
+  expect(() => admission.assertActive()).toThrow()
+  const reopened = await fixture('custom', {
+    storage: MemoryStorage.fromEvents(f.session.key, events), writerRunId: 'after-consumption-crash',
+  })
+  try {
+    const next = appsPort(reopened.session)
+    expect((await next.get(handle)).result).toMatchObject({
+      code: 'full-access', answeredBy: { id: 'persistent-chooser', attrs: {
+        confirmationMode: 'auto-confirmed under full access',
+      } },
+    })
+    expect((await next.get(handle)).consumption).not.toBeNull()
+    await expect(next.admit!(handle)).rejects.toThrow()
+    expect((await next.get(await next.request({ ...business, key: 'fresh' }))).result)
+      .toMatchObject({ answeredBy: { id: 'persistent-chooser' } })
+  } finally { await reopened.session.close() }
+})
+
+it('apps-review: a valid author event name and forged envelope fields remain untrusted on replay', async () => {
+  const f = await fixture('custom')
+  try {
+    await f.ctx.events.emit('yolo-switch', {
+      version: 2, to: true, operatorId: actor.id, sessionKey: f.session.key, lane: 'main',
+      profileHash: null, sessionOwner: { id: actor.id, org: actor.org },
+      origin: 'system', trust: 'trusted', actor,
+    })
+    const events = await f.log.scan({ fromSeq: 1, limit: 1000 })
+    const row = events.find((e) => e.type.endsWith('/yolo-switch'))!
+    expect(row.type).not.toBe('x/core/yolo-switch')
+    expect(row.origin).toMatch(/^ext:/)
+    expect(row.trust).toBe('untrusted')
+    const next = await fixture('custom', {
+      storage: MemoryStorage.fromEvents(f.session.key, events), writerRunId: 'author-forgery-replay',
+    })
+    try {
+      expect(next.session.yolo).toBe(false)
+      const port = appsPort(next.session)
+      expect((await port.get(await port.request(business))).result).toBeNull()
+    } finally { await next.session.close() }
+  } finally { await f.session.close() }
+})
+
+it.each(['v1', 'extension-origin', 'untrusted', 'wrong-owner', 'wrong-profile', 'wrong-operator'])(
+  'apps-review: a replayed %s switch grants no business authority', async (caseName) => {
+    const f = await fixture('custom')
+    const data = {
+      version: caseName === 'v1' ? 1 : 2, to: true,
+      operatorId: caseName === 'wrong-operator' ? 'forged' : actor.id,
+      sessionKey: f.session.key, lane: 'main',
+      profileHash: caseName === 'wrong-profile' ? 'forged' : null,
+      sessionOwner: { id: caseName === 'wrong-owner' ? 'forged' : actor.id, org: actor.org },
+    }
+    await f.log.append([{
+      type: 'x/core/yolo-switch', ignorable: true, lane: 'main', actor, data,
+      origin: caseName === 'extension-origin' ? 'ext:fixture/review' : 'system',
+      trust: caseName === 'untrusted' ? 'untrusted' : 'trusted',
+    }])
+    const events = await f.log.scan({ fromSeq: 1, limit: 1000 })
+    await f.session.close()
+    const next = await fixture('custom', {
+      storage: MemoryStorage.fromEvents(f.session.key, events), writerRunId: `replay-${caseName}`,
+    })
+    try {
+      expect(next.session.yolo).toBe(false)
+      const port = appsPort(next.session)
+      expect((await port.get(await port.request(business))).result).toBeNull()
+    } finally { await next.session.close() }
+  },
+)
+
+it('apps-review: switching on full access cannot dispatch a workspace write without its sandbox', async () => {
+  let writes = 0
+  const f = await openSession({
+    provider: fakeProvider([toolTurn('shell', {}), textTurn('done')]),
+    seams: fakeSeams({ sandbox: { enforcement: () => ({ level: 'none', scope: [] }) } }),
+  })
+  f.session.d.registry.add(shellTool(async () => {
+    writes++; return { content: [{ type: 'text', text: 'effect happened' }] }
+  }), { source: 'fixture/apps', trust: 'builtin' })
+  try {
+    await f.session.setYolo(true, actor)
+    await f.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'execute' }] })
+    await f.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(writes).toBe(0)
+    const results = await f.log.scan({ type: 'tool/result', limit: 10 })
+    expect(results).toHaveLength(1)
+    expect(JSON.stringify(results[0]!.data)).toContain('SANDBOX_UNAVAILABLE')
+  } finally { await f.session.close() }
+})
+
+it('apps-review: manual receipts remain manual after full access is chosen and recovered', async () => {
+  const f = await fixture('custom')
+  const port = appsPort(f.session)
+  const handle = await port.request(business)
+  const pending = await port.get(handle)
+  await f.session.decisions.answer({
+    handle, revision: pending.revision, commandId: 'manual-signature',
+    response: { option: 'allowed-once', value: 'I confirm.' },
+  }, { actor: { ...actor, id: 'manual-signer-B' }, category: 'human', authorize() {} })
+  await f.session.setYolo(true, { ...actor, id: 'full-chooser-A' })
+  const events = await f.log.scan({ fromSeq: 1, limit: 1000 })
+  await f.session.close()
+  const next = await fixture('custom', {
+    storage: MemoryStorage.fromEvents(f.session.key, events), writerRunId: 'manual-receipt-replay',
+  })
+  try {
+    const reopened = appsPort(next.session)
+    const manual = await reopened.get(handle)
+    if (manual.result?.reason !== 'answered') throw new Error('Expected original manual receipt')
+    expect(manual.result?.answeredBy.id).toBe('manual-signer-B')
+    expect(manual.result?.code).not.toBe('full-access')
+    expect(manual.result?.answeredBy.attrs.confirmationMode).toBeUndefined()
+    expect(manual.answerCommand?.commandId).toBe('manual-signature')
+    const auto = await reopened.get(await reopened.request({ ...business, key: 'new-auto' }))
+    expect(auto.result).toMatchObject({ code: 'full-access', answeredBy: { id: 'full-chooser-A', attrs: {
+      confirmationMode: 'auto-confirmed under full access',
+    } } })
+    expect(auto.answerCommand).toBeNull()
+  } finally { await next.session.close() }
+})

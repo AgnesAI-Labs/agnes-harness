@@ -496,3 +496,54 @@ describe('authenticated session ownership RPC guard', () => {
     }
   })
 })
+
+it('apps-review: only the owner RPC can switch and its principal cannot come from params or SessionMeta', async () => {
+  const h = await openTestHost()
+  let poisonedKey = ''
+  const owner = h.endpoint({ lister: { list: async () => ({
+    items: [{ ...meta(poisonedKey), preset: 'full-access', permission: 'full-access' }],
+  }) } })
+  const stranger = h.endpoint({ identity: { principalId: 'foreign', authKind: 'jwt', credentialKind: 'jwt' } })
+  try {
+    await owner.handle(initialize); await stranger.handle(initialize)
+    const created = await owner.handle({ jsonrpc: '2.0', id: 2, method: 'session/new', params: {
+      cwd: h.dataDir, mcpServers: [],
+    } }) as { result: { sessionId: string } }
+    const sessionId = created.result.sessionId
+    poisonedKey = sessionId
+    const listed = await owner.handle({ jsonrpc: '2.0', id: 20, method: '_agnes/v1/session.list', params: {} })
+    expect(listed).toMatchObject({ result: { items: [expect.objectContaining({ permission: 'full-access' })] } })
+    const session = h.host.kernel.get(sessionId)!
+    expect(session.yolo).toBe(false)
+    for (const endpoint of [stranger, owner]) {
+      const result = await endpoint.handle({ jsonrpc: '2.0', id: 3,
+        method: '_agnes/v1/session.setYolo', params: {
+          sessionId, enabled: true, actor: { id: 'forged-human', role: 'owner' },
+          permissionContext: { policy: 'full-access' },
+        },
+      })
+      expect(result).toHaveProperty('error')
+      expect(session.yolo).toBe(false)
+    }
+    await expect(stranger.handle({ jsonrpc: '2.0', id: 4, method: '_agnes/v1/session.setYolo',
+      params: { sessionId, enabled: true } })).resolves.toHaveProperty('error')
+    const signed = { key: 'signature', purpose: 'business.confirm', subject: { revision: 1 },
+      prompt: 'Sign?', options: ['allowed-once', 'rejected'],
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+      responseSchema: { type: 'string', const: 'I confirm.' },
+    }
+    const port = session.decisions.port({ owner: '@fixture/apps-rpc', sourcePackage: '@fixture/apps-rpc',
+      packageVersion: '1', operationId: 'sign', alive() {},
+    })
+    expect((await port.get(await port.request(signed))).result).toBeNull()
+    await expect(owner.handle({ jsonrpc: '2.0', id: 5, method: '_agnes/v1/session.setYolo',
+      params: { sessionId, enabled: true } })).resolves.toHaveProperty('result.effectiveFromSeq')
+    const rows = await session.scan({ type: 'x/core/yolo-switch', limit: 10 })
+    expect(rows.at(-1)).toMatchObject({ data: { version: 2, to: true, operatorId: 'local' }, actor: { id: 'local' } })
+    expect((await port.get(await port.request({ ...signed, key: 'owner-authorized' }))).result)
+      .toMatchObject({ code: 'full-access', answeredBy: { id: 'local', role: 'owner' } })
+    await expect(owner.handle({ jsonrpc: '2.0', id: 6, method: '_agnes/v1/session.setYolo',
+      params: { sessionId, enabled: false } })).resolves.toHaveProperty('result.effectiveFromSeq')
+    expect((await port.get(await port.request({ ...signed, key: 'after-owner-off' }))).result).toBeNull()
+  } finally { await owner.close(); await stranger.close(); await h.close() }
+})

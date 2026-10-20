@@ -141,7 +141,7 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
   }
 })
 
-it('review: full access retains private-home and must-read-first hard refusals', async () => {
+it.each(['resolved-axis', 'live-switch'])('review: %s full access retains private-home and must-read-first hard refusals', async (authority) => {
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-full-access-hard-refusals-')))
   writeFileSync(join(dataDir, 'existing.txt'), 'original content')
   const h = await createTestHost({
@@ -186,7 +186,8 @@ it('review: full access retains private-home and must-read-first hard refusals',
     ],
   })
   try {
-    const session = await h.host.createSession({ cwd: dataDir, preset: 'full-access' })
+    const session = await h.host.createSession({ cwd: dataDir, preset: authority === 'live-switch' ? 'standard' : 'full-access' })
+    if (authority === 'live-switch') await session.setYolo(true, session.d.actor)
     await session.enqueue('next-turn', {
       content: [{ type: 'text', text: 'exercise hard refusals' }],
       actor: session.d.actor,
@@ -280,3 +281,46 @@ it('round6: nested signed writes retain admission until the outer SQLite commit'
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+it.each(['off', 'round-trip', 'close', 'rebind'])(
+  'apps-review: %s after business consumption prevents an actual SQLite commit', async (loss) => {
+    const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-apps-review-commit-')))
+    const { host } = await createTestHost({ dataDir })
+    mkdirSync(join(dataDir, 'business'))
+    const persistence = await sqlitePersistenceProvider.open({ dataDir: join(dataDir, 'business') })
+    const store = ownedStore(persistence.metadata!.namespace('@fixture/apps-review', 'quality'), () => {}, true)
+    try {
+      const session = await host.createSession({ cwd: dataDir, preset: 'standard' })
+      const parent = await host.createSession({ cwd: dataDir, key: 'narrow-parent', preset: 'standard' })
+      await session.setYolo(true, { ...session.d.actor, id: 'real-chooser' })
+      const port = session.decisions.port({
+        owner: '@fixture/apps-review', sourcePackage: '@fixture/apps-review', packageVersion: '1',
+        operationId: 'sign', alive() {},
+      })
+      const handle = await port.request({
+        key: 'signature', purpose: 'business.confirm', subject: { object: 'B-001', revision: 1 },
+        prompt: 'Sign?', options: ['allowed-once', 'rejected'],
+        responseSchema: { type: 'string', const: 'I approve this synthetic record.' },
+        presentation: { en: { title: 'Sign', fields: [], responseValue: 'I approve this synthetic record.' } },
+      })
+      expect((await port.get(handle)).result).toMatchObject({ answeredBy: { id: 'real-chooser' } })
+      const admission = await port.admit!(handle)
+      if (loss === 'close') await session.close()
+      else if (loss === 'rebind') session.inheritAutomaticPermissions(parent)
+      else {
+        await session.setYolo(false, session.d.actor)
+        if (loss === 'round-trip') await session.setYolo(true, session.d.actor)
+      }
+      await expect(admission.verify()).rejects.toThrow()
+      expect(() => store.transaction(() => {
+        store.set('unsigned-outer', true)
+        try { store.transaction(() => store.set('certificate', { decisionId: handle.id }), admission) }
+        catch { /* Swallowing an inner refusal must not commit the outer transaction. */ }
+      })).toThrow()
+      expect(store.get('certificate')).toBeUndefined()
+      expect(store.get('unsigned-outer')).toBeUndefined()
+    } finally {
+      await persistence.close(); await host.close(); rmSync(dataDir, { recursive: true, force: true })
+    }
+  },
+)

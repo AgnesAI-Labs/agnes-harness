@@ -29,13 +29,14 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-async function open() {
+async function open(extraPresets: Record<string, PresetDoc> = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-session-permission-'))
   roots.push(dataDir)
   const { base, ...product } = docs
+  Object.assign(product, extraPresets)
   const options = {
     dataDir,
-    allowed: recipes,
+    allowed: [...recipes, ...Object.keys(extraPresets)],
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     packages: { '@agnes/base': { presets: { base: base! } }, '@agnes/code': { presets: product, runtimes } },
   }
@@ -301,4 +302,29 @@ it('a live full-access choice governs a fixed application recipe and restores it
   } finally {
     await next.close()
   }
+})
+
+it('apps-review: Host never initializes full authority from an author tool-policy provider name', async () => {
+  const { host, dataDir } = await open({
+    'author-role': { name: 'author-role', extends: 'standard',
+      providers: { 'tool-policy': { provider: 'full-access' } },
+    },
+  })
+  try {
+    const session = await host.createSession({ cwd: dataDir, preset: 'author-role' })
+    expect(session.preset.approval.policy).toBe('full-access')
+    expect(session.preset.permission).toBeUndefined()
+    expect(session.yolo).toBe(false)
+    expect(await session.scan({ type: 'x/core/yolo-switch', limit: 10 })).toEqual([])
+    const port = session.decisions.port({ owner: '@fixture/apps-host', sourcePackage: '@fixture/apps-host',
+      packageVersion: '1', operationId: 'sign', alive() {},
+    })
+    const handle = await port.request({ key: 'signature', purpose: 'business.confirm', subject: { revision: 1 },
+      prompt: 'Sign?', options: ['allowed-once', 'rejected'],
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I confirm.' } },
+      responseSchema: { type: 'string', const: 'I confirm.' },
+    })
+    expect((await port.get(handle)).result).toBeNull()
+    await session.close()
+  } finally { await host.close() }
 })
