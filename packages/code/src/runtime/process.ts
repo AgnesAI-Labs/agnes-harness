@@ -51,7 +51,13 @@ export function processRuntime(
       let subcalls = 0
       const output = await ctx.exec(
         language === 'typescript'
-          ? ['node', ...(rawIo ? [] : ['--permission']), '-e', NODE_GUEST]
+          ? [
+              'node',
+              '--disable-warning=ExperimentalWarning',
+              ...(rawIo ? [] : ['--permission']),
+              '-e',
+              NODE_GUEST,
+            ]
           : ['python3', '-I', '-u', '-c', PYTHON_GUEST],
         {
           cwd: ctx.cwd,

@@ -1,6 +1,7 @@
 import { presetDefaults, ToolRegistry } from '@agnes/core'
 import { actor, fakeProvider, openSession, textTurn, toolTurn } from '@agnes/core/testkit'
-import { expect, it } from 'vitest'
+import type { ToolContext } from '@agnes/extension-api'
+import { expect, it, vi } from 'vitest'
 import { createBridge } from '../src/extensions/code-mode/bridge.js'
 import { tool } from './fixtures/sdk.js'
 
@@ -89,4 +90,48 @@ it('a real model tool call writes a plan through core and returns its actual dep
   } finally {
     await session.close()
   }
+})
+
+const invokeFrame = (id: number, name: string) =>
+  ({ jsonrpc: '2.0', id, method: 'bridge.tools.invoke', params: { name, args: {} } }) as const
+
+it('refuses calls after a 1006', async () => {
+  const invoke = vi.fn(async () => {
+    throw Object.assign(new Error('parked'), { code: 'PARKED' })
+  })
+  const ctx = {
+    signal: new AbortController().signal,
+    tools: { invoke, list: () => [] },
+  } as unknown as ToolContext
+  const bridge = createBridge(ctx)
+  expect(await bridge(invokeFrame(1, 'write'))).toMatchObject({ id: 1, error: { code: 1006 } })
+  expect(await bridge(invokeFrame(2, 'read'))).toMatchObject({ id: 2, error: { code: 1006 } })
+  expect(invoke).toHaveBeenCalledTimes(1)
+})
+
+it('records each nested call with its outcome and read-only flag', async () => {
+  const invoke = vi.fn(async (name: string) => {
+    if (name === 'shell') throw Object.assign(new Error('failed'), { code: 'APPROVAL_REJECTED' })
+    return { content: [{ type: 'text', text: 'ok' }] }
+  })
+  const list = () => [
+    { name: 'read', meta: { isReadOnly: true } },
+    { name: 'write', meta: { isReadOnly: false } },
+  ]
+  const ctx = { signal: new AbortController().signal, tools: { invoke, list } } as unknown as ToolContext
+  const bridge = createBridge(ctx)
+  for (const [id, name] of [
+    [1, 'write'],
+    [2, 'read'],
+    [3, 'shell'],
+    [4, 'mystery'],
+  ] as const) {
+    await bridge(invokeFrame(id, name))
+  }
+  expect(bridge.calls()).toEqual([
+    { name: 'write', isError: false, readOnly: false },
+    { name: 'read', isError: false, readOnly: true },
+    { name: 'shell', isError: true, readOnly: false },
+    { name: 'mystery', isError: false, readOnly: false },
+  ])
 })

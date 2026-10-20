@@ -30,14 +30,26 @@ function options(value: unknown, kind: 'fork' | 'spawn' | 'collect') {
 }
 
 /** Validation finishes before the returned closure may perform any operation. */
-export function bridgeDispatch(ctx: ToolContext, request: BridgeRequest): () => Promise<unknown> {
+export function bridgeDispatch(
+  ctx: ToolContext,
+  request: BridgeRequest,
+  /** Told once per nested tool call how it ended; a thrown invoke counts as an error. */
+  record: (name: string, isError: boolean) => void = () => {},
+): () => Promise<unknown> {
   switch (request.method) {
     case 'bridge.tools.invoke': {
       const { name, args } = request.params
       if (name === 'run_code')
         throw Object.assign(new Error('recursive code calls are unavailable'), { bridgeCode: 1003 })
       return async () => {
-        const result = await ctx.tools.invoke(name, args, { signal: ctx.signal })
+        let result: Awaited<ReturnType<ToolContext['tools']['invoke']>>
+        try {
+          result = await ctx.tools.invoke(name, args, { signal: ctx.signal })
+        } catch (error) {
+          record(name, true)
+          throw error
+        }
+        record(name, result.isError === true)
         if (result.isError) {
           const details = result.details
           const code =

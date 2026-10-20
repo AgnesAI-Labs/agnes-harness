@@ -7,7 +7,8 @@
     "1002": "APPROVAL_REJECTED",
     "1003": "DEPTH_EXCEEDED",
     "1004": "TOOL_NOT_FOUND",
-    "1005": "SCHEMA_INVALID"
+    "1005": "SCHEMA_INVALID",
+    "1006": "APPROVAL_PENDING"
   },
   "$defs": {
     "JsonValue": {
@@ -110,7 +111,7 @@
               "required": ["code", "message"],
               "properties": {
                 "code": {
-                  "enum": [1001, 1002, 1003, 1004, 1005, -32600, -32601, -32602, -32603, -32700, -32800]
+                  "enum": [1001, 1002, 1003, 1004, 1005, 1006, -32600, -32601, -32602, -32603, -32700, -32800]
                 },
                 "message": {
                   "type": "string",
