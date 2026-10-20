@@ -34,10 +34,7 @@ export const isPermissionPurpose = (purpose: string) => permissionPurposes.has(p
 
 /** Business consent has one explicit approving option and a declared signature value.
  * Prefer English, otherwise the first locale by code point; never translate or invent a value. */
-function businessConfirmationResponse(
-  options: readonly string[],
-  presentation?: DecisionPresentation,
-) {
+function businessConfirmationResponse(options: readonly string[], presentation?: DecisionPresentation) {
   if (options.length !== 2 || !options.includes('allowed-once') || !options.includes('rejected'))
     return undefined
   const locales = Object.keys(presentation ?? {}).sort()
