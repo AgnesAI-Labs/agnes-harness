@@ -24,6 +24,13 @@ export type ApiKeyProviderId =
   | 'minimax'
   | 'xai'
   | 'agnes-ai'
+  | 'groq'
+  | 'together'
+  | 'cerebras'
+  | 'nvidia'
+  | 'huggingface'
+  | 'moonshotai-cn'
+  | 'zai-coding-cn'
   | 'typesafe-systemone'
   | 'openai-compatible'
 
@@ -218,6 +225,62 @@ const specs: readonly ProviderSpec[] = [
     baseUrl: 'https://api.agnes-ai.cn/v1',
     sourceProviderId: 'agnes-ai',
     load: () => load(import('./providers/agnes-ai.js'), 'agnesAiProvider'),
+  },
+  {
+    id: 'groq',
+    displayName: 'Groq',
+    api: 'openai-completions',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    sourceProviderId: 'groq',
+    load: () => load(import('@earendil-works/pi-ai/providers/groq'), 'groqProvider'),
+  },
+  {
+    id: 'together',
+    displayName: 'Together AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.together.ai/v1',
+    sourceProviderId: 'together',
+    load: () => load(import('@earendil-works/pi-ai/providers/together'), 'togetherProvider'),
+  },
+  {
+    id: 'cerebras',
+    displayName: 'Cerebras',
+    api: 'openai-completions',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    sourceProviderId: 'cerebras',
+    load: () => load(import('@earendil-works/pi-ai/providers/cerebras'), 'cerebrasProvider'),
+  },
+  {
+    id: 'nvidia',
+    displayName: 'NVIDIA',
+    api: 'openai-completions',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    sourceProviderId: 'nvidia',
+    load: () => load(import('@earendil-works/pi-ai/providers/nvidia'), 'nvidiaProvider'),
+  },
+  {
+    id: 'huggingface',
+    displayName: 'Hugging Face',
+    api: 'openai-completions',
+    baseUrl: 'https://router.huggingface.co/v1',
+    sourceProviderId: 'huggingface',
+    load: () => load(import('@earendil-works/pi-ai/providers/huggingface'), 'huggingfaceProvider'),
+  },
+  {
+    id: 'moonshotai-cn',
+    displayName: 'Moonshot / Kimi (moonshot.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    sourceProviderId: 'moonshotai-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/moonshotai-cn'), 'moonshotaiCnProvider'),
+  },
+  {
+    id: 'zai-coding-cn',
+    displayName: 'GLM Coding (bigmodel.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    sourceProviderId: 'zai-coding-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/zai-coding-cn'), 'zaiCodingCnProvider'),
   },
 ] as const
 
