@@ -609,3 +609,131 @@ it.each([
   const { skillInstallReplyError } = await import('../src/supervisor/skill-install-error.js')
   expect(skillInstallReplyError(error)).toEqual({ code, message: code })
 })
+
+describe('reviewer originals', () => {
+it('round2-original: a revoked background Skill installation cannot publish files', async () => {
+  const s = setup()
+  const controller = new AbortController()
+  const context = {
+    sessionKey: 'session',
+    sessionId: 'round2-skill',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  let current = context
+  try {
+    const prepared = await withPermissionContext(
+      context,
+      () => undefined,
+      () => s.request(),
+      async () => current,
+    )
+    await withPermissionContext(
+      context,
+      () => undefined,
+      () =>
+        s.handler(
+          'session',
+          'round2-skill-commit',
+          'skill-install',
+          {
+            ...s.invocation,
+            input: { action: 'commit', proposalId: prepared.proposalId },
+          },
+          controller.signal,
+        ),
+      async () => current,
+    )
+    current = { ...context, epoch: 1, policy: 'workspace-write' }
+    controller.abort()
+    const terminal = await vi.waitUntil(
+      async () => {
+        const status = await s.request({ action: 'status', proposalId: prepared.proposalId })
+        return ['prepared', 'running'].includes(status.state) ? false : status
+      },
+      { timeout: 3_000 },
+    )
+    expect(terminal.state).toBe('failed')
+    expect(existsSync(join(s.home, 'skills', 'demo', 'SKILL.md'))).toBe(false)
+  } finally {
+    await s.ep.close()
+  }
+})
+
+it.each(['epoch', 'deadline'])(
+  'round3: Skill trust cannot commit when its lease loses %s inside the journal transaction',
+  async (boundary) => {
+    const s = setup()
+    const context = {
+      sessionKey: 'session',
+      sessionId: 'round3-skill',
+      epoch: 0,
+      policy: 'full-access',
+      actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }
+    let current = context
+    let intercepted = false
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    const transact = SkillJournalStore.prototype.transact
+    const spy = vi.spyOn(SkillJournalStore.prototype, 'transact').mockImplementation(function <T>(
+      this: SkillJournalStore,
+      profile: string,
+      fn: (
+        journal: SkillJournal,
+      ) => { next: SkillJournal; result: T } | Promise<{ next: SkillJournal; result: T }>,
+      ...extra: unknown[]
+    ): Promise<T> {
+      return Reflect.apply(transact, this, [
+        profile,
+        async (journal: SkillJournal) => {
+          const out = await fn(journal)
+          if (
+            !intercepted &&
+            Object.entries(out.next.trust).some(
+              ([id, decision]) => decision.state === 'trusted' && journal.trust[id]?.state !== 'trusted',
+            )
+          ) {
+            intercepted = true
+            if (boundary === 'epoch') current = { ...context, epoch: 1, policy: 'workspace-write' }
+            else clock.mockReturnValue(now + 110_001)
+          }
+          return out
+        },
+        ...extra,
+      ]) as Promise<T>
+    })
+    try {
+      const prepared = await withPermissionContext(
+        context,
+        () => undefined,
+        () => s.request(),
+        async () => current,
+      )
+      await withPermissionContext(
+        context,
+        () => undefined,
+        () => s.request({ action: 'commit', proposalId: prepared.proposalId }),
+        async () => current,
+      )
+      const terminal = await vi.waitUntil(
+        async () => {
+          const status = await s.request({ action: 'status', proposalId: prepared.proposalId })
+          return ['prepared', 'running'].includes(status.state) ? false : status
+        },
+        { timeout: 3_000 },
+      )
+      expect(intercepted).toBe(true)
+      expect(['failed', 'interrupted']).toContain(terminal.state)
+      const persisted = JSON.parse(readFileSync(join(s.root, 'resources', 'local-dev.skills.json'), 'utf8'))
+      expect(Object.values(persisted.trust)).not.toContainEqual(expect.objectContaining({ state: 'trusted' }))
+    } finally {
+      spy.mockRestore()
+      clock.mockRestore()
+      await s.ep.close()
+    }
+  },
+)
+
+})

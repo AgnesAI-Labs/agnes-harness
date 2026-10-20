@@ -12,7 +12,7 @@ import {
 } from '@agnes/daemon-rpc/local/prompter'
 import type { HostSession } from '@agnes/host'
 import { type MethodName, validateMethod } from '@agnes/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
+import { describe, afterEach, expect, it, vi } from 'vitest'
 import { createCredentialAdmin } from '../../daemon-admin/src/credentials.js'
 import type { RequestFrame } from '../../worker-runtime/src/frames.js'
 import { SharedSessionChannel, sessionPermissions } from '../../worker-runtime/src/shared-session-channel.js'
@@ -400,3 +400,124 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
     expect(ask).toHaveBeenCalledTimes(1)
   },
 )
+
+describe('reviewer originals', () => {
+it.each(['scope', 'hash', 'session'])(
+  'round3: a consumed permission lease refuses a different %s binding',
+  async (field) => {
+    const req = request('mcp.connect')
+    await withPermissionContext(
+      context,
+      () => undefined,
+      async () => {
+        await router().ask(req, { signal: new AbortController().signal })
+        const binding = { scope: req.scope, bindingHash: req.bindingHash, sessionKey: req.sessionKey }
+        if (field === 'scope') binding.scope = 'skills.install'
+        if (field === 'hash') binding.bindingHash = 'b'.repeat(64)
+        if (field === 'session') binding.sessionKey = 'other-session'
+        await expect(acquirePermissionLease(binding, new AbortController().signal)).rejects.toThrow()
+      },
+      async () => context,
+    )
+  },
+)
+
+it.each(['epoch', 'verifier-failure', 'deadline'])(
+  'round3: a lease invalidated by %s cannot revive after recovery',
+  async (failure) => {
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    let current = context
+    let unavailable = false
+    const req = request('mcp.connect')
+    try {
+      await withPermissionContext(
+        context,
+        () => undefined,
+        async () => {
+          await router().ask(req, { signal: new AbortController().signal })
+          const lease = await acquirePermissionLease(req, new AbortController().signal)
+          expect(lease).toBeDefined()
+          await lease!.verify()
+          if (failure === 'deadline') {
+            clock.mockReturnValue(now + 60_000)
+            expect(() => lease!.assertActive()).toThrow()
+          } else {
+            if (failure === 'epoch') current = { ...context, epoch: 1 }
+            else unavailable = true
+            await expect(lease!.verify()).rejects.toThrow()
+          }
+          current = context
+          unavailable = false
+          clock.mockReturnValue(now)
+          expect(() => lease!.assertActive()).toThrow()
+          await expect(lease!.verify()).rejects.toThrow()
+        },
+        async () => {
+          if (unavailable) throw new Error('synthetic closed worker')
+          return current
+        },
+      )
+    } finally {
+      clock.mockRestore()
+    }
+  },
+)
+
+it.each(['cancelled', 'expired'])(
+  'round3: a lease verifier yielding past %s cannot admit an effect',
+  async (boundary) => {
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    const controller = new AbortController()
+    let delayed = false
+    const req = request('mcp.connect')
+    try {
+      await withPermissionContext(
+        context,
+        () => undefined,
+        async () => {
+          await router().ask(req, { signal: controller.signal })
+          const lease = await acquirePermissionLease(req, controller.signal)
+          delayed = true
+          await expect(lease!.verify()).rejects.toThrow()
+          expect(() => lease!.assertActive()).toThrow()
+        },
+        async () => {
+          await Promise.resolve()
+          if (delayed) {
+            if (boundary === 'cancelled') controller.abort()
+            else clock.mockReturnValue(now + 60_000)
+          }
+          return context
+        },
+      )
+    } finally {
+      clock.mockRestore()
+    }
+  },
+)
+
+it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
+  'round3: %s cannot acquire an automatic budget lease',
+  async (policy) => {
+    const ask = vi.fn(async () => 'rejected' as const)
+    const req = { ...request('budget'), kind: 'budget' as const }
+    await withPermissionContext(
+      { ...context, policy },
+      () => {
+        throw new Error('Non-full-access must not journal an automatic answer')
+      },
+      async () => {
+        expect(await router(ask).ask(req, { signal: new AbortController().signal })).toMatchObject({
+          verdict: 'rejected',
+        })
+        expect(await acquirePermissionLease(req, new AbortController().signal)).toBeUndefined()
+      },
+      async () => ({ ...context, policy }),
+    )
+    expect(ask).toHaveBeenCalledTimes(1)
+  },
+)
+
+})

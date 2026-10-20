@@ -364,3 +364,40 @@ describe('count calibration', () => {
     ).toEqual(['budget-register-missing'])
   })
 })
+
+describe('reviewer originals', () => {
+it.each(['full-access', 'workspace-write', 'read-only', 'custom'])(
+  'round2-original: budget quotation preserves the effective %s permission boundary',
+  async (policy) => {
+    let asks = 0
+    const selected = { ...preset(4000, 'quote'), name: 'standard', ...(policy === 'custom' ? {} : { permission: policy as 'full-access' | 'workspace-write' | 'read-only' }) }
+    const f = await openSession({
+      provider: withCount(9000),
+      preset: selected,
+      seams: fakeSeams({
+        billing: {
+          projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
+        },
+        approval: {
+          ask: async () => {
+            asks++
+            return { verdict: 'allowed-once', answeredBy: actor }
+          },
+        },
+      }),
+    })
+    try {
+      await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'budget review' }], actor })
+      await f.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(asks).toBe(policy === 'full-access' ? 0 : 1)
+      const decisions = await f.session.decisions.list()
+      expect(decisions).toHaveLength(1)
+      if (policy === 'full-access') expect(decisions[0]?.result).toMatchObject({ code: 'full-access' })
+      else expect(decisions[0]?.result).not.toHaveProperty('code', 'full-access')
+    } finally {
+      await f.session.close()
+    }
+  },
+)
+
+})

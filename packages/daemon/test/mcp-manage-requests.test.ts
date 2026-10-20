@@ -9,7 +9,7 @@ import {
   createResourceControlStore,
   localResourceAuthority,
 } from '@agnes/resource-control-store'
-import { afterEach, expect, it, vi } from 'vitest'
+import { describe, afterEach, expect, it, vi } from 'vitest'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { createMcpManageRequests } from '../src/supervisor/mcp-manage-requests.js'
 
@@ -465,3 +465,55 @@ it.each(['full-access', 'workspace-write'])(
     else expect(evidence).toEqual([])
   },
 )
+
+describe('reviewer originals', () => {
+it('round2-original: an automatic MCP decision that expires after the prompt cannot register, trust or enable', async () => {
+  const s = await setup()
+  const prepared = await s.request({ action: 'prepare', definition })
+  const context = {
+    sessionKey: 'session',
+    sessionId: 'round2-backend',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  let consumed = false
+  const effects: string[] = []
+  const call = s.service.call.bind(s.service)
+  const spy = vi.spyOn(s.service, 'call').mockImplementation((method, params, authority) => {
+    if (consumed && method === '_agnes/v1/mcp.servers.list') clock.mockReturnValue(now + 110_001)
+    if (
+      consumed &&
+      [
+        '_agnes/v1/mcp.servers.create',
+        '_agnes/v1/mcp.servers.trust.set',
+        '_agnes/v1/mcp.servers.enable',
+      ].includes(method)
+    )
+      effects.push(method)
+    return call(method, params, authority)
+  })
+  try {
+    await withPermissionContext(
+      context,
+      (row) => {
+        if (row.consumption === 'consumed') consumed = true
+      },
+      () => s.request({ action: 'commit', proposalId: prepared.proposalId }).catch(() => undefined),
+      async () => context,
+    )
+    expect(consumed).toBe(true)
+    expect(
+      await s.store.mcp.workerManaged('local-dev'),
+      `Expired grant admitted ${effects.join(', ')}`,
+    ).toEqual([])
+    expect(effects).toEqual([])
+  } finally {
+    spy.mockRestore()
+    clock.mockRestore()
+  }
+})
+
+})
