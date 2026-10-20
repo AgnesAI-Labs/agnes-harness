@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { win32 } from 'node:path'
 import { fitLine } from './components/line.js'
 import type { RendererMouse } from './renderer.js'
 import { displayWidth } from './terminal.js'
@@ -51,7 +52,14 @@ export function copyToClipboard(
 ): void {
   write(`\x1b]52;c;${Buffer.from(text).toString('base64')}\x07`)
   if (env.SSH_CONNECTION || env.SSH_TTY) return
-  const command = platform === 'darwin' ? 'pbcopy' : platform === 'win32' ? 'clip' : undefined
+  // Absolute paths: a bare name would resolve through the workspace directory first on Windows, so a
+  // repository could plant its own `clip` to run on every copy.
+  const command =
+    platform === 'darwin'
+      ? '/usr/bin/pbcopy'
+      : platform === 'win32'
+        ? win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'clip.exe')
+        : undefined
   if (!command) return
   try {
     const child = spawn(command, [], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
