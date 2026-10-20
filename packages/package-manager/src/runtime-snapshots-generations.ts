@@ -54,6 +54,8 @@ const OWNER_FILE = 'owner.json'
 const ADOPTERS_DIR = 'adopters'
 const UNOWNED_GRACE_MS = 10 * 60_000
 const PIN_LOCK_WAIT_MS = 10_000
+/** Heads this store replaced, per composition, kept as publication reuse candidates (newest first). */
+const REPLACED_HEADS = 8
 /** A generation directory being removed is first renamed to `<id>.deleting-<ms>-<token>`. */
 const CLAIM_PATTERN = /^([a-f0-9-]{36})\.deleting-(\d+)-/
 
@@ -159,6 +161,20 @@ export type PluginGenerationSnapshot = Readonly<{
   resourcesDigest?: string
   resources?: RuntimeGenerationResourceSnapshot
 }>
+/** The recorded inputs a generation is reused for; any difference means snapshotting afresh. */
+export type GenerationReuseInputs = Readonly<{
+  artifactDigest: string
+  compatibility: string
+  packages: PluginGenerationSnapshot['packages']
+  resourcesDigest?: string
+  seams?: GenerationSeams
+}>
+const recordedFrom = (snapshot: PluginGenerationSnapshot, expected: GenerationReuseInputs): boolean =>
+  snapshot.artifact.digest === expected.artifactDigest &&
+  snapshot.compatibility === expected.compatibility &&
+  snapshot.resourcesDigest === expected.resourcesDigest &&
+  JSON.stringify(snapshot.packages) === JSON.stringify(expected.packages) &&
+  JSON.stringify(snapshot.seams ?? null) === JSON.stringify(expected.seams ?? null)
 export type SessionGenerationPin = Readonly<{
   /** Monotonic integer of the format the pin was written in. */
   formatVersion: number
@@ -181,6 +197,7 @@ export class RuntimeGenerationSnapshotStore {
   readonly #liveness: ProcessLiveness | undefined
   readonly #anchor: string
   readonly #lockWaitMs: number
+  readonly #replacedHeads = new Map<string, string[]>()
   #problems: StateProblem[] = []
   constructor(
     profileDirectory: string,
@@ -704,6 +721,10 @@ export class RuntimeGenerationSnapshotStore {
     this.#confirmPresent(generationId, () =>
       previous ? publish(previous) : removeFileDurablySync(this.headPath(compositionKey)),
     )
+    if (previous && previous !== generationId) {
+      const replaced = (this.#replacedHeads.get(compositionKey) ?? []).filter((id) => id !== previous)
+      this.#replacedHeads.set(compositionKey, [previous, ...replaced].slice(0, REPLACED_HEADS))
+    }
   }
 
   headId(compositionKey: string): string | undefined {
@@ -721,27 +742,61 @@ export class RuntimeGenerationSnapshotStore {
    */
   reusableHead(
     compositionKey: string,
-    expected: Readonly<{
-      artifactDigest: string
-      compatibility: string
-      packages: PluginGenerationSnapshot['packages']
-      resourcesDigest?: string
-      seams?: GenerationSeams
-    }>,
+    expected: GenerationReuseInputs,
   ): PluginGenerationSnapshot | undefined {
     const id = this.headId(compositionKey)
-    if (!id) return undefined
+    return id ? this.#reuse(id, expected) : undefined
+  }
+
+  /**
+   * A generation already recorded from exactly these inputs, for a publication that would otherwise
+   * snapshot the same code again. Candidates, in order: heads this store replaced for the composition
+   * (a worker records its boot snapshot over the head the previous worker published), the recorded
+   * head, then generations named by session pins. `exclude` holds generations the caller already runs
+   * or saw fail, whose identity a publication must not take over. A candidate with accepted live
+   * configuration is skipped: a container rebuilt from it would apply that configuration, not the
+   * published one. Recorded fields are compared before any package tree is re-hashed.
+   */
+  reusableGeneration(
+    compositionKey: string,
+    expected: GenerationReuseInputs,
+    exclude: ReadonlySet<string>,
+  ): PluginGenerationSnapshot | undefined {
+    const candidates = new Set([
+      ...(this.#replacedHeads.get(compositionKey) ?? []),
+      this.headId(compositionKey),
+      ...this.sessions().map((pin) => pin.generationId),
+    ])
+    for (const id of candidates) {
+      if (!id || exclude.has(id) || !this.#recorded(id, expected)) continue
+      if (existsSync(join(this.directory(id), 'live-config.json'))) continue
+      const reused = this.#reuse(id, expected)
+      if (reused) return reused
+    }
+    return undefined
+  }
+
+  /** Whether `generation.json` alone names these inputs; anything unreadable is not a match. */
+  #recorded(id: string, expected: GenerationReuseInputs): boolean {
     try {
-      const snapshot = this.read(id)
-      if (
-        snapshot.artifact.digest !== expected.artifactDigest ||
-        snapshot.compatibility !== expected.compatibility ||
-        snapshot.resourcesDigest !== expected.resourcesDigest ||
-        JSON.stringify(snapshot.packages) !== JSON.stringify(expected.packages) ||
-        JSON.stringify(snapshot.seams ?? null) !== JSON.stringify(expected.seams ?? null)
+      const file = join(this.directory(id), 'generation.json')
+      const record = decodeGenerationRecord(
+        parseRecord(readFileSync(file, 'utf8'), file),
+        id,
+        file,
+        GENERATION_SNAPSHOT_VERSION,
       )
-        return undefined
-      // Register before trusting the head, then confirm the record survived a concurrent collection.
+      return recordedFrom(record, expected)
+    } catch {
+      return false
+    }
+  }
+
+  /** The generation when it reads cleanly and was built from exactly these inputs, adopted; else undefined. */
+  #reuse(id: string, expected: GenerationReuseInputs): PluginGenerationSnapshot | undefined {
+    try {
+      if (!recordedFrom(this.read(id), expected)) return undefined
+      // Register before trusting the generation, then confirm the record survived a concurrent collection.
       this.#adopt(id)
       return this.read(id)
     } catch {

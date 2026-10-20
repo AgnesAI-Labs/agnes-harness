@@ -152,11 +152,12 @@ export async function createRuntimeGenerationHost(
     basePackages.add(id)
   // Mutable model routes and credential stores follow applyModelProfile. Deployment identity
   // still pins backend and plugin registries, including their loop/adapter selections.
-  const compatibilityFor = (profile: ResolvedProfile) =>
+  const runPlanFor = (profile: ResolvedProfile) =>
     compileRunPlan({
       profile,
       ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
-    }).processFacets.digest
+    })
+  const compatibilityFor = (profile: ResolvedProfile) => runPlanFor(profile).processFacets.digest
 
   const sourcesFor = async (target: RuntimeTarget): Promise<readonly RuntimePluginSnapshot[]> => {
     const sources =
@@ -191,7 +192,7 @@ export async function createRuntimeGenerationHost(
     sources: readonly RuntimePluginSnapshot[],
     skills: SkillRuntimeInput | undefined,
     extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
-    reuseHead = false,
+    reuse: boolean | 'identical' = false,
   ) => {
     const compatibility = compatibilityFor(profile),
       packages = [
@@ -209,22 +210,22 @@ export async function createRuntimeGenerationHost(
         ),
         (extensionRows ?? (current?.host ?? initial).extensionRows.current()).map((row) => row.id),
       ),
-      seams = seamSelectionsOf(
-        compileRunPlan({
-          profile,
-          ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
-        }),
-      )
-    // Workers of one composition share a recorded head instead of each snapshotting the same target.
-    const reused = reuseHead
-      ? store.reusableHead(headKey, {
-          artifactDigest: encodeRuntimeTargetArtifact(target).digest,
-          compatibility,
-          packages,
-          resourcesDigest: generationResourcesDigest(resources),
-          seams,
-        })
-      : undefined
+      seams = seamSelectionsOf(runPlanFor(profile))
+    const expected = {
+      artifactDigest: encodeRuntimeTargetArtifact(target).digest,
+      compatibility,
+      packages,
+      resourcesDigest: generationResourcesDigest(resources),
+      seams,
+    }
+    // Workers of one composition share a recorded head instead of each snapshotting the same target. A
+    // publication takes a generation recorded from the same inputs that this host neither runs nor saw fail.
+    const reused =
+      reuse === 'identical'
+        ? store.reusableGeneration(headKey, expected, new Set([...live.keys(), ...failures.keys()]))
+        : reuse
+          ? store.reusableHead(headKey, expected)
+          : undefined
     return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
   }
   const recordHead = (id: string): void => {
@@ -802,7 +803,7 @@ export async function createRuntimeGenerationHost(
       lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
-    const snapshot = snapshotTarget(target, sources, skillInput, extensionRows)
+    const snapshot = snapshotTarget(target, sources, skillInput, extensionRows, 'identical')
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     try {
       const bound = store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host)
