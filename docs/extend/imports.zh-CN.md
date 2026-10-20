@@ -87,7 +87,7 @@ TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供
 
 请求先落 ledger 再返回 handle。同 owner/key 的相同 spec 返回原 ID 和期限，内容变化则冲突。`wait` 返回 resolved snapshot 或断开后的 pending handle；断线和取消本地 waiter 都保留持久 pending。答复只能经认证的后台入口接收。
 
-工具收到批准后可调用 `admit(handle)` 单次消费该精确操作，取得私有 `PermissionEffectAdmission`。准备写入前调用 `verify()`，并将凭证作为第二个参数传入 `store.transaction(work, admission)`；宿主在同步事务内开始工作前及提交前检查凭证。完全访问的业务确认保留真人主体、presentation 声明的精确值、授权 epoch 和明确的自动确认模式，见[安全指南](../guide/security.zh-CN.md#full-access-exceptions)。缺少 `admit` 的旧宿主不能执行自动业务签署。
+工具收到批准后可调用 `admit(handle)` 单次消费该精确操作，取得私有 `PermissionEffectAdmission`。准备写入前调用 `verify()`，并将凭证作为第二个参数传入 `store.transaction(work, admission)`；宿主在同步事务内开始工作前及提交前检查凭证。嵌套调用加入根事务：内层成功返回后，其准入凭证仍登记在根事务，真实根提交前逐一复核；提交或回滚后清空该登记。完全访问的业务确认保留真人主体、presentation 声明的精确值、授权 epoch 和明确的自动确认模式，见[安全指南](../guide/security.zh-CN.md#full-access-exceptions)。缺少 `admit` 的旧宿主不能执行自动业务签署。
 
 Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。BindableKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。
 

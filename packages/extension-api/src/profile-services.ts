@@ -24,6 +24,7 @@ export interface OwnedStore {
   get(key: string): JsonValue | undefined
   set(key: string, value: JsonValue): void
   delete(key: string): void
+  /** Nested calls join the root transaction; every joined admission is rechecked before its commit. */
   transaction<T>(work: () => T, admission?: import('@agnes/protocol').PermissionEffectAdmission): T
 }
 export interface WakeTarget {

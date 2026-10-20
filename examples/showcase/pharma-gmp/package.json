@@ -38,7 +38,9 @@
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "react-dom": "18.3.1",
-    "@agnes/resource-control-runtime": "workspace:*"
+    "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"

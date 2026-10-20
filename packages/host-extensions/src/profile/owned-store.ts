@@ -25,14 +25,19 @@ export function ownedStore(
   }
   let depth = 0
   let failed = false
+  const admissions = new Set<NonNullable<Parameters<OwnedStore['transaction']>[1]>>()
   const transaction: OwnedStore['transaction'] = (work, admission) => {
     const run = () => {
       assertLive()
-      if (!depth) failed = false
+      if (!depth) {
+        failed = false
+        admissions.clear()
+      }
       const scope = { active: true }
       depth++
       try {
         admission?.assertActive()
+        if (admission) admissions.add(admission)
         const result = scopes.run(scope, work)
         if (result && typeof (result as { then?: unknown }).then === 'function') {
           void Promise.resolve(result).catch(() => undefined)
@@ -41,6 +46,8 @@ export function ownedStore(
         assertLive()
         admission?.assertActive()
         if (failed) throw rpcError('INVALID_PARAMS')
+        // Successful inner calls retain their capabilities until the real root commit.
+        if (depth === 1) for (const joined of admissions) joined.assertActive()
         return result
       } catch (error) {
         failed = true
@@ -50,7 +57,12 @@ export function ownedStore(
         depth--
       }
     }
-    return depth ? run() : namespace.transaction(run)
+    if (depth) return run()
+    try {
+      return namespace.transaction(run)
+    } finally {
+      admissions.clear()
+    }
   }
   return Object.freeze({
     scan(input) {

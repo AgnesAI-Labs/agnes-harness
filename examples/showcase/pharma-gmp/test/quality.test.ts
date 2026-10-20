@@ -1,15 +1,21 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { ToolContext } from '@agnes/extension-api'
 import { createAuthorTestkit, createPluginTestHost } from '@agnes/host/author-testkit'
+import { createTestHost } from '@agnes/host/testkit'
+import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { expect, it } from 'vitest'
 import { main } from '../src/index.js'
 import { type Plant, SIGNATURE_MEANING } from '../src/model.js'
 import { qualityPolicy } from '../src/policy.js'
 import { dashboard, dossier, emStatus, findings, investigation } from '../src/quality.js'
+import { change, read } from '../src/records.js'
 import { report } from '../src/reports.js'
 import { seed } from '../src/seed.js'
+import { sign } from '../src/signature.js'
 
 const packageDir = fileURLToPath(new URL('../', import.meta.url)),
   batch = 'B-2410-017'
@@ -454,3 +460,103 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
       }
     }
 }, 60000)
+
+it.each(['epoch', 'deadline'] as const)(
+  'nested business transaction rolls back after inner success loses %s, including after SQLite reopen',
+  async (loss) => {
+    const home = await mkdtemp(join(tmpdir(), 'agh-pharma-gmp-nested-'))
+    const dbDir = join(home, 'business')
+    await mkdir(dbDir)
+    const { host } = await createTestHost({
+      dataDir: home,
+      allowed: ['standard', 'full-access'],
+      presets: {
+        'full-access': { name: 'full-access', extends: 'standard', approval: { pending_ttl_ms: 1000 } },
+        'permission-full-access': {
+          name: 'permission-full-access',
+          providers: { 'tool-policy': { provider: 'full-access' } },
+        },
+      },
+    })
+    let persistence = await sqlitePersistenceProvider.open({ dataDir: dbDir })
+    const storeOf = () => {
+      if (!persistence.metadata) throw new Error('Missing SQLite fixture metadata')
+      return ownedStore(
+        persistence.metadata.namespace('@fixture/pharma-gmp-nested', 'quality'),
+        () => {},
+        true,
+      )
+    }
+    try {
+      const store = storeOf()
+
+      const before = read(store)
+      const session = await host.createSession({ cwd: home, preset: 'full-access' })
+      let now = Date.now()
+      Object.assign(session.d, { clock: () => now })
+      const decisions = session.decisions.port({
+        owner: '@fixture/pharma-gmp-nested',
+        sourcePackage: '@fixture/pharma-gmp-nested',
+        packageVersion: '1',
+        operationId: 'signed-write',
+        alive() {},
+      })
+      const input = { action: 'investigate' as const, batch, expectedRevision: 0 }
+      const approval = await sign(
+        {
+          signal: new AbortController().signal,
+          session: { key: session.key, toolUseId: 'signed-write' },
+          decisions,
+        } as unknown as ToolContext,
+        { ...input, currentDossier: dossier(before, batch) },
+        { en: 'I attest to this synthetic quality record.', 'zh-CN': '我确认本合成质量记录。' },
+        batch,
+      )
+      const admission = approval.admission
+      if (!admission) throw new Error('Missing real Core signature admission')
+      const proof = (await session.decisions.list()).find((row) => row.handle.id === approval.requestId)
+      if (!proof?.request.expiresAt) throw new Error('Missing business deadline')
+      const expiresAt = proof.request.expiresAt
+      expect(proof.result).toMatchObject({ code: 'full-access', answeredBy: { id: session.d.actor.id } })
+      expect(proof.consumption).not.toBeNull()
+      expect(approval.confirmationMode).toBe('auto-confirmed under full access')
+      let refused = false
+      let innerSucceeded = false
+      try {
+        store.transaction(() => {
+          change(store, input, {
+            actor: approval.answeredBy.id,
+            session: session.key,
+            approval: { ...approval, admission },
+          })
+          expect(read(store).revision).toBe(before.revision + 1)
+          innerSucceeded = true
+          if (loss === 'epoch') session.revokeAutomaticPermissions()
+          else now = Date.parse(expiresAt)
+        })
+      } catch {
+        refused = true
+      }
+      expect(session.d.log.leaseRemainingMs()).toBeGreaterThan(0)
+      await persistence.close()
+      persistence = await sqlitePersistenceProvider.open({ dataDir: dbDir })
+      const reopened = read(storeOf())
+      expect.soft(innerSucceeded).toBe(true)
+      expect.soft(refused).toBe(true)
+      expect.soft(reopened.revision).toBe(before.revision)
+      expect.soft(reopened.deviations).toEqual(before.deviations)
+      expect.soft(reopened.audit).toEqual(before.audit)
+      // Root cleanup must leave subsequent admission-free transactions usable.
+      const ordinary = storeOf()
+      ordinary.transaction(() => ordinary.set('ordinary-after-rollback', true))
+      expect(ordinary.get('ordinary-after-rollback')).toBe(true)
+      expect(
+        (await session.decisions.list()).find((row) => row.handle.id === approval.requestId)?.consumption,
+      ).not.toBeNull()
+    } finally {
+      await persistence.close()
+      await host.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  },
+)

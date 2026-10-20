@@ -13,6 +13,8 @@
     { "path": "../../../packages/host/tsconfig.testkit.json" },
     { "path": "../../../packages/web-client" },
     { "path": "../../../packages/package-manager" },
-    { "path": "../../../packages/protocol" }
+    { "path": "../../../packages/protocol" },
+    { "path": "../../../packages/host-extensions" },
+    { "path": "../../../packages/host-infrastructure" }
   ]
 }

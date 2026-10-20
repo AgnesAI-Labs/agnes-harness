@@ -581,6 +581,25 @@ describe('current profile authority', () => {
       ).toThrow()
       expect(first.get('accepted')).toBe(true)
       expect(first.get('escaped-admission')).toBeUndefined()
+      active = true
+      expect(() =>
+        first.transaction(() => {
+          first.transaction(() => first.set('accepted', false), admission)
+          // A later, still-valid capability must not replace the earlier one at root commit.
+          first.transaction(() => first.set('escaped-second', true), {
+            verify: async () => {},
+            assertActive() {},
+          })
+          active = false
+        }),
+      ).toThrow('authority revoked')
+      expect(first.get('accepted')).toBe(true)
+      expect(first.get('escaped-second')).toBeUndefined()
+      active = true
+      first.transaction(() => first.transaction(() => first.set('accepted', true), admission))
+      active = false
+      first.transaction(() => first.set('accepted', true))
+      expect(first.get('accepted')).toBe(true)
       expect(second.get('accepted')).toBeUndefined()
       expect(first.scan({ prefix: '', limit: 1 })).toMatchObject({
         rows: [{ key: 'accepted', value: true }],

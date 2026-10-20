@@ -157,6 +157,12 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../../../packages/host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../../../packages/host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../../../packages/host-infrastructure
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../../../packages/package-manager
@@ -200,6 +206,12 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../../../packages/host
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../../../packages/host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../../../packages/host-infrastructure
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../../../packages/package-manager

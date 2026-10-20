@@ -22,6 +22,12 @@
     },
     {
       "path": "../../../packages/protocol"
+    },
+    {
+      "path": "../../../packages/host-extensions"
+    },
+    {
+      "path": "../../../packages/host-infrastructure"
     }
   ],
   "extends": "../../../tsconfig.base.json"
