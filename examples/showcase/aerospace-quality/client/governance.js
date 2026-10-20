@@ -406,6 +406,15 @@ export function Zeroing({ data, t, op }) {
             col(t.choose('时间', 'Time'), 'at'),
             col(t.choose('动作', 'Action'), 'action'),
             col(t.choose('对象', 'Subject'), 'subject'),
+            col(t.choose('签署人', 'Signer'), 'signer', { render: (v) => v || '—' }),
+            col(t.choose('确认方式', 'Confirmation mode'), 'confirmationMode', {
+              render: (v) =>
+                v === 'auto-confirmed under full access'
+                  ? t.choose('完全访问下自动确认', 'auto-confirmed under full access')
+                  : v === 'manual'
+                    ? t.choose('人工签署', 'Manual signature')
+                    : '—',
+            }),
             col(t.choose('宿主审批', 'Host approval'), 'approval', { render: (v) => v || '—' }),
           ],
           data.audit,
@@ -413,6 +422,12 @@ export function Zeroing({ data, t, op }) {
         ),
       ),
     ),
+    z.closure &&
+      h(
+        'p',
+        null,
+        `${z.closure.signer} · ${z.closure.confirmationMode === 'auto-confirmed under full access' ? t.choose('完全访问下自动确认', 'auto-confirmed under full access') : t.choose('人工签署', 'Manual signature')} · ${z.closure.decisionId}`,
+      ),
     h(
       Button,
       {

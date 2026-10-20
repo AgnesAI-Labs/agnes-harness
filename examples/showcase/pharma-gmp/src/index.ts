@@ -45,6 +45,7 @@ const signatureReceipt = (approval: Awaited<ReturnType<typeof sign>>, reviewedRe
   decisionId: approval.requestId,
   meaning: approval.signedMeaning,
   signer: approval.answeredBy.id,
+  confirmationMode: approval.confirmationMode,
   signedAt: approval.signedAt,
   reviewedRevision,
   purpose: 'business.confirm' as const,
@@ -92,7 +93,7 @@ export const checklist = defineTool({
 export const record = defineTool({
   name: 'pharma_record',
   description:
-    'On an explicit user request, invoke this tool directly: it requests a native human business signature before writing; do not substitute ask_user_question or ui_render. action=review records the independent BPR review (resolving the bpr checklist item); it is not final release and does not require bpr to pass beforehand. Investigate deviation, or advance the explicitly synthetic evidence scenario (investigation → CAPA → effectiveness → closed). Read latest revision first. Never invent real evidence. / 人工审核后复核批记录、调查偏差或录入明确的合成场景证据。',
+    'On an explicit user request, invoke this tool directly: it requests Host business consent before writing (manual, or explicitly recorded automatic confirmation for the human under full access); do not substitute ask_user_question or ui_render. action=review records the independent BPR review (resolving the bpr checklist item); it is not final release and does not require bpr to pass beforehand. Investigate deviation, or advance the explicitly synthetic evidence scenario (investigation → CAPA → effectiveness → closed). Read latest revision first. Never invent real evidence. / 人工审核后复核批记录、调查偏差或录入明确的合成场景证据。',
   parameters: changeInput,
   result: receiptSchema,
   meta: { ...meta(true, true), isDestructive: false },
@@ -120,7 +121,7 @@ export const record = defineTool({
 export const releaseTool = defineTool({
   name: 'pharma_release',
   description:
-    'Consequential QA batch release. Use dossier.signatureMeaning exactly. Requires exact dossier revision, signature meaning and an independent human business signature requested inside this tool; invoke directly on an explicit release request, never substitute a question or self-authorize. / QA 批次放行：须精确版本、签名含义和独立的人工业务签名。',
+    'Consequential QA batch release. Use dossier.signatureMeaning exactly. Requires exact dossier revision, signature meaning and Host business consent (manual, or recorded for the human under full access) requested inside this tool; invoke directly on an explicit release request, never substitute a question or self-authorize. / QA 批次放行：须精确版本、签名含义和独立的人工业务签名。',
   parameters: releaseInput,
   result: receiptSchema,
   meta: meta(true, true),
@@ -128,7 +129,12 @@ export const releaseTool = defineTool({
     ctx.signal.throwIfAborted()
     try {
       const check = dossier(read(ctx.store), input.batch)
-      if (!check.ready || check.revision !== input.expectedRevision || input.meaning !== SIGNATURE_MEANING)
+      if (
+        check.certificate ||
+        !check.ready ||
+        check.revision !== input.expectedRevision ||
+        input.meaning !== SIGNATURE_MEANING
+      )
         throw new Error('Release prerequisites or signature meaning not satisfied / 放行条件或签名含义不满足')
       const approval = await sign(ctx, { ...input, dossier: check }, SIGNATURE_MEANINGS, input.batch)
       const p = release(ctx.store, input, { ...who(ctx), approval })

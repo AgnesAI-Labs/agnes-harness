@@ -67,7 +67,20 @@ export type Ecr = {
   approvals: string[]
 }
 export type Criterion = { id: string; title: Text; evidence: string[]; accepted: boolean }
-export type Zeroing = { id: string; anomaly: string; status: string; criteria: Criterion[] }
+export type Zeroing = {
+  id: string
+  anomaly: string
+  status: string
+  criteria: Criterion[]
+  closure?: {
+    decisionId: string
+    signer: string
+    confirmationMode: string
+    meaning?: string
+    reviewedRevision: number
+    subjectRevision: string
+  }
+}
 export type Part = {
   id: string
   title: Text
@@ -80,6 +93,8 @@ export type Part = {
   status: string
 }
 export type Audit = {
+  confirmationMode?: string
+  signer?: string
   signatureMeaning?: string
   id: string
   at: string

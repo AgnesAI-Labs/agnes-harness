@@ -206,7 +206,7 @@ export const tools = [
   ),
   tool(
     'aero_decide',
-    'Consequential human decision: MRB disposition, configuration change, reviewed rule activation or evidence-complete zeroing closure. Requires a separate human business signature and current revision / MRB、技术状态、规则启用与归零均要求独立人工业务签名和当前修订。',
+    'Consequential human decision: MRB disposition, configuration change, reviewed rule activation or evidence-complete zeroing closure. Requires Host business consent and current revision; full access auto-confirms for the human principal with an explicit record / MRB、技术状态、规则启用与归零要求宿主业务签署和当前修订；完全访问下代表会话真人自动确认并明确记录。',
     decisionSchema,
     async (i, c) => {
       const state = read(c.store)
@@ -245,6 +245,7 @@ export const tools = [
           decisionId: approval.requestId,
           meaning: approval.signedMeaning,
           signer: approval.answeredBy.id,
+          confirmationMode: approval.confirmationMode,
           signedAt: approval.signedAt,
           reviewedRevision: i.expectedRevision,
           purpose: 'business.confirm',

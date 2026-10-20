@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ToolContext } from '@agnes/extension-api'
 
-/** Business signature, never a permission grant. Full access cannot answer this question. */
+/** Host-bound business consent; full access signs for the human principal with an explicit mode. */
 export async function sign<T extends { expectedRevision: number }>(
   ctx: ToolContext,
   input: T,
@@ -51,10 +51,19 @@ export async function sign<T extends { expectedRevision: number }>(
     result.response.option !== 'allowed-once' ||
     ['system', 'agent'].includes(result.answeredBy.role) ||
     typeof result.response.value !== 'string' ||
-    !Object.values(meanings).includes(result.response.value)
+    !Object.values(meanings).includes(result.response.value) ||
+    (result.code === 'full-access' &&
+      result.answeredBy.attrs.confirmationMode !== 'auto-confirmed under full access')
   )
     throw new Error('Human quality signature required / 需要人工质量签名')
+  if (result.code === 'full-access' && !ctx.decisions.admit)
+    throw new Error('Host signature admission unavailable')
+  const admission = await ctx.decisions.admit?.(handle)
+  await admission?.verify()
   return {
+    ...(admission ? { admission } : {}),
+    confirmationMode:
+      result.code === 'full-access' ? ('auto-confirmed under full access' as const) : ('manual' as const),
     signedMeaning: result.response.value,
     requestId: handle.id,
     subjectRevision,

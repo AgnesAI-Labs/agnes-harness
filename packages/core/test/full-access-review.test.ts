@@ -162,7 +162,7 @@ it('review: auto answers bind exact subject, source, operation and session; cons
   }
 })
 
-it.each(['plan.exit', 'unknown-outcome'])(
+it.each(['ask_user', 'ask_user_question', 'plan.exit', 'unknown-outcome', 'fact-check', 'author.question'])(
   'review: %s stays unanswered even with permission options',
   async (purpose) => {
     const f = await fixture('full-access')
@@ -385,6 +385,116 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
       })
       const handle = await f.ctx.decisions.request(spec)
       expect((await f.ctx.decisions.get(handle)).result).toBeNull()
+    } finally {
+      await f.session.close()
+    }
+  },
+)
+
+const business: DecisionSpec = {
+  ...spec,
+  key: 'signature',
+  purpose: 'business.confirm',
+  subject: { input: { object: 'NCR-018', version: 2 }, evidence: ['EV-001'] },
+  presentation: {
+    'zh-CN': {
+      title: '业务签署',
+      fields: [{ label: '签名含义', value: '我确认。' }],
+      responseValue: '我确认。',
+    },
+    en: {
+      title: 'Business signature',
+      fields: [{ label: 'Meaning', value: 'I confirm.' }],
+      responseValue: 'I confirm.',
+    },
+  },
+  responseSchema: { type: 'string', enum: ['I confirm.', '我确认。'] },
+}
+it.each(['standard', 'workspace-write', 'full-access'])(
+  'business consent: %s uses the human principal and exact declared meaning',
+  async (permission) => {
+    const f = await fixture(permission)
+    try {
+      const handle = await f.author.request(business)
+      const value = await f.author.get(handle)
+      if (permission !== 'full-access') {
+        expect(value.result).toBeNull()
+        return
+      }
+      expect(value.result).toMatchObject({
+        reason: 'answered',
+        code: 'full-access',
+        response: { option: 'allowed-once', value: 'I confirm.' },
+        answeredBy: {
+          id: actor.id,
+          role: actor.role,
+          attrs: { confirmationMode: 'auto-confirmed under full access' },
+        },
+        authorization: { sessionId: f.session.permissionContext.sessionId, epoch: 0 },
+      })
+      expect(value.answerCommand).toBeNull()
+      const admission = await f.author.admit!(handle)
+      await admission.verify()
+      expect((await f.author.get(handle)).consumption).not.toBeNull()
+      await expect(f.author.admit!(handle)).rejects.toThrow('NOT_CONSUMABLE')
+      const projected = await f.session.projectUI(undefined, { surface: 'web' })
+      expect(projected.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'approval',
+            purpose: 'business.confirm',
+            state: 'decided',
+            decision: expect.objectContaining({ reason: 'full-access', byLabel: actor.id }),
+          }),
+        ]),
+      )
+      await f.session.setPreset(presetDefaults())
+      await expect(admission.verify()).rejects.toThrow('AUTHORITY_REVOKED')
+      expect(() => admission.assertActive()).toThrow()
+    } finally {
+      await f.session.close()
+    }
+  },
+)
+it('business consent: ambiguous and incompatible contracts remain pending with a reason', async () => {
+  const f = await fixture('full-access')
+  try {
+    for (const [i, variant] of [
+      { presentation: {} },
+      { options: ['allowed-once', 'allowed-session', 'rejected'] },
+      { presentation: { en: { title: 'Missing value', fields: [] } } },
+      { responseSchema: { type: 'null' } },
+    ].entries()) {
+      const h = await f.author.request({ ...business, ...variant, key: `ambiguous-${i}` })
+      expect((await f.author.get(h)).result).toBeNull()
+    }
+    expect(await f.session.decisions.list()).toHaveLength(4)
+    const skipped = await f.log.scan({ type: 'x/core/decision-automatic-skipped', limit: 10 })
+    expect(skipped).toHaveLength(4)
+    expect(skipped.map((event) => event.data)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: 'response-schema' }),
+        expect.objectContaining({ reason: 'ambiguous-business-confirmation' }),
+      ]),
+    )
+  } finally {
+    await f.session.close()
+  }
+})
+
+it.each(['expiry', 'cancel', 'close'] as const)(
+  'business consent: the consumed lease refuses %s before a write',
+  async (change) => {
+    let now = 1_757_203_200_000
+    const f = await fixture('full-access', { clock: () => now })
+    try {
+      const handle = await f.author.request(business)
+      const admission = await f.author.admit!(handle)
+      if (change === 'expiry') now = Date.parse((await f.author.get(handle)).request.expiresAt!)
+      if (change === 'cancel') await f.session.abort()
+      if (change === 'close') await f.session.close()
+      await expect(admission.verify()).rejects.toThrow()
+      expect(() => admission.assertActive()).toThrow()
     } finally {
       await f.session.close()
     }

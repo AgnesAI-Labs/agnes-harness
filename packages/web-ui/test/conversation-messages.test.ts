@@ -504,6 +504,24 @@ describe('W3b projected message DOM', () => {
       ),
     )
     expect(item('approval')?.getAttribute('aria-label')).toBe('无人审批，未执行')
+    await update(
+      store,
+      settled.map((node) =>
+        node.kind === 'approval'
+          ? {
+              ...node,
+              purpose: 'business.confirm',
+              decision: {
+                verdict: 'allowed-once',
+                via: 'full-access',
+                reason: 'full-access',
+                byLabel: 'human.qa',
+              },
+            }
+          : node,
+      ),
+    )
+    expect(item('approval')?.textContent).toContain('完全访问下自动确认 · human.qa')
     // The record of an approval only unfolds its own text; it offers no decision.
     expect(item('approval')?.querySelectorAll('button:not([data-testid="approval-step"])')).toHaveLength(0)
     expect(item('approval')?.querySelector('[data-approval-action]')).toBeNull()

@@ -103,3 +103,58 @@ it.each([
   ).toBeUndefined()
   expect(automaticPermissionDecision(undefined, purpose)).toBeUndefined()
 })
+
+it('auto-confirms only explicit business contracts for a human using the declared response value', () => {
+  const actor = { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} }
+  const presentation = {
+    'zh-CN': { title: '签署', fields: [], responseValue: '我确认。' },
+    en: { title: 'Sign', fields: [], responseValue: 'I confirm.' },
+  }
+  const options = ['rejected', 'allowed-once']
+  expect(
+    automaticPermissionDecision(
+      { policy: 'full-access', actor },
+      'business.confirm',
+      options,
+      'question',
+      presentation,
+    ),
+  ).toMatchObject({
+    verdict: 'allowed-once',
+    responseValue: 'I confirm.',
+    answeredBy: {
+      id: 'owner',
+      role: 'owner',
+      attrs: { confirmationMode: 'auto-confirmed under full access' },
+    },
+  })
+  for (const role of ['system', 'agent'])
+    expect(
+      automaticPermissionDecision(
+        { policy: 'full-access', actor: { ...actor, role } },
+        'business.confirm',
+        options,
+        'question',
+        presentation,
+      ),
+    ).toBeUndefined()
+  for (const purpose of ['ask_user', 'plan.exit', 'fact-check', 'author.question', 'unknown'])
+    expect(
+      automaticPermissionDecision(
+        { policy: 'full-access', actor },
+        purpose,
+        options,
+        'question',
+        presentation,
+      ),
+    ).toBeUndefined()
+  expect(
+    automaticPermissionDecision(
+      { policy: 'full-access', actor },
+      'business.confirm',
+      ['allowed-once', 'allowed-session', 'rejected'],
+      'question',
+      presentation,
+    ),
+  ).toBeUndefined()
+})

@@ -21,6 +21,9 @@ export interface DecisionPort {
   request(spec: DecisionSpec): Promise<DecisionHandle>
   get(handle: DecisionHandle): Promise<DecisionSnapshot>
   wait(handle: DecisionHandle, options?: { readonly signal?: AbortSignal }): Promise<DecisionWaitResult>
+  /** Consume one approving answer for this exact operation. Private live capability, never JSON.
+   * Verify before work and pass to the effect transaction to check revocation/expiry at commit. */
+  admit?(handle: DecisionHandle): Promise<import('@agnes/protocol').PermissionEffectAdmission>
 }
 /** One-shot candidate review for an admitted operation; Core delivers and consumes the answer.
  * Detached delivery withdraws the candidate. This port never creates reusable permission grants. */

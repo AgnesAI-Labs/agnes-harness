@@ -13,7 +13,11 @@ export type Release = { batch: string; expectedRevision: number; meaning: string
 type Identity = {
   actor: string
   session: string | null
-  approval?: ToolContext['approval'] & { signedMeaning?: string }
+  approval?: ToolContext['approval'] & {
+    signedMeaning?: string
+    confirmationMode?: string
+    admission?: NonNullable<Parameters<OwnedStore['transaction']>[1]>
+  }
 }
 export function read(store?: OwnedStore): Plant {
   if (!store) throw new Error('Owner store unavailable / 业务存储不可用')
@@ -80,11 +84,12 @@ function write(
       reason,
       session: identity.session,
       approval: identity.approval?.requestId ?? null,
+      ...(identity.approval ? { confirmationMode: identity.approval.confirmationMode ?? 'manual' } : {}),
       ...(identity.approval?.signedMeaning ? { signatureMeaning: identity.approval.signedMeaning } : {}),
     })
     persist(store, p)
     return p
-  })
+  }, identity.approval?.admission)
 }
 export function change(store: OwnedStore | undefined, input: Change, who: Identity) {
   if (!who.approval || ['agent', 'system'].includes(who.approval.answeredBy.role))
@@ -222,6 +227,7 @@ export function release(store: OwnedStore | undefined, input: Release, who: Iden
       batch: b.id,
       at: new Date().toISOString(),
       signer: who.approval!.answeredBy.id,
+      confirmationMode: who.approval!.confirmationMode ?? 'manual',
       meaning: who.approval!.signedMeaning ?? input.meaning,
       approvalId: who.approval!.requestId,
       subjectRevision: who.approval!.subjectRevision,

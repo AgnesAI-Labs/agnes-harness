@@ -81,11 +81,13 @@ TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供
 
 ## 会话决策
 
-`ToolContext.decisions`、`LoopContext.decisions` 和获准的 `ServicePorts.decisions` 共用 `DecisionPort`（`request`、`get`、`wait`）。其类型及 `APPROVAL_DEFAULTS` 从 `@agnes/extension-api` 导入。spec 声明 owner 命名空间中的 key、purpose、完整不可变 JSON subject、prompt、实际提供的 options 及可选的有界 JSON response schema；Host 派生会话、作者和原操作，purpose 不授予权限。
+`ToolContext.decisions`、`LoopContext.decisions` 和获准的 `ServicePorts.decisions` 共用 `DecisionPort`（`request`、`get`、`wait` 及可选的 `admit`）。其类型及 `APPROVAL_DEFAULTS` 从 `@agnes/extension-api` 导入。spec 声明 owner 命名空间中的 key、purpose、完整不可变 JSON subject、prompt、实际提供的 options 及可选的有界 JSON response schema；Host 派生会话、作者和原操作，purpose 不授予权限。
 
 可选 `presentation` 按语言标签保存 `{ title, fields: [{ label, value, href? }], responseValue? }`。字段为纯文本；链接仅支持以单个 `/` 开头的同源路径。Web 依次选择精确语言、语言前缀和英语，并原样提交该项 `responseValue`（省略时为 null）。保留 `prompt` 供旧客户端回退。具有业务签名意义的展示值也应放入 `subject`，通过 `responseSchema` 校验答复，并在执行前验证宿主记录的真人结果；保存本次所见的精确签名含义，不在签署后翻译。展示字段不授予权限，也不改变可选决策。
 
 请求先落 ledger 再返回 handle。同 owner/key 的相同 spec 返回原 ID 和期限，内容变化则冲突。`wait` 返回 resolved snapshot 或断开后的 pending handle；断线和取消本地 waiter 都保留持久 pending。答复只能经认证的后台入口接收。
+
+工具收到批准后可调用 `admit(handle)` 单次消费该精确操作，取得私有 `PermissionEffectAdmission`。准备写入前调用 `verify()`，并将凭证作为第二个参数传入 `store.transaction(work, admission)`；宿主在同步事务内开始工作前及提交前检查凭证。完全访问的业务确认保留真人主体、presentation 声明的精确值、授权 epoch 和明确的自动确认模式，见[安全指南](../guide/security.zh-CN.md#full-access-exceptions)。缺少 `admit` 的旧宿主不能执行自动业务签署。
 
 Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。BindableKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。
 

@@ -213,9 +213,9 @@ it('traceability exposes orphan/design/untested gaps and reports preserve uncert
   }
 })
 
-it('asks for a separate human business signature under standard and full-access before MRB disposition', async () => {
+it('retains manual signatures under standard/workspace-write and auto-confirms for the human under full access', async () => {
   const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
-  for (const base of ['standard', 'full-access']) {
+  for (const base of ['standard', 'workspace-write', 'full-access']) {
     const ordinaryReviews: string[] = []
     const kit = await createAuthorTestkit({
       plugin: main,
@@ -224,6 +224,7 @@ it('asks for a separate human business signature under standard and full-access 
       capabilities: { store: true },
       preset: base,
       presets: {
+        'workspace-write': { name: 'workspace-write', extends: 'standard' },
         'full-access': { name: 'full-access', extends: 'standard' },
         'permission-full-access': {
           name: 'permission-full-access',
@@ -251,6 +252,23 @@ it('asks for a separate human business signature under standard and full-access 
         expectedRevision: 1,
       })
       expect(draft.isError).not.toBe(true)
+      if (base === 'full-access') {
+        const result = await s.invoke('aero_decide', { kind: 'mrb', id: 'NCR-018', expectedRevision: 2 })
+        expect(result.isError, JSON.stringify(result)).not.toBe(true)
+        expect(result.structured).toMatchObject({
+          data: {
+            signature: { signer: 'u', confirmationMode: 'auto-confirmed under full access' },
+            audit: { signer: 'u', confirmationMode: 'auto-confirmed under full access' },
+          },
+        })
+        const signatures = (await s.decisions()).filter((d) => d.request.spec.purpose === 'business.confirm')
+        expect(signatures).toHaveLength(1)
+        expect(signatures[0]).toMatchObject({
+          result: { code: 'full-access', answeredBy: { id: 'u' } },
+          consumption: { operationId: expect.any(String) },
+        })
+        continue
+      }
       for (const [role, option, success, badValue] of [
         ['system', 'allowed-once', false, undefined],
         ['reviewer', 'rejected', false, undefined],
@@ -313,7 +331,7 @@ it('asks for a separate human business signature under standard and full-access 
             },
           })
       }
-      expect(ordinaryReviews.length > 0).toBe(base === 'standard')
+      expect(ordinaryReviews.length > 0).toBe(base !== 'full-access')
     } finally {
       await kit.dispose()
     }

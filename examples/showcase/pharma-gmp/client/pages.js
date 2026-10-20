@@ -355,6 +355,11 @@ export function Release({ data, t, locale, mutate, busy }) {
           h('p', { className: 'ph-eyebrow' }, 'SABLELEAF / GMP'),
           h('h2', null, certificate.id),
           h('p', null, `${t.signer}: ${certificate.signer}`),
+          h(
+            'p',
+            null,
+            `${t.confirmationMode}: ${certificate.confirmationMode === 'auto-confirmed under full access' ? t.autoConfirmed : t.manualSignature}`,
+          ),
           h('p', null, `${t.when}: ${certificate.at}`),
           h('p', null, certificate.meaning),
           h('p', null, `${t.approval}: ${certificate.approvalId}`),
@@ -376,6 +381,13 @@ export function Audit({ data, t }) {
         [
           column(t.when, 'at', undefined, 200),
           column(t.actor, 'actor'),
+          column(t.confirmationMode, 'confirmationMode', (mode) =>
+            mode === 'auto-confirmed under full access'
+              ? t.autoConfirmed
+              : mode === 'manual'
+                ? t.manualSignature
+                : '—',
+          ),
           column(t.actionName, 'action'),
           column(t.record, 'record'),
           column(t.revision, 'toRevision'),

@@ -3,8 +3,66 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadPreset } from '@agnes/code'
+import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
+
+it('business consent: narrowing before commit and revocation inside SQLite roll back the signed write', async () => {
+  const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-business-commit-')))
+  const h = await createTestHost({
+    dataDir,
+    allowed: ['standard', 'full-access'],
+    presets: {
+      'permission-full-access': loadPreset('permission-full-access'),
+      'full-access': { name: 'full-access', extends: 'standard' },
+    },
+  })
+  mkdirSync(join(dataDir, 'business'))
+  const persistence = await sqlitePersistenceProvider.open({ dataDir: join(dataDir, 'business') })
+  if (!persistence.metadata) throw new Error('Missing fixture metadata')
+  const store = ownedStore(persistence.metadata.namespace('@fixture/business', 'quality'), () => {}, true)
+  try {
+    for (const gap of ['before-transaction', 'inside-transaction']) {
+      const session = await h.host.createSession({ key: gap, cwd: dataDir, preset: 'full-access' })
+      const port = session.decisions.port({
+        owner: '@fixture/business',
+        sourcePackage: '@fixture/business',
+        packageVersion: '1',
+        operationId: 'release',
+        alive() {},
+      })
+      const handle = await port.request({
+        key: 'release',
+        purpose: 'business.confirm',
+        subject: { object: 'B-001', revision: 1, evidence: ['EV-001'] },
+        prompt: 'Sign release?',
+        options: ['allowed-once', 'rejected'],
+        responseSchema: { type: 'string', const: 'I approve release.' },
+        presentation: { en: { title: 'Release', fields: [], responseValue: 'I approve release.' } },
+      })
+      expect((await port.get(handle)).result).toMatchObject({
+        code: 'full-access',
+        answeredBy: { id: session.d.actor.id, role: session.d.actor.role },
+      })
+      const admission = await port.admit!(handle)
+      await admission.verify()
+      if (gap === 'before-transaction') await session.setPreset(h.host.validatePresetSwitch('standard').view)
+      expect(() =>
+        store.transaction(() => {
+          store.set('certificate', { signer: session.d.actor.id, decisionId: handle.id })
+          if (gap === 'inside-transaction') session.revokeAutomaticPermissions()
+        }, admission),
+      ).toThrow()
+      expect(store.get('certificate')).toBeUndefined()
+      expect((await port.get(handle)).consumption).not.toBeNull()
+    }
+  } finally {
+    await persistence.close()
+    await h.host.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  }
+})
 
 it('review: a genuinely forked child narrowed from a full-access parent has no automatic permission', async () => {
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-full-access-child-')))

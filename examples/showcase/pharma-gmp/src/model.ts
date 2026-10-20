@@ -36,6 +36,7 @@ export type Batch = {
   certificate: Certificate | null
 }
 export type Certificate = {
+  confirmationMode?: string
   id: string
   batch: string
   at: string
@@ -86,6 +87,7 @@ export type Sample = {
   evidence: string
 }
 export type Audit = {
+  confirmationMode?: string
   signatureMeaning?: string
   id: string
   at: string

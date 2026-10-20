@@ -555,6 +555,32 @@ describe('current profile authority', () => {
         first.set('accepted', true)
         first.set('outbox', { terminal: 'done' })
       })
+      let active = true
+      const admission = {
+        verify: async () => {},
+        assertActive() {
+          if (!active) throw new Error('authority revoked')
+        },
+      }
+      expect(() =>
+        first.transaction(() => {
+          first.set('accepted', false)
+          active = false
+        }, admission),
+      ).toThrow('authority revoked')
+      expect(first.get('accepted')).toBe(true)
+      expect(() =>
+        first.transaction(() => {
+          first.set('accepted', false)
+          try {
+            first.transaction(() => first.set('escaped-admission', true), admission)
+          } catch {
+            /* A refused nested admission must also roll back the outer write. */
+          }
+        }),
+      ).toThrow()
+      expect(first.get('accepted')).toBe(true)
+      expect(first.get('escaped-admission')).toBeUndefined()
       expect(second.get('accepted')).toBeUndefined()
       expect(first.scan({ prefix: '', limit: 1 })).toMatchObject({
         rows: [{ key: 'accepted', value: true }],

@@ -18,6 +18,7 @@ import {
   type DecisionResponse,
   inspectJsonData,
   isPermissionPurpose,
+  samePermissionContext,
   validateActor,
   validateAgainst,
 } from '@agnes/protocol'
@@ -40,7 +41,10 @@ export interface DecisionAuthority {
   readonly permissionContext?: import('@agnes/protocol').PermissionContext | undefined
   readonly ttlMs: number
   readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
-  readonly log: Pick<SessionLogImpl, 'append' | 'observeCommitted'>
+  readonly log: Pick<
+    SessionLogImpl,
+    'append' | 'observeCommitted' | 'claimLease' | 'leaseRemainingMs' | 'faulted'
+  >
   readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
   clock(): number
   id(): string
@@ -80,6 +84,7 @@ export class DecisionCommands {
     )
   }
   private readonly waiters = new Set<() => void>()
+  private readonly automaticSkips = new Set<string>()
   /** Decision waits in flight; a run blocked on one is waiting on a person, not stuck. */
   get waiting(): number {
     return this.waiters.size
@@ -145,22 +150,43 @@ export class DecisionCommands {
     executionCheck: () => void = () => undefined,
   ): Promise<void> {
     const cell = this.s.readDecisions().get(value.handle.id)
-    await this.s.log.append([this.event(value)], {
-      expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
-      beforeCommit: recheck,
-      commitCheck: () => {
-        executionCheck()
-        if (!value.invalidation && value.result?.reason === 'answered' && value.result.code === 'full-access')
-          this.checkAuthorization(value)
-        if (
-          !value.invalidation &&
-          (value.result?.reason === 'answered' || value.consumption) &&
-          this.due(value)
-        )
-          fail('DEADLINE')
-        if (value.result?.reason === 'answered' && !value.invalidation && this.s.cancelled) fail('STOPPED')
+    const event = this.event(value)
+    const { register: _register, ...checkpoint } = event
+    await this.s.log.append(
+      [
+        event,
+        ...(value.consumption && !cell?.value.consumption
+          ? [
+              {
+                ...checkpoint,
+                type: 'x/core/decision-checkpoint',
+                data: { handle: value.handle, operationId: value.request.operationId },
+                ignorable: true as const,
+              },
+            ]
+          : []),
+      ],
+      {
+        expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
+        beforeCommit: recheck,
+        commitCheck: () => {
+          executionCheck()
+          if (
+            !value.invalidation &&
+            value.result?.reason === 'answered' &&
+            value.result.code === 'full-access'
+          )
+            this.checkAuthorization(value)
+          if (
+            !value.invalidation &&
+            (value.result?.reason === 'answered' || value.consumption) &&
+            this.due(value)
+          )
+            fail('DEADLINE')
+          if (value.result?.reason === 'answered' && !value.invalidation && this.s.cancelled) fail('STOPPED')
+        },
       },
-    })
+    )
   }
   private async automatic(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
     if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
@@ -170,13 +196,20 @@ export class DecisionCommands {
       value.request.spec.purpose,
       value.request.spec.options,
       value.request.category === 'permission' ? 'permission' : 'question',
+      value.request.spec.presentation,
     )
-    if (!answer) return value
+    if (!answer) {
+      await this.recordAutomaticSkip(value, 'ambiguous-business-confirmation', source)
+      return value
+    }
     if (
       value.request.spec.responseSchema &&
-      compilePluginConfig(value.request.spec.responseSchema)(null).length
-    )
-      fail('RESPONSE_SCHEMA')
+      compilePluginConfig(value.request.spec.responseSchema)(answer.responseValue ?? null).length
+    ) {
+      if (value.request.spec.purpose !== 'business.confirm') fail('RESPONSE_SCHEMA')
+      await this.recordAutomaticSkip(value, 'response-schema', source)
+      return value
+    }
     const next: DecisionSnapshot = {
       ...value,
       revision: value.revision + 1,
@@ -185,7 +218,7 @@ export class DecisionCommands {
         code: answer.reason,
         authorization: this.authorizationBinding(),
         at: new Date(this.s.clock()).toISOString(),
-        response: { option: answer.verdict, value: null },
+        response: { option: answer.verdict, value: answer.responseValue ?? null },
         answeredBy: answer.answeredBy,
       },
     }
@@ -198,6 +231,31 @@ export class DecisionCommands {
       },
     )
     return next
+  }
+  private async recordAutomaticSkip(value: DecisionSnapshot, reason: string, source?: DecisionSource) {
+    const context = this.s.permissionContext
+    if (context?.policy !== 'full-access' || value.request.spec.purpose !== 'business.confirm') return
+    const key = `${context.sessionId}:${context.epoch}:${value.handle.id}`
+    if (this.automaticSkips.has(key)) return
+    const { register: _register, ...event } = this.event(value)
+    await this.s.log.append(
+      [
+        {
+          ...event,
+          type: 'x/core/decision-automatic-skipped',
+          ignorable: true,
+          data: { decisionId: value.handle.id, subjectDigest: value.request.subjectDigest, reason },
+        },
+      ],
+      {
+        beforeCommit: () => this.live(source),
+        commitCheck: () => {
+          this.live(source)
+          this.execution(value.handle.id)
+        },
+      },
+    )
+    this.automaticSkips.add(key)
   }
   private authorizationBinding() {
     const context = this.s.permissionContext
@@ -294,6 +352,7 @@ export class DecisionCommands {
       get: (handle: DecisionHandle) => this.get(handle, source),
       wait: (handle: DecisionHandle, options?: { readonly signal?: AbortSignal }) =>
         this.wait(handle, source, options?.signal),
+      admit: (handle: DecisionHandle) => this.admit(handle, source),
     })
   }
   private request(input: DecisionSpec, source: DecisionSource): Promise<DecisionHandle> {
@@ -359,16 +418,28 @@ export class DecisionCommands {
         spec.purpose,
         spec.options,
         source.permission ? 'permission' : 'question',
+        spec.presentation,
       )
-      if (automatic) {
-        if (spec.responseSchema && compilePluginConfig(spec.responseSchema)(null).length)
-          fail('RESPONSE_SCHEMA')
+      if (
+        automatic &&
+        spec.purpose !== 'business.confirm' &&
+        spec.responseSchema &&
+        compilePluginConfig(spec.responseSchema)(null).length
+      )
+        fail('RESPONSE_SCHEMA')
+      if (
+        automatic &&
+        !(
+          spec.responseSchema &&
+          compilePluginConfig(spec.responseSchema)(automatic.responseValue ?? null).length
+        )
+      ) {
         value.result = {
           reason: 'answered',
           code: automatic.reason,
           authorization: this.authorizationBinding(),
           at: new Date(now).toISOString(),
-          response: { option: automatic.verdict, value: null },
+          response: { option: automatic.verdict, value: automatic.responseValue ?? null },
           answeredBy: automatic.answeredBy,
         }
       }
@@ -380,8 +451,84 @@ export class DecisionCommands {
           this.execution()
         },
       )
+      if (!value.result)
+        await this.recordAutomaticSkip(
+          value,
+          automatic ? 'response-schema' : 'ambiguous-business-confirmation',
+          source,
+        )
       this.requestEpochs.set(handle.id, this.epoch)
       return detached(handle)
+    })
+  }
+  /** One decision, one consumption, and a private lease checked inside the effect transaction. */
+  private async admit(handle: DecisionHandle, source: DecisionSource) {
+    const context = this.s.permissionContext
+    const value = await this.s.transact(async () => {
+      this.live(source)
+      const value = await this.expire(this.read(handle, source), source)
+      if (value.result?.reason !== 'answered' || value.result.response.option !== 'allowed-once')
+        fail('NOT_CONSUMABLE')
+      this.consumptionEvents([handle], source, null)
+      const consumed: DecisionSnapshot = {
+        ...value,
+        revision: value.revision + 1,
+        consumption: {
+          at: new Date(this.s.clock()).toISOString(),
+          operationId: source.operationId,
+          effectId: null,
+        },
+      }
+      // The normal write path rechecks epoch, deadline and cancellation at the ledger commit.
+      await this.write(
+        consumed,
+        () => this.live(source),
+        () => {
+          this.live(source)
+          this.execution(handle.id)
+        },
+      )
+      return value
+    })
+    let revoked = false
+    const assertActive = () => {
+      try {
+        this.live(source)
+        this.execution(handle.id)
+        const current = this.read(handle, source)
+        this.checkAuthorization(current)
+        if (
+          revoked ||
+          this.s.log.faulted ||
+          this.s.log.leaseRemainingMs() <= 0 ||
+          this.s.cancelled ||
+          this.due(current) ||
+          current.invalidation ||
+          !current.consumption ||
+          canonicalJson(current.result) !== canonicalJson(value.result) ||
+          (value.result?.reason === 'answered' &&
+            value.result.code === 'full-access' &&
+            (!context || !samePermissionContext(context, this.s.permissionContext)))
+        )
+          fail('AUTHORITY_REVOKED')
+      } catch (error) {
+        revoked = true
+        throw error
+      }
+    }
+    assertActive()
+    return Object.freeze({
+      assertActive,
+      verify: async () => {
+        try {
+          assertActive()
+          await this.s.log.claimLease()
+          assertActive()
+        } catch (error) {
+          revoked = true
+          throw error
+        }
+      },
     })
   }
   /** Backend withdrawal never manufactures a human refusal or effect receipt. */

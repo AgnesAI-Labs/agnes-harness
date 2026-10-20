@@ -24,6 +24,7 @@ const certificate = obj({
   batch: id,
   at: text,
   signer: text,
+  confirmationMode: Type.Optional(text),
   meaning: text,
   approvalId: text,
   subjectRevision: text,
@@ -96,6 +97,7 @@ const deviation = obj({
 })
 const audit = obj({
   signatureMeaning: Type.Optional(text),
+  confirmationMode: Type.Optional(text),
   id,
   at: text,
   actor: text,
@@ -142,7 +144,14 @@ export const dossierSchema = obj({
   findings: list(findingSchema),
   evidence: obj({
     recordApprovals: list(
-      obj({ action: text, approvalId: text, recordedBy: text, recordedAt: text, reviewedRevision: revision }),
+      obj({
+        action: text,
+        approvalId: text,
+        recordedBy: text,
+        recordedAt: text,
+        reviewedRevision: revision,
+        confirmationMode: Type.Optional(text),
+      }),
     ),
     deviations: list(deviation),
     retests: list(measurement),
@@ -184,6 +193,7 @@ export const receiptSchema = obj({
     obj({
       decisionId: text,
       signer: text,
+      confirmationMode: Type.Optional(text),
       signedAt: text,
       reviewedRevision: revision,
       purpose: Type.Literal('business.confirm'),

@@ -17,9 +17,9 @@
 
 ## 自然业务对话 / Natural business conversation
 
-智能体自行选择工具；操作者在宿主审阅精确对象与版本后签署。业务签名通过 `business.confirm`，在 full-access 下仍问真人，工具权限自动批准不等于质量决策。
+智能体自行选择工具；标准及工作区写入权限由操作者在宿主审阅精确对象与版本后签署。完全访问下 `business.confirm` 代表会话真人自动提交声明的签名值，不弹卡片；回执及关闭审计注明“完全访问下自动确认”。提交前收窄权限仍阻止写入。
 
-The agent chooses tools. The operator signs the exact target/revision in Host. `business.confirm` remains human-only under full access; automatic tool permission is no quality disposition.
+The agent chooses tools. With standard or workspace-write permission the operator signs the exact target/revision in Host. Full access automatically submits the declared `business.confirm` value for the human principal, without a card. Receipts and closure audits say “auto-confirmed under full access”. Narrowing permission before commit still blocks the write.
 
 1. **试验异常诊断员**：“TVAC 冷平台那次电流越限是怎么回事？影响哪些需求和器件？给我证据与替代解释，先别批准任何处置。” / **Investigator**: “What happened with the TVAC cold-plateau current excursion? Which requirements and parts are affected? Show evidence and alternative explanations before any disposition.”
 2. **MRB 助理**：“比较 NCR-018 的五种处置方案。请起草返工：隔离 L2609-B，按受控图样恢复 PVD-011/012/013 并复验。保存草案，先不要批准。” / **MRB**: “Compare the five NCR-018 dispositions. Draft rework: quarantine L2609-B, restore PVD-011/012/013 to the controlled drawing and re-verify. Save the draft; do not approve.”

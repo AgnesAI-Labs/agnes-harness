@@ -52,7 +52,10 @@ export function report(s: State, kind: 'zeroing' | 'digest', locale: 'zh-CN' | '
     `## ${zh ? '审计与责任' : 'Audit and accountability'}`,
     ...s.audit
       .slice(-12)
-      .map((e) => `- r${e.revision} ${e.at} ${e.action} ${e.subject}; Host approval: ${e.approval ?? '—'}`),
+      .map(
+        (e) =>
+          `- r${e.revision} ${e.at} ${e.action} ${e.subject}; Host approval: ${e.approval ?? '—'}; ${e.signer ?? '—'}; ${e.confirmationMode === 'auto-confirmed under full access' ? (zh ? '完全访问下自动确认' : 'auto-confirmed under full access') : e.confirmationMode === 'manual' ? (zh ? '人工签署' : 'Manual signature') : '—'}`,
+      ),
     '',
     'ECSS-Q-ST-10/20 series; ECSS-Q-ST-10-09C; AS9100D §8.3.6 / §8.5.2 / §8.7 / §10.2; NASA-STD-8739 workmanship concepts; NPR 7120.5 lifecycle reviews; GJB 9001C; 双五条归零. Conceptual demonstration, no certification claim.',
   ]

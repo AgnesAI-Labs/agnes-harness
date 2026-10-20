@@ -25,19 +25,21 @@ export function ownedStore(
   }
   let depth = 0
   let failed = false
-  const transaction = <T>(work: () => T): T => {
+  const transaction: OwnedStore['transaction'] = (work, admission) => {
     const run = () => {
       assertLive()
       if (!depth) failed = false
       const scope = { active: true }
       depth++
       try {
+        admission?.assertActive()
         const result = scopes.run(scope, work)
         if (result && typeof (result as { then?: unknown }).then === 'function') {
           void Promise.resolve(result).catch(() => undefined)
           throw rpcError('INVALID_PARAMS')
         }
         assertLive()
+        admission?.assertActive()
         if (failed) throw rpcError('INVALID_PARAMS')
         return result
       } catch (error) {

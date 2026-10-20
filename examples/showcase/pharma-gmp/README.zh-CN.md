@@ -40,7 +40,7 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes-showcase/pharma-gmp ty
 
 ## 业务签名
 
-质量记录与批次放行属于业务签署。工具通过公开决策端口以 `business.confirm` 请求签名，绑定精确对象、版本、证据和签名含义，验证宿主记录的真人回答；系统或模型回答、拒绝、取消、失效均不改变业务状态。即使在 full-access 下也需人工签名。普通工具权限仍由预设控制：非 full-access 按策略询问，full-access 的权限自动批准不代表业务签署。页面 effect 继续使用宿主人工确认与修订校验。
+质量记录与批次放行属于业务签署。工具以 `business.confirm` 绑定精确参数、对象、版本、证据及签名含义。完全访问下，宿主代表选择该权限的会话真人提交声明的批准值，不出现待审卡片；回执、审计及放行证书／关闭记录明确标注 **完全访问下自动确认**，不能冒充人工点击或模型签名。其他权限保留人工签署、拒绝、取消和过期语义。宿主单次消费原决策，私有凭证在存储事务内复核当前 epoch、取消及有效期，提交前收窄权限会阻止写入。批准合同缺失或歧义时仍请求人工。页面 effect 保留宿主人工确认与修订校验。
 
 真实模型投资者演示：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs pharma-gmp --real`，外层使用 heavy-lock 和 web-gate-lock，按任务要求从 keychain 命令级注入密钥。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
 

@@ -197,7 +197,11 @@ export type DecisionInput = {
   expectedRevision: number
 }
 type Approval =
-  | (NonNullable<import('@agnes/extension-api').ToolContext['approval']> & { signedMeaning?: string })
+  | (NonNullable<import('@agnes/extension-api').ToolContext['approval']> & {
+      signedMeaning?: string
+      confirmationMode?: string
+      admission?: NonNullable<Parameters<OwnedStore['transaction']>[1]>
+    })
   | undefined
 function update(
   store: OwnedStore | undefined,
@@ -220,13 +224,15 @@ function update(
       action,
       subject,
       approval: approval?.requestId ?? null,
+      ...(approval ? { signer: approval.answeredBy.id } : {}),
+      ...(approval ? { confirmationMode: approval.confirmationMode ?? 'manual' } : {}),
       ...(approval?.signedMeaning ? { signatureMeaning: approval.signedMeaning } : {}),
       revision: s.revision,
     }
     s.audit.push(audit)
     persist(store, s)
     return { revision: s.revision, audit }
-  })
+  }, approval?.admission)
 }
 export function draft(store: OwnedStore | undefined, input: DraftInput) {
   return update(store, input.expectedRevision, 'mrb-draft', input.ncrId, undefined, (s) => {
@@ -306,6 +312,14 @@ export function decide(store: OwnedStore | undefined, input: DecisionInput, appr
       if (!z || z.status === 'closed' || z.criteria.some((c) => !c.accepted || !c.evidence.length))
         throw new Error('双五条证据不完整，不能归零 / Double-five evidence incomplete; closure refused')
       z.status = 'closed'
+      z.closure = {
+        decisionId: approval.requestId,
+        signer: approval.answeredBy.id,
+        confirmationMode: approval.confirmationMode ?? 'manual',
+        ...(approval.signedMeaning ? { meaning: approval.signedMeaning } : {}),
+        reviewedRevision: input.expectedRevision,
+        subjectRevision: approval.subjectRevision,
+      }
     }
   })
 }

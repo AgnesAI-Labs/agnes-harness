@@ -1,6 +1,11 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Event } from '@agnes/core-common/types'
-import { type DecisionSnapshot, inspectJsonData, validateAgainst } from '@agnes/protocol'
+import {
+  automaticPermissionDecision,
+  type DecisionSnapshot,
+  inspectJsonData,
+  validateAgainst,
+} from '@agnes/protocol'
 import { DecisionSnapshot as SnapshotSchema } from '@agnes/protocol/gen/session-v1'
 
 function fail(message: string): never {
@@ -27,11 +32,26 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
     fail('invalid deadline')
   if (decisionSubjectDigest(next.request.spec.subject) !== next.request.subjectDigest) fail('subject digest')
   const automatic = next.result?.reason === 'answered' && next.result.code === 'full-access'
+  const business =
+    automatic && next.result?.reason === 'answered' && next.request.spec.purpose === 'business.confirm'
+      ? automaticPermissionDecision(
+          { policy: 'full-access', actor: next.result.answeredBy },
+          next.request.spec.purpose,
+          next.request.spec.options,
+          'question',
+          next.request.spec.presentation,
+        )
+      : undefined
   if (
     automatic &&
     (next.result?.reason !== 'answered' ||
       next.result.response.option !== 'allowed-once' ||
-      next.result.answeredBy.role !== 'system' ||
+      (next.request.spec.purpose === 'business.confirm'
+        ? !business ||
+          next.result.response.value !== business.responseValue ||
+          !next.result.authorization ||
+          next.result.answeredBy.attrs.confirmationMode !== 'auto-confirmed under full access'
+        : next.result.answeredBy.role !== 'system') ||
       next.result.answeredBy.attrs.permissionPolicy !== 'full-access' ||
       next.answerCommand !== null)
   )

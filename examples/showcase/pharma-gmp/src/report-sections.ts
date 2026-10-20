@@ -57,7 +57,7 @@ export function dossierSections(p: Plant, id: string, locale: 'zh-CN' | 'en') {
       .filter((a) => a.record === id)
       .map(
         (a) =>
-          `- ${a.id} ${a.at} ${a.actor}: ${a.action}; r${a.fromRevision}→r${a.toRevision}; approval=${a.approval ?? '—'}; session=${a.session ?? '—'}`,
+          `- ${a.id} ${a.at} ${a.actor}: ${a.action}; r${a.fromRevision}→r${a.toRevision}; approval=${a.approval ?? '—'}; session=${a.session ?? '—'}; ${a.confirmationMode === 'auto-confirmed under full access' ? t('完全访问下自动确认', 'auto-confirmed under full access') : a.confirmationMode === 'manual' ? t('人工签署', 'Manual signature') : '—'}`,
       ),
   ]
 }

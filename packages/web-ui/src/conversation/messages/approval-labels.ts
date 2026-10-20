@@ -42,6 +42,9 @@ function reconcileStatus(node: ApprovalNode, t: Translate): string | undefined {
 }
 
 export const approvalStatus = (node: ApprovalNode, t: Translate) =>
+  (node.purpose === 'business.confirm' && node.decision?.reason === 'full-access'
+    ? `${t('timeline.reason.fullAccessBusiness')} · ${node.decision.byLabel ?? ''}`
+    : undefined) ??
   reconcileStatus(node, t) ??
   ((node.state === 'decided' || (node.state === 'expired' && node.decision?.reason === 'stopped')) &&
   node.decision

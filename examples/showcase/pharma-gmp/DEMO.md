@@ -19,9 +19,9 @@ Scenario: fictional Sableleaf OSD, 2024-10-20, B-2410-017. All evidence/people a
 
 ## 自然业务对话 / Natural business conversation
 
-按以下顺序提问；智能体自行选择工具、读取证据和当前版本。每次签名均由演示操作者在宿主审阅。`full-access` 只影响工具权限，`business.confirm` 业务签名在所有预设下都需要真人；拒绝、取消与系统回答不能签署。
+按以下顺序提问；智能体自行选择工具、读取证据和当前版本。标准及工作区写入权限由操作者在宿主审阅签署；完全访问下，宿主代表会话真人自动提交精确签名值，记录“完全访问下自动确认”，不弹签名卡片。拒绝、取消、过期或提交前撤权均不能写入。
 
-Ask in sequence. The agent chooses tools and reads evidence/current revisions. The operator reviews each Host signature. Full access affects tool permission only; `business.confirm` always needs a human. Rejection, cancellation and system answers cannot sign.
+Ask in sequence. The agent chooses tools and reads evidence/current revisions. With standard or workspace-write permission the operator reviews each Host signature. Full access submits the exact declared signature for the human principal without a pending card, recorded as “auto-confirmed under full access”. Rejection, cancellation, expiry and narrowing before commit cannot write.
 
 1. **调查员**：“B-2410-017 的干燥 LOD 超限了，同房间还有 EM 警戒，帮我调查一下，给出 CAPA 建议并说明其他批次是否受影响。先不要改档案。” / **Investigator**: “B-2410-017 has a drying LOD excursion and a same-room EM alert. Investigate, suggest CAPA and assess other batches; keep the records unchanged.”
 2. **质量中枢**：“请登记这次调查。我们在隔离演示中使用合成证据；每次变更都让我审阅签署。” / **Quality Hub**: “Record this investigation using synthetic evidence in this isolated demo. Let me review and sign each change.”

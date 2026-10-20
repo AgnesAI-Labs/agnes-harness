@@ -51,7 +51,7 @@ scan(input: { prefix: string; limit: number; cursor?: string }): {
 get(key: string): JsonValue | undefined
 set(key: string, value: JsonValue): void
 delete(key: string): void
-transaction<T>(work: () => T): T
+transaction<T>(work: () => T, admission?: import('@agnes/protocol').PermissionEffectAdmission): T
 ```
 
 Browser profile pages / 浏览器 profile 页面:

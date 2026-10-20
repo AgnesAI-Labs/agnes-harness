@@ -189,8 +189,11 @@ it('shares service/tool state, persists across Host restart, and refuses missing
   }
 })
 it('requires real Core human approval; preserves original OOS through CAPA/retest and binds the certificate to the actual signer', async () => {
-  for (const base of ['standard', 'full-access'])
-    for (const verdict of ['rejected', 'allowed-once'] as const) {
+  for (const base of ['standard', 'workspace-write', 'full-access'])
+    for (const verdict of (base === 'full-access' ? ['allowed-once'] : ['rejected', 'allowed-once']) as (
+      | 'rejected'
+      | 'allowed-once'
+    )[]) {
       const ordinaryReviews: string[] = []
       const kit = await createAuthorTestkit({
         plugin: main,
@@ -199,6 +202,7 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
         capabilities: { store: true },
         preset: base,
         presets: {
+          'workspace-write': { name: 'workspace-write', extends: 'standard' },
           'full-access': {
             name: 'full-access',
             extends: 'standard',
@@ -233,6 +237,7 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
                   snapshot.invalidation
                 )
                   continue
+                expect(base).not.toBe('full-access')
                 expect(snapshot.request.spec.options).toEqual(['allowed-once', 'rejected'])
                 const view = snapshot.request.spec.presentation?.['zh-CN']
                 expect(view?.fields.find((f) => f.label === '签名含义')?.value).toBe(view?.responseValue)
@@ -266,7 +271,7 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           meaning: SIGNATURE_MEANING,
         })
         expect(blocked.isError).toBe(true)
-        expect(ordinaryReviews.length > 0).toBe(base === 'standard')
+        expect(ordinaryReviews.length > 0).toBe(base !== 'full-access')
         if (verdict === 'rejected') {
           const refused = await invoke('pharma_record', { action: 'investigate', batch, expectedRevision: 0 })
           expect(refused.isError).toBe(true)
@@ -294,7 +299,12 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           })
           expect(changed.isError, JSON.stringify(changed)).not.toBe(true)
           expect(changed.structured).toMatchObject({
-            signature: { signer: 'human.qa', purpose: 'business.confirm', reviewedRevision: revision },
+            signature: {
+              signer: base === 'full-access' ? 'u' : 'human.qa',
+              purpose: 'business.confirm',
+              reviewedRevision: revision,
+              confirmationMode: base === 'full-access' ? 'auto-confirmed under full access' : 'manual',
+            },
           })
           revision++
         }
@@ -364,9 +374,13 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
           revision: 6,
           dossier: {
             certificate: {
-              signer: 'human.qa',
+              signer: base === 'full-access' ? 'u' : 'human.qa',
+              confirmationMode: base === 'full-access' ? 'auto-confirmed under full access' : 'manual',
               dossierRevision: 5,
-              meaning: '我已审核完整质量档案，批准本批放行。',
+              meaning:
+                base === 'full-access'
+                  ? 'I approve this batch for release after reviewing the complete quality dossier.'
+                  : '我已审核完整质量档案，批准本批放行。',
             },
           },
         })
@@ -383,6 +397,18 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
             .isError,
         ).toBe(true)
         await s.assertApproval('allowed-once')
+        const signatures = (await s.decisions()).filter((d) => d.request.spec.purpose === 'business.confirm')
+        expect(signatures).toHaveLength(6)
+        expect(signatures.every((d) => d.consumption && !d.invalidation)).toBe(true)
+        if (base === 'full-access')
+          expect(
+            signatures.every(
+              (d) =>
+                d.result?.reason === 'answered' &&
+                d.result.code === 'full-access' &&
+                d.result.answeredBy.role !== 'system',
+            ),
+          ).toBe(true)
         expect((await s.facts()).some((e) => e.type === 'decision/state')).toBe(true)
       } finally {
         await kit.dispose()
