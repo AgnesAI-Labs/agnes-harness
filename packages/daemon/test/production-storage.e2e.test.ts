@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -191,6 +192,9 @@ describe('production supervisor storage', () => {
     })
     await seeded.release(productionSession, 'fact-fixture')
     await seeded.close()
+    // Every start keeps exactly one private managed workspace for chats under the data directory.
+    const chats = join(realpathSync(dir), 'chats')
+    const chatsOnly = { items: [{ path: chats, kind: 'chats', revision: 1 }] }
     const supervisor = await startProductionSupervisor(o)
     const rpc = await client(supervisor.socketPath)
     try {
@@ -211,6 +215,9 @@ describe('production supervisor storage', () => {
       await expect(
         rpc.call(3, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: true })
+      if (createPlatform().snapshot().os === 'win32') expect(hasPrivateDaclSync(chats)).toBe(true)
+      else expect(statSync(chats).mode & 0o777).toBe(0o700)
+      await expect(rpc.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
     } finally {
       rpc.close()
       await supervisor.close()
@@ -226,6 +233,7 @@ describe('production supervisor storage', () => {
       await expect(
         retry.call(2, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: false })
+      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
       await expect(
         retry.call(3, '_agnes/v1/session.factChain', {
           sessionId: productionSession,

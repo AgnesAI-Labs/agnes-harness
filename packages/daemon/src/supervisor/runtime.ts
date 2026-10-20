@@ -103,12 +103,8 @@ import {
 } from '@agnes/daemon-foundation/storage/source-auth-rotation'
 import type { TableHandle, Tables } from '@agnes/daemon-foundation/storage/table'
 import {
-  MemoryWorkspaceBindings,
-  MemoryWorkspaceStore,
   type WorkspaceBindingEnvelope,
-  WorkspaceBindingIndex,
-  WorkspaceCatalog,
-  WorkspaceIndex,
+  type WorkspaceCatalog,
   workspaceIdFor,
 } from '@agnes/daemon-foundation/storage/workspaces'
 import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
@@ -166,7 +162,6 @@ import {
   readFactChainBinding,
   resolveComposition,
   resolveFileSecretsDirectory,
-  resolveWorkspaceDirectory,
   type ScanRead,
   sessionsDbPath,
 } from '@agnes/host'
@@ -262,6 +257,7 @@ import { adaptHostTables, persistResolvedProfile } from './storage-adapters.js'
 import { webhookSessions } from './webhook-sessions.js'
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
+import { openWorkspaceCatalog } from './workspace-catalog.js'
 import { PACKAGE_MANAGER_VERSION, workspaceDeployments } from './workspace-deployments.js'
 import { listenWebSocket } from './ws.js'
 
@@ -1030,19 +1026,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         : o.artifactReadAuthority
           ? composeProductionArtifactRead(o.config.dataDir, o.artifactReadAuthority)
           : undefined)
-    const workspaceCatalog = new WorkspaceCatalog(
-      jobTables ? new WorkspaceIndex(jobTables.table('workspace_registry')) : new MemoryWorkspaceStore(),
-      workspaces,
-      resolveWorkspaceDirectory,
+    const workspaceCatalog = await openWorkspaceCatalog({
+      dataDir: o.config.dataDir,
+      tables: jobTables,
+      sessions: workspaces,
       clock,
-      jobTables
-        ? new WorkspaceBindingIndex(jobTables.table('workspace_bindings'))
-        : new MemoryWorkspaceBindings(),
-    )
+      workspaceRoot: o.workspaceRoot,
+    })
     workspaceCatalogRef = workspaceCatalog
-    // The CLI/launcher supplied startup root is one of D44's two authority sources. Register it
-    // once before resource-control resolves its default workspace; ambient cwd never grants this.
-    if (o.workspaceRoot) await workspaceCatalog.add(o.workspaceRoot)
     const reclaimStore =
       o.reclaim ??
       (o.tables ? tableReclaimStore(o.tables.table('writer_claims'), o.tables.table('registers')) : undefined)

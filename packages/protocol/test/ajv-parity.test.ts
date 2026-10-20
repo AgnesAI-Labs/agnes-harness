@@ -3965,9 +3965,18 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       lastUsedAt: '2026-09-13T00:00:00.000Z',
       sessionCount: 2,
       available: true,
+      kind: 'chats',
     },
     invalid: [
       { path: '', name: 'project', lastUsedAt: null, sessionCount: 0, available: true },
+      {
+        path: '/workspace/project',
+        name: 'project',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+        kind: 'repo',
+      },
       {
         path: '/workspace/project',
         name: 'project',

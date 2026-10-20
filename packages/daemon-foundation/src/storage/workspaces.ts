@@ -11,7 +11,10 @@ export function workspaceIdFor(path: string): string {
   return createHash('sha256').update(path, 'utf8').digest('hex')
 }
 
-type WorkspaceRow = Omit<WorkspaceEntry, 'sessionCount' | 'available' | 'workspaceId' | 'revision'> & {
+type WorkspaceRow = Omit<
+  WorkspaceEntry,
+  'sessionCount' | 'available' | 'workspaceId' | 'revision' | 'kind'
+> & {
   workspaceId: string
   revision: number
 }
@@ -270,6 +273,8 @@ export class WorkspaceCatalog {
     private readonly resolve: WorkspaceDirectoryResolver,
     private readonly clock: () => number = () => Date.now(),
     private readonly bindings: WorkspaceBindingStore = new MemoryWorkspaceBindings(),
+    /** Canonical daemon-managed root for chats; listed as `kind: 'chats'` and never removable. */
+    private readonly chatsRoot?: string,
   ) {
     this.usedSessionKeys = new Set(bindings.keys())
   }
@@ -400,6 +405,11 @@ export class WorkspaceCatalog {
   ): { removed: boolean; archivedSessionCount: number } {
     const row = this.store.rows().find((candidate) => candidate.workspaceId === workspaceId)
     if (!row) return { removed: false, archivedSessionCount: 0 }
+    if (row.path === this.chatsRoot)
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'WORKSPACE_MANAGED',
+        reason: 'The chats workspace is managed by the daemon and cannot be removed.',
+      })
     if (expectedRevision !== undefined && expectedRevision !== row.revision)
       throw rpcError('SEMANTIC_REJECTED', { code: 'WORKSPACE_STALE', reason: 'workspace revision changed' })
     const keys = this.sessions.keys().filter((key) => this.sessions.get(key) === row.path)
@@ -461,6 +471,7 @@ export class WorkspaceCatalog {
           .at(-1) ?? null,
       sessionCount: fromSessions?.count ?? 0,
       available,
+      ...(row.path === this.chatsRoot ? { kind: 'chats' as const } : {}),
     }
   }
 

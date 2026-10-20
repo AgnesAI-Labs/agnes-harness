@@ -183,6 +183,36 @@ describe('WorkspaceCatalog', () => {
     })
   })
 
+  it('marks the managed chats root and refuses to remove it without archiving', async () => {
+    const sessions = new MemorySessionWorkspaces()
+    const catalog = new WorkspaceCatalog(
+      new MemoryWorkspaceStore(),
+      sessions,
+      resolver(new Set(['/data/chats', '/repo/a'])),
+      () => 0,
+      new MemoryWorkspaceBindings(),
+      '/data/chats',
+    )
+    const chats = await catalog.add('/data/chats')
+    await catalog.add('/repo/a')
+    await catalog.authorizeAndBind('chat', '/data/chats')
+    expect(chats.kind).toBe('chats')
+    const { items } = await catalog.list()
+    expect(items.map((item) => [item.path, item.kind])).toEqual([
+      ['/data/chats', 'chats'],
+      ['/repo/a', undefined],
+    ])
+    const archived: string[] = []
+    expect(() =>
+      catalog.remove(chats.workspaceId ?? '', undefined, {
+        running: () => false,
+        archive: (id) => archived.push(id),
+      }),
+    ).toThrow(expect.objectContaining({ data: expect.objectContaining({ code: 'WORKSPACE_MANAGED' }) }))
+    expect(archived).toEqual([])
+    expect((await catalog.list()).items).toHaveLength(2)
+  })
+
   it('keeps legacy history out of an empty authority registry', async () => {
     const sessions = new MemorySessionWorkspaces()
     sessions.put('z-first-key', '/repo/a')
