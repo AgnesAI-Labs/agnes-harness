@@ -64,38 +64,47 @@ test('showcase full access business signature records the human principal withou
     await page.evaluate(() => (window as typeof window & { businessPrompts?: number }).businessPrompts),
   ).toBe(0)
   for (const locale of ['en', 'zh-CN']) {
-    await preferences(page, locale)
-    await page.reload()
-    const current = page.getByTestId('conversation-turn').last()
-    const toggle = current.getByTestId('turn-process-toggle')
-    await expect(toggle).toBeVisible()
-    if (!(await toggle.evaluate((el) => el.parentElement?.getAttribute('data-open') === 'true')))
-      await toggle.click()
-    await expandActivityGroups(current)
-    await expect(
-      page
-        .getByTestId('approval-step')
-        .filter({ hasText: locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认' }),
-    ).toContainText(signature.result.answeredBy.id)
-    await expect(page.getByTestId('approval-card')).toHaveCount(0)
-    await page.screenshot({
-      path: info.outputPath(`business-full-access-${locale}.png`),
-      fullPage: true,
-      animations: 'disabled',
-    })
-    await page.goto(
-      `${runtime.url}/?page=pharma-audit&pagePackage=${encodeURIComponent('@agnes-showcase/pharma-gmp')}`,
-    )
-    await expect(page.locator('[data-pharma-page="audit"]')).toContainText(
-      locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认',
-    )
-    await expect(page.locator('[data-pharma-page="audit"]')).toContainText(signature.result.answeredBy.id)
-    await page.screenshot({
-      path: info.outputPath(`business-audit-${locale}.png`),
-      fullPage: true,
-      animations: 'disabled',
-    })
-    await page.goto(`${runtime.url}/?session=${encodeURIComponent(session.id)}`)
+    const localized = await page.context().newPage()
+    const errors: string[] = []
+    localized.on('pageerror', (error) => errors.push(error.message))
+    try {
+      await preferences(localized, locale)
+      await localized.goto(`${runtime.url}/?session=${encodeURIComponent(session.id)}`)
+      const current = localized.getByTestId('conversation-turn').last()
+      const toggle = current.getByTestId('turn-process-toggle')
+      await expect(toggle).toBeVisible()
+      if (!(await toggle.evaluate((el) => el.parentElement?.getAttribute('data-open') === 'true')))
+        await toggle.click()
+      await expandActivityGroups(current)
+      await expect(
+        localized
+          .getByTestId('approval-step')
+          .filter({ hasText: locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认' }),
+      ).toContainText(signature.result.answeredBy.id)
+      await expect(localized.getByTestId('approval-card')).toHaveCount(0)
+      await localized.screenshot({
+        path: info.outputPath(`business-full-access-${locale}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      })
+      await localized.goto(
+        `${runtime.url}/?page=pharma-audit&pagePackage=${encodeURIComponent('@agnes-showcase/pharma-gmp')}`,
+      )
+      await expect(localized.locator('[data-pharma-page="audit"]')).toContainText(
+        locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认',
+      )
+      await expect(localized.locator('[data-pharma-page="audit"]')).toContainText(
+        signature.result.answeredBy.id,
+      )
+      await localized.screenshot({
+        path: info.outputPath(`business-audit-${locale}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      })
+      expect(errors).toEqual([])
+    } finally {
+      await localized.close()
+    }
   }
 })
 
