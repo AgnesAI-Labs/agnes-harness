@@ -143,6 +143,6 @@ without a pending card.
 **Evidence & reports** shows session receipts with provenance and report-file links. Approval still
 means implementing a disposition with hardware held for verification; it does not claim a passing test.
 
-Scripted browser acceptance: `pnpm exec node examples/showcase/scripts/workbench.mjs` from the repository
+Scripted browser acceptance: `pnpm exec node --import tsx examples/showcase/scripts/workbench.mjs` from the repository
 root, through the documented toolchain and browser locks. It creates fresh isolated homes and invokes
 no paid model.

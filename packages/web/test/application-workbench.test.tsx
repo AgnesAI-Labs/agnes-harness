@@ -9,8 +9,8 @@ import {
   openApplicationWork,
   rememberApplicationWork,
   rememberSessionAgent,
-  sessionAgentAttribution,
   resolveApplicationWork,
+  sessionAgentAttribution,
   type UiExtensionContext,
 } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'

@@ -1,4 +1,4 @@
-import { homeNavigation, openApplicationWork } from '@agnes/web-client'
+import { homeNavigation } from '@agnes/web-client'
 import { Banner, Button, Chart, Drawer, SearchBar, Segmented, Table, Tag } from '@agnes/web-ui'
 import React from 'react'
 import { WorkButton } from './workbench.js'
@@ -145,14 +145,8 @@ export function Home({ data, t, navigate }) {
           ),
         ),
       ),
-      h(
-        Button,
-        {
-          appearance: 'primary',
-          onClick: () => openApplicationWork('investigate', { type: 'anomaly', id: 'AN-027' }),
-        },
-        t.choose('调查异常', 'Investigate anomaly'),
-      ),
+      h(WorkButton, { action: 'investigate', object: { type: 'anomaly', id: 'AN-027' }, t,
+        appearance: 'primary', label: t.choose('调查异常', 'Investigate anomaly') }),
     ),
     h(
       'nav',
@@ -160,6 +154,7 @@ export function Home({ data, t, navigate }) {
       ...['aero-requirements', 'aero-tests', 'aero-mrb', 'aero-configuration', 'aero-zeroing'].map((id) =>
         h(Button, { key: id, onClick: () => homeNavigation.open(id) }, t.title(id)),
       ),
+      h(Button, { onClick: () => homeNavigation.open('automation') }, t.choose('自动报告', 'Automated reports')),
     ),
     h(
       'div',

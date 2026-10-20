@@ -406,7 +406,14 @@
             "@agnes-showcase/aerospace-quality#aero-home",
             "@agnes-showcase/aerospace-quality#aero-tasks"
           ],
-          "hideBuiltin": []
+          "hideBuiltin": [
+            "agents",
+            "business-agents",
+            "automation",
+            "schedules",
+            "triggers",
+            "plugins"
+          ]
         }
       },
       "defaultAgent": "@agnes-showcase/aerospace-quality#quality",

@@ -5,7 +5,7 @@ import { Configuration, Mrb, Zeroing } from './governance.js'
 import { language, titles } from './i18n.js'
 import { useProgramme } from './operations.js'
 import { Home, Requirements, Tests } from './views.js'
-import { ObjectDossier, Tasks } from './workbench.js'
+import { ObjectDossier, Tasks, WorkOwner } from './workbench.js'
 
 const h = React.createElement
 const views = {
@@ -60,14 +60,14 @@ export function apply(ctx, config) {
                 ? t.loading
                 : t.choose('数据未加载，请刷新重试。', 'Data unavailable; refresh to retry.'),
             )
-          : h(views[id], {
+          : h(WorkOwner.Provider, { value: config.packageId }, h(views[id], {
               data: op.data,
               t,
               op,
               ctx,
               context,
               navigate: (next) => homeNavigation.open(next),
-            }),
+            })),
         h(
           'footer',
           { className: 'aero-footer' },
@@ -92,7 +92,7 @@ export function apply(ctx, config) {
         'aero-tasks': 'check',
       }[id],
       order: Object.keys(titles).indexOf(id) + 10,
-      placement: id === 'aero-object' ? 'secondary' : 'primary',
+      placement: ['aero-home', 'aero-tasks'].includes(id) ? 'primary' : 'secondary',
       component: ProgrammePage,
     })
   }

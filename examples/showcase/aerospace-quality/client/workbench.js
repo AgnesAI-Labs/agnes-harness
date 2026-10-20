@@ -1,17 +1,21 @@
-import { homeNavigation, openApplicationWork } from '@agnes/web-client'
+import { applicationIdentity, homeNavigation, openApplicationWork } from '@agnes/web-client'
 import { Button, EmptyState, Icon, Tag } from '@agnes/web-ui'
 import React from 'react'
 import { section, status } from './views.js'
 
 const h = React.createElement
-export function WorkButton({ action, object, t }) {
+export const WorkOwner = React.createContext(undefined)
+export function WorkButton({ action, object, t, label, appearance }) {
+  const owner = React.useContext(WorkOwner)
+  const application = React.useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const available = application?.status === 'active' && application.selection?.packageId === owner && application.effective?.workbench?.actions?.some((item) => item.id === action)
   const labels = {
     investigate: ['调查', 'Investigate'],
     mrb: ['起草处置', 'Draft disposition'],
     configuration: ['发起评审', 'Start review'],
     report: ['生成报告', 'Generate report'],
   }
-  return h(Button, { onClick: () => openApplicationWork(action, object) }, labels[action][t.zh ? 0 : 1])
+  return h(Button, { disabled: !available, disabledReason: available ? undefined : t.choose('先采用此应用，再开始业务会话。', 'Adopt this application before starting its work.'), ...(appearance ? { appearance } : {}), onClick: () => openApplicationWork(action, object) }, label ?? labels[action][t.zh ? 0 : 1])
 }
 export function ObjectDossier({ data, t, context }) {
   const object = context?.selection?.object
@@ -19,11 +23,14 @@ export function ObjectDossier({ data, t, context }) {
     return h(EmptyState, {
       icon: h(Icon, { name: 'file' }),
       title: t.choose('从业务对象或快捷操作开始工作', 'Start from a business object or work action'),
-      description: t.choose('选择调查、处置或更改评审，档案会跟随会话更新。', 'Choose investigation, disposition or change review; the dossier follows the conversation.'),
+      description: t.choose(
+        '选择调查、处置或更改评审，档案会跟随会话更新。',
+        'Choose investigation, disposition or change review; the dossier follows the conversation.',
+      ),
     })
   const record =
     object.type === 'anomaly'
-      ? data.anomaly
+      ? data.anomaly.id === object.id ? data.anomaly : undefined
       : object.type === 'ncr'
         ? data.ncrs.find((r) => r.id === object.id)
         : object.type === 'ecr'
@@ -32,7 +39,11 @@ export function ObjectDossier({ data, t, context }) {
             ? data.zeroing.find((r) => r.id === object.id)
             : undefined
   if (!record)
-    return h(EmptyState, { icon: h(Icon, { name: 'file' }), title: t.choose('对象不存在或当前不可用', 'Object missing or unavailable'), description: object.id })
+    return h(EmptyState, {
+      icon: h(Icon, { name: 'file' }),
+      title: t.choose('对象不存在或当前不可用', 'Object missing or unavailable'),
+      description: object.id,
+    })
   return h(
     'div',
     { className: 'aero-dossier', 'data-testid': 'aero-object-dossier' },

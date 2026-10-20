@@ -319,27 +319,26 @@
 }
 
 @layer app {
-
-.aero-task-list article {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--agnes-line-primary);
-}
-.aero-task-title {
-  flex: 1;
-}
-.aero-dossier {
-  overflow-wrap: anywhere;
-}
-.workbench-panel-content .aero-app {
-  padding: 16px;
-  min-width: 0;
-}
-.workbench-panel-content .aero-programme,
-.workbench-panel-content .aero-footer {
-  display: none;
-}
+  .aero-task-list article {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .aero-task-title {
+    flex: 1;
+  }
+  .aero-dossier {
+    overflow-wrap: anywhere;
+  }
+  .workbench-panel-content .aero-app {
+    padding: 16px;
+    min-width: 0;
+  }
+  .workbench-panel-content .aero-programme,
+  .workbench-panel-content .aero-footer {
+    display: none;
+  }
 }

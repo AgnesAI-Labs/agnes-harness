@@ -26,7 +26,15 @@ function Signatures() {
   return view ? (
     <Approval ref={handle} initialView={view} contentId="workbench-approval-content" />
   ) : (
-    <EmptyState icon={<Icon name="check" />} title={zh ? '当前没有待签署事项' : 'No signatures pending'} description={zh ? '当前会话需要确认时，将在这里显示宿主请求。' : 'Host requests appear here when this session needs confirmation.'} />
+    <EmptyState
+      icon={<Icon name="check" />}
+      title={zh ? '当前没有待签署事项' : 'No signatures pending'}
+      description={
+        zh
+          ? '当前会话需要确认时，将在这里显示宿主请求。'
+          : 'Host requests appear here when this session needs confirmation.'
+      }
+    />
   )
 }
 function pageComponent(page: HomeEntry, object: unknown): WorkbenchPanel['component'] {

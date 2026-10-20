@@ -75,7 +75,11 @@ export function ApplicationEvidence({ context }: { context: UiExtensionContext }
         <EmptyState
           icon={<Icon name="file-text" />}
           title={zh ? '工具产出的证据与报告将显示在这里' : 'Tool evidence and reports appear here'}
-          description={zh ? '完成业务工具或报告后，可以查看其来源。' : 'Inspect the sources after a business tool or report completes.'}
+          description={
+            zh
+              ? '完成业务工具或报告后，可以查看其来源。'
+              : 'Inspect the sources after a business tool or report completes.'
+          }
         />
       )}
       {tools.map((node) => (

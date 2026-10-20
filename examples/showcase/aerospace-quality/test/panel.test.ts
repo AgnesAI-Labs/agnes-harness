@@ -69,6 +69,10 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
         await host.act(async () => {})
         expect(host.container.querySelector('h1')?.textContent).toBeTruthy()
         expect(host.container.textContent).not.toContain('undefined')
+        if (id === 'aero-home') {
+          const action = [...host.container.querySelectorAll('button')].find((button) => /^(调查异常|Investigate anomaly)$/.test(button.textContent ?? ''))
+          expect(action?.disabled).toBe(true)
+        }
       }
       await host.render('aero-requirements')
       await host.act(async () => {})

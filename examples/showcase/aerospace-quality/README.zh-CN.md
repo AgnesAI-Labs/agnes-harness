@@ -82,5 +82,5 @@ MRB 处置、技术状态更改、规则启用与归零关闭属于业务签署�
 “当前对象”在会话投影失效通知后通过 profile 服务更新；“待签署”与会话卡使用同一组宿主决定动作；标准和工作区写入权限由人确认，完全访问下由宿主自动确认并记录方式，不显示待签卡；
 “证据与报告”展示本会话回执，支持查看来源、审批和报告文件。批准处置仍只批准实施，硬件保持隔离等待复验，不能宣称试验通过。
 
-仓库根目录运行 `pnpm exec node examples/showcase/scripts/workbench.mjs`，外层使用项目工具链和浏览器锁。
+仓库根目录运行 `pnpm exec node --import tsx examples/showcase/scripts/workbench.mjs`，外层使用项目工具链和浏览器锁。
 脚本创建独立的全新 home，不调用付费模型。

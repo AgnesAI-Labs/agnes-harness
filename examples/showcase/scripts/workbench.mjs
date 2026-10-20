@@ -1,7 +1,8 @@
 /** Scripted, isolated browser acceptance of the declared application workbench. */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { chromium } from '@playwright/test'
 import { runtime, toolResult, until } from '../pharma-gmp/scripts/runtime.mjs'
@@ -9,6 +10,8 @@ import { runtime, toolResult, until } from '../pharma-gmp/scripts/runtime.mjs'
 execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
   stdio: 'inherit',
 })
+const descriptor = JSON.parse(await readFile(new URL('../aerospace-quality/client/agnes.client.json', import.meta.url), 'utf8'))
+const brandModes = descriptor.skins[0].tokens['--agnes-brand-primary']
 let rt
 const output = resolve(process.env.AGH_SHOWCASE_SHOTS ?? 'outputs/aerospace-workbench')
 await mkdir(output, { recursive: true })
@@ -20,6 +23,7 @@ const evidence = {
   usd: 0,
   screenshots: [],
   sessions: [],
+  sessionBudgets: [],
   errors: [],
   passed: false,
 }
@@ -27,6 +31,9 @@ console.log(JSON.stringify({ roots: [], output }))
 const packageId = '@agnes-showcase/aerospace-quality'
 let active, activeTurn
 async function shot(page, label, locale, theme) {
+  await page.locator('.sidebar-head').waitFor({ timeout: 30000 })
+  if (!['01-gallery', '02-install-review', '03-adoption-consent'].includes(label))
+    await page.waitForFunction((expected) => getComputedStyle(document.documentElement).getPropertyValue('--agnes-brand-primary').trim().toLowerCase() === expected, brandModes[theme].toLowerCase(), { timeout: 45000 })
   await page.evaluate(() => document.fonts.ready)
   const file = `${label}-${locale}-${theme}.png`
   await page.mouse.move(1550, 20)
@@ -40,10 +47,11 @@ async function launch(page, button) {
   await page.waitForURL(/session=/, { timeout: 45000 })
   const id = new URL(page.url()).searchParams.get('session')
   assert.ok(id)
-  const session = rt.client.sessions.get(id)
-  session.onPermissionRequest(async (request) => ({
-    optionId: request.options.find((option) => option.kind === 'allow_once').optionId,
-  }))
+  const session = await rt.client.session.load(id, {
+    onPermissionRequest: async (request) => ({
+      optionId: request.options.find((option) => option.kind === 'allow_once').optionId,
+    }),
+  })
   await session.attach()
   await session.setModel({ slot: 'primary', route: 'demo', model: 'demo-model' })
   evidence.sessions.push(id)
@@ -75,6 +83,7 @@ try {
     ['en', 'dark'],
   ]) {
     const zh = locale === 'zh-CN'
+    const sessionOffset = evidence.sessions.length
     rt = await runtime(false, 'aerospace-quality', { demoModel: true })
     evidence.roots.push(rt.root)
     console.log(JSON.stringify({ root: rt.root, locale }))
@@ -98,6 +107,7 @@ try {
     await page.goto(rt.url + '/?page=agents')
     const card = page.locator(`[data-application="${packageId}"]`)
     await card.waitFor({ timeout: 45000 })
+    await page.getByTestId('general-agent').locator('.ant-select-content-has-value').waitFor({ timeout: 45000 })
     assert.equal(await card.locator('.application-scenarios li').count(), 3)
     await shot(page, '01-gallery', locale, theme)
     await card.getByRole('button', { name: zh ? '安装并采用' : 'Install and adopt', exact: true }).click()
@@ -110,8 +120,9 @@ try {
     await shot(page, '03-adoption-consent', locale, theme)
     await page.getByRole('button', { name: zh ? '采用此预览' : 'Adopt this preview', exact: true }).click()
     await page.locator('[data-aero-page="aero-home"] h1').waitFor({ timeout: 45000 })
+    await page.locator('.aero-kpi').first().waitFor({ timeout: 45000 })
     await page.getByTestId('home-entry-aero-tasks').waitFor({ timeout: 30000 })
-    assert.equal(await page.getByTestId('home-entry-aero-mrb').count(), 0)
+    assert.equal(await page.getByTestId('home-entry-aero-mrb').isVisible(), false)
     await shot(page, '04-slim-overview', locale, theme)
     const investigation = await launch(
       page,
@@ -215,6 +226,15 @@ try {
       .getByRole('button', { name: /\.html$/ })
       .waitFor({ timeout: 30000 })
     await shot(page, '09-evidence-reports', locale, theme)
+    await page.locator('.application-panel').getByRole('button', { name: /\.html$/ }).click()
+    await page.locator('[data-document-preview="html"] iframe').waitFor({ timeout: 30000 })
+    await page.frameLocator('[data-document-preview="html"] iframe').locator('h1').waitFor({ timeout: 30000 })
+    await shot(page, '10-report-preview', locale, theme)
+    for (const id of evidence.sessions.slice(sessionOffset)) {
+      const budget = await rt.client.sessions.get(id).budget()
+      assert.equal(budget.state.creditsUsed, 0)
+      evidence.sessionBudgets.push({ id, creditsUsed: budget.state.creditsUsed })
+    }
     await context.close()
     await rt.dispose()
     rt = undefined
@@ -228,7 +248,7 @@ try {
       await page.screenshot({ path: join(output, 'diagnostic-failure.png'), fullPage: true }).catch(() => {})
   throw error
 } finally {
-  await writeFile(join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
+  await writeFile(join(output, 'evidence.json'), JSON.stringify(evidence, null, 2).replaceAll(homedir(), '~'))
   await browser.close()
   if (activeTurn) {
     await active?.cancel().catch(() => {})
