@@ -107,6 +107,27 @@ it('refuses calls after a 1006', async () => {
   expect(await bridge(invokeFrame(1, 'write'))).toMatchObject({ id: 1, error: { code: 1006 } })
   expect(await bridge(invokeFrame(2, 'read'))).toMatchObject({ id: 2, error: { code: 1006 } })
   expect(invoke).toHaveBeenCalledTimes(1)
+  // Only the call that reached a tool is recorded, and as pending rather than error.
+  expect(bridge.calls()).toEqual([{ name: 'write', status: 'pending', readOnly: false }])
+})
+
+it('records a parked call as pending, whether it threw or returned its code', async () => {
+  const invoke = vi.fn(async (name: string) => {
+    if (name === 'shell') throw Object.assign(new Error('parked'), { code: 'PARKED' })
+    return {
+      content: [{ type: 'text', text: 'waiting' }],
+      isError: true,
+      details: { code: 'APPROVAL_PENDING' },
+    }
+  })
+  const list = () => [{ name: 'read', meta: { isReadOnly: true } }]
+  const ctx = { signal: new AbortController().signal, tools: { invoke, list } } as unknown as ToolContext
+  const shell = createBridge(ctx)
+  expect(await shell(invokeFrame(1, 'shell'))).toMatchObject({ error: { code: 1006 } })
+  expect(shell.calls()).toEqual([{ name: 'shell', status: 'pending', readOnly: false }])
+  const read = createBridge(ctx)
+  expect(await read(invokeFrame(1, 'read'))).toMatchObject({ error: { code: 1006 } })
+  expect(read.calls()).toEqual([{ name: 'read', status: 'pending', readOnly: true }])
 })
 
 it('records each nested call with its outcome and read-only flag', async () => {
@@ -129,9 +150,9 @@ it('records each nested call with its outcome and read-only flag', async () => {
     await bridge(invokeFrame(id, name))
   }
   expect(bridge.calls()).toEqual([
-    { name: 'write', isError: false, readOnly: false },
-    { name: 'read', isError: false, readOnly: true },
-    { name: 'shell', isError: true, readOnly: false },
-    { name: 'mystery', isError: false, readOnly: false },
+    { name: 'write', status: 'ok', readOnly: false },
+    { name: 'read', status: 'ok', readOnly: true },
+    { name: 'shell', status: 'error', readOnly: false },
+    { name: 'mystery', status: 'ok', readOnly: false },
   ])
 })

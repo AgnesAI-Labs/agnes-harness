@@ -1,6 +1,14 @@
 import { TOOL_PATH_REFERENCES, type ToolContext } from '@agnes/extension-api'
 import { type BridgeRequest, validateAgainst } from '@agnes/protocol'
 import { ArtifactRef, PlanItems } from '@agnes/protocol/gen/session-v1'
+import { toBridgeError } from './bridge-errors.js'
+
+/** How a nested tool call ended, as the `nested calls:` line reports it. */
+export type NestedCallStatus = 'ok' | 'error' | 'pending'
+
+/** A failed call whose bridge code is 1006 is waiting for approval, not failed. */
+const failedStatus = (error: unknown): NestedCallStatus =>
+  toBridgeError(error).code === 1006 ? 'pending' : 'error'
 
 function invalid(): never {
   throw Object.assign(new Error('invalid bridge parameters'), { bridgeCode: -32602 })
@@ -33,8 +41,11 @@ function options(value: unknown, kind: 'fork' | 'spawn' | 'collect') {
 export function bridgeDispatch(
   ctx: ToolContext,
   request: BridgeRequest,
-  /** Told once per nested tool call how it ended; a thrown invoke counts as an error. */
-  record: (name: string, isError: boolean) => void = () => {},
+  /**
+   * Told once per nested tool call how it ended: `pending` when its failure maps to bridge code 1006
+   * (waiting for approval), otherwise `error` for a thrown invoke or an error result.
+   */
+  record: (name: string, status: NestedCallStatus) => void = () => {},
 ): () => Promise<unknown> {
   switch (request.method) {
     case 'bridge.tools.invoke': {
@@ -46,17 +57,23 @@ export function bridgeDispatch(
         try {
           result = await ctx.tools.invoke(name, args, { signal: ctx.signal })
         } catch (error) {
-          record(name, true)
+          record(name, failedStatus(error))
           throw error
         }
-        record(name, result.isError === true)
         if (result.isError) {
           const details = result.details
           const code =
             details && typeof details === 'object' && !Array.isArray(details) ? details.code : undefined
-          if (typeof code === 'string' || result.structured === undefined)
-            throw Object.assign(new Error('tool execution failed'), typeof code === 'string' ? { code } : {})
+          if (typeof code === 'string' || result.structured === undefined) {
+            const error = Object.assign(
+              new Error('tool execution failed'),
+              typeof code === 'string' ? { code } : {},
+            )
+            record(name, failedStatus(error))
+            throw error
+          }
         }
+        record(name, result.isError ? 'error' : 'ok')
         // details is UI-only; structured is the public machine-readable half when present.
         const structured = result.structured
         // Path references are a side note for the loop; a script wants the tool's text.

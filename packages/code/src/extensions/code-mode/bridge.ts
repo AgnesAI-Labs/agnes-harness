@@ -1,14 +1,14 @@
 import type { ToolContext } from '@agnes/extension-api'
 import { type BridgeResponse, validateBridgeFrame } from '@agnes/protocol'
 import type { BridgeHandler } from '../../runtime/index.js'
-import { bridgeDispatch } from './bridge-dispatch.js'
+import { bridgeDispatch, type NestedCallStatus } from './bridge-dispatch.js'
 import { bridgeError, toBridgeError } from './bridge-errors.js'
 import { copyBridgeData, parseBridgeRequest } from './bridge-frame.js'
 
 export { hasBridgeCode, toBridgeError } from './bridge-errors.js'
 export { BRIDGE_METHODS, type BridgeMethod } from './bridge-frame.js'
 
-export type NestedCall = { name: string; isError: boolean; readOnly: boolean }
+export type NestedCall = { name: string; status: NestedCallStatus; readOnly: boolean }
 /** A bridge handler that also remembers how each nested tool call ended. */
 export type RecordingBridge = BridgeHandler & { calls(): ReadonlyArray<NestedCall> }
 
@@ -21,14 +21,14 @@ export function createBridge(
   // Once a call parked for approval, the rest of the cell must not start more work behind it.
   let parked = false
   const nested: NestedCall[] = []
-  const record = (name: string, isError: boolean) => {
+  const record = (name: string, status: NestedCallStatus) => {
     let readOnly = false
     try {
       readOnly = ctx.tools.list().find((def) => def.name === name)?.meta.isReadOnly === true
     } catch {
       /* An unknown tool counts as not read-only. */
     }
-    nested.push({ name, isError, readOnly })
+    nested.push({ name, status, readOnly })
   }
   const handler: BridgeHandler = async (frame) => {
     const parsed = parseBridgeRequest(frame, opts)

@@ -39,7 +39,8 @@ by the session's permission.
 Tools called inside a cell stay out of the model's context: only what the cell
 prints or returns comes back, and the nested calls and results remain visible in
 the session record. The `run_code` result ends with a `nested calls:` line that
-lists each non-read-only call as ok or error and counts the read-only ones.
+lists each non-read-only call as ok, error, or pending (waiting for approval)
+and counts the read-only ones.
 Bridge error code 1006 (`APPROVAL_PENDING`) means a nested call is waiting for
 the user's approval; the cell should end. If several calls got 1006, only one
 waits for approval; the others were withdrawn and did not run, and should be

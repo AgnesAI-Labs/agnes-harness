@@ -117,11 +117,11 @@ describe('run_code tool definition', () => {
   })
 
   it('appends the nested call line', async () => {
-    const calls = [
-      { name: 'write', isError: false, readOnly: false },
-      { name: 'read', isError: false, readOnly: true },
-      { name: 'read', isError: false, readOnly: true },
-      { name: 'shell', isError: true, readOnly: false },
+    const calls: Array<{ name: string; status: 'ok' | 'error' | 'pending'; readOnly: boolean }> = [
+      { name: 'write', status: 'ok', readOnly: false },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'shell', status: 'error', readOnly: false },
     ]
     const withCalls = (list: typeof calls) => ({
       ...deps(runtime()),
@@ -139,5 +139,12 @@ describe('run_code tool definition', () => {
       'hello\nnested calls: write ok; read-only: 0',
     )
     expect(await text([])).toBe('hello')
+    expect(await text([{ name: 'shell', status: 'pending', readOnly: false }])).toBe(
+      'hello\nnested calls: shell pending; read-only: 0',
+    )
+    // A read-only call waiting for approval is still only counted.
+    expect(await text([{ name: 'read', status: 'pending', readOnly: true }])).toBe(
+      'hello\nnested calls: read-only: 1',
+    )
   })
 })

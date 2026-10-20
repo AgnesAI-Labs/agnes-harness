@@ -27,10 +27,13 @@ export type RunCodeDeps = {
   onCellDone?(ctx: ToolContext, runtime: CodeRuntime): void
 }
 
-/** `write ok, shell error; read-only: 2`; read-only calls are only counted, as the model never sees them. */
+/**
+ * `write ok, shell error, edit pending; read-only: 2`; read-only calls are only counted, as the model
+ * never sees them. `pending` is a call waiting for approval (bridge code 1006).
+ */
 function nestedLine(calls: ReadonlyArray<NestedCall>): string {
   if (!calls.length) return ''
-  const listed = calls.filter((c) => !c.readOnly).map((c) => `${c.name} ${c.isError ? 'error' : 'ok'}`)
+  const listed = calls.filter((c) => !c.readOnly).map((c) => `${c.name} ${c.status}`)
   const readOnly = `read-only: ${calls.length - listed.length}`
   return `nested calls: ${listed.length ? `${listed.join(', ')}; ` : ''}${readOnly}`
 }
