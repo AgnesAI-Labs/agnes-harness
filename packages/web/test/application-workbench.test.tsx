@@ -26,6 +26,7 @@ import {
   ApplicationComposerContext,
   ApplicationWorkActions,
 } from '../src/workbench/application-actions.js'
+import { ApplicationEvidence } from '../src/workbench/application-evidence.js'
 import { useApplicationPanels } from '../src/workbench/application-panels.js'
 import { workbenchApproval } from '../src/workbench/approval-store.js'
 
@@ -92,6 +93,41 @@ afterEach(() => {
   sessionStorage.clear()
   document.body.replaceChildren()
   vi.restoreAllMocks()
+})
+it.each(['paths', 'files'])('opens report files from the %s receipt field', async (field) => {
+  document.documentElement.lang = 'en'
+  const openPanel = vi.fn()
+  const node = {
+    kind: 'tool',
+    id: 'report',
+    name: 'community_report',
+    seq: 3,
+    resultSeq: 5,
+    status: 'completed',
+  }
+  const context: UiExtensionContext = {
+    t: (key) => key,
+    openPanel,
+    data: {
+      timeline: { nodes: [node] },
+      session: {
+        readToolDetail: async () => ({
+          result: {
+            structured: {
+              data: { title: 'Reviewed report', [field]: ['output/report.html', 'output/report.md', 42] },
+            },
+          },
+        }),
+      },
+    },
+  }
+  renderRegion(document.body, <ApplicationEvidence context={context} />)
+  await vi.waitFor(() => expect(document.body.textContent).toContain('HTML report'))
+  const reports = [...document.querySelectorAll<HTMLButtonElement>('button')]
+  expect(document.body.textContent).toContain('Reviewed report')
+  expect(document.body.textContent).toContain('Markdown report')
+  flushSync(() => reports.find((button) => button.textContent === 'HTML report')!.click())
+  expect(openPanel).toHaveBeenCalledWith('files', { path: 'output/report.html' })
 })
 it('mounts only adopted owner-qualified pages, restores object context, and removes tabs on revoke/clear', () => {
   document.documentElement.lang = 'en'

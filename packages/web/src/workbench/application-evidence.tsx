@@ -30,10 +30,17 @@ function EvidenceRecord({ node, context, zh }: { node: ToolNode; context: UiExte
     }
   }, [data.session, node.seq, node.resultSeq, zh])
   const record = output && typeof output === 'object' && 'data' in output ? output.data : output
-  const paths =
-    record && typeof record === 'object' && 'paths' in record && Array.isArray(record.paths)
-      ? record.paths.filter((path): path is string => typeof path === 'string')
+  const pathLists =
+    record && typeof record === 'object'
+      ? ['paths' in record ? record.paths : undefined, 'files' in record ? record.files : undefined]
       : []
+  const paths = [
+    ...new Set(
+      pathLists.flatMap((items) =>
+        Array.isArray(items) ? items.filter((path): path is string => typeof path === 'string') : [],
+      ),
+    ),
+  ]
   const title =
     record && typeof record === 'object' && 'title' in record && typeof record.title === 'string'
       ? record.title
