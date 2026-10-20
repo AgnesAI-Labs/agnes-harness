@@ -3540,19 +3540,38 @@ describe('incremental opening', () => {
     await vi.waitFor(() => expect(send.disabled).toBe(false))
   })
 
-  it('shows session recovery when the session controls fail while the opening is out', async () => {
-    const opening = deferred<UITimeline>()
-    const { old } = await bootWith(
-      () => opening.promise,
-      true,
-      (old) => old.controls.mockRejectedValue(new Error('controls unavailable')),
-    )
-    await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
-    opening.resolve(idleTimeline('old'))
-    const notice = document.getElementById('notice') as HTMLElement
-    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
-    expect(old.detach).toHaveBeenCalled()
-  })
+  it.each(['persistent', 'transient'] as const)(
+    'reads %s session control failures during the opening again after it, as before',
+    async (failure) => {
+      const opening = deferred<UITimeline>()
+      const { old } = await bootWith(
+        () => opening.promise,
+        true,
+        (old) =>
+          failure === 'persistent'
+            ? old.controls.mockRejectedValue(new Error('controls unavailable'))
+            : old.controls
+                .mockRejectedValueOnce(new Error('connection lost'))
+                .mockImplementation(async () => controlState()),
+      )
+      await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+      opening.resolve(idleTimeline('old'))
+      const notice = document.getElementById('notice') as HTMLElement
+      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      if (failure === 'persistent') {
+        await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+        expect(old.detach).toHaveBeenCalled()
+      } else {
+        prompt.value = 'Next message'
+        prompt.dispatchEvent(new Event('input', { bubbles: true }))
+        await vi.waitFor(() =>
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+        )
+        expect(notice.dataset.kind).not.toBe('session-recovery')
+      }
+      expect(old.controls).toHaveBeenCalledTimes(2)
+    },
+  )
 
   it('asks for a title once when the seeded last turn completed and the session has none', async () => {
     const { list } = await bootWith(
