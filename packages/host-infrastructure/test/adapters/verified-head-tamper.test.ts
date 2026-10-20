@@ -440,3 +440,97 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(50)
   })
 })
+
+describe('perf3-review: live SQLite provider checkpoints', () => {
+  it.each([
+    'tail',
+    'invalid-checkpoint-with-prefix-tamper',
+    'advanced-checkpoint-with-prefix-tamper',
+    'foreign-checkpoint-with-prefix-tamper',
+  ] as const)('%s seals and deletes the checkpoint through the Host provider bridge', async (change) => {
+    const file = await built(),
+      storage = await openConfiguredPersistence({ dataDir: dirname(file) })
+    open.push(storage)
+    const log = await SessionLogImpl.open(options(storage, 'review-live'))
+    try {
+      await log.fullVerified()
+      const head = (await storage.readVerifiedHead!('k'))!
+      if (change === 'tail') {
+        await log.append([input('tail')])
+        raw(file, TAMPER, 'k', 51)
+      } else {
+        raw(file, TAMPER, 'k', 10)
+        if (change === 'invalid-checkpoint-with-prefix-tamper')
+          raw(
+            file,
+            'UPDATE ledger_verified_head_v1 SET checkpoint_digest = ? WHERE session_key = ?',
+            '0'.repeat(64),
+            'k',
+          )
+        if (change === 'advanced-checkpoint-with-prefix-tamper')
+          await storage.writeVerifiedHead!(makeVerifiedHead({ ...head, throughSeq: 99 }), { force: true })
+        if (change === 'foreign-checkpoint-with-prefix-tamper') {
+          const other = makeVerifiedHead({ ...head, sessionKey: 'other-profile:session' })
+          await storage.writeVerifiedHead!({ ...other, sessionKey: 'k' }, { force: true })
+        }
+      }
+      const opening = log.verifyHistory().then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      const append = log.append([input('must not commit')]).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      const fork = log.forkInto(5, 'review-child', opener).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      expect(await opening).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+      await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      expect(await append).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+      expect(await fork).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+      expect(log.faulted).toBe(true)
+      expect(rowCount(file, 'events')).toBe(change === 'tail' ? 51 : 50)
+      expect(rowCount(file, 'events', 'review-child')).toBe(0)
+      expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
+    } finally {
+      await log.close()
+    }
+  })
+
+  it.each(['self-check', 'beyond-head', 'foreign'] as const)(
+    'checkpoint-only %s corruption falls back to full hashing and repairs the hint',
+    async (change) => {
+      const file = await built(),
+        storage = await openConfiguredPersistence({ dataDir: dirname(file) })
+      open.push(storage)
+      const log = await SessionLogImpl.open(options(storage, 'review-live'))
+      try {
+        await log.fullVerified()
+        const head = (await storage.readVerifiedHead!('k'))!
+        if (change === 'self-check')
+          raw(
+            file,
+            'UPDATE ledger_verified_head_v1 SET checkpoint_digest = ? WHERE session_key = ?',
+            '0'.repeat(64),
+            'k',
+          )
+        if (change === 'beyond-head')
+          await storage.writeVerifiedHead!(makeVerifiedHead({ ...head, throughSeq: 99 }), { force: true })
+        if (change === 'foreign') {
+          const other = makeVerifiedHead({ ...head, sessionKey: 'other-profile:session' })
+          await storage.writeVerifiedHead!({ ...other, sessionKey: 'k' }, { force: true })
+        }
+        await expect(log.verifyHistory()).resolves.toBe(50)
+        await log.fullVerified()
+        expect(log.historyVerified).toBe(true)
+        expect(log.faulted).toBe(false)
+        expect((await storage.readVerifiedHead!('k'))?.throughSeq).toBe(50)
+        await expect(log.append([input('fully verified')])).resolves.toMatchObject({ firstSeq: 51 })
+      } finally {
+        await log.close()
+      }
+    },
+  )
+})

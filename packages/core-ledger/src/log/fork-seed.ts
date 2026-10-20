@@ -70,3 +70,6 @@ export const seededLogs = new WeakMap<SessionLogImpl, SeededLog>()
 /** How a delegated child was opened; a cold open says why the live parent could not seed it. */
 export type ForkPath = { path: 'live-parent' } | { path: 'cold-open'; reason: 'no-tracker' | 'no-fork-point' }
 export const forkPaths = new WeakMap<SessionLogImpl, ForkPath>()
+
+/** Parent verification proof retained only while a child is being constructed and published. */
+export const forkChecks = new WeakMap<SessionLogImpl, () => void>()

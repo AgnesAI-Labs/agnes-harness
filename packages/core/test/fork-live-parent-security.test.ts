@@ -2,6 +2,7 @@ import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import type { Event, IdMinter, Seq } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import type { ScanQuery, StorageAdapter } from '@agnes/core-ledger/log/storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -376,7 +377,7 @@ describe('a partial UI cell', () => {
 })
 
 describe('shared parent objects', () => {
-  it('are not modified by a child that starts from them', async () => {
+  it('are not modified by a published child, including after a parent recheck', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const { k, parent } = await parentReady(storage, script())
     const freeze = (value: unknown): void => {
@@ -390,7 +391,208 @@ describe('shared parent objects', () => {
       cwd: '/w',
       input: 'x',
     })
+    await parent.verifyHistory()
+    await parent.d.log.fullVerified()
     await expect(handle.run('x')).resolves.toBeDefined()
     await k.close()
   })
 })
+
+it('perf3-review: a delegated fork admitted before a recheck cannot publish child rows after the parent seals', async () => {
+  const storage = new MemoryStorage({ clock: () => CLOCK })
+  let entered!: () => void, release!: () => void
+  const reached = new Promise<void>((resolve) => {
+      entered = resolve
+    }),
+    gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+  const wrapped: StorageAdapter = Object.create(storage)
+  wrapped.createChild = async (parent, boundary, child) => {
+    entered()
+    await gate
+    return storage.createChild(parent, boundary, child)
+  }
+  const provider = script(),
+    { k, parent } = await parentReady(wrapped, provider)
+  try {
+    const pending = createChild(parent, 'fork', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'must not execute',
+    }).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    )
+    await reached
+    const before = provider.calls
+    const call = (await storage.scan('parent', { type: 'tool/call', limit: 1 }))[0] as Event
+    tamper(storage, 'parent', call.seq, (event) => ({
+      ...event,
+      data: { ...(event.data as object), args: { path: 'tampered-under-live-parent' } },
+    }))
+    await parent.verifyHistory().catch(() => undefined)
+    await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(parent.d.log.faulted).toBe(true)
+    release()
+    const result = await pending
+    if ('value' in result) await result.value.run('must not execute')
+    const children = await requireChildControl(storage).listByParent('parent')
+    const ownRows = await Promise.all(
+      children.map((row) => storage.scan(row.childKey, { fromSeq: row.boundarySeq + 1, limit: 100 })),
+    )
+    expect({
+      modelCallsAfterSeal: provider.calls - before,
+      childOwnRows: ownRows.flat().length,
+      childAdmitted: 'value' in result,
+      modelSawChangedBytes: JSON.stringify(provider.requests.slice(before)).includes(
+        'tampered-under-live-parent',
+      ),
+    }).toEqual({ modelCallsAfterSeal: 0, childOwnRows: 0, childAdmitted: false, modelSawChangedBytes: false })
+  } finally {
+    release()
+    await k.close()
+  }
+})
+
+const creationWindows = ['create-child', 'child-open', 'registers', 'first-append', 'publish'] as const
+const parentChanges = ['seal', 'close', 'pending', 'repeated'] as const
+it.each(
+  (['head', 'trigger'] as const).flatMap((path) =>
+    [...creationWindows, ...(path === 'trigger' ? ['range' as const] : [])].flatMap((stage) =>
+      parentChanges.map((change) => ({ path, stage, change })),
+    ),
+  ),
+)(
+  'retires a $path fork paused at $stage when its parent changes: $change',
+  async ({ path, stage, change }) => {
+    const storage = new MemoryStorage({ clock: () => CLOCK })
+    const wrapped: StorageAdapter = Object.create(storage)
+    let armed = false,
+      paused = false,
+      holdVerify = false,
+      verificationPaused = false
+    let release!: () => void, finishVerify!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const verifyGate = new Promise<void>((resolve) => {
+      finishVerify = resolve
+    })
+    const pause = async () => {
+      if (!armed || paused) return
+      paused = true
+      await gate
+    }
+    wrapped.createChild = async (...args) => {
+      if (stage === 'create-child') await pause()
+      return storage.createChild(...args)
+    }
+    wrapped.open = async (key, options) => {
+      const result = await storage.open(key, options)
+      if (key !== 'parent' && stage === 'child-open') await pause()
+      return result
+    }
+    wrapped.registers = async (key) => {
+      const result = await storage.registers(key)
+      if (key !== 'parent' && stage === 'registers') await pause()
+      return result
+    }
+    wrapped.scanIntegrity = async (key, query) => {
+      if (key === 'parent' && stage === 'range') await pause()
+      if (key === 'parent' && holdVerify && query.fromSeq === 1) {
+        verificationPaused = true
+        await verifyGate
+      }
+      return storage.scanIntegrity(key, query)
+    }
+    const store = requireChildControl(wrapped)
+    store.commitCreatingChild = async (options) => {
+      const result = await requireChildControl(storage).commitCreatingChild(options)
+      if (stage === 'publish') await pause()
+      return result
+    }
+    const append = SessionLogImpl.prototype.append
+    const spy = vi.spyOn(SessionLogImpl.prototype, 'append').mockImplementation(function (
+      this: SessionLogImpl,
+      tx,
+      options = {},
+    ) {
+      return append.call(
+        this,
+        tx,
+        this.key !== 'parent' && stage === 'first-append'
+          ? {
+              ...options,
+              beforeCommit: async () => {
+                await pause()
+                await options.beforeCommit?.()
+              },
+            }
+          : options,
+      )
+    })
+    const provider = script()
+    let k: Kernel | undefined
+    let closing: Promise<void> | undefined
+    try {
+      const ready = await parentReady(wrapped, provider, path === 'trigger')
+      k = ready.k
+      const parent = ready.parent
+      if (path === 'trigger') await parent.diag('contribute-conflict', {})
+      const boundary = path === 'head' ? parent.lastSeq : parent.lastSeq - 1
+      armed = true
+      const pending = createChild(parent, 'fork', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'must not execute',
+        forkAt: boundary,
+      }).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      await vi.waitFor(() => expect(paused).toBe(true))
+      const [record] = await requireChildControl(storage).listByParent('parent')
+      if (!record) throw new Error('missing creating child')
+      const ownRows = () => storage.scan(record.childKey, { fromSeq: boundary + 1, limit: 100 })
+      const before = (await ownRows()).length
+      const calls = provider.calls
+      if (change === 'seal') {
+        const [call] = await storage.scan('parent', { type: 'tool/call', limit: 1 })
+        if (!call) throw new Error('missing tool call')
+        tamper(storage, 'parent', call.seq, (event) => ({ ...event, data: { changed: true } }))
+        await parent.verifyHistory().catch(() => undefined)
+        await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      } else if (change === 'close') {
+        closing = parent.close()
+        expect(parent.closingOrClosed).toBe(true)
+      } else if (change === 'pending') {
+        holdVerify = true
+        await parent.verifyHistory()
+        await vi.waitFor(() => expect(verificationPaused).toBe(true))
+        expect(parent.d.log.historyVerified).toBe(false)
+      } else {
+        for (let i = 0; i < 2; i++) {
+          await parent.verifyHistory()
+          await parent.d.log.fullVerified()
+        }
+        expect(parent.d.log.historyVerified).toBe(true)
+      }
+      release()
+      const result = await pending
+      expect(result).toHaveProperty('error')
+      expect((await ownRows()).length).toBe(before)
+      expect(provider.calls).toBe(calls)
+      expect(k.get(record.childKey)).toBeUndefined()
+      finishVerify()
+      if (change === 'pending') await parent.d.log.fullVerified()
+      await closing
+    } finally {
+      release()
+      finishVerify()
+      spy.mockRestore()
+      await closing?.catch(() => undefined)
+      await k?.close()
+    }
+  },
+)

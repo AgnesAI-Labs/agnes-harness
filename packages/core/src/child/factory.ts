@@ -11,11 +11,13 @@ import { sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '@agnes/core-effects/effects/tool-context'
 import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runtime'
+import { forkChecks } from '@agnes/core-ledger/log/fork-seed'
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { deliverChildCompletion } from './completion-notice.js'
+import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
 import { childExecutionReceipt } from './execution-receipt.js'
 import { childModels, resolveChildModel } from './model-scope.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
@@ -340,14 +342,23 @@ export class KernelChildren implements ChildrenFactory {
     let handle: ChildHandle | undefined
     let workspace: ChildWorkspaceLifecycle | undefined
     try {
+      while (!parent.d.log.historyVerified) await parent.d.log.fullVerified()
+      const historyCheck = parent.d.log.forkCheck()
+      const checkParent = () => {
+        historyCheck()
+        if (parent.closingOrClosed) throw new CoreError('E_CLOSED', 'parent session closed')
+      }
       if (isTerminalChildState(attempt.state) || attempt.state === 'cancelling')
         throw new CoreError('E_UNSUPPORTED', `child ${attempt.childKey} is ${attempt.state}`)
       workspace = await parent.d.childWorkspaceRuntime?.reserve(parent.key, attempt.childKey)
-      handle = await this.attach(kind, parent, attempt, opts, modelTarget, delegation, workspace)
+      checkParent()
+      handle = await this.attach(kind, parent, attempt, opts, checkParent, modelTarget, delegation, workspace)
+      checkParent()
       if (workspace && !workspace.commit())
         throw new CoreError('E_WORKSPACE_CLOSED', 'child workspace closed before commit', {
           childKey: attempt.childKey,
         })
+      checkParent()
       if (
         attempt.creationPhase === 'creating' &&
         !(await store.commitCreatingChild({
@@ -358,9 +369,14 @@ export class KernelChildren implements ChildrenFactory {
         }))
       )
         throw new CoreError('E_CAS', 'child creation attempt changed before commit')
+      checkParent()
       const live = (await store.lookupByKey(attempt.childKey)) ?? attempt
+      checkParent()
       if (live.state === 'creating') await store.casState(live.childKey, live.stateRevision, 'ready')
+      checkParent()
       this.handles.set(attempt.childKey, handle)
+      const child = this.kernel.get(attempt.childKey)
+      if (child) forkChecks.delete(child.d.log)
       return handle
     } catch (error) {
       let cancellationError: unknown
@@ -377,19 +393,34 @@ export class KernelChildren implements ChildrenFactory {
         live.attemptId === attempt.attemptId
       ) {
         try {
-          await this.cancelOpenAttempt(store, parent, live)
+          await cancelOpenAttempt(store, parent, live)
+        } catch (cause) {
+          cancellationError = cause
+        }
+      } else if (
+        !cancellationError &&
+        live &&
+        !isTerminalChildState(live.state) &&
+        live.creationId === attempt.creationId &&
+        live.attemptId === attempt.attemptId
+      ) {
+        try {
+          await store.casState(live.childKey, live.stateRevision, 'cancelled')
         } catch (cause) {
           cancellationError = cause
         }
       }
       let workspaceCloseDelegated = false
-      if (handle) {
-        workspaceCloseDelegated = true
-        await handle.close().catch(() => undefined)
-      }
       const child = this.kernel.sessions.get(attempt.childKey)
+      if (handle)
+        await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
+          () => undefined,
+        )
       if (child) {
         workspaceCloseDelegated = true
+        // Never publish a completion/cost for a handle that was not admitted. That would also
+        // wait on the very parent verification which invalidated this attempt.
+        await child.d.log.abandon().catch(() => undefined)
         await this.dropLocalChild(attempt.childKey, child)
       }
       if (!workspaceCloseDelegated) await workspace?.close().catch(() => undefined)
@@ -398,35 +429,6 @@ export class KernelChildren implements ChildrenFactory {
         throw new AggregateError([error, cancellationError], 'child open and durable cancellation failed')
       throw error
     }
-  }
-
-  private async cancelOpenAttempt(
-    store: ReturnType<typeof requireChildControl>,
-    parent: SessionImpl,
-    attempt: ChildTaskRecord,
-  ): Promise<void> {
-    let failure: unknown
-    for (let tries = 0; tries < 3; tries += 1) {
-      try {
-        await store.cancelCreatingChild({
-          childKey: attempt.childKey,
-          creationId: attempt.creationId,
-          attemptId: attempt.attemptId,
-          expectedRevision: attempt.creationRevision,
-          reason: 'open_failed',
-          cancelledAt: parent.d.clock(),
-        })
-        return
-      } catch (error) {
-        if (error instanceof CoreError && error.code === 'E_CAS') throw error
-        failure = error
-      }
-    }
-    throw new CoreError('E_STORAGE_FAULT', 'failed to persist child open cancellation', {
-      childKey: attempt.childKey,
-      attemptId: attempt.attemptId,
-      cause: failure instanceof Error ? failure.message : String(failure),
-    })
   }
 
   private owns(record: ChildTaskRecord, caller: string): boolean {
@@ -570,6 +572,7 @@ export class KernelChildren implements ChildrenFactory {
     parent: SessionImpl,
     record: ChildTaskRecord,
     opts: CreateOpts,
+    checkParent: () => void,
     modelTarget?: { route: string; model: string },
     delegation?: {
       kind: ChildKind
@@ -593,6 +596,7 @@ export class KernelChildren implements ChildrenFactory {
     }
     const store = requireChildControl(parent.d.log.storage)
     const cwd = (await store.lookupByKey(record.childKey))?.cwd ?? record.cwd ?? opts.cwd
+    checkParent()
     setChildAgentAllowlist(record.childKey, childAgentAllowlist(parent.key))
     const filter = narrowChildToolFilter(childSessionToolFilter(parent), opts.toolFilter)
     const child = await this.kernel.session(record.childKey, {
@@ -627,6 +631,8 @@ export class KernelChildren implements ChildrenFactory {
         generationDepth: record.generationDepth,
       },
     })
+    forkChecks.set(child.d.log, checkParent)
+    checkParent()
     const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
     const body = opts.input ?? record.inputText
     if (!opts.recovering && body && !inbox?.items?.length) {
@@ -640,6 +646,7 @@ export class KernelChildren implements ChildrenFactory {
         ],
         actor: child.d.actor,
       })
+      checkParent()
     }
 
     let state: 'ready' | 'running' | 'done' | 'error' | 'cancelled' =
@@ -878,6 +885,7 @@ export class KernelChildren implements ChildrenFactory {
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
       .catch(() => undefined)
+    checkParent()
     return handle
   }
 

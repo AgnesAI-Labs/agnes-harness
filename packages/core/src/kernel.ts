@@ -19,7 +19,7 @@ import type {
 } from '@agnes/core-effects/workspace/runtime'
 import { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 import { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
-import { forkPaths } from '@agnes/core-ledger/log/fork-seed'
+import { forkChecks, forkPaths } from '@agnes/core-ledger/log/fork-seed'
 import type { Timers } from '@agnes/core-ledger/log/session-log'
 import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
 import { ProjectionRegistry } from '@agnes/core-ledger/project/named'
@@ -487,6 +487,9 @@ export class Kernel {
           parent: so.parent.key,
         })
       forked = await parent.d.log.forkInto(so.parent.boundarySeq, key, {
+        commitCheck: () => {
+          if (parent.closingOrClosed) throw new CoreError('E_CLOSED', 'parent session closed')
+        },
         actor: so.actor,
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
@@ -542,6 +545,7 @@ export class Kernel {
         ...(this.o.timers ? { timers: this.o.timers } : {}),
         ...(this.o.loopStepTimeoutMs ? { loopStepTimeoutMs: this.o.loopStepTimeoutMs } : {}),
       })
+      if (forked) forkChecks.get(forked)?.()
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its
       // lease is handed back.
@@ -554,6 +558,7 @@ export class Kernel {
     let factoryPort: HookPort | undefined
     try {
       so.historySignal?.throwIfAborted()
+      forkChecks.get(log)?.()
       if (so.requireNew && !log.created) throw new CoreError('E_LANE_BUSY', 'import target is not fresh')
       let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
       let loopFactory: LoopFactory
@@ -717,6 +722,7 @@ export class Kernel {
       creationSignal.addEventListener('abort', cancelCreation, { once: true })
       try {
         creationSignal.throwIfAborted()
+        forkChecks.get(log)?.()
         if (this.o.hooksFactory) {
           const hooks = this.o.hooksFactory(session, sessionHooks)
           if (
@@ -741,9 +747,11 @@ export class Kernel {
         resumed = reason === 'resume'
         await session.start()
         creationSignal.throwIfAborted()
+        forkChecks.get(log)?.()
         if (!(so.skipSessionStartHooks && reason === 'new'))
           await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
         creationSignal.throwIfAborted()
+        forkChecks.get(log)?.()
 
         if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
         if (log.recovery) {
@@ -758,10 +766,13 @@ export class Kernel {
           )
             await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
         }
+        forkChecks.get(log)?.()
         this.sessions.set(key, session)
         creationSignal.throwIfAborted()
         if (resumed) await recoverChildCompletions(session)
         creationSignal.throwIfAborted()
+        forkChecks.get(log)?.()
+        forkChecks.delete(log)
         return session
       } finally {
         creationSignal.removeEventListener('abort', cancelCreation)
@@ -770,6 +781,7 @@ export class Kernel {
       if (factoryPort) this.factoryHooks.delete(factoryPort)
       const failures: unknown[] = [error]
       if (session) {
+        if (this.sessions.get(key) === session) this.sessions.delete(key)
         try {
           await session.close()
         } catch (cleanup) {

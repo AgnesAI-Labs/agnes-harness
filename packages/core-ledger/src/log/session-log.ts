@@ -11,7 +11,8 @@ import {
   type SessionKey,
 } from '@agnes/core-common/types'
 import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
-import { type ForkBase, forkBaseProviders, forkPaths, pageYield, seededLogs } from './fork-seed.js'
+import { forkInto, verifiedRange } from './fork-log.js'
+import { type ForkBase, forkChecks, seededLogs } from './fork-seed.js'
 import {
   type FullVerifyReport,
   verifyCheckpointHistory,
@@ -20,17 +21,14 @@ import {
 } from './history-verification.js'
 
 import {
-  INTEGRITY_PAGE_SIZE,
   type IntegrityState,
   LEDGER_INTEGRITY_ALGORITHM,
   LedgerIntegrityFailure,
   prepareIntegrity,
-  verifyIntegrityRows,
 } from './integrity.js'
 import {
   type CommitReceipt,
   type IntegrityCommit,
-  type IntegrityRow,
   type OpWrite,
   RegisterMap,
   type RegisterRow,
@@ -168,6 +166,7 @@ export class SessionLogImpl {
   // user input are let through. 'failed' seals the log; 'stopped' means it closed first.
   private fullVerifyState: 'pending' | 'done' | 'failed' | 'stopped' = 'done'
   private fullVerifyPromise: Promise<void> = Promise.resolve()
+  private checkpointOperations: Promise<void> | undefined
   private readonly verifyAbort = new AbortController()
   /** When this process last finished verifying the full chain it extends. */
   private verifiedFullAtMs: number
@@ -261,9 +260,11 @@ export class SessionLogImpl {
     parent: { key: SessionKey; boundarySeq: Seq },
     start: IntegrityState,
     seed: { base: ForkBase; inherited: Event[] },
+    checkParent: () => void,
   ): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      checkParent()
       if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       if (
         opened.parent?.key !== parent.key ||
@@ -273,8 +274,10 @@ export class SessionLogImpl {
         throw new CoreError('E_STORAGE_FAULT', 'child ledger ancestry does not match its live parent', {
           childKey: o.key,
         })
-      const own = await verifiedRange(o.storage, o.key, start, opened.lastSeq)
+      const own = await verifiedRange(o.storage, o.key, start, opened.lastSeq, checkParent)
+      checkParent()
       const rows = await o.storage.registers(o.key)
+      checkParent()
       // Opening observers belong to the caller, not to the lifetime of the cached session.
       const { verification: _opening, ...retained } = o
       const log = new SessionLogImpl(
@@ -384,6 +387,18 @@ export class SessionLogImpl {
     return this.fullVerifyState === 'done'
   }
 
+  /** A synchronous construction fence; a new verification cycle invalidates the captured fork point. */
+  forkCheck(): () => void {
+    const cycle = this.fullVerifyPromise
+    const check = () => {
+      this.guard()
+      if (this.fullVerifyState !== 'done' || cycle !== this.fullVerifyPromise)
+        throw new CoreError('E_LANE_BUSY', 'parent history verification changed while creating a fork')
+    }
+    check()
+    return check
+  }
+
   /**
    * Hashes the whole chain up to the checkpoint the open folded from, a page at a time and behind
    * other work, and checks it ends at the digest the checkpoint named. Failing seals the log; an
@@ -435,7 +450,13 @@ export class SessionLogImpl {
     // Seal before awaiting cleanup, so even queued input is refused after a known failure.
     this.markFaulted(failure)
     // Storage outages leave integrity unknown; only a proven integrity failure drops the checkpoint.
-    if (integrity) await this.storage.deleteVerifiedHead?.(this.key).catch(() => undefined)
+    if (integrity) {
+      // An older, already admitted write may still be inside storage. Delete only after it settles.
+      this.checkpointOperations = (this.checkpointOperations ?? Promise.resolve()).then(async () => {
+        await this.storage.deleteVerifiedHead?.(this.key).catch(() => undefined)
+      })
+      await this.checkpointOperations
+    }
     throw failure
   }
 
@@ -449,19 +470,23 @@ export class SessionLogImpl {
     if (!write || this.fullVerifyState !== 'done' || this.faultedValue) return
     const s = this.integrityState
     if (s.headDigest === null || s.lastSeq < 1) return
-    await write.call(
-      this.o.storage,
-      makeVerifiedHead({
-        sessionKey: this.o.key,
-        throughSeq: s.lastSeq,
-        headDigest: s.headDigest,
-        legacyThroughSeq: s.legacyThroughSeq,
-        algorithm: LEDGER_INTEGRITY_ALGORITHM,
-        verifiedFullAtMs: this.verifiedFullAtMs,
-        writtenAtMs: this.o.clock(),
-      }),
-      replace ? { force: true } : undefined,
-    )
+    const head = makeVerifiedHead({
+      sessionKey: this.o.key,
+      throughSeq: s.lastSeq,
+      headDigest: s.headDigest,
+      legacyThroughSeq: s.legacyThroughSeq,
+      algorithm: LEDGER_INTEGRITY_ALGORITHM,
+      verifiedFullAtMs: this.verifiedFullAtMs,
+      writtenAtMs: this.o.clock(),
+    })
+    const invoke = () => write.call(this.o.storage, head, replace ? { force: true } : undefined)
+    const pending = this.checkpointOperations ? this.checkpointOperations.then(invoke) : invoke()
+    const drained = pending.catch(() => undefined)
+    this.checkpointOperations = drained
+    void drained.then(() => {
+      if (this.checkpointOperations === drained) this.checkpointOperations = undefined
+    })
+    await pending
   }
 
   /**
@@ -616,6 +641,7 @@ export class SessionLogImpl {
       this.o.relationCheck?.(events, this, op)
       this.sealCheck()
       opts.commitCheck?.()
+      forkChecks.get(this)?.()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)
@@ -757,6 +783,7 @@ export class SessionLogImpl {
       resolvedProfileHash: string | null
       resolvedPresetHash?: string
       writerRunId: string
+      commitCheck?: () => void
       lane: string
       loop?: { id: string; version: string }
       modelSelections?: Array<{
@@ -775,145 +802,19 @@ export class SessionLogImpl {
     },
   ): Promise<SessionLogImpl> {
     this.guard()
-    // A child starts from this log's chain state, so it may only start from a verified one. Only
-    // awaited while pending: the fork point below is otherwise still taken in the caller's turn.
     while (this.fullVerifyState !== 'done') await this.awaitFullVerify()
-    if (!Number.isSafeInteger(boundarySeq) || boundarySeq < 1 || boundarySeq > this.lastSeqValue)
-      throw new CoreError('E_SURFACE_RANGE', 'fork boundary out of range', {
-        boundarySeq,
-        lastSeq: this.lastSeqValue,
-      })
-
-    // A delegated child of a live parent starts from the parent's own state at a fork point at or
-    // before the boundary. The point is taken synchronously, before anything else can append.
-    const provider = opener.delegation ? forkBaseProviders.get(this) : undefined
-    const base = provider?.(boundarySeq, opener.lane)
-    let boundaryState: IntegrityState | undefined
-    let inherited: IntegrityRow[] = []
-    if (base?.kind === 'head') boundaryState = { ...this.integrityState }
-    else if (base?.kind === 'trigger') {
-      // This writer appends no legacy rows, so the legacy boundary it opened with still holds at c.
-      const atTrigger = {
-        lastSeq: base.seq,
-        legacyThroughSeq: this.integrityState.legacyThroughSeq,
-        headDigest: base.headDigest,
-      }
-      const range = await verifiedRange(this.o.storage, this.o.key, atTrigger, boundarySeq)
-      boundaryState = range.state
-      inherited = range.rows
-    }
-    await this.o.storage.createChild(this.o.key, boundarySeq, childKey)
-    // Parent callbacks close over the parent's tracker and surface. The child is attached to its
-    // own callbacks by the higher-level session assembler; inheriting these would cross-contaminate
-    // the two branch projections as soon as session/start is appended.
-    const childOptions: OpenLogOptions = {
-      storage: this.o.storage,
-      key: childKey,
-      writerRunId: opener.writerRunId,
-      ttlMs: this.o.ttlMs,
-      ids: this.o.ids,
-      clock: this.o.clock,
-      ...(this.o.timers ? { timers: this.o.timers } : {}),
-    }
-    const child =
-      base && boundaryState
-        ? await SessionLogImpl.#openFromLiveParent(
-            childOptions,
-            { key: this.o.key, boundarySeq },
-            boundaryState,
-            {
-              base,
-              inherited: inherited.map((row) => row.event),
-            },
-          )
-        : await SessionLogImpl.open(childOptions)
-    if (opener.delegation)
-      forkPaths.set(
-        child,
-        base && boundaryState
-          ? { path: 'live-parent' }
-          : { path: 'cold-open', reason: provider ? 'no-fork-point' : 'no-tracker' },
-      )
-    try {
-      if (child.lastSeq > boundarySeq) {
-        const own = seededLogs.get(child)?.own
-        const [start] = own
-          ? own
-          : await child.scan({ fromSeq: boundarySeq + 1, toSeq: boundarySeq + 1, limit: 1 })
-        const parent = (start?.data as { parent?: { key?: unknown; boundarySeq?: unknown } } | null)?.parent
-        if (
-          start?.type !== 'session/start' ||
-          parent?.key !== this.o.key ||
-          parent.boundarySeq !== boundarySeq
-        )
-          throw new CoreError('E_STORAGE_FAULT', 'existing fork child has invalid ancestry start', {
-            childKey,
-          })
-        return child
-      }
-      await child.append([
-        {
-          type: 'session/start',
-          actor: opener.actor,
-          origin: 'system',
-          trust: 'trusted',
-          data: {
-            key: childKey,
-            ...(opener.loop ? { loop: { ...opener.loop } } : {}),
-            parent: { key: this.o.key, boundarySeq },
-            resolvedProfileHash: opener.resolvedProfileHash,
-            ...(opener.resolvedPresetHash ? { resolvedPresetHash: opener.resolvedPresetHash } : {}),
-            preset: opener.preset,
-            ...(opener.permission ? { permission: opener.permission } : {}),
-            agnesVersion: opener.agnesVersion,
-            ...(opener.delegation ? { delegation: opener.delegation } : {}),
-          },
-        },
-        {
-          type: 'budget.state',
-          actor: opener.actor,
-          origin: 'system',
-          trust: 'trusted',
-          lane: opener.lane,
-          register: 'budget.state',
-          data: null,
-        },
-        {
-          type: 'inbox',
-          actor: opener.actor,
-          origin: 'system',
-          trust: 'trusted',
-          lane: opener.lane,
-          register: 'inbox',
-          data: null,
-        },
-        ...(opener.modelSelections ?? []).map(
-          (selection): EventInput => ({
-            type: 'x/core/model-switch',
-            actor: opener.actor,
-            origin: 'system',
-            trust: 'trusted',
-            lane: opener.lane,
-            ignorable: true,
-            data: {
-              slot: selection.slot,
-              from: { route: selection.route, model: selection.model },
-              to: {
-                route: selection.route,
-                model: selection.model,
-                ...(selection.thinking === undefined ? {} : { thinking: selection.thinking }),
-                ...(selection.contextWindow === undefined ? {} : { contextWindow: selection.contextWindow }),
-              },
-              reason: 'fork-origin',
-            },
-          }),
-        ),
-      ])
-    } catch (err) {
-      await child.close().catch(() => undefined)
-      throw err
-    }
-    return child
+    return forkInto(
+      this,
+      this.o,
+      this.integrityState,
+      {
+        cold: (options) => SessionLogImpl.open(options),
+        live: (...args) => SessionLogImpl.#openFromLiveParent(...args),
+      },
+      boundarySeq,
+      childKey,
+      opener,
+    )
   }
 
   /**
@@ -950,37 +851,7 @@ export class SessionLogImpl {
     await this.drain.catch(() => undefined)
     this.verifyAbort.abort()
     await this.writeHead().catch(() => undefined)
+    await this.checkpointOperations
     if (release) await this.o.storage.release(this.o.key, this.o.writerRunId)
   }
-}
-
-/** Verifies `(state.lastSeq, toSeq]` of `key` onward from `state`, a page at a time, keeping the rows. */
-async function verifiedRange(
-  storage: StorageAdapter,
-  key: SessionKey,
-  from: IntegrityState,
-  toSeq: Seq,
-): Promise<{ state: IntegrityState; rows: IntegrityRow[] }> {
-  let state = from
-  const rows: IntegrityRow[] = []
-  while (state.lastSeq < toSeq) {
-    if (rows.length > 0) await pageYield()
-    const page = await storage.scanIntegrity(key, {
-      fromSeq: state.lastSeq + 1,
-      toSeq,
-      limit: INTEGRITY_PAGE_SIZE,
-    })
-    if (page.length === 0)
-      throw new LedgerIntegrityFailure('ledger ended before advertised sequence', { seq: state.lastSeq + 1 })
-    // The digests cover each row's own session key, so rows of another ledger that happen to chain
-    // from the same head would verify; they are refused by key before they are verified.
-    const foreign = page.find((row) => row.sessionKey !== key)
-    if (foreign)
-      throw new LedgerIntegrityFailure('ledger row belongs to another session', { seq: foreign.event.seq })
-    state = verifyIntegrityRows(page, state)
-    rows.push(...page)
-  }
-  if (state.lastSeq !== toSeq)
-    throw new LedgerIntegrityFailure('ledger exceeds advertised sequence', { seq: state.lastSeq })
-  return { state, rows }
 }

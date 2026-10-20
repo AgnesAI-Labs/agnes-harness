@@ -1,8 +1,15 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { createRefineHarness, packageStorage, RefineQueue } from '@agnes/base'
-import { CoreError, defaultIds, SessionLogImpl } from '@agnes/core'
+import {
+  CoreError,
+  defaultIds,
+  SessionLogImpl,
+  makeVerifiedHead,
+  LEDGER_INTEGRITY_ALGORITHM,
+} from '@agnes/core'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {
   persistenceContract,
@@ -532,5 +539,221 @@ it('keeps process persistence live after registry teardown until session leases 
     await reopened.release('lease', 'reopened')
   } finally {
     await reopened.close()
+  }
+})
+
+describe('perf3-review: forwarded checkpoint provider operations', () => {
+  const checkpoint = (key: string, throughSeq = 1) =>
+    makeVerifiedHead({
+      sessionKey: key,
+      throughSeq,
+      headDigest: 'a'.repeat(64),
+      legacyThroughSeq: 0,
+      algorithm: LEDGER_INTEGRITY_ALGORITHM,
+      verifiedFullAtMs: 1,
+      writtenAtMs: 1,
+    })
+
+  it('preserves session and independent-home namespaces and enforces forward-only writes through the bridge', async () => {
+    const a = await openConfiguredPersistence({ dataDir: tempDir() }),
+      b = await openConfiguredPersistence({ dataDir: tempDir() })
+    try {
+      const first = checkpoint('profile-a:session-a', 4),
+        other = checkpoint('profile-b:session-b', 7)
+      await a.writeVerifiedHead!(first)
+      await a.writeVerifiedHead!(other)
+      await b.writeVerifiedHead!(checkpoint(first.sessionKey, 9))
+      expect(await a.readVerifiedHead!(first.sessionKey)).toEqual(first)
+      expect(await a.readVerifiedHead!(other.sessionKey)).toEqual(other)
+      expect((await b.readVerifiedHead!(first.sessionKey))?.throughSeq).toBe(9)
+      expect(await b.readVerifiedHead!(other.sessionKey)).toBeUndefined()
+      await a.writeVerifiedHead!(checkpoint(first.sessionKey, 2))
+      expect((await a.readVerifiedHead!(first.sessionKey))?.throughSeq).toBe(4)
+      await a.writeVerifiedHead!(checkpoint(first.sessionKey, 2), { force: true })
+      expect((await a.readVerifiedHead!(first.sessionKey))?.throughSeq).toBe(2)
+      await a.deleteVerifiedHead!(first.sessionKey)
+      expect(await a.readVerifiedHead!(first.sessionKey)).toBeUndefined()
+      expect(await a.readVerifiedHead!(other.sessionKey)).toEqual(other)
+      expect((await b.readVerifiedHead!(first.sessionKey))?.throughSeq).toBe(9)
+      expect(await a.integrityDigestAt!(other.sessionKey, 1)).toBeUndefined()
+      expect(await a.ledgerStats!(other.sessionKey)).toEqual({ storedBytes: 0, maxRowBytes: 0 })
+    } finally {
+      await a.close()
+      await b.close()
+    }
+  })
+
+  it.each([
+    'readVerifiedHead',
+    'writeVerifiedHead',
+    'deleteVerifiedHead',
+    'integrityDigestAt',
+    'ledgerStats',
+  ] as const)('drains an in-flight %s before closing the provider store', async (method) => {
+    let reached!: () => void,
+      release!: () => void,
+      closed = false
+    const entered = new Promise<void>((resolve) => {
+        reached = resolve
+      }),
+      gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+    const provider = definePersistenceProvider({
+      id: 'review-drain',
+      version: '1.0.0',
+      state: { effect: 'restart-required' },
+      capabilities: sqlitePersistenceProvider.capabilities,
+      async open(options) {
+        const store = await sqlitePersistenceProvider.open(options)
+        const hold = async () => {
+          reached()
+          await gate
+          expect(closed).toBe(false)
+        }
+        return {
+          ...store,
+          readVerifiedHead: async (key) => {
+            await hold()
+            return store.readVerifiedHead!(key)
+          },
+          writeVerifiedHead: async (head, options) => {
+            await hold()
+            return store.writeVerifiedHead!(head, options)
+          },
+          deleteVerifiedHead: async (key) => {
+            await hold()
+            return store.deleteVerifiedHead!(key)
+          },
+          integrityDigestAt: async (key, seq) => {
+            await hold()
+            return store.integrityDigestAt!(key, seq)
+          },
+          ledgerStats: async (key) => {
+            await hold()
+            return store.ledgerStats!(key)
+          },
+          close: async () => {
+            closed = true
+            await store.close()
+          },
+        } satisfies PersistenceSessionStore
+      },
+    })
+    const storage = await openConfiguredPersistence({
+      dataDir: tempDir(),
+      providerId: provider.id,
+      providers: [provider],
+    })
+    const invoke = () => {
+      if (method === 'readVerifiedHead') return storage.readVerifiedHead!('a')
+      if (method === 'writeVerifiedHead') return storage.writeVerifiedHead!(checkpoint('a'))
+      if (method === 'deleteVerifiedHead') return storage.deleteVerifiedHead!('a')
+      if (method === 'integrityDigestAt') return storage.integrityDigestAt!('a', 1)
+      return storage.ledgerStats!('a')
+    }
+    const operation = invoke().then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    )
+    await entered
+    let finished = false
+    const closing = storage.close().then(() => {
+      finished = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(finished).toBe(false)
+    expect(closed).toBe(false)
+    release()
+    await operation
+    await closing
+    expect(closed).toBe(true)
+    await expect(invoke()).rejects.toMatchObject({ code: 'E_CLOSED' })
+  })
+})
+
+it('perf3-review: a legacy provider without optional methods fully verifies both cold and warm history', async () => {
+  const directory = tempDir(),
+    reads: number[] = []
+  const provider = definePersistenceProvider({
+    id: 'review-legacy',
+    version: '1.0.0',
+    state: { effect: 'restart-required' },
+    capabilities: sqlitePersistenceProvider.capabilities,
+    async open(options) {
+      const store = await sqlitePersistenceProvider.open(options)
+      const {
+        readVerifiedHead: _read,
+        writeVerifiedHead: _write,
+        deleteVerifiedHead: _delete,
+        integrityDigestAt: _digest,
+        ledgerStats: _stats,
+        ...legacy
+      } = store
+      return {
+        ...legacy,
+        scanIntegrity: async (key, query) => {
+          const rows = await store.scanIntegrity!(key, query)
+          reads.push(
+            ...rows.map((row) => {
+              const seq = row.event.seq
+              if (seq === undefined) throw new Error('provider omitted sequence')
+              return seq
+            }),
+          )
+          return rows
+        },
+      }
+    },
+  })
+  const storage = await openConfiguredPersistence({
+    dataDir: directory,
+    providerId: provider.id,
+    providers: [provider],
+  })
+  const options = {
+    storage,
+    key: 'legacy',
+    writerRunId: 'review-legacy',
+    ttlMs: 60_000,
+    ids: defaultIds(),
+    clock: Date.now,
+  }
+  const writer = await SessionLogImpl.open(options)
+  for (let i = 0; i < 5; i++)
+    await writer.append([
+      {
+        type: 'user/message',
+        data: { content: [{ type: 'text', text: `row-${i}` }] },
+        actor: { id: 'human', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+      },
+    ])
+  await writer.close()
+  reads.length = 0
+  const log = await SessionLogImpl.open(options)
+  try {
+    expect(log.openStats.checkpoint).toEqual({ used: false, reason: 'unsupported' })
+    expect(log.historyVerified).toBe(true)
+    expect(reads).toEqual([1, 2, 3, 4, 5])
+    reads.length = 0
+    await log.verifyHistory()
+    expect(log.historyVerified).toBe(true)
+    expect(reads).toEqual([1, 2, 3, 4, 5])
+    const db = new DatabaseSync(join(directory, 'sessions.db'))
+    try {
+      db.prepare(
+        "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND seq = ?",
+      ).run('legacy', 3)
+    } finally {
+      db.close()
+    }
+    await expect(log.verifyHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(log.faulted).toBe(true)
+  } finally {
+    await log.close()
+    await storage.close()
   }
 })
