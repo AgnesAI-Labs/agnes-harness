@@ -1,3 +1,4 @@
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { install, prompt, toolResult } from './sdk.js'
@@ -27,21 +28,46 @@ test('showcase full access business signature records the human principal withou
       if (document.querySelector('[data-testid="approval-card"]')) state.businessPrompts!++
     }).observe(document.body, { childList: true, subtree: true })
   })
-  // No answer handler: this real showcase tool must complete on the Host's automatic signature.
-  await prompt(
-    session,
-    'call pharma_record {"action":"investigate","batch":"B-2410-017","expectedRevision":0}',
-  )
-  const receipt = await toolResult(session, 'pharma_record')
-  expect(receipt?.structured).toMatchObject({
-    signature: {
-      signer: expect.any(String),
-      confirmationMode: 'auto-confirmed under full access',
-      reviewedRevision: 0,
-    },
-  })
-  const { decisions } = await client.approval.list(session.id)
+  // The pending inbox excludes consumed decisions; the public ledger stream keeps their proof.
+  const proof = new Map<string, DecisionSnapshot>()
+  const events = session.events()[Symbol.asyncIterator]()
+  const collecting = (async () => {
+    for (;;) {
+      const next = await events.next()
+      if (next.done) return
+      if (next.value.type === 'decision/state') {
+        const snapshot = next.value.data as unknown as DecisionSnapshot
+        proof.set(snapshot.handle.id, snapshot)
+      }
+    }
+  })()
+  let receipt: Awaited<ReturnType<typeof toolResult>>
+  try {
+    // No answer handler: this real showcase tool must complete on the Host's automatic signature.
+    await prompt(
+      session,
+      'call pharma_record {"action":"investigate","batch":"B-2410-017","expectedRevision":0}',
+    )
+    receipt = await toolResult(session, 'pharma_record')
+    expect(receipt?.structured).toMatchObject({
+      signature: {
+        signer: expect.any(String),
+        confirmationMode: 'auto-confirmed under full access',
+        reviewedRevision: 0,
+      },
+    })
+    await expect
+      .poll(() =>
+        [...proof.values()].some((d) => d.request.spec.purpose === 'business.confirm' && !!d.consumption),
+      )
+      .toBe(true)
+  } finally {
+    await events.return?.()
+    await collecting
+  }
+  const decisions = [...proof.values()]
   const signature = decisions.find((d) => d.request.spec.purpose === 'business.confirm')
+  expect((await client.approval.list(session.id)).decisions).toEqual([])
   expect(signature).toMatchObject({
     result: {
       reason: 'answered',
