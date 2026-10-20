@@ -41,6 +41,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
   const presentation = useMemo(
     () => ({
       t: props.t,
+      ...(props.renderTurnAttribution ? { renderTurnAttribution: props.renderTurnAttribution } : {}),
       readAttachment: props.readAttachment,
       ...(props.renderTurnActions ? { renderTurnActions: props.renderTurnActions } : {}),
       ...(props.renderTurnDeliverables ? { renderTurnDeliverables: props.renderTurnDeliverables } : {}),
@@ -53,6 +54,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
     }),
     [
       props.t,
+      props.renderTurnAttribution,
       props.readAttachment,
       props.renderTurnActions,
       props.renderTurnDeliverables,

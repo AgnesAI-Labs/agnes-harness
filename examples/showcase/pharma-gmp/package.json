@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/pharma-gmp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -479,13 +479,16 @@
         "navigation": {
           "entries": [
             "@agnes-showcase/pharma-gmp#pharma-home",
-            "@agnes-showcase/pharma-gmp#pharma-batches",
-            "@agnes-showcase/pharma-gmp#pharma-deviations",
-            "@agnes-showcase/pharma-gmp#pharma-em",
-            "@agnes-showcase/pharma-gmp#pharma-release",
-            "@agnes-showcase/pharma-gmp#pharma-audit"
+            "@agnes-showcase/pharma-gmp#pharma-tasks"
           ],
-          "hideBuiltin": []
+          "hideBuiltin": [
+            "agents",
+            "business-agents",
+            "automation",
+            "schedules",
+            "triggers",
+            "plugins"
+          ]
         }
       },
       "defaultAgent": "@agnes-showcase/pharma-gmp#hub",
@@ -495,17 +498,163 @@
         "@agnes-showcase/pharma-gmp#investigator",
         "@agnes-showcase/pharma-gmp#em",
         "@agnes-showcase/pharma-gmp#release"
-      ]
+      ],
+      "workbench": {
+        "tabs": [
+          {
+            "id": "current-object",
+            "title": {
+              "en": "Current object",
+              "zh-CN": "当前对象"
+            },
+            "icon": "file",
+            "order": -30,
+            "slot": "workbench.panel",
+            "view": "page",
+            "page": "@agnes-showcase/pharma-gmp#pharma-object",
+            "when": "session"
+          },
+          {
+            "id": "signatures",
+            "title": {
+              "en": "Pending signatures",
+              "zh-CN": "待签署"
+            },
+            "icon": "check",
+            "order": -20,
+            "slot": "workbench.panel",
+            "view": "signatures"
+          },
+          {
+            "id": "evidence",
+            "title": {
+              "en": "Evidence & reports",
+              "zh-CN": "证据与报告"
+            },
+            "icon": "list",
+            "order": -10,
+            "slot": "workbench.panel",
+            "view": "evidence"
+          }
+        ],
+        "actions": [
+          {
+            "id": "investigate",
+            "title": {
+              "en": "Investigate deviation",
+              "zh-CN": "调查偏差"
+            },
+            "agent": "@agnes-showcase/pharma-gmp#investigator",
+            "prompt": {
+              "en": "Read the selected deviation and linked batches; distinguish original findings, hypotheses and confirmed causes.",
+              "zh-CN": "读取所选偏差与关联批次证据，区分原始发现、假设和确认根因。"
+            },
+            "object": {
+              "type": "deviation",
+              "id": "DEV-2410-017"
+            },
+            "focusTab": "current-object"
+          },
+          {
+            "id": "capa",
+            "title": {
+              "en": "Draft CAPA",
+              "zh-CN": "起草 CAPA"
+            },
+            "agent": "@agnes-showcase/pharma-gmp#investigator",
+            "prompt": {
+              "en": "Draft actions, owners and effectiveness checks for the selected deviation or CAPA; do not claim missing evidence is complete.",
+              "zh-CN": "为所选偏差或 CAPA 起草措施、责任人与有效性检查，不将缺失证据描述为已完成。"
+            },
+            "object": {
+              "type": "deviation",
+              "id": "DEV-2410-017"
+            },
+            "focusTab": "current-object"
+          },
+          {
+            "id": "em",
+            "title": {
+              "en": "Assess EM excursion",
+              "zh-CN": "评估 EM 超限"
+            },
+            "agent": "@agnes-showcase/pharma-gmp#em",
+            "prompt": {
+              "en": "Assess the selected EM result, alert/action limits and linked batch impact, retaining original values.",
+              "zh-CN": "评估所选环境监测结果、警戒与行动限度及关联批次影响，保留原始数值。"
+            },
+            "object": {
+              "type": "em",
+              "id": "EM-0017"
+            },
+            "focusTab": "current-object"
+          },
+          {
+            "id": "review",
+            "title": {
+              "en": "Review batch record",
+              "zh-CN": "批记录复核"
+            },
+            "agent": "@agnes-showcase/pharma-gmp#reviewer",
+            "prompt": {
+              "en": "Review the selected batch originals, LOD, calibration, deviations and independent retest evidence.",
+              "zh-CN": "复核所选批次的原始记录、LOD、设备校准、偏差与复验依据。"
+            },
+            "object": {
+              "type": "batch",
+              "id": "B-2410-017"
+            },
+            "focusTab": "current-object"
+          },
+          {
+            "id": "release",
+            "title": {
+              "en": "Request QA release",
+              "zh-CN": "发起 QA 放行"
+            },
+            "agent": "@agnes-showcase/pharma-gmp#release",
+            "prompt": {
+              "en": "Check release prerequisites for the selected batch; once complete, use Host confirmation under the current permission mode and generate the release certificate.",
+              "zh-CN": "检查所选批次放行前提，完整后按当前权限提交宿主签署流程并生成放行证书。"
+            },
+            "object": {
+              "type": "batch",
+              "id": "B-2410-017"
+            },
+            "focusTab": "current-object"
+          }
+        ],
+        "scenarios": [
+          {
+            "en": "LOD excursion → investigation → CAPA → batch review",
+            "zh-CN": "干燥失重超限 → 偏差调查 → CAPA → 批记录复核"
+          },
+          {
+            "en": "EM alert → impact assessment → linked batch evidence",
+            "zh-CN": "EM 警戒 → 影响评估 → 关联批次证据"
+          },
+          {
+            "en": "Complete dossier → QA signature → release certificate",
+            "zh-CN": "完整档案 → QA 签署 → 放行证书"
+          }
+        ],
+        "includes": [
+          "pages",
+          "tools",
+          "signatures",
+          "reports"
+        ]
+      }
     },
     "metadata": {
       "displayName": "Sableleaf GMP Quality Hub",
       "summary": "Fictional OSD quality application: batch evidence, deviation/CAPA, EM and human-approved QA release.",
-      "description": "Synthetic pharmaceutical quality application with five role agents and six operational pages.",
+      "description": "Synthetic pharmaceutical quality workbench with batch evidence, internal roles and QA signatures.",
       "locales": {
         "zh-CN": {
           "displayName": "沙叶 GMP 质量中枢",
           "summary": "虚构固体制剂质量应用：批记录、偏差/CAPA、EM 和人工批准的 QA 放行。",
-          "description": "五个角色智能体、六个业务页面的合成药厂质量应用。"
+          "description": "围绕批次证据、内部角色协作与 QA 签署开展工作的合成质量工作台。"
         }
       }
     }

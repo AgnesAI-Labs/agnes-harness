@@ -10,7 +10,7 @@ import {
 } from '@agnes/protocol'
 import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
-import { composerCommands } from '@agnes/web-client'
+import { applicationWorkDraft, composerCommands, encodeApplicationWork } from '@agnes/web-client'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
@@ -248,7 +248,11 @@ export function createSubmissionController(
       return
     }
     const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
-    const content: ContentBlock[] = [...(text ? [{ type: 'text' as const, text }] : []), ...attachments]
+    const sentText = encodeApplicationWork(text, applicationWorkDraft.read(session?.id))
+    const content: ContentBlock[] = [
+      ...(sentText ? [{ type: 'text' as const, text: sentText }] : []),
+      ...attachments,
+    ]
     const busy = context.projection?.opState !== null && context.projection?.opState !== undefined
     if (
       attachments.length > 0 &&

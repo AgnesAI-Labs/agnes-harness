@@ -393,6 +393,7 @@ function TurnView({
                 <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
               </span>
               <span className="process-name">{props.t('brand.harness')}</span>
+              {props.renderTurnAttribution?.(turn)}
             </span>
           }
           content={

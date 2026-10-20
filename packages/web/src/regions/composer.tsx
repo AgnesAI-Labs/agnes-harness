@@ -20,7 +20,7 @@ import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { ModelPickerControl } from '../model-picker.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
-import { ApplicationWorkActions } from '../workbench/application-actions.js'
+import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
   COMPOSER_DEPENDENCIES,
@@ -52,6 +52,7 @@ export function ComposerDshFrame({
     controls?.suggestions.subscribe ?? (() => () => {}),
     controls?.suggestions.getSnapshot ?? (() => EMPTY_SUGGESTIONS),
   )
+  const sessionId = useSyncExternalStore(registry.subscribeSession.bind(registry), () => registry.sessionId)
   const language = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
   const examplePrompts = agents.featured.flatMap((row) => {
     const prompt = resolvePluginMetadata(row.metadata, language)?.samplePrompt
@@ -78,7 +79,12 @@ export function ComposerDshFrame({
           {...options}
           examplePrompts={examplePrompts}
           slots={{
-            attachments: outlet('conversation.input.attachments'),
+            attachments: (
+              <>
+                <ApplicationComposerContext sessionId={sessionId} />
+                {outlet('conversation.input.attachments')}
+              </>
+            ),
             dock: (
               <span className="composer-dsh-control" data-agnes-composer-dock={true}>
                 <SlotOutlet

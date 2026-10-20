@@ -74,6 +74,39 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
           expect(dossier.textContent?.includes('2.227')).toBe(id === 'AN-027')
           expect(dossier.querySelector('[data-testid="aero-object-dossier"]') !== null).toBe(id === 'AN-027')
         }
+        for (const mode of ['manual', 'auto-confirmed under full access', undefined]) {
+          renderRegion(
+            dossier as unknown as HTMLElement,
+            createElement(ObjectDossier, {
+              data: {
+                ...state,
+                anomaly: investigate(state),
+                ncrs: state.ncrs.map((record) =>
+                  record.id === 'NCR-018' ? { ...record, approvals: ['synthetic-decision'] } : record,
+                ),
+                audit: [
+                  { approval: 'synthetic-decision', confirmationMode: mode, signer: 'Synthetic operator' },
+                ],
+              },
+              t: language(locale),
+              context: { selection: { object: { type: 'ncr', id: 'NCR-018' } } },
+            }),
+          )
+          const label = dossier.querySelector('[data-business-confirmation]')?.textContent
+          expect(label).toContain(
+            mode === 'manual'
+              ? locale === 'en'
+                ? 'Signed by'
+                : '已由真人签署'
+              : mode
+                ? locale === 'en'
+                  ? 'Auto-confirmed under full access'
+                  : '完全访问下自动确认'
+                : locale === 'en'
+                  ? 'Confirmation mode not recorded'
+                  : '确认方式未记录',
+          )
+        }
       } finally {
         unmountRegion(dossier as unknown as HTMLElement)
         dossier.remove()

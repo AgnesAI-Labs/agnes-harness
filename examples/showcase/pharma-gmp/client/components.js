@@ -21,10 +21,10 @@ export const badge = (value, t) =>
 export const button = (label, onClick, props = {}) => h(Button, { onClick, ...props }, label)
 export const table = (rows, columns, caption, props = {}) =>
   h(Table, { rowKey: 'id', dataSource: rows, columns, caption, captionRepeatsHeading: true, ...props })
-export const column = (title, dataIndex, render, width = 150) => ({
+export const column = (title, dataIndex, render, width = 150, key = dataIndex) => ({
   title,
   dataIndex,
-  key: dataIndex,
+  key,
   width,
   ...(render ? { render } : {}),
 })
@@ -57,7 +57,18 @@ export function measurements(rows, locale, t) {
     ),
   )
 }
-export function BatchDrawer({ batch, dossier, deviations, t, locale, close, mutate, busy }) {
+export function BatchDrawer({
+  batch,
+  dossier,
+  deviations,
+  t,
+  locale,
+  close,
+  mutate,
+  busy,
+  workActions,
+  renderDeviationAction,
+}) {
   if (!batch) return null
   return h(
     Drawer,
@@ -68,6 +79,7 @@ export function BatchDrawer({ batch, dossier, deviations, t, locale, close, muta
       onClose: close,
       size: 'min(760px, 100vw)',
     },
+    workActions,
     h('p', { className: 'ph-note' }, t.original),
     ...(dossier.evidence.recordApprovals ?? []).map((entry) =>
       h(
@@ -123,6 +135,7 @@ export function BatchDrawer({ batch, dossier, deviations, t, locale, close, muta
             badge(d.severity, t),
             ' ',
             badge(d.stage, t),
+            renderDeviationAction?.(d),
           ),
         ),
       ),

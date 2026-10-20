@@ -182,8 +182,10 @@ Actions use `agent` or the application's `defaultAgent`, must target an allowed 
 and may focus a declared tab. They open the existing launch review and fill an editable request,
 never submit it. From a business page, import `openApplicationWork` from `@agnes/web-client` and call
 `openApplicationWork('review', {type: 'ncr', id: record.id})`. The object is bounded structured request
-context, serialized into the editable prompt. Submitted context can be recovered from durable user
-content in a fresh browser tab; editing its object updates the dossier. Optional browser session memory
+context, shown as a removable chip beside the editable human-readable prompt. Only submission serializes
+the context into durable user content; the transcript restores the chip, including after reload or in a
+fresh browser tab. Removing the draft chip omits that context from subsequent requests without changing
+previously submitted messages or the current dossier. Optional browser session memory
 restores pre-submission focus and launch attribution; it grants no authority and is not a backend business record. Routing
 selects an existing agent at launch; it does not introduce delegation or switch a running session's role.
 

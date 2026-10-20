@@ -65,11 +65,15 @@ export function bundledUpdate(
   installed: PackageInstalledDescriptor,
   catalog: readonly PackageCatalogDescriptor[],
 ): PackageCatalogDescriptor | undefined {
-  if (!isBundledPlugin(installed)) return undefined
+  const example =
+    installed.presentation?.origin === 'example' &&
+    installed.source.type === 'file' &&
+    installed.source.ref.startsWith('file:./bundled-examples/')
+  if (!isBundledPlugin(installed) && !example) return undefined
   return catalog.find(
     (entry) =>
       entry.id === installed.id &&
-      entry.sourceId === 'builtin-plugins' &&
+      entry.sourceId === (example ? 'official-examples' : 'builtin-plugins') &&
       entry.source.type === installed.source.type &&
       entry.source.ref === installed.source.ref &&
       entry.integrity !== installed.integrity,
@@ -82,7 +86,9 @@ export async function readBundledCatalog(api: PluginAdminApi): Promise<PackageCa
   let cursor: string | undefined
   do {
     const page = await api.catalog('', cursor)
-    entries.push(...page.items.filter((item) => item.sourceId === 'builtin-plugins'))
+    entries.push(
+      ...page.items.filter((item) => ['builtin-plugins', 'official-examples'].includes(item.sourceId)),
+    )
     cursor = page.nextCursor ?? undefined
   } while (cursor)
   return entries

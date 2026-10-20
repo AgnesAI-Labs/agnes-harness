@@ -28,6 +28,8 @@ export interface ConversationMessagesProps {
   turns?: readonly UITurn[]
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
+  /** Host-provided role attribution beside the assistant name. */
+  renderTurnAttribution?: (turn: UITurn) => ReactNode
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
   /**
    * A loop step's result recorded as an assistant message. The turn shows it as a step row of its

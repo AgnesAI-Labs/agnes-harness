@@ -38,11 +38,14 @@ export function apply(ctx, config) {
           h('span', null, t.synthetic),
           h('span', null, op.data ? `${t.choose('修订', 'Revision')} ${op.data.revision}` : '—'),
         ),
-        h(PageHeader, {
-          title: t.title(id),
-          description: t.description,
-          actions: h(Button, { onClick: op.refresh, disabled: op.busy }, t.refresh),
-        }),
+        !context?.selection?.applicationPanel &&
+          h(PageHeader, {
+            title: t.title(id),
+            description: t.description,
+            actions: h(Button, { onClick: op.refresh, disabled: op.busy }, t.refresh),
+          }),
+        context?.selection?.applicationPanel &&
+          h(Button, { onClick: op.refresh, disabled: op.busy }, t.refresh),
         op.error && h(Banner, { tone: 'error' }, op.error),
         op.message && h(Banner, { tone: op.pending ? 'warning' : 'info' }, op.message),
         op.pending &&

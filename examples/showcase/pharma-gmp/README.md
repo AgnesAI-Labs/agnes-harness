@@ -4,7 +4,7 @@
 
 An installable, explicitly adopted pharmaceutical quality application, `@agnes-showcase/pharma-gmp`. Sableleaf OSD, people, products, signatures and evidence are fictional and synthetic. A public name search found no obvious namesake pharmaceutical plant; this is not trademark clearance. This unvalidated teaching system models nonsterile tablets/capsules and must not be used for real batch release or regulatory submissions.
 
-The fixed scenario date is **2024-10-20**: 36 batches, 240 EM samples, nine equipment records and 12 deviations. Six pages cover overview, batches/records, deviation/CAPA, environmental monitoring, QA release and audit. Five localized agents provide Hub, BPR review, investigation, EM analysis and release assistance.
+The fixed scenario date is **2024-10-20**: 36 batches, 240 EM samples, nine equipment records and 12 deviations. The workbench combines overview, tasks/signatures, live object dossiers and the batch/record, deviation/CAPA, EM, QA release and audit modules. A single Quality Hub entry routes work to five internal roles; their localized names appear as turn attribution.
 
 From the source repository root, after preparing the local CLI using the installation guide:
 
@@ -47,3 +47,7 @@ For the real-model investor demo, run `exec node --import tsx examples/showcase/
 For an explicit test-operator source review, set `AGH_SHOWCASE_REQUIRE_REVIEW=1`: the runner writes `candidate-review.json` and waits for `review-approved.json` in the isolated run directory, containing the same `candidateHash` and `reviewHash`. This test fixture never grants production consent.
 
 The signature card shows the object, reviewed revision, exact meaning and evidence in the current UI language. The human answer must return that view’s bound meaning unchanged; receipts and audit records preserve it. A legacy null answer cannot complete these new signatures.
+
+Version 1.1.0 updates the conversation workbench; existing 1.0.0 installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
+
+The workbench offers Current object, Pending signatures and Evidence & reports. Start deviation, CAPA, EM, batch review or QA release work from object buttons or composer actions; five internal roles appear as turn attribution. Overview and Tasks & signatures form the primary navigation; all other modules remain under More and overview links.

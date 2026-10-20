@@ -52,11 +52,7 @@ export function resolveApplicationWork(request: ApplicationWorkRequest, locale: 
   if (object) applicationWorkRequest(action.id, object)
   return {
     agent,
-    prompt:
-      (action.prompt[locale] ?? action.prompt.en) +
-      (object
-        ? `\n\n${JSON.stringify({ applicationId: app.id, packageId: request.packageId, actionId: action.id, object })}`
-        : ''),
+    prompt: action.prompt[locale] ?? action.prompt.en,
     request: { ...request, ...(object ? { object } : {}) },
     focusTab: action.focusTab,
   }
@@ -69,11 +65,14 @@ export function rememberApplicationWork(
   agent: string,
   title: { en: string; 'zh-CN'?: string },
 ): void {
+  draftMemory.set(sessionId, request)
   try {
     sessionStorage.setItem(key(sessionId), JSON.stringify({ request, agent, title }))
+    sessionStorage.setItem(`${key(sessionId)}:draft`, JSON.stringify(request))
   } catch {
     /* optional */
   }
+  draftChanged()
 }
 export function sessionApplicationWork(
   sessionId: string | undefined,
@@ -119,32 +118,90 @@ export function sessionAgentAttribution(sessionId: string | undefined): string |
   }
 }
 
-/** Recover the explicit submitted object from durable user content, including a fresh browser tab.
- * This is request context only: never infer an actor, approval or write authorization from it. */
+/** Decode only the bounded explicit work envelope; ordinary user JSON stays ordinary text.
+ * The persisted suffix is unchanged. This is presentation context, never authorization. */
+export function applicationWorkText(text: string): { text: string; request?: ApplicationWorkRequest } {
+  const start = text.lastIndexOf('\n\n{')
+  const suffix = (start >= 0 ? text.slice(start + 2) : text).trim()
+  if (!suffix.startsWith('{') || suffix.length > 8192) return { text }
+  try {
+    const value = JSON.parse(suffix)
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      typeof value.applicationId !== 'string' ||
+      !/^[a-z][a-z0-9-]{0,63}$/.test(value.applicationId) ||
+      typeof value.packageId !== 'string' ||
+      !value.packageId ||
+      value.packageId.length > 512 ||
+      typeof value.actionId !== 'string' ||
+      !/^[a-z][a-z0-9.-]{0,63}$/.test(value.actionId) ||
+      Object.keys(value).some((key) => !['applicationId', 'packageId', 'actionId', 'object'].includes(key)) ||
+      (value.object !== undefined &&
+        (!value.object ||
+          typeof value.object.type !== 'string' ||
+          !/^[A-Za-z][A-Za-z0-9.-]{0,63}$/.test(value.object.type) ||
+          typeof value.object.id !== 'string' ||
+          !value.object.id ||
+          value.object.id.length > 128 ||
+          Object.keys(value.object).some((key) => !['type', 'id'].includes(key))))
+    )
+      return { text }
+    return { text: start >= 0 ? text.slice(0, start) : '', request: value }
+  } catch {
+    return { text }
+  }
+}
+export function encodeApplicationWork(text: string, request?: ApplicationWorkRequest): string {
+  return request ? `${text}\n\n${JSON.stringify(request)}` : text
+}
+const draftMemory = new Map<string, ApplicationWorkRequest | undefined>()
+const draftListeners = new Set<() => void>()
+let draftVersion = 0
+function draftChanged() {
+  draftVersion++
+  for (const listener of draftListeners) listener()
+}
+/** Optional composer memory, separate from the submitted session object. */
+export const applicationWorkDraft = {
+  subscribe(listener: () => void) {
+    draftListeners.add(listener)
+    return () => {
+      draftListeners.delete(listener)
+    }
+  },
+  getSnapshot: () => draftVersion,
+  read(sessionId: string | undefined): ApplicationWorkRequest | undefined {
+    if (!sessionId) return undefined
+    try {
+      const value = draftMemory.has(sessionId)
+        ? draftMemory.get(sessionId)
+        : JSON.parse(sessionStorage.getItem(`${key(sessionId)}:draft`) ?? 'null')
+      return value ? resolveApplicationWork(value, 'en')?.request : undefined
+    } catch {
+      return undefined
+    }
+  },
+  remove(sessionId: string) {
+    draftMemory.set(sessionId, undefined)
+    try {
+      sessionStorage.removeItem(`${key(sessionId)}:draft`)
+    } catch {
+      /* optional */
+    }
+    draftChanged()
+  },
+}
+/** Recover submitted context in a fresh tab, qualified against the active application. */
 export function applicationTimelineWork(
   timeline: UITimeline | undefined,
 ): ApplicationWorkRequest | undefined {
-  const app = effectiveApplication()
-  if (!app) return undefined
   for (const node of [...(timeline?.nodes ?? [])].reverse()) {
     if (node.kind !== 'user') continue
     for (const block of [...node.content].reverse()) {
       if (block.type !== 'text') continue
-      const start = block.text.lastIndexOf('\n\n{')
-      const text = (start >= 0 ? block.text.slice(start + 2) : block.text).trim()
-      if (!text.startsWith('{') || text.length > 8192) continue
-      try {
-        const value = JSON.parse(text)
-        if (
-          value.applicationId !== app.id ||
-          value.packageId !== applicationIdentity.getSnapshot()?.selection?.packageId ||
-          typeof value.actionId !== 'string'
-        )
-          continue
-        return applicationWorkRequest(value.actionId, value.object)
-      } catch {
-        /* Other user content is ordinary conversation, not structured work context. */
-      }
+      const request = applicationWorkText(block.text).request
+      if (request && resolveApplicationWork(request, 'en')) return request
     }
   }
   return undefined

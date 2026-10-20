@@ -1,6 +1,8 @@
 export const words = {
   'zh-CN': {
     home: '质量总览',
+    tasks: '待办与签署',
+    object: '当前对象',
     batches: '批次与批记录',
     deviations: '偏差与 CAPA',
     em: '环境监测',
@@ -120,6 +122,8 @@ export const words = {
   },
   en: {
     home: 'Quality overview',
+    tasks: 'Tasks & signatures',
+    object: 'Current object',
     batches: 'Batches & records',
     deviations: 'Deviations & CAPA',
     em: 'Environmental monitoring',

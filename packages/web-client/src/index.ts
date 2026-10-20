@@ -39,7 +39,10 @@ export {
 export {
   type ApplicationWorkRequest,
   applicationTimelineWork,
+  applicationWorkDraft,
   applicationWorkRequest,
+  applicationWorkText,
+  encodeApplicationWork,
   openApplicationWork,
   rememberApplicationWork,
   rememberSessionAgent,

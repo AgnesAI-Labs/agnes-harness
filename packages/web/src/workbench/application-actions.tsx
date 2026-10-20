@@ -1,5 +1,7 @@
 import {
+  type ApplicationWorkRequest,
   applicationIdentity,
+  applicationWorkDraft,
   effectiveApplication,
   openApplicationWork,
   type SessionService,
@@ -36,8 +38,52 @@ export function ApplicationAttribution({ session }: { session?: SessionService |
   const title = sessionAgentAttribution(id)
   const zh = useDocumentLanguage() === 'zh-CN'
   return title ? (
-    <p className="application-attribution" data-testid="application-attribution">
+    <span className="application-attribution" data-testid="application-attribution">
       {zh ? `由 ${title} 处理` : `Handled by ${title}`}
-    </p>
+    </span>
+  ) : null
+}
+
+export function ApplicationWorkChip({
+  request,
+  onRemove,
+}: {
+  request: ApplicationWorkRequest
+  onRemove?: () => void
+}) {
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const language = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
+  const app = effectiveApplication()
+  const action =
+    app?.id === request.applicationId &&
+    applicationIdentity.getSnapshot()?.selection?.packageId === request.packageId
+      ? app.workbench?.actions?.find((item) => item.id === request.actionId)
+      : undefined
+  const title =
+    action?.title[language] ?? action?.title.en ?? (language === 'en' ? 'Application context' : '应用上下文')
+  const label = [request.object?.id, title].filter(Boolean).join(' · ')
+  return (
+    <span className="application-work-chip" data-testid="application-work-chip">
+      <span>{label}</span>
+      {onRemove && (
+        <Button
+          size="small"
+          aria-label={language === 'en' ? `Remove context: ${label}` : `移除上下文：${label}`}
+          onClick={onRemove}
+        >
+          ×
+        </Button>
+      )}
+    </span>
+  )
+}
+export function ApplicationComposerContext({ sessionId }: { sessionId: string | undefined }) {
+  useSyncExternalStore(applicationWorkDraft.subscribe, applicationWorkDraft.getSnapshot)
+  useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const request = applicationWorkDraft.read(sessionId)
+  return request && sessionId ? (
+    <div className="application-composer-context">
+      <ApplicationWorkChip request={request} onRemove={() => applicationWorkDraft.remove(sessionId)} />
+    </div>
   ) : null
 }

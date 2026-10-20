@@ -84,3 +84,5 @@ MRB 处置、技术状态更改、规则启用与归零关闭属于业务签署�
 
 仓库根目录运行 `pnpm exec node --import tsx examples/showcase/scripts/workbench.mjs`，外层使用项目工具链和浏览器锁。
 脚本创建独立的全新 home，不调用付费模型。
+
+1.1.0 更新会话工作台；已有 1.0.0 安装可在插件页审阅捆绑更新。安装与应用采用仍分开进行。

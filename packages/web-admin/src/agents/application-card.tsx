@@ -136,10 +136,8 @@ export function ApplicationCard({
           </div>
         </header>
         <p className="agent-card-summary">{metadata?.summary}</p>
-        <div className="application-preview" role="img" aria-label={tr('Application preview', '应用预览')}>
-          <ApplicationMark data={'applicationAssets' in entry ? entry.applicationAssets?.mark : undefined} />
+        <div className="application-preview">
           <div>
-            <strong>{brand.title}</strong>
             <p>{metadata?.description}</p>
             <span>
               {tr(

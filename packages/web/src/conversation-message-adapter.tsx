@@ -1,5 +1,7 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import {
+  type ApplicationWorkRequest,
+  applicationWorkText,
   type ClientResourceService,
   conversationCards,
   factChainLinks,
@@ -30,6 +32,7 @@ import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { openPlugins } from './pages/plugins/route.js'
+import { ApplicationAttribution, ApplicationWorkChip } from './workbench/application-actions.js'
 import { workflowStepRecord } from './workflow-step.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
@@ -140,7 +143,9 @@ function interactionEcho(
   const index = nodes.findIndex((node) => node.id === nodeId)
   const preceding =
     demoResult && index > 0 ? nodes.slice(0, index).findLast((node) => node.kind === 'tool') : undefined
-  if (preceding?.kind === 'tool' && interactionToolPresentation(preceding)) return preceding
+  // The teaching model echoes raw receipts, including business JSON. Keep the full echo
+  // in the tool's existing disclosure instead of repeating it as an assistant answer.
+  if (preceding?.kind === 'tool') return preceding
   return nodes.find(
     (node): node is Extract<UINode, { kind: 'tool' }> =>
       node.kind === 'tool' &&
@@ -161,6 +166,7 @@ type Presentation = Pick<ConversationMessagesProps, TurnContributionKind> & {
   answerIds: ReadonlySet<string>
   echoIds: ReadonlySet<string>
   echoTexts: ReadonlyMap<string, readonly string[]>
+  workRequests: ReadonlyMap<string, ApplicationWorkRequest>
 }
 const PresentationContext = createContext<Presentation | undefined>(undefined)
 function usePresentation(): Presentation {
@@ -292,7 +298,22 @@ function ScopedConversationMessages({
   const rawKey = JSON.stringify([...rawEchoes])
   const echoIds = useMemo(() => new Set<string>(JSON.parse(echoKey)), [echoKey])
   const echoTexts = useMemo(() => new Map<string, string[]>(JSON.parse(rawKey)), [rawKey])
+  const workRequests = new Map<string, ApplicationWorkRequest>()
+  const displayNodes = (nodes ?? []).map((node) =>
+    node.kind !== 'user'
+      ? node
+      : {
+          ...node,
+          content: node.content.map((block) => {
+            if (block.type !== 'text') return block
+            const work = applicationWorkText(block.text)
+            if (work.request) workRequests.set(node.id, work.request)
+            return work.request ? { ...block, text: work.text } : block
+          }),
+        },
+  )
   const nextContributions: Presentation = {
+    workRequests,
     answers,
     answerIds,
     echoIds,
@@ -330,6 +351,7 @@ function ScopedConversationMessages({
   const native = useMemo<Omit<ConversationMessagesProps, 'nodes' | 'turns' | 'visibleNodeIds'>>(() => {
     return {
       readAttachment,
+      renderTurnAttribution: () => <ApplicationAttribution session={session} />,
       t: translate,
       processStep: (node) => workflowStepRecord(node.text),
       renderMarkdown: (text, part, state) => (
@@ -434,6 +456,12 @@ function ScopedConversationMessages({
             const content = (
               <>
                 {base}
+                {node.kind === 'user' && (
+                  <SelectedContribution
+                    select={(current) => current.workRequests.get(node.id)}
+                    render={(request) => (request ? <ApplicationWorkChip request={request} /> : null)}
+                  />
+                )}
                 {node.kind === 'tool' && node.review && (
                   <p data-testid="tool-review-decision">
                     {locale?.t(
@@ -544,7 +572,7 @@ function ScopedConversationMessages({
       key={sessionScope ?? ''}
       {...native}
       keepNodeVisible={keepNodeVisible}
-      nodes={nodes ?? []}
+      nodes={displayNodes}
       {...(turns ? { turns } : {})}
       {...(shownNodeIds ? { visibleNodeIds: shownNodeIds } : {})}
     />

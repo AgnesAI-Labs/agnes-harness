@@ -1,8 +1,12 @@
 import { readFile } from 'node:fs/promises'
-import type { ModuleIdentity } from '@agnes/web-client'
+import { applicationIdentity, homeNavigation, type ModuleIdentity } from '@agnes/web-client'
 import { createClientPanelTestHost } from '@agnes/web-client/testkit'
+import { renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
 import { expect, it } from 'vitest'
 import { apply } from '../client/index.js'
+import { words } from '../client/locale.js'
+import { ObjectDossier } from '../client/workbench.js'
 import { dashboard, dossier } from '../src/quality.js'
 import { seed } from '../src/seed.js'
 
@@ -27,7 +31,7 @@ const identity: ModuleIdentity = {
   },
 }
 it.each(['zh-CN', 'en'] as const)(
-  'renders six declared profile pages and preserves an approval operation across unmount (%s)',
+  'renders eight declared profile pages and preserves an approval operation across unmount (%s)',
   async (locale) => {
     const plant = seed(),
       data = { plant, kpi: dashboard(plant), dossiers: plant.batches.map((b) => dossier(plant, b.id)) }
@@ -60,12 +64,111 @@ it.each(['zh-CN', 'en'] as const)(
       const refresh = host.container.querySelector('button')!
       await host.act(async () => refresh.click())
       expect(host.container.textContent).toContain('B-2410-017')
+      const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+      await host.act(async () =>
+        applicationIdentity.set({
+          revision: 1,
+          status: 'active',
+          assets: {},
+          candidates: [],
+          selection: {
+            packageId: identity.packageId,
+            applicationId: 'sableleaf-quality',
+            integrity: 'one',
+            declarationDigest: 'a'.repeat(64),
+            consentDigest: 'b'.repeat(64),
+            bindingDigest: 'c'.repeat(64),
+          },
+          effective: manifest.agnes.application,
+        }),
+      )
+      const work = Array.from(host.container.querySelectorAll('button')).find(
+        (button) => button.textContent === (locale === 'en' ? 'Investigate deviation' : '调查偏差'),
+      )!
+      expect(work.disabled).toBe(false)
+      await host.act(async () => work.click())
+      expect(homeNavigation.getSnapshot()).toMatchObject({
+        id: 'agents',
+        selection: {
+          workAction: { actionId: 'investigate', object: { type: 'deviation', id: 'DEV-2410-017' } },
+        },
+      })
+      homeNavigation.close()
       expect(host.container.querySelector('.ph-alert-copy')?.textContent).toContain(
         locale === 'en' ? 'Historical originals' : '原始历史发现',
       )
-      for (const page of ['batches', 'deviations', 'em', 'release', 'audit', 'home']) {
+      for (const page of ['batches', 'deviations', 'em', 'release', 'audit', 'tasks', 'object', 'home']) {
         await host.render(`pharma-${page}`)
         expect(host.container.querySelector(`[data-pharma-page="${page}"]`)).not.toBeNull()
+      }
+      const panel = host.window.document.createElement('div')
+      host.window.document.body.append(panel)
+      try {
+        const objects = [
+          { type: 'batch', id: 'B-2410-017' },
+          { type: 'deviation', id: 'DEV-2410-017' },
+          { type: 'capa', id: plant.deviations.find((d) => d.actions.length)!.actions[0]!.id },
+          { type: 'em', id: 'EM-0017' },
+          { type: 'batch', id: 'missing' },
+          { type: 'unknown', id: 'B-2410-017' },
+        ]
+        for (const object of objects) {
+          renderRegion(
+            panel as unknown as HTMLElement,
+            createElement(ObjectDossier, {
+              data,
+              t: words[locale],
+              locale,
+              context: { selection: { object } },
+            }),
+          )
+          expect(Boolean(panel.querySelector('[data-testid="pharma-object-dossier"]'))).toBe(
+            object.id !== 'missing' && object.type !== 'unknown',
+          )
+          expect(panel.textContent).not.toContain('undefined')
+          if (object.type === 'em') expect(panel.textContent).toContain('72')
+          if (object.type === 'batch' && object.id !== 'missing') expect(panel.textContent).toContain('3.4 %')
+        }
+        const released = plant.batches.find((batch) => batch.certificate)!
+        for (const mode of ['manual', 'auto-confirmed under full access', undefined]) {
+          const proofData = {
+            ...data,
+            plant: {
+              ...plant,
+              batches: plant.batches.map((batch) =>
+                batch.id === released.id
+                  ? { ...batch, certificate: { ...released.certificate!, confirmationMode: mode } }
+                  : batch,
+              ),
+            },
+          }
+          renderRegion(
+            panel as unknown as HTMLElement,
+            createElement(ObjectDossier, {
+              data: proofData,
+              t: words[locale],
+              locale,
+              context: { selection: { object: { type: 'batch', id: released.id } } },
+            }),
+          )
+          const label = panel.querySelector('.ph-card [data-business-confirmation]')?.textContent
+          expect(label).toContain(
+            mode === 'manual'
+              ? locale === 'en'
+                ? 'Signed by'
+                : '已由真人签署'
+              : mode
+                ? locale === 'en'
+                  ? 'Auto-confirmed under full access'
+                  : '完全访问下自动确认'
+                : locale === 'en'
+                  ? 'Confirmation mode not recorded'
+                  : '确认方式未记录',
+          )
+        }
+      } finally {
+        unmountRegion(panel as unknown as HTMLElement)
+        panel.remove()
       }
       await host.render('pharma-release')
       const release = Array.from(host.container.querySelectorAll('button')).find((b) =>
@@ -131,6 +234,8 @@ it.each(['zh-CN', 'en'] as const)(
         locale === 'en' ? 'Released' : '已放行',
       )
     } finally {
+      await host.act(async () => applicationIdentity.set(undefined))
+      homeNavigation.close()
       await host.dispose()
     }
   },

@@ -11,7 +11,6 @@ import type { TranscriptHandle } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'
-import { ApplicationAttribution } from '../workbench/application-actions.js'
 import { type EmptyStateRegionMount, TRANSCRIPT_SLOT } from './contracts.js'
 /** Render the transcript component behind a session-scoped, replaceable SlotOutlet. */
 export interface TranscriptRegionMount extends EmptyStateRegionMount, TranscriptHandle {}
@@ -61,7 +60,6 @@ export function mountTranscriptRegion(
     },
     () => (
       <>
-        <ApplicationAttribution session={options.session} />
         <TimelineNodeHost
           ref={setHandle}
           registry={registry}

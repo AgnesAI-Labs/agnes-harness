@@ -7,9 +7,10 @@ import { join, resolve } from 'node:path'
 import { chromium } from '@playwright/test'
 import { runtime, toolResult, until } from '../pharma-gmp/scripts/runtime.mjs'
 
-execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
-  stdio: 'inherit',
-})
+if (!process.env.AGH_SHOWCASE_SKIP_BUILD)
+  execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
+    stdio: 'inherit',
+  })
 const descriptor = JSON.parse(
   await readFile(new URL('../aerospace-quality/client/agnes.client.json', import.meta.url), 'utf8'),
 )
@@ -45,6 +46,7 @@ async function shot(page, label, locale, theme) {
       { timeout: 45000 },
     )
   await page.evaluate(() => document.fonts.ready)
+  if (await page.locator('.task-heading').isVisible()) assert.ok(!(await page.locator('.task-heading').innerText()).includes('applicationId'))
   const file = `${label}-${locale}-${theme}.png`
   await page.mouse.move(1598, 1098)
   await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
@@ -87,6 +89,17 @@ async function selectTab(page, id, title, zh) {
       .click()
     await page.getByRole('menuitem', { name: title, exact: true }).click()
   }
+}
+async function checkAlignment(page) {
+  const boxes = await page.evaluate(() =>
+    ['#composer', '.application-work-actions'].map((selector) => {
+      const rect = document.querySelector(selector).getBoundingClientRect()
+      return { x: rect.x, width: rect.width }
+    }),
+  )
+  assert.ok(Math.abs(boxes[0].x - boxes[1].x) < 2, JSON.stringify(boxes))
+  assert.ok(Math.abs(boxes[0].width - boxes[1].width) < 2, JSON.stringify(boxes))
+  assert.ok(!(await page.locator('#prompt').inputValue()).includes('applicationId'))
 }
 async function call(session, name, input) {
   const result = await session.prompt(`call ${name} ${JSON.stringify(input)}`, {
@@ -154,7 +167,11 @@ try {
       await page.getByTestId('workbench-tab-application.current-object').getAttribute('aria-selected'),
       'true',
     )
-    assert.ok((await page.locator('#prompt').inputValue()).includes('AN-027'))
+    assert.ok(!(await page.locator('#prompt').inputValue()).includes('applicationId'))
+    assert.ok(
+      (await page.locator('#composer [data-testid=application-work-chip]').innerText()).includes('AN-027'),
+    )
+    await checkAlignment(page)
     await shot(page, '05-object-conversation', locale, theme)
     await page.locator('#send').click()
     await until(
@@ -172,13 +189,22 @@ try {
       Boolean,
       'editable work request submitted',
     )
-    await page.getByTestId('application-attribution').waitFor({ timeout: 30000 })
+    await page
+      .locator('.process-identity [data-testid=application-attribution]')
+      .first()
+      .waitFor({ timeout: 30000 })
     await call(investigation, 'aero_investigate', { anomalyId: 'AN-027' })
     const restored = await context.newPage()
     await restored.goto(`${rt.url}/?session=${investigation.id}`)
     await restored.locator('#view-chat').click()
     await restored.getByTestId('aero-object-dossier').waitFor({ timeout: 45000 })
     assert.ok((await restored.getByTestId('aero-object-dossier').innerText()).includes('AN-027'))
+    assert.ok(
+      (
+        await restored.locator('#transcript [data-testid=application-work-chip]').first().innerText()
+      ).includes('AN-027'),
+    )
+    assert.ok(!(await restored.locator('#transcript').innerText()).includes('applicationId'))
     await shot(restored, '05b-restored-object', locale, theme)
     await restored.close()
     const mrb = await launch(
@@ -190,9 +216,25 @@ try {
     await page.getByTestId('aero-object-dossier').waitFor({ timeout: 45000 })
     assert.ok((await page.getByTestId('aero-object-dossier').innerText()).includes('NCR-018'))
     await shot(page, '06-quick-action', locale, theme)
+    await checkAlignment(page)
+    await page
+      .locator('#workbench-right')
+      .getByRole('button', { name: zh ? '关闭此停靠面板' : 'Close this dock', exact: true })
+      .click()
+    await page.setViewportSize({ width: 760, height: 1100 })
+    await checkAlignment(page)
+    await shot(page, '06b-narrow-actions', locale, theme)
+    await page.setViewportSize({ width: 400, height: 900 })
+    await checkAlignment(page)
+    await shot(page, '06c-mobile-actions', locale, theme)
+    await page.setViewportSize({ width: 1600, height: 1100 })
+    await page.getByTestId('workbench-right-toggle').click()
+    await selectTab(page, 'current-object', zh ? '当前对象' : 'Current object', zh)
     const initial = await call(mrb, 'aero_quality', { view: 'dashboard' })
     const revision = initial.revision
-    const rationale = `Controlled rework ${locale}: quarantine L2609-B, restore drawing, re-verify PVD-011/012/013.`
+    const rationale = zh
+      ? '受控返工：隔离 L2609-B，恢复图纸要求，复验 PVD-011/012/013。'
+      : 'Controlled rework: quarantine L2609-B, restore drawing, re-verify PVD-011/012/013.'
     await call(mrb, 'aero_mrb_draft', {
       ncrId: 'NCR-018',
       disposition: 'rework',
@@ -243,6 +285,7 @@ try {
     await call(quality, 'aero_report', { kind: 'zeroing', locale })
     await selectTab(page, 'evidence', zh ? '证据与报告' : 'Evidence & reports', zh)
     await page.locator('.application-panel').getByRole('button', { name: /HTML/ }).waitFor({ timeout: 30000 })
+    await page.locator('.application-panel').getByRole('button', { name: /HTML/ }).scrollIntoViewIfNeeded()
     await shot(page, '09-evidence-reports', locale, theme)
     await page.locator('.application-panel').getByRole('button', { name: /HTML/ }).click()
     await page.getByTestId('file-view-preview').click()

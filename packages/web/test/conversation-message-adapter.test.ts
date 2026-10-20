@@ -618,6 +618,23 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   )
   expect(item('prose')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
   expect(item('prose')?.textContent).toContain(`My own explanation: ${protocol}`)
+  const business: UINode = {
+    ...tool('completed'),
+    id: 'business',
+    name: 'community_review',
+    resultPreview: '{"revision":2,"object":"NCR-018"}',
+  }
+  const businessEcho: UINode = {
+    kind: 'assistant',
+    id: 'business-echo',
+    seq: 5,
+    text: '[Demo model — local, deterministic, no API key] Tool result: {"revision":2,"object":"NCR-018"}',
+  }
+  await update(store, [question, echo, prose, business, businessEcho])
+  expect(item('business-echo')?.querySelector('.markdown')?.textContent ?? '').not.toContain('revision')
+  expect(item('business')?.querySelector('[data-testid=tool-detail-text]')?.textContent).toContain(
+    '"revision":2',
+  )
   const answer: UINode = { kind: 'user', id: 'answer', seq: 5, content: [{ type: 'text', text: 'Two' }] }
   await update(store, [question, echo, prose, answer])
   expect(item('answer')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()

@@ -146,3 +146,5 @@ means implementing a disposition with hardware held for verification; it does no
 Scripted browser acceptance: `pnpm exec node --import tsx examples/showcase/scripts/workbench.mjs` from the repository
 root, through the documented toolchain and browser locks. It creates fresh isolated homes and invokes
 no paid model.
+
+Version 1.1.0 updates the conversation workbench; existing 1.0.0 installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.

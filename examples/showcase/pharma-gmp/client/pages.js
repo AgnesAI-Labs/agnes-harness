@@ -2,6 +2,7 @@ import { Field, Select, SettingsTextArea } from '@agnes/web-ui'
 import React from 'react'
 import { badge, button, card, chart, column, h, table, text } from './components.js'
 import { confirmationLabel, meaning } from './locale.js'
+import { WorkButton } from './workbench.js'
 
 const age = (opened) =>
   Math.max(0, Math.floor((Date.parse('2024-10-20T23:59:59Z') - Date.parse(opened)) / 86400000))
@@ -36,6 +37,7 @@ export function Home({ data, t, locale, selectBatch }) {
           tracked &&
             h('p', { className: 'ph-alert-state' }, t.currentRecord, ' · ', badge(tracked.status, t)),
           button('B-2410-017 →', () => selectBatch('B-2410-017')),
+          h(WorkButton, { action: 'investigate', object: { type: 'deviation', id: 'DEV-2410-017' }, locale }),
           h('p', { className: 'ph-note' }, t.demoFlow),
         ),
       ),
@@ -81,6 +83,13 @@ export function Home({ data, t, locale, selectBatch }) {
             420,
           ),
           column(t.status, 'status', (s) => badge(s, t)),
+          column(
+            t.actions,
+            'id',
+            (id) => h(WorkButton, { action: 'review', object: { type: 'batch', id }, locale }),
+            170,
+            'work',
+          ),
         ],
         t.timeline,
       ),
@@ -103,6 +112,13 @@ export function Batches({ data, t, locale, selectBatch }) {
           column(t.date, 'date', (d) => d.slice(0, 10)),
           column(t.status, 'status', (s) => badge(s, t)),
           column(t.review, 'review', (s) => badge(s, t)),
+          column(
+            t.actions,
+            'id',
+            (id) => h(WorkButton, { action: 'review', object: { type: 'batch', id }, locale }),
+            170,
+            'work',
+          ),
         ],
         t.batches,
         { pagination: { pageSize: 12, showSizeChanger: false } },
@@ -153,6 +169,7 @@ export function Deviations({ data, t, locale, mutate, busy }) {
                 button(dev.id, () => setSelected(dev.id), { appearance: 'link' }),
                 h('p', null, text(dev.title, locale)),
                 badge(dev.severity, t),
+                h(WorkButton, { action: 'investigate', object: { type: 'deviation', id: dev.id }, locale }),
                 h('small', null, `${dev.batch} · ${age(dev.opened)} ${t.days}`),
               ),
             ),
@@ -173,6 +190,9 @@ export function Deviations({ data, t, locale, mutate, busy }) {
             d.actions,
             [
               column(t.actions, 'text', (x) => text(x, locale), 360),
+              column(t.detail, 'id', (id) =>
+                h(WorkButton, { action: 'capa', object: { type: 'capa', id }, locale }),
+              ),
               column(t.owner, 'owner'),
               column(t.due, 'due'),
               column(t.evidence, 'evidence', undefined, 250),
@@ -274,6 +294,13 @@ export function EM({ data, t, locale }) {
         excursions,
         [
           column('ID', 'id'),
+          column(
+            t.actions,
+            'id',
+            (id) => h(WorkButton, { action: 'em', object: { type: 'em', id }, locale }),
+            180,
+            'work',
+          ),
           column(t.room, 'room'),
           column(t.when, 'at', undefined, 200),
           column('CFU/m³', 'viable'),
@@ -314,6 +341,7 @@ export function Release({ data, t, locale, mutate, busy }) {
             }),
           ),
           h('p', null, text(b.product, locale)),
+          h(WorkButton, { action: 'release', object: { type: 'batch', id }, locale }),
           badge(certificate ? 'released' : check.ready ? 'ready' : 'blocked', t),
           h('p', { className: 'ph-note' }, `${t.revision}: ${check.revision}`),
           ...check.evidence.recordApprovals.map((entry) =>

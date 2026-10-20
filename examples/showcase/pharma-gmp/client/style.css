@@ -371,3 +371,16 @@
     }
   }
 }
+
+@layer app {
+  .ph-module-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-block: 16px;
+  }
+  .ph-work-list article {
+    padding-block: 12px;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+}

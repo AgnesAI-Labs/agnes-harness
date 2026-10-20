@@ -3,7 +3,10 @@ import type { ApplicationState } from '@agnes/protocol'
 import {
   applicationIdentity,
   applicationTimelineWork,
+  applicationWorkDraft,
   applicationWorkRequest,
+  applicationWorkText,
+  encodeApplicationWork,
   homeEntries,
   homeNavigation,
   openApplicationWork,
@@ -11,12 +14,18 @@ import {
   rememberSessionAgent,
   resolveApplicationWork,
   sessionAgentAttribution,
+  sessionApplicationWork,
   type UiExtensionContext,
 } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApplicationAttribution, ApplicationWorkActions } from '../src/workbench/application-actions.js'
+import { WebConversationMessages } from '../src/conversation-message-adapter.js'
+import {
+  ApplicationAttribution,
+  ApplicationComposerContext,
+  ApplicationWorkActions,
+} from '../src/workbench/application-actions.js'
 import { useApplicationPanels } from '../src/workbench/application-panels.js'
 import { workbenchApproval } from '../src/workbench/approval-store.js'
 
@@ -138,25 +147,77 @@ it('renders work chips, routes object links to reviewed launch intent and attrib
   })
   expect(resolveApplicationWork({ ...request, packageId: 'other/kit' }, 'en')).toBeUndefined()
   const resolved = resolveApplicationWork(request, 'en')!
-  expect(JSON.parse(resolved.prompt.split('\n\n').at(-1)!)).toEqual({
-    applicationId: 'acme',
-    packageId: 'acme/kit',
-    actionId: 'review',
-    object: { type: 'ncr', id: 'NCR-018' },
-  })
-  const submitted = { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: resolved.prompt }] }
+  expect(resolved.prompt).toBe('Review the evidence')
+  const encoded = encodeApplicationWork('My edited request', resolved.request)
+  expect(applicationWorkText(encoded)).toEqual({ text: 'My edited request', request })
+  expect(applicationWorkText('Ordinary JSON\n\n{"object":{"id":"NCR-018"}}').request).toBeUndefined()
+  expect(applicationWorkText(encoded.replace('"ncr"', '"invalid type"')).request).toBeUndefined()
+  const submitted = { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: encoded }] }
+  sessionStorage.clear()
   expect(applicationTimelineWork({ nodes: [submitted] } as never)).toEqual(request)
   expect(
     applicationTimelineWork({
-      nodes: [
-        { ...submitted, content: [{ type: 'text', text: resolved.prompt.replace('NCR-018', 'NCR-019') }] },
-      ],
+      nodes: [{ ...submitted, content: [{ type: 'text', text: encoded.replace('NCR-018', 'NCR-019') }] }],
     } as never)?.object?.id,
   ).toBe('NCR-019')
   rememberApplicationWork('returned-session', request, resolved.agent, { en: 'NCR Reviewer' })
+  renderRegion(document.body, <ApplicationComposerContext sessionId="returned-session" />)
+  expect(document.body.textContent).toContain('NCR-018 · Review NCR')
+  expect(document.body.textContent).not.toContain('applicationId')
+  expect(applicationWorkDraft.read('other-session')).toBeUndefined()
+  flushSync(() => document.querySelector<HTMLButtonElement>('[aria-label^="Remove context"]')!.click())
+  expect(document.querySelector('[data-testid="application-work-chip"]')).toBeNull()
+  expect(applicationWorkDraft.read('returned-session')).toBeUndefined()
+  expect(sessionApplicationWork('returned-session')?.request).toEqual(request)
+  expect(encodeApplicationWork('Plain request', applicationWorkDraft.read('returned-session'))).toBe(
+    'Plain request',
+  )
   const session = { subscribe: () => () => {}, getSnapshot: () => 'returned-session' }
   renderRegion(document.body, <ApplicationAttribution session={session as never} />)
   expect(document.body.textContent).toContain('Handled by NCR Reviewer')
+  renderRegion(
+    document.body,
+    <WebConversationMessages
+      session={session as never}
+      nodes={[submitted as never, { kind: 'assistant', id: 'answer', seq: 2, text: 'Evidence reviewed' }]}
+      turns={[
+        {
+          id: 'turn',
+          status: 'completed',
+          nodeIds: ['u1', 'answer'],
+          finalAssistantId: 'answer',
+          startedAt: '2026-10-20T00:00:00Z',
+          endedAt: '2026-10-20T00:00:01Z',
+          turn: 1,
+          startSeq: 1,
+          inherited: false,
+          forkable: false,
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            reasoningComplete: true,
+            billingComplete: true,
+            calls: [],
+          },
+        },
+      ]}
+    />,
+  )
+  expect(document.body.textContent).toContain('My edited request')
+  expect(document.body.textContent).toContain('NCR-018 · Review NCR')
+  expect(document.body.textContent).not.toContain('applicationId')
+  expect(
+    document.querySelector('.process-identity [data-testid="application-attribution"]')?.textContent,
+  ).toContain('Handled by NCR Reviewer')
+  expect(submitted.content[0]!.text).toBe(encoded)
+  const storageFailure = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+    throw new Error('Storage unavailable')
+  })
+  rememberApplicationWork('memory-only', request, resolved.agent, { en: 'NCR Reviewer' })
+  expect(applicationWorkDraft.read('memory-only')).toEqual(request)
+  applicationWorkDraft.remove('memory-only')
+  expect(applicationWorkDraft.read('memory-only')).toBeUndefined()
+  storageFailure.mockRestore()
+
   renderRegion(
     document.body,
     <ApplicationAttribution session={{ ...session, getSnapshot: () => 'other-session' } as never} />,
