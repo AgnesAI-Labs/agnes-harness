@@ -50,3 +50,24 @@ export function validateEndpoint(entry: { api: string; route: string }, baseUrl:
     throw new ConfigurationError('CONFIG_INVALID_INPUT', undefined, undefined, 'baseUrl')
   }
 }
+
+/** An account's network timeouts: known keys only, each a whole number of milliseconds up to an hour. */
+export function checkedNetworkTimeouts(
+  value: unknown,
+): NonNullable<import('@agnes/protocol').ConfigSaveInput['networkTimeouts']> {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    !Object.entries(value).every(
+      ([key, timeout]) =>
+        ['requestMs', 'connectMs', 'streamIdleMs'].includes(key) &&
+        typeof timeout === 'number' &&
+        Number.isSafeInteger(timeout) &&
+        timeout >= 1 &&
+        timeout <= 3_600_000,
+    )
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  return value
+}

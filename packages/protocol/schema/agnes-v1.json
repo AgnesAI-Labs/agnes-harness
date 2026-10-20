@@ -6232,6 +6232,17 @@
         },
         "verified": {
           "type": "boolean"
+        },
+        "catalogueError": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": {
+              "enum": ["network", "timeout", "redirect", "http", "not-json", "empty", "invalid"]
+            },
+            "status": { "type": "integer", "minimum": 100, "maximum": 599 }
+          }
         }
       }
     },

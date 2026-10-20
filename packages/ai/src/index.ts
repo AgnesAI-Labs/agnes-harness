@@ -49,7 +49,11 @@ export {
 } from './adapters/pi/codex.js'
 export type { ManualRoute } from './adapters/pi/index.js'
 export { PiAdapter, toPiModel } from './adapters/pi/index.js'
-export { fetchProviderModels, type ProviderModels } from './adapters/pi/probe-models.js'
+export {
+  fetchProviderModels,
+  type ProviderCatalogueFailure,
+  type ProviderModels,
+} from './adapters/pi/probe-models.js'
 export { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 export { validateModelBaseUrl } from './base-url.js'
 export type { ContractStoreOptions } from './contract/store.js'

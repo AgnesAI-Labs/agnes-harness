@@ -25,6 +25,7 @@ export type ApiKeyProviderId =
   | 'xai'
   | 'agnes-ai'
   | 'typesafe-systemone'
+  | 'openai-compatible'
 
 export type ApiKeyProviderErrorCode =
   | 'UNKNOWN_PROVIDER'
@@ -89,9 +90,10 @@ export type ApiKeyProviderRegistryEntry = Readonly<{
   /**
    * Config-time marker mirrored from the model-adapter registration. A payload-only entry serves no
    * conversation catalogue: it stays out of chat projections, and runtime exclusion keeps reading
-   * the adapter registration's own capabilities.
+   * the adapter registration's own capabilities. A declared-models entry chats, but has no
+   * catalogue either: each account names its own models.
    */
-  capabilities?: Readonly<{ payloadOnly?: boolean }>
+  capabilities?: Readonly<{ payloadOnly?: boolean; declaredModels?: boolean }>
   modelsUrl?: string
   createAdapter(options?: ApiKeyAdapterOptions): Promise<PiAdapter>
   /** Present only where the provider publishes a compatible, pinned model-list endpoint. */
@@ -349,7 +351,27 @@ const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
   createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
 })
 
-const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => entry.capabilities?.payloadOnly !== true
+/**
+ * Any server that speaks OpenAI chat completions at an address the person gives: relays,
+ * aggregators, self-hosted gateways. Nothing is pinned, so there is no default address (the
+ * reserved `.invalid` name stands in for one) and no adapter to build here; each account declares
+ * its models and Host renders their routes.
+ */
+const OPENAI_COMPATIBLE_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'openai-compatible',
+  displayName: 'OpenAI-compatible endpoint',
+  availability: 'available',
+  route: 'openai-compatible',
+  api: 'openai-completions',
+  baseUrl: 'https://endpoint.invalid/v1',
+  credentialRef: 'secret://openai-compatible/default',
+  sourceProviderId: 'openai-compatible',
+  capabilities: { declaredModels: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/** The entries backed by a pinned pi catalogue: the ones built into the startup route table. */
+const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => !entry.capabilities
 
 export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze([
   ...specs.map((spec) =>
@@ -368,6 +390,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
     }),
   ),
   JEV_PROVIDER,
+  OPENAI_COMPATIBLE_PROVIDER,
 ])
 
 /**

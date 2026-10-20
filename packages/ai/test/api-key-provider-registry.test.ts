@@ -72,7 +72,7 @@ const streamOptions = () => ({
 
 describe('API-key provider registry', () => {
   it('publishes exactly the twelve first-screen providers with stable friendly names', () => {
-    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly !== true)
+    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => !entry.capabilities)
     expect(chat.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
     expect(new Set(chat.map((entry) => entry.id)).size).toBe(12)
     expect(chat.every((entry) => entry.availability === 'available')).toBe(true)
@@ -82,6 +82,22 @@ describe('API-key provider registry', () => {
         (entry) => entry.id,
       ),
     ).toEqual(['typesafe-systemone'])
+  })
+
+  it('offers an OpenAI-compatible endpoint whose models the account declares, outside the pi catalogue', async () => {
+    const declared = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.declaredModels === true)
+    expect(declared.map(({ id, api }) => [id, api])).toEqual([['openai-compatible', 'openai-completions']])
+    const entry = getApiKeyProvider('openai-compatible')
+    // No default address: the form has to ask for one.
+    expect(entry?.baseUrl).toMatch(/\.invalid\//)
+    await expect(entry?.createAdapter()).rejects.toMatchObject({ code: 'PROVIDER_CONTRACT' })
+    expect([...API_KEY_CREDENTIAL_REFS]).not.toContain('secret://openai-compatible/default')
+    expect((await createApiKeyProviderConfigs()).map((config) => config.id)).not.toContain(
+      'openai-compatible',
+    )
+    expect((await createApiKeyProviderAdapters()).map((adapter) => adapter.id)).not.toContain(
+      'openai-compatible',
+    )
   })
 
   it.each([
