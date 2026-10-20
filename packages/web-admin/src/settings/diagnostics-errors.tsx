@@ -7,14 +7,15 @@ import {
   Icon,
   Segmented,
   SettingsBlock,
-  SettingsExpand,
+  SettingsDrill,
   SettingsGroup,
   SettingsItem,
   SettingsTag,
   type SettingsTagTone,
+  useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { type ErrorKind, errorKind } from './diagnostics-kinds.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 
@@ -39,6 +40,17 @@ export type ErrorGroup = {
   recent: DiagnosticRecord[]
 }
 const kindKey = (record: DiagnosticRecord) => `${record.name}\u0000${record.cause ?? ''}\u0000${record.code}`
+/** The list's own page id; an error's page opens under it. */
+const LIST_ID = 'errors'
+
+/**
+ * The page id of a kind of error: its key as base64url, so it is stable across reads, differs
+ * between kinds and fits the address bar (`?settings=diagnostics/errors/<id>`).
+ */
+export function errorDrillId(record: DiagnosticRecord): string {
+  const bytes = String.fromCharCode(...new TextEncoder().encode(kindKey(record)))
+  return `err-${btoa(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+}
 
 /** One row per kind of error (same name, cause and code), newest first, counting its repeats. */
 export function groupErrors(records: readonly DiagnosticRecord[]): ErrorGroup[] {
@@ -79,9 +91,22 @@ function byDay(groups: readonly ErrorGroup[]) {
   return days
 }
 
+/** What the page's entry row says: kinds seen on the latest day when that is today, else all kinds. */
+export function errorsEntry(records: readonly DiagnosticRecord[]) {
+  const groups = groupErrors(records)
+  const [first] = byDay(groups)
+  return {
+    kinds: groups.length,
+    today:
+      first?.key === new Date().toDateString()
+        ? { kinds: first.groups.length, count: first.count }
+        : undefined,
+  }
+}
+
 /**
- * 近期错误: a summary, kind filters, then one row per kind grouped by day, each opening in
- * place for its IDs. An ID lookup shows only that kind; empty, not-found and failed reads each
+ * 近期错误: a summary, kind filters, then one row per kind grouped by day, each opening
+ * its own page for its IDs. An ID lookup shows only that kind; empty, not-found and failed reads each
  * say what happened.
  */
 export function RecentErrors({
@@ -107,6 +132,15 @@ export function RecentErrors({
   const { t } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
   const [filter, setFilter] = useState<Filter>('all')
   const [all, setAll] = useState(false)
+  const { stack, back } = useSettingsSubpages()
+  const groups = groupErrors(lookup?.records ?? records)
+  const open = stack.at(-1)?.startsWith('err-') ? stack.at(-1) : undefined
+  const gone =
+    open !== undefined && (failure !== undefined || !groups.some((g) => errorDrillId(g.latest) === open))
+  // An error page whose kind is no longer listed (a stale address, a failed read) returns to the list.
+  useEffect(() => {
+    if (gone) back()
+  }, [gone, back])
   const locale = document.documentElement.lang || 'en'
   const number = (value: number) => new Intl.NumberFormat(locale).format(value)
   const today = new Date().toDateString()
@@ -148,17 +182,16 @@ export function RecentErrors({
         }
       />
     )
-  const groups = groupErrors(lookup?.records ?? records)
   /** `id` names a looked-up record, which need not be its kind's latest. */
-  const row = (group: ErrorGroup, open = false, id = group.latest.diagnosticId) => {
+  const row = (group: ErrorGroup, id = group.latest.diagnosticId) => {
     const record = group.latest
     return (
-      <SettingsExpand
+      <SettingsDrill
         key={kindKey(record)}
+        id={errorDrillId(record)}
         data-testid="diagnostics-error"
         data-kind={group.kind}
         className="agnes-diagnostics-error"
-        defaultOpen={open}
         leading={
           <SettingsTag tone={TONES[group.kind]} data-kind={group.kind} className="agnes-diagnostics-kind">
             {t(`filter.${group.kind}`)}
@@ -179,7 +212,16 @@ export function RecentErrors({
         }
         value={t(group.count === 1 ? 'occurrences.one' : 'occurrences', { count: number(group.count) })}
       >
-        <SettingsBlock className="agnes-diagnostics-details">
+        <p className="agnes-diagnostics-when" data-testid="diagnostics-error-summary">
+          <SettingsTag tone={TONES[group.kind]} data-kind={group.kind} className="agnes-diagnostics-kind">
+            {t(`filter.${group.kind}`)}
+          </SettingsTag>
+          <span>
+            {t('last')} {clock(record.at)}
+          </span>
+          {group.count > 1 && <span>{`${t('first')} ${clock(group.first.at)}`}</span>}
+        </p>
+        <SettingsBlock className="agnes-diagnostics-details" data-testid="diagnostics-error-details">
           <SettingsItem label={t('id')}>
             <span className="agnes-diagnostics-id">
               <code data-testid="diagnostics-error-id">{id}</code>
@@ -236,7 +278,7 @@ export function RecentErrors({
             </>
           )}
         </SettingsBlock>
-      </SettingsExpand>
+      </SettingsDrill>
     )
   }
   if (lookup) {
@@ -270,7 +312,7 @@ export function RecentErrors({
         >
           {t('found')}
         </Banner>
-        <SettingsGroup>{row(listed ?? groups[0], true, found.diagnosticId)}</SettingsGroup>
+        <SettingsGroup>{row(listed ?? groups[0], found.diagnosticId)}</SettingsGroup>
       </>
     )
   }
@@ -287,8 +329,13 @@ export function RecentErrors({
     )
   const counts = (kind: Filter) =>
     number(kind === 'all' ? groups.length : groups.filter((group) => group.kind === kind).length)
-  const filtered = filter === 'all' ? groups : groups.filter((group) => group.kind === filter)
-  const shown = all ? filtered : filtered.slice(0, RECENT)
+  // The kind whose page is open stays mounted past the filter and the first few, so its page can render.
+  const filtered = groups.filter(
+    (group) => filter === 'all' || group.kind === filter || errorDrillId(group.latest) === open,
+  )
+  const shown = all
+    ? filtered
+    : filtered.filter((group, i) => i < RECENT || errorDrillId(group.latest) === open)
   return (
     <>
       <p className="agnes-settings-note" data-testid="diagnostics-summary">

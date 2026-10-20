@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DiagnosticsPanel } from '../src/settings/diagnostics.js'
 
 import { DiagnosticsRequestError, diagnosticsApi } from '../src/settings/diagnostics-api.js'
-import { groupErrors } from '../src/settings/diagnostics-errors.js'
+import { errorDrillId, groupErrors } from '../src/settings/diagnostics-errors.js'
 import { errorKind } from '../src/settings/diagnostics-kinds.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -17,6 +17,7 @@ const roots: Root[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
+  history.replaceState(null, '', '/')
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -32,6 +33,7 @@ beforeEach(() => {
   )
 })
 const diagnosticId = '11111111-1111-4111-8111-111111111111'
+const id0 = diagnosticId
 const bundle: DiagnosticsExportResult = {
   schemaVersion: 1,
   collectedAt: '2026-10-08T00:00:00Z',
@@ -49,7 +51,11 @@ const bundle: DiagnosticsExportResult = {
   limits: { audit: 100, errors: 1000 },
   telemetry: { enabled: true, includeContent: true, endpointHosts: ['collector.example:4318'] },
 }
-async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn()) {
+async function mount(
+  api: ReturnType<typeof diagnosticsApi>,
+  download = vi.fn(),
+  frame: { rootTitle?: string; routeId?: string } = {},
+) {
   const host = document.createElement('form')
   host.id = 'config-form'
   document.body.append(host)
@@ -59,13 +65,15 @@ async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn())
     root.render(
       createElement(
         SettingsSubpageFrame,
-        { header: null },
+        { header: null, ...frame },
         createElement(DiagnosticsPanel, { api, download }),
       ),
     ),
   )
   return host
 }
+const click = (host: ParentNode, testId: string) =>
+  act(async () => host.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)?.click())
 it.each([false, true])(
   'filters and copies real IDs, exports the selected redacted DTO, and feature detects self-check (%s)',
   async (doctorAvailable) => {
@@ -83,28 +91,30 @@ it.each([false, true])(
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
     expect(host.querySelector('form')).toBeNull()
-    // One line per kind: its tag, message, time and count; the code and ID open in place.
+    // The page holds one entry row; the kinds are listed one level down, each opening its own page.
+    expect(host.querySelector('[data-testid="diagnostics-error"]')).toBeNull()
+    await click(host, 'diagnostics-errors-row')
     const row = host.querySelector('[data-testid="diagnostics-error"]')!
     expect(row.querySelector('[data-testid="diagnostics-error-time"]')).not.toBeNull()
     expect(row.getAttribute('data-kind')).toBe('other')
     expect(row.textContent).toContain('Once')
     expect(host.querySelector('[data-testid="diagnostics-error-code"]')).toBeNull()
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-error-toggle"]')?.click(),
-    )
+    await click(host, 'diagnostics-error')
     expect(host.querySelector('[data-testid="diagnostics-error-code"]')?.textContent).toBe('-32602')
     expect(!!host.querySelector('[data-testid="diagnostics-doctor"]')).toBe(doctorAvailable)
     const write = vi
       .spyOn(navigator.clipboard, 'writeText')
       .mockResolvedValue()
       .mockRejectedValueOnce(new Error('Clipboard blocked'))
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-copy"]')?.click())
+    await click(host, 'diagnostics-copy')
     expect(host.querySelector('[data-testid="diagnostics-notice"]')?.textContent).toContain('Copy failed')
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-notice"] button')?.click(),
     )
     expect(host.querySelector('[data-testid="diagnostics-notice"]')).toBeNull()
     expect(write).toHaveBeenCalledWith(diagnosticId)
+    await click(host, 'settings-subpage-back')
+    await click(host, 'settings-subpage-back')
     // OTLP is a subpage of 集成.
     expect(host.querySelector('[data-testid="otlp-state"]')).not.toBeNull()
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="otlp-settings"]')?.click())
@@ -115,9 +125,8 @@ it.each([false, true])(
     expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
       'No Worker is currently running',
     )
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="settings-subpage-back"]')?.click(),
-    )
+    await click(host, 'settings-subpage-back')
+    await click(host, 'diagnostics-errors-row')
     const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'not-an-id')
@@ -136,6 +145,8 @@ it.each([false, true])(
     expect(host.querySelector('[data-testid="diagnostics-found"]')?.textContent).toContain(
       'will contain only this one',
     )
+    await click(host, 'settings-subpage-back')
+    await click(host, 'settings-subpage-back')
     // Export says what the bundle contains first, then exports the selected error.
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export"]')?.click(),
@@ -221,6 +232,161 @@ it('groups repeats of a kind newest first, and sorts known names and causes into
   expect(errorKind({ name: 'INTERNAL_ERROR', cause: 'E_GENERATION_SKILLS' })).toBe('plugin')
   expect(errorKind({ name: 'INVALID_PARAMS' })).toBe('other')
 })
+it('opens the errors and each error as pages, finds an error by ID inside its page, and falls back from a gone one', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 9, 19, 12))
+  try {
+    const id = (n: number) => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`
+    const errors: DiagnosticsExportResult['errors'] = [
+      {
+        diagnosticId: id(1),
+        at: new Date(2026, 9, 10, 9).toISOString(),
+        code: -32602,
+        name: 'INVALID_PARAMS',
+      },
+      {
+        diagnosticId: id(2),
+        at: new Date(2026, 9, 19, 9).toISOString(),
+        code: -32006,
+        name: 'CAPABILITY_DENIED',
+      },
+    ]
+    const api = diagnosticsApi(async (_url, init) =>
+      Response.json(
+        init?.method
+          ? { ...bundle, errors: [errors[0]!] }
+          : { bundle: { ...bundle, errors }, doctorAvailable: false },
+      ),
+    )
+    const route = { rootTitle: 'Runtime', routeId: 'diagnostics' }
+    const host = await mount(api, vi.fn(), route)
+    const header = () => host.querySelector('[data-testid="settings-subpage-header"]')?.textContent ?? ''
+    const value = (testId: string) =>
+      host.querySelector(`[data-testid="${testId}"] .agnes-settings-value`)?.textContent
+    expect(value('diagnostics-errors-row')).toBe('Today 1 kinds · 1 times')
+    expect(host.querySelector('[data-testid="diagnostics-error"]')).toBeNull()
+    await click(host, 'diagnostics-errors-row')
+    expect(location.search).toBe('?settings=diagnostics/errors')
+    expect(header()).toContain('Runtime')
+    expect(header()).toContain('Recent errors')
+    expect(host.querySelector('[data-testid="settings-subpage-header"] #diagnostics-query')).not.toBeNull()
+    expect(host.querySelector('[data-testid="diagnostics-errors"]')?.getAttribute('aria-busy')).toBe('false')
+    const rows = [...host.querySelectorAll('[data-testid="diagnostics-error"]')]
+    expect(rows).toHaveLength(2)
+    const message = rows[1]!.querySelector('.agnes-settings-item-label')?.textContent ?? ''
+    await act(async () => (rows[1] as HTMLButtonElement).click())
+    expect(location.search).toBe(`?settings=diagnostics/errors/${errorDrillId(errors[0]!)}`)
+    for (const part of ['Runtime', 'Recent errors', message]) expect(header()).toContain(part)
+    expect(host.querySelector('[data-testid="diagnostics-error-id"]')?.textContent).toBe(id(1))
+    expect(host.querySelector('[data-testid="diagnostics-error-code"]')?.textContent).toBe('-32602')
+    expect(host.querySelector('[data-testid="diagnostics-copy"]')).not.toBeNull()
+    await click(host, 'settings-subpage-back')
+    expect(location.search).toBe('?settings=diagnostics/errors')
+    expect(host.querySelectorAll('[data-testid="diagnostics-error"]')).toHaveLength(2)
+    // A found error opens its page at once, on the found ID.
+    const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, id(1))
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(location.search).toBe(`?settings=diagnostics/errors/${errorDrillId(errors[0]!)}`)
+    expect(host.querySelector('[data-testid="diagnostics-error-id"]')?.textContent).toBe(id(1))
+    await click(host, 'settings-subpage-back')
+    expect(host.querySelectorAll('[data-testid="diagnostics-error"]')).toHaveLength(1)
+    expect(host.querySelector('[data-testid="diagnostics-found"]')).not.toBeNull()
+    await click(host, 'diagnostics-clear')
+    expect(host.querySelectorAll('[data-testid="diagnostics-error"]')).toHaveLength(2)
+    // An address naming an error that is not there leaves for the list instead of an empty page.
+    await act(async () => roots.pop()?.unmount())
+    document.body.replaceChildren()
+    history.replaceState(null, '', '?settings=diagnostics/errors/err-gone')
+    const gone = await mount(api, vi.fn(), route)
+    expect(gone.querySelector('[data-testid="settings-subpage-err-gone"]')).toBeNull()
+    expect(gone.querySelectorAll('[data-testid="diagnostics-error"]')).toHaveLength(2)
+    expect(location.search).toBe('?settings=diagnostics/errors')
+    // One that is there opens.
+    await act(async () => roots.pop()?.unmount())
+    document.body.replaceChildren()
+    history.replaceState(null, '', `?settings=diagnostics/errors/${errorDrillId(errors[1]!)}`)
+    const there = await mount(api, vi.fn(), route)
+    expect(there.querySelector('[data-testid="diagnostics-error-id"]')?.textContent).toBe(id(2))
+  } finally {
+    vi.useRealTimers()
+  }
+})
+it('does not open a found error once the user has left the list while the lookup ran', async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const api = diagnosticsApi(async (_url, init) => {
+    if (!init?.method) return Response.json({ bundle, doctorAvailable: false })
+    await held
+    return Response.json(bundle)
+  })
+  const host = await mount(api, vi.fn(), { rootTitle: 'Runtime', routeId: 'diagnostics' })
+  await click(host, 'diagnostics-errors-row')
+  const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, diagnosticId)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  await click(host, 'settings-subpage-back')
+  expect(location.search).toBe('')
+  await act(async () => release())
+  expect(location.search).toBe('')
+  expect(host.querySelector('[data-subpage]')?.getAttribute('data-subpage')).toBeUndefined()
+  expect(host.querySelector('[data-testid^="settings-subpage-err-"]')).toBeNull()
+  expect(host.querySelector<HTMLElement>('.agnes-settings-subpage-main')?.hidden).toBe(false)
+  expect(host.querySelector('[data-testid="diagnostics-errors-row"]')).not.toBeNull()
+})
+it('keeps an error page open when the kind filter excludes its kind', async () => {
+  const errors: DiagnosticsExportResult['errors'] = [
+    { diagnosticId, at: '2026-10-08T00:00:00Z', code: -32006, name: 'CAPABILITY_DENIED' },
+  ]
+  const host = await mount(
+    diagnosticsApi(async () => Response.json({ bundle: { ...bundle, errors }, doctorAvailable: false })),
+    vi.fn(),
+    { rootTitle: 'Runtime', routeId: 'diagnostics' },
+  )
+  await click(host, 'diagnostics-errors-row')
+  await click(host, 'diagnostics-error')
+  await click(host, 'settings-subpage-back')
+  await act(async () =>
+    host
+      .querySelector<HTMLInputElement>('[data-testid="diagnostics-filter-kind"] input[value="provider"]')
+      ?.click(),
+  )
+  expect(host.querySelector('[data-testid="diagnostics-error"]')).toBeNull()
+  // The browser's forward button, or a route event, returns to the error's page.
+  history.pushState(null, '', `?settings=diagnostics/errors/${errorDrillId(errors[0]!)}`)
+  await act(async () => {
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(host.querySelector('[data-testid="diagnostics-error-id"]')?.textContent).toBe(diagnosticId)
+  expect(host.querySelector('[data-testid="settings-subpage-back"]')).not.toBeNull()
+})
+it('names a kind of error by an address-safe id that is stable for the kind and differs between kinds', () => {
+  const base = { diagnosticId: id0, at: '2026-10-08T00:00:00Z', code: -32602, name: 'INVALID_PARAMS' }
+  const same = errorDrillId({
+    ...base,
+    diagnosticId: '22222222-2222-4222-8222-222222222222',
+    at: '2026-10-09T00:00:00Z',
+  })
+  expect(errorDrillId(base)).toBe(same)
+  const ids = [
+    base,
+    { ...base, code: -32000 },
+    { ...base, cause: 'CONFIG_CREDENTIAL_REJECTED' },
+    { ...base, name: 'CAPABILITY_DENIED' },
+    { ...base, name: 'INVALID_PARAMS\u0000', cause: 'x' },
+    { ...base, name: 'Ünï/ç 错误 ?&=#%' },
+  ].map(errorDrillId)
+  expect(new Set(ids).size).toBe(ids.length)
+  for (const value of ids) expect(value).toMatch(/^[A-Za-z0-9_-]+$/)
+})
 it('lists kinds by day with filters and the real limit, and says what a lookup found or missed', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 9, 19, 12))
@@ -255,6 +421,10 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
       }),
     )
     const text = (testId: string) => host.querySelector(`[data-testid="${testId}"]`)?.textContent ?? ''
+    const entry = () => text('diagnostics-errors-row')
+    expect(host.querySelector('[data-testid="diagnostics-summary"]')).toBeNull()
+    expect(entry()).toContain('Today 1 kinds · 2 times')
+    await click(host, 'diagnostics-errors-row')
     const kinds = () =>
       [...host.querySelectorAll('[data-testid="diagnostics-error"]')].map((row) =>
         row.getAttribute('data-kind'),
@@ -273,10 +443,9 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
     await act(async () => filters.querySelector<HTMLInputElement>('input[value="provider"]')?.click())
     expect(kinds()).toEqual(['provider'])
     await act(async () => filters.querySelector<HTMLInputElement>('input[value="all"]')?.click())
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-error-toggle"]')?.click(),
-    )
+    await click(host, 'diagnostics-error')
     expect(host.querySelectorAll('[data-testid="diagnostics-copy-occurrence"]')).toHaveLength(2)
+    await click(host, 'settings-subpage-back')
     const input = host.querySelector<HTMLInputElement>('#diagnostics-query')!
     const lookup = async (value: string) => {
       await act(async () => {
@@ -294,11 +463,12 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-not-found"] button')?.click(),
     )
     expect(text('diagnostics-summary')).toContain('3 recent records')
-    // Found shows only that kind, counted as the list counts it, open on the found ID.
+    // Found opens that kind's page on the found ID; back, the list holds only that kind, counted as it counts it.
     found = [errors[1]!]
     await lookup(id(2))
-    expect(kinds()).toEqual(['permission'])
     expect(text('diagnostics-error-id')).toBe(id(2))
+    await click(host, 'settings-subpage-back')
+    expect(kinds()).toEqual(['permission'])
     expect(text('diagnostics-error')).toContain('2 times')
     // The row still describes the kind: its latest time, not the looked-up record's.
     expect(host.querySelector('[data-testid="diagnostics-error-time"]')?.getAttribute('datetime')).toBe(
@@ -317,6 +487,7 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
     expect(text('diagnostics-failure')).toContain(
       'Permission for this operation was denied. Ask an administrator to review the applicable policy before retrying.',
     )
+    expect(entry()).toContain('Could not read error records')
     fail = false
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-failure"] button')?.click(),
@@ -327,6 +498,15 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-refresh"]')?.click(),
     )
     expect(text('diagnostics-empty')).toContain('No recent errors')
+    expect(entry()).toContain('No recent errors')
+    // Only older errors: the entry counts kinds without naming today.
+    errors.push({ diagnosticId: id(1), at: at(18, 22), code: -32602, name: 'INVALID_PARAMS' })
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-refresh"]')?.click(),
+    )
+    expect(
+      host.querySelector('[data-testid="diagnostics-errors-row"] .agnes-settings-value')?.textContent,
+    ).toBe('1 kinds')
   } finally {
     vi.useRealTimers()
   }
@@ -341,6 +521,10 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
     ),
   )
   const host = await mount(api)
+  expect(host.querySelector('[data-testid="diagnostics-errors-row"]')?.textContent).toContain(
+    'Could not read error records',
+  )
+  await click(host, 'diagnostics-errors-row')
   expect(host.querySelector('[data-testid="diagnostics-failure"]')?.textContent).not.toContain('private')
   expect(host.querySelector('[data-testid="diagnostics-failure"]')).not.toBeNull()
   await expect(
@@ -610,6 +794,10 @@ it.each(['saved', 'failed'] as const)(
       finish(outcome === 'saved' ? Response.json(bundle) : Response.json({}, { status: 500 })),
     )
     expect(download).not.toHaveBeenCalled()
+    // The read failure shows on the entry row; the list page holding diagnostics-failure is closed.
+    expect(host.querySelector('[data-testid="diagnostics-errors-row"]')?.textContent).not.toContain(
+      'Could not read error records',
+    )
     expect(host.querySelector('[data-testid="diagnostics-failure"]')).toBeNull()
     expect(
       document.querySelector('[data-testid="diagnostics-export-confirm"]')?.getAttribute('aria-busy'),

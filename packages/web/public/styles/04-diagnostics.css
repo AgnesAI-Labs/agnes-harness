@@ -234,6 +234,15 @@
     flex: 0 1 18.75rem;
     min-width: 0;
   }
+  /* In the page header the input's placeholder names it; the label stays for assistive tech only. */
+  .agnes-diagnostics-lookup .agnes-ui-field-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .agnes-diagnostics-lookup .agnes-settings-search {
     width: 100%;
     font-family: var(--font-mono);
@@ -272,7 +281,7 @@
     background: var(--agnes-status-info-bg);
   }
   /* The count never yields to the message; the message wraps instead. */
-  .agnes-diagnostics-error > .agnes-settings-drill > .agnes-settings-value {
+  .agnes-diagnostics-error.agnes-settings-drill > .agnes-settings-value {
     flex: none;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;

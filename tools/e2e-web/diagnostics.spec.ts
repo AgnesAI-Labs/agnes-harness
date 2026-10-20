@@ -35,23 +35,26 @@ for (const locale of ['en', 'zh-CN'])
       expect(diagnosticPaths.length).toBeGreaterThan(0)
       expect(toolsPaths.length).toBeGreaterThan(0)
       expect(diagnosticPaths).not.toEqual(toolsPaths)
-      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
-      await expect(page.getByTestId('diagnostics-error').first()).toBeVisible()
+      // The page holds one entry row; the errors are a subpage, each error another.
+      const entry = page.getByTestId('diagnostics-errors-row')
+      await expect(entry).toBeVisible()
+      await expect(page.getByTestId('diagnostics-error')).toHaveCount(0)
       const doctor = page.getByTestId('diagnostics-doctor')
       await expect(doctor).toHaveAttribute('aria-busy', 'false')
       await expect(doctor.locator('li[data-testid^="doctor-check-"]')).toHaveCount(12)
-      // Recent rows keep IDs in their details; the always-visible search is submitted with Enter.
-      await page.getByTestId('diagnostics-query').scrollIntoViewIfNeeded()
+      await entry.click()
+      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
+      await expect(page.getByTestId('diagnostics-error').first()).toBeVisible()
+      // The search sits in the list page's header and is submitted with Enter.
       await page.getByTestId('diagnostics-query').fill(diagnosticId)
       await page.getByTestId('diagnostics-query').press('Enter')
-      await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
-      // A found error is the only row, open on its ID; the export then holds only that error.
+      // A found error opens on its own page, on its ID and code.
+      await expect(page.getByTestId('diagnostics-error-id')).toHaveText(diagnosticId)
+      await expect(page.getByTestId('diagnostics-error-code')).toHaveText('-32601')
+      // Back, the list holds only that error; the export then holds only that error.
+      await page.getByTestId('settings-subpage-back').click()
       await expect(page.getByTestId('diagnostics-error')).toHaveCount(1)
       await expect(page.getByTestId('diagnostics-found')).toBeVisible()
-      const row = page.getByTestId('diagnostics-error')
-      await expect(row.getByTestId('diagnostics-error-id')).toHaveText(diagnosticId)
-      await expect(row.getByTestId('diagnostics-error-code')).toHaveText('-32601')
-      await row.getByTestId('diagnostics-error-toggle').click()
       const fieldColor = await page
         .getByTestId('diagnostics-query')
         .evaluate((input) => getComputedStyle(input).backgroundColor)
@@ -64,6 +67,7 @@ for (const locale of ['en', 'zh-CN'])
         return color
       })
       expect(fieldColor).toBe(surfaceColor)
+      await page.getByTestId('settings-subpage-back').click()
       const pending = page.waitForEvent('download')
       await page.getByTestId('diagnostics-export').click()
       await expect(page.getByTestId('diagnostics-export-details')).toBeVisible()
@@ -80,21 +84,19 @@ for (const locale of ['en', 'zh-CN'])
       expect(bundle.telemetry).toEqual({ enabled: false, includeContent: false, endpointHosts: [] })
       for (const privateValue of [payloadMarker, runtime.home, runtime.workspace])
         expect(text).not.toContain(privateValue)
+      await entry.click()
       await expect(page.getByTestId('diagnostics-errors')).toHaveAttribute('aria-busy', 'false')
-      await page.getByTestId('diagnostics-query').scrollIntoViewIfNeeded()
       await page.getByTestId('diagnostics-query').fill('')
       await page.getByTestId('diagnostics-query').press('Enter')
-      await page.getByTestId('diagnostics-errors').evaluate((element) => {
-        for (let parent = element.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
-      })
+      await expect(page.getByTestId('diagnostics-error').first()).toBeVisible()
       await expect(page.locator('.agh-toast')).toHaveCount(0)
       await translated(page)
       await accessible(page, info, 'diagnostics')
       await screen(page, info, `diagnostics-${locale}-${theme}`, [
-        page.getByTestId('diagnostics-error-id'),
         page.getByTestId('diagnostics-error-time'),
         page.getByTestId('diagnostics-day'),
       ])
+      await page.getByTestId('settings-subpage-back').click()
       await expect(doctor).toContainText(
         locale === 'zh-CN' ? '当前无运行中的 Worker' : 'No Worker is currently running',
       )

@@ -12,10 +12,13 @@ import {
   IconButton,
   reportSuccess,
   SettingsBlock,
+  SettingsDrill,
   SettingsInput,
   SettingsItem,
+  SettingsTag,
   StatusMessage,
   trackPageRequest,
+  useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -26,7 +29,7 @@ import {
   diagnosticsApi,
   downloadDiagnostics,
 } from './diagnostics-api.js'
-import { RecentErrors } from './diagnostics-errors.js'
+import { errorDrillId, errorsEntry, RecentErrors } from './diagnostics-errors.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 import { DoctorRows } from './doctor.js'
 import { ObservabilityPanel } from './observability.js'
@@ -37,7 +40,7 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 
 /**
  * 运行时与诊断: status checks in four compact groups (重新检查, 测试模型账户), recent errors by day
- * and kind with an ID lookup (see RecentErrors), and 集成 (OTLP export and the runtime details as
+ * and kind as a subpage with an ID lookup (see RecentErrors), and 集成 (OTLP export and the runtime details as
  * subpages). The page header copies a summary and exports a redacted bundle after saying what it
  * contains; after a lookup finds an error, the bundle holds only that error.
  */
@@ -67,6 +70,10 @@ export function DiagnosticsPanel({
     },
     [api],
   )
+  const { stack, open } = useSettingsSubpages()
+  // The latest stack, read when a lookup returns: the user may have left the list meanwhile.
+  const stackNow = useRef(stack)
+  stackNow.current = stack
   const [query, setQuery] = useState('')
   const [lookup, setLookup] = useState<{ id: string; records: DiagnosticRecord[] }>()
   const selected = lookup?.records.length ? lookup.id : ''
@@ -129,7 +136,12 @@ export function DiagnosticsPanel({
     }
     await run(async (request) => {
       const result = await api.export({ diagnosticId: id }, request.signal)
-      if (request.isCurrent()) setLookup({ id, records: result.errors })
+      if (request.isCurrent()) {
+        setLookup({ id, records: result.errors })
+        // A found error opens on its own page, under the list that now holds only it,
+        // unless the user has left the list while the request ran.
+        if (result.errors[0] && stackNow.current.at(-1) === 'errors') open(errorDrillId(result.errors[0]))
+      }
     })
   }
   const locale = document.documentElement.lang || 'en'
@@ -155,6 +167,17 @@ export function DiagnosticsPanel({
   const serviceStatus = bundle?.doctor.find((row) => row.name === 'daemon')?.status ?? 'ok'
   const workerStatus = bundle?.doctor.find((row) => row.name === 'worker')?.status
   const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
+  const counts = bundle && errorsEntry(bundle.errors)
+  // What the entry row says: nothing while reading, otherwise the state of the latest day or all kinds.
+  const entry = error ? (
+    <SettingsTag tone="error">{t('readFailed')}</SettingsTag>
+  ) : !counts ? undefined : !counts.kinds ? (
+    <SettingsTag tone="ok">{t('noErrors')}</SettingsTag>
+  ) : counts.today ? (
+    `${t('today')} ${t('dayCounts', { kinds: counts.today.kinds, count: counts.today.count })}`
+  ) : (
+    t('kindsTotal', { kinds: counts.kinds })
+  )
   const footerActions = (
     <>
       <Button
@@ -233,13 +256,11 @@ export function DiagnosticsPanel({
         </SettingsBlock>
       )}
       {maintenance}
-      <SettingsBlock
-        bare
+      <SettingsDrill
+        id="errors"
+        data-testid="diagnostics-errors-row"
         label={t('recent')}
-        data-testid="diagnostics-errors"
-        className="agnes-diagnostics-errors"
-        aria-busy={busy}
-        state={error ? undefined : busy && !bundle ? 'loading' : undefined}
+        value={entry}
         actions={
           <span className="agnes-diagnostics-lookup">
             <Field label={t('findById')} error={notice === 'invalid' ? t('invalid') : undefined}>
@@ -278,18 +299,26 @@ export function DiagnosticsPanel({
           </span>
         }
       >
-        {(error || bundle) && (
-          <RecentErrors
-            records={bundle?.errors ?? []}
-            lookup={lookup}
-            limit={bundle?.limits.errors ?? 0}
-            failure={error ? (appServerErrorMessage(failure, locale) ?? t('readFailedHelp')) : undefined}
-            onRetry={() => setReads((value) => value + 1)}
-            onClear={clear}
-            copy={copy}
-          />
-        )}
-      </SettingsBlock>
+        <SettingsBlock
+          bare
+          data-testid="diagnostics-errors"
+          className="agnes-diagnostics-errors"
+          aria-busy={busy}
+          state={error ? undefined : busy && !bundle ? 'loading' : undefined}
+        >
+          {(error || bundle) && (
+            <RecentErrors
+              records={bundle?.errors ?? []}
+              lookup={lookup}
+              limit={bundle?.limits.errors ?? 0}
+              failure={error ? (appServerErrorMessage(failure, locale) ?? t('readFailedHelp')) : undefined}
+              onRetry={() => setReads((value) => value + 1)}
+              onClear={clear}
+              copy={copy}
+            />
+          )}
+        </SettingsBlock>
+      </SettingsDrill>
       <SettingsBlock label={t('integrations')} data-testid="diagnostics-runtime">
         <ObservabilityPanel />
         {integrations}
