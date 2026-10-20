@@ -79,3 +79,57 @@ it('saves each OTLP change by itself: the switch, the collector after typing, he
   )
   expect(saves.at(-1)).toMatchObject({ shutdownPolicy: 'discard' })
 })
+
+it.each(['saved', 'failed'] as const)(
+  'ignores an old OTLP %s probe after permission changes',
+  async (outcome) => {
+    let finish!: (response: Response) => void
+    let signal: AbortSignal | null | undefined
+    let delayed = false
+    const value = (status: string) => ({
+      settings: { enabled: true, endpoint: 'https://collector.example' },
+      health: { status, queued: 0, dropped: 0, failures: 0 },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (delayed) {
+          delayed = false
+          signal = init?.signal
+          return new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        }
+        return Response.json(value('ok'))
+      }),
+    )
+    const host = document.body.appendChild(document.createElement('div'))
+    root = createRoot(host)
+    const draw = (canSave: boolean) =>
+      act(async () =>
+        root?.render(
+          createElement(
+            SettingsSubpageFrame,
+            { header: null },
+            createElement(ObservabilityPanel, { canSave }),
+          ),
+        ),
+      )
+    await draw(true)
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="otlp-settings"]')?.click())
+    delayed = true
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="otlp-test"]')?.click())
+    expect(finish).toBeTypeOf('function')
+    await draw(false)
+    expect(signal?.aborted).toBe(true)
+    await act(async () =>
+      finish(
+        outcome === 'failed'
+          ? Response.json({}, { status: 500 })
+          : Response.json({ ...value('backoff'), connection: 'failed' }),
+      ),
+    )
+    expect(host.querySelector('[data-testid="otlp-health"]')?.textContent).toBe('Healthy')
+    expect(host.querySelector('[data-testid="otlp-notice"]')).toBeNull()
+  },
+)

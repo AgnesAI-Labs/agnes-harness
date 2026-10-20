@@ -1,9 +1,13 @@
 /** @vitest-environment happy-dom */
 
-import { createElement } from 'react'
+import { Context } from '@agnes/cordis'
+import { type HostAgnesClient, LocaleService } from '@agnes/web-client'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgnesClient } from '../src/client-modules/boot.js'
 import { APPROVAL_SLOT } from '../src/region-slots.js'
+import { ProfileApprovals } from '../src/regions/profile-approvals.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 // A render through the approval handle commits in a few milliseconds, but a loaded runner has
@@ -409,6 +413,65 @@ it.each(['en', 'zh-CN'] as const)(
       visibility.mockRestore()
       vi.useRealTimers()
       resetWebDom()
+    }
+  },
+)
+
+it.each(['saved', 'failed'] as const)(
+  'ignores a late profile approval %s after close/reopen and a client change',
+  async (outcome) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    document.documentElement.innerHTML = '<head></head><body></body>'
+    const ctx = new Context()
+    const locale = new LocaleService(ctx, 'en')
+    const decision = {
+      handle: { id: 'same-id', sessionId: null, profileId: 'default' },
+      revision: 1,
+      request: {
+        owner: 'plugin/report',
+        spec: { prompt: 'Publish?', subject: {}, options: ['allowed-once', 'rejected'] },
+      },
+    }
+    let resolve!: (value: unknown) => void
+    let reject!: (reason: unknown) => void
+    const pending = new Promise((ok, fail) => {
+      resolve = ok
+      reject = fail
+    })
+    const makeClient = (answer: Promise<unknown>) =>
+      ({
+        call: vi.fn(async (method: string) => {
+          if (method === '_agnes/v1/profile.decisions.list') return { decisions: [decision] }
+          if (method === '_agnes/v1/schedules.list') return { schedules: [] }
+          if (method === '_agnes/v1/admin.triggers') return { snapshot: { deliveries: [] } }
+          return answer
+        }),
+      }) as unknown as HostAgnesClient
+    const first = makeClient(pending)
+    const next = makeClient(new Promise(() => {}))
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const draw = (client: HostAgnesClient) =>
+      act(async () => root.render(createElement(ProfileApprovals, { client, locale })))
+    const toggle = () => host.querySelector<HTMLButtonElement>('button[aria-controls="profile-approvals"]')!
+    const action = () => host.querySelector<HTMLButtonElement>('[data-testid="approval-action"]')!
+    try {
+      await draw(first)
+      await act(async () => toggle().click())
+      await act(async () => action().click())
+      await act(async () => toggle().click())
+      await draw(next)
+      await act(async () => toggle().click())
+      await act(async () => action().click())
+      expect(action().disabled).toBe(true)
+      await act(async () => (outcome === 'saved' ? resolve({}) : reject(new Error('old answer'))))
+      expect(host.querySelector('[data-testid="approval-card"]')).not.toBeNull()
+      expect(host.querySelector('[role="alert"]')).toBeNull()
+      expect(action().disabled).toBe(true)
+    } finally {
+      await act(async () => root.unmount())
+      await ctx.fiber.dispose()
+      host.remove()
     }
   },
 )

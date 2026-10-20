@@ -618,3 +618,60 @@ it('opens the pricing fold for a saved model that has one', async () => {
   await click(host, 'side-model-edit-jev')
   expect(input(host, 'side-model-cost-input-0')?.value).toBe('0.042')
 })
+
+it.each(['saved', 'failed'] as const)(
+  'ignores a late side-model %s after closing and reopening the editor',
+  async (outcome) => {
+    const paneHost = document.body.appendChild(document.createElement('div'))
+    let release = () => {}
+    await act(async () => {
+      release = mountRegion(
+        paneHost,
+        createElement(SettingsModelPane, { beforeAccounts: null, afterAccounts: null }),
+      )
+    })
+    const sideHost = paneHost.querySelector<HTMLElement>('#config-side-models')!
+    const api = client()
+    let resolve!: (value: ConfigSnapshot) => void
+    let reject!: (reason: unknown) => void
+    api.save.mockImplementationOnce(
+      () =>
+        new Promise((ok, fail) => {
+          resolve = ok
+          reject = fail
+        }),
+    )
+    const onSaved = vi.fn()
+    const root = createRoot(sideHost)
+    roots.push(root)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(SideModelsPanel, {
+            client: api,
+            configuration: snapshot([sideAccount]),
+            canSave: true,
+            onSaved,
+            credentials: credentials(),
+          }),
+        ),
+      )
+      await click(document.body, 'side-model-edit-jev')
+      await click(document.body, 'side-save')
+      expect(resolve).toBeTypeOf('function')
+      await click(document.body, 'settings-subpage-back')
+      await click(document.body, 'side-model-edit-jev')
+      await type(document.body, 'side-label', 'New draft')
+      await act(async () =>
+        outcome === 'saved' ? resolve(snapshot([sideAccount], 2)) : reject(new Error('old failure')),
+      )
+      expect(input(document.body, 'side-label')?.value).toBe('New draft')
+      expect(document.body.querySelector('[data-testid="side-status"]')).toBeNull()
+      expect(onSaved).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => root.unmount())
+      roots.splice(roots.indexOf(root), 1)
+      await act(async () => release())
+    }
+  },
+)

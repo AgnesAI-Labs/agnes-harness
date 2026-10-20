@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { SettingsSubpageFrame } from '@agnes/web-ui'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -121,6 +121,54 @@ it('saves each context change by itself, as presets and chips, and previews a wo
     flushSync(() => control('context-refresh').click())
     await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull())
     expect(host.textContent).toContain('Follow project conventions')
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+    vi.unstubAllGlobals()
+  }
+})
+
+it('does not apply an old context save after permission changes', async () => {
+  const config = {
+    rulesEnabled: true,
+    timeEnabled: true,
+    timeZone: 'UTC',
+    refreshIntervalMs: 600000,
+    maxBytes: 32768,
+    maxSourceBytes: 1048576,
+    instructionFiles: [],
+    localInstructionFiles: [],
+    customSkillRoots: [],
+  }
+  let finish!: (response: Response) => void
+  let signal: AbortSignal | null | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      const input = JSON.parse(String(init?.body))
+      if (input.config) {
+        signal = init?.signal
+        return new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      }
+      return Response.json({ config, workspaces: [] })
+    }),
+  )
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const draw = (canSave: boolean) => flushSync(() => root.render(createElement(ContextPanel, { canSave })))
+  try {
+    draw(true)
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="context-time-enabled"]')).not.toBeNull())
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-testid="context-time-enabled"]')?.click())
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    draw(false)
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true))
+    await act(async () =>
+      finish(Response.json({ config: { ...config, timeZone: 'Pacific/Honolulu' }, workspaces: [] })),
+    )
+    await vi.waitFor(() => expect(host.textContent).not.toContain('Honolulu'))
   } finally {
     flushSync(() => root.unmount())
     host.remove()

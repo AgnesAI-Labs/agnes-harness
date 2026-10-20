@@ -18,7 +18,8 @@ import {
   Tag,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { type JobsSessionSource, type JobsSnapshot, jobsSessions, sessionJobsApi } from './jobs-api.js'
 import { JOBS_NAMESPACE, jobsCatalog } from './jobs-locales.js'
 import { useSettingsOverlay } from './overlay.js'
@@ -45,8 +46,12 @@ export function JobsPanel({
   const [pending, setPending] = useState<string>()
   const [updatedAt, setUpdatedAt] = useState<Date>()
   useSettingsOverlay(!!pending)
-  const owner = useRef(sessionId)
-  owner.current = sessionId
+  const lifetime = useRequestScope(api, JSON.stringify([sessionId, jobId]))
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setPending(undefined)
+  }, [api, sessionId, jobId])
   // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
   useEffect(() => {
     let active = true
@@ -124,12 +129,12 @@ export function JobsPanel({
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('agnes:jobs-changed', wake)
       active = false
-      owner.current = ''
       clearTimeout(timer)
     }
   }, [sessionId, jobId, api])
   async function stop() {
     if (busy || !pending || !sessionId) return
+    const request = captureRequest(lifetime)
     const scope = sessionId
     const id = pending
     if (!snapshot?.jobs.some((job) => job.id === id && job.owner === 'human' && job.status === 'running'))
@@ -139,16 +144,16 @@ export function JobsPanel({
       const result = await api.control(scope, { operation: 'kill', jobId: id })
       if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
         throw new Error('Stop refused')
-      if (owner.current !== scope) return
+      if (!request.isCurrent()) return
       setPending(undefined)
       const value = await api.read(scope, jobId)
-      if (owner.current !== scope) return
+      if (!request.isCurrent()) return
       setSnapshot(value)
       setError(false)
     } catch {
-      if (owner.current === scope) setError(true)
+      if (request.isCurrent()) setError(true)
     } finally {
-      if (owner.current === scope) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const sessionChoice = (

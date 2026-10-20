@@ -373,3 +373,98 @@ it('marks a card this profile does not offer and keeps its description', async (
   )
   await unmount()
 })
+
+it.each(['saved', 'failed', 'conflict'] as const)(
+  'ignores a late %s save, including its cleanup, after a defaults refresh',
+  async (outcome) => {
+    let finishSave!: (response: Response) => void
+    let finishRead!: (response: Response) => void
+    let refresh = false
+    let reads = 0
+    let saveSignal: AbortSignal | null | undefined
+    const fetcher: typeof fetch = async (url, init) => {
+      if (String(url).endsWith('/context')) return context()
+      if (String(url).endsWith('/composition')) return Response.json({})
+      if (init?.method === 'PUT') {
+        saveSignal = init.signal
+        return new Promise((resolve) => {
+          finishSave = resolve
+        })
+      }
+      reads++
+      if (refresh)
+        return new Promise((resolve) => {
+          finishRead = resolve
+        })
+      return Response.json({ revision: 4, defaults: { permission: 'workspace-write' } })
+    }
+    const { host, unmount } = await render({ presets: recipes, permissions: levels, fetcher })
+    const notified = vi.fn()
+    window.addEventListener('agnes:session-configuration-changed', notified)
+    try {
+      await act(async () => pickIn(host)('read-only').click())
+      refresh = true
+      await act(async () => window.dispatchEvent(new Event('agnes:session-configuration-changed')))
+      notified.mockClear()
+      expect(saveSignal?.aborted).toBe(true)
+      await act(async () =>
+        finishSave(
+          outcome === 'saved'
+            ? Response.json({ revision: 5, defaults: { permission: 'read-only' } })
+            : Response.json({}, { status: outcome === 'conflict' ? 409 : 500 }),
+        ),
+      )
+      expect(
+        host.querySelector('[data-testid="security-default-permissions"]')?.getAttribute('aria-busy'),
+      ).toBe('true')
+      expect(host.querySelector('[data-testid="security-default-failed"]')).toBeNull()
+      expect(notified).not.toHaveBeenCalled()
+      expect(reads).toBe(2)
+      await act(async () =>
+        finishRead(Response.json({ revision: 6, defaults: { permission: 'full-access' } })),
+      )
+      expect(pickIn(host)('full-access').checked).toBe(true)
+      expect(pickIn(host)('read-only').disabled).toBe(false)
+    } finally {
+      window.removeEventListener('agnes:session-configuration-changed', notified)
+      await unmount()
+    }
+  },
+)
+
+it('locks refreshed defaults when the new permission check fails and an old save settles later', async () => {
+  let refresh = false
+  let denyContext = false
+  let finish!: (response: Response) => void
+  const fetcher: typeof fetch = async (url, init) => {
+    if (String(url).endsWith('/context')) {
+      if (denyContext) throw new Error('permission context unavailable')
+      return context()
+    }
+    if (String(url).endsWith('/composition')) return Response.json({})
+    if (init?.method === 'PUT')
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    return Response.json({ revision: refresh ? 6 : 4, defaults: { permission: 'workspace-write' } })
+  }
+  const { host, unmount } = await render({ presets: recipes, permissions: levels, fetcher })
+  try {
+    await act(async () => pickIn(host)('read-only').click())
+    refresh = true
+    denyContext = true
+    await act(async () => window.dispatchEvent(new Event('agnes:session-configuration-changed')))
+    expect(pickIn(host)('read-only').disabled).toBe(true)
+    expect(host.querySelector('[data-testid="loadable-retry"]')).not.toBeNull()
+    await act(async () => finish(Response.json({ revision: 5, defaults: { permission: 'read-only' } })))
+    expect(pickIn(host)('read-only').disabled).toBe(true)
+    expect(pickIn(host)('workspace-write').checked).toBe(true)
+    expect(host.querySelector('[data-testid="security-default-failed"]')).toBeNull()
+    denyContext = false
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="loadable-retry"]')?.click())
+    expect(pickIn(host)('read-only').disabled).toBe(false)
+    expect(host.querySelector('[data-testid="loadable-error"]')).toBeNull()
+  } finally {
+    await unmount()
+  }
+})

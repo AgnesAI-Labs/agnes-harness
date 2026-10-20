@@ -28,6 +28,7 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { AUTOMATION_NAMESPACE, automationCatalog } from './automation-locale.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
@@ -191,7 +192,6 @@ export function SchedulesPage({
   actionsHost?: HTMLElement | null | undefined
 }) {
   const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
-  const alive = useRef(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [includeArchived, setIncludeArchived] = useState(false)
   // The list is a cached read: shown at once when the page opens again, refreshed behind.
@@ -213,6 +213,7 @@ export function SchedulesPage({
   // New and edit open as pages inside 自动化: the open page is the address (`view=schedule-…`).
   const nav = usePushStack()
   const top = nav.stack.at(-1)
+  const lifetime = useRequestScope(api, top)
   const formOpen = top?.startsWith('schedule-') === true
   const editing = formOpen && top !== schedulePageId(undefined) ? top.slice('schedule-'.length) : undefined
   /** The page whose draft the form holds; a link opened directly fills it once its row is known. */
@@ -223,27 +224,31 @@ export function SchedulesPage({
   const sessionKey = api?.sessionKey()
   const [draft, setDraft] = useState<ScheduleDraft>(() => emptyDraft({ sessionKey, now: Date.now() }))
   useSettingsOverlay(formOpen || !!pending)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each page or connection starts a fresh operation scope.
   useEffect(() => {
-    alive.current = true
-    return () => {
-      alive.current = false
-    }
-  }, [])
+    setBusy(false)
+    setError(undefined)
+    setFormError(undefined)
+  }, [api, top])
   // Names for targets: workspace and session titles, and what a new session may be started with.
   useEffect(() => {
     if (!api) return
+    let current = true
     void api
       .workspaces?.()
-      .then((value) => alive.current && setWorkspaces(workspacesOf(value)))
+      .then((value) => current && setWorkspaces(workspacesOf(value)))
       .catch(() => undefined)
     void api
       .sessions?.()
-      .then((value) => alive.current && setSessions(sessionsOf(value).filter((session) => !session.archived)))
+      .then((value) => current && setSessions(sessionsOf(value).filter((session) => !session.archived)))
       .catch(() => undefined)
     void api
       .choices?.()
-      .then((value) => alive.current && setChoices(value))
+      .then((value) => current && setChoices(value))
       .catch(() => undefined)
+    return () => {
+      current = false
+    }
   }, [api])
   /**
    * After a write every cached schedule list reads again. A background re-read stays quiet: it
@@ -256,14 +261,15 @@ export function SchedulesPage({
         invalidateResource('schedules')
         return Promise.resolve()
       }
+      const request = captureRequest(lifetime)
       return api
         .list({ scope: 'all', includeArchived })
         .then((value) => {
-          if (alive.current && listKey) setResource(listKey, value)
+          if (request.isCurrent() && listKey) setResource(listKey, value)
         })
         .catch(() => undefined)
     },
-    [api, includeArchived, listKey],
+    [api, includeArchived, listKey, lifetime],
   )
   const live = useScheduleRefresh(() => refresh(true), rows, Boolean(api))
   const sessionTitle = useMemo(() => new Map(sessions.map((item) => [item.id, item])), [sessions])
@@ -275,6 +281,7 @@ export function SchedulesPage({
   const visible = rows.filter((row) => filter === 'all' || row.target.kind === filter)
   const save = async () => {
     if (!api || busy) return
+    const request = captureRequest(lifetime)
     setFormError(undefined)
     setBusy(true)
     try {
@@ -289,7 +296,7 @@ export function SchedulesPage({
           ? { agent: draft.mode }
           : {}),
       })) as { id?: string; code?: string; updated?: boolean }
-      if (!alive.current) return
+      if (!request.isCurrent()) return
       if (result.updated === false) {
         setFormError(failureText(result, ux, t))
         return
@@ -297,21 +304,22 @@ export function SchedulesPage({
       setNotice(t(editing ? 'schedulesSaved' : 'schedulesCreated'))
       nav.back()
     } catch (reason) {
-      if (alive.current) setFormError(failureText(reason, ux, t))
+      if (request.isCurrent()) setFormError(failureText(reason, ux, t))
       return
     } finally {
-      if (alive.current) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
     // The list reloads on its own; the page stays usable meanwhile.
     void refresh()
   }
   const control = async (row: ScheduleRow, action: 'run' | 'pause' | 'resume') => {
     if (!api?.control || busy) return
+    const request = captureRequest(lifetime)
     setError(undefined)
     setBusy(true)
     try {
       const result = (await api.control({ id: row.id, action })) as { updated?: boolean; code?: string }
-      if (!alive.current) return
+      if (!request.isCurrent()) return
       if (result.updated === false) {
         setNotice(undefined)
         setError({ code: result.code })
@@ -322,10 +330,10 @@ export function SchedulesPage({
         setRunRequested(true)
       } else setNotice(ux(action === 'pause' ? 'noticePaused' : 'noticeResumed'))
     } catch (reason) {
-      if (alive.current) setError(reason)
+      if (request.isCurrent()) setError(reason)
       return
     } finally {
-      if (alive.current) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
     void refresh()
   }
@@ -614,22 +622,23 @@ export function SchedulesPage({
         onConfirm={() => {
           const id = pending
           if (!api || !id || busy) return
+          const request = captureRequest(lifetime)
           setError(undefined)
           setBusy(true)
           void api
             .archive({ id })
             .then((result) => {
-              if (!alive.current) return
+              if (!request.isCurrent()) return
               if ((result as { deleted?: boolean }).deleted === false) throw new Error('archive refused')
               setNotice(t('schedulesArchived'))
               setPending(undefined)
               return refresh()
             })
             .catch((reason: unknown) => {
-              if (alive.current) setError(reason)
+              if (request.isCurrent()) setError(reason)
             })
             .finally(() => {
-              if (alive.current) setBusy(false)
+              if (request.isCurrent()) setBusy(false)
             })
         }}
       >

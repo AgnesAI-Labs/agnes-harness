@@ -168,3 +168,52 @@ it('asks for a workspace when none is open', async () => {
     await unmount()
   }
 })
+
+it.each(['saved', 'failed', 'read'] as const)(
+  'retires an old memory %s when permission changes',
+  async (outcome) => {
+    let finish!: (response: Response) => void
+    let oldSignal: AbortSignal | null | undefined
+    let delayed = false
+    const value = (mode: 'off' | 'ask') => ({
+      workspaces: [{ path: '/work/WorkLLM', available: true }],
+      inspection: inspection(mode),
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/context')
+          return Response.json(context([{ path: '/work/WorkLLM', available: true }]))
+        if (delayed) {
+          delayed = false
+          oldSignal = init?.signal
+          return new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        }
+        return Response.json(value('off'))
+      }),
+    )
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const draw = (canSave: boolean) => act(async () => root.render(createElement(MemoryPanel, { canSave })))
+    try {
+      if (outcome === 'read') delayed = true
+      await draw(true)
+      if (outcome !== 'read') {
+        delayed = true
+        await act(async () => radio(host, 'ask')?.click())
+      }
+      expect(finish).toBeTypeOf('function')
+      await draw(false)
+      expect(oldSignal?.aborted).toBe(true)
+      await act(async () =>
+        finish(outcome === 'failed' ? Response.json({}, { status: 500 }) : Response.json(value('ask'))),
+      )
+      expect(radio(host, 'off')?.checked).toBe(true)
+      expect(host.querySelector('[data-testid="settings-save-failed"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

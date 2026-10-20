@@ -177,3 +177,66 @@ it('uses the session job binding RPC from the existing management UI API', async
   }
   await expect(sessionJobsApi().read('community-session')).rejects.toThrow('unavailable')
 })
+
+it.each(['saved', 'failed'] as const)(
+  'ignores an old job stop %s even when the replacement API has the same session id',
+  async (outcome) => {
+    const job: SessionJob = {
+      id: 'human-job',
+      owner: 'human',
+      kind: 'shell',
+      command: 'sleep 10',
+      cwd: '/w',
+      status: 'running',
+      code: null,
+      truncated: false,
+      stdout: 'new scope',
+    }
+    let resolve!: (value: unknown) => void
+    let reject!: (reason: unknown) => void
+    const pending = new Promise((ok, fail) => {
+      resolve = ok
+      reject = fail
+    })
+    const first = {
+      read: vi.fn(async () => ({ jobs: [{ ...job, stdout: 'old scope' }], completions: [] })),
+      control: vi.fn(() => pending),
+    }
+    const next = {
+      read: vi.fn(async () => ({ jobs: [job], completions: [] })),
+      control: vi.fn(async () => ({})),
+    }
+    const sessions = {
+      current: () => 'same-session',
+      list: async () => [
+        { id: 'same-session', title: 'Test', workspace: 'test', createdAt: '2026-10-20T00:00:00Z' },
+      ],
+    }
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const draw = (api: typeof first | typeof next) =>
+      act(async () => root.render(createElement(JobsPanel, { api, sessions })))
+    try {
+      await draw(first)
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>(
+            '[data-testid="session-job-human-job"] button[aria-haspopup="menu"]',
+          )
+          ?.click(),
+      )
+      await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')?.click())
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[data-testid="jobs-stop-confirm"]')?.click(),
+      )
+      expect(first.control).toHaveBeenCalled()
+      await draw(next)
+      const reads = first.read.mock.calls.length
+      await act(async () => (outcome === 'saved' ? resolve({ ok: true }) : reject(new Error('old stop'))))
+      expect(first.read.mock.calls.length).toBe(reads)
+      expect(host.querySelector('[data-testid="jobs-error"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

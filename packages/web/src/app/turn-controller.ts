@@ -55,6 +55,7 @@ export function createTurnController(
     | 'run'
     | 'runtimeCatalog'
     | 'sessionControls'
+    | 'sessionBinding'
     | 'sessionRows'
     | 'sessionPending'
     | 'sessionTitles'
@@ -79,6 +80,17 @@ export function createTurnController(
   })
   let cachedApproval: { session: typeof context.live; ticket: string; node: ApprovalNode } | undefined
   let activeSearch: object | undefined
+  let approvalBinding = context.sessionBinding.capture()
+  const syncApprovalScope = () => {
+    const next = context.sessionBinding.capture()
+    if (next === approvalBinding) return
+    approvalBinding = next
+    cachedApproval = undefined
+    activeSearch = undefined
+    context.approvalBusy = false
+    context.approvalSearch = 'idle'
+    context.approvalSearchTicket = undefined
+  }
   const parkedTicket = (): string | undefined => {
     const ref = context.projection?.opState?.parked?.decisionRef
     return ref ? JSON.stringify(ref) : undefined
@@ -207,6 +219,7 @@ export function createTurnController(
   }
 
   function renderApproval(): void {
+    syncApprovalScope()
     if (context.readOnly || context.sessionPending) {
       context.approvalRuntime.render(undefined)
       return
@@ -326,6 +339,8 @@ export function createTurnController(
       : undefined
     const actions: ApprovalAction[] = []
     const decisionSession = context.live
+    const binding = context.sessionBinding.capture()
+    const current = () => context.sessionBinding.isCurrent(binding) && context.live === decisionSession
     const decide = (id: string, label: string, action: () => Promise<void>): void => {
       actions.push({
         id,
@@ -333,7 +348,7 @@ export function createTurnController(
         onSelect: () =>
           context.run(async () => {
             if (
-              context.live !== decisionSession ||
+              !current() ||
               context.approvalBusy ||
               context.stopping ||
               context.sessionPending ||
@@ -344,10 +359,12 @@ export function createTurnController(
             renderApproval()
             try {
               await action()
-              if (context.live === decisionSession) cachedApproval = undefined
+              if (current()) cachedApproval = undefined
+            } catch (error) {
+              if (current()) throw error
             } finally {
-              context.approvalBusy = false
-              if (context.live === decisionSession) {
+              if (current()) {
+                context.approvalBusy = false
                 decisionSession?.refresh()
                 renderApproval()
               }
@@ -457,6 +474,7 @@ export function createTurnController(
 
   /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
   function searchApproval(limit?: number): void {
+    syncApprovalScope()
     const session = context.live
     if (
       !session ||
@@ -469,7 +487,12 @@ export function createTurnController(
     const search = {}
     let focused = false
     activeSearch = search
-    const current = () => context.live === session && parkedTicket() === ticket && activeSearch === search
+    const binding = context.sessionBinding.capture()
+    const current = () =>
+      context.sessionBinding.isCurrent(binding) &&
+      context.live === session &&
+      parkedTicket() === ticket &&
+      activeSearch === search
     context.approvalSearchTicket = ticket
     context.approvalSearch = 'searching'
     renderApproval()

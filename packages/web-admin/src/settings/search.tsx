@@ -36,8 +36,9 @@ import {
   usePushStack,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { searchConfigSchema } from './config-schemas.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
@@ -126,7 +127,6 @@ export function SearchPanel({
   fetcher?: typeof fetch
 }) {
   const { t: ux } = useUiText(SEARCH_NAMESPACE, searchCatalog)
-  const lifetime = useRef<AbortController>()
   // Adding or editing a service is a page over 网页搜索 (`search-engine`), not a dialog.
   const pages = usePushStack()
   const editor = pages.stack.at(-1) === EDITOR_PAGE
@@ -135,6 +135,7 @@ export function SearchPanel({
   }
   const [confirmClear, setConfirmClear] = useState<SearchRow>()
   const [reload, setReload] = useState(0)
+  const lifetime = useRequestScope(fetcher, `${canSave}:${reload}:${editor}`)
   const [elapsed, setElapsed] = useState<number>()
   const [probeFailure, setProbeFailure] = useState<string>()
   const [status, setStatus] = useState<SearchStatus>()
@@ -157,11 +158,19 @@ export function SearchPanel({
   const [hits, setHits] = useState<SearchHit[]>([])
   useSettingsOverlay(!!confirmClear)
   const selected = status?.providers.find((row) => row.id === providerId)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each page or connection starts a fresh operation scope.
+  useEffect(() => {
+    setBusy(false)
+    setError('')
+    setNotice('')
+    setProbeFailure(undefined)
+    setElapsed(undefined)
+    setHits([])
+  }, [fetcher, canSave, reload, editor])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
   useEffect(() => {
     const controller = new AbortController()
-    lifetime.current = controller
     let current = true
     setFailed(false)
     setBusy(true)
@@ -232,6 +241,7 @@ export function SearchPanel({
     }
     const savedDefault = status.defaultProvider
     const defaultProvider = makeDefault ? providerId : savedDefault === providerId ? null : savedDefault
+    const request = captureRequest(lifetime)
     setBusy(true)
     setError('')
     setErrorEnvelope(undefined)
@@ -241,7 +251,7 @@ export function SearchPanel({
         await fetcher('/admin/api/search', {
           method: 'PUT',
           credentials: 'same-origin',
-          signal: lifetime.current?.signal ?? null,
+          signal: request.signal ?? null,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             defaultProvider,
@@ -257,7 +267,7 @@ export function SearchPanel({
           }),
         }),
       )
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       if (!isStatus(value)) throw new Error('invalid')
       // A closed dialog stops rendering, so the key leaves the field before the dialog closes.
       flushSync(() => setApiKey(''))
@@ -265,11 +275,11 @@ export function SearchPanel({
       reportSuccess('search', t('searchSaved'))
       leaveEditor()
     } catch (error) {
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       setErrorEnvelope((error as { envelope?: unknown })?.envelope)
       setError('searchFailed')
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
 
@@ -281,6 +291,7 @@ export function SearchPanel({
       setElapsed(undefined)
       return
     }
+    const request = captureRequest(lifetime)
     setBusy(true)
     setNotice('')
     setProbeFailure(undefined)
@@ -293,7 +304,7 @@ export function SearchPanel({
       const response = await fetcher('/admin/api/search/test', {
         method: 'POST',
         credentials: 'same-origin',
-        signal: lifetime.current?.signal ?? null,
+        signal: request.signal ?? null,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ provider: status?.defaultProvider ?? providerId, query: probe }),
       })
@@ -303,7 +314,7 @@ export function SearchPanel({
         message?: string
         results?: SearchHit[]
       }
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       if (!response.ok || !value.ok) {
         setProbeFailure(appServerErrorMessage(value.error, document.documentElement.lang) ?? ux('testFailed'))
         return
@@ -312,13 +323,13 @@ export function SearchPanel({
       setNotice('tested')
       reportSuccess('search-test', ux('testCompleted'))
     } catch (error) {
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       setProbeFailure(
         appServerErrorMessage((error as { envelope?: unknown })?.envelope, document.documentElement.lang) ??
           ux('testFailed'),
       )
     } finally {
-      if (!lifetime.current?.signal.aborted) {
+      if (request.isCurrent()) {
         setElapsed(Math.round(performance.now() - started))
         setBusy(false)
       }
@@ -330,6 +341,7 @@ export function SearchPanel({
     patch: { enabled?: boolean; makeDefault?: boolean; clearKey?: boolean },
   ) {
     if (!canSave || busy || !status) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setError('')
     setErrorEnvelope(undefined)
@@ -338,7 +350,7 @@ export function SearchPanel({
         await fetcher('/admin/api/search', {
           method: 'PUT',
           credentials: 'same-origin',
-          signal: lifetime.current?.signal ?? null,
+          signal: request.signal ?? null,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             defaultProvider: patch.makeDefault ? row.id : status.defaultProvider,
@@ -354,17 +366,17 @@ export function SearchPanel({
           }),
         }),
       )
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       if (!isStatus(value)) throw new Error('invalid search status')
       setStatus(value)
       setConfirmClear(undefined)
       reportSuccess('search', t('searchSaved'))
     } catch (failure) {
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       setErrorEnvelope((failure as { envelope?: unknown })?.envelope)
       setError('searchFailed')
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   function edit(id: ProviderId) {

@@ -39,6 +39,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { useSettingsOverlay } from './overlay.js'
 import { triggersCatalog } from './triggers-locale.js'
@@ -133,11 +134,15 @@ export function TriggersPanel({
   const [filtersError, setFiltersError] = useState(false)
   const [payloadError, setPayloadError] = useState(false)
   useSettingsOverlay(formOpen || !!removing)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: leaving or reopening a form retires its requests.
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
+    setBusy(false)
+    setError(false)
+    setNotice('')
     return () => abort.abort()
-  }, [])
+  }, [top])
   const openRule = (item: WebhookRule) => {
     prepared.current = `${TRIGGER_PAGE}${item.id}`
     setRule(item)
@@ -167,15 +172,15 @@ export function TriggersPanel({
   }, [formOpen, top, snapshot, list.data])
   async function request(input: WebhookRequest) {
     if (busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setError(false)
     setNotice('')
     try {
-      const result = await triggersRequest(input, lifetime.current?.signal)
-      const refreshed = result.snapshot
-        ? result
-        : await triggersRequest({ action: 'list' }, lifetime.current?.signal)
-      if (lifetime.current?.signal.aborted) return
+      const result = await triggersRequest(input, request.signal)
+      if (!request.isCurrent()) return
+      const refreshed = result.snapshot ? result : await triggersRequest({ action: 'list' }, request.signal)
+      if (!request.isCurrent()) return
       if (refreshed.snapshot)
         setResource<TriggersRead>(TRIGGERS_KEY, { snapshot: refreshed.snapshot, workspaces })
       if (result.delivery) setNotice(result.delivery.status)
@@ -188,9 +193,9 @@ export function TriggersPanel({
       if (input.action === 'upsert') nav.back()
       if (input.action === 'delete') setRemoving(undefined)
     } catch {
-      if (!lifetime.current?.signal.aborted) setError(true)
+      if (request.isCurrent()) setError(true)
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const set = <K extends keyof WebhookRule>(key: K, value: WebhookRule[K]) =>

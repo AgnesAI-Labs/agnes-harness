@@ -15,6 +15,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { memoryRequest } from './memory-api.js'
 import { memoryCatalog } from './memory-locale.js'
@@ -46,6 +47,9 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
     lifetime.current = abort
     setBusy(true)
     setReadFailed(false)
+    setFailedChange(undefined)
+    setFileError(undefined)
+    setFile(undefined)
     void trackPageRequest(contextRequest({}, fetch, abort.signal))
       .then(async ({ workspaces }) => {
         if (abort.signal.aborted) return
@@ -53,7 +57,8 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         const path = workspaces.find((workspace) => workspace.available)?.path
         if (!path) return
         setCwd(path)
-        setSnapshot(await memoryRequest({ cwd: path }, abort.signal))
+        const value = await memoryRequest({ cwd: path }, abort.signal)
+        if (!abort.signal.aborted) setSnapshot(value)
       })
       .catch(() => {
         if (!abort.signal.aborted) setReadFailed(true)
@@ -62,16 +67,17 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         if (!abort.signal.aborted) setBusy(false)
       })
     return () => abort.abort()
-  }, [reads])
+  }, [reads, canSave])
 
   async function request(input: Request, kind: 'read' | 'change' | 'file' = 'read') {
     if (busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     if (kind === 'change') setFailedChange(undefined)
     setFileError(undefined)
     try {
-      const result = await memoryRequest(input, lifetime.current?.signal)
-      if (lifetime.current?.signal.aborted) return
+      const result = await memoryRequest(input, request.signal)
+      if (!request.isCurrent()) return
       setSnapshot(result)
       if (kind !== 'read') reportSuccess('memory', fallbackT('ui.settingsSaved'))
       if (result.file) {
@@ -79,12 +85,12 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         setContent(result.file.content)
       }
     } catch (error) {
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       if (kind === 'change') setFailedChange(input)
       else if (kind === 'file') setFileError(errorEnvelope(error))
       else setReadFailed(true)
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const inspection = snapshot?.inspection

@@ -19,6 +19,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { captureRequest } from './async-request.js'
 import {
   type DiagnosticsApi,
   DiagnosticsRequestError,
@@ -74,12 +75,10 @@ export function DiagnosticsPanel({
   const [notice, setNotice] = useState('')
   const copyRetry = useRef<() => void>(() => {})
   const [reads, setReads] = useState(0)
-  const alive = useRef(false)
   const controller = useRef<AbortController>()
   useSettingsOverlay(exporting)
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
-    alive.current = true
     const pending = new AbortController()
     controller.current = pending
     setBusy(true)
@@ -98,21 +97,21 @@ export function DiagnosticsPanel({
         if (!pending.signal.aborted) setBusy(false)
       })
     return () => {
-      alive.current = false
       pending.abort()
     }
   }, [api, reads])
-  async function run(action: () => Promise<void>) {
+  async function run(action: (request: ReturnType<typeof captureRequest>) => Promise<void>) {
     if (busy) return
+    const request = captureRequest(controller)
     setBusy(true)
     setError(undefined)
     setNotice('')
     try {
-      await action()
+      await action(request)
     } catch (failure) {
-      if (alive.current) setError(failure)
+      if (request.isCurrent()) setError(failure)
     } finally {
-      if (alive.current) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const clear = () => {
@@ -128,23 +127,24 @@ export function DiagnosticsPanel({
       document.getElementById('diagnostics-query')?.focus()
       return
     }
-    await run(async () => {
-      const result = await api.export({ diagnosticId: id }, controller.current?.signal)
-      if (alive.current) setLookup({ id, records: result.errors })
+    await run(async (request) => {
+      const result = await api.export({ diagnosticId: id }, request.signal)
+      if (request.isCurrent()) setLookup({ id, records: result.errors })
     })
   }
   const locale = document.documentElement.lang || 'en'
   const copy = (value: string, done: string) => {
     copyRetry.current = () => copy(value, done)
+    const request = captureRequest(controller)
     setNotice('')
     void Promise.resolve()
       .then(() => navigator.clipboard.writeText(value))
       .then(
         () => {
-          if (alive.current) reportSuccess('diagnostics', t(done))
+          if (request.isCurrent()) reportSuccess('diagnostics', t(done))
         },
         () => {
-          if (alive.current) setNotice('copyFailed')
+          if (request.isCurrent()) setNotice('copyFailed')
         },
       )
   }
@@ -308,12 +308,9 @@ export function DiagnosticsPanel({
               data-testid="diagnostics-export-confirm"
               loading={busy}
               onClick={() =>
-                void run(async () => {
-                  const value = await api.export(
-                    selected ? { diagnosticId: selected } : {},
-                    controller.current?.signal,
-                  )
-                  if (alive.current) {
+                void run(async (request) => {
+                  const value = await api.export(selected ? { diagnosticId: selected } : {}, request.signal)
+                  if (request.isCurrent()) {
                     download(value)
                     setExporting(false)
                     reportSuccess('diagnostics', t('exported'))

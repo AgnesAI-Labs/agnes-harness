@@ -21,6 +21,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { captureRequest } from './async-request.js'
 import { observabilityRequest } from './observability-api.js'
 import { observabilityCatalog } from './observability-locale.js'
 
@@ -37,6 +38,11 @@ const healthTone = (status: Health['status'] | undefined) =>
  * delivery limits. Every change saves itself; the status below can test the collector.
  */
 export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
+  // Permission changes start a new autosave owner as well as a new read lifetime.
+  return <ObservabilitySettingsPanel key={String(canSave)} canSave={canSave} />
+}
+
+function ObservabilitySettingsPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/observability', observabilityCatalog)
   const lifetime = useRef<AbortController | undefined>(undefined)
   const [snapshot, setSnapshot] = useState<AdminObservabilityResult>()
@@ -45,9 +51,11 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
   const [notice, setNotice] = useState<'' | 'ok' | 'failed'>('')
   const [header, setHeader] = useState({ name: '', env: '' })
   const [headerErrors, setHeaderErrors] = useState(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
+    setBusy(true)
     void trackPageRequest(observabilityRequest({}, abort.signal))
       .then((value) => {
         if (!abort.signal.aborted) setSnapshot(value)
@@ -59,34 +67,37 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
         if (!abort.signal.aborted) setBusy(false)
       })
     return () => abort.abort()
-  }, [])
+  }, [canSave])
   const settings = useAutosave<ObservabilitySettings>({
     resourceKey: 'settings:observability',
     onSaved: () => reportSuccess('settings:observability', fallbackT('ui.settingsSaved')),
     stored: snapshot?.settings,
     equal: sameSettings,
     save: async (next) => {
-      const value = await observabilityRequest({ settings: next })
-      setSnapshot(value)
+      const request = captureRequest(lifetime)
+      if (!request.isCurrent()) return
+      const value = await observabilityRequest({ settings: next }, request.signal)
+      if (request.isCurrent()) setSnapshot(value)
     },
   })
   async function request(action: 'test' | 'refresh') {
     if (busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setNotice('')
     try {
       const value = await observabilityRequest(
         action === 'refresh' || !settings.value ? {} : { settings: settings.value, test: true },
-        lifetime.current?.signal,
+        request.signal,
       )
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       setSnapshot(value)
       if (action === 'test')
         setNotice(value.connection === 'ok' ? 'ok' : value.connection === 'failed' ? 'failed' : '')
     } catch {
-      if (!lifetime.current?.signal.aborted) setNotice('failed')
+      if (request.isCurrent()) setNotice('failed')
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const value = settings.value ?? { enabled: false }

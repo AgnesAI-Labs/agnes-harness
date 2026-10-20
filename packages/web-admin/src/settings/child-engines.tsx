@@ -19,6 +19,7 @@ import {
   StatusMessage,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { childEngineConfigSchema } from './config-schemas.js'
 
 type Text = (key: string) => string
@@ -60,6 +61,7 @@ export function ChildEnginesPanel({
   canSave: boolean
   t: Text
 }) {
+  const lifetime = useRequestScope(api, canSave)
   const [draft, setDraft] = useState<ChildEngineSettings>(structuredClone(DISABLED_CHILD_ENGINES))
   const [revision, setRevision] = useState(0)
   const [ready, setReady] = useState(false)
@@ -67,8 +69,13 @@ export function ChildEnginesPanel({
   const [saved, setSaved] = useState('')
   const [loaded, setLoaded] = useState('')
   const [busy, setBusy] = useState(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   useEffect(() => {
     let cancelled = false
+    setBusy(false)
+    setReady(false)
+    setStatus('')
+    setSaved('')
     if (!api) {
       setStatus('engine.unavailable')
       return
@@ -88,7 +95,7 @@ export function ChildEnginesPanel({
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, canSave])
   const update = (next: ChildEngineSettings) => {
     setDraft(next)
     setStatus('')
@@ -116,9 +123,11 @@ export function ChildEnginesPanel({
       setStatus('engine.unavailable')
       return
     }
+    const request = captureRequest(lifetime)
     setBusy(true)
     void api.saveChildEngines({ revision, engines: draft }).then(
       (state) => {
+        if (!request.isCurrent()) return
         setBusy(false)
         setRevision(state.revision)
         setDraft(state.engines)
@@ -134,6 +143,7 @@ export function ChildEnginesPanel({
         )
       },
       (error: unknown) => {
+        if (!request.isCurrent()) return
         setBusy(false)
         setStatus(
           failureCode(error) === 'CONFIG_REVISION_CONFLICT' ? 'engine.conflict' : 'engine.unavailable',

@@ -817,3 +817,35 @@ feedbackBeforeEach(() => {
   releaseFeedback = installFeedbackSink({ publish: (value) => feedbackResults.push(value), resolve() {} })
 })
 feedbackAfterEach(() => releaseFeedback?.())
+
+it.each(['saved', 'failed'] as const)(
+  'ignores a late schedule %s after leaving and reopening its form',
+  async (outcome) => {
+    let resolve!: (value: unknown) => void
+    let reject!: (reason: unknown) => void
+    const pendingSave = new Promise((ok, fail) => {
+      resolve = ok
+      reject = fail
+    })
+    const host = await mount(createElement(SchedulesPage, { api: api([], { upsert: () => pendingSave }), t }))
+    await click('schedules-new', host)
+    await act(async () => {
+      fill('schedules-title', 'Daily report')
+      fill('schedules-prompt', 'Write report')
+    })
+    await submit()
+    await act(async () => {
+      history.replaceState({ agnesPushPage: 0 }, '')
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { agnesPushPage: 0 } }))
+    })
+    await click('schedules-new', host)
+    await act(async () => fill('schedules-title', 'New draft'))
+    const before = feedbackResults.length
+    await act(async () => (outcome === 'saved' ? resolve(standup) : reject(new Error('old failure'))))
+    expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-title"]')?.value).toBe(
+      'New draft',
+    )
+    expect(document.querySelector('[data-testid="schedules-form-error"]')).toBeNull()
+    expect(feedbackResults).toHaveLength(before)
+  },
+)

@@ -75,8 +75,10 @@ async function harness() {
   const list = vi.fn(async (): Promise<{ decisions: DecisionSnapshot[] }> => ({ decisions: [] }))
   const decide = vi.fn(async () => undefined)
   const showError = vi.fn()
+  const binding = new SessionBindingOwner()
   const context = {
-    submissions: new SubmissionOwner(new SessionBindingOwner()),
+    sessionBinding: binding,
+    submissions: new SubmissionOwner(binding),
     projection: timeline(),
     current: { id: 's' },
     live: { hasEarlier: () => false, loadEarlier: async () => false, refresh: vi.fn() },
@@ -109,7 +111,7 @@ async function harness() {
     >[0][K]
   }
   const controller = createTurnController(context)
-  return { context, controller, list, decide, showError }
+  return { context, controller, list, decide, showError, binding }
 }
 
 it.each(['preview', 'pending', 'full-access', 'full-plan', 'legacy-yolo'])(
@@ -399,23 +401,34 @@ it('settles failed loads and lets locate retry successfully', async () => {
   )
 })
 
-it('ignores lookup and history completion after a session switch', async () => {
-  const { context, controller, list } = await harness()
-  let resolve: ((value: { decisions: DecisionSnapshot[] }) => void) | undefined
-  list.mockImplementation(
-    () =>
-      new Promise((done) => {
-        resolve = done
-      }),
-  )
-  controller.searchApproval()
-  context.live = undefined
-  context.projection = undefined
-  controller.renderApproval()
-  resolve?.({ decisions: [snapshot] })
-  await new Promise((done) => setTimeout(done, 0))
-  expect(document.querySelector('[data-approval-action^="durable:"]')).toBeNull()
-})
+it.each(['different', 'returned'] as const)(
+  'ignores lookup and history completion after a %s session switch',
+  async (mode) => {
+    const { context, controller, list, binding } = await harness()
+    const original = { live: context.live, projection: context.projection }
+    let resolve: ((value: { decisions: DecisionSnapshot[] }) => void) | undefined
+    list.mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    controller.searchApproval()
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+    binding.begin('other')
+    context.live = undefined
+    context.projection = undefined
+    if (mode === 'returned') {
+      binding.begin('s')
+      context.live = original.live
+      context.projection = original.projection
+    }
+    controller.renderApproval()
+    resolve?.({ decisions: [snapshot] })
+    await new Promise((done) => setTimeout(done, 0))
+    expect(document.querySelector('[data-approval-action^="durable:"]')).toBeNull()
+  },
+)
 
 it('formats expiry in the UI language as a relative duration instead of ISO', () => {
   const now = Date.parse('2026-10-14T02:49:50.221Z')
@@ -657,5 +670,45 @@ it.each(['zh-CN', 'en', 'en-GB'])(
       }),
     )
     document.documentElement.lang = ''
+  },
+)
+
+it.each(['saved', 'failed'] as const)(
+  'keeps an old approval %s out of a new binding of the same session handle',
+  async (outcome) => {
+    const { context, controller, list, decide, showError, binding } = await harness()
+    list.mockResolvedValue({ decisions: [snapshot] })
+    let finish!: () => void
+    let fail!: (error: Error) => void
+    const previous = new Promise<undefined>((resolve, reject) => {
+      finish = () => resolve(undefined)
+      fail = reject
+    })
+    decide
+      .mockImplementationOnce(() => previous)
+      .mockImplementationOnce(() => new Promise<undefined>(() => {}))
+    const action = () =>
+      document.querySelector<HTMLButtonElement>('[data-approval-action="durable:rejected"]')
+    controller.searchApproval(3)
+    await vi.waitFor(() => expect(action()).not.toBeNull())
+    action()?.click()
+    await vi.waitFor(() => expect(context.approvalBusy).toBe(true))
+    binding.begin('other')
+    binding.begin('s')
+    // The new binding owns a separate answer and busy state.
+    context.approvalBusy = false
+    controller.renderApproval()
+    controller.searchApproval(3)
+    await vi.waitFor(() => expect(action()?.disabled).toBe(false))
+    action()?.click()
+    await vi.waitFor(() => expect(decide).toHaveBeenCalledTimes(2))
+    if (outcome === 'saved') finish()
+    else fail(new Error('old approval failed'))
+    await previous.catch(() => {})
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(context.approvalBusy).toBe(true)
+    expect(showError).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(action()?.disabled).toBe(true))
   },
 )

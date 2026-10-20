@@ -191,7 +191,7 @@ it.each([false, true])(
         selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
       )
       expect(selfCheck.querySelector('[role="alert"]')?.textContent).toContain(
-        'You do not have permission for this operation.',
+        'Permission for this operation was denied. Ask an administrator to review the applicable policy before retrying.',
       )
     }
   },
@@ -314,7 +314,9 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-refresh"]')?.click(),
     )
-    expect(text('diagnostics-failure')).toContain('You do not have permission for this operation.')
+    expect(text('diagnostics-failure')).toContain(
+      'Permission for this operation was denied. Ask an administrator to review the applicable policy before retrying.',
+    )
     fail = false
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-failure"] button')?.click(),
@@ -561,3 +563,57 @@ it('keeps pending groups in place, announces completion, refreshes time, probes 
     vi.useRealTimers()
   }
 })
+
+it.each(['saved', 'failed'] as const)(
+  'ignores a late %s export after the diagnostics API changes',
+  async (outcome) => {
+    let finish!: (response: Response) => void
+    let finishRead!: (response: Response) => void
+    let oldSignal: AbortSignal | null | undefined
+    const oldApi = diagnosticsApi(async (_url, init) => {
+      if (init?.method) {
+        oldSignal = init.signal
+        return new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      }
+      return Response.json({ bundle, doctorAvailable: false })
+    })
+    const download = vi.fn()
+    const host = await mount(oldApi, download)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export"]')?.click(),
+    )
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export-confirm"]')?.click(),
+    )
+    expect(finish).toBeTypeOf('function')
+    const nextApi = diagnosticsApi(
+      async () =>
+        new Promise<Response>((resolve) => {
+          finishRead = resolve
+        }),
+    )
+    await act(async () =>
+      roots
+        .at(-1)
+        ?.render(
+          createElement(
+            SettingsSubpageFrame,
+            { header: null },
+            createElement(DiagnosticsPanel, { api: nextApi, download }),
+          ),
+        ),
+    )
+    expect(oldSignal?.aborted).toBe(true)
+    await act(async () =>
+      finish(outcome === 'saved' ? Response.json(bundle) : Response.json({}, { status: 500 })),
+    )
+    expect(download).not.toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="diagnostics-failure"]')).toBeNull()
+    expect(
+      document.querySelector('[data-testid="diagnostics-export-confirm"]')?.getAttribute('aria-busy'),
+    ).toBe('true')
+    await act(async () => finishRead(Response.json({ bundle, doctorAvailable: false })))
+  },
+)

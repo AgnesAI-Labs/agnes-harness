@@ -1,9 +1,10 @@
 import type { ApplicationPreview, ApplicationState, PresentationRole } from '@agnes/protocol'
 import { presentationRoles, STANDARD_PRESENTATION_ROLES, selectPresentationRoles } from '@agnes/web-client'
 import { Button, reportSuccess, SettingsBlock, StatusMessage, useDocumentLanguage } from '@agnes/web-ui'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationPreviewSummary, PRESENTATION_ROLE_LABELS as labels } from './application-preview.js'
+import { captureRequest, useRequestScope } from './async-request.js'
 
 const recoveryPath = '/?admin'
 const clearCommand = 'agh app clear'
@@ -40,16 +41,26 @@ export function InterfaceImplementations({
     clientId: string
     preview: ApplicationPreview
   }>()
+  const lifetime = useRequestScope(api, `${canSave}:${state.revision}`)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setReview(undefined)
+  }, [api, canSave, state.revision])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connection and permission changes reset diagnostics.
+  useEffect(() => setError(''), [api, canSave])
   useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: (current: () => boolean) => Promise<void>) => {
     if (!api || busy) return
+    const { isCurrent } = captureRequest(lifetime)
     setBusy(true)
     setError('')
     try {
-      await action()
+      await action(isCurrent)
     } catch {
+      if (!isCurrent()) return
       setReview(undefined)
       setError(
         tr(
@@ -59,10 +70,12 @@ export function InterfaceImplementations({
       )
       await api
         .application()
-        .then(onChange)
+        .then((next) => {
+          if (isCurrent()) onChange(next)
+        })
         .catch(() => undefined)
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
   const saved = (next: ApplicationState) => {
@@ -94,8 +107,10 @@ export function InterfaceImplementations({
           action={{
             label: tr('Reload', '重新加载'),
             onSelect: () =>
-              void run(async () => {
-                if (api) onChange(await api.application())
+              void run(async (current) => {
+                if (!api) return
+                const next = await api.application()
+                if (current()) onChange(next)
               }),
           }}
         >
@@ -139,8 +154,10 @@ export function InterfaceImplementations({
                         label: tr('Restore default', '恢复默认'),
                         busy,
                         onSelect: () =>
-                          void run(async () => {
-                            if (api) saved(await api.clearRole(role, state.revision))
+                          void run(async (current) => {
+                            if (!api) return
+                            const next = await api.clearRole(role, state.revision)
+                            if (current()) saved(next)
                           }),
                       }
                     : undefined
@@ -160,9 +177,10 @@ export function InterfaceImplementations({
                 <Button
                   disabled={!canSave || busy || !api}
                   onClick={() =>
-                    void run(async () => {
+                    void run(async (current) => {
                       if (!api) return
                       const preview = await api.previewRole(role, candidate.packageId, candidate.clientId)
+                      if (!current()) return
                       setReview({ role, clientId: candidate.clientId, preview })
                     })
                   }
@@ -174,8 +192,10 @@ export function InterfaceImplementations({
             <Button
               disabled={!item?.selection || !canSave || busy || !api}
               onClick={() =>
-                void run(async () => {
-                  if (api) saved(await api.clearRole(role, state.revision))
+                void run(async (current) => {
+                  if (!api) return
+                  const next = await api.clearRole(role, state.revision)
+                  if (current()) saved(next)
                 })
               }
             >
@@ -203,17 +223,16 @@ export function InterfaceImplementations({
           <Button
             disabled={!canSave || busy || !api}
             onClick={() =>
-              void run(async () => {
-                if (api)
-                  saved(
-                    await api.selectRole(
-                      review.role,
-                      review.preview.packageId,
-                      review.clientId,
-                      state.revision,
-                      review.preview.consentDigest,
-                    ),
-                  )
+              void run(async (current) => {
+                if (!api) return
+                const next = await api.selectRole(
+                  review.role,
+                  review.preview.packageId,
+                  review.clientId,
+                  state.revision,
+                  review.preview.consentDigest,
+                )
+                if (current()) saved(next)
               })
             }
           >

@@ -1,3 +1,5 @@
+import { captureRequest, useRequestScope } from './async-request.js'
+
 const clearCommand = 'agh app clear'
 const recoveryPath = '/?admin'
 
@@ -28,6 +30,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
     return api.application()
   })
   const state = resource.data
+  const lifetime = useRequestScope(api, `${canSave}:${state?.revision}`)
   const setState = (next: ApplicationState) => {
     if (resourceKey) setResource(resourceKey, next)
   }
@@ -35,6 +38,13 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const refresh = resource.reload
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setPreview(undefined)
+  }, [api, canSave, state?.revision])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connection and permission changes reset diagnostics.
+  useEffect(() => setError(''), [api, canSave])
   useEffect(() => {
     if (!api) return
     // Host daemon notices and completed plugin-admin operations already publish these hints.
@@ -48,13 +58,15 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
       for (const event of events) window.removeEventListener(event, invalidate)
     }
   }, [api, refresh])
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: (current: () => boolean) => Promise<void>) => {
     if (busy) return
+    const { isCurrent } = captureRequest(lifetime)
     setBusy(true)
     setError('')
     try {
-      await action()
+      await action(isCurrent)
     } catch {
+      if (!isCurrent()) return
       setError(
         tr(
           'The application changed or is unavailable. Reload, preview and confirm again.',
@@ -64,7 +76,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
       refresh()
       setPreview(undefined)
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
   return (
@@ -116,8 +128,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             <Button
               disabled={busy || resource.loading || !candidate.available || !canSave}
               onClick={() =>
-                void run(async () => {
-                  if (api) setPreview(await api.previewApplication(candidate.packageId))
+                void run(async (current) => {
+                  if (!api) return
+                  const preview = await api.previewApplication(candidate.packageId)
+                  if (current()) setPreview(preview)
                 })
               }
             >
@@ -142,9 +156,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             <Button
               disabled={busy || resource.loading || !canSave || !state}
               onClick={() =>
-                void run(async () => {
+                void run(async (current) => {
                   if (!api || !state) return
                   await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
+                  if (!current()) return
                   setPreview(undefined)
                   location.reload()
                 })
@@ -162,10 +177,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
             (!state?.selection && !Object.keys(state?.roleSelections ?? {}).length)
           }
           onClick={() =>
-            void run(async () => {
+            void run(async (current) => {
               if (!api || !state) return
               await api.clearApplication(state.revision)
-              location.reload()
+              if (current()) location.reload()
             })
           }
         >

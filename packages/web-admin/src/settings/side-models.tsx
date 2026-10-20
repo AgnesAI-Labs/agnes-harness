@@ -10,6 +10,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { configurationField } from './dialog.js'
 import { SideModelEditor } from './side-models/editor.js'
 import { SideModelList } from './side-models/list.js'
@@ -71,6 +72,13 @@ function SideModels({
   credentials,
 }: Omit<PanelProps, 'credentials'> & { credentials: SideModelsCredentials }) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
+  const lifetime = useRequestScope(client, canSave)
+  const editorEpoch = useRef(0)
+  const capture = () => {
+    const request = captureRequest(lifetime)
+    const epoch = editorEpoch.current
+    return () => request.isCurrent() && epoch === editorEpoch.current
+  }
   const accounts = (configuration?.accounts ?? []).filter((row) =>
     (SIDE_PROVIDERS as readonly string[]).includes(row.providerId),
   )
@@ -91,7 +99,9 @@ function SideModels({
   const copyRoute = async ({ accountId, route }: ConfigAccount) => {
     const board = navigator.clipboard
     if (!board) return
+    const current = capture()
     await board.writeText(route)
+    if (!current()) return
     setCopied(accountId)
     copyTimers.current.push(
       window.setTimeout(() => setCopied((current) => (current === accountId ? undefined : current)), 2000),
@@ -99,6 +109,11 @@ function SideModels({
   }
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setStatus('')
+  }, [client, canSave])
   const [fieldError, setFieldError] = useState<'baseUrl' | 'credentialRef'>()
   const saved = draft && !draft.isNew ? accounts.find((row) => row.accountId === draft.accountId) : undefined
   const endpointChanged =
@@ -139,6 +154,8 @@ function SideModels({
   }
   /** Open the editor on its settings page when the pane has one, else below the list. */
   const show = (next: EditorDraft) => {
+    editorEpoch.current++
+    setBusy(false)
     resetMessages()
     setRemoving(undefined)
     setDraft(next)
@@ -158,6 +175,8 @@ function SideModels({
       models: account.models.map(toDraft),
     })
   const closeEditor = () => {
+    editorEpoch.current++
+    setBusy(false)
     closePage(page)
     setDraft(undefined)
   }
@@ -177,6 +196,8 @@ function SideModels({
       } else queueMicrotask(() => closePage(node))
     }
     return () => {
+      editorEpoch.current++
+      setBusy(false)
       setPage((current) => (current === node ? undefined : current))
       setDraft(undefined)
     }
@@ -212,6 +233,7 @@ function SideModels({
     }
     const selected =
       saved && models.some((model) => model.id === saved.model) ? saved.model : (models[0]?.id ?? '')
+    const current = capture()
     setBusy(true)
     setStatus('')
     try {
@@ -225,15 +247,20 @@ function SideModels({
         models,
         expectedRevision: revision,
       })
+      if (!current()) return
+      setStatus(result.effect === 'restart-required' ? 'side.savedRestart' : 'side.saved')
       closeEditor()
       await onSaved(result)
-      setStatus(result.effect === 'restart-required' ? 'side.savedRestart' : 'side.saved')
     } catch (error) {
+      if (!current()) return
       if (failureCode(error) === 'CONFIG_REVISION_CONFLICT') {
         // The read model moved under the editor: reload it before letting anyone retry.
-        closeEditor()
-        await onSaved(await client.get())
+        const result = await client.get()
+        if (!current()) return
+        await onSaved(result)
+        if (!current()) return
         setStatus('side.conflict')
+        closeEditor()
       } else {
         const field = configurationField(error)
         setFieldError(
@@ -246,7 +273,7 @@ function SideModels({
         setStatus('side.failed')
       }
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
@@ -276,28 +303,30 @@ function SideModels({
       setTestState('side.invalid')
       return
     }
+    const current = capture()
     setBusy(true)
     setTestState('')
     try {
-      setTestState(
-        await runTest({
-          ...(draft.isNew ? {} : { accountId: draft.accountId }),
-          baseUrl: draft.baseUrl,
-          credentialRef: draft.credentialRef,
-          model,
-        }),
-      )
+      const result = await runTest({
+        ...(draft.isNew ? {} : { accountId: draft.accountId }),
+        baseUrl: draft.baseUrl,
+        credentialRef: draft.credentialRef,
+        model,
+      })
+      if (current()) setTestState(result)
     } catch (error) {
+      if (!current()) return
       const field = configurationField(error)
       setFieldError(field === 'baseUrl' || field === 'credentialRef' ? field : undefined)
       setTestState(testKey(error))
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const testSaved = async (account: ConfigAccount) => {
     if (busy) return
+    const current = capture()
     setBusy(true)
     setTested(undefined)
     try {
@@ -307,47 +336,60 @@ function SideModels({
         credentialRef: '',
         model: account.model,
       })
+      if (!current()) return
       setTested({ accountId: account.accountId, key })
     } catch (error) {
+      if (!current()) return
       setTested({ accountId: account.accountId, key: testKey(error) })
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const act = async (accountId: string, action: ConfigAccountInput['action']) => {
     if (busy || !canSave) return
+    const current = capture()
     setBusy(true)
     setStatus('')
     try {
-      await onSaved(await client.account({ accountId, action, expectedRevision: revision }))
+      const result = await client.account({ accountId, action, expectedRevision: revision })
+      if (!current()) return
+      await onSaved(result)
+      if (!current()) return
       setRemoving(undefined)
       setStatus('side.saved')
     } catch (error) {
+      if (!current()) return
       if (failureCode(error) === 'CONFIG_REVISION_CONFLICT') {
-        await onSaved(await client.get())
+        const result = await client.get()
+        if (!current()) return
+        await onSaved(result)
+        if (!current()) return
         setStatus('side.conflict')
       } else {
         setStatus('side.failed')
       }
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const createCredential = async (label: string, value: string) => {
     if (busy || label === '' || value === '') return false
+    const current = capture()
     setBusy(true)
     try {
       const item = await credentials.create(label, value)
+      if (!current()) return false
       setOptions((current) => [...current, item])
       patch({ credentialRef: item.id })
       return true
     } catch {
+      if (!current()) return false
       setStatus('side.failed')
       return false
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 

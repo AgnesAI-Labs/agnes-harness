@@ -20,8 +20,9 @@ import {
   StatusMessage,
   Tag,
 } from '@agnes/web-ui'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { SecurityStatusPanel } from './security-status.js'
 
 export const PROVIDER_KINDS = [
@@ -143,11 +144,19 @@ export function GenerationsPanel({
   t: Text
   onRefresh?(): Promise<void>
 }) {
+  const lifetime = useRequestScope(api, canSave)
   const [sessionId, setSessionId] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<{ previous: string; current: string }>()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setConfirming(false)
+    setResult(undefined)
+    setMessage('')
+  }, [api, canSave])
   const supported = !!api
   const stale =
     status?.generations
@@ -157,11 +166,13 @@ export function GenerationsPanel({
       ) ?? []
   async function migrate() {
     if (!api || !canSave || busy || !sessionId.trim()) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setMessage('')
     setResult(undefined)
     try {
       const value = await api.migrateSession(sessionId.trim())
+      if (!request.isCurrent()) return
       setResult({ previous: value.previousGenerationId, current: value.generationId })
       reportSuccess('session-migration', t(value.changed ? 'migrated' : 'alreadyCurrent'))
       setConfirming(false)
@@ -172,9 +183,9 @@ export function GenerationsPanel({
         /* The refresh controller presents its own error. */
       }
     } catch {
-      setMessage('migrationFailed')
+      if (request.isCurrent()) setMessage('migrationFailed')
     } finally {
-      setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const short = (id: string) => (id.length > 12 ? `${id.slice(0, 12)}…` : id)
@@ -419,47 +430,67 @@ export function LocalPluginsPanel({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [failed, setFailed] = useState(false)
+  const lifetime = useRequestScope(api, `${canSave}:${canTrust}`)
   const [confirming, setConfirming] = useState<WorkspaceDeployment>()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    setBusy(false)
+    setConfirming(undefined)
+    setMessage('')
+    setFailed(false)
+  }, [api, canSave, canTrust])
   // Offered by the backend only; without the list there is nothing this page can vouch for.
   const deployments = snapshot.workspaceDeployments ?? []
   async function trust(deployment: WorkspaceDeployment) {
+    const request = captureRequest(lifetime)
     setBusy(true)
     setMessage('')
     setFailed(false)
     setConfirming(undefined)
     try {
       await api.trustWorkspace(deployment.deployDir, deployment.trustHash)
+      if (!request.isCurrent()) return
       reportSuccess('plugin-folders', t('trusted'), {
         kind: 'rescan-required',
         message: t('rescanRequired'),
-        action: { label: t('reloadLocal'), onSelect: () => void reload() },
+        action: {
+          label: t('reloadLocal'),
+          onSelect: () => {
+            if (request.isCurrent()) void reload()
+          },
+        },
       })
       // The trust stands even if the separate catalog refresh is unavailable.
       await onRefresh().catch(() => undefined)
     } catch {
+      if (!request.isCurrent()) return
       setMessage('trustFailed')
       setFailed(true)
     } finally {
-      setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   async function reload() {
+    const request = captureRequest(lifetime)
     setBusy(true)
     setMessage('')
     setFailed(false)
     try {
       await api.reloadLocal()
+      if (!request.isCurrent()) return
       resolveFeedback('plugin-folders')
       reportSuccess('plugin-folders', t('rescanned'))
       await onRefresh().catch(() => {
+        if (!request.isCurrent()) return
         setMessage('reloadRefreshFailed')
         setFailed(true)
       })
     } catch {
+      if (!request.isCurrent()) return
       setMessage('reloadFailed')
       setFailed(true)
     } finally {
-      setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   return (

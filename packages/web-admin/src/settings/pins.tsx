@@ -12,6 +12,7 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { captureRequest, useRequestScope } from './async-request.js'
 
 type Pin = PackagePinsInspectResult['orphans'][number]
 type Text = (key: string, vars?: Record<string, string | number>) => string
@@ -30,28 +31,39 @@ export function PinsPanel({
   canRelease: boolean
   t: Text
 }) {
+  const lifetime = useRequestScope(api, canRelease)
   const [pins, setPins] = useState<readonly Pin[]>()
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<readonly string[]>()
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map())
   const [skipped, setSkipped] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   const load = useCallback(async () => {
     if (!api) return
+    const request = captureRequest(lifetime)
     setFailed(false)
     try {
-      setPins((await api.pinsInspect()).orphans)
+      const next = await api.pinsInspect()
+      if (request.isCurrent()) setPins(next.orphans)
     } catch {
+      if (!request.isCurrent()) return
       // A list that could not be verified is not shown as current.
       setPins(undefined)
       setFailed(true)
     }
-  }, [api])
+  }, [api, canRelease, lifetime])
   useEffect(() => {
+    setPins(undefined)
+    setBusy(false)
+    setConfirming(undefined)
+    setErrors(new Map())
+    setSkipped(0)
     void load()
   }, [load])
   async function release(ids: readonly string[]) {
     if (!api || !canRelease || busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setConfirming(undefined)
     const failures = new Map<string, string>()
@@ -59,6 +71,7 @@ export function PinsPanel({
     try {
       for (let offset = 0; offset < ids.length; offset += BATCH) {
         const { results } = await api.pinsRelease(ids.slice(offset, offset + BATCH))
+        if (!request.isCurrent()) return
         const released = new Set<string>()
         for (const result of results) {
           if (result.outcome === 'failed')
@@ -72,12 +85,15 @@ export function PinsPanel({
         setPins((current) => current?.filter((pin) => !released.has(pin.pinId)))
       }
     } catch {
+      if (!request.isCurrent()) return
       for (const id of ids) if (!failures.has(id)) failures.set(id, t('pinsReleaseFailed'))
       void load()
     } finally {
-      setErrors(failures)
-      setSkipped(returned)
-      setBusy(false)
+      if (request.isCurrent()) {
+        setErrors(failures)
+        setSkipped(returned)
+        setBusy(false)
+      }
     }
   }
   const purpose = (pin: Pin) => t(`pinsPurpose.${pin.purpose}`)

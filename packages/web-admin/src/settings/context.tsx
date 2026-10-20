@@ -19,6 +19,7 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { captureRequest } from './async-request.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 
 type Config = {
@@ -120,6 +121,11 @@ const sameConfig = (a: Config, b: Config) => JSON.stringify(a) === JSON.stringif
  * loads are a subpage.
  */
 export function ContextPanel({ canSave }: { canSave: boolean }) {
+  // Permission changes start a new autosave owner as well as a new read lifetime.
+  return <ContextSettings key={String(canSave)} canSave={canSave} />
+}
+
+function ContextSettings({ canSave }: { canSave: boolean }) {
   const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const lifetime = useRef<AbortController | undefined>(undefined)
   const [snapshot, setSnapshot] = useState<Snapshot>()
@@ -149,29 +155,31 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
       current = false
       abort.abort()
     }
-  }, [reads])
+  }, [reads, canSave])
   const config = useAutosave<Config>({
     resourceKey: 'settings:context',
     onSaved: () => reportSuccess('settings:context', fallbackT('ui.settingsSaved')),
     stored: snapshot?.config,
     equal: sameConfig,
     save: async (next) => {
-      const value = await contextRequest({ ...(cwd ? { cwd } : {}), config: next }, fetch)
-      setSnapshot(value)
+      const request = captureRequest(lifetime)
+      if (!request.isCurrent()) return
+      const value = await contextRequest({ ...(cwd ? { cwd } : {}), config: next }, fetch, request.signal)
+      if (request.isCurrent()) setSnapshot(value)
     },
   })
   async function readRules(workspace: string) {
     if (busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setRulesError(false)
     try {
-      const value = await contextRequest({ cwd: workspace }, fetch, lifetime.current?.signal)
-      if (!lifetime.current?.signal.aborted) setSnapshot(value)
+      const value = await contextRequest({ cwd: workspace }, fetch, request.signal)
+      if (request.isCurrent()) setSnapshot(value)
     } catch (error) {
-      if (!lifetime.current?.signal.aborted)
-        setRulesError((error as { envelope?: unknown })?.envelope ?? true)
+      if (request.isCurrent()) setRulesError((error as { envelope?: unknown })?.envelope ?? true)
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   const value = config.value

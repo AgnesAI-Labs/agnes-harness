@@ -19,6 +19,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
+import { captureRequest } from './async-request.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
@@ -81,7 +82,9 @@ export function PermissionDefaults({
     const abort = new AbortController()
     lifetime.current = abort
     setBusy(true)
+    setCanSave(false)
     setReadFailed(false)
+    setSaving(undefined)
     // Effective composition is supplemental; a plugin catalog must not hold up saved defaults.
     setEffective(undefined)
     void fetcher('/admin/api/composition', {
@@ -149,6 +152,7 @@ export function PermissionDefaults({
       choice.field === 'permission'
         ? { ...current, permission: choice.value }
         : { ...withoutPreset, ...(choice.value ? { preset: choice.value } : {}) }
+    const request = captureRequest(lifetime)
     setBusy(true)
     setSaving(choice.field === 'permission' ? choice.value : undefined)
     setSaveFailed(false)
@@ -158,14 +162,14 @@ export function PermissionDefaults({
       const response = await fetcher('/admin/api/defaults', {
         method: 'PUT',
         credentials: 'same-origin',
-        signal: lifetime.current?.signal ?? null,
+        signal: request.signal ?? null,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ revision: snapshot.revision, defaults }),
       })
       if (response.status === 409) {
         // The revision this page read is stale. Read the current defaults; the retry then saves the
         // same choice against them instead of repeating the stale revision.
-        if (lifetime.current?.signal.aborted) return
+        if (!request.isCurrent()) return
         setConflict(true)
         setSaveFailed(true)
         setRevision((value) => value + 1)
@@ -173,16 +177,16 @@ export function PermissionDefaults({
       }
       const value: unknown = await response.json()
       if (!response.ok || !isSessionDefaultsSnapshot(value)) throw new Error('save failed')
-      if (lifetime.current?.signal.aborted) return
+      if (!request.isCurrent()) return
       window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
       setSnapshot(value as Snapshot)
       reportSuccess('permission-defaults', fallbackT('ui.defaultsSaved'))
       setConfirm(false)
       setPending(undefined)
     } catch {
-      if (!lifetime.current?.signal.aborted) setSaveFailed(true)
+      if (request.isCurrent()) setSaveFailed(true)
     } finally {
-      if (!lifetime.current?.signal.aborted) {
+      if (request.isCurrent()) {
         setBusy(false)
         setSaving(undefined)
       }
@@ -219,7 +223,7 @@ export function PermissionDefaults({
       bare
       data-testid="security-default-permissions"
       aria-busy={busy}
-      state={readFailed && !snapshot ? 'error' : busy && !snapshot ? 'loading' : undefined}
+      state={readFailed ? 'error' : busy && !snapshot ? 'loading' : undefined}
       onReload={() => setRevision((value) => value + 1)}
     >
       <p className="agnes-settings-note">{t('defaultHelp')}</p>

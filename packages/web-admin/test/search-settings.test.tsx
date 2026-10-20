@@ -228,3 +228,56 @@ it('offers an explicit default action for a ready service and opens the saved se
     'true',
   )
 })
+
+it.each(['saved', 'failed'] as const)(
+  'discards a stale search probe %s after the transport changes',
+  async (outcome) => {
+    let finish!: (response: Response) => void
+    const first: typeof fetch = async (_url, init) =>
+      init?.method === 'POST'
+        ? new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        : Response.json({ ...status, configured: true, defaultProvider: 'brave' })
+    const next: typeof fetch = async () =>
+      Response.json({ ...status, configured: true, defaultProvider: 'brave' })
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    roots.push(root)
+    const draw = (fetcher: typeof fetch) =>
+      act(async () =>
+        root.render(
+          createElement(
+            PushStack,
+            { rootTitle: 'Search' },
+            createElement(SearchPanel, { t, canSave: true, fetcher }),
+          ),
+        ),
+      )
+    await draw(first)
+    await act(async () => {
+      const input = host.querySelector<HTMLInputElement>('[data-testid="search-test-query"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'synthetic query',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.click())
+    expect(finish).toBeTypeOf('function')
+    await draw(next)
+    await act(async () =>
+      finish(
+        outcome === 'saved'
+          ? Response.json({
+              ok: true,
+              results: [{ title: 'Old result', url: 'https://example.test/old', snippet: '' }],
+            })
+          : Response.json({}, { status: 500 }),
+      ),
+    )
+    expect(host.textContent).not.toContain('Old result')
+    expect(host.querySelector('[data-testid="search-test-error"]')).toBeNull()
+    expect(host.querySelector('[data-testid="search-notice"]')).toBeNull()
+  },
+)

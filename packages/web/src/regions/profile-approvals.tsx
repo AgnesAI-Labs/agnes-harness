@@ -47,12 +47,25 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
   const [automation, setAutomation] = useState<WaitingRun[]>([])
   const [busy, setBusy] = useState(false)
   const answering = useRef(false)
+  const answerScope = useRef<AbortController>()
   const [error, setError] = useState(false)
   const [readFailed, setReadFailed] = useState(false)
   const refresh = useRef<() => Promise<void>>(async () => {})
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
+  useEffect(() => {
+    const scope = new AbortController()
+    answerScope.current = scope
+    answering.current = false
+    setBusy(false)
+    setError(false)
+    return () => scope.abort()
+  }, [client, open])
   const opened = useRef(open)
   opened.current = open
   useEffect(() => {
+    setDecisions([])
+    setAutomation([])
+    setReadFailed(false)
     let alive = true
     let pending: Promise<void> | undefined
     let again = false
@@ -118,6 +131,9 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
   }, [client])
   const answer = async (snapshot: DecisionSnapshot, option: string) => {
     if (answering.current) return
+    const scope = answerScope.current
+    const reread = refresh.current
+    const current = () => !!scope && scope === answerScope.current && !scope.signal.aborted
     answering.current = true
     setBusy(true)
     setError(false)
@@ -131,13 +147,16 @@ export function ProfileApprovals({ client, locale }: { client: HostAgnesClient; 
           value: decisionPresentation(snapshot.request.spec.presentation)?.responseValue ?? null,
         },
       })
+      if (!current()) return
       setDecisions((values) => values.filter((value) => value.handle.id !== snapshot.handle.id))
-      await refresh.current()
+      await reread()
     } catch {
-      setError(true)
+      if (current()) setError(true)
     } finally {
-      answering.current = false
-      setBusy(false)
+      if (current()) {
+        answering.current = false
+        setBusy(false)
+      }
     }
   }
   const count = decisions.length + automation.length

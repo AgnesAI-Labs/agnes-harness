@@ -112,3 +112,54 @@ it('shows ACP as continuable and keeps a read-only panel disabled', async () => 
     expect(settingsCatalog['zh-CN'][key]).toBeTruthy()
   }
 })
+
+it.each(['saved', 'failed'] as const)(
+  'ignores a late child-engine %s after replacing the client',
+  async (outcome) => {
+    const first = client(),
+      next = client()
+    let resolve!: (value: unknown) => void
+    let reject!: (reason: unknown) => void
+    first.saveChildEngines.mockImplementation(
+      () =>
+        new Promise((ok, fail) => {
+          resolve = ok
+          reject = fail
+        }),
+    )
+    const host = await mount(true, first)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="child-engine-codex-enabled"]')?.click(),
+    )
+    await act(async () => {
+      const allow = host.querySelector<HTMLTextAreaElement>('[data-testid="child-engine-codex-allow"]')!
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(allow, 'codex')
+      allow.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="child-engine-save"]')?.click())
+    expect(resolve).toBeTypeOf('function')
+    await act(async () =>
+      roots.at(-1)?.render(
+        createElement(ChildEnginesPanel, {
+          api: next,
+          canSave: true,
+          t: (key: string) => settingsCatalog.en[key] ?? key,
+        }),
+      ),
+    )
+    await act(async () =>
+      outcome === 'saved'
+        ? resolve({
+            revision: 5,
+            engines: first.saveChildEngines.mock.calls[0]?.[0].engines,
+            effect: 'new-sessions',
+          })
+        : reject(new Error('old save')),
+    )
+    expect(
+      host.querySelector('[data-testid="child-engine-codex-enabled"]')?.getAttribute('aria-checked'),
+    ).toBe('false')
+    expect(host.querySelector('[data-testid="child-engine-status"]')).toBeNull()
+    expect(outcomes).toEqual([])
+  },
+)
