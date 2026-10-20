@@ -154,7 +154,7 @@ async function queried(ep: Endpoint, sessionId: string, afterSeq = 0, limit?: nu
   const pages: SessionDeliverablesResult[] = []
   const merged = new Map<number, SessionDeliverableSource>()
   for (let next: number | undefined = afterSeq; next !== undefined; ) {
-    const page = must(
+    const page: SessionDeliverablesResult = must(
       await rpc<SessionDeliverablesResult>(ep, '_agnes/v1/session.deliverables', {
         sessionId,
         afterSeq: next,

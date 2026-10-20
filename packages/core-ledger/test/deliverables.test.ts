@@ -1,11 +1,11 @@
 import type { Event } from '@agnes/core-common/types'
-import type { SessionDeliverableSource as DeliverableSource, UITurn } from '@agnes/protocol'
+import type { SessionDeliverableSource as DeliverableSource, JsonValue, UITurn } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { ScanQuery } from '../src/log/storage.js'
 import { projectDeliverableSources } from '../src/project/deliverables.js'
 import { projectUI } from '../src/project/ui.js'
 
-type Row = [type: string, data: Event['data'], extra?: Partial<Event>]
+type Row = [type: string, data: Event['data'], extra?: Partial<Event> | undefined]
 
 function ledger(rows: Row[]): Event[] {
   return rows.map(([type, data, extra], index) => ({
@@ -47,7 +47,7 @@ const call = (toolUseId: string, name = 'present'): Row => [
   'tool/call',
   { toolUseId, name, args: { files: [{ path: `${toolUseId}.md` }] }, ordinal: 0 },
 ]
-const result = (toolUseId: string, structured?: unknown, extra?: Partial<Event>): Row => [
+const result = (toolUseId: string, structured?: JsonValue, extra?: Partial<Event>): Row => [
   'tool/result',
   {
     toolUseId,
@@ -90,7 +90,7 @@ async function fromProjection(events: Event[]): Promise<DeliverableSource[]> {
   return timeline.nodes.flatMap((node) => {
     if (node.kind !== 'tool' || node.name !== 'present' || !node.resultSeq) return []
     // The raw row, exactly as a tool-detail read returns it.
-    const row = events.find((event) => event.seq === node.resultSeq)?.data as { structured?: unknown }
+    const row = events.find((event) => event.seq === node.resultSeq)?.data as { structured?: JsonValue }
     const turnId = turnOf(timeline.turns, node.seq)
     return [
       {
