@@ -81,6 +81,7 @@
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
+        "examples/showcase/aerospace-quality",
         "examples/showcase/pharma-gmp",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",

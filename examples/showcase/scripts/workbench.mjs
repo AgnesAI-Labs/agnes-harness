@@ -10,7 +10,9 @@ import { runtime, toolResult, until } from '../pharma-gmp/scripts/runtime.mjs'
 execFileSync(process.execPath, ['tools/toolchain/run.mjs', '--filter', '@agnes/cli', 'build:local'], {
   stdio: 'inherit',
 })
-const descriptor = JSON.parse(await readFile(new URL('../aerospace-quality/client/agnes.client.json', import.meta.url), 'utf8'))
+const descriptor = JSON.parse(
+  await readFile(new URL('../aerospace-quality/client/agnes.client.json', import.meta.url), 'utf8'),
+)
 const brandModes = descriptor.skins[0].tokens['--agnes-brand-primary']
 let rt
 const output = resolve(process.env.AGH_SHOWCASE_SHOTS ?? 'outputs/aerospace-workbench')
@@ -33,18 +35,34 @@ let active, activeTurn
 async function shot(page, label, locale, theme) {
   await page.locator('.sidebar-head').waitFor({ timeout: 30000 })
   if (!['01-gallery', '02-install-review', '03-adoption-consent'].includes(label))
-    await page.waitForFunction((expected) => getComputedStyle(document.documentElement).getPropertyValue('--agnes-brand-primary').trim().toLowerCase() === expected, brandModes[theme].toLowerCase(), { timeout: 45000 })
+    await page.waitForFunction(
+      (expected) =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--agnes-brand-primary')
+          .trim()
+          .toLowerCase() === expected,
+      brandModes[theme].toLowerCase(),
+      { timeout: 45000 },
+    )
   await page.evaluate(() => document.fonts.ready)
   const file = `${label}-${locale}-${theme}.png`
-  await page.mouse.move(1550, 20)
+  await page.mouse.move(1598, 1098)
+  await page.locator('[role="tooltip"]:visible').waitFor({ state: 'hidden' })
   await page.screenshot({ path: join(output, file), fullPage: true, animations: 'disabled' })
   evidence.screenshots.push(file)
 }
 async function launch(page, button) {
+  const previousSession = new URL(page.url()).searchParams.get('session')
   await button.click()
   await page.getByTestId('agent-launch-review').waitFor({ timeout: 45000 })
   await page.getByTestId('agent-launch-confirm').click()
-  await page.waitForURL(/session=/, { timeout: 45000 })
+  await page.waitForURL(
+    (url) => {
+      const id = url.searchParams.get('session')
+      return Boolean(id && id !== previousSession)
+    },
+    { timeout: 45000 },
+  )
   const id = new URL(page.url()).searchParams.get('session')
   assert.ok(id)
   const session = await rt.client.session.load(id, {
@@ -107,7 +125,10 @@ try {
     await page.goto(rt.url + '/?page=agents')
     const card = page.locator(`[data-application="${packageId}"]`)
     await card.waitFor({ timeout: 45000 })
-    await page.getByTestId('general-agent').locator('.ant-select-content-has-value').waitFor({ timeout: 45000 })
+    await page
+      .getByTestId('general-agent')
+      .locator('.ant-select-content-has-value')
+      .waitFor({ timeout: 45000 })
     assert.equal(await card.locator('.application-scenarios li').count(), 3)
     await shot(page, '01-gallery', locale, theme)
     await card.getByRole('button', { name: zh ? '安装并采用' : 'Install and adopt', exact: true }).click()
@@ -134,7 +155,6 @@ try {
       'true',
     )
     assert.ok((await page.locator('#prompt').inputValue()).includes('AN-027'))
-    await page.getByTestId('application-attribution').waitFor({ timeout: 30000 })
     await shot(page, '05-object-conversation', locale, theme)
     await page.locator('#send').click()
     await until(
@@ -152,6 +172,7 @@ try {
       Boolean,
       'editable work request submitted',
     )
+    await page.getByTestId('application-attribution').waitFor({ timeout: 30000 })
     await call(investigation, 'aero_investigate', { anomalyId: 'AN-027' })
     const restored = await context.newPage()
     await restored.goto(`${rt.url}/?session=${investigation.id}`)
@@ -221,12 +242,10 @@ try {
     )
     await call(quality, 'aero_report', { kind: 'zeroing', locale })
     await selectTab(page, 'evidence', zh ? '证据与报告' : 'Evidence & reports', zh)
-    await page
-      .locator('.application-panel')
-      .getByRole('button', { name: /\.html$/ })
-      .waitFor({ timeout: 30000 })
+    await page.locator('.application-panel').getByRole('button', { name: /HTML/ }).waitFor({ timeout: 30000 })
     await shot(page, '09-evidence-reports', locale, theme)
-    await page.locator('.application-panel').getByRole('button', { name: /\.html$/ }).click()
+    await page.locator('.application-panel').getByRole('button', { name: /HTML/ }).click()
+    await page.getByTestId('file-view-preview').click()
     await page.locator('[data-document-preview="html"] iframe').waitFor({ timeout: 30000 })
     await page.frameLocator('[data-document-preview="html"] iframe').locator('h1').waitFor({ timeout: 30000 })
     await shot(page, '10-report-preview', locale, theme)

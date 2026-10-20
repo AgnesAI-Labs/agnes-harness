@@ -29,7 +29,6 @@ export function Mrb({ data, t, op }) {
                   { key: r.id, className: 'aero-ncr' },
                   h('div', { className: 'aero-row' }, h('code', null, r.id), status(t, r.severity)),
                   h('h3', null, t.value(r.title)),
-                  h(WorkButton, { action: 'mrb', object: { type: 'ncr', id: r.id }, t }),
                   h(
                     'p',
                     null,
@@ -46,6 +45,7 @@ export function Mrb({ data, t, op }) {
                     },
                     t.detail,
                   ),
+                  h(WorkButton, { action: 'mrb', object: { type: 'ncr', id: r.id }, t }),
                 ),
               ),
           ),

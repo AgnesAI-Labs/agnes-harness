@@ -3,17 +3,9 @@
     "id": "aero-pages",
     "lifetime": "profile",
     "entry": "./index.js",
-    "styles": [
-      "./style.css"
-    ],
+    "styles": ["./style.css"],
     "slots": [],
-    "services": [
-      "aero.snapshot",
-      "aero.impact",
-      "aero.draft",
-      "aero.propose",
-      "aero.decide"
-    ],
+    "services": ["aero.snapshot", "aero.impact", "aero.draft", "aero.propose", "aero.decide"],
     "projections": [],
     "publicConfig": {},
     "homeEntries": [

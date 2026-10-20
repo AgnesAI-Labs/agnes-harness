@@ -68,43 +68,6 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@26.4.1)(happy-dom@20.14.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2))(tsx@4.23.13)(yaml@2.9.0))
 
-  examples/showcase/aerospace-quality:
-    dependencies:
-      '@agnes/extension-api':
-        specifier: workspace:*
-        version: link:../../../packages/extension-api
-      '@agnes/plugin-runtime':
-        specifier: workspace:*
-        version: link:../../../packages/plugin-runtime
-      '@sinclair/typebox':
-        specifier: 0.34.33
-        version: 0.34.33
-    devDependencies:
-      '@agnes/package-manager':
-        specifier: workspace:*
-        version: link:../../../packages/package-manager
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../../../packages/host
-      '@agnes/web-client':
-        specifier: workspace:*
-        version: link:../../../packages/web-client
-      '@agnes/web-ui':
-        specifier: workspace:*
-        version: link:../../../packages/web-ui
-      '@agnes/sdk':
-        specifier: workspace:*
-        version: link:../../../packages/sdk
-      'react':
-        specifier: 18.3.1
-        version: 18.3.1
-      'esbuild':
-        specifier: 0.28.2
-        version: 0.28.2
-      'typescript':
-        specifier: 7.0.2
-        version: 7.0.2
-
   examples/community/deliverables-gallery:
     devDependencies:
       '@agnes/web-client':
@@ -179,6 +142,46 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/extension-api
 
+  examples/showcase/aerospace-quality:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../../../packages/extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-runtime
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
+    devDependencies:
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../../../packages/package-manager
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../../../packages/web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../../../packages/web-ui
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   examples/showcase/pharma-gmp:
     dependencies:
       '@agnes/extension-api':
@@ -190,13 +193,10 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
-      'react':
+      react:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
-      '@agnes/resource-control-runtime':
-        specifier: workspace:*
-        version: link:../../../packages/resource-control-runtime
       '@agnes/host':
         specifier: workspace:*
         version: link:../../../packages/host
@@ -206,6 +206,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../../../packages/protocol
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/resource-control-runtime
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../../../packages/sdk
@@ -221,7 +224,7 @@ importers:
       '@types/react-dom':
         specifier: 18.3.1
         version: 18.3.1
-      'react-dom':
+      react-dom:
         specifier: 18.3.1
         version: 18.3.1(react@18.3.1)
 
@@ -500,9 +503,6 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
-      '@agnes/web-client':
-        specifier: workspace:*
-        version: link:../web-client
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -512,6 +512,9 @@ importers:
       '@agnes/plugin-runtime':
         specifier: workspace:*
         version: link:../plugin-runtime
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -751,15 +754,15 @@ importers:
 
   packages/daemon-admin:
     dependencies:
-      '@agnes/error-sanitization':
-        specifier: workspace:*
-        version: link:../error-sanitization
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
+      '@agnes/error-sanitization':
+        specifier: workspace:*
+        version: link:../error-sanitization
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -797,12 +800,12 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
     devDependencies:
-      '@agnes/web-client':
-        specifier: workspace:*
-        version: link:../web-client
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
 
   packages/daemon-foundation:
     dependencies:
@@ -1380,15 +1383,15 @@ importers:
       '@agnes/web':
         specifier: workspace:*
         version: link:../../../web
-      '@agnes/web-units':
-        specifier: workspace:*
-        version: link:../../../web-units
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../../../web-ui
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../../../web-units
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -1428,36 +1431,36 @@ importers:
 
   packages/package-manager/bundled-plugins/goal-ui:
     devDependencies:
-      '@types/react':
-        specifier: 18.3.12
-        version: 18.3.12
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../../../protocol
-      '@agnes/web-foundation':
-        specifier: workspace:*
-        version: link:../../../web-foundation
-      '@agnes/web-conversation':
-        specifier: workspace:*
-        version: link:../../../web-conversation
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
+      '@agnes/web-conversation':
+        specifier: workspace:*
+        version: link:../../../web-conversation
+      '@agnes/web-foundation':
+        specifier: workspace:*
+        version: link:../../../web-foundation
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../../../web-ui
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
       react:
         specifier: 18.3.1
         version: 18.3.1
 
   packages/package-manager/bundled-plugins/interaction-ui:
     devDependencies:
-      '@agnes/web-conversation':
-        specifier: workspace:*
-        version: link:../../../web-conversation
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
+      '@agnes/web-conversation':
+        specifier: workspace:*
+        version: link:../../../web-conversation
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../../../web-ui
@@ -1470,15 +1473,15 @@ importers:
       '@agnes/web':
         specifier: workspace:*
         version: link:../../../web
-      '@agnes/web-units':
-        specifier: workspace:*
-        version: link:../../../web-units
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../../../web-client
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../../../web-ui
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../../../web-units
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -1801,15 +1804,15 @@ importers:
         specifier: workspace:*
         version: link:../web-units
     devDependencies:
-      happy-dom:
-        specifier: 20.14.3
-        version: 20.14.3
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12
       '@types/react-dom':
         specifier: 18.3.1
         version: 18.3.1
+      happy-dom:
+        specifier: 20.14.3
+        version: 20.14.3
       react:
         specifier: 18.3.1
         version: 18.3.1

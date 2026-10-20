@@ -29,8 +29,13 @@ it('public package inspection resolves the third-party application, eight profil
   const pageIcons = inspected.snapshot.contributions.flatMap((row) =>
     'client' in row ? (row.client?.homeEntries ?? []).map((page) => page.navigation?.icon) : [],
   )
-  const pages = inspected.snapshot.contributions.flatMap((row) => 'client' in row ? row.client?.homeEntries ?? [] : [])
-  expect(pages.filter((page) => page.placement === 'primary').map((page) => page.id)).toEqual(['aero-home', 'aero-tasks'])
+  const pages = inspected.snapshot.contributions.flatMap((row) =>
+    'client' in row ? (row.client?.homeEntries ?? []) : [],
+  )
+  expect(pages.filter((page) => page.placement === 'primary').map((page) => page.id)).toEqual([
+    'aero-home',
+    'aero-tasks',
+  ])
   expect(new Set(pageIcons).size).toBe(7)
   expect(inspected.snapshot.application?.workbench?.tabs).toHaveLength(3)
   expect(inspected.snapshot.application?.workbench?.actions).toHaveLength(4)

@@ -24,7 +24,9 @@ function Signatures() {
     handle.current?.render(view)
   }, [view])
   return view ? (
-    <Approval ref={handle} initialView={view} contentId="workbench-approval-content" />
+    <section className="application-panel">
+      <Approval ref={handle} initialView={view} contentId="workbench-approval-content" />
+    </section>
   ) : (
     <EmptyState
       icon={<Icon name="check" />}

@@ -48,8 +48,16 @@ function EvidenceRecord({ node, context, zh }: { node: ToolNode; context: UiExte
         <code>{node.name}</code> · {zh ? '工具回执' : 'Tool receipt'} #{node.resultSeq}
       </p>
       {paths.map((path) => (
-        <Button key={path} onClick={() => context.openPanel?.('files', { path })}>
-          {path.split('/').at(-1)}
+        <Button key={path} title={path} onClick={() => context.openPanel?.('files', { path })}>
+          {path.endsWith('.html')
+            ? zh
+              ? 'HTML 报告'
+              : 'HTML report'
+            : path.endsWith('.md')
+              ? zh
+                ? 'Markdown 报告'
+                : 'Markdown report'
+              : path.split('/').at(-1)}
         </Button>
       ))}
       {error && <p role="status">{error}</p>}

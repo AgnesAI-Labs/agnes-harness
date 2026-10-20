@@ -145,8 +145,13 @@ export function Home({ data, t, navigate }) {
           ),
         ),
       ),
-      h(WorkButton, { action: 'investigate', object: { type: 'anomaly', id: 'AN-027' }, t,
-        appearance: 'primary', label: t.choose('调查异常', 'Investigate anomaly') }),
+      h(WorkButton, {
+        action: 'investigate',
+        object: { type: 'anomaly', id: 'AN-027' },
+        t,
+        appearance: 'primary',
+        label: t.choose('调查异常', 'Investigate anomaly'),
+      }),
     ),
     h(
       'nav',
@@ -154,7 +159,11 @@ export function Home({ data, t, navigate }) {
       ...['aero-requirements', 'aero-tests', 'aero-mrb', 'aero-configuration', 'aero-zeroing'].map((id) =>
         h(Button, { key: id, onClick: () => homeNavigation.open(id) }, t.title(id)),
       ),
-      h(Button, { onClick: () => homeNavigation.open('automation') }, t.choose('自动报告', 'Automated reports')),
+      h(
+        Button,
+        { onClick: () => homeNavigation.open('automation') },
+        t.choose('自动报告', 'Automated reports'),
+      ),
     ),
     h(
       'div',

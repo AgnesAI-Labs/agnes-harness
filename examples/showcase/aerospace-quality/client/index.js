@@ -60,14 +60,18 @@ export function apply(ctx, config) {
                 ? t.loading
                 : t.choose('数据未加载，请刷新重试。', 'Data unavailable; refresh to retry.'),
             )
-          : h(WorkOwner.Provider, { value: config.packageId }, h(views[id], {
-              data: op.data,
-              t,
-              op,
-              ctx,
-              context,
-              navigate: (next) => homeNavigation.open(next),
-            })),
+          : h(
+              WorkOwner.Provider,
+              { value: config.packageId },
+              h(views[id], {
+                data: op.data,
+                t,
+                op,
+                ctx,
+                context,
+                navigate: (next) => homeNavigation.open(next),
+              }),
+            ),
         h(
           'footer',
           { className: 'aero-footer' },

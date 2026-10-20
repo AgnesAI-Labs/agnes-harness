@@ -2,8 +2,12 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createClientPanelTestHost } from '@agnes/web-client/testkit'
+import { renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createElement } from 'react'
 import { expect, it } from 'vitest'
+import { language } from '../client/i18n.js'
 import * as module from '../client/index.js'
+import { ObjectDossier } from '../client/workbench.js'
 import { coverage, health, impact, investigate } from '../src/domain.js'
 import { seed } from '../src/seed.js'
 
@@ -55,6 +59,25 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
     }
     let host = await createClientPanelTestHost(module, identity, caller as any, locale)
     try {
+      const dossier = host.window.document.createElement('div')
+      host.window.document.body.append(dossier)
+      try {
+        for (const id of ['AN-027', 'AN-missing']) {
+          renderRegion(
+            dossier as unknown as HTMLElement,
+            createElement(ObjectDossier, {
+              data: { ...state, anomaly: investigate(state) },
+              t: language(locale),
+              context: { selection: { object: { type: 'anomaly', id } } },
+            }),
+          )
+          expect(dossier.textContent?.includes('2.227')).toBe(id === 'AN-027')
+          expect(dossier.querySelector('[data-testid="aero-object-dossier"]') !== null).toBe(id === 'AN-027')
+        }
+      } finally {
+        unmountRegion(dossier as unknown as HTMLElement)
+        dossier.remove()
+      }
       for (const id of [
         'aero-home',
         'aero-object',
@@ -70,7 +93,9 @@ it('bilingual public profile pages render real domain evidence, filter gaps, sur
         expect(host.container.querySelector('h1')?.textContent).toBeTruthy()
         expect(host.container.textContent).not.toContain('undefined')
         if (id === 'aero-home') {
-          const action = [...host.container.querySelectorAll('button')].find((button) => /^(调查异常|Investigate anomaly)$/.test(button.textContent ?? ''))
+          const action = [...host.container.querySelectorAll('button')].find((button) =>
+            /^(调查异常|Investigate anomaly)$/.test(button.textContent ?? ''),
+          )
           expect(action?.disabled).toBe(true)
         }
       }

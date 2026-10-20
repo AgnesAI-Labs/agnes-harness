@@ -5,17 +5,35 @@ import { section, status } from './views.js'
 
 const h = React.createElement
 export const WorkOwner = React.createContext(undefined)
+/** @returns {import('react').ReactElement} */
 export function WorkButton({ action, object, t, label, appearance }) {
   const owner = React.useContext(WorkOwner)
-  const application = React.useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
-  const available = application?.status === 'active' && application.selection?.packageId === owner && application.effective?.workbench?.actions?.some((item) => item.id === action)
+  const application = React.useSyncExternalStore(
+    applicationIdentity.subscribe,
+    applicationIdentity.getSnapshot,
+  )
+  const available =
+    application?.status === 'active' &&
+    application.selection?.packageId === owner &&
+    application.effective?.workbench?.actions?.some((item) => item.id === action)
   const labels = {
     investigate: ['调查', 'Investigate'],
     mrb: ['起草处置', 'Draft disposition'],
     configuration: ['发起评审', 'Start review'],
     report: ['生成报告', 'Generate report'],
   }
-  return h(Button, { disabled: !available, disabledReason: available ? undefined : t.choose('先采用此应用，再开始业务会话。', 'Adopt this application before starting its work.'), ...(appearance ? { appearance } : {}), onClick: () => openApplicationWork(action, object) }, label ?? labels[action][t.zh ? 0 : 1])
+  return h(
+    Button,
+    {
+      disabled: !available,
+      disabledReason: available
+        ? undefined
+        : t.choose('先采用此应用，再开始业务会话。', 'Adopt this application before starting its work.'),
+      ...(appearance ? { appearance } : {}),
+      onClick: () => openApplicationWork(action, object),
+    },
+    label ?? labels[action][t.zh ? 0 : 1],
+  )
 }
 export function ObjectDossier({ data, t, context }) {
   const object = context?.selection?.object
@@ -30,7 +48,9 @@ export function ObjectDossier({ data, t, context }) {
     })
   const record =
     object.type === 'anomaly'
-      ? data.anomaly.id === object.id ? data.anomaly : undefined
+      ? data.anomaly.anomalyId === object.id
+        ? data.anomaly
+        : undefined
       : object.type === 'ncr'
         ? data.ncrs.find((r) => r.id === object.id)
         : object.type === 'ecr'
