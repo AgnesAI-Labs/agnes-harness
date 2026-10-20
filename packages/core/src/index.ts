@@ -163,6 +163,13 @@ export type {
   StorageAdapter,
 } from '@agnes/core-ledger/log/storage'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from '@agnes/core-ledger/log/storage'
+export type { CheckpointDecision, VerifiedHead } from '@agnes/core-ledger/log/verified-head'
+export {
+  decideCheckpoint,
+  makeVerifiedHead,
+  VERIFIED_HEAD_ALGORITHM,
+  verifiedHeadDigest,
+} from '@agnes/core-ledger/log/verified-head'
 export { projectFactChain } from '@agnes/core-ledger/project/fact-chain'
 export type { ProjectionCacheLine, ProjectionDef, ProjectionSnapshot } from '@agnes/core-ledger/project/named'
 export { ProjectionRegistry } from '@agnes/core-ledger/project/named'

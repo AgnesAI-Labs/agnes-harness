@@ -39,12 +39,30 @@ describe('storage-sqlite', () => {
       'cost_origins',
       'events',
       'ledger_heads',
+      'ledger_verified_head_v1',
       'registers',
       'sessions',
       'writer_claims',
     ])
     expect(s.journalMode()).toBe('wal')
     expect(DDL.length).toBeGreaterThanOrEqual(4)
+  })
+  it('reports the stored size of one session in bytes, not characters', async () => {
+    await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
+    await s.open('other', { writerRunId: 'r2', ttlMs: 1000 })
+    expect(await s.ledgerStats?.('k')).toEqual({ storedBytes: 0, maxRowBytes: 0 })
+    const small = { content: [{ type: 'text', text: 'a' }] }
+    const wide = { content: [{ type: 'text', text: '€'.repeat(100) }] }
+    await s.commit('k', {
+      events: [ev('user/message', small), ev('user/message', wide)],
+      expectedWriterRunId: 'r1',
+    })
+    await s.commit('other', { events: [ev('user/message', wide)], expectedWriterRunId: 'r2' })
+    const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value))
+    expect(await s.ledgerStats?.('k')).toEqual({
+      storedBytes: bytes(small) + bytes(wide),
+      maxRowBytes: bytes(wide),
+    })
   })
   it('open takes a lease, commit assigns seq and materializes registers', async () => {
     const o = await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })

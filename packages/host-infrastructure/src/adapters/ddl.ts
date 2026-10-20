@@ -1,3 +1,5 @@
+import { VERIFIED_HEAD_DDL } from './storage-sqlite-verified-head.js'
+
 export const DDL = [
   `CREATE TABLE IF NOT EXISTS ledger_heads (
      session_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, digest TEXT)`,
@@ -56,4 +58,5 @@ export const DDL = [
      PRIMARY KEY (parent_key, effect_id))`,
   `CREATE TABLE IF NOT EXISTS child_writer_gens (
      root_task_id TEXT PRIMARY KEY, generation INTEGER NOT NULL)`,
+  VERIFIED_HEAD_DDL,
 ]

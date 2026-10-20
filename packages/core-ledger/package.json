@@ -14,6 +14,7 @@
     "./log/scan-pages": "./src/log/scan-pages.ts",
     "./log/session-log": "./src/log/session-log.ts",
     "./log/storage": "./src/log/storage.ts",
+    "./log/verified-head": "./src/log/verified-head.ts",
     "./project/cache-health": "./src/project/cache-health.ts",
     "./project/child-trace-cache": "./src/project/child-trace-cache.ts",
     "./project/named": "./src/project/named.ts",
