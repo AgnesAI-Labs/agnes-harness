@@ -133,7 +133,13 @@ it('keeps nested results out of later requests', async () => {
       const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
       expect(out.reason).toBe('completed')
     }
+    // The cell really made the nested read, and the request really carries the model's own call.
+    const calls = (await session.scan({ type: 'tool/call', toSeq: session.lastSeq })).map(
+      (row) => row.data as { name?: string; depth?: number },
+    )
+    expect(calls).toContainEqual(expect.objectContaining({ name: 'read', depth: 1 }))
     const second = JSON.stringify(provider.requests[1]?.messages)
+    expect(JSON.stringify(provider.requests[1])).toContain('"name":"run_code"')
     expect(second).toContain('len=')
     expect(second).not.toContain('nested host read')
     expect(second).not.toContain('"name":"read"')

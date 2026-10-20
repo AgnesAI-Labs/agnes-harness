@@ -829,7 +829,6 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       ).toMatchObject({ status: 'received' })
       expect(await running).toMatchObject({ reason: 'completed' })
       expect(provider.calls).toHaveLength(3)
-      // The answer reaches the model through the tool's own result, and so does the presented file.
       // The answer reaches the model as the result of the card's own submit call, a top-level call
       // the model sees; ask_user_question returns once the submission is received, before the answer
       // is recorded, so its own result is still the pending text.
