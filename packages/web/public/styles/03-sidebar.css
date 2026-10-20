@@ -306,6 +306,30 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .navigation-label {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .navigation-label-start,
+  .navigation-label-after {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .navigation-label[data-identifier] .navigation-label-start {
+    min-width: 3em;
+  }
+  .navigation-label-start:empty {
+    display: none;
+  }
+  .navigation-label-object,
+  .navigation-label-end {
+    flex: none;
+    overflow: hidden;
+    white-space: nowrap;
+  }
   /* An empty list teaches the next step in the space the list will fill. */
   .session-list-empty {
     padding: var(--s24) var(--s8);

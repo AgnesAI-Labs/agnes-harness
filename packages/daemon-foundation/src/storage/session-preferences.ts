@@ -8,10 +8,19 @@ const BOOKMARK_LIMIT = 200
 export class SessionPreferencesStore {
   private readonly memory = new Map<string, SessionPreferences>()
 
-  constructor(private readonly table?: TableHandle) {
+  constructor(
+    private readonly table?: TableHandle,
+    private readonly clock: () => number = Date.now,
+  ) {
     table?.exec(`CREATE TABLE IF NOT EXISTS session_preferences (
       session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0
     )`)
+    try {
+      // Probe by adding: PRAGMA is outside Host's owner SQL allow-list.
+      table?.exec('ALTER TABLE session_preferences ADD COLUMN pinned_at INTEGER')
+    } catch (error) {
+      if (!/duplicate column name/i.test(String(error))) throw error
+    }
     // Its own table rather than a column, so a store created before bookmarks needs no migration.
     table?.exec(`CREATE TABLE IF NOT EXISTS session_bookmarks (
       session_key TEXT PRIMARY KEY, ids TEXT NOT NULL
@@ -20,8 +29,8 @@ export class SessionPreferencesStore {
 
   get(sessionId: string): SessionPreferences {
     if (!this.table) return { archived: false, ...this.memory.get(sessionId) }
-    const row = this.table.get<{ title: string | null; archived: number }>(
-      'SELECT title, archived FROM session_preferences WHERE session_key = ?',
+    const row = this.table.get<{ title: string | null; archived: number; pinned_at: number | null }>(
+      'SELECT title, archived, pinned_at FROM session_preferences WHERE session_key = ?',
       [sessionId],
     )
     const bookmarks = this.table.get<{ ids: string }>(
@@ -32,6 +41,7 @@ export class SessionPreferencesStore {
     return {
       archived: row?.archived === 1,
       ...(row?.title ? { title: row.title } : {}),
+      ...(typeof row?.pinned_at === 'number' ? { pinnedAt: new Date(row.pinned_at).toISOString() } : {}),
       ...(ids.length ? { bookmarks: ids } : {}),
     }
   }
@@ -57,14 +67,45 @@ export class SessionPreferencesStore {
     return this.get(sessionId)
   }
 
+  /** Archiving unpins in the same statement, so an archived session is never in the pinned group. */
   archive(sessionId: string, archived: boolean): SessionPreferences {
     if (this.table)
       this.table.exec(
         `INSERT INTO session_preferences (session_key, archived) VALUES (?, ?)
-       ON CONFLICT(session_key) DO UPDATE SET archived = excluded.archived`,
+       ON CONFLICT(session_key) DO UPDATE SET archived = excluded.archived,
+         pinned_at = CASE WHEN excluded.archived = 1 THEN NULL ELSE pinned_at END`,
         [sessionId, archived ? 1 : 0],
       )
-    else this.memory.set(sessionId, { ...this.get(sessionId), archived })
+    else {
+      const { pinnedAt, ...rest } = this.get(sessionId)
+      this.memory.set(sessionId, { ...rest, archived, ...(pinnedAt && !archived ? { pinnedAt } : {}) })
+    }
+    return this.get(sessionId)
+  }
+
+  /** Pinning a pinned session keeps its time; an archived session must be restored first. */
+  pin(sessionId: string, pinned: boolean): SessionPreferences {
+    const current = this.get(sessionId)
+    if (pinned && current.archived)
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'SESSION_ARCHIVED',
+        reason: 'Restore an archived session before pinning it.',
+      })
+    const at = pinned ? this.clock() : null
+    if (this.table)
+      this.table.exec(
+        `INSERT INTO session_preferences (session_key, pinned_at) VALUES (?, ?)
+       ON CONFLICT(session_key) DO UPDATE SET pinned_at = CASE
+         WHEN excluded.pinned_at IS NULL THEN NULL ELSE COALESCE(pinned_at, excluded.pinned_at) END`,
+        [sessionId, at],
+      )
+    else {
+      const { pinnedAt, ...rest } = current
+      this.memory.set(sessionId, {
+        ...rest,
+        ...(at !== null ? { pinnedAt: pinnedAt ?? new Date(at).toISOString() } : {}),
+      })
+    }
     return this.get(sessionId)
   }
 
@@ -104,6 +145,7 @@ export class SessionPreferencesStore {
       ...row,
       archived: preference.archived,
       ...(preference.title ? { title: preference.title, titleSource: 'user' as const } : {}),
+      ...(preference.pinnedAt ? { pinnedAt: preference.pinnedAt } : {}),
       ...(preference.bookmarks ? { bookmarks: preference.bookmarks } : {}),
     }
   }

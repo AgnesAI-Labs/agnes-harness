@@ -19,10 +19,18 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
+import { compatibleModelsPanel } from './settings/account-compatible.js'
 import { accountForm, endpointHost, fieldError } from './settings/account-form.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
-import { accountWelcome, defaultAccountLabel, providerTiles, settledTest } from './settings/account-tiles.js'
+import {
+  accountWelcome,
+  COMPATIBLE_PROVIDER,
+  defaultAccountLabel,
+  providerTiles,
+  type RelayPreset,
+  settledTest,
+} from './settings/account-tiles.js'
 import {
   configurationReason,
   errorText,
@@ -126,6 +134,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ui.models.value,
       ui.thinking?.value,
       ui.contextWindow?.value,
+      isCompatible() ? compatible.models().map((model) => model.id) : [],
     ])
   let editingId: string | undefined
   let removingId: string | undefined
@@ -160,6 +169,16 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   let focusReturn: HTMLElement | null = null
   let suggestedAccountLabel: string | undefined
   const providerId = () => ui.provider.value.split(':')[0] ?? ''
+  const isCompatible = () => providerId() === COMPATIBLE_PROVIDER
+  // An OpenAI-compatible account declares its models: listed ones picked, others typed by hand.
+  const compatible = compatibleModelsPanel(
+    optionalElement('config-compatible-models', 'div'),
+    () => {
+      tested = compatible.tested()
+      renderModels()
+    },
+    () => void test(),
+  )
   const canUseSavedModels = (): boolean => {
     const account = selectedAccount()
     return (
@@ -273,6 +292,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     oauth.visible(oauthSelected)
     oauth.disabled(!connected || busy)
     networkFields.disabled(!connected || busy)
+    compatible.show(isCompatible() && !oauthSelected && accountStep === 'connection', !connected || busy)
     ui.apiKey.closest<HTMLElement>('.account-key-field')?.toggleAttribute('hidden', oauthSelected)
     ui.provider.disabled =
       !connected || busy || oauth.operation() !== undefined || selectedAccount() !== undefined
@@ -393,7 +413,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     autoTest.cancel()
     const retest = !!tested?.verified
     const saved = selectedAccount()
-    tested = saved?.models.length ? { models: saved.models, verified: false } : undefined
+    tested = isCompatible()
+      ? compatible.tested()
+      : saved?.models.length
+        ? { models: saved.models, verified: false }
+        : undefined
     ui.models.value = ''
     renderModels()
     if (clearError) form.clearErrors()
@@ -404,7 +428,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const connectionChanged = (delay: number): void => {
     resetTest()
     renderKeyHint()
-    if (!isOAuth() && ui.apiKey.value.trim() && accountStep === 'connection') autoTest.schedule(delay)
+    // A compatible endpoint may need no key: its address alone is worth listing.
+    const ready = ui.apiKey.value.trim() || (isCompatible() && ui.baseUrl.value.trim())
+    if (!isOAuth() && ready && accountStep === 'connection') autoTest.schedule(delay)
   }
 
   const input = (): { providerId: string; accountId?: string; baseUrl?: string; apiKey?: string } => {
@@ -414,7 +440,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const baseUrl = ui.baseUrl.value.trim()
     const apiKey = ui.apiKey.value
     const row = selectedAccount()
-    if (row && baseUrl && row.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, '') && !apiKey)
+    // A compatible account may have no key to re-enter: the backend refuses to move a stored one.
+    const moved = row && baseUrl && row.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, '')
+    if (moved && !apiKey && !isCompatible())
       throw Object.assign(new Error(tr('settings.key.endpointChanged')), { field: 'apiKey' })
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
       throw new Error(tr('settings.provider.switchKeyRequired'))
@@ -467,7 +495,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (accountName) accountName.value = selectedAccount()?.label ?? ''
       removingId = undefined
       renderAccounts()
-      providers = [...result.providers].sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
+      providers = [...result.providers]
+        .sort((a, b) => +(b.id === 'agnes-ai') - +(a.id === 'agnes-ai'))
+        .map((row) =>
+          row.id === COMPATIBLE_PROVIDER ? { ...row, label: tr('accounts.compatibleName') } : row,
+        )
       tested = undefined
       form.clearErrors()
       say('')
@@ -530,6 +562,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       })
       if (!ownsTest()) return
       if (isOAuth()) tested = result
+      if (isCompatible()) {
+        compatible.listed(result)
+        tested = compatible.tested()
+        if (result.verified) say(tr('settings.step.third', { count: result.models.length }), 'ok')
+        else say('')
+        renderModels()
+        return
+      }
       if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
       tested = result
       say(tr('settings.step.third', { count: result.models.length }), 'ok')
@@ -537,7 +577,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderModels(result.models)
     } catch (error) {
       if (!ownsTest()) return
-      tested = isOAuth() && tested ? { ...tested, verified: false } : undefined
+      tested = isCompatible()
+        ? compatible.tested()
+        : isOAuth() && tested
+          ? { ...tested, verified: false }
+          : undefined
       renderModels()
       setError(error, !automatic)
     } finally {
@@ -597,6 +641,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           ...(accountName && editingId ? { label: accountName.value.trim() } : {}),
           model: modelId,
           networkTimeouts,
+          ...(isCompatible() ? { models: compatible.models() } : {}),
           ...(defaultSettings === undefined ? {} : { defaultSettings }),
           ...(configuration ? { expectedRevision: configuration.revision } : {}),
         }))
@@ -651,15 +696,24 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     await save()
     return configuration?.revision !== previous && !form.hasError()
   }
-  const selectProvider = (id: string, custom = false) => {
+  const selectProvider = (id: string, preset?: RelayPreset) => {
     ui.provider.value = id
     ui.provider.dispatchEvent(new Event('change', { bubbles: true }))
     accountStep = 'connection'
     updateButtons()
-    if (custom && advanced) {
-      setDisclosureOpen(advanced, true)
-      ui.baseUrl.focus()
-    } else if (!isOAuth()) ui.apiKey.focus()
+    if (preset) {
+      ui.baseUrl.value = preset.baseUrl
+      ui.baseUrl.dispatchEvent(new Event('input', { bubbles: true }))
+      suggestLabel(preset.label)
+    }
+    if (isCompatible() && !preset) ui.baseUrl.focus()
+    else if (!isOAuth()) ui.apiKey.focus()
+  }
+  /** A name the person has not typed follows the choice: the preset, else the endpoint's host. */
+  const suggestLabel = (base: string) => {
+    if (!accountName || !suggestedAccountLabel || accountName.value !== suggestedAccountLabel) return
+    accountName.value = defaultLabel(base)
+    suggestedAccountLabel = accountName.value
   }
   const renderProviderChoices = () => {
     const host = optionalElement('config-provider-choices', 'div')
@@ -674,6 +728,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     removingId = undefined
     if (accountName) accountName.value = selectedAccount()?.label ?? ''
     renderProviders()
+    compatible.reset(selectedAccount()?.models ?? [])
     if (accountName && !id) {
       accountName.value = defaultLabel(providers.find((p) => p.id === providerId())?.label ?? '')
       suggestedAccountLabel = accountName.value
@@ -851,12 +906,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   ui.provider.addEventListener('change', () => {
     oauth.clear()
     const selected = providers.find((provider) => provider.id === providerId())
-    if (accountName && suggestedAccountLabel && accountName.value === suggestedAccountLabel) {
-      accountName.value = defaultLabel(selected?.label ?? '')
-      suggestedAccountLabel = accountName.value
-    }
-    ui.baseUrl.value = selected?.baseUrl ?? ''
+    suggestLabel(selected?.label ?? '')
+    // A compatible endpoint's registry address is a stand-in; the person gives the real one.
+    ui.baseUrl.value = isCompatible() ? '' : (selected?.baseUrl ?? '')
+    // Its address is the first thing it needs, so the section holding it opens.
+    if (isCompatible() && advanced) setDisclosureOpen(advanced, true)
     ui.apiKey.value = ''
+    compatible.reset([])
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,
@@ -881,7 +937,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     updateButtons()
   })
   accountName?.addEventListener('input', updateButtons)
-  ui.baseUrl.addEventListener('input', () => connectionChanged(1000))
+  ui.baseUrl.addEventListener('input', () => {
+    if (isCompatible()) suggestLabel(endpointHost(ui.baseUrl.value) || tr('accounts.compatibleName'))
+    connectionChanged(1000)
+  })
   ui.apiKey.addEventListener('paste', () => {
     pasted = true
   })

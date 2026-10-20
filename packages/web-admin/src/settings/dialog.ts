@@ -1,5 +1,6 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import { appServerErrorMessage } from '@agnes/web-ui'
+import { COMPATIBLE_PROVIDER } from './account-tiles.js'
 
 export const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
   CONFIG_AUTH_FAILED: 'settings.config.authFailed',
@@ -174,11 +175,15 @@ export function renderAccountKeyHint(
     oauth
       ? 'settings.key.oauthHint'
       : endpointChanged
-        ? 'settings.key.endpointChanged'
+        ? providerId === COMPATIBLE_PROVIDER
+          ? 'settings.key.optionalHint'
+          : 'settings.key.endpointChanged'
         : connected && saved?.id === providerId && saved.credentialConfigured
           ? 'settings.key.savedHint'
           : connected
-            ? 'settings.key.inputHint'
+            ? providerId === COMPATIBLE_PROVIDER
+              ? 'settings.key.optionalHint'
+              : 'settings.key.inputHint'
             : 'settings.key.offlineCleared',
   )
 }

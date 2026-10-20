@@ -187,7 +187,7 @@ test('fresh gallery hides teaching examples until deliberately installed, then r
   await expect(card).toHaveCount(0)
   await expect(page.getByTestId('general-agent')).toBeVisible()
   await expect(
-    page.getByTestId('general-agent').getByRole('button', { name: 'Start now', exact: true }),
+    page.getByTestId('general-agent').getByRole('button', { name: 'Start conversation', exact: true }),
   ).toBeEnabled()
   await page.screenshot({ path: info.outputPath('gallery-fresh.png'), animations: 'disabled' })
   expect((await client.packages.list({ profile: 'local-dev' })).packages.map((row) => row.id)).not.toContain(

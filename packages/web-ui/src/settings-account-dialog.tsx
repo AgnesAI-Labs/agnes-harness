@@ -104,6 +104,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               </fieldset>
               <div id="config-provider-choices" />
               <div className="account-connection-step">
+                <p className="field-hint">{t('accounts.connectNext')}</p>
                 {/* The provider being connected; 换一个服务商 goes back to the tiles. */}
                 <div className="account-provider-card" id="config-provider-card">
                   <span className="agnes-settings-logo" id="config-provider-logo" aria-hidden="true" />
@@ -127,6 +128,8 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                   <AccountKeyField t={t} />
                   <p id="config-key-hint" className="field-hint form-field-wide" />
                   <div id="config-oauth-controls" className="form-field-wide" />
+                  {/* An OpenAI-compatible account's models: listed ones to pick, others typed by hand. */}
+                  <div id="config-compatible-models" className="form-field-wide" hidden />
                   {/* The key is tested as soon as it is entered; the result reads here, where it happened. */}
                   <div className="account-status" id="config-account-status">
                     <p id="config-state" aria-live="polite" />

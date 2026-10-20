@@ -2169,6 +2169,7 @@ describe('web session selection', () => {
           return {
             items: [
               { ...row('gone', 'c'.repeat(64)), available: false },
+              { ...row('chats', 'd'.repeat(64)), kind: 'chats' as const },
               row('first', 'a'.repeat(64)),
               row('linked', linked),
             ],
@@ -2201,16 +2202,27 @@ describe('web session selection', () => {
     expect(chip.textContent).toContain(`/workspace/${expected}`)
     await vi.waitFor(() => expect(chip.disabled).toBe(false))
     chip.click()
-    await vi.waitFor(() => expect(dialog.open).toBe(true))
+    await vi.waitFor(() => expect(document.querySelector('.workspace-picker-panel')).not.toBeNull())
     const other = expected === 'linked' ? 'first' : 'linked'
-    ;[...document.querySelectorAll<HTMLButtonElement>('.workspace-option')]
+    // The managed chats workspace is never offered as a folder to choose.
+    expect(
+      [...document.querySelectorAll('.workspace-picker-panel .workspace-option-name')].map(
+        (name) => name.textContent,
+      ),
+    ).toEqual(['gone', 'first', 'linked'])
+    ;[...document.querySelectorAll<HTMLButtonElement>('.workspace-picker-panel .workspace-option')]
       .find((button) => button.textContent?.includes(other))
       ?.click()
-    await vi.waitFor(() => expect(dialog.open).toBe(false))
-    expect(document.querySelector('[data-workspace-label]')?.textContent).toBe(other)
+    await vi.waitFor(() => expect(document.querySelector('[data-workspace-label]')?.textContent).toBe(other))
+    expect(dialog.open).toBe(false)
     expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
       other === 'linked' ? linked : 'a'.repeat(64),
     )
+    // × leaves the workspace: the draft becomes a chat in the managed chats workspace.
+    document.querySelector<HTMLButtonElement>('.composer-workspace-clear')?.click()
+    await vi.waitFor(() => expect(chip.dataset.chats).toBe('true'))
+    expect(document.querySelector('.composer-workspace-clear')).toBeNull()
+    expect(new URL(location.href).searchParams.get('workspaceId')).toBe('d'.repeat(64))
   })
 
   it('keeps the native picker available when workspace.add rejects the selected directory', async () => {

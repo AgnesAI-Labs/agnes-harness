@@ -86,6 +86,7 @@ export type SessionMetaRow = {
   title?: string
   titleSource?: 'user'
   archived?: boolean
+  pinnedAt?: string
   bookmarks?: string[]
   cwd?: string
 }

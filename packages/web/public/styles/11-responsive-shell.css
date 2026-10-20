@@ -50,12 +50,12 @@
       min-height: 2.25rem;
       margin: 0 0 var(--s12);
     }
-    body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer) {
+    body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer, .application-footer) {
       flex: none;
       width: 2.25rem;
     }
     /* Override the expanded actions (including #settings) with one centered hit area. */
-    body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button) {
+    body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button, .application-footer-item) {
       width: 2.25rem;
       height: 2.25rem;
       min-height: 2.25rem;
@@ -84,6 +84,7 @@
       margin-top: auto;
     }
     body.sidebar-collapsed .home-entry :is(.home-entry-label, .home-entry-badge),
+    body.sidebar-collapsed .application-footer-item > span,
     body.sidebar-collapsed .sidebar-footer button span {
       display: none;
     }
@@ -168,6 +169,7 @@
     }
     .sidebar-actions :where(#new),
     .sidebar-footer button,
+    .application-footer-item,
     .session,
     .code-copy,
     .tool-detail {

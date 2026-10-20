@@ -24,7 +24,15 @@ export type ApiKeyProviderId =
   | 'minimax'
   | 'xai'
   | 'agnes-ai'
+  | 'groq'
+  | 'together'
+  | 'cerebras'
+  | 'nvidia'
+  | 'huggingface'
+  | 'moonshotai-cn'
+  | 'zai-coding-cn'
   | 'typesafe-systemone'
+  | 'openai-compatible'
 
 export type ApiKeyProviderErrorCode =
   | 'UNKNOWN_PROVIDER'
@@ -89,9 +97,10 @@ export type ApiKeyProviderRegistryEntry = Readonly<{
   /**
    * Config-time marker mirrored from the model-adapter registration. A payload-only entry serves no
    * conversation catalogue: it stays out of chat projections, and runtime exclusion keeps reading
-   * the adapter registration's own capabilities.
+   * the adapter registration's own capabilities. A declared-models entry chats, but has no
+   * catalogue either: each account names its own models.
    */
-  capabilities?: Readonly<{ payloadOnly?: boolean }>
+  capabilities?: Readonly<{ payloadOnly?: boolean; declaredModels?: boolean }>
   modelsUrl?: string
   createAdapter(options?: ApiKeyAdapterOptions): Promise<PiAdapter>
   /** Present only where the provider publishes a compatible, pinned model-list endpoint. */
@@ -216,6 +225,62 @@ const specs: readonly ProviderSpec[] = [
     baseUrl: 'https://api.agnes-ai.cn/v1',
     sourceProviderId: 'agnes-ai',
     load: () => load(import('./providers/agnes-ai.js'), 'agnesAiProvider'),
+  },
+  {
+    id: 'groq',
+    displayName: 'Groq',
+    api: 'openai-completions',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    sourceProviderId: 'groq',
+    load: () => load(import('@earendil-works/pi-ai/providers/groq'), 'groqProvider'),
+  },
+  {
+    id: 'together',
+    displayName: 'Together AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.together.ai/v1',
+    sourceProviderId: 'together',
+    load: () => load(import('@earendil-works/pi-ai/providers/together'), 'togetherProvider'),
+  },
+  {
+    id: 'cerebras',
+    displayName: 'Cerebras',
+    api: 'openai-completions',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    sourceProviderId: 'cerebras',
+    load: () => load(import('@earendil-works/pi-ai/providers/cerebras'), 'cerebrasProvider'),
+  },
+  {
+    id: 'nvidia',
+    displayName: 'NVIDIA',
+    api: 'openai-completions',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    sourceProviderId: 'nvidia',
+    load: () => load(import('@earendil-works/pi-ai/providers/nvidia'), 'nvidiaProvider'),
+  },
+  {
+    id: 'huggingface',
+    displayName: 'Hugging Face',
+    api: 'openai-completions',
+    baseUrl: 'https://router.huggingface.co/v1',
+    sourceProviderId: 'huggingface',
+    load: () => load(import('@earendil-works/pi-ai/providers/huggingface'), 'huggingfaceProvider'),
+  },
+  {
+    id: 'moonshotai-cn',
+    displayName: 'Moonshot / Kimi (moonshot.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    sourceProviderId: 'moonshotai-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/moonshotai-cn'), 'moonshotaiCnProvider'),
+  },
+  {
+    id: 'zai-coding-cn',
+    displayName: 'GLM Coding (bigmodel.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    sourceProviderId: 'zai-coding-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/zai-coding-cn'), 'zaiCodingCnProvider'),
   },
 ] as const
 
@@ -349,7 +414,27 @@ const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
   createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
 })
 
-const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => entry.capabilities?.payloadOnly !== true
+/**
+ * Any server that speaks OpenAI chat completions at an address the person gives: relays,
+ * aggregators, self-hosted gateways. Nothing is pinned, so there is no default address (the
+ * reserved `.invalid` name stands in for one) and no adapter to build here; each account declares
+ * its models and Host renders their routes.
+ */
+const OPENAI_COMPATIBLE_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'openai-compatible',
+  displayName: 'OpenAI-compatible endpoint',
+  availability: 'available',
+  route: 'openai-compatible',
+  api: 'openai-completions',
+  baseUrl: 'https://endpoint.invalid/v1',
+  credentialRef: 'secret://openai-compatible/default',
+  sourceProviderId: 'openai-compatible',
+  capabilities: { declaredModels: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/** The entries backed by a pinned pi catalogue: the ones built into the startup route table. */
+const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => !entry.capabilities
 
 export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze([
   ...specs.map((spec) =>
@@ -368,6 +453,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
     }),
   ),
   JEV_PROVIDER,
+  OPENAI_COMPATIBLE_PROVIDER,
 ])
 
 /**

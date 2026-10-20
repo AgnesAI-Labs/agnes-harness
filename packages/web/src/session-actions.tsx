@@ -12,7 +12,7 @@ import {
 
 import { createRuntimeDialog } from './session-runtime-dialog.js'
 
-export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
+export type SessionAction = 'pin' | 'unpin' | 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
 
 export function forkTitle(title: string): string {
   const match = /^(.*) \((\d+)\)$/.exec(title)
@@ -249,7 +249,11 @@ export function createSessionActions(options: {
         if (action === 'revealWorkspace')
           await options.client.call('_agnes/v1/session.revealWorkspace', { sessionId: id })
         else if (action === 'fork') await options.fork(id, title)
-        else {
+        else if (action === 'pin' || action === 'unpin') {
+          // The daemon moves the row between groups; the refresh reloads both of them.
+          await options.client.session.pin(id, action === 'pin')
+          await options.changed()
+        } else {
           await options.client.session.archive(id, true)
           archivedSuccessfully = true
           reportSuccess('session-archive', t('session.archivedNotice'))

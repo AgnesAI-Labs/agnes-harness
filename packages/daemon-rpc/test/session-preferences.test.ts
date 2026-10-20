@@ -44,6 +44,8 @@ describe('session preferences', () => {
       expect(store.archive('s', true)).toEqual({ title: '持久名称', archived: true })
       expect(store.setBookmarks('s', ['01JTURN']).bookmarks).toEqual(['01JTURN'])
       expect(store.setBookmarks('s', [])).toEqual({ title: '持久名称', archived: true })
+      store.archive('s', false)
+      expect(store.pin('s', true).pinnedAt).toMatch(/^\d{4}-\d\d-\d\dT/)
       expect(storage.coreTableNames()).not.toContain('session_preferences')
       expect(storage.coreTableNames()).not.toContain('session_bookmarks')
     } finally {
@@ -56,7 +58,16 @@ describe('session preferences', () => {
     const dir = await mkdtemp(join(tmpdir(), 'agnes-session-preferences-'))
     let tables = sqliteTables(join(dir, 'preferences.db'))
     try {
-      const store = new SessionPreferencesStore(tables.table('session_preferences'))
+      // A database from before pinning gains the column on open and keeps its rows.
+      tables.table('session_preferences').exec(`CREATE TABLE session_preferences (
+        session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0)`)
+      tables.table('session_preferences').exec("INSERT INTO session_preferences VALUES ('old', '旧名称', 0)")
+      const store = new SessionPreferencesStore(tables.table('session_preferences'), () => 1_000)
+      expect(store.pin('old', true)).toEqual({
+        title: '旧名称',
+        archived: false,
+        pinnedAt: '1970-01-01T00:00:01.000Z',
+      })
       store.archive('s', true)
       store.rename('s', '  我的名称 😀  ')
       store.archive('s', true)
@@ -65,6 +76,7 @@ describe('session preferences', () => {
       tables = sqliteTables(join(dir, 'preferences.db'))
       const reopened = new SessionPreferencesStore(tables.table('session_preferences'))
       expect(reopened.get('s')).toEqual({ title: '我的名称 😀', archived: true })
+      expect(reopened.get('old').pinnedAt).toBe('1970-01-01T00:00:01.000Z')
       reopened.archive('s', false)
       expect(reopened.apply({ ...row, title: '迟到的自动名称' })).toMatchObject({
         title: '我的名称 😀',
@@ -141,6 +153,46 @@ describe('session preferences', () => {
         'result',
         { title: 'name', archived: false },
       )
+    await endpoint.close()
+  })
+
+  it('pins on the wire for the local owner only, keeps the first pin time, and never pins an archived session', async () => {
+    let now = Date.parse('2026-10-20T08:00:00.000Z')
+    const store = new SessionPreferencesStore(undefined, () => now++)
+    const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    registerSessionPreferences(endpoint, lister, store)
+    const pin = (params: unknown) =>
+      endpoint.handle({ jsonrpc: '2.0', id: 1, method: '_agnes/v1/session.pin', params })
+    endpoint.conn.initialized = true
+    for (const [authKind, credentialKind] of [
+      ['jwt', 'local'],
+      ['local', 'jwt'],
+    ] as const) {
+      endpoint.conn.authKind = authKind
+      endpoint.conn.credentialKind = credentialKind
+      expect(await pin({ sessionId: 's', pinned: true })).toHaveProperty(
+        'error.data.code',
+        'CAPABILITY_DENIED',
+      )
+    }
+    endpoint.conn.authKind = 'local'
+    endpoint.conn.credentialKind = 'local'
+    expect(store.get('s')).not.toHaveProperty('pinnedAt')
+    expect(await pin({ sessionId: 'missing', pinned: true })).toHaveProperty(
+      'error.data.code',
+      'SESSION_NOT_FOUND',
+    )
+    expect(await pin({ sessionId: 's', pinned: 'yes' })).toHaveProperty('error')
+    for (let i = 0; i < 2; i++)
+      expect(await pin({ sessionId: 's', pinned: true })).toHaveProperty('result', {
+        archived: false,
+        pinnedAt: '2026-10-20T08:00:00.000Z',
+      })
+    expect(await pin({ sessionId: 's', pinned: false })).toHaveProperty('result', { archived: false })
+    await pin({ sessionId: 's', pinned: true })
+    expect(store.archive('s', true)).toEqual({ archived: true })
+    expect(await pin({ sessionId: 's', pinned: true })).toHaveProperty('error.data.code', 'SESSION_ARCHIVED')
+    expect(store.get('s')).toEqual({ archived: true })
     await endpoint.close()
   })
 })

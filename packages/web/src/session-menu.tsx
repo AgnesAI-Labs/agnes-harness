@@ -4,6 +4,8 @@ import { useLayoutEffect, useRef } from 'react'
 import type { SessionAction } from './session-actions.js'
 
 const ITEMS: readonly (readonly [SessionAction, string, IconName])[] = [
+  ['pin', 'session.menu.pin', 'pin'],
+  ['unpin', 'session.menu.unpin', 'pin-off'],
   ['rename', 'session.menu.rename', 'pencil'],
   ['fork', 'session.menu.fork', 'git-branch'],
   ['revealWorkspace', 'session.menu.openFolder', 'folder-open'],
@@ -20,8 +22,14 @@ export function SessionMenu({
   t,
   action,
   platform,
+  chats = false,
+  pinned = false,
 }: {
+  /** Offers 「取消置顶」 in place of 「置顶」. */
+  pinned?: boolean
   platform?: string | undefined
+  /** A chat in the managed chats workspace has no folder of its own to show. */
+  chats?: boolean
   id: string
   title: string
   disabled: boolean
@@ -81,7 +89,9 @@ export function SessionMenu({
           tone="neutral"
           label={t('session.menu.triggerAria', { name: title })}
           trigger={button}
-          items={ITEMS.map(([item, key, icon]) => ({
+          items={ITEMS.filter(
+            ([item]) => (!chats || item !== 'revealWorkspace') && item !== (pinned ? 'pin' : 'unpin'),
+          ).map(([item, key, icon]) => ({
             id: item,
             dividerBefore: item === 'revealWorkspace' || item === 'archive',
             label: t(

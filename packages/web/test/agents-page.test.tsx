@@ -166,13 +166,14 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
         expect(general?.querySelector('button:not([aria-haspopup])')?.hasAttribute('disabled')).toBe(false),
       )
       const initialStart = [...(general?.querySelectorAll('button') ?? [])].find(
-        (button) => button.textContent === 'Start now',
+        (button) => button.textContent === 'Start conversation',
       )
       await act(async () => initialStart?.click())
       expect(assign).toHaveBeenCalledWith(
         outcome === 'inherited' ? '/?new=1&loop=acme.workflow%401.0.0' : '/?new=1&loop=acme.chat%402.0.0',
       )
       assign.mockClear()
+      await act(async () => general?.querySelector<HTMLElement>('.agh-disclosure-summary')?.click())
       // The picker is a native public Select: keyboard choice selects the requested provider.
       await act(async () =>
         general?.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
@@ -182,7 +183,7 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
       )
       await act(async () => option?.click())
       const start = [...(general?.querySelectorAll('button') ?? [])].find(
-        (button) => button.textContent === 'Start now',
+        (button) => button.textContent === 'Start conversation',
       )
       await act(async () => start?.click())
       expect(assign).toHaveBeenCalledWith(
@@ -338,6 +339,7 @@ it('reacts to the effective application for catalog and installed agents, includ
     expect(refs()).toHaveLength(3)
     await act(async () => applicationIdentity.set({ ...state, effective: { id: 'acme', agents: [] } }))
     expect(refs()).toEqual([])
+    expect(host.textContent).not.toContain('No agents found')
     expect(host.querySelector('[data-testid="general-agent"]')).not.toBeNull()
     await act(async () =>
       applicationIdentity.set({ ...state, status: 'unresolved', effective: { id: 'acme', agents: [] } }),
@@ -400,6 +402,11 @@ it.each([false, true])(
     try {
       await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
       await vi.waitFor(() => expect(host.querySelectorAll('[data-application]')).toHaveLength(1))
+      const gallery = host.querySelector('[data-testid="agents-gallery"]')
+      expect(gallery?.firstElementChild?.getAttribute('data-testid')).toBe('general-agent')
+      expect(gallery?.querySelector('[data-application]')).not.toBeNull()
+      expect(gallery?.querySelector('[data-application]')?.textContent).not.toContain(entry.id)
+      expect(gallery?.querySelector('[data-testid="general-agent"] > footer button')).not.toBeNull()
       expect(host.querySelectorAll('.application-roles li')).toHaveLength(5)
       expect(host.textContent).toContain('5 role agents')
       expect(host.querySelectorAll('.application-roles li button')).toHaveLength(offline ? 1 : 0)
@@ -422,8 +429,11 @@ it.each(['en', 'zh-CN'])(
         agents: async () => ({ agents: [] }),
         loops: async () => ({
           revision: 1,
-          loops: [{ id: 'agnes.default', version: '1.0.0' }],
-          defaults: {},
+          loops: [
+            { id: 'custom.loop', version: '1.0.0' },
+            { id: 'agnes.default', version: '1.0.0' },
+          ],
+          defaults: { providers: { loop: { provider: 'custom.loop', version: '1.0.0' } } },
         }),
       },
     })
@@ -446,6 +456,12 @@ it.each(['en', 'zh-CN'])(
         ),
       )
       expect(host.querySelector('[data-testid="general-agent"]')?.textContent).not.toContain('agnes.default')
+      expect(host.textContent).not.toContain(locale === 'en' ? 'No agents found' : '未发现智能体')
+      expect(
+        host.querySelector('[data-testid="general-agent"] .agh-disclosure')?.getAttribute('data-open'),
+      ).toBe('false')
+      expect(host.querySelector('[data-testid="general-agent"] .agh-disclosure-chevron')).not.toBeNull()
+      expect(host.textContent).toContain(locale === 'en' ? 'Start conversation' : '开始对话')
     } finally {
       await act(async () => root.unmount())
       localized.dispose()

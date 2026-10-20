@@ -66,6 +66,24 @@ describe('workspace RPC methods', () => {
     })
   })
 
+  it('refuses to remove the managed chats workspace', async () => {
+    const catalog = new WorkspaceCatalog(
+      new MemoryWorkspaceStore(),
+      new MemorySessionWorkspaces(),
+      async (path) => ({ path, name: 'chats' }),
+      () => 0,
+      undefined,
+      '/data/chats',
+    )
+    const ep = endpoint(catalog, { running: () => false, archive: () => {} })
+    const chats = await catalog.add('/data/chats')
+
+    await expect(
+      ep.handle(request(1, '_agnes/v1/workspace.remove', { workspaceId: chats.workspaceId })),
+    ).resolves.toMatchObject({ error: { code: -32011, data: { code: 'WORKSPACE_MANAGED' } } })
+    expect((await catalog.list()).items).toMatchObject([{ path: '/data/chats', kind: 'chats' }])
+  })
+
   it('maps Host validation to a stable workspace error', async () => {
     const catalog = new WorkspaceCatalog(
       new MemoryWorkspaceStore(),

@@ -12,6 +12,7 @@ export function WorkspaceMenu({
   runningCount,
   newSession,
   action,
+  managed = false,
 }: {
   workspace: WorkspaceEntry
   name: string
@@ -22,6 +23,8 @@ export function WorkspaceMenu({
   runningCount: number
   newSession(): void
   action?: ((action: 'reveal' | 'remove', workspace: WorkspaceEntry) => Promise<void>) | undefined
+  /** The daemon-managed chats workspace: only 「新建会话」, never reveal or remove. */
+  managed?: boolean
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const [confirm, setConfirm] = useState(false)
@@ -82,7 +85,7 @@ export function WorkspaceMenu({
         >
           <Icon name="compose" />
         </Button>
-        {disabled || pending ? (
+        {managed ? null : disabled || pending ? (
           button
         ) : (
           <Menu

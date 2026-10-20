@@ -246,6 +246,114 @@ it('keeps the payload-only provider out of the chat account form projection', as
   expect(getApiKeyProvider('typesafe-systemone')?.capabilities?.payloadOnly).toBe(true)
 })
 
+it('connects an OpenAI-compatible endpoint with its own model ids, with or without a key, over chat completions', async () => {
+  const server = await fixture(['my-model', 'qwen-plus'])
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect((await service.providers()).providers.some((row) => row.id === 'openai-compatible')).toBe(true)
+  const compatible = { providerId: 'openai-compatible', baseUrl: server.baseUrl }
+  const listed = { id: 'my-model', name: 'my-model', contextWindow: 128000, maxTokens: 8192 }
+  // No intersection with a reviewed catalogue, and no key needed to list.
+  expect(await service.test(compatible)).toEqual({
+    models: [listed, { ...listed, id: 'qwen-plus', name: 'qwen-plus' }],
+    verified: true,
+  })
+  expect(requestsHeaders(server.requests)[0]?.authorization).toBeUndefined()
+  // The OpenAI provider on the same address keeps its reviewed-catalogue rule.
+  expect(
+    await service.test({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }),
+  ).toMatchObject({ verified: false })
+  // The stand-in default is not an address; a listing failure says why and is not an error.
+  await expect(service.test({ providerId: 'openai-compatible' })).rejects.toMatchObject({
+    code: 'CONFIG_INVALID_INPUT',
+    field: 'baseUrl',
+  })
+  const bare = server.baseUrl.replace(/\/v1$/, '')
+  expect(await service.test({ ...compatible, baseUrl: bare })).toEqual({
+    models: [],
+    verified: false,
+    catalogueError: { reason: 'http', status: 404 },
+  })
+
+  // A hand-typed model saves although nothing listed it, and no key is stored as no key.
+  const saved = await service.save({
+    ...compatible,
+    baseUrl: bare,
+    accountId: 'relay',
+    label: 'Relay',
+    model: 'hand-typed',
+    models: [{ id: 'hand-typed', name: 'hand-typed' }],
+    expectedRevision: 0,
+  })
+  expect(saved.accounts?.[0]).toMatchObject({
+    providerId: 'openai-compatible',
+    model: 'hand-typed',
+    models: [{ id: 'hand-typed', name: 'hand-typed', contextWindow: 128000, maxTokens: 8192 }],
+    credentialConfigured: true,
+  })
+  expect(saved.defaultAccountId).toBe('relay')
+  // Without models, a save takes what the endpoint lists; a key goes on the request.
+  await service.save({
+    ...compatible,
+    accountId: 'keyed',
+    label: 'Keyed',
+    apiKey: 'sk-relay',
+    model: 'qwen-plus',
+    expectedRevision: 1,
+  })
+  expect(requestsHeaders(server.requests).at(-1)?.authorization).toBe('Bearer sk-relay')
+  await expect(
+    service.save({ ...compatible, accountId: 'other', model: 'absent', expectedRevision: 2 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_MODEL_UNAVAILABLE' })
+
+  const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  // Re-listing a keyless account sends no key either.
+  await reopened.test({ ...compatible, accountId: 'relay', baseUrl: bare })
+  expect(requestsHeaders(server.requests).at(-1)?.authorization).toBeUndefined()
+  const routes = (await reopened.profileInput()).provider?.routes ?? []
+  expect(routes.map((row) => [row.route, row.api, row.baseUrl])).toEqual([
+    ['account-relay', 'openai-completions', bare],
+    ['account-keyed', 'openai-completions', server.baseUrl],
+  ])
+  expect(routes[0]?.models?.[0]).toMatchObject({
+    id: 'hand-typed',
+    api: 'openai-completions',
+    reasoning: false,
+    input: ['text'],
+    toolCallFormats: ['native'],
+    thinkingReplay: 'drop',
+    contextWindow: 128000,
+    maxTokens: 8192,
+  })
+  expect(routes[1]?.models?.map((model) => model.id)).toEqual(['qwen-plus', 'my-model'])
+  const keyed = routes[1]?.credentialRef
+  if (!keyed) throw new Error('keyed route has no credential')
+  await expect(createCredentialStore({ root }).read(keyed)).resolves.toMatchObject({ value: 'sk-relay' })
+
+  // A keyless account has no key to protect: it moves to another address without one.
+  const moved = { ...compatible, accountId: 'relay', model: 'my-model', models: [listed] }
+  await expect(reopened.test({ ...compatible, accountId: 'relay' })).resolves.toMatchObject({
+    verified: true,
+  })
+  expect(requestsHeaders(server.requests).at(-1)?.authorization).toBeUndefined()
+  expect((await reopened.save({ ...moved, expectedRevision: 2 })).accounts?.[0]).toMatchObject({
+    baseUrl: server.baseUrl,
+    credentialConfigured: true,
+  })
+  // A real key never follows the account to a new address unasked.
+  await expect(
+    reopened.save({ ...moved, accountId: 'keyed', baseUrl: bare, expectedRevision: 3 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED', field: 'apiKey' })
+})
+
+it('refuses a rejected key while listing an OpenAI-compatible endpoint', async () => {
+  const server = await fixture('my-model', 401)
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  await expect(
+    service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl, apiKey: 'sk-bad' }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REJECTED' })
+})
+
 const JEV_MODEL = {
   id: 'typesafe/jev-1.13-20260917',
   name: 'Jev 1.13 (2026-09-17)',

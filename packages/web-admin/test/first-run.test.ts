@@ -28,7 +28,7 @@ it.each([
   expect(needsFirstRun(value)).toBe(expected)
 })
 
-async function setup(dismissed?: string) {
+async function setup(dismissed?: string, detach = () => {}) {
   const host = document.createElement('div'),
     banner = document.createElement('div')
   document.body.append(host, banner)
@@ -46,7 +46,8 @@ async function setup(dismissed?: string) {
   const saved = new Map<string, string>()
   if (dismissed) saved.set(`agh-doctor-dismissed:${homeId}`, dismissed)
   const start = vi.fn(async () => {}),
-    connect = vi.fn(async () => true)
+    connect = vi.fn(async () => true),
+    selectDemo = vi.fn(async () => {})
   const controller = createFirstRunController({
     host,
     banner,
@@ -57,8 +58,9 @@ async function setup(dismissed?: string) {
         saved.set(key, value)
       },
     },
-    attachAccount: () => () => {},
+    attachAccount: () => detach,
     connectAccount: connect,
+    selectDemo,
     chooseWorkspace: async () => 'project',
     examples: async () => homeNavigation.open('agents'),
     details: async () => {},
@@ -69,7 +71,7 @@ async function setup(dismissed?: string) {
   controllers.push(controller)
   await controller.initialize(snapshot, false)
   const click = (id: string) => host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.click()
-  return { host, banner, controller, click, start, connect, saved, homeId }
+  return { host, banner, controller, click, start, connect, selectDemo, saved, homeId }
 }
 it('keeps setup inline, advances through the work folder and remembers completion for this home/profile', async () => {
   vi.stubGlobal(
@@ -101,6 +103,9 @@ it('keeps setup inline, advances through the work folder and remembers completio
   h.click('first-run-next')
   await vi.waitFor(() => expect(wrap()?.style.display).not.toBe('none'))
   expect(guide()?.getAttribute('data-step')).toBe('ready')
+  expect(h.host.querySelector('[data-testid="first-run-examples"]')?.textContent).toBe(
+    'Explore demos in Agents',
+  )
   h.click('first-run-examples')
   await vi.waitFor(() => expect(homeNavigation.getSnapshot()?.id).toBe('agents'))
   await vi.waitFor(() => expect(wrap()?.style.display).toBe('none'))
@@ -112,7 +117,53 @@ it('keeps setup inline, advances through the work folder and remembers completio
   expect(h.saved.get(`agh-first-run:${h.homeId}:local-dev`)).toBe('done')
   expect(await h.controller.initialize(snapshot, false)).toBe(false)
 })
+it('hands the account form back to Settings when setup is skipped mid-connection', async () => {
+  const detach = vi.fn()
+  const h = await setup(undefined, detach)
+  h.click('first-run-add')
+  await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-connection"]')).not.toBeNull())
+  h.click('first-run-skip')
+  // A hidden guide that kept the form would leave Settings' account tiles opening nothing.
+  await vi.waitFor(() => expect(detach).toHaveBeenCalled())
+})
 it.each([0, 6, 8])('suppresses a dismissed doctor notice for seven days (%s days)', async (days) => {
   const h = await setup(String(Date.now() - days * 24 * 60 * 60 * 1000))
   expect(h.banner.querySelector('[data-testid="doctor-notice"]') !== null).toBe(days >= 7)
+})
+
+it.each(['en', 'zh-CN'])(
+  'selects Demo before continuing and explains the local model on the finish step (%s)',
+  async (locale) => {
+    document.documentElement.lang = locale
+    const h = await setup()
+    h.click('first-run-demo')
+    h.click('first-run-next')
+    await vi.waitFor(() => expect(h.host.querySelector('[data-step="workspace"]')).not.toBeNull())
+    expect(h.selectDemo).toHaveBeenCalled()
+    expect(h.connect).not.toHaveBeenCalled()
+    h.click('first-run-workspace-pick')
+    await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-workspace"]')).not.toBeNull())
+    h.click('first-run-next')
+    const text = h.host.querySelector('[data-testid="first-run-demo-next"]')?.textContent
+    expect(text).toContain(locale === 'en' ? 'Demo is selected' : '已选择 Demo')
+    expect(text).toContain(locale === 'en' ? 'without reasoning' : '不进行推理')
+    expect(text).toContain(locale === 'en' ? 'Settings → Models' : '设置 → 模型')
+    expect(h.host.querySelector('[data-testid="first-run-examples"]')?.textContent).toBe(
+      locale === 'en' ? 'Explore demos in Agents' : '想看产品演示？打开智能体',
+    )
+    h.click('first-run-examples')
+    await vi.waitFor(() => expect(homeNavigation.getSnapshot()?.id).toBe('agents'))
+    document.documentElement.lang = ''
+  },
+)
+
+it('keeps setup on the account step when selecting Demo fails and allows retry', async () => {
+  const h = await setup()
+  h.selectDemo.mockRejectedValueOnce(new Error('Demo unavailable'))
+  h.click('first-run-demo')
+  h.click('first-run-next')
+  await vi.waitFor(() => expect(h.host.textContent).toContain('Setup could not be saved'))
+  expect(h.host.querySelector('[data-step="account"]')).not.toBeNull()
+  h.click('first-run-next')
+  await vi.waitFor(() => expect(h.host.querySelector('[data-step="workspace"]')).not.toBeNull())
 })

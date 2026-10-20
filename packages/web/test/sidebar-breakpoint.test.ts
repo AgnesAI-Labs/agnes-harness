@@ -56,7 +56,9 @@ describe('sidebar narrow breakpoint', () => {
       expect(start, selector).toBeGreaterThan(-1)
       return flat.slice(start + selector.length + 2, flat.indexOf('}', start))
     }
-    const buttons = rule('body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button)')
+    const buttons = rule(
+      'body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button, .application-footer-item)',
+    )
     for (const declaration of [
       'width: 2.25rem;',
       'height: 2.25rem;',
@@ -65,13 +67,15 @@ describe('sidebar narrow breakpoint', () => {
       'justify-content: center;',
     ])
       expect(buttons).toContain(declaration)
-    expect(rule('body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer)')).toContain(
-      'width: 2.25rem;',
-    )
+    expect(
+      rule(
+        'body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer, .application-footer)',
+      ),
+    ).toContain('width: 2.25rem;')
     expect(rule('body.sidebar-collapsed .sidebar-actions #new')).toContain('box-shadow: none;')
     expect(
       rule(
-        'body.sidebar-collapsed .home-entry :is(.home-entry-label, .home-entry-badge), body.sidebar-collapsed .sidebar-footer button span',
+        'body.sidebar-collapsed .home-entry :is(.home-entry-label, .home-entry-badge), body.sidebar-collapsed .application-footer-item > span, body.sidebar-collapsed .sidebar-footer button span',
       ),
     ).toContain('display: none;')
     expect(rule('body.sidebar-collapsed .sidebar')).toContain('align-items: center;')

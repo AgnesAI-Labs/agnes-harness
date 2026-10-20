@@ -31,12 +31,21 @@ function setup() {
     },
     client: {
       session: {
+        list: vi.fn(async (query: { q: { prefix: string }; limit: number }) => ({
+          items: [
+            { sessionId: 'AA', title: 'A different session sharing the prefix' },
+            { sessionId: 'A', title: 'Renamed investigation 017' },
+          ]
+            .filter((row) => row.sessionId.startsWith(query.q.prefix))
+            .slice(0, query.limit),
+        })),
         view: (id: string, options: { maxNodes: number }) =>
           new Promise<ReturnType<typeof view>>((resolve) =>
             pending.set(`${id}:${options.maxNodes}`, resolve),
           ),
       },
     },
+    sessionTitles: new Map<string, string>(),
     projection: undefined as unknown,
     readOnly: undefined as { id: string; maxNodes: number; hasEarlier: boolean } | undefined,
     render: vi.fn(),
@@ -69,6 +78,7 @@ it('keeps the newest selection when a late loadEarlier response of the previous 
   await b
   pending.get('A:400')?.(view('A'))
   await earlier
+  expect(context.sessionTitles.get('A')).toBe('Renamed investigation 017')
   expect(context.readOnly?.id).toBe('B')
   expect(context.projection).toEqual({ sessionId: 'B' })
   expect(context.clientModules.session.getSnapshot()).toBe('B')
@@ -93,35 +103,45 @@ it.each([refusal, isolationRefusal])(
   },
 )
 
-it('shows isolation-refused history with only a new-session action, including earlier messages', async () => {
-  const { context, controller, pending } = setup()
-  const shown = controller.show(
-    'A',
-    {
-      data: {
-        ...isolationRefusal.data,
-        actions: ['upgrade', 'repin'],
-        localized: { en: 'unsafe', 'zh-CN': 'unsafe' },
+it.each([false, true])(
+  'shows isolation-refused history even when title lookup fails (%s)',
+  async (metadataMissing) => {
+    const { context, controller, pending } = setup()
+    if (metadataMissing) {
+      context.sessionTitles.set('A', 'Cached renamed title')
+      context.client.session.list.mockRejectedValue(new Error('Metadata unavailable'))
+    }
+    const shown = controller.show(
+      'A',
+      {
+        data: {
+          ...isolationRefusal.data,
+          actions: ['upgrade', 'repin'],
+          localized: { en: 'unsafe', 'zh-CN': 'unsafe' },
+        },
       },
-    },
-    context.sessionBinding.capture(),
-  )
-  await tick()
-  pending.get('A:200')?.(view('A'))
-  expect(await shown).toBe(true)
-  expect(context.readOnly).toEqual({ id: 'A', maxNodes: 200, hasEarlier: true })
-  expect(context.projection).toEqual({ sessionId: 'A' })
-  const notice = vi.mocked(appReadOnly.show).mock.lastCall?.[0]
-  expect(notice?.actions.map((action) => action.id)).toEqual(['new'])
-  expect(notice?.message.en).toContain('read')
-  expect(notice?.message['zh-CN']).toContain('查看')
-  const earlier = controller.loadEarlier()
-  await tick()
-  pending.get('A:400')?.(view('A', false))
-  await earlier
-  expect(context.readOnly).toEqual({ id: 'A', maxNodes: 400, hasEarlier: false })
-  expect(context.windowAtStart).toBe(true)
-})
+      context.sessionBinding.capture(),
+    )
+    await tick()
+    pending.get('A:200')?.(view('A'))
+    expect(await shown).toBe(true)
+    expect(context.readOnly).toEqual({ id: 'A', maxNodes: 200, hasEarlier: true })
+    expect(context.projection).toEqual({ sessionId: 'A' })
+    expect(context.sessionTitles.get('A')).toBe(
+      metadataMissing ? 'Cached renamed title' : 'Renamed investigation 017',
+    )
+    const notice = vi.mocked(appReadOnly.show).mock.lastCall?.[0]
+    expect(notice?.actions.map((action) => action.id)).toEqual(['new'])
+    expect(notice?.message.en).toMatch(/read/i)
+    expect(notice?.message['zh-CN']).toContain('查看')
+    const earlier = controller.loadEarlier()
+    await tick()
+    pending.get('A:400')?.(view('A', false))
+    await earlier
+    expect(context.readOnly).toEqual({ id: 'A', maxNodes: 400, hasEarlier: false })
+    expect(context.windowAtStart).toBe(true)
+  },
+)
 
 it.each([
   { data: { code: 'E_SANDBOX_WORKSPACE', reason: 'probe-failed' } },
@@ -156,6 +176,8 @@ it('states which rows a truncated record shows', async () => {
   await tick()
   pending.get('A:200')?.(view('A', true, { fromSeq: 901, throughSeq: 1500 }))
   await shown
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].sessionId).toBe('A')
+  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message.en).not.toContain('Session: A.')
   expect(appReadOnly.show).toHaveBeenLastCalledWith(
     expect.objectContaining({ scan: expect.objectContaining({ fromSeq: 901, throughSeq: 1500 }) }),
   )

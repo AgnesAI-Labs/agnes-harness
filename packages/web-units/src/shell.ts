@@ -22,6 +22,7 @@ export {
   type PermissionMode,
   type PermissionPickerProps,
   type PermissionPickerState,
+  type WorkspacePickerProps,
 } from './composer.js'
 export {
   type ConversationAttachmentsRenderer,

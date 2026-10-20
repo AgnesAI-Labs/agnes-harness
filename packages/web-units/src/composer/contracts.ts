@@ -5,6 +5,7 @@ import type {
   UIPendingInput,
   UsageView,
   userImagePolicy,
+  WorkspaceEntry,
 } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
 import type { FileMention, SessionAuxiliarySnapshot } from '@agnes/web-ui'
@@ -68,6 +69,15 @@ export type PermissionPickerState = {
   defaultMode?: PermissionMode
 }
 
+export type WorkspacePickerProps = {
+  workspace: ComposerView['workspace']
+  hidden: boolean
+  /** Opens the host's full workspace dialog (register a new folder). */
+  onWorkspace(): void
+  onSelect(workspace: WorkspaceEntry | 'chats'): void
+  onRemove?(workspace: WorkspaceEntry): void
+}
+
 export type PermissionPickerProps = {
   state: PermissionPickerState
   onError(error: unknown): void
@@ -84,6 +94,8 @@ export interface ComposerDependencies {
   ModelPicker: ComponentType<ModelPickerProps>
   /** Trigger plus popover for the session approval mode. */
   PermissionPicker: ComponentType<PermissionPickerProps>
+  /** Trigger plus popover for the draft workspace; without it the chip opens `onWorkspace` directly. */
+  WorkspacePicker?: ComponentType<WorkspacePickerProps>
   UsagePanel: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
   downscaleImage?(file: File, policy?: ReturnType<typeof userImagePolicy>): Promise<File>
@@ -114,6 +126,7 @@ export interface ComposerView {
   connected: boolean
   configured: boolean
   hasSession: boolean
+  readOnly?: boolean
   /** `action` is the one-click way out of the state the hint describes: switch to this model. */
   hint: { kind: 'shortcut' | 'state'; text: string; action?: { label: string; model: ModelPickerOption } }
   input: {
@@ -158,6 +171,12 @@ export interface ComposerView {
     root?: string
     /** The `~`-shortened folder shown after the name. */
     path?: string
+    /** The draft runs in the daemon-managed chats workspace instead of a chosen one. */
+    chats?: boolean
+    /** The draft may leave its workspace for the chats workspace. */
+    clearable?: boolean
+    /** Registered workspaces the draft may switch to, never the chats workspace. */
+    choices?: readonly WorkspaceEntry[]
   }
 }
 
@@ -201,6 +220,9 @@ export interface ComposerRegionOptions {
   onPromoteQueued?(itemId: string): void
   onRemoveQueued?(itemId: string): void
   onWorkspace(): void
+  /** Switches the draft's workspace in place; `'chats'` leaves it for the managed chats workspace. */
+  onWorkspaceSelect?(workspace: WorkspaceEntry | 'chats'): void
+  onWorkspaceRemove?(workspace: WorkspaceEntry): void
 }
 
 export interface ComposerSlots {

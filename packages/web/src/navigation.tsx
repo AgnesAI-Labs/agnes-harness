@@ -54,6 +54,28 @@ export function workspaceLabel(workspace: WorkspaceEntry): string {
   )
 }
 
+/** Keep both the action and the distinguishing suffix visible in a narrow navigation row. */
+export function NavigationLabel({ text }: { text: string }) {
+  const points = Array.from(text)
+  if (points.length <= 12) return <>{text}</>
+  const object = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+[A-Z0-9-]*\b/u.exec(text)
+  return (
+    <span className="navigation-label" title={text} data-identifier={object ? 'true' : undefined}>
+      <span className="navigation-label-start">
+        {object ? text.slice(0, object.index) : points.slice(0, -10).join('')}
+      </span>
+      {object ? (
+        <>
+          <span className="navigation-label-object">{object[0]}</span>
+          <span className="navigation-label-after">{text.slice(object.index + object[0].length)}</span>
+        </>
+      ) : (
+        <span className="navigation-label-end">{points.slice(-10).join('')}</span>
+      )}
+    </span>
+  )
+}
+
 const DAY_MS = 86_400_000
 
 /** The picker's recent workspaces: one click selects; a folder that is gone can only be removed. */
@@ -243,6 +265,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
   const needle = query.trim().toLocaleLowerCase()
   const name = (path: string | undefined) => {
     const workspace = options.workspaces.find((entry) => entry.path === path)
+    if (workspace?.kind === 'chats') return t('nav.chats')
     return workspace ? workspaceLabel(workspace) : (path?.split(/[\\/]/).filter(Boolean).at(-1) ?? '')
   }
   const rows = sortSessionsByRecency(
@@ -361,6 +384,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
     for (const group of options.paging.groups) groups.set(group.groupId, group.items)
     count = options.paging.groups.reduce((sum, group) => sum + group.total, 0)
   }
+  const chatsPath = options.workspaces.find((entry) => entry.kind === 'chats')?.path
   const item = (row: SidebarNavigationOptions['sessions'][number]): ConversationItemType => {
     const title =
       row.title ||
@@ -384,7 +408,9 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
             onClick={() => options.open(row.sessionId)}
           >
             {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
-            <span className="session-title">{title}</span>
+            <span className="session-title">
+              <NavigationLabel text={title} />
+            </span>
           </Button>
           {options.action && (
             <SessionMenu
@@ -395,6 +421,8 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
               t={t}
               action={options.action}
               platform={options.runtimePlatform}
+              chats={!!chatsPath && row.cwd === chatsPath}
+              pinned={!!row.pinnedAt}
             />
           )}
         </>
@@ -420,11 +448,22 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
         {[...groups].map(([path, sessions]) => {
           if (!sessions.length && !path) return null
           const page = options.paging?.groups.find((group) => group.groupId === path)
-          if (page?.groupId === 'unassigned' && page.total === 0) return null
-          const workspace = options.workspaces.find((entry) =>
-            page ? entry.workspaceId === page.workspaceId : entry.path === path,
-          )
-          const name = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
+          const pinned = page?.groupId === 'pinned'
+          if ((page?.groupId === 'unassigned' || pinned) && page.total === 0) return null
+          const workspace = pinned
+            ? undefined
+            : options.workspaces.find((entry) =>
+                page ? entry.workspaceId === page.workspaceId : entry.path === path,
+              )
+          // The managed chats workspace is a group of chats, not a folder the user chose.
+          const chats = workspace?.kind === 'chats'
+          const name = pinned
+            ? t('nav.pinned')
+            : chats
+              ? t('nav.chats')
+              : workspace
+                ? workspaceLabel(workspace)
+                : t('session.uncategorized')
           const collapsed = page ? !page.opened : collapsedGroups.has(path)
           const expanded = expandedGroups.has(path)
           const sorted = page ? sessions : sortSessionsByRecency(sessions)
@@ -445,7 +484,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   className="workspace-heading"
                   aria-expanded={!collapsed}
                   aria-controls={listId}
-                  title={workspace?.path ?? t('nav.noWorkspaceTitle')}
+                  title={chats || pinned ? name : (workspace?.path ?? t('nav.noWorkspaceTitle'))}
                   onClick={() => {
                     if (page) {
                       options.groupAction?.(path, 'toggle')
@@ -457,9 +496,20 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                     redraw((value) => value + 1)
                   }}
                 >
-                  <FolderIcon className="icon icon-folder icon-folder-closed" />
-                  <FolderIcon open className="icon icon-folder icon-folder-open" />
-                  <span className="workspace-name">{name}</span>
+                  {pinned || chats ? (
+                    <Icon
+                      name={pinned ? 'pin' : 'message-square'}
+                      className={pinned ? 'icon icon-pinned' : 'icon icon-chats'}
+                    />
+                  ) : (
+                    <>
+                      <FolderIcon className="icon icon-folder icon-folder-closed" />
+                      <FolderIcon open className="icon icon-folder icon-folder-open" />
+                    </>
+                  )}
+                  <span className="workspace-name">
+                    <NavigationLabel text={name} />
+                  </span>
                 </Button>
                 {workspace && (
                   <WorkspaceMenu
@@ -474,6 +524,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                     }
                     newSession={() => options.newSession(workspace)}
                     action={options.workspaceAction}
+                    managed={chats}
                   />
                 )}
               </div>

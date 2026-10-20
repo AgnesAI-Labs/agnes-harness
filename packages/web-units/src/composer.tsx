@@ -82,6 +82,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onPromoteQueued,
     onRemoveQueued,
     onWorkspace,
+    onWorkspaceSelect,
+    onWorkspaceRemove,
     slots,
   }: ComposerProps,
   ref: ForwardedRef<ComposerHandle>,
@@ -354,7 +356,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           event.preventDefault()
           const steer = submitAsSteer.current
           submitAsSteer.current = false
-          if (view.loading || view.send.disabled) return
+          if (view.readOnly || view.loading || view.send.disabled) return
           onSubmit(steer ? { steer } : undefined)
         }}
       >
@@ -393,8 +395,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             classNames={SENDER_CLASSES}
             inputAttributes={INPUT_ATTRIBUTES}
             value={draft}
-            disabled={view.input.disabled}
-            placeholder={view.input.placeholder}
+            disabled={view.readOnly || view.input.disabled}
+            placeholder={view.readOnly ? t('composer.hint.readOnly') : view.input.placeholder}
             autoSize={nativeSizing ? false : AUTO_SIZE}
             {...(nativeSizing ? { styles: NATIVE_INPUT_STYLES } : {})}
             onChange={changeDraft}
@@ -469,14 +471,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
             footer={
               <div className="composer-controls">
-                {addButton}
+                {!view.readOnly && addButton}
                 {slots?.permission}
-                <dependencies.PermissionPicker
-                  state={view.permission}
-                  onError={onError}
-                  onSelect={onPermissionSelect}
-                />
-                <p id="composer-hint" data-kind={view.hint.kind}>
+                {!view.readOnly && (
+                  <dependencies.PermissionPicker
+                    state={view.permission}
+                    onError={onError}
+                    onSelect={onPermissionSelect}
+                  />
+                )}
+                <p id="composer-hint" data-kind={view.hint.kind} hidden={view.readOnly}>
                   {view.hint.text}
                 </p>
                 {view.hint.action && (
@@ -497,16 +501,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>
                   <dependencies.UsagePanel usage={view.usage} connected={view.connected} t={t} />
                 </section>
-                <div className="model-field">
-                  <dependencies.ModelPicker
-                    state={pickerState(view)}
-                    onError={onError}
-                    onSelect={onModelSelect}
-                    {...(onAuxiliaryRead ? { onAuxiliaryRead } : {})}
-                    {...(onAuxiliarySelect ? { onAuxiliarySelect } : {})}
-                    {...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {})}
-                  />
-                </div>
+                {!view.readOnly && (
+                  <div className="model-field">
+                    <dependencies.ModelPicker
+                      state={pickerState(view)}
+                      onError={onError}
+                      onSelect={onModelSelect}
+                      {...(onAuxiliaryRead ? { onAuxiliaryRead } : {})}
+                      {...(onAuxiliarySelect ? { onAuxiliarySelect } : {})}
+                      {...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {})}
+                    />
+                  </div>
+                )}
                 {view.controls ? (
                   // Pause and stop are a pair of same-size icon buttons; paused, this one turns into continue.
                   <Tooltip
@@ -549,6 +555,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 </Button>
                 <Button
                   id="send"
+                  hidden={view.readOnly}
                   appearance="primary"
                   htmlType="submit"
                   disabled={view.send.disabled}
@@ -601,23 +608,33 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             {slots?.right}
             {slots?.plan}
           </ComposerExtras>
-          <Button
-            id="composer-workspace"
-            className="composer-workspace"
-            appearance="ghost"
-            size="small"
-            hidden={!(view.workspace.visible ?? !view.hasSession)}
-            htmlType="button"
-            aria-haspopup="dialog"
-            title={view.workspace.title}
-            disabled={view.workspace.disabled}
-            onClick={onWorkspace}
-          >
-            <Icon name="folder" />
-            <span data-workspace-label={true}>{view.workspace.label}</span>
-            {view.workspace.path && <span data-workspace-path={true}>{view.workspace.path}</span>}
-            <Icon name="chevron-down" className="model-chevron" />
-          </Button>
+          {dependencies.WorkspacePicker && onWorkspaceSelect ? (
+            <dependencies.WorkspacePicker
+              workspace={view.workspace}
+              hidden={!(view.workspace.visible ?? !view.hasSession)}
+              onWorkspace={onWorkspace}
+              onSelect={onWorkspaceSelect}
+              {...(onWorkspaceRemove ? { onRemove: onWorkspaceRemove } : {})}
+            />
+          ) : (
+            <Button
+              id="composer-workspace"
+              className="composer-workspace"
+              appearance="ghost"
+              size="small"
+              hidden={!(view.workspace.visible ?? !view.hasSession)}
+              htmlType="button"
+              aria-haspopup="dialog"
+              title={view.workspace.title}
+              disabled={view.workspace.disabled}
+              onClick={onWorkspace}
+            >
+              <Icon name="folder" />
+              <span data-workspace-label={true}>{view.workspace.label}</span>
+              {view.workspace.path && <span data-workspace-path={true}>{view.workspace.path}</span>}
+              <Icon name="chevron-down" className="model-chevron" />
+            </Button>
+          )}
         </div>
         <div className="composer-meta-end">{slots?.dock}</div>
       </div>
@@ -640,5 +657,6 @@ export type {
   PermissionMode,
   PermissionPickerProps,
   PermissionPickerState,
+  WorkspacePickerProps,
 } from './composer/contracts.js'
 export { downscaleImageFile } from './composer/image-files.js'

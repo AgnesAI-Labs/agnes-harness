@@ -35,6 +35,13 @@ const expected = [
   ['minimax', 'MiniMax'],
   ['xai', 'xAI'],
   ['agnes-ai', 'Agnes AI'],
+  ['groq', 'Groq'],
+  ['together', 'Together AI'],
+  ['cerebras', 'Cerebras'],
+  ['nvidia', 'NVIDIA'],
+  ['huggingface', 'Hugging Face'],
+  ['moonshotai-cn', 'Moonshot / Kimi (moonshot.cn)'],
+  ['zai-coding-cn', 'GLM Coding (bigmodel.cn)'],
 ] as const
 
 function assistant(): AssistantMessage {
@@ -71,10 +78,10 @@ const streamOptions = () => ({
 })
 
 describe('API-key provider registry', () => {
-  it('publishes exactly the twelve first-screen providers with stable friendly names', () => {
-    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly !== true)
+  it('publishes exactly the nineteen catalogue providers with stable friendly names', () => {
+    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => !entry.capabilities)
     expect(chat.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
-    expect(new Set(chat.map((entry) => entry.id)).size).toBe(12)
+    expect(new Set(chat.map((entry) => entry.id)).size).toBe(19)
     expect(chat.every((entry) => entry.availability === 'available')).toBe(true)
     // Payload-only entries are registered for account storage lookups, not for chat onboarding.
     expect(
@@ -82,6 +89,22 @@ describe('API-key provider registry', () => {
         (entry) => entry.id,
       ),
     ).toEqual(['typesafe-systemone'])
+  })
+
+  it('offers an OpenAI-compatible endpoint whose models the account declares, outside the pi catalogue', async () => {
+    const declared = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.declaredModels === true)
+    expect(declared.map(({ id, api }) => [id, api])).toEqual([['openai-compatible', 'openai-completions']])
+    const entry = getApiKeyProvider('openai-compatible')
+    // No default address: the form has to ask for one.
+    expect(entry?.baseUrl).toMatch(/\.invalid\//)
+    await expect(entry?.createAdapter()).rejects.toMatchObject({ code: 'PROVIDER_CONTRACT' })
+    expect([...API_KEY_CREDENTIAL_REFS]).not.toContain('secret://openai-compatible/default')
+    expect((await createApiKeyProviderConfigs()).map((config) => config.id)).not.toContain(
+      'openai-compatible',
+    )
+    expect((await createApiKeyProviderAdapters()).map((adapter) => adapter.id)).not.toContain(
+      'openai-compatible',
+    )
   })
 
   it.each([
@@ -159,7 +182,7 @@ describe('API-key provider registry', () => {
       }
     },
   )
-  it('pre-registers all twelve providers without keys, then fails closed with AUTH only on selection', async () => {
+  it('pre-registers every catalogue provider without keys, then fails closed with AUTH only on selection', async () => {
     const adapters = await createApiKeyProviderAdapters({
       adapters: {
         deepseek: { modelIds: ['deepseek-v4-pro'] },
@@ -181,7 +204,7 @@ describe('API-key provider registry', () => {
       clock: () => 0,
     })
 
-    // All eleven lookups were attempted, but none prevented route-table assembly.
+    // Every lookup was attempted, but none prevented route-table assembly.
     expect(requested).toEqual(expected.map(([id]) => `secret://${id}/default`))
     expect(provider.models().map((model) => model.route)).toContain('deepseek')
     const events = await collect(

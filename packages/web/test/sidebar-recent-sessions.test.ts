@@ -306,6 +306,87 @@ describe('recent sessions per workspace', () => {
     })
   })
 
+  it('shows the managed chats workspace as 「临时会话」 with only a new-session action', () => {
+    const chats: WorkspaceEntry = { ...workspace, path: '/data/chats', name: 'chats', kind: 'chats' }
+    const nav = document.createElement('nav')
+    document.body.append(nav)
+    const newSession = vi.fn()
+    flushSync(() =>
+      renderSessionNavigation(
+        {
+          nav,
+          sessions: [session(0), { ...session(1), cwd: chats.path }],
+          workspaces: [workspace, chats],
+          labels: new Map(),
+          newSession,
+          open: vi.fn(),
+          action: vi.fn(),
+          workspaceAction: vi.fn(),
+        },
+        zhT,
+      ),
+    )
+    const [folder, chatGroup] = [...nav.querySelectorAll<HTMLElement>('.workspace-group')]
+    expect(folder?.querySelector('.workspace-name')?.textContent).toBe('WorkLLM')
+    expect(folder?.querySelector('.workspace-menu-trigger')).not.toBeNull()
+    expect(chatGroup?.querySelector('.workspace-name')?.textContent).toBe('临时会话')
+    expect(chatGroup?.querySelector('.workspace-heading')?.getAttribute('title')).toBe('临时会话')
+    expect(chatGroup?.querySelector('.icon-folder')).toBeNull()
+    expect(chatGroup?.querySelector('.workspace-menu-trigger')).toBeNull()
+    chatGroup?.querySelector<HTMLButtonElement>('.workspace-new-session')?.click()
+    expect(newSession).toHaveBeenCalledWith(chats)
+  })
+
+  it('puts a non-empty 「置顶」 group first with a pin and no workspace actions, offering 「取消置顶」', async () => {
+    const nav = document.createElement('nav')
+    document.body.append(nav)
+    const group = (groupId: string, items: PageSessionMeta['items']): SidebarGroupState => ({
+      groupId,
+      ...(groupId === 'a' ? { workspaceId: 'a' } : {}),
+      total: items.length,
+      revision: 'v1',
+      lastMessageAt: null,
+      ready: true,
+      opened: true,
+      loaded: true,
+      loading: false,
+      items,
+    })
+    const draw = (pinned: PageSessionMeta['items']) =>
+      flushSync(() =>
+        renderSessionNavigation(
+          {
+            nav,
+            sessions: [],
+            workspaces: [{ ...workspace, workspaceId: 'a' }],
+            labels: new Map(),
+            newSession: vi.fn(),
+            open: vi.fn(),
+            action: vi.fn(),
+            workspaceAction: vi.fn(),
+            paging: {
+              groups: [group('pinned', pinned), group('a', [session(0)])],
+              ready: true,
+              loading: false,
+            },
+          },
+          zhT,
+        ),
+      )
+    draw([])
+    expect([...nav.querySelectorAll('.workspace-name')].map((node) => node.textContent)).toEqual(['WorkLLM'])
+    draw([{ ...session(3), pinnedAt: '2026-10-20T08:00:00.000Z' }])
+    const [pinnedGroup, folder] = [...nav.querySelectorAll<HTMLElement>('.workspace-group')]
+    expect(pinnedGroup?.querySelector('.workspace-name')?.textContent).toBe('置顶')
+    expect(pinnedGroup?.querySelector('.workspace-heading')?.getAttribute('title')).toBe('置顶')
+    expect(pinnedGroup?.querySelector('.icon-pinned')).not.toBeNull()
+    expect(pinnedGroup?.querySelector('.workspace-menu-trigger')).toBeNull()
+    expect(titles(pinnedGroup!)).toEqual(['会话 3'])
+    expect(titles(folder!)).toEqual(['会话 0'])
+    flushSync(() => pinnedGroup?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('取消置顶'))
+  })
+
   it('draws the heading tools small and quiet: 24px buttons, 14px icons, darker when pointed at', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     expect(css).toMatch(

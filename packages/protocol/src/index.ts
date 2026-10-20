@@ -161,6 +161,7 @@ export type {
   SessionLoopCatalogResult,
   SessionMeta,
   SessionOpenParams,
+  SessionPinParams,
   SessionPreferences,
   SessionPreviewParams,
   SessionProjectUIHistoryParams,

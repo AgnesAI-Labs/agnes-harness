@@ -19,25 +19,45 @@ const POPULAR_PROVIDERS = [
 ] as const
 /** A short remainder is listed with the others; a fold is only worth it for a long one. */
 const FOLD_REMAINDER_FROM = 4
+/** Any OpenAI chat-completions server at an address the person gives; it has a tile of its own. */
+export const COMPATIBLE_PROVIDER = 'openai-compatible'
+/** Backend providers that are relays, offered beside the relay presets. */
+const RELAY_PROVIDERS = ['openrouter'] as const
 
-/** Split the backend's providers into the popular ones, in their fixed order, and the remainder. */
+/** A relay is not a provider of its own: it fills the compatible form's address and account name. */
+export type RelayPreset = Readonly<{ label: string; baseUrl: string }>
+const RELAY_PRESETS = [
+  ['siliconflow', 'https://api.siliconflow.cn/v1'],
+  ['302ai', 'https://api.302.ai/v1'],
+  ['aihubmix', 'https://aihubmix.com/v1'],
+  ['volcengine-ark', 'https://ark.cn-beijing.volces.com/api/v3'],
+  ['dashscope', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
+] as const
+
+/** Split the backend's providers into the popular ones, in their fixed order, the relays and the rest. */
 export function groupProviders<T extends { id: string }>(
   providers: readonly T[],
-): { popular: T[]; more: T[] } {
+): { popular: T[]; relay: T[]; more: T[] } {
   const popular = POPULAR_PROVIDERS.flatMap((id) => providers.filter((provider) => provider.id === id))
-  const more = providers.filter((provider) => !popular.includes(provider))
-  return more.length < FOLD_REMAINDER_FROM ? { popular: [...popular, ...more], more: [] } : { popular, more }
+  const relay = RELAY_PROVIDERS.flatMap((id) => providers.filter((provider) => provider.id === id))
+  const more = providers.filter(
+    (provider) =>
+      !popular.includes(provider) && !relay.includes(provider) && provider.id !== COMPATIBLE_PROVIDER,
+  )
+  return more.length < FOLD_REMAINDER_FROM
+    ? { popular: [...popular, ...more], relay, more: [] }
+    : { popular, relay, more }
 }
 
 /**
  * The first step of adding an account: a tile per popular provider (Agnes AI first), each saying
- * how it connects, then a custom OpenAI-compatible address; every other provider the backend
- * offers sits in a fold below.
+ * how it connects, then any OpenAI-compatible address; a row of relays; every other provider the
+ * backend offers sits in a fold below.
  */
 export function providerTiles(
   providers: readonly Provider[],
   tr: (key: string) => string,
-  select: (id: string, custom?: boolean) => void,
+  select: (id: string, preset?: RelayPreset) => void,
   quick = false,
 ): ReactElement {
   const tile = (key: string, name: string, hint: string, onClick: () => void) =>
@@ -60,7 +80,16 @@ export function providerTiles(
       ),
       () => select(provider.id),
     )
-  const { popular, more } = groupProviders(providers)
+  const { popular, relay, more } = groupProviders(providers)
+  const compatible = !quick && providers.some((provider) => provider.id === COMPATIBLE_PROVIDER)
+  const presets = compatible
+    ? RELAY_PRESETS.map(([id, baseUrl]) => {
+        const preset = { label: tr(`accounts.preset.${id}`), baseUrl }
+        return tile(`preset:${id}`, preset.label, tr('accounts.relayHint'), () =>
+          select(COMPATIBLE_PROVIDER, preset),
+        )
+      })
+    : []
   return createElement(
     'div',
     { className: 'account-provider-groups' },
@@ -69,10 +98,27 @@ export function providerTiles(
       { className: 'account-provider-choices' },
       ...(quick ? popular.slice(0, 4) : popular).map(providerTile),
       ...(quick ? [tile('more', tr('accounts.moreProviders'), '…', () => select(''))] : []),
-      ...(!quick && providers.some((provider) => provider.id === 'openai')
-        ? [tile('custom', tr('accounts.custom'), tr('accounts.customHint'), () => select('openai', true))]
+      ...(compatible
+        ? [
+            tile(COMPATIBLE_PROVIDER, tr('accounts.custom'), tr('accounts.customHint'), () =>
+              select(COMPATIBLE_PROVIDER),
+            ),
+          ]
         : []),
     ),
+    !quick &&
+      relay.length + presets.length > 0 &&
+      createElement(
+        'div',
+        { className: 'account-provider-relays', 'data-testid': 'account-relays' },
+        createElement('p', { className: 'account-provider-group-label' }, tr('accounts.relays')),
+        createElement(
+          'div',
+          { className: 'account-provider-choices' },
+          ...relay.map(providerTile),
+          ...presets,
+        ),
+      ),
     !quick &&
       more.length > 0 &&
       createElement(

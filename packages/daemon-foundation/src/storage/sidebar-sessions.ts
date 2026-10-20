@@ -65,6 +65,7 @@ export class SidebarSessions implements SidebarSessionPort {
   private known(group: string): void {
     if (
       group !== 'unassigned' &&
+      group !== 'pinned' &&
       !this.table.get('SELECT workspace_id FROM workspace_registry WHERE workspace_id = ? AND listed = 1', [
         group,
       ])
@@ -117,20 +118,20 @@ export class SidebarSessions implements SidebarSessionPort {
         pending: number
         failed: number
       }>(
-        `SELECT s.sidebar_group AS groupId, COUNT(*) AS total, MAX(s.sidebar_sort_at) AS at,
+        `SELECT CASE WHEN p.pinned_at IS NULL THEN s.sidebar_group ELSE 'pinned' END AS groupId, COUNT(*) AS total, MAX(s.sidebar_sort_at) AS at,
          SUM(CASE WHEN ${ready} THEN 0 ELSE 1 END) AS pending, MAX(s.sidebar_failed) AS failed FROM session_workspaces s ${joins}
-         WHERE ${visible} GROUP BY s.sidebar_group`,
+         WHERE ${visible} GROUP BY CASE WHEN p.pinned_at IS NULL THEN s.sidebar_group ELSE 'pinned' END`,
         [principal],
       )
       const groups = this.table.all<{ workspace_id: string }>(
         'SELECT workspace_id FROM workspace_registry WHERE listed = 1 ORDER BY workspace_id',
       )
-      const items = [...groups.map((row) => row.workspace_id), 'unassigned']
+      const items = ['pinned', ...groups.map((row) => row.workspace_id), 'unassigned']
         .map((groupId) => {
           const row = summary.find((item) => item.groupId === groupId)
           return {
             groupId,
-            ...(groupId !== 'unassigned' ? { workspaceId: groupId } : {}),
+            ...(groupId !== 'unassigned' && groupId !== 'pinned' ? { workspaceId: groupId } : {}),
             total: row?.total ?? 0,
             lastMessageAt: row ? new Date(row.at).toISOString() : null,
             revision: `${this.instance}:${this.revision(principal, groupId)}`,
@@ -140,7 +141,9 @@ export class SidebarSessions implements SidebarSessionPort {
         })
         .sort(
           (a, b) =>
-            (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '') || (a.groupId < b.groupId ? -1 : 1),
+            +(b.groupId === 'pinned') - +(a.groupId === 'pinned') ||
+            (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '') ||
+            (a.groupId < b.groupId ? -1 : 1),
         )
       return { items, ready: items.every((item) => item.ready) }
     })
@@ -156,6 +159,11 @@ export class SidebarSessions implements SidebarSessionPort {
     this.known(input.groupId)
     const cursor =
       input.cursor === undefined ? undefined : this.decode(input.cursor, principal, input.groupId)
+    // Pinned rows leave their workspace group and order by pin time; there are few, so no index.
+    const pinned = input.groupId === 'pinned'
+    const member = pinned ? 'p.pinned_at IS NOT NULL' : 'p.pinned_at IS NULL AND s.sidebar_group = ?'
+    const order = pinned ? 'p.pinned_at' : 's.sidebar_sort_at'
+    const params = pinned ? [principal] : [principal, input.groupId]
     return this.table.transaction(() => {
       const version = this.revision(principal, input.groupId),
         revision = `${this.instance}:${version}`
@@ -165,15 +173,16 @@ export class SidebarSessions implements SidebarSessionPort {
         ? { total: cursor[4], pending: 0 }
         : this.table.get<{ total: number; pending: number }>(
             `SELECT COUNT(*) AS total, SUM(CASE WHEN ${ready} THEN 0 ELSE 1 END) AS pending
-         FROM session_workspaces s ${joins} WHERE ${visible} AND s.sidebar_group = ?`,
-            [principal, input.groupId],
+         FROM session_workspaces s ${joins} WHERE ${visible} AND ${member}`,
+            params,
           )!
       if (count.pending)
         fail('SESSION_SIDEBAR_NOT_READY', 'Message summaries are still initializing; refresh to retry')
       const limit = input.limit ?? 5
       const rows = this.table.all<
-        SessionMetaRow & {
+        Omit<SessionMetaRow, 'pinnedAt'> & {
           sortAt: number
+          pinnedAt: number | null
           messageAt: number | null
           loopPin: string | null
           bookmarkIds: string | null
@@ -181,19 +190,20 @@ export class SidebarSessions implements SidebarSessionPort {
       >(
         `SELECT s.session_key AS sessionId, s.created_at AS createdAt, s.last_seq AS lastSeq, s.generation, s.preset, s.cwd,
          COALESCE(p.title, s.title) AS title, CASE WHEN p.title IS NOT NULL THEN 'user' ELSE NULL END AS titleSource,
-         s.sidebar_sort_at AS sortAt, s.message_at AS messageAt, s.loop_pin AS loopPin, b.ids AS bookmarkIds
-         FROM session_workspaces s INDEXED BY sidebar_order ${joins}
+         ${order} AS sortAt, p.pinned_at AS pinnedAt, s.message_at AS messageAt, s.loop_pin AS loopPin, b.ids AS bookmarkIds
+         FROM session_workspaces s ${pinned ? '' : 'INDEXED BY sidebar_order'} ${joins}
          LEFT JOIN session_bookmarks b ON b.session_key = s.session_key
-         WHERE ${visible} AND s.sidebar_group = ? ${cursor ? 'AND (s.sidebar_sort_at, s.session_key) < (?, ?)' : ''}
-         ORDER BY s.sidebar_sort_at DESC, s.session_key COLLATE BINARY DESC LIMIT ?`,
-        [principal, input.groupId, ...(cursor ? [cursor[5], cursor[6]] : []), limit + 1],
+         WHERE ${visible} AND ${member} ${cursor ? `AND (${order}, s.session_key) < (?, ?)` : ''}
+         ORDER BY ${order} DESC, s.session_key COLLATE BINARY DESC LIMIT ?`,
+        [...params, ...(cursor ? [cursor[5], cursor[6]] : []), limit + 1],
       )
       const page = rows.slice(0, limit),
         last = page.at(-1)
       const items = page.map(
-        ({ sortAt: _sort, messageAt, loopPin, bookmarkIds, titleSource, title, ...row }) => ({
+        ({ sortAt: _sort, pinnedAt, messageAt, loopPin, bookmarkIds, titleSource, title, ...row }) => ({
           ...row,
           archived: false,
+          ...(pinnedAt !== null ? { pinnedAt: new Date(pinnedAt).toISOString() } : {}),
           ...(title ? { title } : {}),
           ...(titleSource ? { titleSource } : {}),
           ...(messageAt !== null ? { lastMessageAt: new Date(messageAt).toISOString() } : {}),

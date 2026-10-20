@@ -24,6 +24,7 @@ import {
 import {
   Banner,
   Button,
+  Disclosure,
   Field,
   Icon,
   IconButton,
@@ -68,6 +69,7 @@ function AgentList({
   )
   const cards = applicationAgents(declared)
   const needle = query.trim().toLocaleLowerCase()
+  const showGeneral = !needle || `${t('general')} ${t('generalHelp')}`.toLocaleLowerCase().includes(needle)
   const products = new Map<string, PackageCatalogDescriptor | PackageInstalledDescriptor>()
   for (const agent of data.agents) products.set(agent.entry.id, agent.entry)
   for (const installed of data.installed) products.set(installed.id, installed)
@@ -132,7 +134,11 @@ function AgentList({
     linkHandled.current = linkedPage
     starter.start(linked)
   }, [linkedPage, linked, navigation, starter])
-  const initialLoop = loops.data && (defaultLoop(loops.data.defaults) ?? loops.data.loops[0])
+  const initialLoop =
+    loops.data &&
+    (loops.data.loops.find((item) => item.id === 'agnes.default') ??
+      defaultLoop(loops.data.defaults) ??
+      loops.data.loops[0])
   const chosenLoop = loops.data?.loops.find((item) =>
     loop === undefined
       ? item.id === initialLoop?.id && item.version === initialLoop.version
@@ -142,7 +148,54 @@ function AgentList({
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
       <SearchBar label={t('search')} value={query} onChange={setQuery} />
-      <div className="application-gallery" data-testid="applications-gallery">
+      <div className="agent-gallery" data-testid="agents-gallery">
+        {showGeneral && (
+          <article className="agent-card" data-testid="general-agent">
+            <header>
+              <span className="agent-tile" data-tint={0} aria-hidden="true">
+                <Icon name="bot" />
+              </span>
+              <div className="agent-card-heading">
+                <h3>{t('general')}</h3>
+              </div>
+            </header>
+            <p>{t('generalHelp')}</p>
+            <Disclosure variant="plain" summary={t('otherModes')}>
+              <Loadable
+                loading={loops.loading}
+                error={loops.error}
+                hasData={!!loops.data}
+                onRetry={loops.reload}
+              >
+                <Field label={t('runningMode')}>
+                  <Select
+                    value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
+                    aria-label={t('runningMode')}
+                    onChange={setLoop}
+                    options={(loops.data?.loops ?? []).map((item) => ({
+                      value: `${item.id}@${item.version}`,
+                      label: choiceName(item, t),
+                    }))}
+                  />
+                </Field>
+              </Loadable>
+            </Disclosure>
+            <footer>
+              <Button
+                appearance="primary"
+                disabled={!chosenLoop}
+                disabledReason={t('noRunningMode')}
+                // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
+                // new-session branch, with no agent, combination or permission overrides.
+                onClick={() =>
+                  chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
+                }
+              >
+                {t('generalStart')}
+              </Button>
+            </footer>
+          </article>
+        )}
         {shownApplications.map((entry) => (
           <ApplicationCard
             key={entry.id}
@@ -159,50 +212,6 @@ function AgentList({
             }
           />
         ))}
-      </div>
-      <div className="agent-gallery" data-testid="agents-gallery">
-        {(!needle || `${t('general')} ${t('generalHelp')}`.toLocaleLowerCase().includes(needle)) && (
-          <article className="agent-card" data-testid="general-agent">
-            <header>
-              <span className="agent-tile" data-tint={0} aria-hidden="true">
-                <Icon name="bot" />
-              </span>
-              <div className="agent-card-heading">
-                <h3>{t('general')}</h3>
-              </div>
-            </header>
-            <p>{t('generalHelp')}</p>
-            <Loadable
-              loading={loops.loading}
-              error={loops.error}
-              hasData={!!loops.data}
-              onRetry={loops.reload}
-            >
-              <Field label={t('runningMode')}>
-                <Select
-                  value={chosenLoop ? `${chosenLoop.id}@${chosenLoop.version}` : undefined}
-                  aria-label={t('runningMode')}
-                  onChange={setLoop}
-                  options={(loops.data?.loops ?? []).map((item) => ({
-                    value: `${item.id}@${item.version}`,
-                    label: choiceName(item, t),
-                  }))}
-                />
-              </Field>
-            </Loadable>
-            <Button
-              disabled={!chosenLoop}
-              disabledReason={t('noRunningMode')}
-              // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
-              // new-session branch, with no agent, combination or permission overrides.
-              onClick={() =>
-                chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
-              }
-            >
-              {t('start')}
-            </Button>
-          </article>
-        )}
         {shown.map((card) => {
           const installed = data.installed.find((item) => item.id === card.entry.id)
           const blocked = data.denied && !(installed?.trusted && installed.desired === 'enabled')
@@ -239,7 +248,7 @@ function AgentList({
           )
         })}
       </div>
-      {!shown.length && !shownApplications.length && (
+      {!showGeneral && !shown.length && !shownApplications.length && (
         <p>
           {t('emptyTitle')} <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
         </p>

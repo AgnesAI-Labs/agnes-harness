@@ -66,6 +66,7 @@ import {
 import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
+import * as compatible from './configuration-compatible.js'
 import {
   configurationCredentialAvailability,
   effectiveDefaultAccount,
@@ -73,7 +74,12 @@ import {
   isUsableCredential,
 } from './configuration-credential-availability.js'
 import { configurationCredentialFailure } from './configuration-credential-failure.js'
-import { parseBaseUrl, requireEndpointCredential, validateEndpoint } from './configuration-endpoint.js'
+import {
+  checkedNetworkTimeouts,
+  parseBaseUrl,
+  requireEndpointCredential,
+  validateEndpoint,
+} from './configuration-endpoint.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
 import {
   applyModelConfiguration,
@@ -354,7 +360,9 @@ function parseSaveInput(value: unknown): {
   })
   // The declared model list and an explicit credential reference exist only for payload-only
   // providers; a chat account keeps its catalogue-derived models and its account-scoped key.
-  if (!isPayloadOnlyEntry(parsed.entry) && (input.models !== undefined || input.credentialRef !== undefined))
+  // An OpenAI-compatible account declares its models too, but holds an ordinary key.
+  const declares = compatible.declaresModels(parsed.entry)
+  if ((!declares && input.models !== undefined) || (!isPayloadOnlyEntry(parsed.entry) && input.credentialRef))
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   if (input.networkTimeouts !== undefined) checkedNetworkTimeouts(input.networkTimeouts)
   const model = parseModel(input.model)
@@ -773,7 +781,7 @@ export function createConfigurationService(
           baseUrl: row.baseUrl,
           ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
           model: row.model,
-          models: isPayloadOnlyEntry(entry)
+          models: compatible.declaresModels(entry)
             ? row.models.map((saved) => structuredClone(saved))
             : await staticCatalogue(entry)
                 .catch(() => ({ records: [] as ModelRecord[] }))
@@ -897,11 +905,28 @@ export function createConfigurationService(
     const row = selectedAccount(state, input)
     const baseUrl = input.baseUrl === undefined ? (row?.baseUrl ?? parsed.baseUrl) : parsed.baseUrl
     validateEndpoint(parsed.entry, baseUrl)
-    requireEndpointCredential(baseUrl, row, parsed)
+    await requireEndpointCredential(baseUrl, row, parsed, readCredential)
     if (isPayloadOnlyEntry(parsed.entry))
       return testPayloadOnlyAccount(
         { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
         { request, signal: callerSignal ?? new AbortController().signal, readCredential },
+      )
+    const list = (api: string, url: string, credential: string | undefined) =>
+      fetchProviderModels({
+        api,
+        baseUrl: url,
+        request,
+        ...(credential ? { credential } : {}),
+        ...(callerSignal ? { signal: callerSignal } : {}),
+      }).catch((error: unknown) => {
+        if (error instanceof ApiKeyProviderError && (error.status === 401 || error.status === 403))
+          throw new ConfigurationError('CONFIG_CREDENTIAL_REJECTED')
+        throw error
+      })
+    if (compatible.isCompatibleEntry(parsed.entry))
+      return compatible.testCompatibleAccount(
+        { entry: parsed.entry, baseUrl, apiKey: parsed.apiKey, row },
+        { list, readCredential },
       )
     const storedCredential =
       row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null
@@ -946,18 +971,8 @@ export function createConfigurationService(
       return { models, verified: false }
     const key = parsed.apiKey ?? (storedCredential?.kind === 'api-key' ? storedCredential.value : undefined)
     if (key === undefined) return { models, verified: false }
-    const probed = await fetchProviderModels({
-      api: parsed.entry.api,
-      baseUrl,
-      credential: key,
-      request,
-      ...(callerSignal ? { signal: callerSignal } : {}),
-    }).catch((error: unknown) => {
-      if (error instanceof ApiKeyProviderError && (error.status === 401 || error.status === 403))
-        throw new ConfigurationError('CONFIG_CREDENTIAL_REJECTED')
-      throw error
-    })
-    if (!probed) return { models, verified: false }
+    const probed = await list(parsed.entry.api, baseUrl, key)
+    if (!('ids' in probed)) return { models, verified: false, catalogueError: probed.failure }
     const offered = new Set(probed.ids)
     const supported = models.filter((model) => offered.has(model.id))
     // The runtime catalogue is the installed, reviewed source of model capabilities. A remote
@@ -1005,7 +1020,7 @@ export function createConfigurationService(
         ? (existing?.baseUrl ?? providerEndpoint(entry, undefined))
         : providerEndpoint(entry, input.baseUrl)
     validateEndpoint(entry, baseUrl)
-    requireEndpointCredential(baseUrl, existing, parsed)
+    await requireEndpointCredential(baseUrl, existing, parsed, readCredential)
     if (isPayloadOnlyEntry(entry)) {
       const row = payloadOnlyAccountRow({
         input,
@@ -1040,22 +1055,24 @@ export function createConfigurationService(
       existing.label !== label
     const result = labelOnlyUpdate
       ? { models: structuredClone(existing?.models ?? []), verified: true }
-      : oauthEntry
-        ? {
-            models: (await staticCatalogue(entry)).records.map((record) =>
-              configModel(
-                record,
-                existing?.models.find((m) => m.id === record.id),
+      : compatible.isCompatibleEntry(entry) && parsed.models !== undefined
+        ? { models: compatible.compatibleModels(entry, baseUrl, parsed.models), verified: true }
+        : oauthEntry
+          ? {
+              models: (await staticCatalogue(entry)).records.map((record) =>
+                configModel(
+                  record,
+                  existing?.models.find((m) => m.id === record.id),
+                ),
               ),
-            ),
-            verified: true,
-          }
-        : await test({
-            providerId: parsed.entry.id,
-            accountId: id,
-            baseUrl,
-            ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
-          })
+              verified: true,
+            }
+          : await test({
+              providerId: parsed.entry.id,
+              accountId: id,
+              baseUrl,
+              ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
+            })
     if (!result.verified) throw new ConfigurationError('CONFIG_TEST_FAILED')
     if (!result.models.some((model) => model.id === parsed.model))
       throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
@@ -1078,7 +1095,9 @@ export function createConfigurationService(
     const before =
       existing && parsed.apiKey === undefined ? await readCredential(existing.credentialRef) : null
     const key =
-      parsed.apiKey ?? (before?.kind === 'api-key' && before.provider === entry.id ? before.value : undefined)
+      parsed.apiKey ??
+      (before?.kind === 'api-key' && before.provider === entry.id ? before.value : undefined) ??
+      (compatible.isCompatibleEntry(entry) ? compatible.KEYLESS_CREDENTIAL : undefined)
     const oauth = oauthEntry
     if (oauth ? !isSubscriptionCredential(before, entry.id) : !key)
       throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
@@ -1455,6 +1474,7 @@ export function createConfigurationService(
           // A payload-only account has no provider catalogue to resolve against; its declared
           // models render through the fixed payload template instead.
           if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]
+          if (compatible.isCompatibleEntry(entry)) return [compatible.compatibleRoute(row, entry.api)]
           const catalogue = await staticCatalogue(entry)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
           const records = row.models.map((model) => {
@@ -1528,22 +1548,4 @@ export function createConfigurationService(
       throw new ConfigurationError('CONFIG_PERSIST_FAILED')
     }
   }
-}
-
-function checkedNetworkTimeouts(
-  value: unknown,
-): NonNullable<import('@agnes/protocol').ConfigSaveInput['networkTimeouts']> {
-  if (
-    !isRecord(value) ||
-    !Object.entries(value).every(
-      ([key, timeout]) =>
-        ['requestMs', 'connectMs', 'streamIdleMs'].includes(key) &&
-        typeof timeout === 'number' &&
-        Number.isSafeInteger(timeout) &&
-        timeout >= 1 &&
-        timeout <= 3_600_000,
-    )
-  )
-    throw new ConfigurationError('CONFIG_INVALID_INPUT')
-  return value
 }

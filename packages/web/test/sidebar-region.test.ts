@@ -5,9 +5,10 @@ import { homeEntries, homeNavigation } from '@agnes/web-client'
 import { getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { archivedSessions } from '../src/archived-sessions.js'
-import { resetCollapsedGroups } from '../src/navigation.js'
+import { NavigationLabel, resetCollapsedGroups } from '../src/navigation.js'
 import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
@@ -122,10 +123,11 @@ describe('rendered sidebar region', () => {
       sessionPending: true,
       newDisabled: true,
     })
-    expect(sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.disabled).toBe(true)
-    expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false')
-    expect(sidebar?.querySelector('.session-row')?.hasAttribute('data-menu-open')).toBe(false)
-    expect(document.querySelector('[role=menu]')).toBeNull()
+    // Session admission leaves navigation usable so another selection can supersede it.
+    expect(sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.disabled).toBe(false)
+    expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('true')
+    expect(sidebar?.querySelector('.session-row')?.hasAttribute('data-menu-open')).toBe(true)
+    expect(document.querySelector('[role=menu]')).not.toBeNull()
   })
 
   it('marks the running session, shows the shortcut hint and starts a session from the chord', async () => {
@@ -626,4 +628,18 @@ describe('rendered sidebar region', () => {
       archivedSessions.show('unarchived')
     }
   })
+})
+
+it.each([
+  '调查异常 AN-027 的全部追溯材料并完成质量审阅与证据整理 AN-027',
+  '/workspace/very-long-shared-parent/industry/production/quality-017',
+  '调查偏差 DEV-2410-017 的根因和全部历史追溯材料并整理结果',
+])('keeps both ends of a long navigation label: %s', (text) => {
+  const host = document.createElement('div')
+  host.innerHTML = renderToStaticMarkup(createElement(NavigationLabel, { text }))
+  expect(host.querySelector('[title]')?.getAttribute('title')).toBe(text)
+  expect(host.textContent).toBe(text)
+  expect(host.querySelector('.navigation-label-object, .navigation-label-end')?.textContent).toContain(
+    text.includes('DEV-2410-017') ? 'DEV-2410-017' : text.endsWith('017') ? '017' : 'AN-027',
+  )
 })

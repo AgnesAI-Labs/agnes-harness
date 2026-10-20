@@ -32,9 +32,12 @@ it('expires a live cursor when another process activates an imported session in 
       owners.activateNew(`s${i}`, 'owner')
     }
     const first = await pages.list('owner', { groupId })
+    const pinned = await pages.list('owner', { groupId: 'pinned' })
+    expect(pinned.items).toEqual([])
     const script = `
       import { SessionWorkspaceIndex } from './packages/daemon-foundation/src/storage/lister.ts';
       import { SessionPrincipalOwnershipIndex } from './packages/daemon-foundation/src/storage/session-ownership.ts';
+      import { SessionPreferencesStore } from './packages/daemon-foundation/src/storage/session-preferences.ts';
       import { sqliteTables } from './packages/daemon-foundation/test/sqlite-tables.ts';
       const tables = sqliteTables(process.argv[1]), t = tables.table('session_workspaces');
       const sessions = new SessionWorkspaceIndex(t), owners = new SessionPrincipalOwnershipIndex(t);
@@ -42,6 +45,7 @@ it('expires a live cursor when another process activates an imported session in 
         owners.bindNew('imported', 'owner'); sessions.put('imported', '/synthetic');
         sessions.observe('imported', { seq: 1, type: 'session/start', lane: 'main', ts: '2026-10-16T00:00:00Z', data: {} });
         owners.activateNew('imported', 'owner');
+        new SessionPreferencesStore(t).pin('s1', true);
       } finally { await tables.close(); }
     `
     await promisify(execFile)(
@@ -53,6 +57,12 @@ it('expires a live cursor when another process activates an imported session in 
       data: { code: 'SESSION_SIDEBAR_CURSOR_STALE' },
     })
     expect((await pages.list('owner', { groupId })).items[0]?.sessionId).toBe('imported')
+    // The other process pinned s1: it moved out of its workspace into the pinned group.
+    expect((await pages.list('owner', { groupId: 'pinned' })).revision).not.toBe(pinned.revision)
+    expect((await pages.list('owner', { groupId: 'pinned' })).items.map((row) => row.sessionId)).toEqual([
+      's1',
+    ])
+    expect((await pages.groups('owner')).items.find((group) => group.groupId === groupId)?.total).toBe(6)
   } finally {
     await pages.close()
     await tables.close()

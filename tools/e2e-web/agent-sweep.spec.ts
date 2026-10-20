@@ -158,7 +158,9 @@ test.describe('shipped agent acceptance', () => {
         const card = general
           ? page.getByTestId('general-agent')
           : page.locator(`[data-agent-ref="${agent.ref}"]`)
-        await card.getByRole('button', { name: 'Start now', exact: true }).click()
+        await card
+          .getByRole('button', { name: general ? 'Start conversation' : 'Start now', exact: true })
+          .click()
         if (!general) {
           const install = page.getByTestId('agent-start-confirm')
           await expect(

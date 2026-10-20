@@ -640,6 +640,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
+  SessionPinParams: AgnesGen.SessionPinParams,
   SessionBookmarksSetParams: AgnesGen.SessionBookmarksSetParams,
   DiagnosticsExportParams: AgnesGen.DiagnosticsExportParams,
   DiagnosticsExportResult: AgnesGen.DiagnosticsExportResult,
@@ -3965,9 +3966,18 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       lastUsedAt: '2026-09-13T00:00:00.000Z',
       sessionCount: 2,
       available: true,
+      kind: 'chats',
     },
     invalid: [
       { path: '', name: 'project', lastUsedAt: null, sessionCount: 0, available: true },
+      {
+        path: '/workspace/project',
+        name: 'project',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+        kind: 'repo',
+      },
       {
         path: '/workspace/project',
         name: 'project',
@@ -4096,9 +4106,15 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   SessionPreferences: {
     note: 'presentation preference',
-    valid: { archived: false, title: '我的名称', bookmarks: ['01JABCDEFGHJKMNPQRSTVWXYZ0'] },
+    valid: {
+      archived: false,
+      title: '我的名称',
+      pinnedAt: '2026-10-20T08:00:00.000Z',
+      bookmarks: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
+    },
     invalid: [
       { archived: 'false' },
+      { archived: false, pinnedAt: 'yesterday' },
       { archived: false, title: '' },
       { archived: false, bookmarks: ['a', 'a'] },
       { archived: false, bookmarks: [''] },
@@ -4126,6 +4142,11 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'archive input',
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's' }, { sessionId: 's', archived: 'yes' }],
+  },
+  SessionPinParams: {
+    note: 'pin to the top of the sidebar',
+    valid: { sessionId: 's', pinned: true },
+    invalid: [{ sessionId: 's' }, { sessionId: '', pinned: true }, { sessionId: 's', pinned: 'yes' }],
   },
   DiagnosticsExportParams: {
     note: 'bounded redacted bundle',
@@ -4197,9 +4218,11 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       generation: 1,
       preset: 'code',
       permission: 'full-access',
+      pinnedAt: '2026-10-20T08:00:00.000Z',
     },
     invalid: [
       { createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' }, // missing sessionId
+      { sessionId: 's', createdAt: '', lastSeq: 3, generation: 1, preset: 'code', pinnedAt: 'never' },
       {
         sessionId: 's',
         createdAt: '2026-09-10T00:00:00Z',
@@ -5784,7 +5807,7 @@ AGNES_SAMPLES.SessionGroupsParams = {
   note: 'principal comes only from authenticated context',
 }
 AGNES_SAMPLES.SessionGroup = {
-  valid: { groupId: 'unassigned', total: 0, revision: 'instance:1', ready: true, lastMessageAt: null },
+  valid: { groupId: 'pinned', total: 0, revision: 'instance:1', ready: true, lastMessageAt: null },
   invalid: [{ groupId: 'unassigned' }],
   note: 'summary contains no session bodies',
 }
@@ -8758,6 +8781,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionArchiveParams',
     result: 'SessionPreferences',
   },
+  '_agnes/v1/session.pin': {
+    fileId: AGNES_ID,
+    params: 'SessionPinParams',
+    result: 'SessionPreferences',
+  },
   '_agnes/v1/session.bookmarks.set': {
     fileId: AGNES_ID,
     params: 'SessionBookmarksSetParams',
@@ -9612,6 +9640,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's', archived: 'true' }],
   },
+  '_agnes/v1/session.pin': AGNES_SAMPLES.SessionPinParams as Sample,
   '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionBookmarksSetParams as Sample,
   '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportParams as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
@@ -10106,6 +10135,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/session.pin': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportResult as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,

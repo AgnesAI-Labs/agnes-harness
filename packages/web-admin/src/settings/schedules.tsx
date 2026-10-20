@@ -434,16 +434,7 @@ export function SchedulesPage({
         </label>
       </div>
       {runRequested && (
-        <StatusMessage
-          kind="pending"
-          action={{
-            label: t('retry'),
-            onSelect: () => {
-              setRunRequested(false)
-              void refresh()
-            },
-          }}
-        >
+        <StatusMessage kind="pending" data-testid="schedules-run-requested">
           {ux('runStarted')}
         </StatusMessage>
       )}
@@ -502,6 +493,7 @@ export function SchedulesPage({
               {visible.map((row) => {
                 const live = row.status === 'active' || row.status === 'paused'
                 const last = row.runs.at(-1)
+                const resultSession = last?.sessionKey
                 const target = row.target
                 const link = target.kind === 'session' ? target.sessionKey : undefined
                 return (
@@ -512,7 +504,7 @@ export function SchedulesPage({
                     data-target={target.kind}
                     icon={<Icon name="clock" size={16} />}
                     title={row.title}
-                    {...(live ? { onOpen: () => openEdit(row) } : {})}
+                    {...(resultSession ? { onOpen: () => location.assign(sessionHref(resultSession)) } : {})}
                     description={
                       <>
                         {link ? (
@@ -548,6 +540,14 @@ export function SchedulesPage({
                     actions={
                       live && (
                         <>
+                          {last?.sessionKey && (
+                            <a data-testid="schedules-view-results" href={sessionHref(last.sessionKey)}>
+                              {ux('viewResults')}
+                            </a>
+                          )}
+                          <Button size="small" data-testid="schedules-edit" onClick={() => openEdit(row)}>
+                            {ux('edit')}
+                          </Button>
                           <StateSwitch
                             testId="schedules-enabled"
                             label={ux('enabledLabel', { title: row.title })}
@@ -578,12 +578,6 @@ export function SchedulesPage({
                                     },
                                   ]
                                 : []),
-                              {
-                                id: 'edit',
-                                label: ux('edit'),
-                                testId: 'schedules-edit',
-                                onSelect: () => openEdit(row),
-                              },
                               {
                                 id: 'archive',
                                 label: ux('archive'),

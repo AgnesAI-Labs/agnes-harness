@@ -40,15 +40,22 @@ export function ApplicationSwitch({ locale }: { locale: LocaleService }) {
         <Button
           appearance="ghost"
           className="application-footer-item"
+          aria-label={tr('Return to official UI', '返回官方界面')}
           disabled={busy}
           onClick={() => void restore()}
           data-testid="application-return"
         >
-          <Icon name="arrow-left" /> <span>{tr('Return to official UI', '返回官方界面')}</span>
+          <Icon name="arrow-left" />
+          <span>{tr('Return to official UI', '返回官方界面')}</span>
         </Button>
       )}
-      <a className="application-footer-item" href="?settings=application" data-testid="application-switch">
-        <Icon name="puzzle" />{' '}
+      <a
+        className="application-footer-item"
+        href="?settings=application"
+        aria-label={adopted ? tr('Switch application', '切换应用') : tr('Applications', '应用')}
+        data-testid="application-switch"
+      >
+        <Icon name="puzzle" />
         <span>{adopted ? tr('Switch application', '切换应用') : tr('Applications', '应用')}</span>
       </a>
       {error && (
