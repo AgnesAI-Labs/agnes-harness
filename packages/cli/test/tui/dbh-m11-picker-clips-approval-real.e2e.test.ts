@@ -127,7 +127,7 @@ async function scenario(openPicker: boolean) {
     return {
       allowOnceOnScreen: before.includes('allow_once'),
       pickerOnScreen: before.includes('Select Session'),
-      usageRowOnScreen: before.includes('Σ'),
+      usageRowOnScreen: /session {2}in|Session total|会话/i.test(before),
       written: existsSync(join(root, 'receipt.txt')),
       screen: before,
     }

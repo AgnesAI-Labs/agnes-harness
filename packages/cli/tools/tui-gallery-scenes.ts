@@ -286,6 +286,25 @@ export const SCENES: Scene[] = [
     done: ['credits 78/100', 'resumed'],
   },
   {
+    id: 'busy-zh-CN',
+    title: 'Busy turn, zh-CN: spinner, notice and usage line',
+    locale: 'zh-CN',
+    timeline: timeline(CONVERSATION.slice(0, 1), {
+      opState: { turn: 2, step: 1, phase: 'thinking' },
+      usage,
+      budget: { slot: 'primary', escalate: false, creditsUsed: 78, creditsCap: 100 },
+    }),
+    ready: ['Summarise'],
+    act: ({ endpoint, sessionId }) =>
+      endpoint.pushNotice({
+        kind: 'resumed',
+        sessionId,
+        detail: { lastStep: 4 },
+        at: new Date(0).toISOString(),
+      }),
+    done: ['credits 78/100', '已续跑'],
+  },
+  {
     id: 'conversation-60',
     title: 'Full turn at 60×24',
     cols: 60,

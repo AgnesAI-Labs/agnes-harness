@@ -124,7 +124,8 @@ export class StatusBar implements Component {
       )
     }
     // The composer rail draws the context gauge at the same width; below its floor this line does.
-    const usage = this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH)
+    const usage =
+      this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH, this.locale)
     if (usage?.trim()) lines.push(usage)
     return lines
   }

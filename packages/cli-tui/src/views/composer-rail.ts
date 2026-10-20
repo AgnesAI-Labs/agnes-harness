@@ -1,6 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import { fitLine } from '../components/line.js'
-import { clipLabel, contextPressure, formatTokenCount, sanitizeLabel } from '../format-usage.js'
+import { clipLabel, contextPressure, formatTokenCountShort, sanitizeLabel } from '../format-usage.js'
 import { EXTENDED_KEYS, type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
@@ -28,7 +28,6 @@ type Chip = {
 type Gauge = { tokens: number; window: number; compactAt?: number; showTokens: boolean }
 
 const width = (parts: readonly Part[]) => parts.reduce((n, part) => n + displayWidth(part.text), 0)
-const tokens = (n: number) => formatTokenCount(n).replace('.0', '')
 const shortPath = (path: string) => {
   const name = path.split(/[\\/]/).filter(Boolean).at(-1)
   return name && name !== path ? `…/${name}` : path
@@ -92,10 +91,12 @@ function gaugeParts(gauge: Gauge | undefined, bar: number): Part[] {
   return [
     { text: '─ ', tone: 'border' },
     { text: `${Math.round((gauge.tokens / gauge.window) * 100)}%`, tone, bold: true },
-    ...(gauge.showTokens ? [{ text: ` ${tokens(gauge.tokens)}`, tone: 'muted' as const }] : []),
+    ...(gauge.showTokens
+      ? [{ text: ` ${formatTokenCountShort(gauge.tokens)}`, tone: 'muted' as const }]
+      : []),
     { text: ' ' },
     ...cells,
-    { text: ` ${tokens(gauge.window)} `, tone: 'muted', bold: true },
+    { text: ` ${formatTokenCountShort(gauge.window)} `, tone: 'muted', bold: true },
     { text: '─╮', tone: 'border' },
   ]
 }
