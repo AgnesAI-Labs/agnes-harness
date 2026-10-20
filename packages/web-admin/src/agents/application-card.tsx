@@ -134,10 +134,6 @@ export function ApplicationCard({
           <div className="agent-card-heading">
             <p className="application-eyebrow">{tr('Industry application', '行业应用')}</p>
             <h3>{brand.title}</h3>
-            <p className="application-source">
-              {tr('Package: ', '软件包：')}
-              {entry.id}
-            </p>
           </div>
         </header>
         <p className="agent-card-summary">{metadata?.summary}</p>

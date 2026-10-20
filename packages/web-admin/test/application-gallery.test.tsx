@@ -216,7 +216,7 @@ it.each(['missing', 'installed', 'adopted', 'unresolved'] as const)(
       )
       const primary = () => host.querySelector<HTMLButtonElement>('[data-application] footer button')
       expect(host.querySelector('.application-roles')).toBeNull()
-      expect(host.querySelector('.application-source')?.textContent).toBe('Package: test/plain-app')
+      expect(host.querySelector('[data-application]')?.textContent).not.toContain(entry.id)
       expect(host.querySelector('.agent-card-heading')?.textContent).not.toContain('Agnes Harness')
       expect(primary()?.textContent).toBe(
         state === 'missing' ? 'Install and adopt' : state === 'adopted' ? 'Open' : 'Adopt',

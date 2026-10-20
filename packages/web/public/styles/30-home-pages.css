@@ -52,10 +52,10 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
-  .agent-gallery,
-  .application-gallery {
+  .agent-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
+    align-items: start;
     gap: var(--s12);
   }
   .agent-card {
@@ -423,9 +423,6 @@
 
 @layer app {
   /* Applications are package-level products; their roles stay within the product card. */
-  .application-gallery {
-    margin: var(--s12) 0 var(--s16);
-  }
   .application-card header {
     align-items: center;
   }
@@ -441,11 +438,6 @@
     color: var(--agnes-text-secondary);
     font-size: 12px;
     margin: 0 0 6px;
-  }
-  .application-card .application-source {
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-    overflow-wrap: anywhere;
   }
   .application-card .agent-card-heading p {
     margin: 4px 0;
@@ -487,9 +479,6 @@
   .application-card .application-roles p {
     color: var(--agnes-text-secondary);
     font-size: 13px;
-  }
-  .application-card footer {
-    margin-top: auto;
   }
   @media (max-width: 760px) {
     .application-preview {

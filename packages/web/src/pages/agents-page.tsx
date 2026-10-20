@@ -148,24 +148,6 @@ function AgentList({
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
       <SearchBar label={t('search')} value={query} onChange={setQuery} />
-      <div className="application-gallery" data-testid="applications-gallery">
-        {shownApplications.map((entry) => (
-          <ApplicationCard
-            key={entry.id}
-            entry={entry}
-            data={data}
-            startableAgents={cards.map((card) => card.ref)}
-            onStartAgent={
-              cards.some((card) => card.entry.id === entry.id)
-                ? (ref) => {
-                    const card = cards.find((item) => item.ref === ref)
-                    if (card) starter.start(card)
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </div>
       <div className="agent-gallery" data-testid="agents-gallery">
         {showGeneral && (
           <article className="agent-card" data-testid="general-agent">
@@ -198,20 +180,38 @@ function AgentList({
                 </Field>
               </Loadable>
             </Disclosure>
-            <Button
-              appearance="primary"
-              disabled={!chosenLoop}
-              disabledReason={t('noRunningMode')}
-              // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
-              // new-session branch, with no agent, combination or permission overrides.
-              onClick={() =>
-                chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
-              }
-            >
-              {t('generalStart')}
-            </Button>
+            <footer>
+              <Button
+                appearance="primary"
+                disabled={!chosenLoop}
+                disabledReason={t('noRunningMode')}
+                // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
+                // new-session branch, with no agent, combination or permission overrides.
+                onClick={() =>
+                  chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))
+                }
+              >
+                {t('generalStart')}
+              </Button>
+            </footer>
           </article>
         )}
+        {shownApplications.map((entry) => (
+          <ApplicationCard
+            key={entry.id}
+            entry={entry}
+            data={data}
+            startableAgents={cards.map((card) => card.ref)}
+            onStartAgent={
+              cards.some((card) => card.entry.id === entry.id)
+                ? (ref) => {
+                    const card = cards.find((item) => item.ref === ref)
+                    if (card) starter.start(card)
+                  }
+                : undefined
+            }
+          />
+        ))}
         {shown.map((card) => {
           const installed = data.installed.find((item) => item.id === card.entry.id)
           const blocked = data.denied && !(installed?.trusted && installed.desired === 'enabled')
