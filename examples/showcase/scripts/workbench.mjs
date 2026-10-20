@@ -34,7 +34,7 @@ console.log(JSON.stringify({ roots: [], output }))
 const packageId = '@agnes-showcase/aerospace-quality'
 let active, activeTurn
 async function shot(page, label, locale, theme) {
-  await page.locator('.sidebar-head').waitFor({ timeout: 30000 })
+  await page.locator('.sidebar-head').waitFor({ state: 'attached', timeout: 30000 })
   if (!['01-gallery', '02-install-review', '03-adoption-consent'].includes(label))
     await page.waitForFunction(
       (expected) =>
