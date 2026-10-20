@@ -68,7 +68,7 @@ describe('step naming', () => {
     expect(
       toolStep(tool('a', 'shell', { command: 'ls -la\necho done', description: 'List files' }), t),
     ).toMatchObject({ kind: 'command', verb: '运行命令', target: 'List files', command: 'ls -la\necho done' })
-    expect(toolStep(tool('b', 'shell', { command: 'ls -la\necho done' }), t).target).toBe('ls -la')
+    expect(toolStep(tool('b', 'shell', { command: 'ls -la\necho done' }), t).target).toBe('')
     expect(
       toolStep(tool('c', 'read', { path: `${['', 'Users', 'someone'].join('/')}/work/a.md` }), t),
     ).toMatchObject({
@@ -88,8 +88,8 @@ describe('step naming', () => {
     })
     expect(toolStep(tool('g', 'plugin_hello_tool', { message: 'hi' }), t)).toMatchObject({
       kind: 'tool',
-      verb: '调用 plugin_hello_tool',
-      target: 'hi',
+      verb: '执行操作',
+      target: '',
     })
     expect(toolStep(tool('h', 'ask_user_question', {}), t, { name: '提问' })).toMatchObject({
       verb: '提问',
@@ -99,7 +99,7 @@ describe('step naming', () => {
 
   it('reads the target from an argument preview that was clipped mid-JSON', () => {
     const clipped = `{"command":"pnpm test --run \\"fast\\"","content":"${'x'.repeat(40)}`
-    expect(toolStep(tool('a', 'shell', {}, { argsPreview: clipped }), t).target).toBe(
+    expect(toolStep(tool('a', 'shell', {}, { argsPreview: clipped }), t).command).toBe(
       'pnpm test --run "fast"',
     )
     expect(toolStep(tool('b', 'read', {}, { argsPreview: 'not json' }), t).target).toBe('')
@@ -299,12 +299,10 @@ describe('turn timeline', () => {
     expect(wrapper('sh')?.dataset.grouped).toBe('true')
     const failed = wrapper('sh')?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')
     expect(failed?.textContent).toContain('运行命令')
-    expect(failed?.querySelector('.activity-target')?.textContent).toBe('cat x')
+    expect(failed?.querySelector('.activity-target')).toBeNull()
     expect(failed?.querySelector('.activity-note')?.textContent).toBe('退出码 1')
     await click(failed)
-    expect(wrapper('sh')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toBe(
-      '$ cat x\n\n执行结果\nno such file',
-    )
+    expect(wrapper('sh')?.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain('$ cat x')
 
     // Settling collapses the process to the answer; nothing was remounted along the way.
     const settled = nodes.map((node) => node)
@@ -341,7 +339,7 @@ describe('turn timeline', () => {
     await render(nodes, turn(nodes))
     const row = groups()[0]?.querySelector<HTMLButtonElement>('[data-testid="turn-activity-toggle"]')
     expect(row?.dataset.state).toBe('running')
-    expect(row?.textContent).toBe('运行命令·pnpm test')
+    expect(row?.textContent).toBe('运行命令')
     await click(row)
     expect(
       [...host.querySelectorAll('.turn-step:not([hidden]) .activity-verb')].map((verb) => verb.textContent),

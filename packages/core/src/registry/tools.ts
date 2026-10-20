@@ -209,6 +209,12 @@ function materializeToolMeta(value: unknown): unknown {
     !Array.isArray(materialized.costHint)
   )
     materialized.costHint = { ...(materialized.costHint as Record<string, unknown>) }
+  if (
+    materialized.presentation &&
+    typeof materialized.presentation === 'object' &&
+    !Array.isArray(materialized.presentation)
+  )
+    materialized.presentation = { ...materialized.presentation }
   if (Array.isArray(materialized.paths))
     materialized.paths = materialized.paths.map((path) =>
       path && typeof path === 'object'
@@ -232,6 +238,15 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     isConcurrencySafe: meta.isConcurrencySafe,
     isOpenWorld: meta.isOpenWorld,
     replay: meta.replay,
+    ...(meta.presentation
+      ? {
+          presentation: Object.freeze({
+            title: meta.presentation.title,
+            description: meta.presentation.description,
+            ...(meta.presentation.summary === undefined ? {} : { summary: meta.presentation.summary }),
+          }),
+        }
+      : {}),
     ...(costHint === undefined ? {} : { costHint }),
     ...(meta.deferLoading === undefined ? {} : { deferLoading: meta.deferLoading }),
     ...(meta.discoveryGroup === undefined ? {} : { discoveryGroup: meta.discoveryGroup }),

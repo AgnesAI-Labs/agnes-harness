@@ -2,6 +2,7 @@
 import { Context } from '@agnes/cordis'
 import type { DecisionSnapshot, UINode, UITimeline } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
+import { liveApprovalCard } from '@agnes/web-conversation/approval-card'
 import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { unmountApplication } from '@agnes/web-ui'
@@ -358,6 +359,11 @@ it('keeps focus on details when an explicit lookup succeeds before history finis
     expect(document.activeElement?.getAttribute('data-approval-action')).toBe('durable:allowed-once'),
   )
   const details = document.querySelector<HTMLElement>('[data-testid="approval-preview"]')
+  document
+    .querySelector<HTMLButtonElement>('[data-testid="approval-preview"]')
+    ?.closest('[data-open]')
+    ?.querySelector<HTMLButtonElement>('button')
+    ?.click()
   details?.focus()
   finishHistory?.(false)
   await vi.waitFor(() => expect(context.approvalSearch).toBe('not-found'))
@@ -710,5 +716,33 @@ it.each(['saved', 'failed'] as const)(
     expect(context.approvalBusy).toBe(true)
     expect(showError).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(action()?.disabled).toBe(true))
+  },
+)
+
+it.each([
+  [
+    'shell python3 script.py cwd="private"',
+    'Count words in brief.md to verify the script',
+    'Count words in brief.md to verify the script',
+  ],
+  ['Review the chosen report', undefined, 'Review the chosen report'],
+  ['shell python3 script.py cwd="private"', undefined, zhT('app.approval.impact.execute')],
+])(
+  'keeps human intent in live approval headers and raw commands in details (%s)',
+  (title, description, expected) => {
+    const card = liveApprovalCard(
+      {
+        title,
+        kind: 'execute',
+        rawInput: { command: 'python3 script.py', cwd: 'private', ...(description ? { description } : {}) },
+        _meta: { 'ai.agnes.harness': { tool: 'shell' } },
+      },
+      zhT,
+    )
+    expect(card.summary).toBe(expected)
+    expect(card.summary).not.toContain('python3')
+    expect(card.sessionLabel).toBe('本会话内允许此工具的所有调用')
+    expect(card.preview).toContain('python3 script.py')
+    expect(card.preview).toContain('private')
   },
 )

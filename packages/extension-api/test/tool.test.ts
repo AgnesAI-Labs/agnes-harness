@@ -487,3 +487,17 @@ describe('checkToolDef bounds on what a model is shown', () => {
     expect(TOOL_PARAMETERS_MAX_DEPTH).toBe(32)
   })
 })
+
+it('validates optional human presentation without changing safety metadata', () => {
+  expect(
+    checkToolMeta({ ...fullMeta, presentation: { title: 'Review', description: 'Read the selected record' } })
+      .ok,
+  ).toBe(true)
+  for (const presentation of [
+    { title: '', description: 'Read' },
+    { title: 'Review' },
+    [],
+    { title: 'Review', description: 'Read', extra: true },
+  ])
+    expect(checkToolMeta({ ...fullMeta, presentation }).ok).toBe(false)
+})

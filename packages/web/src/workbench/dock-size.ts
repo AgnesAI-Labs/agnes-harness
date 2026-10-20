@@ -1,6 +1,6 @@
 /** Narrowest the side dock gets, and the width it opens at and returns to on a double-click. */
 export const RIGHT_MIN = 240
-export const RIGHT_DEFAULT = 320
+export const RIGHT_DEFAULT = 720
 export const BOTTOM_MIN = 120
 export const BOTTOM_DEFAULT = 220
 /** The conversation keeps at least this much of the main column however far the dock is dragged. */

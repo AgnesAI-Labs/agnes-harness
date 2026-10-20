@@ -854,8 +854,8 @@ export async function approveAndExecute(
         kind: 'tool' as const,
         toolUseId: call.toolUseId,
         summary: permission.review
-          ? `${summarizeCall(call.name, call.args)} — ${permission.reason}`
-          : summarizeCall(call.name, call.args),
+          ? `${summarizeCall(call.name, call.args, meta.presentation)} — ${permission.reason}`
+          : summarizeCall(call.name, call.args, meta.presentation),
         risk: risk === 'never' ? ('unknown' as const) : risk,
         bindingHash,
         scope,

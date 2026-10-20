@@ -3,6 +3,7 @@ import { validateAgainst } from '@agnes/protocol'
 import { UITimeline } from '@agnes/protocol/gen/agnes-v1'
 import { expect, it } from 'vitest'
 import { projectUI } from '../src/project/ui.js'
+import { pendingDecision } from '../testkit/decision.js'
 
 const EMOJI = '\u{1F600}'
 
@@ -64,6 +65,14 @@ function toolTurn(args: Record<string, string>, result: string, name = 'shell', 
 
 it('keeps tool previews of astral characters within the published limits', async () => {
   const events = toolTurn({ cmd: EMOJI.repeat(1100) }, EMOJI.repeat(3000))
+  const presentation = {
+    title: 'Review selected report',
+    description: 'Read the source before signing',
+    summary: 'Verify record-1',
+  }
+  const call = events[2]!.data
+  if (!call || typeof call !== 'object' || Array.isArray(call)) throw new Error('Expected call object')
+  Object.assign(call, { presentation })
   const review = {
     scopePreview: { args: 'printf reviewed', cwd: '/synthetic', mode: 'workspace-write' },
     model: 'demo',
@@ -86,6 +95,14 @@ it('keeps tool previews of astral characters within the published limits', async
     sourceEventSeqs: [3],
     data: { toolUseId: 'tool-1', review },
   })
+  const subject = { call: { name: 'shell', args: { command: EMOJI.repeat(1100) }, cwd: '/synthetic' } }
+  events.push({
+    ...events.at(-1)!,
+    seq: events.at(-1)!.seq + 1,
+    type: 'decision/state',
+    register: 'decision/state',
+    data: pendingDecision('review', { subject, sessionId: 'bounds' }),
+  })
   const timeline = await projectUI(events, {
     sessionKey: 'bounds',
   })
@@ -93,6 +110,9 @@ it('keeps tool previews of astral characters within the published limits', async
   expect(tool?.kind === 'tool' && tool.argsPreview?.length).toBeLessThanOrEqual(2048)
   expect(tool?.kind === 'tool' && tool.resultPreview?.length).toBeLessThanOrEqual(4096)
   expect(tool?.kind === 'tool' && tool.review).toEqual(review)
+  expect(tool?.kind === 'tool' && tool.presentation).toEqual(presentation)
+  const approval = timeline.nodes.find((node) => node.kind === 'approval')
+  expect(approval?.kind === 'approval' && JSON.parse(approval.subjectText!)).toEqual(subject)
   expectPublishable(timeline)
 })
 

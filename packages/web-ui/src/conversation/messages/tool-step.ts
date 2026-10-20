@@ -32,13 +32,13 @@ export function toolKind(name: string): ActivityKind {
 
 // Which argument says what the step acted on, most telling first.
 const TARGET_KEYS: Record<ActivityKind, readonly string[]> = {
-  command: ['description', 'title', 'command', 'cmd', 'script'],
+  command: ['description', 'title'],
   read: ['path', 'file_path', 'filePath', 'file', 'filename', 'uri'],
   edit: ['path', 'file_path', 'filePath', 'file', 'filename'],
   list: ['path', 'dir', 'directory', 'pattern'],
   search: ['pattern', 'query', 'queries', 'q', 'regex', 'name', 'path'],
   web: ['url', 'query', 'queries', 'q'],
-  tool: ['description', 'title', 'name', 'path', 'query', 'command', 'prompt', 'message', 'id'],
+  tool: ['description', 'title', 'path', 'object', 'scope'],
   thinking: [],
   approval: [],
   step: [],
@@ -105,6 +105,12 @@ export interface ToolStep {
 
 /** Names one tool call as a step: a verb for its kind and the one thing it acted on. */
 export function toolStep(node: ToolNode, t: Translate, presentation?: { name: string }): ToolStep {
+  if (node.presentation) {
+    const view = node.presentation
+    const scope = argument(node.argsPreview, ['path', 'file_path', 'object', 'batch', 'scope'])
+    const target = [...new Set([scope, view.summary, view.description].filter(Boolean))].join(' · ')
+    return { kind: 'tool', verb: view.title, target, full: target }
+  }
   if (presentation) return { kind: 'tool', verb: presentation.name, target: '', full: '' }
   const kind = toolKind(node.name)
   const raw = argument(node.argsPreview, TARGET_KEYS[kind]) ?? ''
@@ -116,7 +122,7 @@ export function toolStep(node: ToolNode, t: Translate, presentation?: { name: st
     kind,
     verb:
       kind === 'tool'
-        ? t('activity.verb.tool', { name: node.name })
+        ? t('activity.verb.generic')
         : kind === 'web' && /search/i.test(node.name)
           ? t('activity.verb.webSearch')
           : t(`activity.verb.${kind}`),

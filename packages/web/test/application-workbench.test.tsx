@@ -267,7 +267,7 @@ it('renders work chips, routes object links to reviewed launch intent and attrib
   expect(sessionAgentAttribution('default-session')).toBeUndefined()
   expect(() => openApplicationWork('review')).toThrow('unavailable')
 })
-it('uses the same host decision actions in place and retires them when the host clears the request', () => {
+it('shows pending status and jumps to the sole conversation decision without duplicating actions', () => {
   applicationIdentity.set(state)
   const confirm = vi.fn()
   workbenchApproval.set({
@@ -279,9 +279,73 @@ it('uses the same host decision actions in place and retires them when the host 
     disabled: false,
   })
   renderRegion(document.body, <Panels context={{ t: (key) => key, data: { session: { id: 'one' } } }} />)
-  flushSync(() => document.querySelector<HTMLButtonElement>('[data-approval-action]')!.click())
-  expect(confirm).toHaveBeenCalledOnce()
+  expect(document.querySelector('[data-approval-action]')).toBeNull()
+  expect(document.body.textContent).toContain('Awaiting confirmation in conversation')
+  const card = document.createElement('div')
+  card.id = 'approval-content'
+  card.innerHTML =
+    '<div data-approval-key="decision:1"><button data-approval-action="allow">Sign</button></div>'
+  document.body.append(card)
+  flushSync(() =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Go to confirmation')!
+      .click(),
+  )
+  expect(document.activeElement).toBe(card.querySelector('button'))
+  expect(confirm).not.toHaveBeenCalled()
+  card.remove()
   flushSync(() => workbenchApproval.set(undefined))
   expect(document.querySelector('[data-approval-action]')).toBeNull()
   expect(document.body.textContent).toContain('No signatures pending')
+})
+
+it('lists declared evidence objects with localized states, keeps executions in details and ignores unrelated results', async () => {
+  document.documentElement.lang = 'zh-CN'
+  const openPanel = vi.fn()
+  const outputs = [
+    {
+      evidence: [
+        { name: '审阅记录', kind: 'record', status: 'available', path: 'review.md' },
+        { name: '待出报告', kind: 'report', status: 'pending', path: 'report.html' },
+        { name: '失败报告', kind: 'report', status: 'failed', path: 'bad.html' },
+        { name: 'bad', kind: 'file', status: 'available', path: 'javascript:alert(1)' },
+      ],
+    },
+    { data: { count: 20 } },
+  ]
+  renderRegion(
+    document.body,
+    <ApplicationEvidence
+      context={{
+        t: (key) => key,
+        openPanel,
+        data: {
+          timeline: {
+            nodes: outputs.map((_, i) => ({
+              kind: 'tool',
+              id: String(i),
+              name: 'plain_test',
+              seq: i + 1,
+              resultSeq: i + 3,
+              status: 'completed',
+            })),
+          },
+          session: {
+            id: 'test',
+            readToolDetail: async (seq: number) => ({ result: { structured: outputs[seq - 1] } }),
+          },
+        },
+      }}
+    />,
+  )
+  await vi.waitFor(() => expect(document.querySelectorAll('article')).toHaveLength(3))
+  expect(document.body.textContent).toContain('可查看')
+  expect(document.body.textContent).toContain('待完成')
+  expect(document.body.textContent).toContain('不可用')
+  expect(document.querySelector('h3')?.textContent).toBe('审阅记录')
+  expect(document.querySelector('code')?.closest('[data-open]')?.getAttribute('data-open')).toBe('false')
+  const open = document.querySelector<HTMLButtonElement>('article button')!
+  flushSync(() => open.click())
+  expect(openPanel).toHaveBeenCalledWith('files', { path: 'review.md' })
+  expect(document.querySelectorAll('button:disabled')).toHaveLength(2)
 })

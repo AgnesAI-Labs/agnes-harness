@@ -60,3 +60,26 @@ OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-
 应用可通过 `application.workbench` 声明独立会话标签及业务快捷操作，参见
 [会话业务工作台](applications.zh-CN.md#会话业务工作台)。有归属的 profile 页面提供对象档案，
 宿主签署与证据视图保持现有授权链路。
+
+## 应用工作台中的证据对象
+
+通用应用 `evidence` 视图显示工具结果声明的对象：名称、种类、状态以及通过授权工作区文件读取打开的入口。
+工具执行仅作为折叠详情中的来源。在 `ToolResult.structured.evidence` 中最多返回 64 项：
+
+```ts
+structured: {
+  evidence: [{ name: '已审阅报告', kind: 'report', status: 'available', path: 'reports/review.html' }]
+}
+```
+
+种类为 `report`、`file`、`record`；状态为 `available`、`pending`、`failed`，仅可用项允许打开。
+`path` 是会话工作区路径，不能是 URL，仍由后台执行工作区授权。名称最多 256 字符，路径最多 4096 字符；
+无效项被忽略。`@agnes/protocol` 导出公共 `WorkbenchEvidenceItem` schema 和 `readWorkbenchEvidence` 解析器。
+已有的 `structured.data.files` / `paths` 字符串数组继续兼容。视图读取最近 64 个工具回执，同一路径保留最新对象。
+
+工具卡和权限确认可声明可选的 `meta.presentation`，包含 `title`、`description` 和可选 `summary`。
+这些是随调用保存的展示文字，不替代授权所用的原始参数；缺失时客户端使用通用操作名称和已知范围字段。
+命令和 JSON 保留在折叠技术详情内。业务决定已支持本地化 `DecisionSpec.presentation`。
+等待中的会话卡片是唯一确认入口；待签署页签显示状态并跳转到该卡片。
+
+内置 `shell` 工具还支持可选的 `description` 参数，用一句话说明本次操作、涉及的文件或范围和目的，在批准前展示；精确命令保留在详情中。

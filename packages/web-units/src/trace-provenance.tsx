@@ -122,11 +122,13 @@ function Chain({ links }: { links: readonly Link[] }) {
           <span className="trace-chain-label">{link.label}</span>
           <span className="trace-chain-value">{link.value}</span>
           {link.detail?.length ? (
-            <ul className="trace-chain-detail">
-              {link.detail.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+            <Disclosure summary={link.label}>
+              <ul className="trace-chain-detail">
+                {link.detail.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Disclosure>
           ) : null}
         </li>
       ))}
@@ -283,32 +285,36 @@ export function TraceSourceRecord({
   const artifacts = of(result, 'artifact')
   const authoring = of(result, 'authoring')
   const gaps = [...new Set(result.gaps.map((gap) => gap.reason))]
+  const uncertain = of(result, 'receipt').some((receipt) => receipt.outcome === 'unknown')
   return (
     <div className="trace-source-record">
-      {authoring.map((node) => (
-        <AuthoringRecord key={node.id} node={node} />
-      ))}
       {links.length ? (
         <Chain links={links} />
       ) : authoring.length ? null : (
         <p className="trace-detail-status">{traceText('trace.provenance.empty')}</p>
       )}
-      {review && invocation?.review ? (
-        <TraceReview name={invocation.name} review={invocation.review} />
-      ) : null}
-      {artifacts.length ? (
-        <ul className="trace-artifacts" aria-label={traceText('trace.facts.artifact')}>
-          {artifacts.map((artifact) => (
-            <ArtifactDownload key={artifact.id} artifact={artifact} laneId={laneId} load={loadArtifact} />
-          ))}
-        </ul>
-      ) : null}
-      {gaps.length ? (
-        <p className="trace-raw-note" data-testid="trace-gaps">
-          <strong>{traceText('trace.facts.gaps')}</strong>{' '}
-          {gaps.map((reason) => traceText(`trace.facts.gap.${reason}` as TraceMessageKey)).join(' ')}
-        </p>
-      ) : null}
+      {uncertain && <p role="status">{traceText('trace.facts.uncertain')}</p>}
+      <Disclosure summary={traceText('trace.facts.technical')}>
+        {authoring.map((node) => (
+          <AuthoringRecord key={node.id} node={node} />
+        ))}
+        {review && invocation?.review ? (
+          <TraceReview name={invocation.name} review={invocation.review} />
+        ) : null}
+        {artifacts.length ? (
+          <ul className="trace-artifacts" aria-label={traceText('trace.facts.artifact')}>
+            {artifacts.map((artifact) => (
+              <ArtifactDownload key={artifact.id} artifact={artifact} laneId={laneId} load={loadArtifact} />
+            ))}
+          </ul>
+        ) : null}
+        {gaps.length ? (
+          <p className="trace-raw-note" data-testid="trace-gaps">
+            <strong>{traceText('trace.facts.gaps')}</strong>{' '}
+            {gaps.map((reason) => traceText(`trace.facts.gap.${reason}` as TraceMessageKey)).join(' ')}
+          </p>
+        ) : null}
+      </Disclosure>
     </div>
   )
 }

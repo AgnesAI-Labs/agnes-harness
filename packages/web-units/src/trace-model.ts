@@ -284,7 +284,7 @@ const nodeSource = (node: UINode): string => {
 /** «[runtime context] {json}» reads as its label and the facts a person would look for. */
 export function contextLine(text: string): { label: string; detail: string } {
   const match = /^\[([^\]]+)\]\s*([\s\S]*)$/.exec(text.trim())
-  if (!match) return { label: traceText('trace.badge.context'), detail: clip(oneLine(text), 160) }
+  if (!match) return { label: traceText('trace.badge.context'), detail: '' }
   const name = match[1] ?? ''
   const rest = match[2] ?? ''
   const label =
@@ -304,7 +304,7 @@ export function contextLine(text: string): { label: string; detail: string } {
       if (parts.length) return { label, detail: parts.join(' · ') }
     }
   } catch {}
-  return { label, detail: clip(oneLine(rest), 160) }
+  return { label, detail: '' }
 }
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim()
 

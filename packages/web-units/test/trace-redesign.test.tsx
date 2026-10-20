@@ -34,7 +34,7 @@ describe('tool summaries', () => {
       '写入 boot-portal.html（2,981 字符）',
     )
     expect(say('edit', { path: 'boot-portal.html', edits: [{}, {}] })).toBe('编辑 boot-portal.html（2 处）')
-    expect(say('shell', { command: 'npx serve .' })).toBe('运行命令 npx serve .')
+    expect(say('shell', { command: 'npx serve .' })).toBe('运行命令')
     expect(say('ls', { path: '.' }, { status: 'completed', resultPreview: 'a\nb\nc' })).toBe(
       '列出文件 . → 3 项',
     )
@@ -45,11 +45,11 @@ describe('tool summaries', () => {
     expect(say('grep', { pattern: 'TODO' })).toBe('搜索内容「TODO」')
   })
 
-  it('reads a cut-off argument preview and keeps raw JSON only when nothing is readable', () => {
+  it('reads a cut-off argument preview while keeping raw JSON out of the summary', () => {
     const cut = '{"path":"portal.html","content":"<!DOCTYPE html><html lang=\\"zh-CN\\">…'
     expect(summarizeTool({ name: 'write', argsPreview: cut }).text).toBe('Write portal.html')
     const unknown = summarizeTool({ name: 'crm_lookup', summary: 'Find customer', argsPreview: '{"id":7}' })
-    expect(unknown).toEqual({ text: 'crm_lookup · Find customer', secondary: '{"id":7}' })
+    expect(unknown).toEqual({ text: 'Find customer' })
   })
 
   it('turns runtime context JSON into the facts a reader looks for', () => {
@@ -116,7 +116,7 @@ describe('inspector per record kind', () => {
     )
     const byId = new Map(rows.map((row) => [row.id, row]))
     expect(byId.get('t')?.title).toBe('Read a.md')
-    expect(inspectorPanes(byId.get('t')!, false)).toEqual(['args', 'result', 'source'])
+    expect(inspectorPanes(byId.get('t')!, false)).toEqual(['result', 'source', 'args'])
     expect(defaultPane(byId.get('t'))).toBe('result')
     expect(byId.get('a')?.title).toBe('Model request · deepseek-flash')
     expect(inspectorPanes(byId.get('a')!, true)).toEqual(['reply', 'request', 'usage', 'source'])
@@ -235,11 +235,58 @@ describe('provenance in the source tab', () => {
       ),
     )
     expect(reads).toEqual([{ sessionId: 's', laneId: 'main', anchor: { kind: 'request', callId: 'call' } }])
+    expect(host.querySelector('[data-open]')?.getAttribute('data-open')).toBe('false')
+    expect(host.textContent).not.toContain('exactly once')
     expect(host.querySelector('[data-testid="trace-provenance"]')?.textContent).toContain(
       'support-triage · 1.1.0',
     )
     await act(async () => root.unmount())
   })
+})
+
+it('keeps an unknown action outcome visible while folding technical provenance gaps', async () => {
+  document.documentElement.lang = 'en'
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const result: FactChainResult = {
+    sessionId: 's',
+    laneId: 'main',
+    atSeq: 3,
+    edges: [],
+    gaps: [{ at: null, reason: 'ambiguous-link' }],
+    nodes: [
+      {
+        id: 'receipt',
+        kind: 'receipt',
+        toolUseId: 't',
+        resultSeq: 3,
+        settledSeq: null,
+        isError: null,
+        code: null,
+        outcome: 'unknown',
+        resultKind: 'synthetic',
+        partial: false,
+        externalOutcome: 'unknown',
+      },
+    ],
+  }
+  await act(async () =>
+    root.render(
+      createElement(TraceSourceRecord, {
+        sessionId: 's',
+        anchor: { kind: 'tool', toolUseId: 't' },
+        read: async () => result,
+      }),
+    ),
+  )
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    'Check the current state before retrying',
+  )
+  const gap = host.querySelector('[data-testid="trace-gaps"]')
+  expect(gap?.closest('[data-open]')?.getAttribute('data-open')).toBe('false')
+  expect(gap?.textContent).toContain('uniquely')
+  await act(async () => root.unmount())
 })
 
 describe('splitter', () => {

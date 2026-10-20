@@ -200,7 +200,7 @@ function MessageView({
             'data-status': node.status,
             // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
             'aria-label': props.t('tool.card.aria', {
-              name: node.name,
+              name: node.presentation?.title ?? node.name,
               status: toolOutcome(node, props.t).label,
             }),
           }

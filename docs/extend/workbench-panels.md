@@ -60,3 +60,31 @@ Changed-file paths display as plain text, including spaces and Unicode. Diff hea
 Applications can declare conversation tabs and composer work actions through `application.workbench`;
 see [Conversation workbench](applications.md#conversation-workbench). Owned profile pages supply
 object dossiers; host signature and evidence views preserve existing authorization paths.
+
+## Evidence objects in the application workbench
+
+The generic application `evidence` view shows objects declared by tool results, with their name,
+kind, status and an authorized workspace-file open action. Tool executions appear only as sources
+inside details. Return up to 64 items in `ToolResult.structured.evidence`:
+
+```ts
+structured: {
+  evidence: [{ name: 'Reviewed report', kind: 'report', status: 'available', path: 'reports/review.html' }]
+}
+```
+
+Kinds are `report`, `file`, `record`; statuses are `available`, `pending`, `failed`. Only available
+items can open. `path` is a session workspace path, never a URL; normal backend workspace authorization
+still applies. Names are limited to 256 characters and paths to 4096. Invalid items are ignored.
+The public `WorkbenchEvidenceItem` schema and `readWorkbenchEvidence` parser are exported by
+`@agnes/protocol`. Existing `structured.data.files` / `paths` string arrays remain compatible.
+The view reads the latest 64 tool receipts and keeps the latest object for each path.
+
+For tool cards and permission prompts, optionally declare `meta.presentation` with `title`,
+`description` and optional `summary`. These are display labels, persisted with the call; they never
+replace the arguments used for authorization. Without them the client uses a generic action label
+and known scope fields. Commands and JSON remain in collapsed technical details. Business decisions
+already support localized `DecisionSpec.presentation`. The waiting conversation card is the sole
+place to confirm; the signatures tab shows status and jumps to that card.
+
+The built-in `shell` tool also accepts an optional `description` describing the action, affected files or scope, and purpose for that call. This is shown before approval; exact command text remains in details.

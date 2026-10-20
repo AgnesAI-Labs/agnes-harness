@@ -1,5 +1,5 @@
 import type { FactChainAnchor, UINode, UITurn } from '@agnes/protocol'
-import { Button, IconButton, Menu, type MenuItem } from '@agnes/web-ui'
+import { Button, Disclosure, IconButton, Menu, type MenuItem } from '@agnes/web-ui'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { FeedbackProvenance } from './message-feedback/index.js'
 import type { TraceMeta, TracePanelOptions } from './trace.js'
@@ -54,7 +54,8 @@ export type ToolDetailState =
 export function inspectorPanes(row: TraceRow, hasRequest: boolean): InspectorPane[] {
   if (row.kind === 'assistant')
     return hasRequest ? ['reply', 'request', 'usage', 'source'] : ['reply', 'usage', 'source']
-  if (row.kind === 'tool') return ['args', 'result', 'source']
+  if (row.kind === 'context') return ['source', 'content']
+  if (row.kind === 'tool') return ['result', 'source', 'args']
   if (row.kind === 'ui') return ['snapshot', 'actionSteps', 'source']
   if (row.kind === 'control' && row.steps) return ['steps', 'source']
   return ['content', 'source']
@@ -295,7 +296,9 @@ function InspectorView({
             </TraceCard>
             {row.review ? (
               <TraceCard title={traceText('trace.card.review')} testId="trace-auto-review">
-                <TraceReview name={row.tool?.name ?? row.source} review={row.review} />
+                <Disclosure summary={traceText('trace.facts.technical')}>
+                  <TraceReview name={row.tool?.name ?? row.source} review={row.review} />
+                </Disclosure>
               </TraceCard>
             ) : null}
             {focus?.kind === 'authoring' && sessionId ? (
@@ -314,7 +317,7 @@ function InspectorView({
             ) : null}
             {request ? <RequestCapture state={request} clear={options.clearModelRequest} /> : null}
             <p className="trace-readonly" data-testid="trace-readonly">
-              {traceText('trace.facts.readOnly')}
+              {traceText('trace.facts.recordOnly')}
             </p>
           </>
         )

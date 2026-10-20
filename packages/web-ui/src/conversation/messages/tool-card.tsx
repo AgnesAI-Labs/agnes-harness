@@ -2,10 +2,12 @@ import type { UITurn } from '@agnes/protocol'
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
+import { Disclosure } from '../../ui/disclosure.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import { ActivityRow, type ActivityState } from './activity-row.js'
 import { fallbackT, type ToolNode } from './context.js'
+import { shellOutput } from './shell-output.js'
 import { toolStep } from './tool-step.js'
 import { WebSourceList, webSources } from './web-sources.js'
 
@@ -81,16 +83,16 @@ export function ConversationToolCard({
   // Declared in a step the turn did not carry out (it stopped, waits or moved on): it never ran.
   const notRun = node.status === 'planned' && turnStatus !== undefined && turnStatus !== 'running'
   const outcome = toolOutcome(node, t)
+  const output =
+    node.name === 'shell' && node.status === 'completed' ? shellOutput(outcome.text) : { text: outcome.text }
   const step = toolStep(node, t, interaction)
   // The row already names the tool and how it ended; the detail is what went in and what came out.
   const nextDetail = [
+    node.name,
     ...(node.permissionDecision ? [t('timeline.reason.fullAccess')] : []),
-    ...(step.command
-      ? [`$ ${step.command}`]
-      : node.argsPreview
-        ? [t('tool.detail.args'), node.argsPreview]
-        : []),
-    ...(outcome.text ? ['', outcome.section, outcome.text] : []),
+    ...(step.command ? [`$ ${step.command}`] : []),
+    ...(node.argsPreview ? [t('tool.detail.args'), node.argsPreview] : []),
+    ...(output.text ? ['', outcome.section, output.text] : []),
     ...(resultAppendix ? ['', resultAppendix] : []),
   ]
     .join('\n')
@@ -121,7 +123,7 @@ export function ConversationToolCard({
       : node.permissionDecision
         ? t('timeline.reason.fullAccess')
         : undefined
-  const target = step.target || (meaningful ? summary : '')
+  const target = step.target || (meaningful && step.kind !== 'command' ? summary : '')
   return (
     <div
       ref={cardHost}
@@ -157,6 +159,11 @@ export function ConversationToolCard({
           >
             {detail}
           </div>
+          {output.environment && expanded && (
+            <Disclosure summary={t('tool.environment')}>
+              <pre>{output.environment}</pre>
+            </Disclosure>
+          )}
         </div>
       </div>
     </div>

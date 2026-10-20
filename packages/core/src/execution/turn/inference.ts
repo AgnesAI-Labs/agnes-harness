@@ -78,6 +78,7 @@ import {
 import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
+import { toolCallPayload } from '../../step/tool-call.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import {
@@ -1317,13 +1318,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         events.push(
           s.ev(
             'tool/call',
-            {
-              toolUseId,
-              name: c.name,
-              args: c.args,
-              ordinal,
-              ...(policy ?? {}),
-            },
+            toolCallPayload(
+              { toolUseId, name: c.name, args: c.args, ordinal },
+              def?.meta.presentation,
+              policy,
+            ),
             { origin: 'model' },
           ),
         )

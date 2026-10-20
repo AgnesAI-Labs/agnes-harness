@@ -3499,6 +3499,7 @@
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
           "properties": {
+            "presentation": { "$ref": "session-v1.json#/$defs/ToolPresentation" },
             "permissionDecision": {
               "type": "object",
               "additionalProperties": false,

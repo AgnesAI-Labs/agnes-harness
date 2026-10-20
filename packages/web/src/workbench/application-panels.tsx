@@ -10,8 +10,7 @@ import {
   type WorkbenchPanel,
 } from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
-import { EmptyState, Icon, useDocumentLanguage } from '@agnes/web-ui'
-import { Approval, type ApprovalHandle } from '@agnes/web-units/shell'
+import { Button, EmptyState, Icon, useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { ApplicationEvidence } from './application-evidence.js'
 import { workbenchApproval } from './approval-store.js'
@@ -19,13 +18,27 @@ import { workbenchApproval } from './approval-store.js'
 function Signatures() {
   const view = useSyncExternalStore(workbenchApproval.subscribe, workbenchApproval.getSnapshot)
   const zh = useDocumentLanguage() === 'zh-CN'
-  const handle = useRef<ApprovalHandle>(null)
-  useEffect(() => {
-    handle.current?.render(view)
-  }, [view])
   return view ? (
     <section className="application-panel">
-      <Approval ref={handle} initialView={view} contentId="workbench-approval-content" />
+      <h3>{view.summary}</h3>
+      <p role="status">
+        {view.kind === 'answered'
+          ? zh
+            ? '已确认，等待继续'
+            : 'Answered; waiting to continue'
+          : zh
+            ? '等待在会话中确认'
+            : 'Awaiting confirmation in conversation'}
+      </p>
+      <Button
+        onClick={() => {
+          const card = document.querySelector<HTMLElement>('#approval-content [data-approval-key]')
+          card?.scrollIntoView?.({ block: 'nearest' })
+          ;(card?.querySelector<HTMLButtonElement>('[data-approval-action]:not(:disabled)') ?? card)?.focus()
+        }}
+      >
+        {zh ? '前往会话确认' : 'Go to confirmation'}
+      </Button>
     </section>
   ) : (
     <EmptyState

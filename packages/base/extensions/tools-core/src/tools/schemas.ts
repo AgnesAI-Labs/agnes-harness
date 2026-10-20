@@ -19,6 +19,14 @@ export const ReadParams = Type.Object(
 export const ShellParams = Type.Object(
   {
     command: Type.String({ minLength: 1 }),
+    description: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 1024,
+        description:
+          'Brief human-readable action, affected files or scope, and purpose. Shown before approval; the command remains in technical details.',
+      }),
+    ),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
     cwd: Type.Optional(Path),
     background: Type.Optional(Type.Boolean()),

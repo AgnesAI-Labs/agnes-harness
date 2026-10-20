@@ -50,6 +50,7 @@ import {
 import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
 import { SurfaceCache } from './surface.js'
+import { initialToolNode } from './tool-node.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
@@ -799,16 +800,7 @@ export class UIProjectionCell {
         )
           this.plans.set(planCall.toolUseId, planCall.args.plan)
         const call = data as ToolCall
-        const node: ToolNode = {
-          kind: 'tool',
-          id,
-          seq,
-          toolUseId: call.toolUseId,
-          name: call.name,
-          status: 'planned',
-          summary: clip(call.name, 512),
-          argsPreview: clip(canonicalJson(call.args), 2048),
-        }
+        const node = initialToolNode(id, seq, call)
         this.tools.set(call.toolUseId, node)
         this.pushNode(node)
         changed.add(id)

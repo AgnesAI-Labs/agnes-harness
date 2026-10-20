@@ -84,11 +84,18 @@ export type ToolSummary = {
 /** One tool call as a person would say it, from its name, argument preview and result preview. */
 export function summarizeTool(input: {
   name: string
+  presentation?: import('@agnes/protocol').ToolPresentation
   summary?: string | undefined
   argsPreview?: string | undefined
   resultPreview?: string | undefined
   status?: string | undefined
 }): ToolSummary {
+  if (input.presentation)
+    return {
+      text: [input.presentation.title, input.presentation.summary, input.presentation.description]
+        .filter(Boolean)
+        .join(' · '),
+    }
   const raw = input.argsPreview ?? ''
   const args = parse(raw)
   const path = field(args, raw, 'path') ?? field(args, raw, 'file_path') ?? field(args, raw, 'file')
@@ -126,7 +133,7 @@ export function summarizeTool(input: {
     }
     case 'shell':
     case 'bash': {
-      const command = field(args, raw, 'command') ?? field(args, raw, 'cmd')
+      const command = field(args, raw, 'description') ?? field(args, raw, 'title')
       if (command) return say('trace.summary.subject', { subject: oneLine(command) })
       break
     }
@@ -181,7 +188,6 @@ export function summarizeTool(input: {
   }
   const described = input.summary && input.summary !== input.name ? input.summary : undefined
   return {
-    text: described ? `${label} · ${oneLine(described)}` : label,
-    ...(raw ? { secondary: raw } : {}),
+    text: described ? oneLine(described) : TOOL_LABEL[input.name] ? label : traceText('trace.tool.generic'),
   }
 }

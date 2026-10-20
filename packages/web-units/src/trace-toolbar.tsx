@@ -1,4 +1,4 @@
-import { Button, IconButton, Menu, SettingsInput } from '@agnes/web-ui'
+import { Button, Disclosure, IconButton, Menu, SettingsInput } from '@agnes/web-ui'
 import { type KeyboardEvent, type RefObject, useId, useState } from 'react'
 import { traceText } from './trace-locale.js'
 import { BADGE_KEY, type TimelineMode } from './trace-model.js'
@@ -78,9 +78,11 @@ export function TraceToolbar({
     <div className="trace-toolbar" hidden={hidden}>
       <div className="trace-toolbar-lead">
         {loop ? (
-          <span className="trace-stat trace-loop" key="session-loop">
-            {traceText('trace.sessionLoop', { id: loop.id, version: loop.version })}
-          </span>
+          <Disclosure summary={traceText('trace.facts.technical')}>
+            <span className="trace-stat trace-loop" key="session-loop">
+              {traceText('trace.sessionLoop', { id: loop.id, version: loop.version })}
+            </span>
+          </Disclosure>
         ) : null}
         <div className="trace-stats">
           {stats.map(([label, value]) => (

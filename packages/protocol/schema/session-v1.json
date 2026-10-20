@@ -595,11 +595,22 @@
     "DispatchPhase": {
       "enum": ["not_sent", "may_have_sent", "responded"]
     },
+    "ToolPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      }
+    },
     "ToolCall": {
       "type": "object",
       "additionalProperties": false,
       "required": ["toolUseId", "name", "args", "ordinal"],
       "properties": {
+        "presentation": { "$ref": "#/$defs/ToolPresentation" },
         "toolUseId": { "type": "string", "maxLength": 128 },
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
         "args": { "$ref": "#/$defs/JsonValue" },
@@ -2768,7 +2779,8 @@
             },
             "code": { "const": "full-access" },
             "authorization": {
-              "type": "object", "additionalProperties": false,
+              "type": "object",
+              "additionalProperties": false,
               "required": ["sessionId", "epoch"],
               "properties": {
                 "sessionId": { "type": "string", "minLength": 1, "maxLength": 256 },

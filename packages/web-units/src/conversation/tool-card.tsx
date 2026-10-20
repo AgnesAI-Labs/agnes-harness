@@ -60,7 +60,7 @@ export function createConversationToolCard(
     element.setAttribute(
       'aria-label',
       options.translate('tool.card.aria', {
-        name: next.name,
+        name: next.presentation?.title ?? next.name,
         status: toolOutcome(next, options.translate).label,
       }),
     )

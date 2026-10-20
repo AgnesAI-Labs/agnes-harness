@@ -865,3 +865,64 @@ it('shows a missing/reclaimed referenced image as unavailable without creating i
   expect(host.querySelector('img')).toBeNull()
   vi.unstubAllGlobals()
 })
+
+it('uses declared tool intent and scope while keeping commands, identifiers and JSON behind details', async () => {
+  const node: UINode = {
+    kind: 'tool',
+    id: 'human',
+    seq: 1,
+    toolUseId: 'human',
+    name: 'plain_release',
+    status: 'completed',
+    summary: 'plain_release',
+    presentation: { title: '审阅报告', description: '检查来源后提交', summary: '准备签署' },
+    argsPreview: JSON.stringify({ object: 'Record-1', command: 'echo secret', cwd: '/private' }),
+    resultPreview: 'done',
+  }
+  await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [node] }))
+  const row = item('human')?.querySelector('[data-testid="tool-detail-toggle"]')
+  expect(row?.textContent).toContain('审阅报告')
+  expect(row?.textContent).toContain('Record-1 · 准备签署')
+  expect(row?.textContent).not.toContain('plain_release')
+  expect(row?.textContent).not.toContain('secret')
+  expect(item('human')?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('true')
+  expect(item('human')?.querySelector('.tool-detail-text')?.textContent).toContain('echo secret')
+})
+
+it('separates successful shell environment diagnostics, preserving real stderr and failed output', async () => {
+  const { shellOutput } = await import('../src/conversation/messages/shell-output.js')
+  const noise = "xcrun: error: couldn't create cache file '/tmp/xcrun_db-1' (errno=Operation not permitted)"
+  const text = `count 20\n[stderr]\n${noise}\nscript warning: incomplete row\n[exit 0]`
+  expect(
+    shellOutput(
+      '[stderr]\npython3: warning: confstr() failed with code 5: could not get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n[exit 0]',
+    ).environment,
+  ).toContain('DARWIN_USER_TEMP_DIR')
+  expect(shellOutput(text)).toEqual({
+    text: 'count 20\n[stderr]\nscript warning: incomplete row\n[exit 0]',
+    environment: noise,
+  })
+  expect(shellOutput(text.replace('[exit 0]', '[exit 1]'))).toEqual({
+    text: text.replace('[exit 0]', '[exit 1]'),
+  })
+  expect(shellOutput('failure mentions DARWIN_USER_TEMP_DIR\n[exit 0]').environment).toBeUndefined()
+  const node: UINode = {
+    kind: 'tool',
+    id: 'noise',
+    seq: 1,
+    toolUseId: 'noise',
+    name: 'shell',
+    status: 'completed',
+    summary: 'shell',
+    resultPreview: text,
+  }
+  await mount(createConversationProjectionStore({ sessionId: 'session', nodes: [node] }))
+  await act(async () =>
+    item('noise')?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')?.click(),
+  )
+  expect(item('noise')?.querySelector('.tool-detail-text')?.textContent).toContain(
+    'script warning: incomplete row',
+  )
+  expect(item('noise')?.querySelector('.tool-detail-text')?.textContent).not.toContain('xcrun_db')
+  expect(item('noise')?.querySelector('[data-open]')?.getAttribute('data-open')).toBe('false')
+})
