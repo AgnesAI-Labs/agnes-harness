@@ -1659,7 +1659,9 @@
     color: var(--agnes-brand-primary);
     font-weight: 600;
   }
-  /* The optional test and the outcome on the left, 取消 / 保存 on the right, kept in view. */
+  /* The optional test and the outcome on the left, 取消 / 保存 on the right, kept in view.
+     On its own page the editor fills the body to the dialog's bottom edge and scrolls itself, so
+     the bar sits on that edge and the form scrolls above it. */
   .side-editor-footer {
     position: sticky;
     bottom: 0;
@@ -1671,6 +1673,30 @@
     padding: var(--s16) 0;
     border-top: 1px solid var(--agnes-line-primary);
     background: var(--agnes-bg-surface);
+  }
+  :is(#settings-sections-pane, .settings-shell)
+    .agnes-settings-subpage-body:not([hidden]):has(> .side-model-page-host > .side-editor) {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+  .side-model-page-host:has(> .side-editor) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .side-model-page-host > .side-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .side-model-page-host > .side-editor > .side-editor-footer {
+    margin-top: auto;
   }
   .side-editor-test {
     display: flex;
