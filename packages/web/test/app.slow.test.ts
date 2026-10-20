@@ -7,6 +7,7 @@ import type {
   PageSessionMeta,
   SessionGroupsResult,
   SessionListParams,
+  SessionRuntimeDescriptor,
   UIOpeningResult,
   UIProjectionUpdate,
   UITimeline,
@@ -619,7 +620,7 @@ describe('web permission synchronization', () => {
         },
       }),
     }))
-    const publish = (enabled: boolean) => {
+    const publish = (enabled: boolean, type = 'x/core/yolo-switch', data = { to: enabled }) => {
       timeline.yolo = enabled
       timeline.upto++
       const next = receive
@@ -628,8 +629,8 @@ describe('web permission synchronization', () => {
         seq: timeline.upto,
         ts: '2026-10-01T00:00:00.000Z',
         id: String(timeline.upto).padStart(26, '0'),
-        type: 'x/core/yolo-switch',
-        data: { to: enabled },
+        type,
+        data,
         actor: { id: 'test', org: '', role: 'user', deptPath: [], attrs: {} },
         origin: 'principal',
         trust: 'trusted',
@@ -680,7 +681,7 @@ describe('web permission synchronization', () => {
       client.connectionState = event === 'reconnected' ? 'connected' : 'reconnecting'
       for (const listener of [...(listeners.get(event) ?? [])]) listener()
     }
-    return { old, publish, timeline, connect }
+    return { old, publish, timeline, connect, client }
   }
 
   const startupRaces = ['ordinary', 'start link', 'settings close', 'settings cancel', 'settings backdrop']
@@ -872,6 +873,62 @@ describe('web permission synchronization', () => {
       const notice = document.getElementById('notice')?.textContent ?? ''
       if (choice === shown) expect(notice).not.toContain('只对新会话生效')
       else expect(notice).toContain(`权限档只对新会话生效。本会话仍为「${shown}」`)
+    },
+    40_000,
+  )
+
+  it.each([true, false])(
+    'refreshes an open child composer and runtime from Core after parent changes (full: %s)',
+    async (before) => {
+      const { old, publish, timeline, client } = await boot(before, {
+        permission: before ? 'workspace-write' : 'full-access',
+      })
+      const runtime = vi.fn(
+        async (): Promise<SessionRuntimeDescriptor> => ({
+          sessionKey: 'old',
+          loaded: true,
+          generation: { current: false, state: 'historical' },
+          providers: [],
+          seams: [],
+          restartRequired: [],
+          policy: {
+            approvalMode: 'manual',
+            toolPolicy: 'default',
+            toolRuntime: 'default',
+            readOnly: false,
+            sandbox: { provider: 'local', onUnavailable: 'deny' },
+            permission: {
+              policy: timeline.yolo ? 'full-access' : 'workspace-write',
+              principal: 'core-parent',
+            },
+          },
+        }),
+      )
+      Object.assign(client.session, { runtime })
+      Object.assign(client, {
+        approval: { sessionGrants: async () => ({ grants: [] }) },
+        call: async () => ({ items: [], tools: [], resources: [] }),
+      })
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click(),
+      )
+      const runtimeAction = await vi.waitFor(() => {
+        const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
+          button.textContent?.includes('运行信息'),
+        )
+        expect(item).toBeDefined()
+        return item!
+      })
+      runtimeAction.click()
+      const summary = () =>
+        document.querySelector('[data-testid="session-runtime-summary"]')?.textContent ?? ''
+      await vi.waitFor(() => expect(summary()).toContain('core-parent'))
+      // The notification deliberately lies; both labels must use the backend reads instead.
+      publish(!before, 'x/core/permission-projection-invalidated', { to: before })
+      await vi.waitFor(() => expect(label()).toBe(before ? '可修改工作区' : '完全访问'))
+      await vi.waitFor(() => expect(summary()).toContain(before ? '可修改工作区' : '完全访问'))
+      expect(runtime).toHaveBeenLastCalledWith('old')
+      expect(old.setYolo).not.toHaveBeenCalled()
     },
     40_000,
   )

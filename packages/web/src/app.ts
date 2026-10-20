@@ -137,6 +137,7 @@ export interface AppSessionContext {
   clientModules: typeof clientModules
   composerDraftKey: string
   selectComposerDraft: typeof selectComposerDraft
+  invalidateSessionRuntime(id: string): void
   composerRuntime: typeof composerRuntime
   configured: typeof configured
   connected: typeof connected
@@ -224,6 +225,7 @@ export interface AppSessionContext {
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
 const appSessionContext: AppSessionContext = {
+  invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
   sessionBinding,
   submissions,
   get SESSION_WATCH_STOP_TIMEOUT_MS() {

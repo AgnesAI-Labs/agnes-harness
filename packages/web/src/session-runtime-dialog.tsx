@@ -411,34 +411,39 @@ export function createRuntimeDialog(options: {
         render()
       })
   }
-  return {
-    async open(id: string, trigger: HTMLElement) {
-      const mine = ++version
-      sessionId = id
-      returnFocus = trigger
-      runtime = undefined
-      tools = undefined
-      toolsFailed = false
-      toolsBusy = false
-      grants = undefined
-      revoking = undefined
-      loopLabel = undefined
-      opened = true
+  const open = async (id: string, trigger: HTMLElement) => {
+    const mine = ++version
+    sessionId = id
+    returnFocus = trigger
+    runtime = undefined
+    tools = undefined
+    toolsFailed = false
+    toolsBusy = false
+    grants = undefined
+    revoking = undefined
+    loopLabel = undefined
+    opened = true
+    render()
+    try {
+      const value = await options.client.session.runtime(id)
+      if (mine !== version) return
+      runtime = value
+      // The composer's catalog names loops; an id it does not know is shown as it is.
+      loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
       render()
-      try {
-        const value = await options.client.session.runtime(id)
-        if (mine !== version) return
-        runtime = value
-        // The composer's catalog names loops; an id it does not know is shown as it is.
-        loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
-        render()
-        void readTools(mine)
-        void readGrants(mine, id)
-      } catch (failure) {
-        if (mine !== version) return
-        close()
-        options.error(failure)
-      }
+      void readTools(mine)
+      void readGrants(mine, id)
+    } catch (failure) {
+      if (mine !== version) return
+      close()
+      options.error(failure)
+    }
+  }
+  return {
+    open,
+    /** An invalidation only identifies what to re-read; it never supplies runtime authority. */
+    invalidate(id: string) {
+      if (opened && sessionId === id && returnFocus) return open(id, returnFocus)
     },
     dispose() {
       opened = false

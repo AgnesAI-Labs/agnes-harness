@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 import type { SessionApprovalGrant, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
+import type { Client } from '@agnes/sdk/browser'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it } from 'vitest'
-import { RuntimeInfo } from '../src/session-runtime-dialog.js'
+import { expect, it, vi } from 'vitest'
+import { createRuntimeDialog, RuntimeInfo } from '../src/session-runtime-dialog.js'
 import {
   GRANT_RETRY_LIMIT,
   grantsFailure,
@@ -59,6 +60,76 @@ async function mount(node: ReturnType<typeof createElement>) {
     },
   }
 }
+
+it('re-reads an open runtime summary after invalidation and ignores stale reads, other sessions and closed dialogs', async () => {
+  const snapshot = (policy: string, principal: string) =>
+    descriptor('gen-1', {
+      policy: {
+        approvalMode: 'manual',
+        toolPolicy: 'default',
+        toolRuntime: 'default',
+        readOnly: false,
+        sandbox: { provider: 'local', onUnavailable: 'deny' },
+        permission: { policy, principal },
+      },
+    })
+  let current = snapshot('full-access', 'first-chooser')
+  const runtime = vi.fn(async (_id: string) => current)
+  const error = vi.fn()
+  const client = {
+    session: { runtime },
+    approval: { sessionGrants: async () => ({ grants: [] }) },
+    call: async () => ({ items: [], tools: [], resources: [] }),
+  } as unknown as Client
+  const dialog = createRuntimeDialog({ client, translate: enT, error, permissionOf: () => 'full-access' })
+  const trigger = document.createElement('button')
+  document.body.append(trigger)
+  const summary = () => document.querySelector('[data-testid="session-runtime-summary"]')?.textContent ?? ''
+  try {
+    await act(async () => dialog.open('child', trigger))
+    expect(summary()).toContain('first-chooser')
+    current = snapshot('workspace-write', 'parent-owner')
+    await act(async () => dialog.invalidate('unrelated'))
+    expect(summary()).toContain('first-chooser')
+    await act(async () => dialog.invalidate('child'))
+    expect(summary()).toContain(enT('session.runtime.permission.workspace'))
+    expect(summary()).not.toContain('first-chooser')
+    let release!: (value: SessionRuntimeDescriptor) => void
+    runtime.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    let stale!: Promise<void> | undefined
+    await act(async () => {
+      stale = dialog.invalidate('child')
+    })
+    current = snapshot('full-access', 'replacement-chooser')
+    await act(async () => dialog.invalidate('child'))
+    await act(async () => {
+      release(snapshot('full-access', 'stale-chooser'))
+      await stale
+    })
+    expect(summary()).toContain('replacement-chooser')
+    expect(summary()).not.toContain('stale-chooser')
+    await act(async () => {
+      const close = [...document.querySelectorAll<HTMLButtonElement>('.session-runtime-dialog button')].find(
+        (button) => button.textContent === enT('session.runtime.close'),
+      )
+      expect(close).toBeDefined()
+      close?.click()
+    })
+    current = snapshot('full-access', 'closed-chooser')
+    await act(async () => dialog.invalidate('child'))
+    expect(document.querySelector('dialog.react-dialog-host[open]')).toBeNull()
+    expect(summary()).not.toContain('closed-chooser')
+    expect(error).not.toHaveBeenCalled()
+  } finally {
+    await act(async () => dialog.dispose())
+    trigger.remove()
+  }
+})
 
 it('says that plugin panels and views are not pinned by the session generation', async () => {
   const view = await mount(createElement(RuntimeInfo, { runtime: descriptor('gen-1'), t: enT }))

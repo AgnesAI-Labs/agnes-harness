@@ -196,6 +196,9 @@ export function createSessionActions(options: {
   const busy = new Set<string>()
   return {
     dispose,
+    invalidateRuntime(id: string) {
+      void runtimeDialog?.invalidate(id)
+    },
     renameInline(id: string, initialTitle: string) {
       let persisted = initialTitle
       return async (title: string) => {
