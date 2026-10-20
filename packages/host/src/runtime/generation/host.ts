@@ -47,7 +47,7 @@ import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
 import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf } from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
-import { openGenerationStore } from './process-liveness.js'
+import { openGenerationStore, reusableSnapshot, trackRunningGenerations } from './process-liveness.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, generationSessions } from './runtime-descriptor.js'
 import {
@@ -94,12 +94,6 @@ export type PluginGenerationStatus = Readonly<{
 }>
 
 type LiveGeneration = { snapshot: PluginGenerationSnapshot; host: Host }
-/**
- * The generations each open generation Host in this process runs. A publication never reuses one of
- * them: two containers with one generation identity would each count the other's session pins as
- * bound to itself, and fork where it would have published in place.
- */
-const runningInProcess = new Set<ReadonlyMap<string, LiveGeneration>>()
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 /**
  * Generation-local containers keep Cordis row identities, extension leases, loop registries and
@@ -224,19 +218,7 @@ export async function createRuntimeGenerationHost(
       resourcesDigest: generationResourcesDigest(resources),
       seams,
     }
-    // Workers of one composition share a recorded head instead of each snapshotting the same target. A
-    // publication takes a generation recorded from the same inputs that no Host in this process runs and
-    // this host never saw fail.
-    const reused =
-      reuse === 'identical'
-        ? store.reusableGeneration(
-            headKey,
-            expected,
-            new Set([...[...runningInProcess].flatMap((running) => [...running.keys()]), ...failures.keys()]),
-          )
-        : reuse
-          ? store.reusableHead(headKey, expected)
-          : undefined
+    const reused = reusableSnapshot(store, headKey, expected, reuse, failures.keys())
     return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
   }
   const recordHead = (id: string): void => {
@@ -1353,7 +1335,7 @@ export async function createRuntimeGenerationHost(
         await Promise.allSettled(opening.values())
         for (const generation of live.values()) claim(generation.host)
         const results = await Promise.allSettled(hosts.values())
-        runningInProcess.delete(live)
+        releaseRunning()
         const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
         if (errors.length) throw new AggregateError(errors, 'generation shutdown failed')
         await store.collect(new Set())
@@ -1361,11 +1343,11 @@ export async function createRuntimeGenerationHost(
       return closing
     },
   }
-  runningInProcess.add(live)
+  const releaseRunning = trackRunningGenerations(live)
   try {
     await ensureCurrent()
   } catch (error) {
-    runningInProcess.delete(live)
+    releaseRunning()
     await initial.close().catch(() => undefined)
     throw error
   }
