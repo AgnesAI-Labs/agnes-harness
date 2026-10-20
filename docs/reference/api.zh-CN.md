@@ -142,6 +142,10 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 `session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。
 
+## 置顶会话
+
+`client.session.pin(sessionId, pinned)`（`_agnes/v1/session.pin`，参数 `{ sessionId, pinned: boolean }`）把会话置顶到侧边栏最上面，返回带 `pinnedAt` 的 `SessionPreferences`。对已置顶的会话再次置顶保留原来的时间；`pinned: false` 取消置顶。已归档的会话以 `SESSION_ARCHIVED` 拒绝；归档会话（包括通过 `workspace.remove`）会取消置顶。所有者与本地凭据检查和 `session.rename` 相同。`session.groups` 把 `pinned` 组排在最前；`session.list` 带 `sidebar: { groupId: "pinned" }` 按置顶时间从新到旧分页，工作区组不再列出已置顶的会话。`SessionMeta` 行带 `pinnedAt`。
+
 ## 辅助模型默认值
 
 本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots, auto? }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（不使用）；省略 `verifier` 时保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。

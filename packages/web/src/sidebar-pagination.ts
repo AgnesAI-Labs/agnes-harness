@@ -137,7 +137,8 @@ export function createSidebarPagination(
           const group = old.get(item.groupId) ?? {
             ...item,
             items: [],
-            opened: false,
+            // The pinned area at the top is shown open; workspace groups start collapsed.
+            opened: item.groupId === 'pinned',
             loaded: false,
             loading: false,
             generation: 0,
@@ -166,7 +167,7 @@ export function createSidebarPagination(
         if (!initialised && ready) {
           initialised = true
           if (!touched) {
-            const first = groups.find((group) => group.total > 0)
+            const first = groups.find((group) => group.groupId !== 'pinned' && group.total > 0)
             if (first) {
               first.opened = true
               reload.push(first)

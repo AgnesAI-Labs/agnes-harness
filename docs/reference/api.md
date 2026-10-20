@@ -154,6 +154,10 @@ Each id is the `id` of a `kind: "user"` node in the session's UI projection (`se
 
 `session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks.
 
+## Pinned sessions
+
+`client.session.pin(sessionId, pinned)` (`_agnes/v1/session.pin`, params `{ sessionId, pinned: boolean }`) pins a session to the top of the sidebar and returns `SessionPreferences` with `pinnedAt`. Pinning an already pinned session keeps its original time; `pinned: false` clears it. An archived session is refused with `SESSION_ARCHIVED`, and archiving a session, including through `workspace.remove`, unpins it. The owner and local-credential checks are those of `session.rename`. `session.groups` lists a `pinned` group first; `session.list` with `sidebar: { groupId: "pinned" }` pages its sessions newest pin first, and workspace groups leave pinned sessions out. `SessionMeta` rows carry `pinnedAt`.
+
 ## Auxiliary model defaults
 
 The local Node SDK exposes `client.config.modelSlots.get()` and `client.config.modelSlots.save({ revision, slots })`. Both return `{ revision, slots, auto? }`; `slots` accepts only `fast` and `verifier`, each an explicit `{ route, model }` or `null` (none). An omitted `verifier` retains preset-defined behavior. The save replaces the auxiliary-default map, checks the shared configuration revision and validates the exact route/model against the live Host catalog. Unsupported models and stale revisions are refused.

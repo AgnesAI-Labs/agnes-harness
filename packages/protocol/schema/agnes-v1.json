@@ -5256,6 +5256,7 @@
         "archived": {
           "type": "boolean"
         },
+        "pinnedAt": { "type": "string", "format": "date-time" },
         "bookmarks": {
           "type": "array",
           "maxItems": 200,
@@ -5283,6 +5284,21 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        }
+      }
+    },
+    "SessionPinParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "pinned"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "pinned": {
+          "type": "boolean"
         }
       }
     },
@@ -5454,6 +5470,7 @@
           "maxLength": 256
         },
         "archived": { "type": "boolean" },
+        "pinnedAt": { "type": "string", "format": "date-time" },
         "titleSource": { "const": "user", "type": "string" },
         "bookmarks": {
           "type": "array",
@@ -5484,7 +5501,7 @@
           "additionalProperties": false,
           "required": ["groupId"],
           "properties": {
-            "groupId": { "type": "string", "pattern": "^(unassigned|[a-f0-9]{64})$" }
+            "groupId": { "type": "string", "pattern": "^(pinned|unassigned|[a-f0-9]{64})$" }
           }
         },
         "cursor": { "type": "string", "maxLength": 4096 },
@@ -5507,7 +5524,7 @@
       "required": ["groupId", "total", "lastMessageAt", "revision", "ready"],
       "properties": {
         "initializationError": { "type": "boolean" },
-        "groupId": { "type": "string", "pattern": "^(unassigned|[a-f0-9]{64})$" },
+        "groupId": { "type": "string", "pattern": "^(pinned|unassigned|[a-f0-9]{64})$" },
         "workspaceId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "total": { "type": "integer", "minimum": 0 },
         "lastMessageAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },

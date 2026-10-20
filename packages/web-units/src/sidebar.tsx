@@ -13,7 +13,7 @@ import {
 } from 'react'
 import type { Translate } from './locales/index.js'
 import { isNewSessionShortcut, newSessionShortcutKeys } from './session-groups.js'
-export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
+export type SessionAction = 'pin' | 'unpin' | 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
 export type SidebarGroupState = SessionGroup & {
   items: PageSessionMeta['items']
   opened: boolean

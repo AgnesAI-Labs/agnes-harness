@@ -24,6 +24,7 @@
 - `_agnes/v1/session.fork`
 - `_agnes/v1/session.rename`
 - `_agnes/v1/session.archive`
+- `_agnes/v1/session.pin`
 - `_agnes/v1/session.revealWorkspace`
 - `_agnes/v1/session.bookmarks.set`
 - `_agnes/v1/session.control`

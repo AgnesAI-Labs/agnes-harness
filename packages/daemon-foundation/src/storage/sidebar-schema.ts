@@ -25,18 +25,21 @@ export function ensureSidebarSchema(t: TableHandle): void {
     WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = ${key})
     AND group_id IN (${groups});`
   const group = (key: string) => `(SELECT sidebar_group FROM session_workspaces WHERE session_key = ${key})`
+  // A pinned session is listed in the pinned group, so its changes also invalidate that group.
+  const pinned = (key: string) =>
+    `(SELECT 'pinned' FROM session_preferences WHERE session_key = ${key} AND pinned_at IS NOT NULL)`
   trigger(
     'session_insert',
     'AFTER INSERT ON session_workspaces',
     `
     UPDATE session_workspaces SET sidebar_group = COALESCE(
       (SELECT workspace_id FROM workspace_registry WHERE path = NEW.cwd AND listed = 1), 'unassigned') WHERE session_key = NEW.session_key;
-    ${bump('NEW.session_key', group('NEW.session_key'))}`,
+    ${bump('NEW.session_key', `${group('NEW.session_key')}, ${pinned('NEW.session_key')}`)}`,
   )
   trigger(
     'session_delete',
     'AFTER DELETE ON session_workspaces',
-    bump('OLD.session_key', 'OLD.sidebar_group'),
+    bump('OLD.session_key', `OLD.sidebar_group, ${pinned('OLD.session_key')}`),
   )
   trigger(
     'session_update',
@@ -45,16 +48,23 @@ export function ensureSidebarSchema(t: TableHandle): void {
     OLD.created_at IS NOT NEW.created_at OR
     (OLD.message_seq = OLD.last_seq AND OLD.message_seq >= OLD.sidebar_target_seq) IS NOT
     (NEW.message_seq = NEW.last_seq AND NEW.message_seq >= NEW.sidebar_target_seq) OR OLD.sidebar_failed IS NOT NEW.sidebar_failed`,
-    bump('NEW.session_key', 'OLD.sidebar_group, NEW.sidebar_group'),
+    bump('NEW.session_key', `OLD.sidebar_group, NEW.sidebar_group, ${pinned('NEW.session_key')}`),
   )
   for (const action of ['INSERT', 'UPDATE', 'DELETE']) {
     const row = action === 'DELETE' ? 'OLD' : 'NEW'
     const condition =
-      action === 'UPDATE' ? ' WHEN OLD.archived IS NOT NEW.archived' : ` WHEN ${row}.archived != 0`
+      action === 'UPDATE'
+        ? ' WHEN OLD.archived IS NOT NEW.archived OR OLD.pinned_at IS NOT NEW.pinned_at'
+        : ` WHEN ${row}.archived != 0 OR ${row}.pinned_at IS NOT NULL`
+    // Pinning moves a row between its workspace group and the pinned group: both change.
+    const pin =
+      action === 'UPDATE'
+        ? "CASE WHEN OLD.pinned_at IS NOT NULL OR NEW.pinned_at IS NOT NULL THEN 'pinned' END"
+        : `CASE WHEN ${row}.pinned_at IS NOT NULL THEN 'pinned' END`
     trigger(
       `preferences_${action.toLowerCase()}`,
       `AFTER ${action} ON session_preferences${condition}`,
-      bump(`${row}.session_key`, group(`${row}.session_key`)),
+      bump(`${row}.session_key`, `${group(`${row}.session_key`)}, ${pin}`),
     )
     const changed =
       action === 'UPDATE'
@@ -63,7 +73,7 @@ export function ensureSidebarSchema(t: TableHandle): void {
     trigger(
       `ownership_${action.toLowerCase()}`,
       `AFTER ${action} ON session_principal_ownership${changed}`,
-      `UPDATE sidebar_versions SET revision = revision + 1 WHERE group_id = ${group(`${row}.session_id`)}
+      `UPDATE sidebar_versions SET revision = revision + 1 WHERE group_id IN (${group(`${row}.session_id`)}, ${pinned(`${row}.session_id`)})
        AND principal_id IN (${action === 'UPDATE' ? 'OLD.principal_id, NEW.principal_id' : `${row}.principal_id`});`,
     )
   }

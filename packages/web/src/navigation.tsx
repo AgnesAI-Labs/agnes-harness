@@ -422,6 +422,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
               action={options.action}
               platform={options.runtimePlatform}
               chats={!!chatsPath && row.cwd === chatsPath}
+              pinned={!!row.pinnedAt}
             />
           )}
         </>
@@ -447,17 +448,22 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
         {[...groups].map(([path, sessions]) => {
           if (!sessions.length && !path) return null
           const page = options.paging?.groups.find((group) => group.groupId === path)
-          if (page?.groupId === 'unassigned' && page.total === 0) return null
-          const workspace = options.workspaces.find((entry) =>
-            page ? entry.workspaceId === page.workspaceId : entry.path === path,
-          )
+          const pinned = page?.groupId === 'pinned'
+          if ((page?.groupId === 'unassigned' || pinned) && page.total === 0) return null
+          const workspace = pinned
+            ? undefined
+            : options.workspaces.find((entry) =>
+                page ? entry.workspaceId === page.workspaceId : entry.path === path,
+              )
           // The managed chats workspace is a group of chats, not a folder the user chose.
           const chats = workspace?.kind === 'chats'
-          const name = chats
-            ? t('nav.chats')
-            : workspace
-              ? workspaceLabel(workspace)
-              : t('session.uncategorized')
+          const name = pinned
+            ? t('nav.pinned')
+            : chats
+              ? t('nav.chats')
+              : workspace
+                ? workspaceLabel(workspace)
+                : t('session.uncategorized')
           const collapsed = page ? !page.opened : collapsedGroups.has(path)
           const expanded = expandedGroups.has(path)
           const sorted = page ? sessions : sortSessionsByRecency(sessions)
@@ -478,7 +484,7 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                   className="workspace-heading"
                   aria-expanded={!collapsed}
                   aria-controls={listId}
-                  title={chats ? name : (workspace?.path ?? t('nav.noWorkspaceTitle'))}
+                  title={chats || pinned ? name : (workspace?.path ?? t('nav.noWorkspaceTitle'))}
                   onClick={() => {
                     if (page) {
                       options.groupAction?.(path, 'toggle')
@@ -490,8 +496,11 @@ function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; 
                     redraw((value) => value + 1)
                   }}
                 >
-                  {chats ? (
-                    <Icon name="message-square" className="icon icon-chats" />
+                  {pinned || chats ? (
+                    <Icon
+                      name={pinned ? 'pin' : 'message-square'}
+                      className={pinned ? 'icon icon-pinned' : 'icon icon-chats'}
+                    />
                   ) : (
                     <>
                       <FolderIcon className="icon icon-folder icon-folder-closed" />

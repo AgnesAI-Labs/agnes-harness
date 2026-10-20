@@ -5,6 +5,7 @@ import {
   rpcError,
   type SessionArchiveParams,
   type SessionBookmarksSetParams,
+  type SessionPinParams,
   type SessionRenameParams,
 } from '@agnes/protocol'
 
@@ -77,6 +78,11 @@ export function registerSessionPreferences(
     const request = params as SessionArchiveParams
     await requireSession(request.sessionId, context)
     return store.archive(request.sessionId, request.archived)
+  })
+  endpoint.register('_agnes/v1/session.pin', async (params, context) => {
+    const request = params as SessionPinParams
+    await requireSession(request.sessionId, context)
+    return store.pin(request.sessionId, request.pinned)
   })
   endpoint.register('_agnes/v1/session.bookmarks.set', async (params, context) => {
     const request = params as SessionBookmarksSetParams

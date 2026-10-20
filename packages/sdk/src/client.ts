@@ -584,6 +584,9 @@ export class Client {
       this.call('_agnes/v1/session.rename', { sessionId, title }),
     archive: (sessionId: string, archived: boolean): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.archive', { sessionId, archived }),
+    /** Pins a session to the top of the sidebar; pinning again keeps the original time. */
+    pin: (sessionId: string, pinned: boolean): Promise<SessionPreferences> =>
+      this.call('_agnes/v1/session.pin', { sessionId, pinned }),
     /** Replaces the bookmarked user prompts: UINode ids of kind 'user', kept in the order given. */
     setBookmarks: (sessionId: string, bookmarks: readonly string[]): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.bookmarks.set', { sessionId, bookmarks: [...bookmarks] }),

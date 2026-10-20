@@ -11,7 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderMenu(platform?: string, chats = false) {
+function renderMenu(platform?: string, chats = false, pinned = false) {
   const host = document.createElement('div')
   document.body.append(host)
   const select = vi.fn()
@@ -23,6 +23,7 @@ function renderMenu(platform?: string, chats = false) {
         disabled={disabled}
         platform={platform}
         chats={chats}
+        pinned={pinned}
         t={zhT}
         action={select}
       />
@@ -129,7 +130,22 @@ it.each(['win32', 'darwin'])(
 
 it('offers no folder to show for a chat in the managed chats workspace', async () => {
   const items = [...(await renderMenu('darwin', true).open()).querySelectorAll('[role="menuitem"]')]
-  expect(items.map((item) => item.textContent)).toEqual(['重命名', '分叉会话', '运行信息', '归档会话'])
+  expect(items.map((item) => item.textContent)).toEqual([
+    '置顶',
+    '重命名',
+    '分叉会话',
+    '运行信息',
+    '归档会话',
+  ])
+})
+
+it('offers 「取消置顶」 for a pinned session and reports it as unpin', async () => {
+  const { trigger, select, open, closed } = renderMenu('darwin', false, true)
+  const first = (await open()).querySelector<HTMLElement>('[role="menuitem"]')
+  expect(first?.textContent).toBe('取消置顶')
+  first?.click()
+  await closed()
+  expect(select).toHaveBeenCalledWith('unpin', 'visible', '名称 visible', trigger)
 })
 
 it('labels the trigger for assistive technology and starts collapsed', () => {
@@ -141,7 +157,7 @@ it('labels the trigger for assistive technology and starts collapsed', () => {
   expect(trigger.querySelector('svg')).not.toBeNull()
 })
 
-it('portals one menu with five icon-led items and marks the trigger expanded', async () => {
+it('portals one menu with six icon-led items and marks the trigger expanded', async () => {
   const { host, trigger, open } = renderMenu()
   const panel = await open()
   expect(host.contains(panel)).toBe(false)
@@ -149,15 +165,24 @@ it('portals one menu with five icon-led items and marks the trigger expanded', a
   expect(panel.getAttribute('role')).toBe('menu')
   const items = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
   expect(items.map((item) => item.textContent)).toEqual([
+    '置顶',
     '重命名',
     '分叉会话',
     '在文件管理器中打开',
     '运行信息',
     '归档会话',
   ])
-  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true, true])
+  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+  ])
   expect([...panel.children].filter((item) => item.classList.contains('agh-menu-separator'))).toHaveLength(2)
   expect([...panel.children].map((item) => item.textContent)).toEqual([
+    '置顶',
     '重命名',
     '分叉会话',
     '',
@@ -177,7 +202,7 @@ it('portals one menu with five icon-led items and marks the trigger expanded', a
   items[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   expect(document.activeElement).toBe(items[1])
   items[1]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
-  expect(document.activeElement).toBe(items[4])
+  expect(document.activeElement).toBe(items[5])
 })
 
 it('dismisses on selection, reports the session action and returns focus to the trigger', async () => {
@@ -185,7 +210,7 @@ it('dismisses on selection, reports the session action and returns focus to the 
   const panel = await open()
   panel.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
   await closed()
-  expect(select).toHaveBeenCalledWith('rename', 'visible', '名称 visible', trigger)
+  expect(select).toHaveBeenCalledWith('pin', 'visible', '名称 visible', trigger)
   expect(document.activeElement).toBe(trigger)
 })
 

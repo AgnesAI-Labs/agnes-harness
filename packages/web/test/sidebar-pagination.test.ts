@@ -389,3 +389,28 @@ it('waits for all summaries before default expansion and does not override a man
   await second.ui.refresh()
   expect(second.ui.snapshot().groups.map((g) => g.opened)).toEqual([true, false])
 })
+
+it('shows the pinned area open without taking the default expansion from the first workspace', async () => {
+  const s = setup()
+  const summary = s.groups.getMockImplementation()!
+  s.groups.mockImplementation(async () => {
+    const result = await summary()
+    return { ...result, items: [{ ...result.items[0]!, groupId: 'pinned', total: 2 }, ...result.items] }
+  })
+  await s.ui.refresh()
+  expect(s.ui.snapshot().groups.map((g) => [g.groupId, g.opened, g.items.length])).toEqual([
+    ['pinned', true, 5],
+    ['a', true, 5],
+    ['b', false, 0],
+  ])
+  expect(s.list.mock.calls.map(([input]) => input.sidebar.groupId).sort()).toEqual(['a', 'pinned'])
+  // A pin changes the revision of both groups; one refresh rereads each of them.
+  s.revision('v2')
+  await s.ui.refresh()
+  expect(
+    s.list.mock.calls
+      .map(([input]) => input.sidebar.groupId)
+      .slice(2)
+      .sort(),
+  ).toEqual(['a', 'pinned'])
+})

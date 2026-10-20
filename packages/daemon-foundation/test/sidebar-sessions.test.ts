@@ -22,10 +22,10 @@ const event = (
   ts = '2026-10-16T00:00:00Z',
   data: unknown = { content: [{ type: 'text', text: 'hello' }] },
 ): EventEnvelope => ({ seq, type, ts, data, lane: 'main' }) as EventEnvelope
-function setup(t: TableHandle) {
+function setup(t: TableHandle, clock?: () => number) {
   const workspaces = new SessionWorkspaceIndex(t),
     ownership = new SessionPrincipalOwnershipIndex(t)
-  const preferences = new SessionPreferencesStore(t),
+  const preferences = new SessionPreferencesStore(t, clock),
     registry = new WorkspaceIndex(t)
   const add = (key: string, cwd = '/repo', principal = 'owner', at = '2026-10-16T00:00:00Z') => {
     ownership.bindNew(key, principal)
@@ -181,6 +181,69 @@ it.each(['sql', 'memory'])(
       await expect(pages.list('owner', { groupId, cursor: fresh.next! })).rejects.toMatchObject({
         data: { code: 'SESSION_SIDEBAR_CURSOR_STALE' },
       })
+    } finally {
+      await pages.close()
+      await tables.close()
+    }
+  },
+)
+
+it.each(['sql', 'memory'])(
+  'moves pinned sessions into a first pinned group ordered by pin time, apart from their workspace (%s)',
+  async (kind) => {
+    let now = 0
+    const tables = sqliteTables(),
+      t = tables.table('session_workspaces'),
+      s = setup(t, () => ++now)
+    const pages =
+      kind === 'sql'
+        ? new SidebarSessions(t, s.workspaces)
+        : new MemorySidebarSessions(s.workspaces, s.ownership, s.preferences, async () => ({
+            items: s.registry.rows().map((row) => ({ ...row, sessionCount: 0, available: true })),
+          }))
+    const groupId = workspaceIdFor('/repo')
+    const group = async (id: string) => (await pages.groups('owner')).items.find((g) => g.groupId === id)!
+    const ids = (page: { items: { sessionId: string }[] }) => page.items.map((row) => row.sessionId)
+    try {
+      for (let i = 0; i < 7; i++) s.add(`s${i}`, '/repo', 'owner', `2026-10-1${i}T00:00:00Z`)
+      s.add('u0', '/other')
+      s.add('foreign', '/repo', 'other')
+      const before = await pages.groups('owner')
+      expect(before.items[0]).toMatchObject({ groupId: 'pinned', total: 0, lastMessageAt: null })
+      expect(before.items[0]).not.toHaveProperty('workspaceId')
+      for (const key of ['s0', 's1', 's2', 's3', 's4', 's5', 'u0', 'foreign']) s.preferences.pin(key, true)
+      const after = await pages.groups('owner')
+      expect(after.items.map((g) => [g.groupId, g.total])).toEqual([
+        ['pinned', 7],
+        [groupId, 1],
+        ['unassigned', 0],
+      ])
+      for (const id of ['pinned', groupId])
+        expect(after.items.find((g) => g.groupId === id)?.revision).not.toBe(
+          before.items.find((g) => g.groupId === id)?.revision,
+        )
+      const first = await pages.list('owner', { groupId: 'pinned' })
+      expect(ids(first)).toEqual(['u0', 's5', 's4', 's3', 's2'])
+      expect(first.items[0]?.pinnedAt).toBe(new Date(7).toISOString())
+      expect(ids(await pages.list('owner', { groupId }))).toEqual(['s6'])
+      // Pinning again keeps the original time and leaves an open page valid.
+      expect(s.preferences.pin('s0', true).pinnedAt).toBe(new Date(1).toISOString())
+      expect(ids(await pages.list('owner', { groupId: 'pinned', cursor: first.next! }))).toEqual(['s1', 's0'])
+      s.preferences.pin('s5', false)
+      await expect(pages.list('owner', { groupId: 'pinned', cursor: first.next! })).rejects.toMatchObject({
+        data: { code: 'SESSION_SIDEBAR_CURSOR_STALE' },
+      })
+      expect(ids(await pages.list('owner', { groupId }))).toEqual(['s6', 's5'])
+      // Archiving unpins; an archived session cannot be pinned until it is restored.
+      const pinned = (await group('pinned')).revision
+      expect(s.preferences.archive('s4', true)).toEqual({ archived: true })
+      expect((await group('pinned')).revision).not.toBe(pinned)
+      expect(() => s.preferences.pin('s4', true)).toThrow(
+        expect.objectContaining({ data: expect.objectContaining({ code: 'SESSION_ARCHIVED' }) }),
+      )
+      s.preferences.archive('s4', false)
+      expect(ids(await pages.list('owner', { groupId }))).toEqual(['s6', 's5', 's4'])
+      expect(await group('pinned')).toMatchObject({ total: 5 })
     } finally {
       await pages.close()
       await tables.close()

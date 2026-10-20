@@ -75,6 +75,7 @@ function setup(translate = zhT) {
     list: vi.fn<(options: unknown) => Promise<PageSessionMeta>>(async () => ({ items: [] })),
     rename: vi.fn(async () => ({ title: '新名称', archived: false })),
     archive: vi.fn(async () => ({ archived: false })),
+    pin: vi.fn(async () => ({ archived: false })),
     runtime: vi.fn(async (id: string) => runtimeDescriptor(id)),
   }
   const call = vi.fn(async (method: string): Promise<unknown> => {
@@ -131,6 +132,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
   const panel = document.querySelector('[role=menu]') as HTMLElement
   expect([...panel.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
+    '置顶',
     '重命名',
     '分叉会话',
     '在访达中打开',
@@ -140,16 +142,16 @@ it('keeps the row menu out of the session button and hides archived rows', async
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   await vi.waitFor(() => expect(rowElement.getAttribute('data-menu-open')).toBe('true'))
   ;(panel.querySelector('[role="menuitem"]') as HTMLButtonElement).click()
-  expect(action).toHaveBeenCalledWith('rename', 'visible', '名称 visible', trigger)
+  expect(action).toHaveBeenCalledWith('pin', 'visible', '名称 visible', trigger)
   await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
   await vi.waitFor(() => expect(rowElement.hasAttribute('data-menu-open')).toBe(false))
   const key = (node: Element, value: string) =>
     node.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }))
   key(trigger, 'ArrowDown')
-  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('重命名'))
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('置顶'))
   if (!document.activeElement) throw new Error('menu focus missing')
   key(document.activeElement, 'ArrowDown')
-  expect(document.activeElement?.textContent).toBe('分叉会话')
+  expect(document.activeElement?.textContent).toBe('重命名')
   key(document.activeElement, 'End')
   expect(document.activeElement?.textContent).toBe('归档会话')
   key(document.activeElement, 'Escape')
@@ -285,6 +287,22 @@ it('distinguishes a committed archive from a failed refresh', async () => {
   changed.mockRejectedValueOnce(new Error('读取超时'))
   await actions.act('archive', 's', '名称', trigger)
   expect(error.mock.calls[0]?.[0].message).toContain('已归档，但列表刷新失败')
+})
+
+it.each([
+  ['pin', true],
+  ['unpin', false],
+] as const)('%ss through the SDK and refreshes the sidebar groups', async (action, pinned) => {
+  const { actions, session, changed, error, trigger } = setup()
+  await actions.act(action, 's', '名称', trigger)
+  expect(session.pin).toHaveBeenCalledWith('s', pinned)
+  expect(changed).toHaveBeenCalledOnce()
+  expect(session.archive).not.toHaveBeenCalled()
+  expect(error).not.toHaveBeenCalled()
+  session.pin.mockRejectedValueOnce(new Error('SESSION_ARCHIVED'))
+  await actions.act(action, 's', '名称', trigger)
+  expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'SESSION_ARCHIVED' }))
+  expect(changed).toHaveBeenCalledOnce()
 })
 
 it('shows the Host runtime descriptor in the session menu dialog, with pending and restart notes', async () => {

@@ -22,20 +22,23 @@ export class MemorySidebarSessions implements SidebarSessionPort {
   async close(): Promise<void> {}
   private async view(principal: string) {
     const directories = (await this.directories()).items
-    const groups = new Map<string, Array<SessionMetaRow & { sort: number }>>()
+    const groups = new Map<string, Array<SessionMetaRow & { sort: number; at: number }>>()
+    groups.set('pinned', [])
     for (const directory of directories) if (directory.workspaceId) groups.set(directory.workspaceId, [])
     groups.set('unassigned', [])
     for (const key of this.owners.activeSessionIds(principal)) {
       const meta = this.sessions.metadata(key),
         cwd = this.sessions.get(key)
       if (!meta || this.preferences.get(key).archived) continue
-      const group = directories.find((row) => row.path === cwd)?.workspaceId ?? 'unassigned'
       const { profileHash: _hash, lastActiveAt: _active, ...metadata } = meta
-      const parsed = Date.parse(meta.lastMessageAt ?? meta.createdAt)
-      groups.get(group)!.push({
-        ...this.preferences.apply({ ...metadata, sessionId: key, ...(cwd ? { cwd } : {}) }),
-        sort: Number.isFinite(parsed) ? parsed : 0,
-      })
+      const row = this.preferences.apply({ ...metadata, sessionId: key, ...(cwd ? { cwd } : {}) })
+      const group = row.pinnedAt
+        ? 'pinned'
+        : (directories.find((entry) => entry.path === cwd)?.workspaceId ?? 'unassigned')
+      const parsed = Date.parse(meta.lastMessageAt ?? meta.createdAt),
+        at = Number.isFinite(parsed) ? parsed : 0
+      // The pinned group orders by pin time; every other group by its last message.
+      groups.get(group)!.push({ ...row, at, sort: row.pinnedAt ? Date.parse(row.pinnedAt) : at })
     }
     return [...groups]
       .map(([groupId, rows]) => {
@@ -45,19 +48,21 @@ export class MemorySidebarSessions implements SidebarSessionPort {
         const revision = createHash('sha256')
           .update(JSON.stringify(rows.map((row) => [row.sessionId, row.sort, !!row.createdAt])))
           .digest('hex')
+        const latest = Math.max(...rows.map((row) => row.at))
         return {
           groupId,
-          ...(groupId !== 'unassigned' ? { workspaceId: groupId } : {}),
+          ...(groupId !== 'unassigned' && groupId !== 'pinned' ? { workspaceId: groupId } : {}),
           rows,
           revision: `${this.instance}:${revision}`,
           total: rows.length,
           ready: rows.every((row) => !!row.createdAt),
-          lastMessageAt: rows[0] ? new Date(rows[0].sort).toISOString() : null,
+          lastMessageAt: rows.length ? new Date(latest).toISOString() : null,
         }
       })
       .sort(
         (a, b) =>
-          (b.rows[0]?.sort ?? -Infinity) - (a.rows[0]?.sort ?? -Infinity) ||
+          +(b.groupId === 'pinned') - +(a.groupId === 'pinned') ||
+          (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '') ||
           Buffer.compare(Buffer.from(a.groupId), Buffer.from(b.groupId)),
       )
   }
@@ -102,7 +107,7 @@ export class MemorySidebarSessions implements SidebarSessionPort {
     }
     const start = after === undefined ? 0 : group.rows.findIndex((row) => row.sessionId === after) + 1
     if (after !== undefined && start === 0) fail('SESSION_SIDEBAR_CURSOR_INVALID')
-    const items = group.rows.slice(start, start + limit).map(({ sort: _sort, ...row }) => row)
+    const items = group.rows.slice(start, start + limit).map(({ sort: _sort, at: _at, ...row }) => row)
     let next: string | undefined
     if (start + limit < group.rows.length) {
       const data = Buffer.from(
