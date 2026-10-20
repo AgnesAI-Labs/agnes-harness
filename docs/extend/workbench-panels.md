@@ -56,3 +56,7 @@ Optional `context.openPanel(id, selection)` navigates a registered panel without
 Changed-file paths display as plain text, including spaces and Unicode. Diff headers escape control characters to keep newline names from forging header lines. Execution evidence opens `factChainLinks.open({ sessionId, laneId, anchor: { kind: 'tool', toolUseId } })`. The optional evidence `laneId` comes only from matching call, receipt and result ledger lanes. Missing or mismatched lanes and unavailable navigation show an unlinked state; paths never infer request or artifact provenance.
 
 [Short UI author guide](../develop/ui-author-guide.md): shared buttons, contextual panels, settings groups, surface summaries and token rules.
+
+Applications can declare conversation tabs and composer work actions through `application.workbench`;
+see [Conversation workbench](applications.md#conversation-workbench). Owned profile pages supply
+object dossiers; host signature and evidence views preserve existing authorization paths.

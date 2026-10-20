@@ -45,6 +45,7 @@ export interface ApprovalHandle {
 
 export interface ApprovalProps {
   initialView?: ApprovalView
+  contentId?: string
   detail?: ReactNode
 }
 
@@ -55,7 +56,7 @@ function focusApproval(content: HTMLDivElement | null): void {
 }
 
 export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Approval(
-  { initialView, detail }: ApprovalProps,
+  { initialView, detail, contentId = 'approval-content' }: ApprovalProps,
   ref: ForwardedRef<ApprovalHandle>,
 ) {
   const [view, setView] = useState<ApprovalView | undefined>(initialView)
@@ -111,7 +112,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
   return (
     <div
       ref={content}
-      id="approval-content"
+      id={contentId}
       style={{ display: 'contents' }}
       data-agnes-region-owner="builtin"
       data-agnes-region-unit="approval"

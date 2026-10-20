@@ -3,7 +3,15 @@ import { AGENTS_NAMESPACE, agentsCatalog } from '@agnes/web-admin/agents'
 import { Button, SettingsGroup, SettingsItem, useUiText } from '@agnes/web-ui'
 
 /** Everything here comes from the ticket presentation, rather than the catalog card. */
-export function AgentLaunchReview({ plan, onConfirm }: { plan: AgentPlan; onConfirm(): void }) {
+export function AgentLaunchReview({
+  plan,
+  onConfirm,
+  draft,
+}: {
+  plan: AgentPlan
+  onConfirm(): void
+  draft?: string | undefined
+}) {
   const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   return (
     <section data-testid="agent-launch-review">
@@ -15,10 +23,10 @@ export function AgentLaunchReview({ plan, onConfirm }: { plan: AgentPlan; onConf
           label={t('launch.sources')}
           description={plan.sources.map((item) => `${item.id}@${item.version} ${item.integrity}`).join(', ')}
         />
-        {plan.launch.prompt && (
+        {(draft || plan.launch.prompt) && (
           <SettingsItem
             label={t('launch.draft')}
-            description={plan.launch.prompt.text[locale] ?? plan.launch.prompt.text.en}
+            description={draft ?? plan.launch.prompt?.text[locale] ?? plan.launch.prompt?.text.en}
           />
         )}
       </SettingsGroup>

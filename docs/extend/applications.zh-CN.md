@@ -125,3 +125,49 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 `/?admin` 的清除操作和 `agh app clear [--profile NAME] [--json]` **同时清除当前应用与全部界面实现选择**。恢复启动不运行第三方代码，保留执行配置和其他用户偏好。
 
 开发者示例见[五个机制教学包](../../examples/fde/README.zh-CN.md)。产品演示使用 [showcase 应用](../guide/demos.zh-CN.md)，将在同一版本提供。
+
+## 会话业务工作台
+
+可选的 `application.workbench` 将应用组织为一个业务工作台；未声明的既有应用保持原有界面。
+安装审阅和应用采用同意仍然独立。下面以 `acme/kit` 的 profile 页面 `dossier` 为例：
+
+```json
+{
+  "workbench": {
+    "tabs": [
+      { "id": "object", "title": { "en": "Current object", "zh-CN": "当前对象" }, "icon": "file", "order": -30, "slot": "workbench.panel", "view": "page", "page": "acme/kit#dossier", "when": "session" },
+      { "id": "signatures", "title": { "en": "Pending signatures" }, "order": -20, "slot": "workbench.panel", "view": "signatures" },
+      { "id": "evidence", "title": { "en": "Evidence and reports" }, "order": -10, "slot": "workbench.panel", "view": "evidence" }
+    ],
+    "actions": [
+      { "id": "review", "title": { "en": "Review NCR" }, "agent": "acme/kit#reviewer", "prompt": { "en": "Review the selected NCR using its controlled evidence." }, "focusTab": "object", "object": { "type": "ncr", "id": "NCR-018" } }
+    ],
+    "includes": ["pages", "tools", "signatures", "reports"],
+    "scenarios": [{ "en": "Anomaly → investigation → disposition → signature" }]
+  }
+}
+```
+
+- `tabs` 最多 8 项：唯一 `id`、本地化 `title`、可选 `icon`、-100～100 的整数 `order`、固定
+  `slot: "workbench.panel"`。`view` 为 `page`、`signatures` 或 `evidence`。只有 `page` 必须且能够
+  声明 `page: "包名#页面ID"`，目标必须是已声明且就绪的 profile 页面。`when` 可为 `session`（默认）
+  或 `object`。清除或无法解析应用时撤下标签；渲染错误隔离；文件、更改、终端仍可由工作台和溢出菜单访问。
+- `actions` 最多 12 项：唯一 `id`、本地化 `title`、`prompt`；可选 `agent` 默认为应用 `defaultAgent`，
+  必须是应用允许且可启动的角色。可选 `focusTab` 引用声明标签；`object: {type, id}` 是默认对象。
+  点击经现有启动审阅打开可编辑草稿，不自动发送。角色在启动时路由，不引入委派运行时，也不切换进行中会话的角色。
+- 可选 `includes` 声明图库包含项：`pages`、`tools`、`signatures`、`reports`，最多 4 个且不重复，只声明应用确实提供的能力。
+- `scenarios` 最多 3 项，在图库显示具体业务场景；角色说明保留在折叠详情中，工作台应用不再逐角色展示启动按钮。
+  本地化文本必须有 `en`，可有 `zh-CN`，每种语言最多 2048 字符；其他字段和数组同样受限。
+
+业务页面从 `@agnes/web-client` 导入 `openApplicationWork`，调用
+`openApplicationWork('review', {type: 'ncr', id: record.id})`。对象类型最多 64 字符、编号最多 128 字符。
+对象作为 JSON 结构化上下文写入可编辑请求；提交后可从持久化用户内容恢复，修改对象会更新档案。
+可选的浏览器会话记忆恢复提交前的对象焦点及启动角色归属，不授予权限，
+也不充当后端业务记录。
+
+标签页面组件通过 `context.selection.object`、`context.selection.applicationPanel` 接收展示上下文。
+从 `apply(ctx)` 闭包取得服务，通过已声明的 profile query 读取业务数据；订阅 `ctx.session.projection`
+失效通知和 `ctx.session.readiness` epoch，在工具写入后刷新、丢弃旧读取，并在卸载时退订，不能轮询。
+`signatures` 复用宿主当前决定动作，包括独立的 `business.confirm`；完全访问权限处理不把业务签署变成客户端写入。
+完全访问下，宿主自动确认符合条件的业务决定并记录方式，不显示待签卡；标准和工作区写入权限保留人工确认。不能把自动确认写成人工点击。
+`evidence` 从当前会话工具回执进入既有执行记录和报告文件。业务状态、CAS 和签署证明仍由后端模块负责。

@@ -3,6 +3,7 @@ import { createRegionRenderer } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
 import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
+import { workbenchApproval } from '../workbench/approval-store.js'
 import { APPROVAL_SLOT, type EmptyStateRegionMount } from './contracts.js'
 export interface ApprovalRegionMount extends EmptyStateRegionMount, ApprovalHandle {}
 export const APPROVAL_DSH_CHILDREN = Object.freeze({
@@ -51,6 +52,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
   let disposed = false
   return {
     render(next) {
+      workbenchApproval.set(next)
       view = next
       container.hidden = next === undefined
       if (next) container.dataset.key = next.key
@@ -63,6 +65,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
     dispose() {
       if (disposed) return
       disposed = true
+      workbenchApproval.set(undefined)
       root.unmount()
       removeBuiltin()
     },

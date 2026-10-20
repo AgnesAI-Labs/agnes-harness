@@ -825,6 +825,9 @@
         },
         "presentation": {
           "$ref": "#/$defs/ApplicationPresentation"
+        },
+        "workbench": {
+          "$ref": "#/$defs/ApplicationWorkbench"
         }
       }
     },
@@ -985,6 +988,162 @@
       "minLength": 1,
       "maxLength": 512,
       "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9.-]{0,127}$"
+    },
+    "ApplicationWorkbench": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includes": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "enum": ["pages", "tools", "signatures", "reports"] }
+        },
+        "tabs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/ApplicationPanelTab"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/ApplicationWorkAction"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ApplicationWorkbenchText"
+          }
+        }
+      },
+      "required": []
+    },
+    "ApplicationPanelTab": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "title": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "order": {
+          "type": "integer",
+          "minimum": -100,
+          "maximum": 100
+        },
+        "slot": {
+          "const": "workbench.panel"
+        },
+        "view": {
+          "enum": [
+            "page",
+            "signatures",
+            "evidence"
+          ]
+        },
+        "page": {
+          "$ref": "#/$defs/ApplicationPageRef"
+        },
+        "when": {
+          "enum": [
+            "session",
+            "object"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "order",
+        "slot",
+        "view"
+      ]
+    },
+    "ApplicationWorkAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "title": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "prompt": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "focusTab": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "object": {
+          "$ref": "#/$defs/ApplicationWorkObject"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "prompt"
+      ]
+    },
+    "ApplicationWorkObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9.-]*$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ]
+    },
+    "ApplicationWorkbenchText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "en"
+      ],
+      "properties": {
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "zh-CN": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
     }
   }
 }

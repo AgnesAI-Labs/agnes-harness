@@ -79,6 +79,9 @@ Declare exact backend names in client.services (agnes.client.json) and register 
 There is no ctx.tools.invoke from the browser; call your own declared profile service. ctx.agnes.services.call is session-bound and is not a substitute for a profile page. / 浏览器没有 ctx.tools.invoke；调用自己声明的 profile service。不要把需要当前会话的 call 当作 profile 页面接口。
 Use public author APIs, the tool-with-panel template and this version-matched reference before editing. Never search Host/installed source, other workspaces, environment variables or credentials; use authorized workspace files and artifact references only. Keep queries/effects, loading/error states, owner-store and inherited interaction/restart tests together. / 先用本版本作者参考与模板；禁止翻查宿主或安装源码、其他工作区、环境变量与凭据；只用授权工作区文件及 artifact 引用；保留交互、持久化与错误测试。
 
+Application workbench / 应用业务工作台:
+Optional agnes.application.workbench declares tabs (max 8, unique id/title/icon/order, slot="workbench.panel", view="page" with page="package#declared-profile-page", or view="signatures"|"evidence", optional when="session"|"object"); actions (max 12, id/title/prompt, optional agent/defaultAgent, focusTab, object:{type,id}); scenarios (max 3 localized texts), includes (unique pages/tools/signatures/reports gallery features). Text requires en, optionally zh-CN, <=2048 chars each. Unknown slots and missing pages/agents are refused. Import openApplicationWork from '@agnes/web-client'; openApplicationWork(actionId,{type,id}) opens existing launch review and an editable request containing JSON object context. Page components receive context.selection.object/applicationPanel. Subscribe to ctx.session.projection and readiness, discard stale reads, unsubscribe; no polling. Signatures reuse Host decisions; browser object/role memory grants no authority. Routing selects a role at launch, without a new delegation runtime. / 声明标签、业务操作和场景；对象经可编辑请求进入会话，授权与签署仍归宿主。
+
 Skin tokens / 完整皮肤 token 白名单 (120):
 ```ts
 --agnes-brand-primary

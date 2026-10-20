@@ -387,6 +387,48 @@ it('validates application identity and explicit agent, page and role references'
   })
   const app = { id: 'acme', defaultAgent: 'acme/kit#work', agents: ['acme/kit#work'] }
   expect(parseApplicationContract(app, 'acme/kit', bundles, {}).application).toEqual(app)
+  const workbench = {
+    tabs: [
+      {
+        id: 'signatures',
+        title: { en: 'Signatures', 'zh-CN': '待签署' },
+        order: 0,
+        slot: 'workbench.panel',
+        view: 'signatures',
+      },
+    ],
+    actions: [
+      {
+        id: 'review',
+        title: { en: 'Review' },
+        prompt: { en: 'Review this NCR' },
+        focusTab: 'signatures',
+        object: { type: 'ncr', id: 'NCR-018' },
+      },
+    ],
+  }
+  expect(
+    parseApplicationContract({ ...app, workbench }, 'acme/kit', bundles, {}).application?.workbench,
+  ).toEqual(workbench)
+  expect(() =>
+    parseApplicationContract(
+      { ...app, workbench: { ...workbench, actions: [...workbench.actions, ...workbench.actions] } },
+      'acme/kit',
+      bundles,
+      {},
+    ),
+  ).toThrow()
+  for (const tabs of [
+    [...workbench.tabs, ...workbench.tabs],
+    Array.from({ length: 9 }, (_, index) => ({ ...workbench.tabs[0], id: `tab${index}` })),
+    [{ ...workbench.tabs[0], order: 101 }],
+    [{ ...workbench.tabs[0], when: 'arbitrary-code' }],
+    [{ ...workbench.tabs[0], title: { en: 'x'.repeat(2049) } }],
+  ])
+    expect(() =>
+      parseApplicationContract({ ...app, workbench: { ...workbench, tabs } }, 'acme/kit', bundles, {}),
+    ).toThrow()
+
   for (const value of [
     { ...app, brand: { unknown: 'no' } },
     { ...app, presentation: { roles: { unknown: { packageId: 'acme/kit', clientId: 'ui' } } } },
@@ -394,6 +436,53 @@ it('validates application identity and explicit agent, page and role references'
     { ...app, presentation: { home: 'acme/kit#unknown' } },
     { ...app, defaultAgent: 'acme/kit#missing' },
     { ...app, agents: [] },
+    {
+      ...app,
+      workbench: {
+        tabs: [{ id: 'object', title: { en: 'Object' }, order: 0, slot: 'unknown', view: 'signatures' }],
+      },
+    },
+    {
+      ...app,
+      workbench: {
+        tabs: [{ id: 'object', title: { en: 'Object' }, order: 0, slot: 'workbench.panel', view: 'page' }],
+      },
+    },
+    {
+      ...app,
+      workbench: {
+        actions: [{ id: 'work', title: { en: 'Work' }, prompt: { en: 'Review' }, agent: 'acme/kit#missing' }],
+      },
+    },
+    {
+      ...app,
+      workbench: {
+        actions: [{ id: 'work', title: { en: 'Work' }, prompt: { en: 'Review' }, focusTab: 'missing' }],
+      },
+    },
+    {
+      ...app,
+      workbench: {
+        actions: Array.from({ length: 13 }, (_, i) => ({
+          id: `work${i}`,
+          title: { en: 'Work' },
+          prompt: { en: 'Review' },
+        })),
+      },
+    },
+    {
+      ...app,
+      workbench: {
+        actions: [
+          {
+            id: 'work',
+            title: { en: 'Work' },
+            prompt: { en: 'Review' },
+            object: { type: 'ncr', id: 'x'.repeat(129) },
+          },
+        ],
+      },
+    },
   ])
     expect(() => parseApplicationContract(value, 'acme/kit', bundles, {})).toThrow()
   expect(

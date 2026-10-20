@@ -6,7 +6,13 @@ import {
   openStartedSession,
   useBusinessAgentStart,
 } from '@agnes/web-admin/agents'
-import { homeNavigation } from '@agnes/web-client'
+import {
+  type ApplicationWorkRequest,
+  homeNavigation,
+  rememberApplicationWork,
+  rememberSessionAgent,
+  resolveApplicationWork,
+} from '@agnes/web-client'
 import { Banner, Button, Loadable, PushPage, usePushStack, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { AgentLaunchReview } from './agents-launch-review.js'
@@ -20,6 +26,7 @@ type Launch = {
   phase: 'preparing' | 'review' | 'starting' | 'failed'
   attempt?: Attempt
   error?: string
+  work?: ApplicationWorkRequest
 }
 
 /** Installed agents use the B2 ticket facade. Catalog-only agents use B2's public install flow,
@@ -45,13 +52,14 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     features: data.features,
     onChanged: data.refreshInstalled,
   })
-  const prepare = async (card: Pick<AgentCard, 'ref' | 'name' | 'slug'>) => {
+  const prepare = async (card: Pick<AgentCard, 'ref' | 'name' | 'slug'>, work?: ApplicationWorkRequest) => {
     if (!data.api) return
     const pending: Launch = {
       ref: card.ref,
       name: card.name,
       pageId: `agent-${card.slug}`,
       phase: 'preparing',
+      ...(work ? { work } : {}),
     }
     set(pending)
     nav.open(pending.pageId)
@@ -80,6 +88,10 @@ export function useAgentLaunch(data: BusinessAgentsData) {
   const start = async (pending: Launch, recover = false) => {
     const api = data.api
     if (!api || !pending.attempt || current.current !== pending || pending.phase === 'starting') return
+    if (pending.work && resolveApplicationWork(pending.work, locale)?.agent !== pending.ref) {
+      set({ ...pending, phase: 'failed', error: t('reason.changed') })
+      return
+    }
     const attempt = pending.attempt
     const running: Launch = { ...pending, phase: 'starting' }
     set(running)
@@ -87,9 +99,13 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       if (current.current !== running) return
       set(undefined)
       nav.back()
+      rememberSessionAgent(result.sessionId, pending.ref, attempt.plan.launch.title)
+      const work = pending.work && resolveApplicationWork(pending.work, locale)
+      if (work && work.agent === pending.ref)
+        rememberApplicationWork(result.sessionId, work.request, pending.ref, attempt.plan.launch.title)
       openStartedSession({
         sessionId: result.sessionId,
-        prompt: result.draft?.text[locale] ?? result.draft?.text.en,
+        prompt: work?.prompt ?? result.draft?.text[locale] ?? result.draft?.text.en,
       })
     }
     const read = async () => {
@@ -131,7 +147,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     nav.back()
   }
   return {
-    start(card: AgentCard) {
+    start(card: AgentCard, work?: ApplicationWorkRequest) {
       const pending = current.current
       if (pending) {
         // Keep the original receipt reachable until its result is known or a new intent is explicit.
@@ -143,10 +159,11 @@ export function useAgentLaunch(data: BusinessAgentsData) {
         return
       }
       if (card.catalogAgent) {
+        if (work) return
         catalog.start({ ...card.catalogAgent, slug: card.slug })
         return
       }
-      void prepare(card)
+      void prepare(card, work)
     },
     pageId: launch?.pageId ?? catalog.pageId,
     dialog: (
@@ -160,6 +177,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
             {launch.phase === 'review' && launch.attempt && (
               <AgentLaunchReview
                 plan={launch.attempt.plan}
+                draft={launch.work ? resolveApplicationWork(launch.work, locale)?.prompt : undefined}
                 onConfirm={() => {
                   void start(launch)
                 }}
@@ -175,11 +193,14 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                   onClick={() => {
                     if (launch.attempt) void start(launch, true)
                     else
-                      void prepare({
-                        ref: launch.ref,
-                        name: launch.name,
-                        slug: encodeURIComponent(launch.ref),
-                      })
+                      void prepare(
+                        {
+                          ref: launch.ref,
+                          name: launch.name,
+                          slug: encodeURIComponent(launch.ref),
+                        },
+                        launch.work,
+                      )
                   }}
                 >
                   {t(launch.attempt ? 'launch.check' : 'dialog.retry')}
@@ -188,11 +209,14 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                   <Button
                     data-testid="agent-launch-new-intent"
                     onClick={() => {
-                      void prepare({
-                        ref: launch.ref,
-                        name: launch.name,
-                        slug: encodeURIComponent(launch.ref),
-                      })
+                      void prepare(
+                        {
+                          ref: launch.ref,
+                          name: launch.name,
+                          slug: encodeURIComponent(launch.ref),
+                        },
+                        launch.work,
+                      )
                     }}
                   >
                     {t('launch.another')}

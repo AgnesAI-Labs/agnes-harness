@@ -56,3 +56,7 @@ OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-
 更改文件路径显示为普通文本，保留空格与 Unicode；diff header 对控制字符转义，防止带换行的名称伪造 header 行。执行证据通过 `factChainLinks.open({ sessionId, laneId, anchor: { kind: 'tool', toolUseId } })` 打开；可选证据字段 `laneId` 仅来自相互匹配的 call、receipt、result 账本 lane。缺失或不匹配的 lane、不可用的导航均提示无法关联，不通过路径推断 request 或 artifact 来源。
 
 [UI 作者短指南](../develop/ui-author-guide.zh-CN.md)：共享按钮、工作台显示条件、设置分组、界面摘要与 token 规则。
+
+应用可通过 `application.workbench` 声明独立会话标签及业务快捷操作，参见
+[会话业务工作台](applications.zh-CN.md#会话业务工作台)。有归属的 profile 页面提供对象档案，
+宿主签署与证据视图保持现有授权链路。

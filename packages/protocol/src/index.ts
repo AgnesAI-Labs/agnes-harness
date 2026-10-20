@@ -252,7 +252,11 @@ export type {
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   AgentRef,
+  ApplicationPanelTab,
   ApplicationTemplate,
+  ApplicationWorkAction,
+  ApplicationWorkbench,
+  ApplicationWorkObject,
   BundleLaunch,
   Capabilities,
   ClientContribution,

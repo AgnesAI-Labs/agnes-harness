@@ -6093,6 +6093,44 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { id: 'acme', brand: { unknown: true } }],
     note: 'Application identity and presentation contract',
   },
+  ApplicationWorkbench: {
+    valid: { includes: ['pages', 'tools'], scenarios: [{ en: 'Investigate and sign' }] },
+    invalid: [{ unknown: true }, { includes: ['unknown'] }, { tabs: Array(9).fill({}) }],
+    note: 'Bounded application workbench contributions',
+  },
+  ApplicationWorkbenchText: {
+    valid: { en: 'Review', 'zh-CN': '审阅' },
+    invalid: [{ 'zh-CN': '审阅' }, { en: 'x'.repeat(2049) }],
+    note: 'Localized workbench text requires bounded English fallback',
+  },
+  ApplicationPanelTab: {
+    valid: {
+      id: 'object',
+      title: { en: 'Object' },
+      order: -30,
+      slot: 'workbench.panel',
+      view: 'page',
+      page: 'acme/kit#dossier',
+    },
+    invalid: [{}, { id: 'object', title: { en: 'Object' }, order: 0, slot: 'unknown', view: 'signatures' }],
+    note: 'Only the declared workbench panel slot is admitted',
+  },
+  ApplicationWorkAction: {
+    valid: {
+      id: 'review',
+      title: { en: 'Review' },
+      prompt: { en: 'Review evidence' },
+      agent: 'acme/kit#work',
+      focusTab: 'object',
+    },
+    invalid: [{}, { id: 'review', title: { en: 'Review' }, prompt: { en: 'Review' }, agent: 'bare-agent' }],
+    note: 'Work actions request an existing agent and editable prompt',
+  },
+  ApplicationWorkObject: {
+    valid: { type: 'ncr', id: 'NCR-018' },
+    invalid: [{}, { type: 'ncr', id: 'x'.repeat(129) }, { type: '../path', id: 'x' }],
+    note: 'Object request context carries bounded type and identifier',
+  },
   ApplicationAsset: {
     valid: {
       path: 'assets/mark.png',
@@ -6351,6 +6389,11 @@ const ExtensionManifestDefs: Record<string, TSchema> = {
   BundleLaunch: ExtensionManifestGen.BundleLaunch,
   DeclaredAgent: ExtensionManifestGen.DeclaredAgent,
   ApplicationTemplate: ExtensionManifestGen.ApplicationTemplate,
+  ApplicationWorkbench: ExtensionManifestGen.ApplicationWorkbench,
+  ApplicationWorkbenchText: ExtensionManifestGen.ApplicationWorkbenchText,
+  ApplicationPanelTab: ExtensionManifestGen.ApplicationPanelTab,
+  ApplicationWorkAction: ExtensionManifestGen.ApplicationWorkAction,
+  ApplicationWorkObject: ExtensionManifestGen.ApplicationWorkObject,
   ApplicationAsset: ExtensionManifestGen.ApplicationAsset,
   ApplicationBrand: ExtensionManifestGen.ApplicationBrand,
   ApplicationPresentation: ExtensionManifestGen.ApplicationPresentation,

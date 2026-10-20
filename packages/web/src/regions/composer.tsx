@@ -20,6 +20,7 @@ import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { ModelPickerControl } from '../model-picker.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
+import { ApplicationWorkActions } from '../workbench/application-actions.js'
 import {
   COMPOSER_BAR_DSH_CHILDREN,
   COMPOSER_DEPENDENCIES,
@@ -70,6 +71,7 @@ export function ComposerDshFrame({
           card={{ kind: 'composer.before-input', data: {} }}
           context={{ t: (key) => key }}
         />
+        <ApplicationWorkActions />
         <Composer
           ref={setHandle}
           dependencies={dependencies}

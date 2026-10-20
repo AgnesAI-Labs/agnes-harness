@@ -107,11 +107,13 @@ export class Applications {
     for (const ref of [
       ...(declaration.agents ?? []),
       ...(declaration.defaultAgent ? [declaration.defaultAgent] : []),
+      ...(declaration.workbench?.actions ?? []).flatMap((action) => (action.agent ? [action.agent] : [])),
     ])
       if (!owner(ref).entry.agents?.some((a) => a.ref === ref)) return fail('APPLICATION_AGENT_UNKNOWN')
     for (const ref of [
       ...(declaration.presentation?.navigation?.entries ?? []),
       ...(declaration.presentation?.home ? [declaration.presentation.home] : []),
+      ...(declaration.workbench?.tabs ?? []).flatMap((tab) => (tab.page ? [tab.page] : [])),
     ]) {
       const page = ref.slice(ref.indexOf('#') + 1)
       if (
@@ -119,7 +121,9 @@ export class Applications {
           (c) =>
             'client' in c &&
             c.client?.lifetime === 'profile' &&
-            (c.client.examplePages?.includes(page) || c.client.homeEntries?.some((p) => p.id === page)),
+            ((!declaration.workbench?.tabs?.some((tab) => tab.page === ref) &&
+              c.client.examplePages?.includes(page)) ||
+              c.client.homeEntries?.some((p) => p.id === page)),
         )
       )
         return fail('APPLICATION_PAGE_UNKNOWN')

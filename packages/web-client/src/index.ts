@@ -36,6 +36,17 @@ export {
   presentationDefault,
   resolveApplicationBrand,
 } from './application-identity.js'
+export {
+  type ApplicationWorkRequest,
+  applicationTimelineWork,
+  applicationWorkRequest,
+  openApplicationWork,
+  rememberApplicationWork,
+  rememberSessionAgent,
+  resolveApplicationWork,
+  sessionAgentAttribution,
+  sessionApplicationWork,
+} from './application-work.js'
 export type { ClientContext, ClientModule } from './client-module.js'
 export { clientModule } from './client-module.js'
 export type { ContributionAvailability } from './contribution-scope.js'

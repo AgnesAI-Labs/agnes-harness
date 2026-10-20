@@ -149,6 +149,29 @@ export function ApplicationCard({
             </span>
           </div>
         </div>
+        {entry.application?.workbench?.scenarios && (
+          <ul className="application-scenarios">
+            {entry.application.workbench.scenarios.map((scenario) => (
+              <li key={scenario.en}>{scenario[locale] ?? scenario.en}</li>
+            ))}
+          </ul>
+        )}
+        {!!entry.application?.workbench?.includes?.length && (
+          <p>
+            {tr('Includes: ', '包含：')}
+            {entry.application.workbench.includes
+              .map(
+                (feature) =>
+                  ({
+                    pages: tr('business pages', '业务页面'),
+                    tools: tr('business tools', '业务工具'),
+                    signatures: tr('signatures', '签署流程'),
+                    reports: tr('automated reports', '自动报告'),
+                  })[feature],
+              )
+              .join(' · ')}
+          </p>
+        )}
         {installed && <PluginPrimaryStatus status={installed.primaryStatus} />}
         <Disclosure
           variant="plain"
@@ -163,13 +186,25 @@ export function ApplicationCard({
               <li key={agent.ref}>
                 <strong>{agent.launch.title[locale] ?? agent.launch.title.en}</strong>
                 <p>{agent.launch.description[locale] ?? agent.launch.description.en}</p>
-                {ready && onStartAgent && (!startableAgents || startableAgents.includes(agent.ref)) && (
-                  <Button onClick={() => onStartAgent(agent.ref)}>{t('start')}</Button>
-                )}
+                {!entry.application?.workbench &&
+                  ready &&
+                  onStartAgent &&
+                  (!startableAgents || startableAgents.includes(agent.ref)) && (
+                    <Button onClick={() => onStartAgent(agent.ref)}>{t('start')}</Button>
+                  )}
               </li>
             ))}
           </ul>
         </Disclosure>
+        {entry.application?.workbench &&
+          ready &&
+          onStartAgent &&
+          entry.application.defaultAgent &&
+          (!startableAgents || startableAgents.includes(entry.application.defaultAgent)) && (
+            <Button onClick={() => onStartAgent(entry.application!.defaultAgent!)}>
+              {tr('Open workbench assistant', '打开工作台助手')}
+            </Button>
+          )}
         {denied && <Banner tone="warning">{t(denied)}</Banner>}
         <footer>
           <Button

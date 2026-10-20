@@ -17,6 +17,7 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { useApplicationPanelFocus, useApplicationPanels } from './application-panels.js'
 import {
   BOTTOM_DEFAULT,
   BOTTOM_MIN,
@@ -157,6 +158,12 @@ function DockTabs({
 }
 export function Dock({ context }: { context: UiExtensionContext }) {
   const registryVersion = useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
+  const applicationPanels = useApplicationPanels(context)
+  const panels = useMemo(() => {
+    void registryVersion
+    return [...workbenchPanels.entries(), ...applicationPanels].sort((a, b) => a.order - b.order)
+  }, [registryVersion, applicationPanels])
+  const getPanel = useCallback((id: string) => panels.find((panel) => panel.id === id), [panels])
   // A tab count changes without the dock's context changing (a poll, a session client update).
   const [, setCountVersion] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: a registry change brings new count sources.
@@ -257,7 +264,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   }, [surfaces])
   useEffect(() => {
     const openPanel = (id: string) => {
-      const panel = workbenchPanels.get(id)
+      const panel = getPanel(id)
       if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return false
       rememberFocus(panel.edge)
       setSelected((value) => ({ ...value, [panel.edge]: id }))
@@ -285,7 +292,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       removePanel()
       removeMentions()
     }
-  }, [rememberFocus, context])
+  }, [rememberFocus, context, getPanel])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -351,7 +358,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     return () => document.removeEventListener('keydown', keyboard)
   }, [layout, surfaces, restoreFocus])
   const openPanel = (id: string, payload?: unknown) => {
-    const panel = workbenchPanels.get(id)
+    const panel = getPanel(id)
     if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return
     const edge = panel.edge
     rememberFocus(edge)
@@ -366,6 +373,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       surfaces[edge]?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(),
     )
   }
+  useApplicationPanelFocus(context, applicationPanels, openPanel)
   const close = (edge: 'right' | 'bottom') => {
     setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
     restoreFocus(edge)
@@ -388,11 +396,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const controlsView = (
     <div ref={controls} className="workbench-controls">
       {[...edges].reverse().map((edge) => {
-        const entries = workbenchPanels
-          .entries()
-          .filter(
-            (panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)),
-          )
+        const entries = panels.filter(
+          (panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)),
+        )
         if (entries.length === 0 && edge === 'bottom') return null
         const active = entries.find((panel) => panel.id === selected[edge]) ?? entries[0]
         const Component = active?.component

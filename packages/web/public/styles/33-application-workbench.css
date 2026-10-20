@@ -1,0 +1,26 @@
+@layer app {
+.application-work-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.application-panel {
+  padding: 16px;
+}
+.application-panel article {
+  border-bottom: 1px solid var(--agnes-line-primary);
+  padding: 12px 0;
+}
+.application-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.application-attribution {
+  color: var(--agnes-text-secondary);
+  font-size: 12px;
+  margin: 8px 0;
+}
+}

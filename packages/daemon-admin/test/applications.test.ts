@@ -165,6 +165,36 @@ it('fails closed for missing or undeclared roles, references and changed asset b
   await expect(f.applications.preview('local-dev', 'a')).rejects.toMatchObject({
     data: { reason: 'APPLICATION_ROLE_UNDECLARED' },
   })
+  for (const [workbench, reason] of [
+    [
+      {
+        tabs: [
+          {
+            id: 'object',
+            title: { en: 'Object' },
+            order: 0,
+            slot: 'workbench.panel',
+            view: 'page',
+            page: 'a#missing',
+          },
+        ],
+      },
+      'APPLICATION_PAGE_UNKNOWN',
+    ],
+    [
+      { actions: [{ id: 'review', title: { en: 'Review' }, prompt: { en: 'Review' }, agent: 'a#missing' }] },
+      'APPLICATION_AGENT_UNKNOWN',
+    ],
+  ] as const) {
+    f.replace([
+      {
+        ...a!,
+        entry: { ...a!.entry, application: { id: 'a', workbench: structuredClone(workbench) as never } },
+      },
+      b!,
+    ])
+    await expect(f.applications.preview('local-dev', 'a')).rejects.toMatchObject({ data: { reason } })
+  }
   const bytes = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==',
     'base64',

@@ -20,10 +20,25 @@ export function parseApplicationContract(
     !application.agents.includes(application.defaultAgent)
   )
     throw new TypeError('application defaultAgent must be in agents')
+  const workbench = application.workbench
+  for (const rows of [workbench?.tabs ?? [], workbench?.actions ?? []])
+    if (new Set(rows.map((row) => row.id)).size !== rows.length)
+      throw new TypeError('duplicate application workbench id')
+  for (const tab of workbench?.tabs ?? [])
+    if ((tab.view === 'page') !== (tab.page !== undefined))
+      throw new TypeError('application page tab requires exactly one page')
+  for (const action of workbench?.actions ?? []) {
+    const agent = action.agent ?? application.defaultAgent
+    if (!agent || (application.agents && !application.agents.includes(agent)))
+      throw new TypeError('application action requires a visible agent')
+    if (action.focusTab && !workbench?.tabs?.some((tab) => tab.id === action.focusTab))
+      throw new TypeError('unknown application action tab')
+  }
   let deploymentDependent = false
   for (const ref of new Set([
     ...(application.agents ?? []),
     ...(application.defaultAgent ? [application.defaultAgent] : []),
+    ...(application.workbench?.actions ?? []).flatMap((action) => (action.agent ? [action.agent] : [])),
   ])) {
     if (Object.hasOwn(bundles, ref)) {
       if (!bundles[ref]?.document.launch) throw new TypeError(`application target is not an agent: ${ref}`)
@@ -39,9 +54,22 @@ export function parseApplicationContract(
       ? [...(c.client.examplePages ?? []), ...(c.client.homeEntries ?? []).map((p) => p.id)]
       : [],
   )
+  for (const tab of application.workbench?.tabs ?? []) {
+    if (
+      tab.page?.startsWith(`${packageId}#`) &&
+      !contributions.some(
+        (contribution) =>
+          'client' in contribution &&
+          contribution.client?.lifetime === 'profile' &&
+          contribution.client.homeEntries?.some((entry) => `${packageId}#${entry.id}` === tab.page),
+      )
+    )
+      throw new TypeError(`unknown application tab page ${tab.page}`)
+  }
   for (const ref of [
     ...(application.presentation?.navigation?.entries ?? []),
     ...(application.presentation?.home ? [application.presentation.home] : []),
+    ...(application.workbench?.tabs ?? []).flatMap((tab) => (tab.page ? [tab.page] : [])),
   ]) {
     const [owner, page] = ref.split('#')
     if (owner === packageId) {

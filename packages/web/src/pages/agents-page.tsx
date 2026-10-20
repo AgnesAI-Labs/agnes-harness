@@ -14,9 +14,11 @@ import {
 import { choiceName } from '@agnes/web-admin/settings/choices'
 import { sessionStartUrl } from '@agnes/web-admin/settings/runtime-panels'
 import {
+  type ApplicationWorkRequest,
   applicationAgents,
   applicationIdentity,
   homeNavigation,
+  resolveApplicationWork,
   type UiExtensionContext,
 } from '@agnes/web-client'
 import {
@@ -99,6 +101,16 @@ function AgentList({
     handled.current = selection
     starter.start(focused)
   }, [focused, request?.start, selection, starter])
+  const workRequest = (selection as { workAction?: ApplicationWorkRequest } | undefined)?.workAction
+  const work = workRequest && resolveApplicationWork(workRequest, locale)
+  const workHandled = useRef<unknown>()
+  useEffect(() => {
+    if (!workRequest || !work || workHandled.current === selection) return
+    const card = cards.find((item) => item.ref === work.agent && !item.catalogAgent)
+    if (!card) return
+    workHandled.current = selection
+    starter.start(card, workRequest)
+  }, [workRequest, work, selection, cards, starter])
   const navigation = usePushStack()
   const linkedPage = navigation.stack.at(-1)
   const linked = cards.find(
