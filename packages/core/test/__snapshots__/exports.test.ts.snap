@@ -133,6 +133,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "prepareIntegrity",
   "prepareOwnerReplacement",
   "presetDefaults",
+  "projectDeliverableSources",
   "projectFactChain",
   "projectUI",
   "projectUsage",

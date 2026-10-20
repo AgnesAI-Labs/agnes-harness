@@ -3,7 +3,12 @@ import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
-import type { ToolDetailRead, ToolDetailReadResult } from '@agnes/worker-runtime'
+import type {
+  DeliverablesRead,
+  DeliverablesReadResult,
+  ToolDetailRead,
+  ToolDetailReadResult,
+} from '@agnes/worker-runtime'
 import type { WorkerSessionChannel } from './worker-link.js'
 
 /** How long a viewer's live previews may wait on a worker's snapshot. */
@@ -355,6 +360,9 @@ export class RemoteSession {
   }
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {
     return this.link.command('readToolDetail', input) as Promise<ToolDetailReadResult>
+  }
+  readDeliverablesPage(input: DeliverablesRead): Promise<DeliverablesReadResult> {
+    return this.link.command('readDeliverables', input) as Promise<DeliverablesReadResult>
   }
 
   /**

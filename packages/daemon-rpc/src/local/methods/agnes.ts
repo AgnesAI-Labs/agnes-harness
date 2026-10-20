@@ -43,7 +43,6 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
-  type SessionReadToolDetailParams,
   type ThinkingLevel,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_HISTORY_MAX_LIMIT,
@@ -67,12 +66,6 @@ import {
   SessionRemoveQueuedParams,
   SessionSendNowParams,
 } from '@agnes/protocol/gen/agnes-v1'
-import {
-  readToolDetailPage,
-  TOOL_DETAIL_PAGE_BYTES,
-  type ToolDetailRead,
-  type ToolDetailReadResult,
-} from '@agnes/worker-runtime'
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
@@ -86,6 +79,7 @@ import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 import { registerIntelligentUi } from './intelligent-ui.js'
 import { registerSchedules } from './schedules.js'
 import { registerSessionGrants } from './session-grants.js'
+import { registerToolRecordReads } from './tool-records.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
@@ -474,6 +468,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.fileUpload',
       'session.references.search',
       'session.readToolDetail',
+      'session.deliverables',
       'session.list',
       'session.rename',
       'session.revealWorkspace',
@@ -649,6 +644,7 @@ export function registerAgnes(
   registerFileUpload(ep, cx, requireOwner)
   registerSessionJobs(ep, cx.sessionServices, requireOwner)
   registerSessionGrants(ep, cx, requireOwner)
+  registerToolRecordReads(ep, cx, requireOwner)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {
     sessionId: string
@@ -1060,38 +1056,6 @@ export function registerAgnes(
     const catalog = await cx.registry.require(sessionId).session.toolCatalog()
     const capabilities = catalog.capabilities ?? cx.host.sessionCapabilities?.(sessionId)
     return { ...catalog, ...(capabilities ? { capabilities } : {}) }
-  })
-  ep.register('_agnes/v1/session.readToolDetail', async (params, c) => {
-    const p = params as SessionReadToolDetailParams
-    requireOwner('session.readToolDetail', p.sessionId, c)
-    const offset = p.offset ?? 0
-    const maxBytes = p.maxBytes ?? TOOL_DETAIL_PAGE_BYTES
-    if (
-      !Number.isSafeInteger(p.callSeq) ||
-      p.callSeq < 1 ||
-      (p.resultSeq !== undefined && (!Number.isSafeInteger(p.resultSeq) || p.resultSeq <= p.callSeq)) ||
-      !Number.isSafeInteger(offset) ||
-      offset < 0 ||
-      !Number.isSafeInteger(maxBytes) ||
-      maxBytes < 1 ||
-      maxBytes > TOOL_DETAIL_PAGE_BYTES
-    )
-      throw rpcError('INVALID_PARAMS', { reason: 'invalid tool detail bounds' })
-    const entry = cx.registry.require(p.sessionId)
-    const input: ToolDetailRead = {
-      callSeq: p.callSeq,
-      ...(p.resultSeq === undefined ? {} : { resultSeq: p.resultSeq }),
-      offset,
-      maxBytes,
-    }
-    const session = entry.session as typeof entry.session & {
-      readToolDetailPage?: (input: ToolDetailRead) => Promise<ToolDetailReadResult>
-    }
-    const outcome = session.readToolDetailPage
-      ? await session.readToolDetailPage(input)
-      : await readToolDetailPage(session, input)
-    if (!outcome.ok) throw rpcError('INVALID_PARAMS', { reason: outcome.reason })
-    return { sessionId: p.sessionId, ...outcome.page }
   })
   ep.register('_agnes/v1/session.projectUIPatch', async (params, c): Promise<UIProjectionUpdate> => {
     const p = params as SessionProjectUIPatchParams

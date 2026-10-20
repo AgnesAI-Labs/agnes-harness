@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import type { WorkerHello } from '../src/supervisor/frames.js'
 import { encodeFrame, FrameTooLarge, InvalidFrame, JsonlDecoder } from '../src/supervisor/framing.js'
+import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { handleCommand } from '../src/worker/commands.js'
 
 const actor: Actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -54,6 +55,75 @@ describe('worker command dispatch against a real host+session', () => {
       }
       expect(detail.call.args).toEqual({ path: 'full' })
       expect(detail.result.content).toEqual([{ type: 'text', text: 'full result'.repeat(200) }])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reads deliverable sources in the worker and hands the page across the frame unchanged', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const structured = {
+        deliverables: [],
+        laneId: 'main',
+        owner: 'agnes/deliverables',
+        surfaceId: 'card-p',
+      }
+      const presented = (toolUseId: string) =>
+        session.ev('tool/result', {
+          toolUseId,
+          content: [{ type: 'text', text: 'Presented' }],
+          structured,
+          isError: false,
+          enforcement: { level: 'full', scope: [] },
+          authz: { decisionId: `d-${toolUseId}` },
+        })
+      const { seqs } = await session.append([
+        session.ev('turn/start', { turn: 1, trigger: 'prompt' }),
+        session.ev('step/start', { turn: 1, step: 1 }),
+        session.ev('tool/call', { toolUseId: 'p', name: 'present', args: { files: [] }, ordinal: 0 }),
+        session.ev('tool/call', { toolUseId: 'q', name: 'present', args: { files: [] }, ordinal: 1 }),
+        presented('p'),
+        presented('q'),
+        session.ev('step/end', { turn: 1, step: 1 }),
+        session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ])
+      const link = {
+        alive: true,
+        async command(method: string, params: Record<string, unknown>) {
+          const result = await handleCommand(
+            session,
+            { kind: 'command', requestId: '1', method: method as 'readDeliverables', params },
+            { host: t.host, aborts: new Map() },
+          )
+          return JSON.parse(encodeFrame({ kind: 'reply', requestId: '1', result }).toString()).result
+        },
+      }
+      const remote = new RemoteSession(session.key, 'writer', 1, link as never, t.dataDir)
+      const item = (toolUseId: string, callSeq?: number, resultSeq?: number) => ({
+        callSeq,
+        resultSeq,
+        toolUseId,
+        turnId: 'turn:1',
+        structured,
+      })
+      await expect(remote.readDeliverablesPage({ afterSeq: 0, limit: 1 })).resolves.toEqual({
+        ok: true,
+        page: { upto: seqs[4], items: [item('p', seqs[2], seqs[4])], nextAfterSeq: seqs[4] },
+      })
+      await expect(remote.readDeliverablesPage({ afterSeq: seqs[4] as number, limit: 100 })).resolves.toEqual(
+        {
+          ok: true,
+          page: { upto: session.lastSeq, items: [item('q', seqs[3], seqs[5])] },
+        },
+      )
+      await expect(remote.readDeliverablesPage({ afterSeq: session.lastSeq + 1, limit: 1 })).resolves.toEqual(
+        {
+          ok: false,
+          reason: 'after-seq-out-of-range',
+        },
+      )
     } finally {
       await t.close()
     }

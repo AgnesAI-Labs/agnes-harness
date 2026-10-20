@@ -125,6 +125,7 @@ describe('authenticated session ownership RPC guard', () => {
         { method: '_agnes/v1/session.setYolo', params: { sessionId, enabled: true } },
         { method: '_agnes/v1/session.attach', params: { sessionId } },
         { method: '_agnes/v1/session.tools', params: { sessionId } },
+        { method: '_agnes/v1/session.deliverables', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.list', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.changes', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.read', params: { sessionId, path: 'report.md' } },

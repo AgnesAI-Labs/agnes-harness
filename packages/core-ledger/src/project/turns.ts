@@ -412,6 +412,11 @@ export class TurnProjection {
   }
 }
 
+/** The turn a timeline reader files a seq under: the first turn whose seq range holds it. */
+export function turnAt(turns: readonly UITurn[], seq: number): string | undefined {
+  return turns.find((turn) => seq >= turn.startSeq && (turn.endSeq === undefined || seq <= turn.endSeq))?.id
+}
+
 export function turnsForNodes(
   turns: readonly UITurn[],
   nodes: readonly UINode[],
