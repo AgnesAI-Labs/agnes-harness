@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createRefreshCoordinator } from '../src/refresh-coordinator.js'
+import { coalesceBurst, createRefreshCoordinator } from '../src/refresh-coordinator.js'
 
 afterEach(() => vi.useRealTimers())
 
@@ -69,4 +69,29 @@ it.each([false, true])('applies post-save state after an in-flight read (first f
   expect(shown).toBe('saved')
   expect(reads).toBe(2)
   coordinator.stop()
+})
+
+it('runs once per burst, never drops a later request, and cancels a pending run on stop', async () => {
+  vi.useFakeTimers()
+  let runs = 0
+  const burst = coalesceBurst(() => {
+    runs++
+  }, 100)
+  burst.request()
+  await vi.advanceTimersByTimeAsync(40)
+  burst.request()
+  burst.request()
+  await vi.advanceTimersByTimeAsync(59)
+  expect(runs).toBe(0)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(runs).toBe(1)
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(runs).toBe(1)
+  burst.request()
+  await vi.advanceTimersByTimeAsync(100)
+  expect(runs).toBe(2)
+  burst.request()
+  burst.stop()
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(runs).toBe(2)
 })

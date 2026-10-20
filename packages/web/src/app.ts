@@ -85,7 +85,7 @@ import type { ModelPickerOption } from './model-picker.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
-import { createRefreshCoordinator } from './refresh-coordinator.js'
+import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
@@ -2074,6 +2074,12 @@ client.on('generationChanged', (payload) => {
   if (!forCurrent(payload)) return
   void sessionBinding.live?.resync().catch(showError)
 })
+// A cold daemon reports its tree and packages in quick succession; notices that close share one read.
+const packageNotices = coalesceBurst(() => {
+  scheduleClientRosterRead()
+  broadcast('agnes:plugins-invalidated')
+  void modelRefresh.request().catch(showError)
+}, 100)
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
@@ -2087,11 +2093,7 @@ client.on('notice', (payload) => {
     typeof incoming.detail === 'object' && incoming.detail !== null
       ? (incoming.detail as { profile?: unknown })
       : undefined
-  if (profileName && detail?.profile === profileName) {
-    scheduleClientRosterRead()
-    broadcast('agnes:plugins-invalidated')
-    void modelRefresh.request().catch(showError)
-  }
+  if (profileName && detail?.profile === profileName) packageNotices.request()
 })
 onPageVisible(() => {
   reconnect.resume()
@@ -2147,6 +2149,7 @@ onPageHide(() => {
   if (dockHost) unmountWorkbench(dockHost)
   unmountAppShell()
   modelRefresh.stop()
+  packageNotices.stop()
   stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()

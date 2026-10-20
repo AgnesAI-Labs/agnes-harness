@@ -3798,6 +3798,49 @@ describe('incremental opening', () => {
   })
 })
 
+it('reads the plugin roster, skins and models once per burst of package notices', async () => {
+  installPublicFixture()
+  const on = vi.fn()
+  const old = session('old', async () => idleTimeline('old'))
+  const request = vi.fn(async (_method: string) => undefined)
+  const config = vi.fn(async () => ({ configured: true, profile: 'local-dev' }))
+  const skins = vi.fn(async () => ({ revision: 'r1', skins: [] }))
+  sdk.createClient.mockReturnValue({
+    initialize: vi.fn(initialized),
+    on,
+    close: vi.fn(async () => undefined),
+    request,
+    apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+    config: { get: config, providers: vi.fn(async () => ({ providers: [] })) },
+    clientModules: { list: vi.fn(async () => ({ revision: 'r1', modules: [], statuses: [], rows: [] })) },
+    skins: { list: skins },
+    workspace: { list: vi.fn(async () => ({ items: [] })) },
+    session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })) },
+    approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
+  })
+  binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+  await bootApp()
+  await vi.waitFor(() => expect(old.controls).toHaveBeenCalled())
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const rosters = () =>
+    request.mock.calls.filter(([method]) => method === '_agnes/v1/applications.get').length
+  const reads = { rosters: rosters(), configs: config.mock.calls.length, skins: skins.mock.calls.length }
+  const notice = (kind: string) => {
+    for (const [name, listener] of on.mock.calls)
+      if (name === 'notice') listener({ kind, detail: { profile: 'local-dev' } })
+  }
+  for (const kind of ['tree_changed', 'tree_changed', 'packages_changed']) notice(kind)
+  await vi.waitFor(() => expect(rosters()).toBeGreaterThan(reads.rosters))
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(rosters()).toBe(reads.rosters + 1)
+  expect(config).toHaveBeenCalledTimes(reads.configs + 1)
+  expect(skins).toHaveBeenCalledTimes(reads.skins + 1)
+  notice('packages_changed')
+  await vi.waitFor(() => expect(rosters()).toBe(reads.rosters + 2))
+  await vi.waitFor(() => expect(config).toHaveBeenCalledTimes(reads.configs + 2))
+  await vi.waitFor(() => expect(skins).toHaveBeenCalledTimes(reads.skins + 2))
+})
+
 it('renders Computer Use in the application and retires its late operation reply on pagehide', async () => {
   installPublicFixture()
   history.replaceState(null, '', '/?page=plugins&tab=plugins.computer-use#test-launcher-token')
