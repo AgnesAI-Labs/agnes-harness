@@ -52,7 +52,8 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
-  .agent-gallery {
+  .agent-gallery,
+  .application-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     gap: var(--s12);
@@ -423,20 +424,17 @@
 @layer app {
   /* Applications are package-level products; their roles stay within the product card. */
   .application-gallery {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s16);
     margin: var(--s12) 0 var(--s16);
-  }
-  .application-card {
-    gap: 18px;
-    padding: 22px;
   }
   .application-card header {
     align-items: center;
   }
-  .application-card header img {
-    border-radius: 16px;
+  .application-card header img,
+  .application-card header .agnes-mark {
+    width: 2.125rem;
+    height: 2.125rem;
+    flex: 0 0 auto;
+    border-radius: var(--radius-md);
     object-fit: contain;
   }
   .application-card .application-eyebrow {
@@ -444,8 +442,10 @@
     font-size: 12px;
     margin: 0 0 6px;
   }
-  .application-card .agent-card-heading h3 {
-    font-size: 20px;
+  .application-card .application-source {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
   }
   .application-card .agent-card-heading p {
     margin: 4px 0;
@@ -492,12 +492,6 @@
     margin-top: auto;
   }
   @media (max-width: 760px) {
-    .application-gallery {
-      grid-template-columns: 1fr;
-    }
-    .application-card {
-      padding: 18px;
-    }
     .application-preview {
       flex-wrap: wrap;
     }

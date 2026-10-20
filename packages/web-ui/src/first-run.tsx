@@ -124,7 +124,7 @@ export function FirstRunGuide({
               <Icon name="folder" />
               {t('firstRun.chooseWorkspace')}
             </Button>
-            <Disclosure summary={t('firstRun.manualWorkspace')}>
+            <Disclosure variant="plain" summary={t('firstRun.manualWorkspace')}>
               <Field label={t('firstRun.workspacePath')}>
                 <SettingsInput
                   value={path}

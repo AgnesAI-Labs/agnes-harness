@@ -354,7 +354,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           event.preventDefault()
           const steer = submitAsSteer.current
           submitAsSteer.current = false
-          if (view.loading || view.send.disabled) return
+          if (view.readOnly || view.loading || view.send.disabled) return
           onSubmit(steer ? { steer } : undefined)
         }}
       >
@@ -393,8 +393,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             classNames={SENDER_CLASSES}
             inputAttributes={INPUT_ATTRIBUTES}
             value={draft}
-            disabled={view.input.disabled}
-            placeholder={view.input.placeholder}
+            disabled={view.readOnly || view.input.disabled}
+            placeholder={view.readOnly ? t('composer.hint.readOnly') : view.input.placeholder}
             autoSize={nativeSizing ? false : AUTO_SIZE}
             {...(nativeSizing ? { styles: NATIVE_INPUT_STYLES } : {})}
             onChange={changeDraft}
@@ -469,7 +469,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
             footer={
               <div className="composer-controls">
-                {addButton}
+                {!view.readOnly && addButton}
                 {slots?.permission}
                 {!view.readOnly && (
                   <dependencies.PermissionPicker
@@ -478,7 +478,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     onSelect={onPermissionSelect}
                   />
                 )}
-                <p id="composer-hint" data-kind={view.hint.kind}>
+                <p id="composer-hint" data-kind={view.hint.kind} hidden={view.readOnly}>
                   {view.hint.text}
                 </p>
                 {view.hint.action && (
@@ -553,6 +553,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 </Button>
                 <Button
                   id="send"
+                  hidden={view.readOnly}
                   appearance="primary"
                   htmlType="submit"
                   disabled={view.send.disabled}

@@ -38,8 +38,15 @@ export function selectionFromMemory(
   provider: AccountModelSource | undefined,
 ): { model?: ComposerModelRef; permission: ComposerPermission } {
   const accountDefault = accountDefaultModel(models, provider)
+  const remembered = readWebComposerMemory()
+  // Demo is a starter choice. A connected account's default takes over for future drafts;
+  // an existing session and an explicit choice in the current draft keep their own model.
+  const starter = remembered?.model?.route === 'demo' && remembered.model.id === 'demo-model'
   return resolveNewSessionSelection({
-    remembered: readWebComposerMemory(),
+    remembered:
+      starter && accountDefault && accountDefault.route !== 'demo'
+        ? { ...remembered, model: accountDefault }
+        : remembered,
     models,
     ...(accountDefault ? { accountDefault } : {}),
   })

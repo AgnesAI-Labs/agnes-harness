@@ -33,6 +33,7 @@ it('keeps an opening preview neutral and reserves the warning and recovery actio
     )
     expect(host.querySelector('[data-tone="warning"]')?.textContent).toContain('History failed verification')
     expect(host.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
+    expect(host.querySelector('.agh-disclosure-chevron')).not.toBeNull()
     expect(host.querySelector('.agh-disclosure code')?.textContent).toBe(
       '11111111-2222-4333-8444-555555555555',
     )

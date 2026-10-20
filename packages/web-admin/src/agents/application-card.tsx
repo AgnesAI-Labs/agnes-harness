@@ -134,7 +134,10 @@ export function ApplicationCard({
           <div className="agent-card-heading">
             <p className="application-eyebrow">{tr('Industry application', '行业应用')}</p>
             <h3>{brand.title}</h3>
-            <p>{brand.name}</p>
+            <p className="application-source">
+              {tr('Package: ', '软件包：')}
+              {entry.id}
+            </p>
           </div>
         </header>
         <p className="agent-card-summary">{metadata?.summary}</p>
@@ -173,29 +176,31 @@ export function ApplicationCard({
           </p>
         )}
         {installed && <PluginPrimaryStatus status={installed.primaryStatus} />}
-        <Disclosure
-          variant="plain"
-          className="application-roles"
-          summary={tr(
-            `${entry.agents?.length ?? 0} role agents`,
-            `${entry.agents?.length ?? 0} 个角色智能体`,
-          )}
-        >
-          <ul>
-            {entry.agents?.map((agent) => (
-              <li key={agent.ref}>
-                <strong>{agent.launch.title[locale] ?? agent.launch.title.en}</strong>
-                <p>{agent.launch.description[locale] ?? agent.launch.description.en}</p>
-                {!entry.application?.workbench &&
-                  ready &&
-                  onStartAgent &&
-                  (!startableAgents || startableAgents.includes(agent.ref)) && (
-                    <Button onClick={() => onStartAgent(agent.ref)}>{t('start')}</Button>
-                  )}
-              </li>
-            ))}
-          </ul>
-        </Disclosure>
+        {!!entry.agents?.length && (
+          <Disclosure
+            variant="plain"
+            className="application-roles"
+            summary={tr(
+              `${entry.agents?.length ?? 0} role agents`,
+              `${entry.agents?.length ?? 0} 个角色智能体`,
+            )}
+          >
+            <ul>
+              {entry.agents?.map((agent) => (
+                <li key={agent.ref}>
+                  <strong>{agent.launch.title[locale] ?? agent.launch.title.en}</strong>
+                  <p>{agent.launch.description[locale] ?? agent.launch.description.en}</p>
+                  {!entry.application?.workbench &&
+                    ready &&
+                    onStartAgent &&
+                    (!startableAgents || startableAgents.includes(agent.ref)) && (
+                      <Button onClick={() => onStartAgent(agent.ref)}>{t('start')}</Button>
+                    )}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        )}
         {adopted &&
           entry.application?.workbench &&
           ready &&

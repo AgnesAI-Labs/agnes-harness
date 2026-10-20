@@ -1285,6 +1285,12 @@ const firstRun = createFirstRunController({
   storage: safeThemeStorage(),
   attachAccount: (host) => settings.attachInline(host),
   connectAccount: () => settings.submitInline(),
+  selectDemo: async () => {
+    await modelRefresh.request()
+    const demo = runtimeModels.find((model) => model.route === 'demo' && model.id === 'demo-model')
+    if (!demo) throw new Error(t('composer.hint.modelUnavailable'))
+    rememberWebComposer({ model: demo })
+  },
   chooseWorkspace: async (path) => {
     if (!path) {
       const result = await requestWorkspacePicker()

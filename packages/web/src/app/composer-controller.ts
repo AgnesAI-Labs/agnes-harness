@@ -295,16 +295,18 @@ export function createComposerController(
           (!!context.readOnly && !context.sessionPending) ||
           initialSubmissionPending,
         // The slash hint is a promise that typing "/" offers something: only with a command registered.
-        placeholder: busy
-          ? context.sessionControls?.sessionId === context.current?.id &&
-            context.sessionControls?.value.paused === true
-            ? context.t('composer.placeholder.paused')
-            : context.t('composer.placeholder.busy', { shortcut: shortcutLabel(['mod', 'enter']) })
-          : context.t(
-              !context.draftingNew && context.clientModules.commands.list().length
-                ? 'composer.placeholder.idle'
-                : 'composer.placeholder.idleNoCommands',
-            ),
+        placeholder: context.readOnly
+          ? context.t('composer.hint.readOnly')
+          : busy
+            ? context.sessionControls?.sessionId === context.current?.id &&
+              context.sessionControls?.value.paused === true
+              ? context.t('composer.placeholder.paused')
+              : context.t('composer.placeholder.busy', { shortcut: shortcutLabel(['mod', 'enter']) })
+            : context.t(
+                !context.draftingNew && context.clientModules.commands.list().length
+                  ? 'composer.placeholder.idle'
+                  : 'composer.placeholder.idleNoCommands',
+              ),
       },
       loading: context.sessionPending,
       model: {

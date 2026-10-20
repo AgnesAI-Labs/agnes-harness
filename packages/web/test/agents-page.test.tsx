@@ -455,6 +455,7 @@ it.each(['en', 'zh-CN'])(
       expect(
         host.querySelector('[data-testid="general-agent"] .agh-disclosure')?.getAttribute('data-open'),
       ).toBe('false')
+      expect(host.querySelector('[data-testid="general-agent"] .agh-disclosure-chevron')).not.toBeNull()
       expect(host.textContent).toContain(locale === 'en' ? 'Start conversation' : '开始对话')
     } finally {
       await act(async () => root.unmount())

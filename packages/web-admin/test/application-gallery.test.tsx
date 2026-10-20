@@ -137,6 +137,7 @@ it.each(['adopt', 'stale', 'readonly', 'denied', 'cancel'] as const)(
       expect(host.querySelectorAll('[data-application]')).toHaveLength(1)
       expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(0)
       expect(host.textContent).toContain('2 role agents')
+      expect(host.querySelector('.application-roles .agh-disclosure-chevron')).not.toBeNull()
       if (outcome === 'readonly' || outcome === 'denied') {
         expect(
           [...host.querySelectorAll('button')].find((node) => node.textContent === 'Install and adopt')
@@ -214,6 +215,9 @@ it.each(['missing', 'installed', 'adopted', 'unresolved'] as const)(
         ),
       )
       const primary = () => host.querySelector<HTMLButtonElement>('[data-application] footer button')
+      expect(host.querySelector('.application-roles')).toBeNull()
+      expect(host.querySelector('.application-source')?.textContent).toBe('Package: test/plain-app')
+      expect(host.querySelector('.agent-card-heading')?.textContent).not.toContain('Agnes Harness')
       expect(primary()?.textContent).toBe(
         state === 'missing' ? 'Install and adopt' : state === 'adopted' ? 'Open' : 'Adopt',
       )

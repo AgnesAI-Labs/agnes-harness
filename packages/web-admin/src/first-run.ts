@@ -42,6 +42,7 @@ export function createFirstRunController(options: {
   storage?: Pick<Storage, 'getItem' | 'setItem'> | undefined
   attachAccount(host: HTMLElement): () => void
   connectAccount(): Promise<boolean>
+  selectDemo(): Promise<void>
   chooseWorkspace(path?: string): Promise<string | undefined>
   examples(): Promise<void>
   closeSettings(): void
@@ -202,21 +203,23 @@ export function createFirstRunController(options: {
       render()
       return
     }
-    if (demo || (accountReady && !connecting)) {
+    if (accountReady && !connecting) {
       step = 1
       render()
       return
     }
-    if (!connecting) return
+    if (!connecting && !demo) return
     const epoch = ++generation
     busy = true
     error = undefined
     render()
     try {
-      const saved = await options.connectAccount()
+      let saved = false
+      if (demo) await options.selectDemo()
+      else saved = await options.connectAccount()
       if (epoch !== generation || disposed) return
-      if (saved) {
-        accountReady = true
+      if (saved || demo) {
+        accountReady = saved
         step = 1
         connecting = false
       }

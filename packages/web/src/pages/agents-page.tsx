@@ -178,7 +178,7 @@ function AgentList({
               </div>
             </header>
             <p>{t('generalHelp')}</p>
-            <Disclosure summary={t('otherModes')}>
+            <Disclosure variant="plain" summary={t('otherModes')}>
               <Loadable
                 loading={loops.loading}
                 error={loops.error}

@@ -220,7 +220,7 @@ export function ReadOnlyNotice() {
     >
       <strong>{t('app.readOnly.label')}</strong> {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
       {view.sessionId && (
-        <Disclosure summary={t('app.readOnly.details')}>
+        <Disclosure variant="plain" summary={t('app.readOnly.details')}>
           <code>{view.sessionId}</code>
         </Disclosure>
       )}
