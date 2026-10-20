@@ -3110,7 +3110,7 @@
           "jsonrpc": "2.0",
           "id": null,
           "error": {
-            "code": 1006,
+            "code": 1007,
             "message": "invalid"
           }
         },

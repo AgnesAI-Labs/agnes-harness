@@ -44,6 +44,8 @@ import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
+import { callFailureNotes, executedNotes, refusalNotes } from './nested-note.js'
+import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { preflightError } from './preflight-error.js'
@@ -73,6 +75,12 @@ export type ExecOpts = {
   onAttachmentRead?: () => void
   /** A crash-recovered second dispatch of the already-durable effect. */
   resumeDispatch?: { effectId: string; startSeq: Seq; attempt: 2 }
+  /**
+   * Set by the batch runner for a nested call it runs itself, which only an approval continuation
+   * does. No running code reads that result, so it commits with a `[nested result]` note naming the
+   * tool the call was made inside.
+   */
+  unconsumed?: { parentEffectId?: string | undefined }
 }
 export type PlannedCall = {
   toolUseId: string
@@ -89,6 +97,8 @@ export type PlannedCall = {
 export type CallOutcome = {
   result: ToolResult
   park?: EventInput
+  /** The nested call whose question `park` is, when it is not this call's own. */
+  parkedToolUseId?: string
   deferred?: { jobId: string; toolUseId: string }
 }
 
@@ -227,6 +237,20 @@ function stopRequestedBy(s: SessionImpl): Actor | undefined {
   return control?.status === 'cancel_requested' ? control.by : undefined
 }
 
+type SyntheticFailure = {
+  code: string
+  message: string
+  structured?: JsonValue
+  reconciliation?: EventInput[]
+  outcome: EffectOutcome
+  cancelledBy?: Actor
+  partial?: boolean
+}
+
+/**
+ * A synthesized failure of a call that crossed its intent: the result, the settlement, and the
+ * `[nested result]` note the failure commits with, read from how the call was run (`o`).
+ */
 async function settleSyntheticDispatch(
   s: SessionImpl,
   call: PlannedCall,
@@ -234,20 +258,14 @@ async function settleSyntheticDispatch(
   attempt: ExecuteAttempt,
   phase: 'not_sent' | 'may_have_sent',
   decisionId: string,
-  input: {
-    code: string
-    message: string
-    structured?: JsonValue
-    reconciliation?: EventInput[]
-    outcome: EffectOutcome
-    cancelledBy?: Actor
-    partial?: boolean
-  },
+  input: SyntheticFailure,
+  o: ExecOpts,
 ): Promise<ToolResult> {
   const result = {
     ...dispatchErrorResult(input.code, input.message),
     ...(input.structured ? { structured: input.structured } : {}),
   }
+  const notes = await callFailureNotes(s, call.name, effect.effectId, o, input.code)
   await s.transition(
     [
       s.ev(
@@ -268,6 +286,7 @@ async function settleSyntheticDispatch(
       ),
       effect.settle(input.outcome),
       ...(input.reconciliation ?? []),
+      ...notes,
     ],
     (cur) =>
       updateCall(cur, call.toolUseId, {
@@ -309,6 +328,7 @@ export async function refuse(
         },
         callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
       ),
+      ...(await refusalNotes(s, toolUseId, code)),
       ...(settled ? settledDecisionEvents(s, settled.handles, settled.source) : []),
     ],
     (cur) => updateCall(cur, toolUseId, { status: 'completed' }),
@@ -1015,6 +1035,7 @@ export async function approveAndExecute(
           message: 'host-computer-use dispatch is unavailable during recovered attempt',
           outcome: 'error',
         },
+        o,
       )
       return { result }
     }
@@ -1126,7 +1147,7 @@ export async function approveAndExecute(
   // return its own result (partial output, the cause) before the kernel cuts the call off.
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
-  const nestedParks: EventInput[] = []
+  const nestedParks: NestedPark[] = []
   const onAbort = () => ac.abort()
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
@@ -1141,7 +1162,7 @@ export async function approveAndExecute(
         ...io,
         parentEffectId: effect.effectId,
         ...(o.nestedLease ? { nestedLease: o.nestedLease } : {}),
-        onPark: (event) => nestedParks.push(event),
+        onPark: (event, toolUseId) => nestedParks.push({ event, toolUseId }),
         onAttachmentRead: markAttachmentRead,
       })
     }
@@ -1268,6 +1289,9 @@ export async function approveAndExecute(
         )
       return invoke(context(NO_WORKSPACE_FS), attempt)
     }
+    // Every synthesized failure of this call goes through here, so each commits its `[nested result]` note.
+    const settleFailed = (at: ExecuteAttempt, phase: 'not_sent' | 'may_have_sent', input: SyntheticFailure) =>
+      settleSyntheticDispatch(s, call, effect, at, phase, decisionId, input, o)
     let attempt: ExecuteAttempt = initialAttempt
     let observation: HostDispatchObservation
     let timedOut = false
@@ -1277,7 +1301,7 @@ export async function approveAndExecute(
     while (true) {
       if (ac.signal.aborted) {
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'CANCELLED',
             message: 'cancelled before dispatch',
             outcome: 'aborted',
@@ -1329,7 +1353,7 @@ export async function approveAndExecute(
       if (observation.phase === 'rejected_before_effect') {
         const diagnostic: JsonValue = { ...observation.error, effect: 'none' }
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'TOOL_REJECTED_BEFORE_EFFECT',
             message: `${observation.error.message}\n${JSON.stringify(diagnostic)}`,
             structured: diagnostic,
@@ -1348,7 +1372,7 @@ export async function approveAndExecute(
       )
       if (attempt === 2)
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'TOOL_DISPATCH_NOT_SENT',
             message: 'transport did not accept the tool call after two attempts',
             outcome: 'error',
@@ -1356,7 +1380,7 @@ export async function approveAndExecute(
         }
       if (parent.aborted)
         return {
-          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+          result: await settleFailed(attempt, 'not_sent', {
             code: 'CANCELLED',
             message: 'cancelled before dispatch retry',
             outcome: 'aborted',
@@ -1394,29 +1418,18 @@ export async function approveAndExecute(
         // a bare abort with no cancel on the ledger, a Host call, and a call still running when the wait ends.
         const stoppedBy = cancelled && call.executionDomain === 'workspace' ? stopRequestedBy(s) : undefined
         if (stoppedBy && dispatched && (await settlesWithin(dispatched, STOPPED_CALL_REST_MS))) {
-          const result = await settleSyntheticDispatch(
-            s,
-            call,
-            effect,
-            attempt,
-            'may_have_sent',
-            decisionId,
-            {
-              code: 'CANCELLED',
-              message: userStoppedMessage(call.name),
-              outcome: 'aborted',
-              partial: true,
-              cancelledBy: stoppedBy,
-            },
-          )
-          return {
-            result,
-            ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
-          }
+          const result = await settleFailed(attempt, 'may_have_sent', {
+            code: 'CANCELLED',
+            message: userStoppedMessage(call.name),
+            outcome: 'aborted',
+            partial: true,
+            cancelledBy: stoppedBy,
+          })
+          return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)
-        const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
+        const result = await settleFailed(attempt, 'may_have_sent', {
           code: 'TOOL_OUTCOME_UNKNOWN',
           reconciliation: reconciliation.rows,
           message:
@@ -1433,17 +1446,14 @@ export async function approveAndExecute(
         }
       }
       if (timedOut || cancelled) {
-        const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
+        const result = await settleFailed(attempt, 'may_have_sent', {
           code: 'CANCELLED',
           message: timedOut ? `timeout: ${call.name}` : `aborted: ${call.name}`,
           outcome: 'aborted',
           partial: true,
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
         })
-        return {
-          result,
-          ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
-        }
+        return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
       }
       result = errorResult(
         observation.error instanceof Error ? observation.error.message : String(observation.error),
@@ -1561,6 +1571,7 @@ export async function approveAndExecute(
               ]
             : []),
         ]
+    resultRows.push(...(await executedNotes(s, call.name, o, deferred ? undefined : resultRows[0])))
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
       tier: s.preset.verifier.defaultTier,
@@ -1621,7 +1632,7 @@ export async function approveAndExecute(
     }
     return {
       result: recordedResult,
-      ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+      ...(await parkOutcome(s, nestedParks, updateCall)),
       ...(deferred ? { deferred: { jobId: deferred, toolUseId: call.toolUseId } } : {}),
     }
   } finally {
@@ -1693,11 +1704,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
           parks.push(
             s.ev(
               'x/core/tool-policy-binding-refused',
-              {
-                toolUseId: c.toolUseId,
-                name: c.name,
-                reason: bindingProblem,
-              },
+              { toolUseId: c.toolUseId, name: c.name, reason: bindingProblem },
               { ignorable: true, sourceEventSeqs: [c.argsSeq] },
             ),
           )
@@ -1739,6 +1746,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
                 ...(c.toolUseId !== continuation?.toolUseId && c.parentEffectId
                   ? { parentEffectId: c.parentEffectId }
                   : {}),
+                ...((c.depth ?? 0) > 0 ? { unconsumed: { parentEffectId: c.parentEffectId } } : {}),
                 ...(recovered
                   ? {
                       resumeDispatch: {

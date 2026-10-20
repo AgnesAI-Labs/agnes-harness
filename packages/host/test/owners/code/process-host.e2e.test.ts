@@ -84,3 +84,70 @@ it.each(['read', 'denied-shell', 'raw-io-denied'] as const)(
   },
   30000,
 )
+
+it('keeps nested results out of later requests', async () => {
+  const { mkdtempSync, realpathSync, rmSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const { fakeProvider, textTurn, toolTurn } = await import('@agnes/core/testkit')
+  const { createTestHost } = await import('@agnes/host/testkit')
+  const code = await import('@agnes/code')
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-ptc-')))
+  writeFileSync(join(dir, 'input.txt'), 'nested host read')
+  const executor = createExec()
+  const provider = fakeProvider(
+    [
+      toolTurn('run_code', {
+        code: "const a = await tools.read({ path: 'input.txt' }); console.log('len=' + String(a).length);",
+      }),
+      textTurn('done'),
+      textTurn('again'),
+    ],
+    '2',
+  )
+  const { host } = await createTestHost({
+    dataDir: dir,
+    provider,
+    packageDirs: {
+      '@agnes/base': fileURLToPath(new URL('../../../../base/', import.meta.url)),
+      '@agnes/code': fileURLToPath(new URL('../../../../code/', import.meta.url)),
+    },
+    packages: {
+      '@agnes/code': {
+        presets: code.presets,
+        ecosystem: code.ecosystem,
+        runtimes: code.runtimes,
+        operations: code.operations,
+      },
+    },
+    allowed: ['ptc'],
+    profileInputs: { user: { name: 'local-dev', presets: { default: 'ptc', allowed: ['ptc'] } } },
+    seams: { sandbox: { exec: executor.run } },
+    approval: async (req) => ({ verdict: 'allowed-once', answeredBy: { ...req.actor, id: 'reviewer' } }),
+  })
+  try {
+    const session = await host.createSession({ cwd: dir, key: 'ptc-hidden', preset: 'ptc' })
+    for (const text of ['Read the input.', 'Anything else?']) {
+      await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text }] })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out.reason).toBe('completed')
+    }
+    // The cell really made the nested read, and the request really carries the model's own call.
+    const calls = (await session.scan({ type: 'tool/call', toSeq: session.lastSeq })).map(
+      (row) => row.data as { name?: string; depth?: number },
+    )
+    expect(calls).toContainEqual(expect.objectContaining({ name: 'read', depth: 1 }))
+    const second = JSON.stringify(provider.requests[1]?.messages)
+    expect(JSON.stringify(provider.requests[1])).toContain('"name":"run_code"')
+    expect(second).toContain('len=')
+    expect(second).not.toContain('nested host read')
+    expect(second).not.toContain('"name":"read"')
+    expect(JSON.stringify(provider.requests[1])).not.toContain('ExperimentalWarning')
+    expect(JSON.stringify(provider.requests[2])).not.toContain('ExperimentalWarning')
+  } finally {
+    await host.close()
+    await executor.killAll()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 30000)

@@ -759,6 +759,99 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     }
   })
 
+  it('default preset keeps card tool answers and hides nested ui_render', async () => {
+    const dataDir = scratch()
+    writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1' })],
+      scripts: [
+        callTool('ask_user_question', {
+          timeoutMs: 20000,
+          questions: [{ id: 'color', question: 'Pick a colour', options: ['blue', 'red'] }],
+        }),
+        callTool('present', { files: [{ path: 'report.txt', description: 'Review result' }] }),
+        say('Done.'),
+      ],
+      onExhausted: 'error',
+    })
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      provider,
+      disableSessionTitle: true,
+      seams: {
+        artifacts: {
+          put: async (bytes, meta) => {
+            const sha256 = createHash('sha256').update(bytes).digest('hex')
+            const shard = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2))
+            mkdirSync(shard, { recursive: true })
+            writeFileSync(join(shard, sha256), bytes)
+            return { sha256, size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+          },
+        },
+      },
+    })
+    try {
+      const session = await host.createSession({ cwd: dataDir })
+      expect(session.preset.name).toBe('standard')
+      const service = session.intelligentUi
+      if (!service) throw new Error('missing Intelligent UI service')
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Ask me, then present the report' }],
+        actor: session.d.actor,
+        kind: 'prompt',
+      })
+      const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+      // The tool waits for the answer, so the question card is answered while the turn is running.
+      const questionSurface = async () => {
+        for (let i = 0; i < 200; i++) {
+          const open = (await service.read({ sessionId: session.key }, new AbortController().signal)).surfaces
+          if (open[0]) return open[0]
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        throw new Error('the question card never opened')
+      }
+      const surface = await questionSurface()
+      expect(
+        await service.action(
+          {
+            sessionId: session.key,
+            surfaceId: surface.surface.id,
+            revision: surface.surface.revision,
+            actionId: 'submit',
+            commandId: 'answer',
+            input: { answers: { color: 'blue' } },
+            selection: {},
+          },
+          session.d.actor,
+          new AbortController().signal,
+        ),
+      ).toMatchObject({ status: 'received' })
+      expect(await running).toMatchObject({ reason: 'completed' })
+      expect(provider.calls).toHaveLength(3)
+      // The answer reaches the model as the result of the card's own submit call, a top-level call
+      // the model sees; ask_user_question returns once the submission is received, before the answer
+      // is recorded, so its own result is still the pending text.
+      const resultTexts = (request: (typeof provider.calls)[number]): string[] =>
+        request.messages.flatMap((message) =>
+          message.role === 'tool_result'
+            ? message.content.flatMap((block) => (block.type === 'text' ? [block.text] : []))
+            : [],
+        )
+      expect(resultTexts(provider.calls[1]!).some((text) => text.includes('blue'))).toBe(true)
+      expect(resultTexts(provider.calls[2]!).some((text) => text.includes('report.txt'))).toBe(true)
+      // The cards themselves were rendered through nested ui_render calls, which the model never made.
+      const nested = (await session.scan({ type: 'tool/call', toSeq: session.lastSeq })).filter(
+        (row) => (row.data as { name: string; depth?: number }).name === 'ui_render',
+      )
+      expect(nested.length).toBeGreaterThan(0)
+      for (const request of provider.calls.slice(1))
+        expect(JSON.stringify(request.messages)).not.toContain('"name":"ui_render"')
+    } finally {
+      await host.close()
+    }
+  })
+
   it('searches a catalogued Skill through the assembled Host and activates it by name', async () => {
     const dataDir = scratch()
     const resourceId = `skill/user/user-agnes/${'a'.repeat(64)}`

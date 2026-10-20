@@ -115,4 +115,36 @@ describe('run_code tool definition', () => {
       name: 'cell-output.txt',
     })
   })
+
+  it('appends the nested call line', async () => {
+    const calls: Array<{ name: string; status: 'ok' | 'error' | 'pending'; readOnly: boolean }> = [
+      { name: 'write', status: 'ok', readOnly: false },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'shell', status: 'error', readOnly: false },
+    ]
+    const withCalls = (list: typeof calls) => ({
+      ...deps(runtime()),
+      bridge: () => Object.assign(async (frame: unknown) => frame, { calls: () => list }),
+    })
+    const text = async (list: typeof calls) =>
+      (
+        (await createRunCodeTool(withCalls(list)).execute({ code: 'x' }, context())).content[0] as {
+          text: string
+        }
+      ).text
+    expect(await text(calls)).toBe('hello\nnested calls: write ok, shell error; read-only: 2')
+    expect(await text(calls.slice(1, 3))).toBe('hello\nnested calls: read-only: 2')
+    expect(await text([calls[0] as (typeof calls)[number]])).toBe(
+      'hello\nnested calls: write ok; read-only: 0',
+    )
+    expect(await text([])).toBe('hello')
+    expect(await text([{ name: 'shell', status: 'pending', readOnly: false }])).toBe(
+      'hello\nnested calls: shell pending; read-only: 0',
+    )
+    // A read-only call waiting for approval is still only counted.
+    expect(await text([{ name: 'read', status: 'pending', readOnly: true }])).toBe(
+      'hello\nnested calls: read-only: 1',
+    )
+  })
 })

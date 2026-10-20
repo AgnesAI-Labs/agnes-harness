@@ -2226,7 +2226,7 @@ export class SessionImpl {
       parentEffectId?: string
       invocationId?: string
       nestedLease?: NestedToolLease
-      onPark?: (event: EventInput) => void
+      onPark?: (event: EventInput, toolUseId: string) => void
       onAttachmentRead?: () => void
     },
   ): Promise<ToolResult> {

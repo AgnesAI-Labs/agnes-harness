@@ -5,6 +5,7 @@ import type { ToolDef } from '@agnes/extension-api'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
+import { hookSurface } from '../src/execution/turn/compaction-summary.js'
 import { mintAuxiliaryVisionProductionAdmission } from '../src/orchestrator/auxiliary-vision-assembly.js'
 import { loadAuxiliaryVisionPreflight } from '../src/orchestrator/request-media-preflight.js'
 import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-media-surface.js'
@@ -1492,6 +1493,57 @@ describe('surfaceToolCalls owner attribution (C-17 producer)', () => {
     expect(calls).toHaveLength(1)
     // The one that survives is the one the surviving message actually asked for.
     expect(calls[0]?.args).toEqual({ path: 'a' })
+  })
+})
+
+describe('nested tool calls stay out of the model context', () => {
+  const outerTool = (): ToolDef =>
+    ({
+      name: 'outer',
+      description: 'outer',
+      parameters: Type.Object({}),
+      meta: {
+        isReadOnly: true,
+        isDestructive: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe' as const,
+        costHint: undefined,
+        deferLoading: undefined,
+        requiresApproval: undefined,
+      },
+      execute: async (
+        _args: unknown,
+        ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } },
+      ) => {
+        await ctx.tools.invoke('read', { path: 'inner' })
+        return { content: [{ type: 'text' as const, text: 'outer done' }] }
+      },
+    }) as never
+
+  it('surfaceToolCalls skips nested calls', async () => {
+    const registry = readRegistry()
+    registry.add(outerTool(), { source: 's', trust: 'builtin' })
+    const { session, log } = await primed([toolTurn('outer', {}), textTurn('done')], registry)
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const rows = await log.scan({ type: 'tool/call', limit: 10 })
+    // The nested call is a real ledger row; it is the surface that must not carry it.
+    expect(rows.map((r) => (r.data as { depth?: number }).depth ?? 0).sort()).toEqual([0, 1])
+    const calls = [...(await surfaceToolCalls(session))]
+    expect(calls.map((c) => c.name)).toEqual(['outer'])
+  })
+
+  it('hookSurface omits nested results', async () => {
+    const registry = readRegistry()
+    registry.add(outerTool(), { source: 's', trust: 'builtin' })
+    const { session, log } = await primed([toolTurn('outer', {}), textTurn('done')], registry)
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const results = await log.scan({ type: 'tool/result', limit: 10 })
+    expect(results).toHaveLength(2)
+    const surface = session.surface()
+    expect(surface.filter((n) => n.kind === 'tool_result')).toHaveLength(1)
+    const listed = hookSurface(surface, new Map()).map((n) => n.seq)
+    for (const r of results.slice(0, -1)) expect(listed).not.toContain(r.seq)
   })
 })
 

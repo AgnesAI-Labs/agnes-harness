@@ -1359,6 +1359,39 @@ describe('runtime-context user/message projection', () => {
     expect(kind(nodes, 'user')).toHaveLength(0)
   })
 
+  it('projects a [nested result] note to a context node', async () => {
+    const cell = new UIProjectionCell('k', 'main')
+    const header = '[nested result]\nThe nested call shell inside outer finished later (status: ok). Preview:'
+    const event: Event = {
+      seq: 1,
+      ts: '2026-09-14T00:00:00.000Z',
+      id: '01K000000000000000000006',
+      type: 'user/message',
+      data: {
+        content: [
+          { type: 'text', text: header },
+          { type: 'text', text: 'ran' },
+        ],
+        kind: 'runtime_context',
+      },
+      actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+      origin: 'system',
+      trust: 'untrusted',
+      lane: 'main',
+      v: 1,
+      ignorable: true,
+    } as Event
+    cell.apply([event])
+    const { nodes } = await cell.view()
+    expect(nodes).toContainEqual({
+      kind: 'context',
+      id: '01K000000000000000000006',
+      seq: 1,
+      text: `${header}ran`,
+    })
+    expect(kind(nodes, 'user')).toHaveLength(0)
+  })
+
   it('still projects a genuine user message (no data.kind) to a user node', async () => {
     const cell = new UIProjectionCell('k', 'main')
     const event: Event = {

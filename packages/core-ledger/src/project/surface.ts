@@ -13,11 +13,37 @@ export type SurfaceNode = {
   masked?: { start: Seq; end: Seq; sourceEventSeqs: Seq[] }
 }
 
-/** A surface's nodes as they stood when taken; `byId` is the live, append-only map, read up to the fork seq. */
+/**
+ * A surface's nodes as they stood when taken; `byId`, `nestedToolUseIds`, `hiddenResultSeqs` and
+ * `summaryOrigins` are the live, append-only maps, read up to the fork seq. `nestedToolUseIds` maps
+ * each nested call's id to the seq of its `tool/call` row, which is what lets a seed keep only the ids
+ * that existed at its fork point. `hiddenResultSeqs` holds the seqs of the nested results the fold
+ * hid, and `summaryOrigins` maps each summary's seq to the seq of the first row its range covers.
+ */
 export type SurfaceSnapshot = {
   nodes: readonly SurfaceNode[]
   replaceGeneration: number
   byId: ReadonlyMap<Seq, Event>
+  nestedToolUseIds: ReadonlyMap<string, Seq>
+  hiddenResultSeqs: ReadonlySet<Seq>
+  summaryOrigins: ReadonlyMap<Seq, Seq>
+}
+
+/**
+ * What a fold keeps beside its nodes. `nested` and `hidden` are the nested calls and the result rows
+ * they hid; `origins` places each summary node by the first row it covers, which is where it sits.
+ */
+type FoldState = { nested: Map<string, Seq>; hidden: Set<Seq>; origins: Map<Seq, Seq> }
+
+const newFoldState = (): FoldState => ({ nested: new Map(), hidden: new Set(), origins: new Map() })
+
+/**
+ * Whether a `tool/call` row's data is a nested call: one a tool made through `ctx.tools.invoke`,
+ * which carries `depth > 0`. The model never asked for it, so neither it nor its result is shown.
+ */
+export function isNestedCall(data: unknown): boolean {
+  const depth = (data as { depth?: unknown } | null | undefined)?.depth
+  return typeof depth === 'number' && depth > 0
 }
 
 /** Message types carried by the surface; delegated session starts also reset its scope. */
@@ -27,12 +53,50 @@ const KIND: Record<string, SurfaceNode['kind']> = {
   'tool/result': 'tool_result',
 }
 
+/** The call id a `tool/call` or `tool/result` row names, when it names one. */
+function toolUseIdOf(e: Event): string | undefined {
+  const id = (e.data as { toolUseId?: unknown } | null | undefined)?.toolUseId
+  return typeof id === 'string' ? id : undefined
+}
+
+/** Whether `e` is the result of a nested call, which never reaches the surface. */
+function hiddenResult(e: Event, nested: ReadonlyMap<string, Seq>): boolean {
+  const id = e.type === 'tool/result' ? toolUseIdOf(e) : undefined
+  return id !== undefined && nested.has(id)
+}
+
+/**
+ * The run of `nodes` a replace masks. A boundary is normally a node's own seq. A ledger written before
+ * nested results were hidden can name one of those results as a boundary; it is snapped to the visible
+ * nodes inside the range, placed by the first row each covers: the first node after a hidden start and
+ * the last node before a hidden end. A range with no visible node inside it resolves to nothing.
+ */
+function replaceRange(
+  nodes: readonly SurfaceNode[],
+  { start, end }: { start: Seq; end: Seq },
+  state: FoldState,
+): { i: number; j: number } | undefined {
+  const at = (n: SurfaceNode) => state.origins.get(n.seq) ?? n.seq
+  const i = state.hidden.has(start)
+    ? nodes.findIndex((n) => at(n) > start)
+    : nodes.findIndex((n) => n.seq === start)
+  const j = state.hidden.has(end)
+    ? nodes.findLastIndex((n) => at(n) < end)
+    : nodes.findIndex((n) => n.seq === end)
+  return i === -1 || j === -1 || j < i ? undefined : { i, j }
+}
+
 /**
  * Folds one event onto a surface the caller owns, in place. `changed` says whether the surface is
  * different afterwards; `replaced` says whether a range was actually masked, which is what a
  * generation counter should count — an event whose range no longer resolves changes nothing.
  */
-function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: boolean; replaced: boolean } {
+function applyEvent(
+  nodes: SurfaceNode[],
+  e: Event,
+  pins: Set<Seq>,
+  state: FoldState,
+): { changed: boolean; replaced: boolean } {
   if (e.type === 'session/start') {
     const start = e.data as unknown as SessionStart
     if (start.parent && start.delegation?.kind === 'spawn') {
@@ -43,15 +107,29 @@ function applyEvent(nodes: SurfaceNode[], e: Event, pins: Set<Seq>): { changed: 
       return { changed, replaced: changed }
     }
   }
+  if (e.type === 'tool/call') {
+    // Read only to remember which calls are nested; a call is never a node of its own.
+    const id = toolUseIdOf(e)
+    if (id !== undefined && isNestedCall(e.data)) state.nested.set(id, e.seq)
+    return { changed: false, replaced: false }
+  }
   const kind = KIND[e.type]
   if (!kind) return { changed: false, replaced: false }
+  // A nested call's result belongs to the tool that made the call, not to the conversation. This is
+  // read by call id, so a refused result (which names no source rows) is hidden like any other.
+  if (hiddenResult(e, state.nested)) {
+    state.hidden.add(e.seq)
+    return { changed: false, replaced: false }
+  }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {
     const { start, end } = e.surfaceOp
-    const i = nodes.findIndex((n) => n.seq === start)
-    const j = nodes.findIndex((n) => n.seq === end)
+    const range = replaceRange(nodes, e.surfaceOp, state)
     // An unresolvable range is tolerated on a rebuild rather than fatal: the append path validated it
     // when it was written, so the fold's job here is to reproduce a history, not to re-adjudicate it.
-    if (i === -1 || j === -1 || j < i) return { changed: false, replaced: false }
+    if (!range) return { changed: false, replaced: false }
+    const { i, j } = range
+    const first = nodes[i] as SurfaceNode
+    state.origins.set(e.seq, state.origins.get(first.seq) ?? first.seq)
     const summary: SurfaceNode = {
       seq: e.seq,
       kind: 'summary',
@@ -75,10 +153,11 @@ export function computeSurface(
   const lane = opts.lane ?? 'main'
   const pins = opts.pins ?? new Set<Seq>()
   const nodes: SurfaceNode[] = []
+  const state = newFoldState()
   for (const e of events) {
     if (opts.upto !== undefined && e.seq > opts.upto) break
     if ((e.lane ?? 'main') !== lane) continue
-    applyEvent(nodes, e, pins)
+    applyEvent(nodes, e, pins, state)
   }
   return nodes
 }
@@ -147,6 +226,8 @@ export class SurfaceCache {
   #nodes: SurfaceNode[] = []
   #view: readonly SurfaceNode[] | undefined
   readonly #byId = new Map<Seq, Event>()
+  // Nested calls are not model-visible rows, so they stay out of #byId; only their ids are kept.
+  readonly #fold = newFoldState()
   readonly #lane: string
   readonly #pins: Set<Seq>
   #upto = 0
@@ -158,6 +239,10 @@ export class SurfaceCache {
       const cache = new SurfaceCache(lane)
       cache.#nodes = snap.nodes.map((n) => (n.pinned ? { ...n, pinned: false } : n))
       for (const [id, event] of snap.byId) if (id <= seq) cache.#byId.set(id, event)
+      for (const [id, callSeq] of snap.nestedToolUseIds)
+        if (callSeq <= seq) cache.#fold.nested.set(id, callSeq)
+      for (const hidden of snap.hiddenResultSeqs) if (hidden <= seq) cache.#fold.hidden.add(hidden)
+      for (const [at, origin] of snap.summaryOrigins) if (at <= seq) cache.#fold.origins.set(at, origin)
       cache.replaceGeneration = snap.replaceGeneration
       cache.#upto = seq
       return cache
@@ -170,7 +255,14 @@ export class SurfaceCache {
   }
 
   snapshot(): SurfaceSnapshot {
-    return { nodes: this.nodes(), replaceGeneration: this.replaceGeneration, byId: this.#byId }
+    return {
+      nodes: this.nodes(),
+      replaceGeneration: this.replaceGeneration,
+      byId: this.#byId,
+      nestedToolUseIds: this.#fold.nested,
+      hiddenResultSeqs: this.#fold.hidden,
+      summaryOrigins: this.#fold.origins,
+    }
   }
 
   constructor(lane: string, pins: Set<Seq> = new Set()) {
@@ -182,8 +274,8 @@ export class SurfaceCache {
     for (const e of events) {
       if (e.seq > this.#upto) this.#upto = e.seq
       if ((e.lane ?? 'main') !== this.#lane) continue
-      if (KIND[e.type]) this.#byId.set(e.seq, e)
-      const applied = applyEvent(this.#nodes, e, this.#pins)
+      const applied = applyEvent(this.#nodes, e, this.#pins, this.#fold)
+      if (KIND[e.type] && !this.#fold.hidden.has(e.seq)) this.#byId.set(e.seq, e)
       if (applied.changed) this.#view = undefined
       if (applied.replaced) this.replaceGeneration++
     }

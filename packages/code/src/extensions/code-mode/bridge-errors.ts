@@ -21,6 +21,8 @@ const governed: Record<string, BridgeError['code']> = {
   TOOL_NOT_DISCLOSED: 1004,
   TOOL_ARGS_INVALID: 1005,
   SCHEMA_INVALID: 1005,
+  PARKED: 1006,
+  APPROVAL_PENDING: 1006,
 }
 export function bridgeError(code: BridgeError['code']): BridgeError {
   return { code, message: messages[code] }
