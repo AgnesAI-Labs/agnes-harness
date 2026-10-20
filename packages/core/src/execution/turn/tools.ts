@@ -44,7 +44,7 @@ import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
-import { callFailureNotes, executedNotes } from './nested-note.js'
+import { callFailureNotes, executedNotes, refusalNotes } from './nested-note.js'
 import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
@@ -322,6 +322,7 @@ export async function refuse(
         },
         callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
       ),
+      ...(await refusalNotes(s, toolUseId, code)),
       ...(settled ? settledDecisionEvents(s, settled.handles, settled.source) : []),
     ],
     (cur) => updateCall(cur, toolUseId, { status: 'completed' }),
@@ -1423,10 +1424,7 @@ export async function approveAndExecute(
               notes: await callFailureNotes(s, call.name, effect.effectId, o, 'CANCELLED'),
             },
           )
-          return {
-            result,
-            ...(await parkOutcome(s, nestedParks, updateCall)),
-          }
+          return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
         const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)

@@ -350,7 +350,8 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         })
       )[0]
       // The `[nested result]` note a synthesized close of this call commits with. Read before the
-      // result lands, while the effect is still pending and bounds the scan.
+      // result lands, while the effect is still pending and bounds the scan. A nested root is an
+      // approval continuation; one blocked on its decision is refused, and no running code reads that.
       const notesFor = (code: string) =>
         failureNotes(
           s,
@@ -358,6 +359,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
             name: root.tool?.name ?? 'a tool',
             effectId: root.effectId,
             nested: isNestedCall(callRow?.data),
+            unconsumed: code === 'DECISION_CONTINUATION_BLOCKED',
             parentEffectId: (callRow?.data as { parentEffectId?: string } | undefined)?.parentEffectId,
           },
           code,

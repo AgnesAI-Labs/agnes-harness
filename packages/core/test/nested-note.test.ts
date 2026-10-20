@@ -324,6 +324,163 @@ describe('[nested result] notes', () => {
     }
   })
 
+  const notRun = (code: string) => [
+    `${PREFIX}The nested call shell inside outer was approved but did not run (${code}). Check the current state before trying it again.`,
+  ]
+
+  it('an approved nested call refused at execution writes the not-run note', async () => {
+    const h = await parkedOnNestedShell()
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    h.session.hooks = { ...h.session.hooks, toolCall: async () => ({ allow: false, reason: 'policy' }) }
+    expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const refused = (await h.log.scan({ type: 'tool/result', limit: 20 })).find(
+      (row) => (row.data as { code?: string }).code === 'HOOK_DENIED',
+    )
+    expect(refused).toBeDefined()
+    expect(await ledgerNotes(h.log)).toEqual([notRun('HOOK_DENIED')])
+    // The note commits with the refusal it describes.
+    const [note] = await h.log.scan({ type: 'user/message', fromSeq: (refused?.seq ?? 0) + 1, limit: 1 })
+    expect(note?.seq).toBe((refused?.seq ?? 0) + 1)
+    expect(h.provider.requests[1]?.messages.filter(isNote).map(texts)).toEqual([notRun('HOOK_DENIED')])
+  })
+
+  it('an approved nested call cancelled before dispatch writes the not-run note', async () => {
+    const h = await parkedOnNestedShell()
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    h.session.hooks = {
+      ...h.session.hooks,
+      toolCall: async () => {
+        await h.session.abort(stopper)
+        return { allow: true }
+      },
+    }
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED')])
+  })
+
+  it('an approved nested call the user stops while it runs writes the not-run note', async () => {
+    const held: { s?: SessionImpl } = {}
+    const h = await parkedOnNestedShell(
+      shellTool(
+        (_args, ctx) =>
+          new Promise((resolve) => {
+            ctx.signal.addEventListener('abort', () => resolve({ content: [] }), { once: true })
+            void held.s?.abort(stopper)
+          }),
+      ) as ToolDef,
+    )
+    held.s = h.session
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    const cancelled = (await h.log.scan({ type: 'tool/result', limit: 20 })).at(-1)
+    expect(cancelled?.data).toMatchObject({ code: 'CANCELLED' })
+    expect(await ledgerNotes(h.log)).toEqual([notRun('CANCELLED')])
+  })
+
+  it('an approved nested call blocked on recovery writes the not-run note', async () => {
+    let entered!: () => void
+    const called = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const shell = shellTool(async (_args, ctx) => {
+      await ctx.decisions.request({
+        key: 'review',
+        purpose: 'business.confirm',
+        subject: { text: 'Review' },
+        prompt: 'Continue?',
+        presentation: { en: { title: 'Review', fields: [], responseValue: 'review' } },
+        options: ['continue', 'reject'],
+      })
+      entered()
+      return new Promise(() => undefined)
+    }) as ToolDef
+    const h = await parkedOnNestedShell(shell)
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
+    void h.session.run({ until: 'turn-end', signal: signal() }).catch(() => undefined)
+    await called
+    await h.log.close()
+    const reopened = await openSession({
+      provider: fakeProvider([]),
+      storage: h.storage,
+      writerRunId: 'reopen',
+      registry: registryOf(
+        shell,
+        outer((ctx) => ctx.tools.invoke('shell', { command: 'click' })),
+      ),
+    })
+    try {
+      await reopened.session.resume()
+      expect((await reopened.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
+        code: 'DECISION_CONTINUATION_BLOCKED',
+      })
+      expect(await ledgerNotes(reopened.log)).toEqual([notRun('DECISION_CONTINUATION_BLOCKED')])
+    } finally {
+      await reopened.session.close()
+    }
+  })
+
+  it('an outer call cancelled after only a read-only nested call writes no note', async () => {
+    const held: { s?: SessionImpl } = {}
+    const h = await openSession({
+      provider: fakeProvider([toolTurn('outer', {}), textTurn('done')]),
+      registry: registryOf(
+        readTool() as ToolDef,
+        outer(async (ctx) => {
+          await ctx.tools.invoke('read', {})
+          await new Promise<void>((resolve) => {
+            ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+            void held.s?.abort(stopper)
+          })
+        }),
+      ),
+    })
+    held.s = h.session
+    await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    const outerResult = (await h.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data
+    expect(outerResult).toMatchObject({ code: 'CANCELLED' })
+    expect(await ledgerNotes(h.log)).toEqual([])
+  })
+
+  it('the outer-failure note lists a depth-2 write', async () => {
+    const held: { s?: SessionImpl } = {}
+    const middle: ToolDef = {
+      ...(outer((ctx) => ctx.tools.invoke('write', {})) as ToolDef),
+      name: 'middle',
+    }
+    const h = await openSession({
+      provider: fakeProvider([toolTurn('outer', {}), textTurn('done')]),
+      registry: registryOf(
+        write(),
+        middle,
+        outer(async (ctx) => {
+          await ctx.tools.invoke('middle', {})
+          await new Promise<void>((resolve) => {
+            ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+            void held.s?.abort(stopper)
+          })
+        }),
+      ),
+      preset: { ...presetDefaults(), depthLimit: 2 },
+    })
+    held.s = h.session
+    await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await h.session.run({ until: 'turn-end', signal: signal() })
+    const calls = await h.log.scan({ type: 'tool/call', limit: 10 })
+    expect(
+      calls.map((row) => [(row.data as { name: string }).name, (row.data as { depth?: number }).depth ?? 0]),
+    ).toEqual([
+      ['outer', 0],
+      ['middle', 1],
+      ['write', 2],
+    ])
+    expect(await ledgerNotes(h.log)).toEqual([
+      [
+        `${PREFIX}outer ended with CANCELLED after these nested calls had results: middle ok; write ok. Check the current state before running them again.`,
+      ],
+    ])
+  })
+
   it('consumed nested results write no note', async () => {
     const provider = fakeProvider([toolTurn('outer', {}), textTurn('done')])
     const h = await openSession({

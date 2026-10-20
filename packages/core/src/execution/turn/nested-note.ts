@@ -3,15 +3,17 @@ import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import { NESTED_RESULT_PREFIX } from '../../request/derive.js'
 import type { SessionImpl } from '../../step/session.js'
+import { approvalContinuation } from './parked.js'
 
 /**
  * The `[nested result]` notes. A nested call and its result never reach the model: the tool that
  * made the call reads the result and answers for it. Some nested outcomes land where no running code
  * reads them -- an approval continuation, a refusal or deadline, a deferred job, an unknown outcome,
- * an outer call that failed after its nested calls wrote -- and the model would otherwise never learn
- * of them. Each such outcome commits with one of these notes, beside the result it describes.
+ * an outer call that failed after its nested calls wrote, an approved call that was then refused or
+ * cancelled -- and the model would otherwise never learn of them. Each such outcome commits with one
+ * of these notes, beside the result it describes.
  */
-export type NestedOutcome = 'executed' | 'rejected' | 'deadline' | 'deferred' | 'unknown'
+export type NestedOutcome = 'executed' | 'rejected' | 'deadline' | 'deferred' | 'unknown' | 'not-run'
 
 /** How much of the result a note quotes. */
 const PREVIEW_CHARS = 2000
@@ -30,6 +32,8 @@ export function nestedOutcomeNote(
     parent: string
     outcome: NestedOutcome
     isError?: boolean
+    /** The code a `not-run` call was closed with. */
+    code?: string
     preview?: string
     trust?: EventInput['trust']
   },
@@ -41,6 +45,7 @@ export function nestedOutcomeNote(
     deadline: `Approval for ${call} expired; it did not run.`,
     deferred: `The nested call ${n.name} inside ${n.parent} finished later (status: ${status(n.isError)}). Preview:`,
     unknown: `The outcome of ${call} is unknown; check the current state before running it again.`,
+    'not-run': `The nested call ${n.name} inside ${n.parent} was approved but did not run (${n.code}). Check the current state before trying it again.`,
   }[n.outcome]
   let preview = n.preview?.slice(0, PREVIEW_CHARS) ?? ''
   // A cut through a surrogate pair would leave half a character for the provider to reject.
@@ -157,24 +162,33 @@ export async function nestedWritesUnder(
 
 /**
  * The note a synthesized failure of a call commits with, beside its `tool/result`. A nested call
- * whose outcome is unknown gets the unknown note; an outer call that failed after nested calls
- * under it wrote gets the list of them. Anything else needs none.
+ * whose outcome is unknown gets the unknown note; an approved nested call no running code reads
+ * (`unconsumed`) that failed any other way gets the not-run note; an outer call that failed after
+ * nested calls under it wrote gets the list of them. Anything else needs none.
  */
 export async function failureNotes(
   s: SessionImpl,
-  call: { name: string; effectId: string; nested: boolean; parentEffectId?: string | undefined },
+  call: {
+    name: string
+    effectId: string
+    nested: boolean
+    unconsumed?: boolean
+    parentEffectId?: string | undefined
+  },
   code: string,
 ): Promise<EventInput[]> {
-  if (call.nested)
-    return code === 'TOOL_OUTCOME_UNKNOWN'
-      ? [
-          nestedOutcomeNote(s, {
-            name: call.name,
-            parent: await nestedParentName(s, call.parentEffectId),
-            outcome: 'unknown',
-          }),
-        ]
-      : []
+  if (call.nested) {
+    const unknown = code === 'TOOL_OUTCOME_UNKNOWN'
+    if (!unknown && !call.unconsumed) return []
+    const parent = await nestedParentName(s, call.parentEffectId)
+    return [
+      nestedOutcomeNote(s, {
+        name: call.name,
+        parent,
+        ...(unknown ? { outcome: 'unknown' } : { outcome: 'not-run', code }),
+      }),
+    ]
+  }
   const calls = await nestedWritesUnder(s, call.effectId)
   return calls.length > 0 ? [outerFailureNote(s, { parent: call.name, code, calls })] : []
 }
@@ -191,7 +205,31 @@ export function callFailureNotes(
   code: string,
 ): Promise<EventInput[]> {
   const parentEffectId = o.parentEffectId ?? o.unconsumed?.parentEffectId
-  return failureNotes(s, { name, effectId, nested: o.depth > 0, parentEffectId }, code)
+  return failureNotes(
+    s,
+    { name, effectId, nested: o.depth > 0, unconsumed: o.unconsumed !== undefined, parentEffectId },
+    code,
+  )
+}
+
+/**
+ * The note a refusal of a call commits with, beside its `tool/result`. Only the call the batch runner
+ * marks `unconsumed` has one: a nested call it runs itself, which is the approval continuation. It was
+ * approved and is now refused or cancelled before it ran, and no running code reads that.
+ */
+export async function refusalNotes(s: SessionImpl, toolUseId: string, code: string): Promise<EventInput[]> {
+  const op = s.op()
+  const call =
+    op?.phase.kind === 'tools' ? op.phase.batch.calls.find((c) => c.toolUseId === toolUseId) : undefined
+  if (!call || (call.depth ?? 0) === 0 || (await approvalContinuation(s))?.toolUseId !== toolUseId) return []
+  return [
+    nestedOutcomeNote(s, {
+      name: call.name,
+      parent: await nestedParentName(s, call.parentEffectId),
+      outcome: 'not-run',
+      code,
+    }),
+  ]
 }
 
 /**
