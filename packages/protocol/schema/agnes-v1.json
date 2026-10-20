@@ -3538,6 +3538,16 @@
               "type": "string",
               "maxLength": 2048
             },
+            "argumentRecovery": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["disabled", "presentational"],
+              "properties": {
+                "disabled": { "type": "boolean" },
+                "presentational": { "type": "boolean" }
+              },
+              "description": "Core's argument rejection fact. Render failed attempts in one collapsed technical record."
+            },
             "resultPreview": {
               "type": "string",
               "maxLength": 4096
@@ -4532,6 +4542,23 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "argumentRecovery": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "Bounded diagnostic attempts without a tool-call node (nested/announced validation refusals). Full history stays in the ledger.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "seq", "disabled", "presentational", "hint"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 64 },
+              "seq": { "type": "integer", "minimum": 1 },
+              "disabled": { "type": "boolean" },
+              "presentational": { "type": "boolean" },
+              "hint": { "type": "string", "maxLength": 2000 }
+            }
           }
         },
         "finalAssistantId": {

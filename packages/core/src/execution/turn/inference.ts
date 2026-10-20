@@ -38,7 +38,6 @@ import {
   type RequestMediaScanTruncation,
   restoreRequestMediaFromLedger,
 } from '../../orchestrator/request-media-surface.js'
-import { resolveValidatedToolCallPolicy } from '../../registry/tool-policy.js'
 import { prepareAuxiliaryVisionDerivedText } from '../../request/auxiliary-vision-derived-text.js'
 import type {
   ContextBreakdownDiag,
@@ -77,15 +76,15 @@ import {
 } from '../../step/model-tools.js'
 import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
-import { toolArgumentError } from '../../step/tool-args.js'
+import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import {
   bindToolAvailability,
   disclosureRestriction,
   prepareToolAvailability,
-  toolAvailability,
 } from './tool-availability.js'
+import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
@@ -401,7 +400,7 @@ export function discloseTools(s: SessionImpl): string[] {
         (d) => modelVisibleTool(d, true) && (d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)),
       )
       .map((d) => d.name)
-  return eager().filter((name) => !disclosureRestriction(s, { name }))
+  return eager().filter((name) => !toolArgumentsDisabled(s, name) && !disclosureRestriction(s, { name }))
 }
 
 /**
@@ -470,6 +469,7 @@ export async function prepareInferenceRequest(
   if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
   const tailNote = loopTailNote(options)
   await restoreToolDisclosure(s)
+  await restoreToolArgumentRecovery(s)
   const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
   const step = op.step + 1
   const slot = options.slot ?? 'primary'
@@ -484,7 +484,7 @@ export async function prepareInferenceRequest(
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
   const coreTools = toolNamesForModel(
-    options.tools ? [...options.tools] : discloseTools(s),
+    (options.tools ? [...options.tools] : discloseTools(s)).filter((name) => !toolArgumentsDisabled(s, name)),
     t.snapshot,
     computerUseAllowed,
   )
@@ -1286,34 +1286,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       for (const c of calls) {
         const ordinal = t.ordinal++
         const toolUseId = s.d.ids.toolUseId(ordinal)
-        const def = t.snapshot.byName.get(c.name)
-        let refusal:
-          | {
-              code: 'TOOL_NOT_FOUND' | 'TOOL_ARGS_INVALID' | 'TOOL_POLICY_INVALID' | 'TOOL_NOT_DISCLOSED'
-              text: string
-            }
-          | undefined
-        let policy: ReturnType<typeof resolveValidatedToolCallPolicy> | undefined
-        if (!def) refusal = { code: 'TOOL_NOT_FOUND', text: `unknown tool ${c.name}` }
-        else if (!offered.has(c.name))
-          refusal = {
-            code: 'TOOL_NOT_DISCLOSED',
-            text: `tool ${c.name}: ${toolAvailability(s, c.name).message}`,
-          }
-        else {
-          const argsError = toolArgumentError(def.parameters, c.args)
-          if (argsError) refusal = { code: 'TOOL_ARGS_INVALID', text: argsError }
-          else {
-            try {
-              policy = resolveValidatedToolCallPolicy(def, c.args as JsonValue)
-            } catch (error) {
-              refusal = {
-                code: 'TOOL_POLICY_INVALID',
-                text: error instanceof Error ? error.message : 'tool policy classifier failed',
-              }
-            }
-          }
-        }
+        const { refusal, policy, events: validationEvents } = checkModelToolCall(s, c, offered, toolUseId)
+        refusedCalls.push(...validationEvents)
         events.push(
           s.ev(
             'tool/call',

@@ -2,7 +2,13 @@ import type { VerifierSeam, VerifierVerdict } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
 export type VerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly?: boolean }>
+  toolCalls: Array<{
+    name: string
+    args: unknown
+    schemaOk: boolean
+    isReadOnly?: boolean
+    rejected?: boolean
+  }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
@@ -24,7 +30,7 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
       const x = input as VerifyInput
       const fail: string[] = []
       const revise: string[] = []
-      if (x.toolCalls.some((c) => !c.schemaOk)) fail.push('schema_invalid')
+      if (x.toolCalls.some((c) => !c.schemaOk && !c.rejected)) fail.push('schema_invalid')
       if (x.deviations > 0) fail.push('tool_call_as_text')
       if (x.lastFinishReason === 'length') fail.push('output_truncated')
       if (scope === 'turn' || scope === 'task') {
@@ -36,7 +42,11 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
         // callers without aligned policy metadata retain conservative repeat detection.
         let run = 0
         for (let i = 0; i < keys.length; i++) {
-          if (x.toolCalls.length === keys.length && x.toolCalls[i]?.isReadOnly === true) run = 0
+          if (
+            x.toolCalls.length === keys.length &&
+            (x.toolCalls[i]?.isReadOnly === true || x.toolCalls[i]?.rejected === true)
+          )
+            run = 0
           else run = i > 0 && keys[i] === keys[i - 1] ? run + 1 : 1
         }
         if (keys.length >= repeatThreshold && run >= repeatThreshold) revise.push(`repeated_write:${run}`)

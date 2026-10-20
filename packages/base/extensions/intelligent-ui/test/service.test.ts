@@ -397,6 +397,11 @@ describe('preset surface contract and ledger lifecycle', () => {
         expect(tool.description).toContain('plain text/outlines/summaries stay in the reply')
         expect(tool.description).toContain('never a bilingual "A / B" title')
         expect(tool.description).toContain('never imitate system ids')
+        expect(tool.parameters.description).toContain('ONLY top-level field is surface')
+        const sample = String(tool.parameters.description)
+          .split('Minimal valid example: ')[1]
+          ?.split('. Use exactly')[0]
+        expect(validateAgainst(tool.parameters, JSON.parse(sample!)).ok).toBe(true)
       }
       const described = await describe.execute({ name }, ctx)
       const text = described.content[0] as { text: string }
@@ -426,7 +431,8 @@ describe('preset surface contract and ledger lifecycle', () => {
       // extension then fails to load; keep headroom for the shared data contracts to grow.
       expect(tool.description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_MAX_LENGTH - 100)
       expect(bytes(JSON.stringify(tool.parameters))).toBeLessThan(10000)
-      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(12000)
+      // The model-visible minimal example adds a bounded annotation; keep both individual limits.
+      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(12500)
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })

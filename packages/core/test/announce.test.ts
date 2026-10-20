@@ -399,7 +399,7 @@ describe('announced tool calls', () => {
   it.each([
     ['an unknown tool', { name: 'missing', args: {} }, 'TOOL_NOT_FOUND'],
     ['invalid arguments', { name: 'read', args: 5 }, 'TOOL_ARGS_INVALID'],
-  ] as const)('writes nothing when an announced batch holds %s', async (_name, bad, code) => {
+  ] as const)('dispatches nothing when an announced batch holds %s', async (_name, bad, code) => {
     let refused: unknown
     let written: number[] = []
     const f = setup(
@@ -416,7 +416,11 @@ describe('announced tool calls', () => {
     await enqueue(session)
     expect(await run(session)).toMatchObject({ reason: 'completed' })
     expect(refused).toMatchObject({ code })
-    expect(written[1]).toBe(written[0])
+    expect(written[1]! - written[0]!).toBe(code === 'TOOL_ARGS_INVALID' ? 1 : 0)
+    if (code === 'TOOL_ARGS_INVALID')
+      expect(
+        (await session.scan({ type: 'x/core/tool-argument-recovery', limit: 1 }))[0]?.data,
+      ).toMatchObject({ name: 'read', failures: 1, disabled: false })
     expect(await session.scan({ type: 'tool/call', limit: 10 })).toEqual([])
     expect(await session.scan({ type: 'assistant/message', limit: 10 })).toEqual([])
     expect(await session.scan({ type: 'x/core/loop-invocation', limit: 10 })).toEqual([])

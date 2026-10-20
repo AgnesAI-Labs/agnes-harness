@@ -1,7 +1,6 @@
 {
   "packages/core/src/execution/turn/compaction.ts#<module>/FunctionDeclaration:runCompaction": 375,
   "packages/core/src/execution/turn/inference.ts#<module>/FunctionDeclaration:runInference": 520,
-  "packages/core/src/execution/turn/inference.ts#<module>/FunctionDeclaration:runInference/Block:0/VariableDeclaration:settle/ArrowFunction:0": 225,
   "packages/core/src/execution/turn/parked.ts#<module>/FunctionDeclaration:continueParked": 240,
   "packages/core/src/execution/turn/policy-review.ts#<module>/FunctionDeclaration:decideToolPolicy": 220,
   "packages/core/src/execution/turn/resume.ts#<module>/FunctionDeclaration:resumeSession": 270,

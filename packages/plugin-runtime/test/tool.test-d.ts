@@ -129,6 +129,7 @@ describe('tool types', () => {
       | 'isPresentational'
       | 'modelVisible'
       | 'requiresImageInput'
+      | 'invalidArgumentLimit'
     >()
     const m: ToolMeta = {
       isReadOnly: true,

@@ -11,6 +11,7 @@ export default defineConfig({
     'human-controls.spec.ts',
     'references.spec.ts',
     'intelligent-ui.spec.ts',
+    'tool-recovery.spec.ts',
     'question-surfaces.spec.ts',
     'feedback.spec.ts',
     'large-upload.spec.ts',

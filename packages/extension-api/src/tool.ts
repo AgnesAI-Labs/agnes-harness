@@ -106,6 +106,8 @@ export interface ToolMeta {
    * combined with `isDestructive` or `isOpenWorld`.
    */
   isPresentational?: boolean
+  /** Consecutive invalid argument limit per turn. Default 2; integer 1–5. */
+  invalidArgumentLimit?: number
 }
 export const TOOL_META_KEYS = [
   'isReadOnly',
@@ -494,6 +496,13 @@ export function checkToolMeta(meta: unknown): CheckResult {
       problems.push(`${key}: expected boolean | undefined`)
   if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))
     problems.push('commandArg: expected a top-level argument name | undefined')
+  if (
+    m.invalidArgumentLimit !== undefined &&
+    (!Number.isInteger(m.invalidArgumentLimit) ||
+      Number(m.invalidArgumentLimit) < 1 ||
+      Number(m.invalidArgumentLimit) > 5)
+  )
+    problems.push('invalidArgumentLimit: expected integer 1–5 | undefined')
   if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
     problems.push('isPresentational: expected boolean | undefined')
   if (m.isPresentational === true && m.isDestructive === true)

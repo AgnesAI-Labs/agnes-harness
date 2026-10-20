@@ -30,6 +30,10 @@ const fullMeta = {
 describe('checkToolMeta (explicit safety keys, optional hints)', () => {
   it('accepts omitted optional hints and validates declared fields', () => {
     expect(checkToolMeta(fullMeta)).toEqual({ ok: true })
+    for (const invalidArgumentLimit of [1, 2, 5])
+      expect(checkToolMeta({ ...fullMeta, invalidArgumentLimit }).ok).toBe(true)
+    for (const invalidArgumentLimit of [0, 6, 1.5, '2', null])
+      expect(checkToolMeta({ ...fullMeta, invalidArgumentLimit }).ok).toBe(false)
     expect(checkToolMeta({ ...fullMeta, modelVisible: false, requiresImageInput: true })).toEqual({
       ok: true,
     })

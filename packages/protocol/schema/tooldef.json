@@ -81,6 +81,12 @@
           ],
           "description": "Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies."
         },
+        "invalidArgumentLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn."
+        },
         "isPresentational": {
           "type": "boolean",
           "description": "Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask."

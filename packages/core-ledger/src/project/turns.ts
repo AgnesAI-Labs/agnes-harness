@@ -261,6 +261,40 @@ export class TurnProjection {
         changed.add(turn.id)
         break
       }
+      case 'x/core/tool-argument-recovery': {
+        const fact = event.data as {
+          name?: string
+          toolUseId?: string
+          failures?: number
+          disabled?: boolean
+          presentational?: boolean
+          hint?: string
+        }
+        const turn = this.current ? this.byId.get(this.current) : undefined
+        if (
+          turn &&
+          event.origin === 'system' &&
+          event.trust === 'trusted' &&
+          !fact.toolUseId &&
+          fact.failures &&
+          typeof fact.name === 'string' &&
+          typeof fact.disabled === 'boolean' &&
+          typeof fact.presentational === 'boolean'
+        ) {
+          turn.argumentRecovery = [
+            ...(turn.argumentRecovery ?? []),
+            {
+              name: fact.name.slice(0, 64),
+              seq: event.seq,
+              disabled: fact.disabled,
+              presentational: fact.presentational,
+              hint: (fact.hint ?? '').slice(0, 2000),
+            },
+          ].slice(-16)
+          changed.add(turn.id)
+        }
+        break
+      }
       case 'decision/state': {
         const value = event.data as import('@agnes/protocol').DecisionSnapshot
         const turn = this.current ? this.byId.get(this.current) : undefined

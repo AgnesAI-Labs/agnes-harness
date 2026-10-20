@@ -5,11 +5,9 @@ import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState, Inbox, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
 import { minimumContextBudget } from '@agnes/protocol'
-import { type AskRewrite, hookedAsk } from '../../step/approval-ask.js'
 import { quoteBudget } from '../../step/calibrate.js'
 import { finishAborted } from '../../step/control.js'
-import { domainDecisionEvents, requestDomainDecision } from '../../step/domain-decision.js'
-import { claimFrom, inboxEvent } from '../../step/inbox.js'
+import { claimFrom } from '../../step/inbox.js'
 import { replacementEffects, runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type {
   BudgetReplacementOutput,
@@ -20,6 +18,7 @@ import type {
   StopGateReplacementOutput,
   TurnEndReason,
 } from '../../step/session.js'
+import { retireVerifierDecision } from '../../step/verifier-continuation.js'
 import { turnVerifyInput } from '../../step/verify-input.js'
 import { discloseTools, estimateTokens, resolveModel } from './inference.js'
 
@@ -279,15 +278,11 @@ export async function beforeStepGate(s: SessionImpl, step: number): Promise<'ok'
   return { phase: 'terminal', reason: 'parked' }
 }
 
-/**
- * What an approval given after the turn parked at the gate does. The default loop continues the
- * turn with another model round; a loop that asked to complete has no further step to take, so the
- * approval completes the turn, exactly as it does when it is given before the turn parks.
- */
+/** A loop may stop at its completion edge or request another model round. */
 export type GateResume = 'continue' | 'complete'
 
 /** The gate a turn has to pass to be allowed to finish. */
-async function builtinStopGate(s: SessionImpl, resume: GateResume): Promise<StepOutcome> {
+async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
   const persisted = [...s.state.registers.decisionStates.values()]
     .map((cell) => cell.value)
@@ -300,12 +295,11 @@ async function builtinStopGate(s: SessionImpl, resume: GateResume): Promise<Step
         (value.request.spec.subject as { turn?: number; step?: number }).turn === op.meta.turn &&
         (value.request.spec.subject as { step?: number }).step === op.step,
     )
+  if (persisted) await retireVerifierDecision(s, persisted)
   const subject = persisted?.request.spec.subject as
     | {
         verdict: VerifierVerdict['verdict']
         reasons: string[]
-        risk: 'always' | 'budget' | 'unknown'
-        rewrite?: AskRewrite
       }
     | undefined
   const hook = persisted
@@ -357,104 +351,25 @@ async function builtinStopGate(s: SessionImpl, resume: GateResume): Promise<Step
       lane: s.lane,
     })
   ).map((e) => e.data as unknown as RepairDecision)
-  const decision = persisted
+  const proposed = persisted
     ? 'park'
     : await s.d.runtime.repairDecide({ turn: op.meta.turn, round: history.length + 1, history }, verdict)
+  const decision =
+    history.length >= 1 ? 'park' : proposed === 'park' || proposed === 'complete' ? 'repair' : proposed
   const repairEvents = (verdictSeq: Seq): EventInput[] => [
     signal,
     s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
+    s.ev(
+      'x/core/verifier-recovery',
+      { verdict, proposed, handling: decision === 'park' ? 'blocked' : 'repair' },
+      { ignorable: true },
+    ),
   ]
-  if (decision === 'complete') {
-    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', { events: repairEvents })
-    return { phase: 'terminal', reason: 'completed' }
-  }
   if (decision === 'park') {
-    const requestId = s.d.ids.requestId()
-    const asked = {
-      requestId,
-      kind: 'unknown-outcome' as const,
-      summary: persisted?.request.spec.prompt ?? `verifier failed: ${verdict.reasons.join('; ')}`,
-      risk: subject?.risk ?? ('unknown' as const),
-      bindingHash: '',
-      deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
-    }
-    // The payload describes "any request for human approval": this park has no tool call behind it,
-    // so `tool` names the approval's own kind and `argv` carries nothing.
-    const hooked = await hookedAsk(s, asked.kind, null, asked, !persisted)
-    const finalAsked = hooked.asked
-    // A restored question is asked again exactly as it was recorded.
-    const rewrite = subject?.rewrite ?? hooked.rewrite
-    const review = await requestDomainDecision(
-      s,
-      'gate',
-      `${op.meta.turn}:${op.step}:${history.length + 1}`,
-      {
-        turn: op.meta.turn,
-        step: op.step,
-        triggerSeq: op.meta.triggerSeq,
-        round: history.length + 1,
-        verdict: verdict.verdict,
-        reasons: verdict.reasons,
-        risk: finalAsked.risk,
-        ...(rewrite ? { rewrite } : {}),
-        ...(resume === 'complete' ? { completes: true } : {}),
-      },
-      {
-        ...finalAsked,
-        sessionKey: s.key,
-        stepId: `${op.meta.turn}/${op.step}`,
-        actor: s.d.actor,
-        taint: op.taint || s.laneTaint(),
-        scope: s.key,
-      },
-      s.ac.signal,
-    )
-    if (review.park && review.pending) {
-      await s.endTurn('parked', {
-        events: (seq) => [...repairEvents(seq), review.park!],
-      })
-      return { phase: 'terminal', reason: 'parked' }
-    }
-    if (review.park)
-      await s.decisions.withdraw(
-        review.snapshot.handle,
-        review.source,
-        (review.park.data as { waitEndedBy: string }).waitEndedBy,
-      )
-    const allowed =
-      review.snapshot.result?.reason === 'answered' &&
-      !review.snapshot.invalidation &&
-      review.snapshot.result.response.option.startsWith('allowed')
-    const decisionEvents = () => domainDecisionEvents(s, review.snapshot, review.source)
-    if (!allowed) {
-      await s.endTurn('blocked', {
-        events: (seq) => [...repairEvents(seq), ...decisionEvents()],
-      })
-      return { phase: 'terminal', reason: 'blocked' }
-    }
-    // The model has already proposed completion. Approval accepts this verdict's evidence,
-    // not another inference over the same history (which would ask the identical question again).
-    // Close this turn atomically with the decision; future turns still run their own verifier.
-    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
-    await s.endTurn('completed', {
-      events: (seq) => {
-        // A steer received while approval/after-core awaited must not be stranded when this
-        // turn closes. Preserve it as a new turn, with fresh verification and its original trust.
-        const inbox = s.latest('inbox') as Inbox | undefined
-        const pending = inbox?.items.some((item) => item.target === 'next-step')
-          ? [
-              inboxEvent(s.lane, s.d.actor, {
-                items: inbox.items.map((item) =>
-                  item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
-                ),
-              }),
-            ]
-          : []
-        return [...repairEvents(seq), ...decisionEvents(), ...pending]
-      },
-    })
-    return { phase: 'terminal', reason: 'completed' }
+    // Verification is a system judgment, never an authorization request. Preserve the rejected
+    // evidence and stop after one automatic repair even if an extension keeps requesting retries.
+    await s.endTurn('blocked', { events: repairEvents })
+    return { phase: 'terminal', reason: 'blocked' }
   }
   const prev = (s.latest('budget.state') as BudgetState | undefined) ?? {
     slot: 'primary',
@@ -467,7 +382,19 @@ async function builtinStopGate(s: SessionImpl, resume: GateResume): Promise<Step
       ? [s.ev('budget.state', { ...prev, escalate: true }, { register: 'budget.state' })]
       : []
   await s.transition(
-    (seq) => [...repairEvents(seq), ...extra],
+    (seq) => [
+      ...repairEvents(seq),
+      ...extra,
+      s.ev('user/message', {
+        kind: 'runtime_context',
+        content: [
+          {
+            type: 'text',
+            text: 'The system could not verify completion. Repair the answer once using available evidence; avoid failed call paths. Keep internal errors in diagnostics. If the task cannot be completed, explain the limitation plainly.',
+          },
+        ],
+      }),
+    ],
     withPhase(op, { kind: 'checkpoint', continuation: 'need_assistant', triggerSeq: op.meta.triggerSeq }),
   )
   return { phase: 'checkpoint' }
