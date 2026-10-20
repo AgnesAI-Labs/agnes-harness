@@ -413,6 +413,26 @@ it('publishes a delivered target on the generation an earlier worker recorded fo
   expect(generations()).toEqual(before)
 })
 
+it('publishes afresh rather than on a generation another Host in this process still runs', async () => {
+  const root = scratch()
+  const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
+  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  let second: Awaited<ReturnType<typeof createTestHost>> | undefined
+  try {
+    await first.host.applyRuntimeTarget(delivered)
+    const running = first.host.lastChange?.()?.generationId
+    // A second worker on the same composition snapshots its boot target over the first one's head.
+    second = await createTestHost({ dataDir: root, disableSessionTitle: true })
+    await second.host.applyRuntimeTarget(delivered)
+    const published = second.host.lastChange?.()?.generationId
+    expect(published).toBeDefined()
+    expect(published).not.toBe(running)
+  } finally {
+    await second?.host.close()
+    await first.host.close()
+  }
+})
+
 it('never publishes on a generation this host still runs for an open session', async () => {
   const root = scratch()
   const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target

@@ -94,6 +94,12 @@ export type PluginGenerationStatus = Readonly<{
 }>
 
 type LiveGeneration = { snapshot: PluginGenerationSnapshot; host: Host }
+/**
+ * The generations each open generation Host in this process runs. A publication never reuses one of
+ * them: two containers with one generation identity would each count the other's session pins as
+ * bound to itself, and fork where it would have published in place.
+ */
+const runningInProcess = new Set<ReadonlyMap<string, LiveGeneration>>()
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 /**
  * Generation-local containers keep Cordis row identities, extension leases, loop registries and
@@ -219,10 +225,15 @@ export async function createRuntimeGenerationHost(
       seams,
     }
     // Workers of one composition share a recorded head instead of each snapshotting the same target. A
-    // publication takes a generation recorded from the same inputs that this host neither runs nor saw fail.
+    // publication takes a generation recorded from the same inputs that no Host in this process runs and
+    // this host never saw fail.
     const reused =
       reuse === 'identical'
-        ? store.reusableGeneration(headKey, expected, new Set([...live.keys(), ...failures.keys()]))
+        ? store.reusableGeneration(
+            headKey,
+            expected,
+            new Set([...[...runningInProcess].flatMap((running) => [...running.keys()]), ...failures.keys()]),
+          )
         : reuse
           ? store.reusableHead(headKey, expected)
           : undefined
@@ -1342,6 +1353,7 @@ export async function createRuntimeGenerationHost(
         await Promise.allSettled(opening.values())
         for (const generation of live.values()) claim(generation.host)
         const results = await Promise.allSettled(hosts.values())
+        runningInProcess.delete(live)
         const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
         if (errors.length) throw new AggregateError(errors, 'generation shutdown failed')
         await store.collect(new Set())
@@ -1349,9 +1361,11 @@ export async function createRuntimeGenerationHost(
       return closing
     },
   }
+  runningInProcess.add(live)
   try {
     await ensureCurrent()
   } catch (error) {
+    runningInProcess.delete(live)
     await initial.close().catch(() => undefined)
     throw error
   }
