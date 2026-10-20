@@ -4,6 +4,8 @@ import type { Session } from '@agnes/sdk/browser'
 import type { AppSessionContext } from '../app.js'
 import { showCommandFeedback } from './command-feedback.js'
 
+export type ApplySessionControls = (options?: { render?: boolean }) => Promise<void>
+
 export function createCommandController(
   context: Pick<
     AppSessionContext,
@@ -177,8 +179,11 @@ export function createCommandController(
     await (await readSessionControls(session))()
   }
 
-  /** Reads the controls now; the returned step applies them unless superseded in the meantime. */
-  async function readSessionControls(session: Session): Promise<() => Promise<void>> {
+  /**
+   * Reads the controls now; the returned step applies them unless superseded in the meantime. A caller
+   * that renders right after applying can leave the render to itself.
+   */
+  async function readSessionControls(session: Session): Promise<ApplySessionControls> {
     const epoch = context.sessionBinding.capture()
     const request = ++controlsRefresh
     const current = () => context.sessionBinding.isCurrent(epoch, session) && request === controlsRefresh
@@ -194,13 +199,14 @@ export function createCommandController(
     } while (value.factsMore)
     const state = { ...value, facts }
     context.controlsHistory.set(session.id, { through, facts })
-    return () => applySessionControls(session, state, current)
+    return (options) => applySessionControls(session, state, current, options?.render ?? true)
   }
 
   async function applySessionControls(
     session: Session,
     value: SessionControlStateResult,
     current: () => boolean,
+    render: boolean,
   ): Promise<void> {
     if (!current()) return
     context.sessionControls = { sessionId: session.id, value }
@@ -228,7 +234,7 @@ export function createCommandController(
       context.recoveredReturns.add(key)
       sessionStorage.setItem(key, 'pending')
     }
-    context.render()
+    if (render) context.render()
     await showCommandFeedback(context, session)
   }
 

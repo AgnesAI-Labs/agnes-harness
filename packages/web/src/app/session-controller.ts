@@ -305,7 +305,9 @@ export function createSessionController(
       bindingOwner.watch(epoch, liveProjection)
       await liveProjection.start()
       // A read lost while the opening was out (a dropped connection) is made again, as before.
-      await (await controls.catch(() => context.readSessionControls(loaded)))()
+      const applyControls = await controls.catch(() => context.readSessionControls(loaded))
+      // The readiness render below paints the applied controls in the same task.
+      await applyControls({ render: false })
       if (!context.sessionBinding.isCurrent(epoch)) return
       selectionReady = true
       context.sessionPending = false

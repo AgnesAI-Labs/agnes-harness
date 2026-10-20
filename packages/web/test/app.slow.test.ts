@@ -42,6 +42,8 @@ const traceBridge = vi.hoisted(() => ({
   transcriptOptions: undefined as unknown,
   claim: undefined as unknown,
   metas: [] as unknown[],
+  // The session readiness at each full transcript render.
+  paints: [] as (string | undefined)[],
 }))
 vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/client-modules/boot.js')>()
@@ -63,6 +65,13 @@ vi.mock('../src/client-modules/boot.js', async (importOriginal) => {
         const render = runtime.trace.render.bind(runtime.trace)
         runtime.trace.render = (nodes, turns, meta) => {
           traceBridge.metas.push(meta)
+          render(nodes, turns, meta)
+        }
+      }
+      if (runtime.transcript) {
+        const render = runtime.transcript.render.bind(runtime.transcript)
+        runtime.transcript.render = (nodes, turns, meta) => {
+          traceBridge.paints.push(runtime.session.readiness.getSnapshot()?.status)
           render(nodes, turns, meta)
         }
       }
@@ -401,6 +410,7 @@ afterEach(async () => {
   traceBridge.transcriptOptions = undefined
   traceBridge.claim = undefined
   traceBridge.metas.length = 0
+  traceBridge.paints.length = 0
   vi.unstubAllGlobals()
   if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
   else Reflect.deleteProperty(URL, 'createObjectURL')
@@ -3538,6 +3548,46 @@ describe('incremental opening', () => {
     expect(document.body.textContent).toContain('正在准备会话')
     controls.resolve(controlState())
     await vi.waitFor(() => expect(send.disabled).toBe(false))
+  })
+
+  it('renders an opened session once after its controls, together with its readiness', async () => {
+    const controls = deferred<ReturnType<typeof controlState>>()
+    const { old } = await bootWith(
+      async () => ({ ...idleTimeline('old'), upto: 4 }),
+      true,
+      (old) => old.controls.mockImplementation(() => controls.promise),
+    )
+    await vi.waitFor(() => expect(old.events).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const opened = traceBridge.paints.length
+    expect(opened).toBeGreaterThan(0)
+    controls.resolve(controlState())
+    await vi.waitFor(() => expect(releaseRuntime?.session.readiness.getSnapshot()?.status).toBe('ready'))
+    await vi.waitFor(() => expect(traceBridge.paints.length).toBeGreaterThan(opened))
+    expect(traceBridge.paints.slice(opened).filter((status) => status !== 'ready')).toEqual([])
+  })
+
+  it('still renders a later controls refresh by itself', async () => {
+    const child = (status: string) => ({
+      id: 'child-1',
+      status,
+      totalTokens: 10,
+      durationMs: 1000,
+      controls: { stop: true, continue: true },
+    })
+    const { old } = await bootWith(
+      async () => ({ ...idleTimeline('old'), upto: 4 }),
+      true,
+      (old) =>
+        old.controls
+          .mockImplementationOnce(async () => ({ ...controlState(), children: [child('running')] }))
+          .mockImplementation(async () => ({ ...controlState(), children: [child('completed')] })),
+    )
+    const status = () => document.querySelector('[data-testid="child-control-row"] [role="status"]')
+    await vi.waitFor(() => expect(status()?.textContent).toBe('运行中'))
+    // The periodic child refresh reads the controls again without any projection change.
+    await vi.waitFor(() => expect(status()?.textContent).toBe('已完成'), { timeout: 4000 })
+    expect(old.controls.mock.calls.length).toBeGreaterThan(1)
   })
 
   it.each(['persistent', 'transient'] as const)(

@@ -12,7 +12,7 @@ import {
 } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
-import { createCommandController } from './app/command-controller.js'
+import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
 import {
@@ -2012,7 +2012,7 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued' | '
 function refreshSessionControls(session: Session): Promise<void> {
   return commandController.refreshSessionControls(session)
 }
-function readSessionControls(session: Session): Promise<() => Promise<void>> {
+function readSessionControls(session: Session): Promise<ApplySessionControls> {
   return commandController.readSessionControls(session)
 }
 function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
