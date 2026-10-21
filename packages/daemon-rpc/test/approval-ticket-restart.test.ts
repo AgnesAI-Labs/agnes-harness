@@ -177,7 +177,7 @@ it('re-offers a real Host tool approval after its client disconnects without rec
   }
 })
 
-it('answers a real verifier pending through the same native command without changing its domain storage', async () => {
+it('recovers verifier failures without creating manual approval decisions or accepting an old ticket', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-domain-review-'))
   let checks = 0
   const { host } = await createTestHost({
@@ -216,28 +216,28 @@ it('answers a real verifier pending through the same native command without chan
   try {
     await client.initialize()
     const session = await client.session.new({ cwd: root })
-    expect(await session.prompt('review')).toMatchObject({ reason: 'parked' })
-    const node = (await session.projectUI()).nodes.find((node) => node.kind === 'approval')
-    if (node?.kind !== 'approval' || !node.decisionRef) throw new Error('Missing domain review')
-    const command = {
-      ...node.decisionRef,
-      commandId: 'native-domain-review',
-      response: { option: 'allowed-once', value: null },
-    }
-    const receipt = await client.approval.decide(command)
-    expect(await client.approval.decide(command)).toEqual(receipt)
-    await expect(client.approval.decide({ ...command, commandId: 'other' })).rejects.toMatchObject({
-      data: { code: 'APPROVAL_REJECTED' },
-    })
+    expect(await session.prompt('review')).toMatchObject({ reason: 'completed' })
+    expect((await session.projectUI()).nodes.filter((node) => node.kind === 'approval')).toEqual([])
     const backend = host.kernel.get(session.id)!
-    expect(backend.state.registers.decisionStates.size).toBe(1)
-    expect(backend.state.registers.decisionStates.get(node.decisionRef.id)?.value.result).toMatchObject({
-      reason: 'answered',
-      answeredBy: REQUESTER,
-    })
-    expect(backend.state.registers.decisionStates.get(node.decisionRef.id)?.value.answerCommand).toEqual(
-      receipt,
+    expect(backend.state.registers.decisionStates.size).toBe(0)
+    expect(await backend.d.log.scan({ type: 'verifier/signal', toSeq: backend.lastSeq })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ data: expect.objectContaining({ verdict: 'needs_revision' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ scope: 'turn', verdict: 'pass' }) }),
+      ]),
     )
+    const before = backend.lastSeq
+    await expect(
+      client.approval.decide({
+        sessionId: session.id,
+        id: 'domain-review',
+        revision: 1,
+        commandId: 'retired-domain-review',
+        response: { option: 'allowed-once', value: null },
+      }),
+    ).rejects.toMatchObject({ data: { code: 'APPROVAL_REJECTED' } })
+    expect(backend.lastSeq).toBe(before)
+    expect(backend.state.registers.decisionStates.size).toBe(0)
   } finally {
     await client.close()
     await host.close()

@@ -64,8 +64,21 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-it('ships every business agent example', () => {
-  expect(shipped.filter((path) => path.startsWith('fde/')).length).toBeGreaterThanOrEqual(12)
+it('lists the curated business agents independently of local TypeScript build outputs', () => {
+  expect(
+    BUNDLED_EXAMPLES.filter((example) => ['fde', 'showcase'].includes(example.family))
+      .map((example) => `${example.family}/${example.name}`)
+      .sort(),
+  ).toEqual([
+    'fde/data-report',
+    'fde/finance-reconcile',
+    'fde/knowledge-qa',
+    'fde/ops-runbook',
+    'fde/support-triage',
+    'showcase/aerospace-quality',
+    'showcase/devboard',
+    'showcase/pharma-gmp',
+  ])
 })
 
 it.each(shipped)('installs, trusts, enables and loads %s from a clean home', async (path) => {
