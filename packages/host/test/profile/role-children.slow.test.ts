@@ -301,6 +301,11 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
     expect((await parent.d.log.storage.scan(reader.key, { type: 'session/start', limit: 1 }))[0]?.seq).toBe(1)
     expect(fixture.host.kernel.get(reader.key)?.d.log.parent).toBeUndefined()
     const writer = await create(ref('writer'))
+    expect((await parent.scan({ type: 'x/host/role-tool-intersection', limit: 100 })).at(-1)).toMatchObject({
+      origin: 'system',
+      trust: 'trusted',
+      data: { role: ref('writer'), excluded: [{ tool: 'role_only', reason: 'parent-tool-unavailable' }] },
+    })
     await writer.run('Inspect the evidence').catch(async (error) => {
       throw new Error(
         'writer failed ' + JSON.stringify(await parent.d.log.storage.scan(writer.key, { limit: 100 })),
