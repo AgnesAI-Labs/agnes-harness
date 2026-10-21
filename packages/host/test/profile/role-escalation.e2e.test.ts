@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it, vi } from 'vitest'
@@ -7,9 +8,15 @@ import { packageDirs } from '../assemble/plugin-extension-fixture.js'
 import { roleHuman, setupRoleEscalation } from './role-escalation-fixture.js'
 
 it('reoffers the same child decision after process loss while pending, using the pinned Host composition', async () => {
-  const fixture = await setupRoleEscalation(async () => {
-    throw new Error('No preparation effects expected')
-  })
+  const homes = join(homedir(), 'agh-real-eval')
+  mkdirSync(homes, { recursive: true })
+  const home = mkdtempSync(join(homes, 'role-escalation-security-'))
+  const fixture = await setupRoleEscalation(
+    async () => {
+      throw new Error('No preparation effects expected')
+    },
+    { home },
+  )
   await fixture.host.close()
   const config = join(fixture.dataDir, 'crash-config.json')
   writeFileSync(
@@ -39,6 +46,7 @@ it('reoffers the same child decision after process loss while pending, using the
   }
   const first = start('hold')
   let second: ReturnType<typeof start> | undefined
+  let third: ReturnType<typeof start> | undefined
   try {
     await vi.waitFor(
       () => {
@@ -66,8 +74,19 @@ it('reoffers the same child decision after process loss while pending, using the
     expect(result.decision.consumption).not.toBeNull()
     expect(result.calls).toHaveLength(1)
     expect(readFileSync(join(fixture.dataDir, 'cold.md'), 'utf8')).toBe('Cold child requirements')
+    third = start('replay')
+    expect(await new Promise((resolve) => third!.once('exit', resolve)), output).toBe(0)
+    const replay = JSON.parse(readFileSync(join(fixture.dataDir, 'replay-result.json'), 'utf8'))
+    expect(replay.decision).toEqual(result.decision)
+    expect(replay.calls).toHaveLength(1)
+    expect(replay.role.parentTainted).toBe(true)
   } finally {
     if (first.exitCode === null && first.signalCode === null) first.kill('SIGKILL')
     if (second?.exitCode === null && second.signalCode === null) second.kill('SIGKILL')
+    if (third?.exitCode === null && third.signalCode === null) third.kill('SIGKILL')
+    for (const worker of [first, second, third])
+      if (worker && worker.exitCode === null && worker.signalCode === null)
+        await new Promise((resolve) => worker.once('exit', resolve))
+    rmSync(home, { recursive: true, force: true })
   }
 }, 110000)

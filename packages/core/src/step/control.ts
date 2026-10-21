@@ -1,6 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { Actor } from '@agnes/protocol'
+import { revokeChildLifecycle } from '../child/lifecycle.js'
 import { refusalNotes } from '../execution/turn/nested-note.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
@@ -15,6 +16,7 @@ export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }
  * on the ledger says anyone asked it to.
  */
 export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResult> {
+  revokeChildLifecycle(s)
   s.decisions.revokeScope()
   const op = s.op()
   // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
@@ -42,6 +44,13 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
     // running on with a caller who believes it was stopped.
     s.ac.abort()
   }
+}
+
+export function cancelSessionRuntimes(s: SessionImpl, cancel: readonly (() => unknown)[]): void {
+  // This is a cancellation request, not a drain: a tool may await the abort itself.
+  void Promise.all(cancel.map((request) => Promise.resolve().then(request))).catch((error: unknown) => {
+    void s.diag('invariant', { kind: 'loop-cancel-failed', message: String(error) }).catch(() => undefined)
+  })
 }
 
 /**
