@@ -36,6 +36,18 @@ describe('Host workspace policy compiler', () => {
     expect(sandboxStaticConfigHash(a)).toBe(sandboxStaticConfigHash(b))
     expect(sandboxStaticConfigHash(a)).toMatch(/^[a-f0-9]{64}$/)
     expect(Object.isFrozen(a)).toBe(true)
+    const serving = normalizeSandboxStaticConfig({ sandbox: { level: 'L1', loopback_serve: true } })
+    expect(serving.loopbackServe).toBe(true)
+    expect(sandboxStaticConfigHash(serving)).not.toBe(
+      sandboxStaticConfigHash({ ...serving, loopbackServe: false }),
+    )
+    for (const sandbox of [
+      { level: 'L0', loopback_serve: true },
+      { level: 'L1', loopback_serve: 'true' },
+      { level: 'L1', loopback_serve: true, on_unavailable: 'allow' },
+      { level: 'L1', loopback_serve: true, network_allow: ['example.com'] },
+    ])
+      expect(() => normalizeSandboxStaticConfig({ sandbox })).toThrow('E_SANDBOX_WORKSPACE')
     const conditional = normalizeSandboxStaticConfig({
       sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
     })
@@ -202,4 +214,15 @@ describe('Host workspace policy compiler', () => {
     const sensitive = await compile('/work')
     expect(insensitive.policy.digest).not.toBe(sensitive.policy.digest)
   })
+})
+
+it('binds loopback serving to policy identity and intersects the captured parent authority', async () => {
+  const plan = await compile('/work', { sandbox: { level: 'L1', loopback_serve: true } })
+  const closed = await compile('/work', { sandbox: { level: 'L1' } })
+  expect(plan.policy.loopbackServe).toBe(true)
+  expect(plan.backendOptions.loopbackServe).toBe(true)
+  expect(plan.policy.digest).not.toBe(closed.policy.digest)
+  expect(intersectWorkspacePlan(plan, closed.policy).policy.loopbackServe).not.toBe(true)
+  expect(intersectWorkspacePlan(plan, closed.policy).backendOptions.loopbackServe).not.toBe(true)
+  expect(intersectWorkspacePlan(plan, plan.policy).policy.loopbackServe).toBe(true)
 })

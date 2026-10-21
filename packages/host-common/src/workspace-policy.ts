@@ -18,6 +18,7 @@ export type SandboxStaticConfig = Readonly<{
   extraPaths: readonly string[]
   denyPaths: readonly string[]
   networkAllow: readonly string[]
+  loopbackServe?: boolean
 }>
 
 export type WorkspacePolicyPlan = Readonly<{
@@ -31,6 +32,7 @@ export type WorkspacePolicyPlan = Readonly<{
     denyPaths: readonly string[]
     networkAllow: readonly string[]
     network?: 'deny' | 'allow'
+    loopbackServe?: boolean
     fullAccess?: boolean
   }>
 }>
@@ -45,6 +47,7 @@ const CONFIG_KEYS = new Set([
   'extra_paths',
   'deny_paths',
   'network_allow',
+  'loopback_serve',
 ])
 
 function stringList(value: unknown, field: string): readonly string[] {
@@ -84,9 +87,20 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     throw fault('sandbox.on_unavailable is invalid')
   if (level !== 'L1' && onUnavailable === 'allow-if-unimplemented')
     throw fault('allow-if-unimplemented requires an L1 request')
+  const loopbackServe = input.loopback_serve ?? false
+  if (typeof loopbackServe !== 'boolean') throw fault('sandbox.loopback_serve is not boolean')
+  if (
+    loopbackServe &&
+    (level !== 'L1' ||
+      onUnavailable !== 'deny' ||
+      access === 'full-access' ||
+      stringList(input.network_allow, 'network_allow').length)
+  )
+    throw fault('loopback_serve requires L1, on_unavailable deny, restricted access and no network_allow')
   return Object.freeze({
     level,
     access,
+    ...(loopbackServe ? { loopbackServe: true } : {}),
     required,
     onUnavailable,
     extraPaths: stringList(input.extra_paths, 'extra_paths'),
@@ -121,6 +135,7 @@ export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
         [...config.extraPaths],
         [...config.denyPaths],
         [...config.networkAllow],
+        ...(config.loopbackServe ? [true] : []),
       ]),
     )
     .digest('hex')
@@ -148,6 +163,7 @@ function policyDigest(
   workspaceRoot: string,
   rules: readonly FsRule[],
   networkAllow: readonly string[],
+  loopbackServe = false,
 ): string {
   return createHash('sha256')
     .update(
@@ -158,6 +174,7 @@ function policyDigest(
         pathIdentity(workspaceRoot, semantics),
         rules.map((rule) => [pathIdentity(rule.path, semantics), rule.effect, rule.hard, rule.source]),
         networkAllow,
+        ...(loopbackServe ? [true] : []),
       ]),
     )
     .digest('hex')
@@ -267,7 +284,14 @@ export async function compileWorkspacePolicy(
     workspaceRoot,
     rules: Object.freeze(rules.map((rule) => Object.freeze(rule))),
     networkAllow,
-    digest: policyDigest(input.semantics, workspaceRoot, rules, networkAllow),
+    ...(input.staticConfig.loopbackServe ? { loopbackServe: true } : {}),
+    digest: policyDigest(
+      input.semantics,
+      workspaceRoot,
+      rules,
+      networkAllow,
+      input.staticConfig.loopbackServe,
+    ),
   })
   validateFsPolicy(policy)
   return Object.freeze({
@@ -292,6 +316,7 @@ export async function compileWorkspacePolicy(
           .map((rule) => rule.path),
       ),
       networkAllow,
+      ...(input.staticConfig.loopbackServe ? { loopbackServe: true } : {}),
       ...(input.staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
     }),
   })
@@ -320,15 +345,19 @@ export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPoli
   const networkAllow = plan.policy.networkAllow.filter(
     (host) => parent.networkAllow.includes('*') || parent.networkAllow.includes(host),
   )
+  const loopbackServe =
+    plan.policy.loopbackServe === true && (parent.loopbackServe === true || parent.networkAllow.includes('*'))
   const policy: FsPolicy = {
+    ...(loopbackServe ? { loopbackServe: true } : {}),
     workspaceRoot: parent.workspaceRoot,
     rules,
     networkAllow,
-    digest: policyDigest(plan.semantics, parent.workspaceRoot, rules, networkAllow),
+    digest: policyDigest(plan.semantics, parent.workspaceRoot, rules, networkAllow, loopbackServe),
   }
   validateFsPolicy(policy)
   const staticConfig: SandboxStaticConfig = {
     ...plan.staticConfig,
+    loopbackServe,
     access: plan.staticConfig.access === 'read-only' ? 'read-only' : 'workspace-write',
     extraPaths: rules.filter((r) => r.effect === 'allow').map((r) => r.path),
     denyPaths: rules.filter((r) => r.effect === 'deny').map((r) => r.path),
@@ -343,6 +372,7 @@ export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPoli
     backendOptions: {
       ...backend,
       network: 'deny',
+      loopbackServe,
       networkAllow,
       allowPaths:
         plan.staticConfig.access === 'read-only'
