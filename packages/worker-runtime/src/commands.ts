@@ -37,6 +37,7 @@ import { noticeConnectingMcp } from './mcp-turn-notice.js'
 import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
 import { sessionReferences } from './references.js'
 import { sessionServiceCommand } from './service-commands.js'
+import { auditSessionHistory } from './session-integrity.js'
 import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
 import { sessionWorkspaceChanges } from './workspace-changes.js'
@@ -438,6 +439,13 @@ export async function handleCommand(
     }
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
+      return {}
+    case 'integrityStatus':
+      return session.integrityStatus()
+    case 'auditHistory':
+      return auditSessionHistory(session)
+    case 'requireVerifiedHistory':
+      await session.requireVerifiedHistory()
       return {}
     case 'verifyHistory':
       return session.verifyHistory()

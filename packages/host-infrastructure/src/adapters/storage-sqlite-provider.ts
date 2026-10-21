@@ -41,6 +41,8 @@ export const sqlitePersistenceProvider: PersistenceProvider = definePersistenceP
       scanLean: storage.scanLean,
       registers: storage.registers,
       scanIntegrity: storage.scanIntegrity,
+      readIntegrityFailure: storage.readIntegrityFailure,
+      writeIntegrityFailure: storage.writeIntegrityFailure,
       readVerifiedHead: storage.readVerifiedHead,
       writeVerifiedHead: storage.writeVerifiedHead,
       deleteVerifiedHead: storage.deleteVerifiedHead,

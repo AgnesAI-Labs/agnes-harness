@@ -31,6 +31,7 @@ export function registerFactChain(
   endpoint: LocalEndpoint,
   deps: {
     requireSessionOwner(method: string, sessionId: string, context: CallContext): void
+    verifyHistory?(sessionId: string): Promise<void>
     scan(sessionId: string): ScanRead<EventEnvelope>
     traces?: Pick<RequestTraceStore, 'metadata'>
     binding?(sessionId: string, generationId: string | null): Promise<FactChainNode[]> | FactChainNode[]
@@ -41,6 +42,8 @@ export function registerFactChain(
   endpoint.register('_agnes/v1/session.factChain', async (params, context): Promise<FactChainResult> => {
     const { sessionId, laneId, anchor } = params as FactChainParams
     deps.requireSessionOwner('session.factChain', sessionId, context)
+    await deps.verifyHistory?.(sessionId)
+    context.signal.throwIfAborted()
     const empty: FactChainResult = { sessionId, laneId, atSeq: 0, nodes: [], edges: [], gaps: [] }
     const clock = deps.clock ?? Date.now,
       started = clock()

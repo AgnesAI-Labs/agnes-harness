@@ -1,7 +1,11 @@
 import { defaultIds } from '@agnes/core-common/ids'
 import type { Event, EventInput, PreparedEvent } from '@agnes/core-common/types'
 import { describe, expect, it, vi } from 'vitest'
-import { LedgerIntegrityFailure, verifyIntegrityRows } from '../src/log/integrity.js'
+import {
+  LedgerIntegrityFailure,
+  verifyIntegrityRowCooperatively,
+  verifyIntegrityRows,
+} from '../src/log/integrity.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { type OpenLogOptions, SessionLogImpl } from '../src/log/session-log.js'
 import type { IntegrityRow, StorageAdapter } from '../src/log/storage.js'
@@ -54,14 +58,29 @@ describe('ledger integrity', () => {
   it('anchors the first new row, chains a batch, and keeps metadata out of public events', async () => {
     const storage = new MemoryStorage()
     const log = await SessionLogImpl.open(options(storage))
-    await log.append([input('one'), input('two')])
+    await log.append([input('one😀'.repeat(14_000)), input('two')])
     await log.close()
 
     const rows = await storage.scanIntegrity('k', { fromSeq: 1, toSeq: 2, limit: 10 })
     expect(rows.map((row) => row.integrity?.mode)).toEqual(['anchor', 'chain'])
     expect(rows[1]?.integrity?.previousDigest).toBe(rows[0]?.integrity?.digest)
     expect(await storage.scan('k', { toSeq: 2 })).toEqual(rows.map((row) => row.event))
-    expect(await SessionLogImpl.open(options(storage, 'reopen'))).toMatchObject({ lastSeq: 2 })
+    let state = { lastSeq: 0, legacyThroughSeq: 0, headDigest: null as string | null }
+    for (const row of rows) state = await verifyIntegrityRowCooperatively(row, state, () => undefined)
+    expect(state).toEqual(verifyIntegrityRows(rows, { lastSeq: 0, legacyThroughSeq: 0, headDigest: null }))
+    const changed = structuredClone(rows[0]!)
+    changed.event.data = { content: [{ type: 'text', text: 'changed' }] }
+    await expect(
+      verifyIntegrityRowCooperatively(
+        changed,
+        { lastSeq: 0, legacyThroughSeq: 0, headDigest: null },
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 1 } })
+    const reopened = await SessionLogImpl.open(options(storage, 'reopen'))
+    expect(reopened.lastSeq).toBe(2)
+    await reopened.fullVerified()
+    await reopened.close()
   })
 
   it('accepts a legacy prefix and anchors the first migrated append without rewriting it', async () => {

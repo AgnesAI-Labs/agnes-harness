@@ -93,6 +93,9 @@ export async function readLedger(client: Client, id: string): Promise<LedgerExpo
   if (client.sessions.has(id))
     throw new UsageError(`cannot export ${id} with a client that already opened that session`)
   await client.restoreSession(id, '')
+  const integrity = await client.session.integrity(id, true)
+  if (integrity.state !== 'verified')
+    throw new Error(`history integrity failed at seq ${integrity.failureSeq ?? 'unknown'}`)
   // A caller may have installed a handle while restoration was awaiting the daemon.
   if (client.sessions.has(id))
     throw new UsageError(`cannot export ${id} with a client that already opened that session`)

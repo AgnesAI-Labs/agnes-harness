@@ -37,7 +37,7 @@ import {
   type StorageAdapter,
 } from './storage.js'
 import { prepareEvents } from './validate.js'
-import { makeVerifiedHead, type VerifiedHead } from './verified-head.js'
+import { makeVerifiedHead } from './verified-head.js'
 
 export type { FullVerifyReport } from './history-verification.js'
 
@@ -51,11 +51,8 @@ export type AppendOptions = {
   refineCaller?: boolean
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
   opState?: OpWrite
-  /**
-   * `'allow'` lets the batch through while this log's history is being fully re-verified in the
-   * background (`verifyHistory`). Only appending user input may ask for it; every other write waits.
-   */
-  beforeFullVerify?: 'allow'
+  /** Refuse a pending evidence write when the caller already holds its own writer lock. */
+  beforeFullVerify?: 'allow' | 'refuse'
 }
 
 /** What one committed batch carried besides its rows. */
@@ -83,12 +80,12 @@ export type OpenLogOptions = {
   /** `op` is the program-counter cell the batch will write, when it writes one. */
   relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
-  /** Folds the ledger while `open` verifies it: `page` receives every verified page in order, from seq 1. */
+  /** Folds open-time checked pages in order; the prefix remains provisional until fullVerified(). */
   verification?: import('./integrity.js').VerificationOptions
   replay?: {
     page(events: Event[]): void
   }
-  /** Called once per background prefix rehash, which only an explicit `verifyHistory({ rehashPrefix })` starts. */
+  /** Called once per background full verification, including the one started on open. */
   onFullVerify?: (r: FullVerifyReport) => void
 }
 
@@ -161,15 +158,17 @@ export class SessionLogImpl {
   private readonly registersCache = new RegisterMap()
   private closed = false
   private faultedValue = false
-  // The gate of an explicit full verification (`verifyHistory`). An open never sets it: a cold open
-  // does not hash the prefix, so the log starts 'done'. While a verification is 'pending' only appends
-  // of user input are let through. 'failed' seals the log; 'stopped' means it closed first.
+  // Verification gates attestations only; execution and appends retain their normal writer gate.
   private fullVerifyState: 'pending' | 'done' | 'failed' | 'stopped' = 'done'
   private fullVerifyPromise: Promise<void> = Promise.resolve()
+  private readonly historyChecks = new Set<Promise<number>>()
+  private auditTail: Promise<void> = Promise.resolve()
   private checkpointOperations: Promise<void> | undefined
   private readonly verifyAbort = new AbortController()
   /** When the chain this log extends was last hashed in full; 0 when it never was. */
   private verifiedFullAtMs = 0
+  private verifiedThroughSeq = 0
+  private failureSeq: number | undefined
   /** Set once by `open`; a child opened from a live parent reports the zero value. */
   openStats: SessionOpenStats
   // Appends are serialized through a promise chain rather than run concurrently: seq assignment and
@@ -204,11 +203,14 @@ export class SessionLogImpl {
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      const failure = await o.storage.readIntegrityFailure?.(o.key)
+      if (failure)
+        throw new LedgerIntegrityFailure('session history was sealed by a previous verification', failure)
       if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       // A cold open does not hash the prefix. Every row is checked for sequence and structure while it
       // is folded, the rows after the checkpoint (the last few without one) are hashed, and a replay
-      // consumer only sees rows that passed those checks. Hashing the whole chain is the explicit
-      // `verifyHistory({ rehashPrefix: true })`.
+      // consumer only sees rows that passed those checks. The full background check starts below;
+      // auditHistory requests a fresh check later.
       const replay = o.replay
       const { decision, state: integrityState } = await verifyCheckpointHistory(
         o.storage,
@@ -236,15 +238,19 @@ export class SessionLogImpl {
           ? { used: true, throughSeq: decision.head.throughSeq }
           : { used: false, reason: decision.reason },
       }
-      // The head just folded, under this writer's lease, becomes the checkpoint: it names this ledger's
-      // chain head, not a prefix that was hashed. It replaces one the open could not use, which would
-      // otherwise stay.
-      if (decision.use) {
-        log.verifiedFullAtMs = decision.head.verifiedFullAtMs
-        if (decision.head.throughSeq < opened.lastSeq) void log.writeHead().catch(() => undefined)
-      } else void log.writeHead(true).catch(() => undefined)
+      // A checkpoint only accelerates open. Rehash its prefix in this process before attesting it.
+      // With no checkpoint, the adopted prefix is never promoted to a verified head here.
+      if (opened.lastSeq > 0) log.fullVerifyPromise = log.startBackgroundVerify({ ...integrityState })
+      else log.verifiedFullAtMs = o.clock()
       return log
     } catch (error) {
+      if (error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY') {
+        const seq = error.detail?.seq
+        await o.storage
+          .writeIntegrityFailure?.(o.key, typeof seq === 'number' ? { seq } : {})
+          .catch(() => undefined)
+        await o.storage.deleteVerifiedHead?.(o.key).catch(() => undefined)
+      }
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
       throw error
     }
@@ -252,8 +258,9 @@ export class SessionLogImpl {
 
   /**
    * Opens a delegated child from its live parent without re-reading the parent's history: the chain
-   * state at the boundary comes from the parent, which computed or verified it in this process. Only
-   * the child's own rows are read and checked. ES-private, so no caller can hand in a chain state.
+   * state at the boundary comes from the parent and may still be provisional. Only the child's own
+   * rows are checked here; its inherited prefix is independently verified in the background.
+   * ES-private, so no caller can hand in a chain state.
    */
   static async #openFromLiveParent(
     o: OpenLogOptions,
@@ -265,6 +272,9 @@ export class SessionLogImpl {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
       checkParent()
+      const failure = await o.storage.readIntegrityFailure?.(o.key)
+      if (failure)
+        throw new LedgerIntegrityFailure('session history was sealed by a previous verification', failure)
       if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       if (
         opened.parent?.key !== parent.key ||
@@ -289,8 +299,16 @@ export class SessionLogImpl {
         opened.parent,
       )
       seededLogs.set(log, { ...seed, own: own.rows.map((row) => row.event), tail: [] })
+      log.fullVerifyPromise = log.startBackgroundVerify({ ...own.state })
       return log
     } catch (error) {
+      if (error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY') {
+        const seq = error.detail?.seq
+        await o.storage
+          .writeIntegrityFailure?.(o.key, typeof seq === 'number' ? { seq } : {})
+          .catch(() => undefined)
+        await o.storage.deleteVerifiedHead?.(o.key).catch(() => undefined)
+      }
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
       throw error
     }
@@ -319,68 +337,84 @@ export class SessionLogImpl {
     return this.closed
   }
 
-  /**
-   * Recheck the tail after the checkpoint now. The prefix before it is hashed again, behind the
-   * execution gate, only when `rehashPrefix` asks for a full verification; without a usable checkpoint
-   * that hashes every row. Neither a cold open nor a reopen of a live log does: a row changed before
-   * the checkpoint is found only by this explicit full verification.
-   */
-  async verifyHistory(
+  /** Recheck the tail for a live reload, or start/coalesce a full background rehash for an audit. */
+  verifyHistory(
     options: import('./integrity.js').VerificationOptions & { rehashPrefix?: boolean } = {},
   ): Promise<number> {
-    const { rehashPrefix = false, ...verification } = options
-    // Serialize verification cycles too: a previous completion must never release a newer gate.
-    while (this.fullVerifyState === 'pending')
-      await waitForVerification(this.fullVerifyPromise, options.signal)
+    const check = this.checkHistory(options)
+    this.historyChecks.add(check)
+    const finished = () => this.historyChecks.delete(check)
+    void check.then(finished, finished)
+    return check
+  }
+
+  private async checkHistory(
+    options: import('./integrity.js').VerificationOptions & { rehashPrefix?: boolean } = {},
+  ): Promise<number> {
     if (options.signal?.aborted) throw new CoreError('E_CLOSED', 'ledger verification cancelled')
     this.guard()
-    const drain = this.drain
-    // Set the gate before the first await, so no step/fork/non-input append can pass during the tail read.
-    this.fullVerifyState = 'pending'
-    const foreground = (async () => {
-      await drain
+    const expected = { ...this.integrityState }
+    if (options.rehashPrefix) {
+      if (this.fullVerifyState !== 'pending') this.fullVerifyPromise = this.startBackgroundVerify(expected)
+      return expected.lastSeq
+    }
+    try {
+      const { state } = await verifyCheckpointHistory(this.storage, this.key, expected.lastSeq, {
+        ...options,
+        signal: options.signal
+          ? AbortSignal.any([options.signal, this.verifyAbort.signal])
+          : this.verifyAbort.signal,
+      })
+      if (state.headDigest !== expected.headDigest || state.legacyThroughSeq !== expected.legacyThroughSeq)
+        throw new LedgerIntegrityFailure('stored history differs from the live head')
       this.guard()
-      const expected = { ...this.integrityState }
-      const result = await verifyCheckpointHistory(
-        this.storage,
-        this.key,
-        expected.lastSeq,
-        {
-          ...verification,
-          signal: this.verifyAbort.signal,
-          onProgress: (progress) => {
-            if (!options.signal?.aborted) options.onProgress?.(progress)
-          },
-        },
-        undefined,
-        rehashPrefix,
-      )
-      if (
-        result.state.headDigest !== expected.headDigest ||
-        result.state.legacyThroughSeq !== expected.legacyThroughSeq
-      )
-        throw new LedgerIntegrityFailure('stored history differs from the live verified head')
+      if (this.fullVerifyState !== 'pending') this.fullVerifyPromise = this.startBackgroundVerify(expected)
+      return expected.lastSeq
+    } catch (error) {
+      // Cancelling a viewer does not change the live verification or its seal.
+      if (options.signal?.aborted) throw error
+      return this.failVerification(error)
+    }
+  }
+
+  /** A fresh full audit; the caller waits, ordinary session work does not. */
+  auditHistory(signal?: AbortSignal): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    if (signal?.aborted) return Promise.reject(new CoreError('E_CLOSED', 'audit wait cancelled'))
+    // Each request gets a scan started after it arrived. Coalescing with an older scan could miss a
+    // row changed after that scan passed it, or newly appended rows beyond its captured cut.
+    const audit = this.auditTail.then(async () => {
+      await this.fullVerified()
       this.guard()
-      return { ...result, lastSeq: expected.lastSeq }
-    })()
-    this.fullVerifyPromise = foreground.then(
-      async ({ decision }) => {
-        if (this.closed) return this.failVerification(new CoreError('E_CLOSED', 'session closed'))
-        if (decision.use && rehashPrefix) await this.startBackgroundVerify(decision.head)
-        else {
-          this.fullVerifyState = 'done'
-          // Without a usable checkpoint a full verification just hashed everything.
-          if (!decision.use && rehashPrefix) this.verifiedFullAtMs = this.o.clock()
-          await this.writeHead(!decision.use).catch(() => undefined)
-        }
-      },
-      (error: unknown) => this.failVerification(error),
+      this.fullVerifyPromise = this.startBackgroundVerify({ ...this.integrityState })
+      await this.fullVerified()
+      return this.integrityStatus()
+    })
+    this.auditTail = audit.then(
+      () => undefined,
+      () => undefined,
     )
-    this.fullVerifyPromise.catch(() => undefined)
-    return waitForVerification(
-      foreground.then(({ lastSeq }) => lastSeq),
-      options.signal,
-    )
+    return waitForVerification(audit, signal)
+  }
+
+  integrityStatus(): import('@agnes/protocol').SessionIntegrityStatus {
+    return {
+      state:
+        this.fullVerifyState === 'failed' || this.fullVerifyState === 'stopped'
+          ? this.fullVerifyState
+          : this.historyChecks.size > 0 || this.fullVerifyState === 'pending'
+            ? 'verifying'
+            : 'verified',
+      verifiedThroughSeq: this.fullVerifyState === 'done' ? this.lastSeq : this.verifiedThroughSeq,
+      lastSeq: this.lastSeq,
+      legacyThroughSeq: this.integrityState.legacyThroughSeq,
+      ...(this.verifiedFullAtMs ? { verifiedAtMs: this.verifiedFullAtMs } : {}),
+      ...(this.failureSeq === undefined ? {} : { failureSeq: this.failureSeq }),
+    }
+  }
+
+  /** Session shutdown cancels the independent verifier before draining operations waiting on it. */
+  cancelHistoryVerification(): void {
+    this.verifyAbort.abort()
   }
 
   /**
@@ -390,8 +424,10 @@ export class SessionLogImpl {
    */
   async fullVerified(): Promise<void> {
     do {
+      await Promise.all(this.historyChecks)
       await this.fullVerifyPromise
-    } while (this.fullVerifyState === 'pending')
+    } while (this.fullVerifyState === 'pending' || this.historyChecks.size > 0)
+    this.guard()
   }
 
   /**
@@ -399,28 +435,21 @@ export class SessionLogImpl {
    * verification runs, and for good once it failed or the log closed before it finished.
    */
   get historyVerified(): boolean {
-    return this.fullVerifyState === 'done'
+    return (
+      this.fullVerifyState === 'done' && this.historyChecks.size === 0 && !this.faultedValue && !this.closed
+    )
   }
 
-  /** A synchronous construction fence; a new verification cycle invalidates the captured fork point. */
+  /** Forks may use the provisional prefix, but cannot publish after their parent closes or seals. */
   forkCheck(): () => void {
-    const cycle = this.fullVerifyPromise
-    const check = () => {
-      this.guard()
-      if (this.fullVerifyState !== 'done' || cycle !== this.fullVerifyPromise)
-        throw new CoreError('E_LANE_BUSY', 'parent history verification changed while creating a fork')
-    }
-    check()
-    return check
+    this.guard()
+    return () => this.guard()
   }
 
-  /**
-   * Hashes the whole chain up to the checkpoint, a page at a time and behind other work, and checks it
-   * ends at the digest the checkpoint named. Only an explicit full verification starts it. Failing seals the log; an
-   * integrity failure also drops the checkpoint, so the next open verifies from the first row.
-   */
-  private startBackgroundVerify(head: VerifiedHead): Promise<void> {
+  /** Fixed snapshot, small pages, no execution gate. Appends extend its head with hashes we compute. */
+  private startBackgroundVerify(expected: IntegrityState): Promise<void> {
     this.fullVerifyState = 'pending'
+    this.verifiedThroughSeq = 0
     let measured: FullVerifyReport | undefined
     const report = () => {
       try {
@@ -429,16 +458,25 @@ export class SessionLogImpl {
         /* advisory only */
       }
     }
-    const verified = verifyCheckpointPrefix(this.storage, this.key, head, this.verifyAbort.signal, (r) => {
-      measured = r
-    })
+    const verified = verifyCheckpointPrefix(
+      this.storage,
+      this.key,
+      { throughSeq: expected.lastSeq, ...expected },
+      this.verifyAbort.signal,
+      (r) => {
+        measured = r
+      },
+    )
     const completion = verified.then(
       async () => {
+        if (this.closed) return this.failVerification(new CoreError('E_CLOSED', 'session closed'))
+        this.guard()
         this.fullVerifyState = 'done'
+        this.verifiedThroughSeq = expected.lastSeq
         this.verifiedFullAtMs = this.o.clock()
         report()
         // A log that closed meanwhile has handed its lease back; it writes nothing more.
-        if (!this.closed) await this.writeHead().catch(() => undefined)
+        if (!this.closed) await this.writeHead(true).catch(() => undefined)
       },
       (error: unknown) => {
         const failed = this.failVerification(error)
@@ -458,6 +496,8 @@ export class SessionLogImpl {
       throw new CoreError('E_CLOSED', 'session closed before its history was verified')
     }
     this.fullVerifyState = 'failed'
+    const seq = error instanceof CoreError ? error.detail?.seq : undefined
+    this.failureSeq = typeof seq === 'number' && Number.isSafeInteger(seq) && seq > 0 ? seq : undefined
     const failure =
       error instanceof CoreError
         ? error
@@ -468,6 +508,9 @@ export class SessionLogImpl {
     if (integrity) {
       // An older, already admitted write may still be inside storage. Delete only after it settles.
       this.checkpointOperations = (this.checkpointOperations ?? Promise.resolve()).then(async () => {
+        await this.storage
+          .writeIntegrityFailure?.(this.key, this.failureSeq === undefined ? {} : { seq: this.failureSeq })
+          .catch(() => undefined)
         await this.storage.deleteVerifiedHead?.(this.key).catch(() => undefined)
       })
       await this.checkpointOperations
@@ -475,12 +518,7 @@ export class SessionLogImpl {
     throw failure
   }
 
-  /**
-   * Records the in-memory head as the checkpoint. It names the head of this ledger's chain, not a
-   * prefix that was hashed (`verifiedFullAtMs` says when one last was): the rows after the previous
-   * checkpoint were hashed on open and every later row is one this log wrote and chained itself.
-   * Storage keeps the furthest one unless `replace` says this one stands.
-   */
+  /** Only a fully hashed prefix plus our own hashed appends can become a verified checkpoint. */
   private async writeHead(replace = false): Promise<void> {
     const write = this.o.storage.writeVerifiedHead
     if (!write || this.fullVerifyState !== 'done' || this.faultedValue) return
@@ -503,16 +541,6 @@ export class SessionLogImpl {
       if (this.checkpointOperations === drained) this.checkpointOperations = undefined
     })
     await pending
-  }
-
-  /**
-   * Waits for the background verification, then re-checks the log: a batch that waited was never
-   * admitted, so one whose log closed meanwhile is refused rather than written after the lease went.
-   */
-  private async awaitFullVerify(): Promise<void> {
-    // Resolves only once the state is 'done'; every other outcome rejects.
-    await this.fullVerified()
-    this.guard()
   }
 
   /** Import-only compensation: existing sessions are refused and storage rechecks the writer lease. */
@@ -623,9 +651,17 @@ export class SessionLogImpl {
 
   async append(tx: EventInput[], opts: AppendOptions = {}): Promise<{ firstSeq: Seq; seqs: Seq[] }> {
     this.guard()
-    // Before the batch is prepared or queued: an allowed batch behind it takes the next seq. Only
-    // awaited while pending, so a verified log admits a batch in the same turn as before.
-    while (opts.beforeFullVerify !== 'allow' && this.fullVerifyState !== 'done') await this.awaitFullVerify()
+    // Decisions and final verifier conclusions attest history; ordinary execution remains available.
+    const attests = tx.some(attestsHistory)
+    if (attests) {
+      if (opts.beforeFullVerify === 'refuse') {
+        if (!this.historyVerified)
+          throw new CoreError(
+            'E_LANE_BUSY',
+            'verifying history; retry the evidence operation after verification',
+          )
+      } else await this.fullVerified()
+    }
     const events = prepareEvents(tx, {
       ids: this.o.ids,
       clock: this.o.clock,
@@ -656,6 +692,11 @@ export class SessionLogImpl {
       if (opts.beforeCommit) await opts.beforeCommit()
       this.o.relationCheck?.(events, this, op)
       this.sealCheck()
+      if (events.some(attestsHistory) && !this.historyVerified)
+        throw new CoreError(
+          'E_LANE_BUSY',
+          'verifying history; retry the evidence operation after verification',
+        )
       opts.commitCheck?.()
       forkChecks.get(this)?.()
       let committed: CommitReceipt
@@ -818,7 +859,6 @@ export class SessionLogImpl {
     },
   ): Promise<SessionLogImpl> {
     this.guard()
-    while (this.fullVerifyState !== 'done') await this.awaitFullVerify()
     return forkInto(
       this,
       this.o,
@@ -861,13 +901,29 @@ export class SessionLogImpl {
   async close(release = true): Promise<void> {
     if (this.closed) return
     this.closed = true
+    this.verifyAbort.abort()
     this.observers.clear()
     this.faultListeners.clear()
     this.timers().clearTimeout(this.timer)
     await this.drain.catch(() => undefined)
-    this.verifyAbort.abort()
+    // Never publish a checkpoint for a background verification cancelled by close.
+    await this.fullVerifyPromise.catch(() => undefined)
     await this.writeHead().catch(() => undefined)
     await this.checkpointOperations
     if (release) await this.o.storage.release(this.o.key, this.o.writerRunId)
   }
+}
+
+/** Evidence-bearing decisions, permission reviews and final gate verdicts use the same ledger fence. */
+function attestsHistory(event: EventInput): boolean {
+  if (event.type === 'verifier/signal') return (event.data as { scope?: unknown })?.scope === 'turn'
+  if (event.type === 'x/core/permission-auto-allowed') return true
+  if (event.type === 'x/approval/review') return true
+  if (event.register !== 'decision/state') return false
+  const data = event.data as {
+    result?: { reason?: string }
+    consumption?: unknown
+    invalidation?: unknown
+  } | null
+  return !data?.invalidation && (data?.result?.reason === 'answered' || !!data?.consumption)
 }

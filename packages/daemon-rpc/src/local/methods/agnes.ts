@@ -464,6 +464,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.tools',
+      'session.integrity',
       'session.jobs.read',
       'session.jobs.control',
       'session.workspace.list',

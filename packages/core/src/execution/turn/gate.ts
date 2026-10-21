@@ -420,6 +420,7 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
 }
 
 export async function stopGate(s: SessionImpl, resume: GateResume = 'continue'): Promise<StepOutcome> {
+  await s.requireVerifiedHistory()
   if (!s.d.segments?.StopGate) return builtinStopGate(s, resume)
   const op = s.op() as OpStateObj
   let delegated = false

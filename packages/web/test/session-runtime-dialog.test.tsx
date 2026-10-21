@@ -76,8 +76,19 @@ it('re-reads an open runtime summary after invalidation and ignores stale reads,
   let current = snapshot('full-access', 'first-chooser')
   const runtime = vi.fn(async (_id: string) => current)
   const error = vi.fn()
+  const audited: import('@agnes/protocol').SessionIntegrityStatus = {
+    state: 'verified',
+    verifiedThroughSeq: 10,
+    lastSeq: 10,
+    legacyThroughSeq: 0,
+    verifiedAtMs: 1000,
+  }
+  const integrity = vi.fn(async (_id: string, _verify?: boolean) => audited)
   const client = {
-    session: { runtime },
+    session: {
+      runtime,
+      integrity,
+    },
     approval: { sessionGrants: async () => ({ grants: [] }) },
     call: async () => ({ items: [], tools: [], resources: [] }),
   } as unknown as Client
@@ -88,6 +99,29 @@ it('re-reads an open runtime summary after invalidation and ignores stale reads,
   try {
     await act(async () => dialog.open('child', trigger))
     expect(summary()).toContain('first-chooser')
+    let finishAudit!: (value: import('@agnes/protocol').SessionIntegrityStatus) => void
+    integrity.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishAudit = resolve
+        }),
+    )
+    await act(async () => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('.session-runtime-dialog button')].find(
+        (element) => element.textContent === enT('session.integrity.verify'),
+      )
+      expect(button).toBeDefined()
+      button?.click()
+    })
+    expect(document.querySelector('.session-runtime-dialog')?.textContent).toContain(
+      enT('session.integrity.verifying'),
+    )
+    expect(integrity).toHaveBeenLastCalledWith('child', true)
+    await act(async () => {
+      finishAudit(audited)
+      await Promise.resolve()
+    })
+
     current = snapshot('workspace-write', 'parent-owner')
     await act(async () => dialog.invalidate('unrelated'))
     expect(summary()).toContain('first-chooser')
@@ -305,7 +339,15 @@ it('retries a failed allowance read from the dialog until it succeeds or the lim
     .mockRejectedValueOnce(new Error('worker unavailable'))
     .mockResolvedValueOnce({ grants: [grant('shell')] })
   const client = {
-    session: { runtime: async () => descriptor('gen-1') },
+    session: {
+      runtime: async () => descriptor('gen-1'),
+      integrity: async () => ({
+        state: 'verified',
+        verifiedThroughSeq: 10,
+        lastSeq: 10,
+        legacyThroughSeq: 0,
+      }),
+    },
     call: vi.fn(async () => ({ tools: [] })),
     approval: { sessionGrants },
   } as unknown as import('@agnes/sdk/browser').Client

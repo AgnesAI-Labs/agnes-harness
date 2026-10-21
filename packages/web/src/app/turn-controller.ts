@@ -418,7 +418,12 @@ export function createTurnController(
       summary,
       ...(presentation ? { presentation } : {}),
       ...(rewritten === undefined ? {} : { rewritten }),
-      impact: [impact, approvalExpiry(durable?.expiresAt, context.t)].filter(Boolean).join(' · '),
+      impact: [
+        context.approvalBusy ? context.t('session.integrity.verifying') : impact,
+        approvalExpiry(durable?.expiresAt, context.t),
+      ]
+        .filter(Boolean)
+        .join(' · '),
       ...(durable && !reconcile ? { risk: durable.risk } : {}),
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...(preview === undefined ? {} : { preview }),

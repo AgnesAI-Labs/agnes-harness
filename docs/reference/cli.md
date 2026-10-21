@@ -41,6 +41,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | List generic credentials (id, name, kind, creation time, references; never a secret) / rename one |
 | `agh credentials delete ID [--yes] [--force]` | Without `--yes`, show what would be deleted and send nothing; a credential still in use also needs `--force` |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
+| `agh sessions verify ID [--json]` | Run a fresh full history audit; reports verified sequence/time or the failing sequence and exits nonzero on failure. |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |
 | `agh --connect TARGET` | Connect only to that target; no fallback on failure |

@@ -7,6 +7,12 @@ export function registerSessionRuntime(
   endpoint: LocalEndpoint,
   host: Pick<Host, 'kernel' | 'sessionGeneration' | 'sessionRuntime' | 'resolveAgent'>,
   requireOwner: (method: string, sessionId: string, context: CallContext) => void,
+  integrity?: (
+    key: string,
+  ) =>
+    | import('@agnes/protocol').SessionIntegrityStatus
+    | Promise<import('@agnes/protocol').SessionIntegrityStatus>
+    | undefined,
 ): void {
   endpoint.register('_agnes/v1/agents.resolve', async (params) => {
     if (!host.resolveAgent) throw rpcError('CAPABILITY_DENIED', { reason: 'agent resolution unavailable' })
@@ -20,6 +26,8 @@ export function registerSessionRuntime(
       (!host.kernel.get(sessionId) && host.sessionGeneration?.(sessionId) === undefined)
     )
       throw rpcError('SESSION_NOT_FOUND', { sessionId })
-    return host.sessionRuntime(sessionId)
+    const value = await host.sessionRuntime(sessionId)
+    const status = await integrity?.(sessionId)
+    return { ...value, ...(status ? { integrity: status } : {}) }
   })
 }

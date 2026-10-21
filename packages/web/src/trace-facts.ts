@@ -14,7 +14,7 @@ export async function readTraceFactChain(
 ): Promise<FactChainResult> {
   if (!session || session.id !== params.sessionId) throw switched()
   if (params.anchor.kind !== 'authoring')
-    return session.factChain(params.anchor, params.laneId, { timeoutMs: 10_000 })
+    return session.factChain(params.anchor, params.laneId, { timeoutMs: 600_000 })
   const response = await fetch('/admin/api/fact-chain', {
     method: 'POST',
     credentials: 'same-origin',

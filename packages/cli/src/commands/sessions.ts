@@ -53,6 +53,18 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   if (p.command === 'settings') return settingsCommand(p, client, io)
   if (p.command === 'credentials') return credentialsCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
+  if (action === 'verify') {
+    const id = p.positional[1]
+    if (!id || p.positional.length !== 2) throw new UsageError('sessions verify expects <id>')
+    if (!p.json) io.stderr.write('Verifying history…\n')
+    const result = await client.session.integrity(id, true)
+    io.stdout.write(
+      p.json
+        ? `${JSON.stringify(result)}\n`
+        : `${result.state}: through seq ${result.verifiedThroughSeq}${result.verifiedAtMs === undefined ? '' : `; verified at ${new Date(result.verifiedAtMs).toISOString()}`}${result.failureSeq === undefined ? '' : `; failed at seq ${result.failureSeq}`}\n`,
+    )
+    return result.state === 'verified' ? ExitCode.OK : ExitCode.ERROR
+  }
   if (action === 'migrate') {
     const sessionId = p.positional[1]
     if (!sessionId) throw new UsageError('sessions migrate expects <key> [<pinned seam kind> ...]')
@@ -77,7 +89,7 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   if (managed) return manageSessions(managed, p, client, io)
   if (action !== 'list' && action !== 'show')
     throw new UsageError(
-      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables or migrate',
+      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables, verify or migrate',
     )
 
   const id = action === 'show' ? p.positional[1] : undefined

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 // A cold open folds the ledger and checks its structure and its tail; it does not hash the prefix.
-// Hashing the whole chain again is the explicit `verifyHistory({ rehashPrefix: true })`.
+// The prefix is hashed after open, without blocking ordinary work.
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const timers = { setTimeout: () => 0, clearTimeout: () => undefined }
@@ -94,87 +94,149 @@ function counting(storage: StorageAdapter): { storage: StorageAdapter; rows: () 
 }
 
 describe('cold open does not hash the ledger prefix', () => {
-  it('with a checkpoint it reads each row once and nothing waits for a background rehash', async () => {
+  it('returns before background hashing and admits ordinary writes while sensitive evidence waits', async () => {
     const file = await built(5)
-    const { storage, rows } = counting(sqlite(file))
-    const rehashes: unknown[] = []
-    const log = await SessionLogImpl.open(options(storage, 'r1', { onFullVerify: (r) => rehashes.push(r) }))
+    const source = sqlite(file)
+    let release!: () => void
+    let reached!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const { storage } = counting(source)
+    const scan = storage.scanIntegrity.bind(storage)
+    let opening = true
+    storage.scanIntegrity = async (key, q) => {
+      if (!opening && q.fromSeq === 1) {
+        reached()
+        await gate
+      }
+      return scan(key, q)
+    }
+    const log = await SessionLogImpl.open(options(storage, 'r1'))
+    opening = false
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
-    expect(log.historyVerified).toBe(true)
-    // A model-side write is admitted at once: there is no execution gate to wait for.
+    expect(log.historyVerified).toBe(false)
+    await started
     await expect(log.append([input('model-side write')])).resolves.toMatchObject({ firstSeq: 56 })
-    await new Promise((r) => setTimeout(r, 20))
-    // The open folds all 55 rows once; a rehash of the 50-row prefix would read them again.
-    expect(rows()).toBe(55)
-    expect(rehashes).toEqual([])
+    await expect(
+      log.append([{ ...input('review'), type: 'x/approval/review', ignorable: true }], {
+        beforeFullVerify: 'refuse',
+      }),
+    ).rejects.toMatchObject({ code: 'E_LANE_BUSY', message: expect.stringContaining('verifying history') })
+    const approval = log.append([{ ...input('review'), type: 'x/approval/review', ignorable: true }])
+    await Promise.resolve()
+    expect(log.lastSeq).toBe(56)
+    release()
+    await approval
+    expect(log.integrityStatus()).toMatchObject({ state: 'verified', verifiedThroughSeq: 57 })
     await log.close()
   })
 
-  it('a row changed before the checkpoint is accepted by a cold open and sealed by an explicit full verify', async () => {
+  it('background verification finds a changed row before the checkpoint, seals, and retains evidence on reload', async () => {
     const file = await built()
     raw(file, TAMPER, 'k', 10)
     const storage = sqlite(file)
     const log = await SessionLogImpl.open(options(storage, 'r1'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
-    await log.fullVerified()
-    expect(log.faulted).toBe(false)
-    await expect(log.append([input('model-side write')])).resolves.toMatchObject({ firstSeq: 51 })
-    // The write extended the chain from the stored head, so the full verify still fails at the changed row.
-    await expect(log.verifyHistory({ rehashPrefix: true })).resolves.toBe(51)
     await expect(log.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 10 },
     })
-    expect(log.faulted).toBe(true)
+    expect(log.integrityStatus()).toMatchObject({ state: 'failed', failureSeq: 10 })
+    expect(await storage.readVerifiedHead('k')).toBeUndefined()
+    await expect(log.append([input('after seal')])).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()
-  })
-
-  it('a session without a checkpoint opens without a foreground full hash and without gating writes', async () => {
-    const file = await built()
-    raw(file, 'DELETE FROM ledger_verified_head_v1')
-    // Row 10 is far before the last 32 rows, so only a full hash could notice it.
-    raw(file, TAMPER, 'k', 10)
-    const storage = sqlite(file)
-    const pages: number[] = []
-    const log = await SessionLogImpl.open(
-      options(storage, 'r1', { replay: { page: (events) => pages.push(events.length) } }),
-    )
-    expect(log.openStats.checkpoint).toMatchObject({ used: false, reason: 'absent' })
-    expect(pages.reduce((a, b) => a + b, 0)).toBe(50)
-    expect(log.historyVerified).toBe(true)
-    await expect(log.append([input('model-side write')])).resolves.toMatchObject({ firstSeq: 51 })
-    await log.close()
-    // The head it adopted is checkpointed for the next open.
-    expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(51)
-    const next = await SessionLogImpl.open(options(storage, 'r2'))
-    expect(next.openStats.checkpoint).toEqual({ used: true, throughSeq: 51 })
-    // Only the explicit full verify hashes the prefix again.
-    await next.verifyHistory({ rehashPrefix: true })
-    await expect(next.fullVerified()).rejects.toMatchObject({
+    await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 10 },
     })
+    const db = new DatabaseSync(file)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_key = ?').get('k')).toEqual({ n: 50 })
+    db.close()
+  })
+
+  it('never promotes an unverified prefix to a checkpoint, including on close', async () => {
+    const file = await built()
+    raw(file, 'DELETE FROM ledger_verified_head_v1')
+    const source = sqlite(file)
+    let release!: () => void
+    let reached!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const started = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const storage: StorageAdapter = Object.create(source)
+    let opening = true
+    storage.scanIntegrity = async (key, q) => {
+      if (!opening && q.fromSeq === 1) {
+        reached()
+        await gate
+      }
+      return source.scanIntegrity(key, q)
+    }
+    const log = await SessionLogImpl.open(options(storage, 'r1'))
+    opening = false
+    await started
+    await log.append([input('ordinary')])
+    expect(await source.readVerifiedHead('k')).toBeUndefined()
+    const closing = log.close()
+    release()
+    await closing
+    expect(await source.readVerifiedHead('k')).toBeUndefined()
+    const next = await SessionLogImpl.open(options(source, 'r2'))
+    await next.fullVerified()
+    expect((await source.readVerifiedHead('k'))?.throughSeq).toBe(51)
     await next.close()
   })
 
-  it('an explicit full verify without a usable checkpoint hashes from the first row', async () => {
-    const file = await built()
-    raw(file, 'DELETE FROM ledger_verified_head_v1')
-    raw(file, TAMPER, 'k', 10)
-    const storage = sqlite(file)
-    const log = await SessionLogImpl.open(options(storage, 'r1'))
-    expect(log.faulted).toBe(false)
-    // The open checkpointed the head it adopted; with that gone nothing vouches for the prefix.
-    for (let i = 0; i < 100 && !(await storage.readVerifiedHead('k')); i++)
-      await new Promise((r) => setTimeout(r, 5))
-    raw(file, 'DELETE FROM ledger_verified_head_v1')
-    await expect(log.verifyHistory({ rehashPrefix: true })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-      detail: { seq: 10 },
-    })
-    expect(log.faulted).toBe(true)
-    await log.close()
-  })
+  it.each(['before', 'during'] as const)(
+    'a fresh audit finds bytes changed %s an earlier scan',
+    async (when) => {
+      const file = await built()
+      const source = sqlite(file)
+      let hold = false
+      let release!: () => void
+      let reached!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const paused = new Promise<void>((resolve) => {
+        reached = resolve
+      })
+      const storage: StorageAdapter = Object.create(source)
+      storage.scanIntegrity = async (key, q) => {
+        if (hold && q.fromSeq > 10 && q.limit <= 32) {
+          reached()
+          await gate
+        }
+        return source.scanIntegrity(key, q)
+      }
+      const log = await SessionLogImpl.open(options(storage, 'r1'))
+      await log.fullVerified()
+      let first: ReturnType<typeof log.auditHistory> | undefined
+      if (when === 'during') {
+        hold = true
+        first = log.auditHistory()
+        await paused
+      }
+      raw(file, TAMPER, 'k', 10)
+      const audit = expect(log.auditHistory()).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+        detail: { seq: 10 },
+      })
+      hold = false
+      release()
+      if (first) await expect(first).resolves.toMatchObject({ state: 'verified' })
+      await audit
+      expect(log.integrityStatus()).toMatchObject({ state: 'failed', failureSeq: 10 })
+      await log.close()
+    },
+  )
 
   it.each(['checkpoint', 'no checkpoint'] as const)(
     'a sequence gap still fails a cold open (%s)',
