@@ -59,7 +59,7 @@ describe('runTui model selection', () => {
     })
 
     await expect(runTui(await booted(endpoint), parseArgs([]), io)).resolves.toBe(143)
-    expect(rendered).toContain('Acme Workbench ·ᴗ·')
+    expect(rendered).toContain('Acme Workbench')
     expect(rendered).toContain('local-dev · (default)')
     expect(rendered).toContain('acme ·ᴗ·  local-dev · (default)')
     expect(rendered).not.toContain('Agnes AI')

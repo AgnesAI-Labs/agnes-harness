@@ -194,6 +194,11 @@ export class TuiApp {
       ansi,
       theme: this.theme,
       locale,
+      rows: () => o.term.size().rows,
+    })
+    this.welcomeBanner.update({
+      session: { id: o.session.id, generation: 1 },
+      workspace: { root: tildePath(this.cwd) },
     })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
@@ -334,6 +339,12 @@ export class TuiApp {
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
     this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
       this.composer.setWorkspace(info)
+      this.welcomeBanner.update({
+        workspace: {
+          root: info.subpath ? `${info.root}/${info.subpath}` : info.root,
+          ...((info.branch ?? info.detached) ? { branch: (info.branch ?? info.detached) as string } : {}),
+        },
+      })
       if (!this.stopped) this.renderer.requestRender()
     })
     // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
@@ -753,6 +764,7 @@ export class TuiApp {
     // value older or newer than what the rest of this repaint reflects), so this reads `value.
     // budget` directly rather than polling `session.budget()` on `turn/end`.
     if (value.budget) this.statusBar.setBudget(value.budget.creditsUsed, value.budget.creditsCap ?? undefined)
+    this.welcomeBanner.update({ session: { id: this.o.session.id, generation: value.generation } })
     this.header.set({
       profile: this.o.profile ?? this.o.header ?? '',
       preset: this.o.preset ?? '',

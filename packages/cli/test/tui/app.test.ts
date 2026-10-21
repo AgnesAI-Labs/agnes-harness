@@ -754,10 +754,9 @@ it('paints the startup session card, compact header and editor surface once acro
     await vi.waitFor(async () => {
       const screen = await screenOf(term, 60, 20)
       const text = screen.join('\n')
-      expect(text).toContain('Agnes AI ·ᴗ·')
+      // 60 columns by 20 rows is too short for art: the welcome is two plain lines.
+      expect(text).toContain('agnes ·ᴗ·  deepseek-v4-pro')
       expect(text).toContain('local-dev · standard')
-      expect(text).toContain('● deepseek-v4-pro')
-      expect(text).toContain('Type / for commands')
       expect(text).not.toContain('Ctrl+C×2 退出')
       // The header's first segment is the brand, separated from the profile.
       expect(text).toContain('agnes ·ᴗ·  local-dev · standard')
@@ -769,7 +768,7 @@ it('paints the startup session card, compact header and editor surface once acro
     // The banner belongs to the app, not the session: the switch must not repaint it.
     await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('li:dm:s2'))
     const text = (await screenOf(term, 60, 20)).join('\n')
-    expect(text.split('Agnes AI').length - 1).toBe(1)
+    expect(text.split('agnes ·ᴗ·  resolving model').length - 1).toBe(1)
   } finally {
     await app?.stop()
     await client.close()
