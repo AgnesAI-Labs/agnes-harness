@@ -493,6 +493,54 @@ function hostMemoryRoot(home: string, workspace = home) {
   return join(fileMemoryRoots(home, workspace).root, 'MEMORY.md')
 }
 
+it('i01: turning full access off in a workspace session prevents a fresh automatic memory write', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-i01-memory-off-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  await mkdir(workspace)
+  const target = hostMemoryRoot(home, workspace)
+  const { host } = await createTestHost({
+    dataDir: home,
+    workspaceRoot: workspace,
+    disableSessionTitle: true,
+    allowed: ['standard'],
+    presets: {
+      'permission-full-access': loadPreset('permission-full-access'),
+      'permission-workspace-write': loadPreset('permission-workspace-write'),
+    },
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async () => ({ verdict: 'rejected' }),
+    script: [() => call('write', { path: target, content: 'I01_UNAUTHORIZED_MEMORY' }), () => done],
+  })
+  try {
+    const inspection = host.memory(workspace, 'human')
+    if (!inspection) throw new Error('Memory unavailable')
+    await inspection.configure({ mode: 'ask' })
+    const session = await host.createSession({
+      cwd: workspace,
+      preset: 'standard',
+      permission: 'workspace-write',
+    })
+    await session.setYolo(true, session.d.actor)
+    expect(session.yolo).toBe(true)
+    await session.setYolo(false, session.d.actor)
+    const off = await session.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
+    expect(off[0]?.data).toMatchObject({ to: false })
+    expect.soft(session.yolo).toBe(false)
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'Write the preference after disabling full access' }],
+    })
+    await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+    const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
+    expect.soft(decision?.result).not.toEqual(expect.objectContaining({ code: 'full-access' }))
+    expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+  } finally {
+    await host.close()
+  }
+})
+
 it('round4: a memory file awaiting its approved response cannot write after the session is narrowed', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agh-memory-permission-review-'))
   homes.push(home)
@@ -556,6 +604,82 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     expect(decision?.result).toMatchObject({ code: 'full-access' })
     expect(decision?.consumption).not.toBeNull()
     // Use the live permission switch used by Web/TUI; a preset cannot refit Host isolation.
+    await session.setYolo(false, session.d.actor)
+    expect(session.permissionContext.policy).toBe('workspace-write')
+    release()
+    await run
+    expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+  } finally {
+    release()
+    await run?.catch(() => undefined)
+    await host.close()
+  }
+})
+
+it('i01: a consumed automatic memory grant cannot commit after a workspace permission switch', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-memory-permission-review-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  await mkdir(workspace)
+  const target = hostMemoryRoot(home, workspace)
+  const { host } = await createTestHost({
+    dataDir: home,
+    workspaceRoot: workspace,
+    allowed: ['standard'],
+    presets: {
+      'permission-full-access': loadPreset('permission-full-access'),
+      'permission-workspace-write': loadPreset('permission-workspace-write'),
+    },
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async () => {
+      throw new Error('Unexpected human approval')
+    },
+    script: [() => call('write', { path: target, content: 'Reviewed preference.' }), () => done],
+  })
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  let run: Promise<unknown> | undefined
+  try {
+    const inspection = host.memory(workspace, 'human')
+    if (!inspection) throw new Error('Memory unavailable')
+    await inspection.configure({ mode: 'ask' })
+    const session = await host.createSession({
+      cwd: workspace,
+      preset: 'standard',
+      permission: 'workspace-write',
+    })
+    await session.setYolo(true, session.d.actor)
+    const memory = session.d.memory
+    if (!memory) throw new Error('Session memory unavailable')
+    const wrapped: typeof memory = {
+      ...memory,
+      files: (fallback, source, signal, approve) =>
+        memory.files(fallback, source, signal, async (proposal) => {
+          const result = await approve(proposal)
+          if (result.status === 'approved') {
+            entered()
+            await gate
+          }
+          return result
+        }),
+    }
+    Object.assign(session.d, { memory: wrapped })
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'Review memory commit' }],
+    })
+    run = session.run({ until: 'turn-end', signal: new AbortController().signal })
+    await reached
+    const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
+    expect(decision?.result).toMatchObject({ code: 'full-access' })
+    expect(decision?.consumption).not.toBeNull()
     await session.setYolo(false, session.d.actor)
     expect(session.permissionContext.policy).toBe('workspace-write')
     release()
