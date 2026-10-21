@@ -20,12 +20,22 @@ export function onlyTools(tools: ToolRegistry, names: readonly string[]): ToolRe
       if (property === 'snapshot')
         return (seq: Parameters<ToolRegistry['snapshot']>[0]): RegistrySnapshot => {
           const original = target.snapshot(seq)
-          const defs = original.defs.filter((tool) => allowed.has(tool.name))
-          if (defs.length === original.defs.length) return original
+          // A session's explicit names are its requested working set, not discovery hints.
+          // Offer that set even when the global catalog deferred the same tools. Visibility,
+          // model capability, custom Loop selection and execution policy still apply later.
+          const defs = Object.freeze(
+            [...original.byName.values()]
+              .filter((tool) => allowed.has(tool.name))
+              .map((tool) =>
+                tool.meta.deferLoading === true
+                  ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
+                  : tool,
+              ),
+          )
           return Object.freeze({
             ...original,
             defs,
-            byName: new Map([...original.byName].filter(([name]) => allowed.has(name))),
+            byName: new Map(defs.map((tool) => [tool.name, tool])),
             hash: sha256Hex(
               canonicalJson(defs.map((tool) => ({ name: tool.name, parameters: tool.parameters }))),
             ),
