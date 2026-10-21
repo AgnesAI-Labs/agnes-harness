@@ -1319,6 +1319,10 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
+    devDependencies:
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/model-adapters:
     dependencies:

@@ -85,7 +85,7 @@ describe('package.json agnes.plugins', () => {
       parseAgnesPluginEntries('@acme/example', [
         { export: 'main', apiRange: '^4.0.0', metadata: { ...purpose, category: 'invented' } },
       ]),
-    ).toThrow('metadata')
+    ).toThrow(/Retired.*clean home/)
   })
 
   it('rejects duplicate normalized ids', () => {

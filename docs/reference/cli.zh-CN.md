@@ -29,7 +29,7 @@
 | `agh --standalone` / `agh --ephemeral` | 嵌入/临时执行 |
 | `agh acp` / `agh --mode acp` | ACP 协议入口 |
 
-`--preset` 选择配方（`standard`、`minimal`、`ptc` 或其他允许的预设），`--permission` 选择会话能做什么；任何允许的组合均可，例如 `agh --preset ptc --permission read-only`，或只写 `agh --permission read-only`。旧写法 `agh --preset read-only`（以及 `workspace-write`、`full-access`）仍表示该权限下的 `standard`，不能与不同的 `--permission` 组合。见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets)。
+`--preset` 选择配方（`standard`、`minimal`、`ptc` 或其他允许的预设），`--permission` 选择会话能做什么；任何允许的组合均可，例如 `agh --preset ptc --permission read-only`，或只写 `agh --permission read-only`。旧的权限配方别名（`read-only`、`workspace-write`、`full-access`）已拒绝，请分别指定配方与权限。省略权限或选择 `default` 均跟随部署默认值。见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets)。
 
 Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
 

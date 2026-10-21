@@ -10,7 +10,7 @@ export const browserCatalog = {
     'browser.copyRecovery': 'Copy recovery steps and exact path',
     'browser.copied': 'Copied',
     'browser.copyFailed': 'Copy failed; select the path and steps above.',
-    'browser.address': 'Web address in the AGH runtime',
+    'browser.address': 'Web address or file path in the AGH runtime',
     'browser.open': 'Open',
     'browser.take': 'Take control',
     'browser.return': 'Return to AGH',
@@ -35,7 +35,8 @@ export const browserCatalog = {
     'browser.actualSize': 'Show at 100%',
     'browser.disconnected': 'Display disconnected',
     'browser.noSession': 'Open a conversation to use the browser.',
-    'browser.empty': 'Enter a website or the actual address of your running local project.',
+    'browser.empty':
+      'Enter a website, workspace file path, or the actual address of your running local project.',
     'browser.fallback':
       'Computer Use must be configured and authorized separately. Desktop browsers do not share this login state.',
     'browser.reconnect': 'Reconnect display',
@@ -44,7 +45,10 @@ export const browserCatalog = {
     'browser.noErrors': 'No recent errors recorded.',
     'browser.checkAction': 'Check previous action',
     'browser.protectedTarget': 'AGH management and cloud metadata addresses cannot be opened here.',
-    'browser.invalidUrl': 'Enter an absolute http or https address without a username or password.',
+    'browser.invalidUrl':
+      'Enter an http(s) address without credentials, or an authorized workspace file path.',
+    'browser.fileDenied': 'This file is unavailable or outside the permitted preview directory.',
+    'browser.unsupportedFile': 'This file cannot be displayed by the browser.',
   },
   'zh-CN': {
     'browser.title': '浏览器',
@@ -57,7 +61,7 @@ export const browserCatalog = {
     'browser.copyRecovery': '复制恢复步骤和精确路径',
     'browser.copied': '已复制',
     'browser.copyFailed': '复制失败，请手动选择上方路径和步骤。',
-    'browser.address': '在 AGH 运行环境访问的网址',
+    'browser.address': '在 AGH 运行环境访问的网址或文件路径',
     'browser.open': '打开',
     'browser.take': '接管',
     'browser.return': '交还 AGH',
@@ -81,7 +85,7 @@ export const browserCatalog = {
     'browser.actualSize': '按 100% 显示',
     'browser.disconnected': '画面连接已断开',
     'browser.noSession': '请先打开一个会话，再使用浏览器。',
-    'browser.empty': '输入网站地址，或已启动的本地项目实际地址。',
+    'browser.empty': '输入网站地址、工作区文件路径，或已启动的本地项目实际地址。',
     'browser.fallback': 'Computer Use 需要单独配置和授权，桌面浏览器不会继承这里的登录状态。',
     'browser.reconnect': '重连画面',
     'browser.close': '关闭标签页',
@@ -89,6 +93,8 @@ export const browserCatalog = {
     'browser.noErrors': '尚未记录到最近错误。',
     'browser.checkAction': '核对上次操作',
     'browser.protectedTarget': '不能在内置浏览器中打开 AGH 管理地址或云元数据地址。',
-    'browser.invalidUrl': '请输入完整的 http 或 https 地址，不要包含用户名或密码。',
+    'browser.invalidUrl': '请输入不含用户名和密码的 http(s) 地址，或有权访问的工作区文件路径。',
+    'browser.fileDenied': '文件不可用，或不在允许预览的目录内。',
+    'browser.unsupportedFile': '浏览器无法显示这种文件。',
   },
 }

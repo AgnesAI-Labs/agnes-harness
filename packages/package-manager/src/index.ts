@@ -46,6 +46,7 @@ export * from './local-workspace-trust.js'
 export * from './lock-state.js'
 export * from './lockfile.js'
 export * from './manager.js'
+export { assertCurrentPackageFormat } from './package-format.js'
 export * from './package-plugin-loader.js'
 export * from './plugin-capabilities.js'
 export * from './plugin-manifest.js'
@@ -80,7 +81,6 @@ export {
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
-export { currentStoredShape } from './stored-metadata.js'
 export * from './trust-gate.js'
 export {
   invalidatePackageVerification,

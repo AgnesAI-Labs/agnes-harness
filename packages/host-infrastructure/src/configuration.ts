@@ -21,32 +21,31 @@ import {
   testSubscriptionCredential,
 } from '@agnes/ai'
 import { withConfigurationLock } from '@agnes/host-common/configuration-lock'
+import { isHostError } from '@agnes/host-common/errors'
 import { fileSecretsDir } from '@agnes/host-common/paths'
 import type { RuntimeProfileManifest } from '@agnes/host-common/profile/types'
-import type {
-  ChildEngineSettings,
-  ConfigAccount,
-  ConfigAccountInput,
-  ConfigModel,
-  ConfigOAuthInput,
-  ConfigOAuthResult,
-  ConfigProvider,
-  ConfigProvidersResult,
-  ConfigSaveInput,
-  ConfigSnapshot,
-  ConfigTestInput,
-  ConfigTestResult,
-  ModelRecord,
-  ModelSettings,
-} from '@agnes/protocol'
 import {
   type ApplicationConfigSnapshot,
   ApplicationSelection,
   AuxiliaryModelSlots,
+  type ChildEngineSettings,
+  type ConfigAccount,
+  type ConfigAccountInput,
+  type ConfigModel,
+  type ConfigOAuthInput,
+  type ConfigOAuthResult,
+  type ConfigProvider,
+  type ConfigProvidersResult,
+  type ConfigSaveInput,
+  type ConfigSnapshot,
+  type ConfigTestInput,
+  type ConfigTestResult,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
   isSessionDefaults,
   isSessionDefaultsSnapshot,
+  type ModelRecord,
+  type ModelSettings,
   ModelSlotsSnapshot,
   minimumContextBudget,
   PresentationRoleSelections,
@@ -1419,7 +1418,7 @@ export function createConfigurationService(
           ...current,
           ...(!current ? { inheritProvider: true as const } : {}),
           revision: input.revision + 1,
-          sessionDefaults: structuredClone(input.defaults),
+          sessionDefaults: permissionLevelDefaults(input.defaults),
         }
         await persistState(next)
         return { revision: next.revision, defaults: structuredClone(next.sessionDefaults ?? {}) }
@@ -1545,7 +1544,7 @@ export function createConfigurationService(
     try {
       return await withConfigurationLock(lockPath, action)
     } catch (error) {
-      if (error instanceof ConfigurationError) throw error
+      if (error instanceof ConfigurationError || isHostError(error)) throw error
       throw new ConfigurationError('CONFIG_PERSIST_FAILED')
     }
   }

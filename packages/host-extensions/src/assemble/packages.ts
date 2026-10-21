@@ -362,7 +362,6 @@ export function createJitiPackageLoader(loader: {
         pluginDeclarations = parseAgnesPluginEntries(
           id,
           (pkg.agnes as Readonly<Record<string, unknown>> | undefined)?.plugins,
-          { stored: true },
         )
       } catch (error) {
         if (error instanceof ProviderError) throw error

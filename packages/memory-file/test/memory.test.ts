@@ -383,3 +383,54 @@ it.each(
     lock?.close()
   }
 })
+
+it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
+  'shared proof: refuses memory %s at final publication',
+  async (loss) => {
+    const { permissionEffectAdmission } = await import('@agnes/protocol')
+    let active = true,
+      now = 0,
+      epoch = 0,
+      version = 1
+    const controller = new AbortController()
+    const proof = permissionEffectAdmission({
+      signals: [controller.signal],
+      expiresAt: 10,
+      clock: () => now,
+      unavailable: () => Error('permission unavailable'),
+      assertBound: () => {
+        if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+      },
+    })
+    const lose = () => {
+      if (loss === 'revocation') active = false
+      if (loss === 'abort') controller.abort()
+      if (loss === 'expiry') now = 10
+      if (loss === 'epoch') epoch++
+      if (loss === 'stale-proof') version++
+    }
+    const admission = {
+      ...proof,
+      verify: async () => {
+        await proof.verify()
+        lose()
+      },
+    }
+    const f = await fixture()
+    const { MemoryStore } = await import('../src/store.js')
+    const { file } = await import('../src/content.js')
+    const { roots } = await import('../src/paths.js')
+    const store = new MemoryStore(roots(f.home, f.home).protectedRoot, f.session.root)
+    const base = store.read('MEMORY.md').hash
+    const candidate = file('MEMORY.md', 'Reviewed preference.')
+    await expect(
+      store.commit(candidate, base, { sessionKey: 'one', turn: 1 }, false, undefined, admission),
+    ).rejects.toThrow('permission unavailable')
+    expect(store.read('MEMORY.md').content).toBe('')
+    expect(store.writer()).toBeUndefined()
+    await store.commit(candidate, base, { sessionKey: 'one', turn: 1 }, false)
+    await expect(store.commit(candidate, base, { sessionKey: 'one', turn: 1 }, false)).rejects.toThrow(
+      'MEMORY_CONFLICT',
+    )
+  },
+)

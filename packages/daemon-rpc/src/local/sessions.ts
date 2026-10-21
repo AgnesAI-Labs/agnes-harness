@@ -107,7 +107,9 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.historySignal ? { historySignal: o.historySignal } : {}),
       ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       ...(o.preset ? { preset: o.preset } : {}),
-      ...(o.permission ? { permission: o.permission } : {}),
+      ...(o.permission !== undefined || o.agent === undefined
+        ? { permission: o.permission ?? 'default' }
+        : {}),
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),

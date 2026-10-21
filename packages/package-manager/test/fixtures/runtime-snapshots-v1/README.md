@@ -16,9 +16,7 @@ credentials or network source is involved in generation. Keep the original
 snapshot records, pin request hashes, trust decisions and package bytes intact.
 The formatter leaves `home/` unchanged because its original bytes are integrity-bound test evidence.
 
-The fast PackageManager upgrade tests consume this home directly. The real
-previous-build gate merges its records into a stopped synthetic previous-build
-home before starting the new daemon. That gate then resumes real old sessions,
-performs a reviewed current-format update, resolves an agent/application for a
-new session, and checks that the captured session pin and retained bytes remain unchanged.
-Injected active pins without a generation reference may be collected by ordinary GC.
+The fast PackageManager refusal tests consume this home as negative evidence.
+Current AGH rejects its retired category/launches/kinds metadata and version-1
+records with a clean-home hint, leaving the records, pins, trust decisions and
+package bytes unchanged. It must never project these bytes into current trusted state.

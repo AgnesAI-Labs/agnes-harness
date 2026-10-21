@@ -9,7 +9,7 @@ import type { PresetDoc } from './types.js'
 export const PERMISSIONS = ['read-only', 'workspace-write', 'full-access'] as const
 export type Permission = (typeof PERMISSIONS)[number]
 
-/** What a request that names a preset but no permission gets, exactly as before the split. */
+/** Built-in deployment default when no permission is configured. */
 export const DEFAULT_PERMISSION: Permission = 'workspace-write'
 
 /** A client sends this to say "follow whatever the deployment default is" rather than a level. */
@@ -22,21 +22,14 @@ export const overlayName = (permission: Permission): string => `${OVERLAY_PREFIX
 export const isPermission = (value: unknown): value is Permission =>
   (PERMISSIONS as readonly unknown[]).includes(value)
 
-/**
- * Preset names that were really permission levels. Each is the `standard` recipe under that level and
- * stays resolvable forever; asking for it together with a different level is a contradiction.
- */
-export function aliasedPermission(name: string): Permission | undefined {
-  return isPermission(name) ? name : undefined
-}
-
-/**
- * The permission a request gets when it names only a legacy preset: an alias keeps its level, every
- * other recipe keeps the level it always ran under. A script or schedule written before the split
- * therefore never moves when an administrator later changes the default permission.
- */
-export function legacyPermission(name: string): Permission {
-  return aliasedPermission(name) ?? DEFAULT_PERMISSION
+/** Permission levels are reserved for the permission axis, never recipe aliases. */
+export function assertRecipeName(name: string): void {
+  if (isPermission(name))
+    throw new HostError(
+      'E_PRESET_UNSUPPORTED',
+      `Retired permission-as-preset alias ${name}; use preset standard with permission ${name} and select a new, empty AGH_HOME (clean home).`,
+      { detail: { source: name, capability: 'preset', reason: 'clean-home-required' } },
+    )
 }
 
 const isMap = (value: unknown): value is Record<string, unknown> =>
@@ -89,12 +82,4 @@ export function declaresPermissionFields(doc: PresetDoc): boolean {
     const value = doc[section]
     return isMap(value) && value[key] !== undefined
   })
-}
-
-export function conflictingPermission(name: string, alias: Permission, requested: Permission): HostError {
-  return new HostError(
-    'E_PRESET_UNSUPPORTED',
-    `preset ${name} is the ${alias} permission and cannot be combined with ${requested}`,
-    { detail: { source: name, capability: 'permission', alias, requested, reason: 'permission-axis' } },
-  )
 }

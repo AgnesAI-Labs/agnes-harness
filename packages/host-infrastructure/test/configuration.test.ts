@@ -1090,11 +1090,13 @@ it('does not read a provider choice from the removed onboarding selection file',
   expect((await service.get()).accounts ?? []).toEqual([])
 })
 
-it('reads a stored default recipe that names a permission level as the default permission', async () => {
+it('refuses a retired permission-as-recipe default before saving', async () => {
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
-  await service.saveSessionDefaults({ revision: 0, defaults: { preset: 'full-access' } })
-  expect(await service.sessionDefaults()).toEqual({ revision: 1, defaults: { permission: 'full-access' } })
+  await expect(
+    service.saveSessionDefaults({ revision: 0, defaults: { preset: 'full-access' } }),
+  ).rejects.toThrow(/Retired.*clean home/)
+  expect(await service.sessionDefaults()).toEqual({ revision: 0, defaults: {} })
 })
 
 it('persists session defaults in existing configuration with cross-instance revision checks', async () => {

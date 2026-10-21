@@ -6359,28 +6359,6 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     invalid: [{ id: 'reports', placement: 'unknown' }, { placement: 'primary' }],
     note: 'Navigation contribution has an explicit bounded identity and placement',
   },
-  ExampleLaunchDeclaration: {
-    valid: {
-      id: 'example',
-      kind: 'business-agent',
-      title: 'Example',
-      bundle: 'acme/example',
-      preset: 'standard',
-      prompt: 'Start example',
-    },
-    invalid: [
-      { id: 'example' },
-      {
-        id: 'example',
-        kind: 'business-agent',
-        title: 'Example',
-        bundle: 'acme/example',
-        preset: 'standard',
-        prompt: '',
-      },
-    ],
-    note: 'Example launch requires the complete declarative input',
-  },
   ExtensionManifest: configSample('ExtensionManifest'),
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
@@ -6462,7 +6440,6 @@ const LockfileDefs: Record<string, TSchema> = {
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
   HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
-  ExampleLaunchDeclaration: ExtensionManifestGen.ExampleLaunchDeclaration,
   UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
   PluginProvide: ExtensionManifestGen.PluginProvide,
   PluginLocalizedText: ExtensionManifestGen.PluginLocalizedText,

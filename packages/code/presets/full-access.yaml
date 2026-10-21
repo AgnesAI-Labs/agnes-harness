@@ -1,3 +1,0 @@
-# Compatibility alias: the standard recipe under the full-access permission (permission-full-access.yaml).
-name: full-access
-extends: standard

@@ -229,3 +229,57 @@ it.each(
     }
   },
 )
+
+it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
+  'shared proof: rolls back publication after %s inside final transaction',
+  async (loss) => {
+    const { permissionEffectAdmission } = await import('@agnes/protocol')
+    let active = true,
+      now = 0,
+      epoch = 0,
+      version = 1
+    const controller = new AbortController()
+    const proof = permissionEffectAdmission({
+      signals: [controller.signal],
+      expiresAt: 10,
+      clock: () => now,
+      unavailable: () => Error('permission unavailable'),
+      assertBound: () => {
+        if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+      },
+    })
+    const lose = () => {
+      if (loss === 'revocation') active = false
+      if (loss === 'abort') controller.abort()
+      if (loss === 'expiry') now = 10
+      if (loss === 'epoch') epoch++
+      if (loss === 'stale-proof') version++
+    }
+    const tables = sqliteTables()
+    const table = tables.table('composite')
+    const store = new CompositeTargetStore(table, 'default')
+    const prior = artifact('ext:prior'),
+      next = artifact('ext:next')
+    store.publishDesired(prior)
+    const exec = table.exec.bind(table)
+    table.exec = (sql, params = []) => {
+      exec(sql, params)
+      if (String(sql).includes('SET desired_json')) lose()
+    }
+    try {
+      await expect(
+        publishProbedRuntimeTarget({
+          store,
+          artifact: next,
+          admission: proof,
+          probe: async () => {},
+        }),
+      ).rejects.toThrow('permission unavailable')
+      expect(store.desired()).toEqual(prior)
+      expect(store.previous()).toBeUndefined()
+      expect(store.acknowledged()).toBeUndefined()
+    } finally {
+      await tables.close()
+    }
+  },
+)

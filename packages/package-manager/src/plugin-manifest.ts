@@ -12,7 +12,7 @@ import {
   validatePluginMetadata,
 } from '@agnes/protocol'
 
-import { validStoredMetadata } from './stored-metadata.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 
@@ -149,7 +149,7 @@ function validRowId(value: string): boolean {
 export function parseAgnesPluginEntries(
   packageId: string,
   input: unknown,
-  options: { readonly bundled?: boolean; readonly stored?: boolean } = {},
+  options: { readonly bundled?: boolean } = {},
 ): readonly Readonly<AgnesPluginManifestEntry>[] {
   if (input === undefined) return Object.freeze([])
   if (!Array.isArray(input)) fail('list', 'must be an array')
@@ -218,10 +218,8 @@ export function parseAgnesPluginEntries(
       if (raw.config !== undefined && validate(raw.config).length)
         fail(`entry ${index} config`, 'does not satisfy configSchema (secret fields require references)')
     }
-    if (
-      raw.metadata !== undefined &&
-      !(options.stored ? validStoredMetadata(raw.metadata) : validatePluginMetadata(raw.metadata).ok)
-    )
+    assertCurrentPackageFormat({ metadata: raw.metadata })
+    if (raw.metadata !== undefined && !validatePluginMetadata(raw.metadata).ok)
       fail(`entry ${index} metadata`, 'must satisfy the public PluginMetadata contract')
     let capabilities: PluginCapabilities | undefined
     if (raw.capabilities !== undefined) {

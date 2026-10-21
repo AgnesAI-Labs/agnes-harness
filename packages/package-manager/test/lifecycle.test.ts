@@ -787,3 +787,61 @@ it.each(
     }
   },
 )
+
+it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
+  'shared proof: refuses package %s at final publication',
+  async (loss) => {
+    const { permissionEffectAdmission } = await import('@agnes/protocol')
+    let active = true,
+      now = 0,
+      epoch = 0,
+      version = 1
+    const controller = new AbortController()
+    const proof = permissionEffectAdmission({
+      signals: [controller.signal],
+      expiresAt: 10,
+      clock: () => now,
+      unavailable: () => Error('permission unavailable'),
+      assertBound: () => {
+        if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+      },
+    })
+    const lose = () => {
+      if (loss === 'revocation') active = false
+      if (loss === 'abort') controller.abort()
+      if (loss === 'expiry') now = 10
+      if (loss === 'epoch') epoch++
+      if (loss === 'stale-proof') version++
+    }
+    let flushed = false
+    const admission = {
+      ...proof,
+      verify: async () => {
+        await proof.verify()
+        if (flushed) lose()
+      },
+    }
+    const m = manager({ references: emptyRefs })
+    const preview = await m.inspect(profile, source)
+    const before = load()
+    const lockfile = await import('../src/lockfile.js')
+    const prepare = lockfile.prepareLockPublication
+    const spy = vi.spyOn(lockfile, 'prepareLockPublication').mockImplementation((...args) => {
+      const staged = prepare(...args)
+      flushed = true
+      return staged
+    })
+    try {
+      await expect(
+        m.install(profile, source, { expectedIntegrity: preview.integrity, admission }),
+      ).rejects.toThrow('permission unavailable')
+    } finally {
+      spy.mockRestore()
+    }
+    expect(load()).toEqual(before)
+    expect(existsSync(packageDir(root, 'local-dev', id))).toBe(false)
+    expect(
+      readdirSync(profile).filter((name) => name.includes('transaction') || name.endsWith('.tmp')),
+    ).toEqual([])
+  },
+)

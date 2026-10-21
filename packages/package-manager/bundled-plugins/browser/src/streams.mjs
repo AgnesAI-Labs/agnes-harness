@@ -1,3 +1,4 @@
+import { captureAudio } from './audio.mjs'
 import { failure } from './policy.mjs'
 
 const identity = (scope) => {
@@ -53,7 +54,11 @@ export async function showView(runtime, input, context) {
           cleanup = undefined
           if (stopped || nextSequence !== sequence) return
           capture = new AbortController()
-          cleanup = await showPage(runtime, { pageId }, { ...context, signal: capture.signal })
+          cleanup = await showPage(
+            runtime,
+            { pageId, displayVersion: input.displayVersion },
+            { ...context, signal: capture.signal },
+          )
           if (stopped || nextSequence !== sequence) await cleanup()
         })
       return queue
@@ -116,6 +121,8 @@ export async function showPage(runtime, input, context) {
   const item = runtime.get(session, input.pageId)
   let stopped = false
   item.viewers.add(context.stream)
+  item.modernViewers ??= new Set()
+  if (input.displayVersion === 2) item.modernViewers.add(context.stream)
   const serialize = (work) => {
     const next = (item.captureQueue ?? Promise.resolve()).then(work)
     item.captureQueue = next.catch(() => {})
@@ -127,8 +134,13 @@ export async function showPage(runtime, input, context) {
     context.signal.removeEventListener('abort', abort)
     disconnect?.()
     item.viewers.delete(context.stream)
+    item.modernViewers.delete(context.stream)
     item.capture?.dropped?.delete(context.stream)
     await serialize(async () => {
+      if (!item.modernViewers.size && item.capture?.stopAudio) {
+        await item.capture.stopAudio()
+        item.capture.stopAudio = undefined
+      }
       if (item.viewers.size || !item.capture) return
       const capture = item.capture
       item.capture = undefined
@@ -136,6 +148,7 @@ export async function showPage(runtime, input, context) {
       clearTimeout(capture.retry)
       clearTimeout(capture.settle)
       runtime.listeners.delete(capture.broadcast)
+      await capture.stopAudio?.()
       await capture.cdp.send('Page.stopScreencast').catch(() => {})
       await capture.cdp.detach().catch(() => {})
     })
@@ -148,12 +161,26 @@ export async function showPage(runtime, input, context) {
       if (stopped || context.signal.aborted) return
       if (!item.capture) {
         const cdp = await item.page.context().newCDPSession(item.page)
+        // A secondary CDP session otherwise uses its default 1x capture metrics.
+        // Keep this session aligned with the context's existing CSS viewport/DPR.
+        try {
+          await cdp.send('Emulation.setDeviceMetricsOverride', {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 2,
+            mobile: false,
+          })
+        } catch (error) {
+          await cdp.detach().catch(() => {})
+          throw error
+        }
         const capture = {
           cdp,
           bytes: undefined,
           pageEpoch: -1,
           last: -Infinity,
           dropped: new Set(),
+          liveWidth: 2560,
           broadcast: () => {},
         }
         let paintVersion = 0,
@@ -166,18 +193,30 @@ export async function showPage(runtime, input, context) {
               if (snapshotting || item.capture !== capture || !item.viewers.size) return
               const epoch = item.epoch,
                 version = paintVersion,
-                inputVersion = item.inputVersion
+                inputVersion = item.inputVersion,
+                agentRevision = item.agentRevision,
+                liveBytes = capture.liveEpoch === item.epoch ? capture.liveBytes : undefined
               snapshotting = true
               try {
                 runtime.get(session, input.pageId)
                 // Let the pinned engine resolve the scrolled viewport and device scale together.
                 // Raw CDP capture without that normalization can return only CSS-sized pixels.
-                const bytes = await item.page.screenshot({
-                  type: 'jpeg',
-                  quality: 90,
-                  fullPage: false,
-                  scale: 'device',
-                })
+                let bytes, mime
+                // Preserve text edges without sacrificing bounded transport on photo-heavy pages.
+                for (const options of [
+                  ...(item.modernViewers.size === item.viewers.size ? [{ type: 'png' }] : []),
+                  ...[90, 65, 35, 15].map((quality) => ({ type: 'jpeg', quality })),
+                ]) {
+                  bytes = await item.page.screenshot({
+                    ...options,
+                    fullPage: false,
+                    scale: 'device',
+                  })
+                  mime = options.type === 'png' ? 'image/png' : 'image/jpeg'
+                  if (bytes.length <= 1_000_000) break
+                  if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)
+                    return
+                }
                 runtime.get(session, input.pageId)
                 if (
                   item.capture !== capture ||
@@ -187,14 +226,32 @@ export async function showPage(runtime, input, context) {
                 )
                   return
                 if (bytes.length > 1_000_000) return
+                clearTimeout(capture.timer)
+                capture.pending = undefined
                 capture.bytes = bytes
+                capture.agentRevision = agentRevision
+                capture.mime = mime
                 capture.pageEpoch = epoch
+                capture.sharpLiveBytes = liveBytes
+                capture.sharpInputVersion = inputVersion
+                capture.snapshotFailures = 0
                 capture.broadcast()
               } catch {
-                // Optional sharpness never blocks the live stream or changes input authority.
+                // A transient capture failure must not strand a static tab at its
+                // live quality. Retry a bounded number of times without blocking input.
+                capture.snapshotFailures = (capture.snapshotFailures ?? 0) + 1
+                if (item.capture === capture && capture.snapshotFailures <= 3) settle()
               } finally {
                 snapshotting = false
-                if (item.capture === capture && item.epoch !== epoch) settle(true)
+                // A screenshot can itself repaint Chromium. If a paint invalidates
+                // this attempt, retry after idle instead of losing the last timer
+                // while the screenshot is still running. Identical live pixels are
+                // deduplicated below; asynchronous page changes remain observable.
+                if (
+                  item.capture === capture &&
+                  (item.epoch !== epoch || item.inputVersion !== inputVersion || paintVersion !== version)
+                )
+                  settle(item.epoch !== epoch || !capture.bytes)
               }
               // Static tabs may not emit a screencast paint. Supply their first image
               // immediately; only sharpening an already visible page waits for idle.
@@ -209,6 +266,9 @@ export async function showPage(runtime, input, context) {
           if (!pending || item.capture !== capture || pending.pageEpoch !== item.epoch) return
           capture.last = performance.now()
           capture.bytes = pending.bytes
+          capture.sharpLiveBytes = undefined
+          capture.agentRevision = pending.agentRevision
+          capture.mime = 'image/jpeg'
           capture.pageEpoch = pending.pageEpoch
           capture.broadcast()
         }
@@ -226,13 +286,24 @@ export async function showPage(runtime, input, context) {
             // URLs belong to the session page list, not to every image envelope.
             // Omitting them also keeps long addresses below the decoder's metadata limit.
             const { url: _url, ...description } = runtime.describe(item)
-            const metadata = Buffer.from(JSON.stringify(description), 'utf8')
+            const metadata = Buffer.from(
+              JSON.stringify({
+                ...description,
+                agentRevision: capture.agentRevision ?? description.agentRevision,
+                frameMime: capture.mime ?? 'image/jpeg',
+              }),
+              'utf8',
+            )
             const header = Buffer.alloc(4)
             header.writeUInt32BE(metadata.length)
             const envelope = Buffer.concat([header, metadata, capture.bytes])
             for (const viewer of recipients) {
               if (!item.viewers.has(viewer)) {
                 capture.dropped.delete(viewer)
+                continue
+              }
+              if (capture.mime === 'image/png' && !item.modernViewers.has(viewer)) {
+                settle(true)
                 continue
               }
               if (viewer.send(envelope) === 'dropped') capture.dropped.add(viewer)
@@ -253,32 +324,72 @@ export async function showPage(runtime, input, context) {
           void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
           if (item.capture !== capture) return
           const bytes = Buffer.from(frame.data, 'base64')
+          // Large photographic frames must not freeze the view or build latency.
+          // Reduce live cost; the idle image retains the context's full 2x detail.
+          if (bytes.length > 150_000 && capture.liveWidth > 1280 && !capture.tuning) {
+            capture.tuning = true
+            capture.liveWidth = capture.liveWidth === 2560 ? 1920 : 1280
+            void cdp
+              .send('Page.stopScreencast')
+              .then(async () => {
+                if (item.capture !== capture) return
+                await cdp.send('Page.startScreencast', {
+                  format: 'jpeg',
+                  quality: 65,
+                  maxWidth: capture.liveWidth,
+                  maxHeight: (capture.liveWidth * 800) / 1280,
+                  everyNthFrame: 1,
+                })
+              })
+              .catch(() => {})
+              .finally(() => {
+                capture.tuning = false
+              })
+          }
           if (bytes.length > 1_000_000) return
           // Screenshot capture can provoke an identical screencast repaint. Do not
           // downgrade the sharp image or repeatedly schedule captures for those pixels.
           if (capture.liveEpoch === item.epoch && capture.liveBytes?.equals(bytes)) return
           capture.liveBytes = bytes
           capture.liveEpoch = item.epoch
+          // Surface screenshots can briefly repaint before restoring the exact
+          // prior live pixels. Coalesce that repaint pair:
+          // retain the sharp image when the final pixels are unchanged. Genuine
+          // input bypasses this window; an asynchronous scene change still wins.
+          const sharp =
+            capture.pageEpoch === item.epoch && capture.sharpInputVersion === item.inputVersion
+              ? capture.sharpLiveBytes
+              : undefined
+          if (sharp?.equals(bytes)) {
+            clearTimeout(capture.timer)
+            clearTimeout(capture.settle)
+            capture.timer = undefined
+            capture.settle = undefined
+            capture.pending = undefined
+            return
+          }
           paintVersion++
           settle()
           // Keep the final paint of a burst: dropping it can leave a static page showing old pixels.
-          capture.pending = { bytes, pageEpoch: item.epoch }
+          capture.pending = { bytes, pageEpoch: item.epoch, agentRevision: item.agentRevision }
           // Match the existing 4 MiB/s media allowance without growing its queue or budget.
-          const interval = Math.max(1000 / 30, bytes.length / 3500)
-          const delay = interval - (performance.now() - capture.last)
+          const interval = Math.max(1000 / 60, bytes.length / 3500)
+          const delay = Math.max(sharp ? 50 : 0, interval - (performance.now() - capture.last))
           if (delay <= 0) {
             clearTimeout(capture.timer)
             publish()
           } else capture.timer ??= setTimeout(publish, Math.ceil(delay))
         })
         item.capture = capture
+        if (item.modernViewers.size)
+          capture.stopAudio = await captureAudio(runtime, item, capture).catch(() => undefined)
         runtime.listeners.add(capture.broadcast)
         try {
           await cdp.send('Page.startScreencast', {
             format: 'jpeg',
             quality: 85,
-            maxWidth: 1280,
-            maxHeight: 800,
+            maxWidth: 2560,
+            maxHeight: 1600,
             // Coalesce at publish(), where the final paint is retained. Sampling
             // here can discard a static page's only update after a click.
             everyNthFrame: 1,
@@ -293,7 +404,11 @@ export async function showPage(runtime, input, context) {
           await cdp.detach().catch(() => {})
           throw error
         }
-      } else item.capture.broadcast()
+      } else {
+        if (item.modernViewers.size && !item.capture.stopAudio)
+          item.capture.stopAudio = await captureAudio(runtime, item, item.capture).catch(() => undefined)
+        item.capture.broadcast()
+      }
     })
     if (context.signal.aborted) await close()
     return close

@@ -280,7 +280,7 @@ export type ResolvedProfile = Readonly<{
   cacheDir: string
   limits: Record<string, number>
   presets: { default: string; allowed: string[] }
-  /** Absent on a profile that predates the split; see `allowedPermissions`. */
+  /** Permission defaults and grants, independent of the recipe catalogue. */
   permissions?: { default: Permission; allowed: Permission[] }
   policy: { capabilityCeiling: Capability[]; workspacePackages: 'deny' | 'require-project-trust' }
   reconcile: ReconcilePolicy

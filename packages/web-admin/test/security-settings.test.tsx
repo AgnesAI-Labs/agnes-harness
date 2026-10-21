@@ -303,7 +303,7 @@ it('lists permission levels apart from presets and shows each session’s permis
   }
   const status = {
     platform: { os: 'linux' as const, l1: { level: 'full' as const, scope: ['file' as const] } },
-    presetPolicies: [policy('standard', 'default', 'deny'), policy('workspace-write', 'default', 'deny')],
+    presetPolicies: [policy('standard', 'default', 'deny'), policy('inspect', 'read-only', 'deny')],
     permissionPolicies: [
       policy('read-only', 'read-only', 'deny'),
       policy('full-access', 'full-access', 'unrestricted'),
@@ -317,8 +317,8 @@ it('lists permission levels apart from presets and shows each session’s permis
   expect(details.querySelector('[data-testid="permission-level-status"]')?.textContent).toContain(
     text('network.unrestricted'),
   )
-  // A legacy alias the Host still reports is not listed as a preset again.
-  expect(rows('permission-preset-status')).toEqual(['Standard'])
+  // Recipe rows and permission rows have distinct names.
+  expect(rows('permission-preset-status')).toEqual(['Standard', 'inspect'])
   expect(details.querySelector('[data-testid="workspace-permission"]')?.textContent).toBe('Full access')
   await act(async () => root?.unmount())
   const summary = await mount(createElement(SecurityStatusPanel, { status, t: text }))
@@ -343,7 +343,7 @@ it('lists permission levels apart from presets and shows each session’s permis
     [...legacy.querySelectorAll('[data-testid="permission-preset-status"] tbody tr')].map(
       (row) => row.firstChild?.textContent,
     ),
-  ).toEqual(['Standard', 'Edit workspace'])
+  ).toEqual(['Standard', 'inspect'])
   expect(legacy.querySelector('[data-testid="workspace-permission"]')).toBeNull()
 })
 

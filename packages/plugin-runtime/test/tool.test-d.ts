@@ -198,6 +198,7 @@ describe('tool types', () => {
       | 'cwd'
       | 'exec'
       | 'fs'
+      | 'sessionFiles'
       | 'net'
       | 'sandbox'
       | 'platform'

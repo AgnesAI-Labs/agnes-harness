@@ -23,6 +23,13 @@ export function isRunProgress(value: unknown): value is RunProgress {
     (state.reason === undefined || (typeof state.reason === 'string' && state.reason.length <= 64))
   )
 }
+/** The only event types `observeProgress` reacts to; observers skip every other row before reading state. */
+export const RUN_PROGRESS_EVENT_TYPES: readonly string[] = [
+  'decision/state',
+  'turn/start',
+  'turn/end',
+  'x/core/unattended-refused',
+]
 export const startProgress = (): RunProgress => ({ outcome: 'running', needsAttention: false, pending: {} })
 export function expireProgress(state: RunProgress, now: number): RunProgress {
   if (

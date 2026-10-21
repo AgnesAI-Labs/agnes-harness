@@ -40,12 +40,16 @@ async function fixture(authorized = true) {
   )
   writeFileSync(
     join(pkg, 'index.mjs'),
-    `export const main = { apply(ctx) { ctx.services.register({ ...${JSON.stringify(cap)}, async handler(input, serviceCtx) {
+    `let delayedFiles;
+    export const main = { apply(ctx) { ctx.services.register({ ...${JSON.stringify(cap)}, async handler(input, serviceCtx) {
     if (input.value === 2) await serviceCtx.fs.write('forbidden-write', 'no');
     if (input.value === 3) return {value: (await serviceCtx.fs.read('read.txt')).length};
     if (input.value === 4) await serviceCtx.fs.read('../outside');
     if (input.value === 5) await serviceCtx.exec(['touch', 'forbidden-exec']);
     if (input.value === 6) await new Promise((resolve) => setTimeout(resolve, 40));
+    if (input.value === 7) delayedFiles = serviceCtx.sessionFiles;
+    if (input.value === 8) return {value: (await delayedFiles.read('read.txt', {limit: 32})).length};
+    if (input.value === 9) await delayedFiles.read('../outside', {limit: 32});
     return {value: input.value};
   } }); } };`,
   )
@@ -124,7 +128,9 @@ it('loads a real bundled factory and enforces the selected session workspace/que
   expect(h.host.kernel.sessions.size).toBe(1)
   await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
   await expect(h.call(3)).resolves.toEqual({ output: { value: 4 } })
-  for (const value of [2, 4, 5])
+  await expect(h.call(7)).resolves.toEqual({ output: { value: 7 } })
+  await expect(h.call(8)).resolves.toEqual({ output: { value: 4 } })
+  for (const value of [2, 4, 5, 9])
     await expect(h.call(value)).rejects.toMatchObject({ data: { code: 'INTERNAL_ERROR' } })
   await h.host.close()
   let closedFailure: unknown

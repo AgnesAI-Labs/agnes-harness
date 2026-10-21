@@ -61,10 +61,12 @@ const inside = (root: string, path: string): boolean => {
  * inside a repository; elsewhere a bounded walk does, without ignore files. Runs without a shell.
  */
 export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
+  if (process.env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
   const root = await realpath(cwd)
-  const home = resolve(
-    process.env.AGH_HOME || process.env.AGNES_HOME || join(process.env.HOME || homedir(), AGH_DIR),
-  )
+  const home = resolve(process.env.AGH_HOME || join(process.env.HOME || homedir(), AGH_DIR))
   const homes = [home, await realpath(home).catch(() => home)]
   const hidden = (rel: string): boolean =>
     rel.split('/').includes('.git') ||

@@ -70,7 +70,10 @@ export const main = {
               )
             case 'browser.open':
               return browserEffect(runtime, () =>
-                runtime.act(context.session, { action: 'open', url: input.url }, context.signal),
+                runtime.act(context.session, { action: 'open', ...input }, context.signal, {
+                  files: context.sessionFiles,
+                  root: context.session.workspaceRoot,
+                }),
               )
             case 'browser.control': {
               if (input.mode === 'human' && !context.controlGrant)
@@ -127,7 +130,7 @@ export const main = {
     ctx.tools.register({
       name: 'browser',
       description:
-        'Operate the built-in workbench browser: SAME page for AGH and the user. Start local servers with shell/Jobs, then open their actual http(s) URL. status/tabs list pages; inspect returns current element refs and pageEpoch; pass both for click/fill and current pageEpoch for other mutations. screenshot returns an image. events reads bounded console/network errors. Respect human control and uncertain actions. When disabled use authorized computer_use, which opens a separate desktop browser.',
+        "An optional background browser, sharing the SAME page with the workbench. Choose suitable tools for the task; always respect the user's specified browser or tool. It does not open a desktop window or expand the panel. Start local projects with shell/Jobs and open the actual URL. open also accepts workspace paths or file URLs; previewRoot optionally selects the permitted asset directory within the workspace. Browser-native files use their content types; unsupported formats are reported. status/tabs list pages; inspect returns current refs and pageEpoch for mutations; screenshot returns an image; events reads console/network errors. Use another tab when the user is working. Never silently switch a specified browser or replay uncertain actions.",
       parameters,
       meta: {
         isReadOnly: false,
@@ -165,7 +168,10 @@ export const main = {
                 },
               ],
             }
-          const result = await runtime.act(context.session, input, context.signal)
+          const result = await runtime.act(context.session, input, context.signal, {
+            files: context.sessionFiles,
+            root: context.session.workspaceRoot,
+          })
           const content = []
           if (result.bytes) {
             const ref = await context.artifacts.put(result.bytes, { mime: 'image/png', name: 'browser-page' })

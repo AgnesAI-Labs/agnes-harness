@@ -126,8 +126,8 @@ describe('Web command launch contract', () => {
   })
 
   // Only `--home` is an explicit home. A home variable stays in the environment handed to the
-  // backend, whose agnesHome(env) applies AGH_HOME > AGNES_HOME and the deprecation notice; lifting
-  // one out here would let the legacy name beat AGH_HOME and skip the notice.
+  // backend, whose agnesHome(env) refuses AGNES_HOME; lifting
+  // one out here would hide that backend refusal.
   it('takes an explicit home only from --home, never from a home variable', () => {
     expect(Object.hasOwn(parseWebCommand([], { AGNES_HOME: '/tmp/legacy-home' }), 'home')).toBe(false)
     expect(Object.hasOwn(parseWebCommand([], { AGH_HOME: '/tmp/agh-home' }), 'home')).toBe(false)

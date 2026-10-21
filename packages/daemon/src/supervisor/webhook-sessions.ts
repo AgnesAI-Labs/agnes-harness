@@ -29,6 +29,7 @@ export function webhookSessions(
         await client.createSession({
           cwd: input.workspace,
           preset: input.agent,
+          permission: 'default',
           bundles: input.bundles,
           sessionKey: input.sessionKey,
         })

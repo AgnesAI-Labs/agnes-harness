@@ -188,3 +188,19 @@ it('keeps accessor-backed codes closed when their values change during classific
     reason: 'The operation was refused by the budget limit.',
   })
 })
+
+it.each(['E_PRESET_UNSUPPORTED', 'E_PACKAGE_INTEGRITY', 'E_RELATION', 'E_HOME_INVALID'])(
+  'preserves actionable clean-home guidance for %s across serialization',
+  (code) => {
+    const failure = publicRejectionRpc({
+      code,
+      reason: 'private implementation log',
+      detail: { reason: 'clean-home-required' },
+    })
+    expect(failure).toBeDefined()
+    const serialized = JSON.parse(JSON.stringify(failure))
+    expect(publicErrorHelp(serialized)?.action).toContain('new, empty private AGH_HOME')
+    expect(publicErrorHelp(serialized, 'zh-CN')?.action).toContain('新的空私有 AGH_HOME')
+    expect(JSON.stringify(serialized)).not.toContain('private implementation log')
+  },
+)

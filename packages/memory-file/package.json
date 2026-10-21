@@ -13,6 +13,9 @@
     "@agnes/extension-api": "workspace:*",
     "@agnes/system-node": "workspace:*"
   },
+  "devDependencies": {
+    "@agnes/protocol": "workspace:*"
+  },
   "license": "Apache-2.0",
   "agnes": {
     "metadata": {

@@ -74,14 +74,14 @@ describe('new session request', () => {
     localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
   }
   it.each([
-    ['a chosen level', { explicit: 'view' }, { permission: 'read-only' }],
+    ['a chosen level', { explicit: 'view' }, { preset: 'standard', permission: 'read-only' }],
     ['a recipe alone', { preset: 'ptc' }, { preset: 'ptc', permission: 'default' }],
     [
       'both',
       { preset: 'minimal', explicit: 'workspace' },
       { preset: 'minimal', permission: 'workspace-write' },
     ],
-    ['nothing chosen', {}, {}],
+    ['nothing chosen', {}, { preset: 'standard', permission: 'default' }],
   ] as const)('sends %s from every creation path', async (_case, choice, expected) => {
     const binding = new SessionBindingOwner()
     const created = vi.fn(async () => {

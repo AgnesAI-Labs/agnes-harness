@@ -250,6 +250,10 @@ export type ToolRequestAvailability = Readonly<{
 }>
 
 export interface ToolContext {
+  /** Read-only session resource access. Each operation acquires a fresh workspace invocation;
+   * unlike fs, this may serve delayed browser resources after this call settles. Session close
+   * and current filesystem policy revoke access. Never retain the ordinary invocation fs. */
+  readonly sessionFiles?: Pick<ToolContext['fs'], 'read' | 'stat'>
   readonly decisions: DecisionPort
   /** Active main-conversation request only; Host owns validation and native approval. */
   readonly mcpManage?: Readonly<{ request(input: unknown): Promise<unknown> }>

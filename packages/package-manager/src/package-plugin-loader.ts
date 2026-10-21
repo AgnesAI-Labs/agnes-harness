@@ -14,7 +14,8 @@ import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
 import { type AgnesPluginManifestEntry, parseAgnesPluginEntries } from './plugin-manifest.js'
 import type { RuntimePin, RuntimeSnapshot } from './runtime-snapshots.js'
-import { hashDirectory, hashDirectoryAsync } from './sources.js'
+import { hashDirectoryAsync } from './sources.js'
+import { verifiedDirectoryDigest, verifiedDirectoryDigestAsync } from './verification-operation.js'
 
 export interface PackagePluginModuleLoader {
   importModule(snapshot: RuntimeSnapshot): Promise<Readonly<Record<string, unknown>>>
@@ -114,7 +115,7 @@ export function runtimePluginDataSourcesFromInventory(
       return false
     const manifest = readStaticJson(join(pkg.directory, 'package.json'))
     const agnes = (manifest.agnes ?? {}) as Record<string, unknown>
-    if (parseAgnesPluginEntries(pkg.id, agnes.plugins, { stored: true }).length) return false
+    if (parseAgnesPluginEntries(pkg.id, agnes.plugins).length) return false
     return (
       Object.keys(parsePackageBundleContract(pkg.id, agnes.bundles)).length > 0 ||
       pkg.entry.application !== undefined
@@ -197,7 +198,7 @@ function integrityFailure(reason: string): never {
 function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): void {
   let digest: string
   try {
-    digest = hashDirectory(snapshot.directory, { exclude: [] })
+    digest = verifiedDirectoryDigest(snapshot.directory, snapshot)
   } catch {
     integrityFailure(reason)
   }
@@ -225,9 +226,7 @@ function readDeclarations(
   if ((agnes as Readonly<Record<string, unknown>>).extensions !== undefined)
     stateFailure('legacy-extension-format')
   try {
-    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins, {
-      stored: true,
-    })
+    return parseAgnesPluginEntries(snapshot.packageId, (agnes as Readonly<Record<string, unknown>>).plugins)
   } catch (error) {
     if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')
@@ -245,7 +244,15 @@ export async function preflightPackagePluginsAsync(
   input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation'>,
 ) {
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
-  await assertSnapshotTreeAsync(input.snapshot, 'snapshot-stale')
+  try {
+    if (
+      (await verifiedDirectoryDigestAsync(input.snapshot.directory, input.snapshot)) !==
+      input.snapshot.treeIntegrity
+    )
+      integrityFailure('snapshot-stale')
+  } catch {
+    integrityFailure('snapshot-stale')
+  }
   return preflightMetadata(input)
 }
 
@@ -292,7 +299,10 @@ function normalizeExport(
 export async function loadPackagePlugins(
   input: LoadPackagePluginsInput,
 ): Promise<readonly LoadedPackagePlugin[]> {
-  const { declarations } = await preflightPackagePluginsAsync(input)
+  // Static readers can reuse exact bytes within their operation; import is an independent gate.
+  if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
+  await assertSnapshotTreeAsync(input.snapshot, 'snapshot-stale')
+  const { declarations } = preflightMetadata(input)
   if (!declarations.length) return Object.freeze([])
   const declarationSnapshot = canonical(declarations)
 

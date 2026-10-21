@@ -513,13 +513,13 @@ export class Client {
       const meta: Record<string, unknown> = {}
       if (o.agent !== undefined) {
         meta.agent = parseAgentRef(o.agent)
-        if (o.loop || o.bundles !== undefined || o.preset || o.permission)
+        if (o.loop || o.bundles !== undefined || o.preset || o.permission !== undefined)
           throw new TypeError('agent cannot be combined with execution overrides')
       }
       if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
       if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
-      if (o.permission) meta.permission = o.permission
+      if (o.agent === undefined) meta.permission = o.permission ?? 'default'
       if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
       const r = await this.call<{ sessionId: string }>('session/new', {

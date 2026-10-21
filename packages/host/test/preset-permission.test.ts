@@ -21,16 +21,9 @@ const golden = JSON.parse(
   readFileSync(new URL('./fixtures/preset-legacy-merged.json', import.meta.url), 'utf8'),
 ) as Record<string, { hash: string; doc: PresetDoc }>
 
-/**
- * Same document apart from two spellings that run identically: the old read-only recipe's tool list
- * (a key nothing reads), and an explicit `default` tool policy, which is what an unset one selects.
- */
-const withoutDeadToolList = (doc: PresetDoc, name: string): PresetDoc => {
-  const copy = structuredClone(doc) as PresetDoc & {
-    tools?: { core?: unknown }
-    providers?: Record<string, { provider?: string }>
-  }
-  if (name === 'read-only' && copy.tools) delete copy.tools.core
+/** An explicit default policy and an absent policy select the same provider. */
+const withoutDefaultPolicy = (doc: PresetDoc): PresetDoc => {
+  const copy = structuredClone(doc) as PresetDoc & { providers?: Record<string, { provider?: string }> }
   if (copy.providers?.['tool-policy']?.provider === 'default') {
     delete copy.providers['tool-policy']
     if (Object.keys(copy.providers).length === 0) delete copy.providers
@@ -38,7 +31,7 @@ const withoutDeadToolList = (doc: PresetDoc, name: string): PresetDoc => {
   return copy
 }
 
-describe('permission overlays keep every pre-split recipe byte-equal', () => {
+describe('permission overlays preserve real recipe documents', () => {
   const names = Object.keys(golden).filter((name) => name !== 'base')
 
   it.each(names)('%s resolves to the document it had before the split', (name) => {
@@ -47,8 +40,8 @@ describe('permission overlays keep every pre-split recipe byte-equal', () => {
     // minimal sat on L0 with allow; it now takes the permission's L1. That is the one intended change.
     const intended =
       name === 'minimal' ? { sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' } } : {}
-    const want = withoutDeadToolList(expected, name) as Record<string, unknown>
-    const got = withoutDeadToolList(resolved.doc, name) as Record<string, unknown>
+    const want = withoutDefaultPolicy(expected) as Record<string, unknown>
+    const got = withoutDefaultPolicy(resolved.doc) as Record<string, unknown>
     if (name === 'minimal') {
       // The tool allowlist moved from a composition entry to the preset's own `tools.allow`.
       expect(got.tools).toMatchObject({ allow: ['read', 'grep', 'find', 'ls'] })
@@ -110,29 +103,19 @@ describe('resolving a recipe under a chosen permission', () => {
     )
   })
 
-  it('refuses a legacy permission name combined with a different level', () => {
-    expect(() => resolvePreset('read-only', docs, { permission: 'full-access' })).toThrow('read-only')
-    expect(resolvePreset('read-only', docs, { permission: 'read-only' }).permission).toBe('read-only')
-  })
+  it.each(['read-only', 'workspace-write', 'full-access'] as const)(
+    'refuses the retired %s recipe alias',
+    (name) => {
+      expect(() => resolvePreset(name, docs)).toThrow(/Retired.*clean home/)
+      expect(() => resolvePreset(name, docs, { permission: name })).toThrow(/Retired.*clean home/)
+    },
+  )
 
   it('refuses a level for a recipe that carries its own table', () => {
     expect(() => resolvePreset('standard-windows', docs, { permission: 'read-only' })).toThrow(
       'carries its own permission settings',
     )
     expect(resolvePreset('standard-windows', docs).permission).toBeUndefined()
-  })
-
-  it('refuses a legacy level name whose base recipe was replaced by one with its own table', () => {
-    const custom = {
-      ...docs,
-      standard: { ...docs.standard!, sandbox: { level: 'L0', on_unavailable: 'allow' } },
-    }
-    for (const alias of ['read-only', 'full-access'])
-      expect(() => resolvePreset(alias, custom)).toThrow('does not allow')
-    // The default level is what a recipe runs under as written, so its name keeps working.
-    expect(resolvePreset('workspace-write', custom).permission).toBeUndefined()
-    // The recipe itself still runs as written.
-    expect(resolvePreset('standard', custom).permission).toBeUndefined()
   })
 
   it('never lets an overlay lower a required sandbox to L0', () => {

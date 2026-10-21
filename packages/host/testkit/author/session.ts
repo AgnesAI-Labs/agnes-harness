@@ -61,6 +61,7 @@ export interface AuthorTestOptions extends AuthorPluginVersion {
   packageDirs?: TestHostOptions['packageDirs']
   presets?: TestHostOptions['presets']
   preset?: string
+  permission?: string
 }
 export interface AuthorSession {
   readonly key: string
@@ -342,6 +343,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         key,
         cwd: directory,
         ...(options.preset ? { preset: options.preset } : {}),
+        permission: options.permission ?? 'default',
         loop,
       })
     const failed = owner.extensions().find((entry) => entry.package === id && (!entry.loaded || entry.error))

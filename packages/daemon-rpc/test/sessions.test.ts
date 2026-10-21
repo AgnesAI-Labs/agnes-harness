@@ -185,11 +185,13 @@ describe('SessionRegistry', () => {
     await expect(first).rejects.toThrow('stop after capture')
     await expect(retry).rejects.toThrow('stop after capture')
 
-    // A request that names no permission reaches the Host exactly as before the split.
-    const legacy = reg.open(request)
+    // An omitted permission is the same deployment-default request as explicit default.
+    const omitted = reg.open(request)
+    const followed = reg.open({ ...request, permission: 'default' })
     stop(new Error('stop after capture'))
-    await expect(legacy).rejects.toThrow('stop after capture')
-    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('permission')
+    await expect(omitted).rejects.toThrow('stop after capture')
+    await expect(followed).rejects.toThrow('stop after capture')
+    expect(create.mock.calls[1]?.[0]).toHaveProperty('permission', 'default')
 
     // A live session conflicts only with a named level it does not run under.
     ;(reg as unknown as { entries: Map<string, SessionEntry> }).entries.set(request.key, {

@@ -130,7 +130,7 @@ export type {
   WorkspaceInvocationView,
   WorkspacePublicationDispatch,
 } from '@agnes/core-effects/workspace/runtime'
-export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { createSessionFileReader, createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
 export { decisionSubjectDigest, leanEvents, reduceDecision } from '@agnes/core-ledger'
 export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'
@@ -210,7 +210,7 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
-export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
+export { bindChildAgentSession } from './child/loop-port.js'
 export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {

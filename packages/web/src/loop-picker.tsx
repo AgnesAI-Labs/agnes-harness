@@ -126,7 +126,7 @@ export interface LoopPickerView {
   inherited: string
   unavailable: string
   onSelect(loop: LoopSelection | undefined): void
-  /** The Host's preset catalog; legacy permission-level names in it are not offered as recipes. */
+  /** The Host's current recipe catalog. */
   presets?: readonly { id: string; isDefault: boolean }[]
   preset?: string | undefined
   /** The recipe a draft runs when it names none; the 「默认」 entry carries its name. */

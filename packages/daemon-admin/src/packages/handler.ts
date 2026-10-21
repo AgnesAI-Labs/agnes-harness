@@ -17,7 +17,6 @@ import {
   AuthoringCandidates,
   activeRuntimePinId,
   collectSkinRoster,
-  currentStoredShape,
   parseSource,
   publicPluginFailureReason,
   resolveSkinAsset,
@@ -1336,7 +1335,7 @@ class Service implements PackageAdminService {
     // prevents one authenticated administrator from observing another administrator's operation.
     if (!found || found.identity.principalId !== authority.principalId)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
-    return operationWithHelp(currentStoredShape(found.operation) as PackageOperation)
+    return operationWithHelp(found.operation)
   }
 
   private async effect(
@@ -2105,7 +2104,7 @@ class Service implements PackageAdminService {
     })
     for (const listener of this.listeners) {
       try {
-        listener(structuredClone(currentStoredShape(value.operation)) as PackageOperation)
+        listener(structuredClone(value.operation))
       } catch {
         // Observation cannot change the durable operation result.
       }

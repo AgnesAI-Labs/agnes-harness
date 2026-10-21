@@ -192,12 +192,12 @@ it.each(['pending', 'failed'])(
   },
 )
 
-it('offers only recipe presets beside the permission levels, even when the catalog lists the legacy names', async () => {
+it('keeps the selected recipe and permission independent when saving', async () => {
   const writes: unknown[] = []
-  // An older store kept the permission in `preset`; it reads as the permission and is saved as one.
+  // Current saved defaults name both axes.
   let snapshot: { revision: number; defaults: Record<string, unknown> } = {
     revision: 2,
-    defaults: { preset: 'read-only' },
+    defaults: { preset: 'standard', permission: 'read-only' },
   }
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/context')) return context()
@@ -216,12 +216,9 @@ it('offers only recipe presets beside the permission levels, even when the catal
     await act(async () =>
       root.render(
         createElement(PermissionDefaults, {
-          // An older Host: no permission catalog, and the levels still listed as presets.
+          permissions: levels,
           presets: [
-            { id: 'workspace-write', isDefault: true },
-            { id: 'read-only', isDefault: false },
-            { id: 'full-access', isDefault: false },
-            { id: 'standard', isDefault: false },
+            { id: 'standard', isDefault: true },
             { id: 'minimal', isDefault: false },
           ],
           fetcher,
@@ -246,12 +243,12 @@ it('offers only recipe presets beside the permission levels, even when the catal
 it.each([
   ['the permission catalog', [{ id: 'standard', isDefault: true }], levels.slice(0, 2), ['full-access']],
   [
-    'the presets of an older Host',
+    'a missing permission catalog',
     [{ id: 'standard', isDefault: true }],
     undefined,
     ['read-only', 'workspace-write', 'full-access'],
   ],
-] as const)('allows only the levels %s names', async (_source, presets, permissions, refused) => {
+] as const)('disables levels absent from %s', async (_source, presets, permissions, refused) => {
   const writes: unknown[] = []
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/context')) return context()
@@ -337,7 +334,7 @@ it('returns to the stored value when a save fails, names both, and retries the s
 it.each([
   ['ghost', 'New sessions use the “ghost” profile'],
   ['ptc', null],
-  ['workspace-write', null],
+  ['default', 'New sessions use the “default” profile'],
 ] as const)(
   'names a stored %s preset above the cards only when the catalog lacks it',
   async (preset, note) => {

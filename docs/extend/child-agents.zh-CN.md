@@ -108,7 +108,7 @@ Host/Core 调用一次 `childAgents.forSession(parent)`，把返回的 `ChildAge
 
 父作用域包含 `sessionKey`、`signal`、`cwd`，以及可选的代码 `generation`、剩余 `budget` 和 `toolFilter`。启动选项不能替换父身份或代码代际；子预算和工具名单只能收紧继承约束。每次启动检查当前模型/提供者允许名单。外观拒绝控制不归自己所有的句柄。父 signal 中止会请求取消；调用方必须等待 `dispose()`，才能确认启动和清理已结束，并观察失败。`result()` 是终态结果，不是每一轮回答；轮次状态通过事件和列表观察。
 
-Core 的旧 `runLoopChild` 出口保留为同步进程内兼容函数，不选择外部提供者。
+Loop 通过 `LoopContext.children` 启动子任务；旧的 Core `runLoopChild` 出口已移除。
 
 ## ACP 子代理
 

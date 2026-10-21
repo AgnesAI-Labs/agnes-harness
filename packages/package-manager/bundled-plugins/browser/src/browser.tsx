@@ -16,7 +16,7 @@ export function apply(ctx: ClientContext) {
   function Panel() {
     const state = useBrowser()
     useEffect(() => client.start(), [])
-    const [selected, setSelected] = useState({ pageId: '', activity: 0 })
+    const [selected, setSelected] = useState('')
     const [address, setAddress] = useState('')
     const [control, setControl] = useState<HumanControl>()
     const [error, setError] = useState('')
@@ -35,16 +35,10 @@ export function apply(ctx: ClientContext) {
     const releaseControl = useCallback(() => setControl(undefined), [])
     const [events, setEvents] = useState<{ seq: number; kind: string; detail: string }[]>([])
     const screen = useRef<BrowserScreenHandle>(null)
-    const activePage = state.pages.reduce<BrowserPage | undefined>(
-      (latest, candidate) => ((candidate.activity ?? 0) > (latest?.activity ?? 0) ? candidate : latest),
-      undefined,
-    )
-    const activity = activePage?.activity ?? 0
-    const preferred =
-      control?.pageId ?? (selected.activity >= activity ? selected.pageId : activePage?.pageId)
-    const page = state.pages.find((p) => p.pageId === preferred) ?? activePage ?? state.pages[0]
-    // Manual selection lasts until the agent next targets a page. Human control always keeps its page.
-    const selectPage = (pageId: string) => setSelected({ pageId, activity })
+    const preferred = control?.pageId ?? selected
+    const page = state.pages.find((p) => p.pageId === preferred) ?? state.pages[0]
+    // A user's selected tab stays put while the model works in another tab.
+    const selectPage = (pageId: string) => setSelected(pageId)
     const pageId = page?.pageId
     const target = useRef(pageId)
     target.current = pageId
@@ -101,7 +95,11 @@ export function apply(ctx: ClientContext) {
             ? t('protectedTarget')
             : code === 'INVALID_URL'
               ? t('invalidUrl')
-              : String(error),
+              : code === 'FILE_DENIED'
+                ? t('fileDenied')
+                : code === 'UNSUPPORTED_FILE'
+                  ? t('unsupportedFile')
+                  : String(error),
         )
         return undefined
       } finally {

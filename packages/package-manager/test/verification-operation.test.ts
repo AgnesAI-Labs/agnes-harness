@@ -165,7 +165,8 @@ it('canonicalizes an ancestor alias on each hit and refuses a directory retarget
     expect(() => verifiedDirectoryDigest(alias, identity)).toThrow(/symbolic link/)
     mkdirSync(moved)
     renameSync(join(dir, 'payload'), join(moved, 'payload'))
-    symlinkSync(join(moved, 'payload'), join(dir, 'payload'))
+    // A directory link exercises the same traversal refusal and works without Windows file-link privileges.
+    symlinkSync(moved, join(dir, 'payload'), process.platform === 'win32' ? 'junction' : 'dir')
     // A pre-execution/write gate must reject a link introduced after the read observation.
     expect(() => withoutPackageVerification(() => verifiedDirectoryDigest(dir, identity))).toThrow(
       /symbolic link/,

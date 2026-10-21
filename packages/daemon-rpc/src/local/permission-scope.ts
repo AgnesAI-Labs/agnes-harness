@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { automaticPermissionDecision, type PermissionContext, samePermissionContext } from '@agnes/protocol'
+import {
+  automaticPermissionDecision,
+  type PermissionContext,
+  permissionEffectAdmission,
+  samePermissionContext,
+} from '@agnes/protocol'
 import type { ApprovalRequest } from './prompter.js'
 
 export type AutomaticPermissionEvidence = {
@@ -91,38 +96,32 @@ export async function acquirePermissionLease(
       row.bindingHash === binding.bindingHash &&
       row.sessionKey === binding.sessionKey,
   )
-  let revoked = false
-  const assertActive = () => {
-    if (
-      revoked ||
-      signal.aborted ||
-      !grant ||
-      current.grants.get(grant.requestId) !== grant ||
-      grant.sessionId !== current.context.sessionId ||
-      grant.epoch !== current.context.epoch ||
-      !Number.isFinite(Date.parse(grant.deadline)) ||
-      Date.now() >= Date.parse(grant.deadline)
-    ) {
-      revoked = true
-      throw new PermissionGrantUnavailable('Permission grant unavailable or expired')
-    }
-  }
-  const verify = async () => {
-    assertActive()
-    try {
-      if (!samePermissionContext(current.context, await current.verify()))
-        throw new PermissionGrantUnavailable('Permission authority revoked')
-      // The verifier can yield past cancellation or the exact grant's deadline.
-      assertActive()
-    } catch (error) {
-      revoked = true
-      throw error instanceof PermissionGrantUnavailable
-        ? error
-        : new PermissionGrantUnavailable('Permission authority unavailable')
-    }
-  }
-  await verify()
-  return Object.freeze({ verify, assertActive })
+  const admission = permissionEffectAdmission({
+    signals: [signal],
+    expiresAt: Date.parse(grant?.deadline ?? ''),
+    unavailable: () => new PermissionGrantUnavailable('Permission grant unavailable or expired'),
+    assertBound: () => {
+      if (
+        !grant ||
+        current.grants.get(grant.requestId) !== grant ||
+        grant.sessionId !== current.context.sessionId ||
+        grant.epoch !== current.context.epoch
+      )
+        throw new PermissionGrantUnavailable('Permission grant unavailable or expired')
+    },
+    verify: async () => {
+      try {
+        if (!samePermissionContext(current.context, await current.verify()))
+          throw new PermissionGrantUnavailable('Permission authority revoked')
+      } catch (error) {
+        throw error instanceof PermissionGrantUnavailable
+          ? error
+          : new PermissionGrantUnavailable('Permission authority unavailable')
+      }
+    },
+  })
+  await admission.verify()
+  return admission
 }
 export async function automaticRequestDecision(req: ApprovalRequest) {
   const current = scope.getStore()

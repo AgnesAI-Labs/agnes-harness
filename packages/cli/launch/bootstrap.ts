@@ -18,13 +18,14 @@ function nonEmpty(value: string | undefined): string | undefined {
 /**
  * The home `agnesHome` selects, or undefined where it would refuse. Kept local because the shared
  * resolver imports the protocol package, whose load time is what this entry exists to cache; the
- * equality is pinned by test. It never warns: the real entry reports a deprecated or invalid home.
+ * equality is pinned by test. The real entry reports an invalid or retired home setting.
  */
 export function compileCacheHome(
   env: Readonly<Record<string, string | undefined>>,
   homeDir?: string,
 ): string | undefined {
-  const explicit = nonEmpty(env.AGH_HOME) ?? nonEmpty(env.AGNES_HOME)
+  if (nonEmpty(env.AGNES_HOME) !== undefined) return undefined
+  const explicit = nonEmpty(env.AGH_HOME)
   const selected = explicit ?? nonEmpty(env.HOME) ?? homedir()
   if (sep === '\\' && (!isAbsolute(selected) || parse(selected).root.length <= 1)) return undefined
   if (explicit !== undefined && !isAbsolute(explicit)) return undefined

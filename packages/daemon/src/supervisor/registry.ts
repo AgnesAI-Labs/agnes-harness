@@ -8,9 +8,19 @@ import {
   type WorkspaceBindingEnvelope,
 } from '@agnes/daemon-foundation/storage/workspaces'
 import type { LoopSelection } from '@agnes/protocol'
-import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import { type EventEnvelope, rpcError, SESSION_ARTIFACT_ROOT_EVENT_TYPES } from '@agnes/protocol'
+import { type HistoryConsumer, historyIndex, readRange } from './open-history.js'
 import { RemoteSession } from './remote-session.js'
 import type { WorkerPool } from './worker-pool.js'
+
+type ReplayFrame = { event: EventEnvelope; beforePublish?: () => void; onWire?: () => void }
+
+export type RegistryOptions = Readonly<{
+  /** Caught up on a session's sidebar row when it opens; the row may lag its ledger. */
+  workspaces?: Pick<SessionWorkspacePort, 'refresh'>
+  /** Consumers of ledger rows; an open feeds each the history rows of the types it lists. */
+  history?: readonly HistoryConsumer[]
+}>
 
 export type ArtifactAuthorityLifecycle = Readonly<{
   observe(sessionId: string, event: unknown, signal: AbortSignal): Promise<void>
@@ -98,15 +108,16 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /**
    * A worker starts its ledger tail as soon as the start gate opens, so live frames can arrive while
-   * `openFresh()` is still waiting for its explicit authority replay scan. Awaiting such a frame on
-   * `artifactQueues` would put the scan reply behind a promise which itself waits for that reply.
-   * Hold the frames as plain data until the scan completes, then project and publish them in wire
-   * order before exposing the opened session.
+   * `openFresh()` is still reading the session's history. Awaiting such a frame on `artifactQueues`
+   * would put the scan reply behind a promise which itself waits for that reply. Hold the frames as
+   * plain data until the history has been handled, then project and publish them in wire order
+   * before exposing the opened session.
    */
-  private readonly artifactReplayBuffers = new Map<
-    string,
-    Array<{ event: EventEnvelope; beforePublish?: () => void }>
-  >()
+  private readonly artifactReplayBuffers = new Map<string, ReplayFrame[]>()
+  /** The highest seq offered to a session's listeners; they outlive the entries that fed them. */
+  private readonly publishedThrough = new Map<string, number>()
+  private readonly history: ReturnType<typeof historyIndex>
+  private readonly authorityTypes: ReadonlySet<string>
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
   private readonly generationMigrations = new Set<string>()
@@ -144,19 +155,32 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   constructor(
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
-    /** Folds a replayed history into the session's sidebar row in one batch. */
-    private readonly workspaces?: Pick<SessionWorkspacePort, 'batch'>,
-  ) {}
+    private readonly options: RegistryOptions = {},
+  ) {
+    this.authorityTypes = new Set(artifactAuthority ? SESSION_ARTIFACT_ROOT_EVENT_TYPES : [])
+    this.history = historyIndex(options.history ?? [], [...this.authorityTypes])
+  }
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
    *  and folded into that session's `lastSeq` / register cache. */
-  deliver(sessionKey: string, e: EventEnvelope, beforePublish?: () => void): void | Promise<void> {
+  deliver(
+    sessionKey: string,
+    e: EventEnvelope,
+    beforePublish?: () => void,
+    onWire?: () => void,
+  ): void | Promise<void> {
+    const replayBuffer = this.artifactReplayBuffers.get(sessionKey)
+    if (replayBuffer) {
+      // `onWire` waits with its row: its consumers have just been fed the history in ledger order.
+      replayBuffer.push({
+        event: e,
+        ...(beforePublish ? { beforePublish } : {}),
+        ...(onWire ? { onWire } : {}),
+      })
+      return
+    }
+    onWire?.()
     if (this.artifactAuthority) {
-      const replayBuffer = this.artifactReplayBuffers.get(sessionKey)
-      if (replayBuffer) {
-        replayBuffer.push({ event: e, ...(beforePublish ? { beforePublish } : {}) })
-        return
-      }
       const queued = (this.artifactQueues.get(sessionKey) ?? Promise.resolve()).then(async () => {
         const entry = this.entries.get(sessionKey)
         if (!entry || entry.ac.signal.aborted) throw new Error('artifact authority session is unavailable')
@@ -279,6 +303,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (!en) return
     en.session.observe(e)
     en.session.observeRegister(e)
+    this.publishedThrough.set(sessionKey, Math.max(this.publishedThrough.get(sessionKey) ?? 0, e.seq))
     for (const l of en.listeners) l(e)
   }
 
@@ -299,6 +324,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     forkAt?: number
     resume?: boolean
   }): Promise<RemoteEntry> {
+    if (o.agent === undefined) o = { ...o, permission: o.permission ?? 'default' }
     if (this.closingAll) throw new Error('worker registry is shutting down')
     if (o.key && this.generationMigrations.has(o.key))
       throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')
@@ -337,6 +363,71 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     }
   }
 
+  /**
+   * Brings the daemon's view of a session that has just opened up to its ledger head. The worker only
+   * pushes rows after `head`; the history before it is read once, by the types its consumers react
+   * to, so the cost follows those rows rather than the length of the ledger. Rows that arrived on the
+   * wire meanwhile wait in `replayBuffer` and are handled afterwards, in wire order.
+   */
+  private async catchUpHistory(o: {
+    key: string
+    entry: RemoteEntry
+    session: RemoteSession
+    head: number
+    generation: number
+    replayBuffer: ReplayFrame[]
+  }): Promise<void> {
+    const { key, entry, session, head, replayBuffer } = o
+    const current = (): void => {
+      if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
+        throw new Error('artifact authority session is unavailable')
+    }
+    const scan = (q: Record<string, unknown>) => session.scan(q)
+    const project = (seq: number): void => {
+      this.artifactProjectedThrough.set(key, Math.max(this.artifactProjectedThrough.get(key) ?? 0, seq))
+      this.resolveArtifactProjectionWaiters(key)
+    }
+    if (this.history.types.length > 0)
+      await readRange(scan, { fromSeq: 1, toSeq: head, types: this.history.types }, async (event) => {
+        current()
+        if (this.artifactAuthority && this.authorityTypes.has(event.type)) {
+          await this.artifactAuthority.observe(key, event, entry.ac.signal)
+          project(event.seq)
+        }
+        for (const consumer of this.history.byType.get(event.type) ?? [])
+          consumer.observe(key, event, o.generation)
+      })
+    // Only rows that can create authority were read, and every one up to `head` has been handled.
+    if (this.artifactAuthority) project(head)
+    // Listeners outlive the worker generation that fed them: offer them the rows they have not seen.
+    const published = this.publishedThrough.get(key)
+    if (published !== undefined && published < head && entry.listeners.size > 0)
+      await readRange(scan, { fromSeq: published + 1, toSeq: head }, (event) => {
+        current()
+        this.publish(key, event)
+      })
+    this.publishedThrough.set(key, Math.max(published ?? 0, head))
+    await session.primeRegisters(head)
+    // The sidebar row may lag the ledger (history written while it was not being indexed).
+    await this.options.workspaces?.refresh(key, session, o.generation).catch(() => undefined)
+    // Draining may yield while projecting. Any frame that arrives during that await is appended to
+    // the same array and is picked up by this loop before the replay buffer is removed. Walk it by
+    // index: shifting a long buffer re-copies the array once per frame.
+    for (let index = 0; index < replayBuffer.length; index++) {
+      const buffered = replayBuffer[index] as ReplayFrame
+      current()
+      buffered.onWire?.()
+      // A frame the worker repeats from before `head` was projected by the read above.
+      if (this.artifactAuthority && buffered.event.seq > head) {
+        await this.artifactAuthority.observe(key, buffered.event, entry.ac.signal)
+        project(buffered.event.seq)
+      }
+      current()
+      buffered.beforePublish?.()
+      this.publish(key, buffered.event)
+    }
+  }
+
   private async openFresh(key: string, o: RemoteOpen, sessionEpoch: number): Promise<RemoteEntry> {
     const isCurrent = (): boolean => !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
     if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
@@ -371,10 +462,17 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       await link.closeSession('session closed while opening').catch(() => undefined)
       throw new Error(`session ${key} was closed while opening`)
     }
+    // The history up to the head is read by type once the session is open; the worker pushes what follows.
+    const head = hello.lastSeq
+    if (!Number.isSafeInteger(head) || head < 0) {
+      await link.closeSession('worker reported no ledger head').catch(() => undefined)
+      throw new Error(`worker reported no ledger head for session ${key}`)
+    }
     let entry: RemoteEntry | undefined
     const session = new RemoteSession(key, hello.writerRunId, hello.generation, link, o.cwd, () => {
       if (entry) this.retireAtTurnBoundary(key, entry)
     })
+    session.lastSeq = head
     const registry = this
     let inflight: RemoteEntry['inflight'] = null
     const listeners = this.listenerSets.get(key) ?? new Set<(e: EventEnvelope) => void>()
@@ -406,11 +504,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ),
     )
     // The shared worker may emit events while tail() is still acknowledging its subscription.
-    if (this.artifactAuthority) this.artifactReplayBuffers.set(key, [])
+    this.artifactReplayBuffers.set(key, [])
     try {
       if (!link.alive) throw new Error(`worker link closed while opening session ${key}`)
       const tail = (link as unknown as { tail?: (fromSeq: number) => Promise<void> }).tail
-      if (tail) await tail.call(link, 1)
+      // The history up to `head` is read by type below; the worker pushes what comes after it.
+      if (tail) await tail.call(link, head + 1)
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
       // This worker read its resources before hello. If a control operation committed while it was
       // opening, never publish that old-snapshot generation to a caller; let WorkerPool wait for its
@@ -435,88 +534,24 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         this.artifactReplayBuffers.delete(key)
         return this.openFresh(key, o, sessionEpoch)
       }
-      if (this.artifactAuthority) {
-        const replayBuffer = this.artifactReplayBuffers.get(key)
-        if (!replayBuffer) throw new Error('artifact authority session is unavailable')
+      const replayBuffer = this.artifactReplayBuffers.get(key)
+      if (!replayBuffer) throw new Error('session history replay is unavailable')
+      try {
+        await this.catchUpHistory({ key, entry, session, head, generation: hello.generation, replayBuffer })
+        this.artifactReplayBuffers.delete(key)
+      } catch (error) {
+        this.artifactReplayBuffers.delete(key)
+        if (this.entries.get(key) === entry) this.entries.delete(key)
+        entry.ac.abort(error)
         try {
-          let fromSeq = 1
-          let replayedThrough = 0
-          for (;;) {
-            // Explicit bounds allow large attachment pages to be split across worker frames.
-            const page = (await session.scan({
-              fromSeq,
-              toSeq: fromSeq + 499,
-              order: 'asc',
-              limit: 500,
-            })) as EventEnvelope[]
-            if (page.length === 0) break
-            for (const event of page) {
-              await this.artifactAuthority.observe(key, event, entry.ac.signal)
-              this.artifactProjectedThrough.set(
-                key,
-                Math.max(this.artifactProjectedThrough.get(key) ?? 0, event.seq),
-              )
-              this.resolveArtifactProjectionWaiters(key)
-            }
-            const last = page.at(-1)?.seq
-            if (!Number.isSafeInteger(last) || (last as number) < fromSeq)
-              throw new Error('artifact authority replay returned an invalid page')
-            replayedThrough = last as number
-            fromSeq = replayedThrough + 1
-            if (page.length < 500) break
-          }
-          // Draining may yield while projecting. Any frame that arrives during that await is appended
-          // to the same array and is picked up by this loop before the replay buffer is removed.
-          // Walk it by index: shifting a long replay re-copies the array once per frame.
-          let index = 0
-          const frame = () => replayBuffer[index] as (typeof replayBuffer)[number]
-          // The tail begins at seq 1, so it commonly repeats rows already covered by the scan. Those
-          // frames publish without awaiting; their sidebar folds share one row read and one write.
-          const replayed = () => {
-            for (; index < replayBuffer.length && frame().event.seq <= replayedThrough; index++) {
-              if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
-                throw new Error('artifact authority session is unavailable')
-              frame().beforePublish?.()
-              this.publish(key, frame().event)
-            }
-          }
-          if (this.workspaces?.batch) this.workspaces.batch(key, replayed)
-          else replayed()
-          for (; index < replayBuffer.length; index++) {
-            const buffered = frame()
-            const current = this.entries.get(key)
-            if (current !== entry || entry.ac.signal.aborted)
-              throw new Error('artifact authority session is unavailable')
-            // The tail begins at seq 1, so it commonly repeats rows already covered by the scan.
-            // Publish each wire frame once, but do not project the same durable row twice.
-            if (buffered.event.seq > replayedThrough) {
-              await this.artifactAuthority.observe(key, buffered.event, entry.ac.signal)
-              this.artifactProjectedThrough.set(
-                key,
-                Math.max(this.artifactProjectedThrough.get(key) ?? 0, buffered.event.seq),
-              )
-              this.resolveArtifactProjectionWaiters(key)
-            }
-            if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
-              throw new Error('artifact authority session is unavailable')
-            buffered.beforePublish?.()
-            this.publish(key, buffered.event)
-          }
-          this.artifactReplayBuffers.delete(key)
-        } catch (error) {
-          this.artifactReplayBuffers.delete(key)
-          if (this.entries.get(key) === entry) this.entries.delete(key)
-          entry.ac.abort(error)
-          try {
-            this.artifactAuthority.resetSession(key)
-          } catch {
-            // The original replay failure is the public startup result; scope is already detached.
-          }
-          this.pool.retire([key], 'artifact-authority-replay-failed')
-          this.rejectArtifactProjectionWaiters(key)
-          this.artifactProjectedThrough.delete(key)
-          throw error
+          this.artifactAuthority?.resetSession(key)
+        } catch {
+          // The original replay failure is the public startup result; scope is already detached.
         }
+        this.pool.retire([key], 'artifact-authority-replay-failed')
+        this.rejectArtifactProjectionWaiters(key)
+        this.artifactProjectedThrough.delete(key)
+        throw error
       }
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
       // Previews were dropped while the replay held events back, and a preview from a generation
@@ -731,6 +766,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.sessionEpochs.set(key, (this.sessionEpochs.get(key) ?? 0) + 1)
     this.listenerSets.delete(key)
     this.previewSets.delete(key)
+    this.publishedThrough.delete(key)
     let firstError: unknown
     try {
       this.artifactAuthority?.resetSession(key)

@@ -88,6 +88,7 @@ describe('wireResourceSnapshotNotifications', () => {
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),

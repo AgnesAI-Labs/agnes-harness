@@ -511,6 +511,10 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   writeFileSync(dataFile, original)
   const unknown = join(dirname(pin.snapshot.directory), 'unknown-directory')
   mkdirSync(unknown)
+  await expect(m.listRuntimePins(profile)).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+    detail: { reason: 'unknown-runtime-directory' },
+  })
   // With no writer transaction in progress the lock-free reader stays fail-closed too.
   await expect(m.runtimePluginSnapshots(profile)).rejects.toMatchObject({
     code: 'E_PACKAGE_INTEGRITY',

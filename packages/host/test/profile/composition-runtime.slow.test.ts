@@ -858,7 +858,8 @@ it('filters registered MCP identities without confusing slug collisions or long 
   }
   const tree = {
     profile: 'local-dev',
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
     bundles: [],
     selection: {},
     sources: {},

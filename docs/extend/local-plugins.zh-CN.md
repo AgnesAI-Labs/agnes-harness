@@ -4,7 +4,7 @@
 
 [作者指南](README.zh-CN.md) · [让 Agent 创建插件](agent-built-plugins.zh-CN.md)
 
-Daemon 在启动时扫描 `<AGNES_HOME>/plugins/<name>/` 和 `<workspace>/.agh/plugins/<name>/`，并监听变更。这里的 home 是实际配置的运行目录（CLI 使用 `AGH_HOME`）；workspace 是 daemon 的启动工作区。目录名使用小写字母、数字、点、下划线和连字符。
+Daemon 在启动时扫描 `<AGH_HOME>/plugins/<name>/` 和 `<workspace>/.agh/plugins/<name>/`，并监听变更。这里的 home 是实际配置的运行目录（CLI 使用 `AGH_HOME`）；workspace 是 daemon 的启动工作区。目录名使用小写字母、数字、点、下划线和连字符。
 
 目录可以包含正常包的 `package.json`，声明 `agnes.plugins` 与源码入口：
 

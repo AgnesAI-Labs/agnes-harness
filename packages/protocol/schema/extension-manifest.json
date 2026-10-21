@@ -694,41 +694,6 @@
         }
       }
     },
-    "ExampleLaunchDeclaration": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "kind", "title", "bundle", "preset", "prompt"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9.-]*$",
-          "maxLength": 128
-        },
-        "kind": {
-          "const": "business-agent"
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "bundle": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "preset": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "prompt": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 16384
-        }
-      }
-    },
     "PluginLocalizedText": {
       "type": "object",
       "additionalProperties": false,

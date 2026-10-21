@@ -87,9 +87,9 @@ presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 ```
 
-本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。没有 `permissions` 的 profile 由 `presets.allowed` 推导允许的权限级别；用户或工作区层只写了 `presets` 而没写 `permissions` 时，内置模板的 `permissions` 不再保留，因此收窄 `presets` 也会收窄权限。`--permission default` 或 `permission: 'default'` 表示跟随部署默认值。
+本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。配方与权限各自授权：收窄 `presets` 不改变 `permissions`；没有配置权限块时，内置默认值是 `workspace-write`。省略权限、`--permission default` 与 `permission: 'default'` 均跟随部署默认值，包括明确指定配方的请求。
 
-旧的预设名 `read-only`、`workspace-write`、`full-access` 仍可用作 `--preset` 值和 `presets.allowed` 条目，各自表示该权限下的 `standard` 预设，因此 `agh --preset read-only` 等同于 `agh --preset standard --permission read-only`。把它们与不同的 `--permission` 组合会报错。只指定预设的请求（如 `--preset ptc`）继续以 `workspace-write` 运行，即使管理员之后修改了默认权限，已有脚本和计划任务的行为也不变。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
+旧的配方别名 `read-only`、`workspace-write`、`full-access` 已拒绝，`presets.allowed` 中也不能使用。请将 `agh --preset read-only` 改为 `agh --preset standard --permission read-only`。旧 profile 与持久格式须使用新的空 `AGH_HOME`，不会转换旧字节或沿用旧信任摘要。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
 
 已打开的会话保持原有权限。`/preset NAME` 切换预设并保留权限；会改变沙箱约束的切换（包括任何权限变化）会被拒绝，须新建会话。自定义预设若自行写入沙箱或命令审批设置，就固定了自己的权限，会拒绝 `--permission` 选择。
 
@@ -115,13 +115,16 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 自动权限结果绑定后端会话身份和授权 epoch。切换预设会撤销待处理的自动授权与未消费结果；已消费的副作用回执保留为历史。后端在日志持久化后和副作用准入前再次校验 epoch。候选自动发布还要求候选来源会话与当前会话一致。私有 `permission-decisions.jsonl` 授权日志保留精确的非秘密会话、调用、范围、哈希、操作者、时间与消费状态，省略自由文本摘要；通用审计脱敏规则不变。扩展的普通问题（`decisions.request`）和未知用途不会因按钮形状而成为权限；业务确认遵循下述明确合同。ask_user、计划退出、事实核对及作者自由提问仍需人工内容。
 
+私有效果准入统一使用后端证明载体（`@agnes/protocol` 的 `permissionEffectAdmission`）。异步验证与最终同步提交或 CAS 内的 `assertActive()` 保持分离；载体保留取消、过期、会话 epoch 和上游准入检查，任一检查失败后永久失效。各业务模块继续核对自己的对象、版本与持久消费状态：memory 文件摘要、候选及包摘要、凭据引用、Skill 行及业务决策。一次发布可以包含多个获准提交；该载体不替代持久重放检查，也不承诺外部效果恰好发生一次。
+
+
 候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 
 受监管电子签名属于业务行为，独立于工具权限。示范应用通过公开决策端口以 `business.confirm` 请求质量记录、GMP 放行、MRB 处置、技术状态更改、规则启用与归零关闭签名，绑定审阅参数、修订与签名含义。完全访问包含这些业务确认：宿主代表选择该权限的会话真人提交声明的精确 `presentation.responseValue`，明确记录 **完全访问下自动确认**，不得冒充人工点击或模型／系统签名。Core 授权日志（`decision/state`）、业务回执、审计与放行证书／关闭记录均保留该身份、模式及原决策绑定。只有明确的单次 `allowed-once`／`rejected` 合同及声明的签名值可自动确认（优先 en，其余语言键按码点排序）；缺失、歧义或不符合响应 schema 的合同保留人工请求并记录原因。其他权限仍须真人回答。单次消费和私有写入凭证在事务提交前保留原 sessionId、epoch、取消及有效期校验，提交前收窄权限会阻止写入。嵌套业务写入会把全部准入凭证保留到最外层事务，真实提交前逐一复核，包括已成功返回的内层调用凭证。拒绝、取消、过期及旧修订仍不能签署。
 
 `ask_user` 等用户问题、用户明确选择的计划／只读模式、对 AGH 私有 `secrets/`、`auth/`、`profiles/` 的普通文件工具硬拒绝，以及 edit/write 的先读后改和过期读取检查保持有效。选择完全访问本身可以保留一次授权确认。未知外部效果的事实核对不是权限授权，不能自动断言已经发生。
 
-需要允许工作区外文件时，显式使用 `agh --permission full-access`（旧写法 `agh --preset full-access` 仍可用）。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
+需要允许工作区外文件时，显式使用 `agh --permission full-access`。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
 
 ```yaml
 permissions:
@@ -155,7 +158,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 `AGH_HOME` 包含会话、配置、授权、审计和缓存。日志经过限缩不代表会话正文没有敏感信息；导出、截图或公开错误时仍要检查用户输入、工具参数与路径。不要提交 `secrets/`、`auth/`、完整 home、真实 trace 或凭据文件。`publicConfig` 会到浏览器，绝不能装入密钥或 secret 引用。
 
-文件工具与沙箱保护工作区 `.agh/secrets`。Linux 上 Host 在编译命令沙箱前准备祖先 `.agh`：缺失时只以普通权限创建这个 AGH 自有空目录，不跟随符号链接；若已是链接或非目录，以 `E_SANDBOX_WORKSPACE`（`workspace-ancestor-not-directory`）精确拒绝。祖先保留真实挂载锚点，命令不能通过重命名它暴露凭据。`.agnes/secrets` 属于其他产品，不再享有 AGH 隐式防护，也不自动迁移。不要把 AGH 的 home 指到其他产品的数据目录；旧 `AGNES_HOME` 是兼容项，没有自动迁移。
+文件工具与沙箱保护工作区 `.agh/secrets`。Linux 上 Host 在编译命令沙箱前准备祖先 `.agh`：缺失时只以普通权限创建这个 AGH 自有空目录，不跟随符号链接；若已是链接或非目录，以 `E_SANDBOX_WORKSPACE`（`workspace-ancestor-not-directory`）精确拒绝。祖先保留真实挂载锚点，命令不能通过重命名它暴露凭据。`.agnes/secrets` 属于其他产品，不再享有 AGH 隐式防护，也不自动迁移。不要把 AGH 的 home 指到其他产品的数据目录；`AGNES_HOME` 已移除：取消该变量，用 `AGH_HOME` 指向干净的 home。
 
 恢复未知副作用前先核对目标系统，再决定重试。后台数据库恢复并不能撤销已发出的邮件、网络写入或物理设备动作。
 

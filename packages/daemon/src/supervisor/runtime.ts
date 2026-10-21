@@ -8,7 +8,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { collectPackageSkillFiles } from '@agnes/base'
-import { openDaemonScheduleDb } from '@agnes/base/schedule'
+import { openDaemonScheduleDb, RUN_PROGRESS_EVENT_TYPES } from '@agnes/base/schedule'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
 import {
@@ -113,7 +113,13 @@ import type { LockedPackageMutationStatusSource } from '@agnes/daemon-rpc/local/
 import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { disposeFeeds, type Feed, registerAcp } from '@agnes/daemon-rpc/local/methods/acp'
 import { registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
-import { type AgnesContext, registerAgnes, requireSessionOwner } from '@agnes/daemon-rpc/local/methods/agnes'
+import {
+  type AgnesContext,
+  APPROVAL_TICKET_EVENT_TYPES,
+  indexApprovalTicket,
+  registerAgnes,
+  requireSessionOwner,
+} from '@agnes/daemon-rpc/local/methods/agnes'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '@agnes/daemon-rpc/local/methods/artifacts'
 import { type PublishChildEngines, registerConfiguration } from '@agnes/daemon-rpc/local/methods/config'
 import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics'
@@ -243,6 +249,7 @@ import { canonicalPath, daemonProfileLoader, resolveDaemonProfile, resolveDaemon
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor, type SessionViewRead, storageReads } from './session-reads.js'
+import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -357,6 +364,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     private readonly workspaces: SessionWorkspacePort,
   ) {}
   async open(o: SessionOpenRequest): Promise<SessionEntry> {
+    if (o.agent === undefined) o = { ...o, permission: o.permission ?? 'default' }
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {
@@ -1133,27 +1141,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       ...(o.workerExecArgv ? { execArgv: o.workerExecArgv } : {}),
       workerEntry,
 
-      onEvent: (sessionKey, e) => {
-        automationEvents.observe(sessionKey, e)
-        if (e.type === 'turn/start') pool.resetSessionRequests(sessionKey)
-        if (
-          e.type === 'x/core/preset-switch' &&
-          e.origin === 'system' &&
-          (e.data as { fromPermission?: string }).fromPermission === 'full-access'
-        ) {
-          pool.revokeSessionRequests(sessionKey)
-          pool.resetSessionRequests(sessionKey)
-        }
-        const control = e.data as { action?: unknown; outcome?: unknown }
-        if (
-          e.type === 'x/core/control' &&
-          e.origin === 'principal' &&
-          control.outcome === 'requested' &&
-          (control.action === 'cancel' || control.action === 'interrupt')
-        )
-          pool.revokeSessionRequests(sessionKey)
-        return deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces)
-      },
+      onEvent: (sessionKey, e) =>
+        deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces, () => {
+          automationEvents.observe(sessionKey, e)
+          observeSessionRequests(pool, sessionKey, e)
+        }),
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onDecisionsChanged: (detail) => {
         if (detail.profile === o.profile.name) notices.emit('decisions_changed', { detail })
@@ -1274,7 +1266,28 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, workspaces)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
+      workspaces,
+      // A reopened session replays only the rows these consumers react to, in ledger order.
+      history: [
+        {
+          types: SESSION_REQUEST_EVENT_TYPES,
+          observe: (key, e) => observeSessionRequests(pool, key, e),
+        },
+        { types: RUN_PROGRESS_EVENT_TYPES, observe: (key, e) => automationEvents.observe(key, e) },
+        ...(tickets
+          ? [
+              {
+                types: APPROVAL_TICKET_EVENT_TYPES,
+                observe: (key: string, e: EventEnvelope) => {
+                  tickets.gc(clock())
+                  indexApprovalTicket(tickets, key, e, registry.get(key)?.session.cwd)
+                },
+              },
+            ]
+          : []),
+      ],
+    })
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({

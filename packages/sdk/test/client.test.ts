@@ -738,12 +738,14 @@ it('carries validated loop, preset, permission and ordered bundles on new-sessio
     await c.session.new({ cwd: '/w', loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] })
     await c.createSession({ cwd: '/w', preset: 'standard', permission: 'full-access' })
     expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
-      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop } } },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop, permission: 'default' } } },
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { agent: 'acme/kit#work' } } },
       {
         cwd: '/w',
         mcpServers: [],
-        _meta: { [META_KEY]: { loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] } },
+        _meta: {
+          [META_KEY]: { loop, preset: 'standard', permission: 'default', bundles: ['acme#one', 'acme#two'] },
+        },
       },
       { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { preset: 'standard', permission: 'full-access' } } },
     ])
