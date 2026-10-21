@@ -23,18 +23,16 @@ export async function prepareDocumentStyles(
   if (target.styleUrls.length === 0) return { activate() {}, dispose() {} }
   const nonce = document.querySelector<HTMLMetaElement>('meta[name="agnes-csp-nonce"]')?.content
   const links = target.styleUrls.map((href) => {
-    let link: HTMLStyleElement | HTMLLinkElement
+    const link = document.createElement(nonce ? 'style' : 'link')
     if (nonce) {
       // Use the page's existing style authorization for the import wrapper. Only the actual
       // stylesheet crosses the daemon's asset gate; relative imports still resolve against it.
-      link = document.createElement('style')
       link.setAttribute('nonce', nonce)
       link.textContent = `@import url(${JSON.stringify(href)}) layer(app);\n`
     } else {
-      const external = document.createElement('link')
+      const external = link as HTMLLinkElement
       external.rel = 'stylesheet'
       external.href = `${href}${href.includes('?') ? '&' : '?'}agnes_css_layer=app`
-      link = external
     }
     link.media = 'not all'
     link.dataset.plugin = target.packageId
