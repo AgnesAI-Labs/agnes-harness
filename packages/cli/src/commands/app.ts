@@ -84,7 +84,8 @@ export async function clearApplicationCommand(p: ParsedArgs, io: MainIO, home: s
 
 /** The only maintenance commands that deliberately bypass generic profile/Host boot. */
 export async function recoveryCommand(p: ParsedArgs, io: MainIO, home: string): Promise<number | undefined> {
-  if (p.command === 'app') return clearApplicationCommand(p, io, home)
+  if (p.command === 'app' && !['show', 'preview', 'adopt'].includes(p.rest[0] ?? ''))
+    return clearApplicationCommand(p, io, home)
   if (p.command === 'home') {
     const { homeCommand } = await import('./home.js')
     return homeCommand(p.rest, io)

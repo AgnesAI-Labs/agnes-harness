@@ -10,8 +10,8 @@ export function commandHelp(command?: Command, locale = 'en'): string {
   switch (command) {
     case 'app':
       if (locale === 'zh-CN')
-        return '用法：agh app clear [--profile NAME] [--json]\n无需加载插件即可清除应用展示选择。后台运行时使用在线 CAS，否则使用共享配置锁。'
-      return 'Usage: agh app clear [--profile NAME] [--json]\nClear the presentation selection without loading plugins. Uses online CAS when the daemon is running, otherwise the shared configuration lock.'
+        return '用法：agh app clear [--profile NAME] [--json]\nagh app show [--json] | preview <插件#应用> [--json] | adopt <插件#应用> [--yes] [--json]\nclear 无需加载插件即可清除应用展示选择。后台运行时使用在线 CAS，否则使用共享配置锁。show 显示当前应用与候选，preview 显示采纳前的同意预览；adopt 不带 --yes 只打印将要采纳的内容，不发请求。需要管理员连接，后台拒绝原样显示并以退出码 1 结束。'
+      return 'Usage: agh app clear [--profile NAME] [--json]\nagh app show [--json] | preview <package#app> [--json] | adopt <package#app> [--yes] [--json]\nClear the presentation selection without loading plugins. Uses online CAS when the daemon is running, otherwise the shared configuration lock. Show prints the current application and its candidates, preview the consent preview; adopt without --yes prints what it would adopt and sends nothing. Needs an admin connection; a refusal is shown as is and exits 1.'
     case 'home':
       return 'Usage: agh home info [--json]\nInspect the versioned home without writes. AGH_HOME selects the home.'
     case 'app-server':

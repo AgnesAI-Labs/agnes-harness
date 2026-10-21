@@ -101,6 +101,8 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | Apply a tree artifact / roll back to the previous one; without `--yes` only print what would happen and send nothing |
 | `agh plugins publication-status [--json]` | Read per-container convergence results |
 | `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
+| `agh app show [--json]` / `app preview PACKAGE#APP` | Show the current application and candidates / the consent preview before adopting |
+| `agh app adopt PACKAGE#APP [--yes]` | Adopt an application; without `--yes` prints the preview and sends nothing |
 | `agh app clear [--profile NAME] [--json]` | Clear the application and all explicit interface role choices before plugin boot; uses the shared configuration CAS |
 | `agh app-server --stdio` / `schema --out DIR` | Bridge to the shared daemon / export its generated contract without starting it |
 | `agh doctor --json` / `doctor --probe --json` | Local checks / explicit account probes, which may incur charges |

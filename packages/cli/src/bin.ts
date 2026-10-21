@@ -774,7 +774,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'plugins' || p.command === 'dev') {
+    if (p.command === 'plugins' || p.command === 'dev' || p.command === 'app') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { runPluginDevelopmentCommand: run } = await import('./commands/plugins.js')

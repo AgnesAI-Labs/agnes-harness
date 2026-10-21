@@ -10,6 +10,7 @@ export function usage(locale = 'en'): string {
     'agh runtime reconcile <resource> --extension <row-id> [--operation <id>] [--answer allow|reject]',
     'agh batch start|status|follow|results|resume|cancel|list|export ... [--help]',
     'agh app clear [--profile <p>] [--json]',
+    'agh app show [--json] | preview <package#app> [--json] | adopt <package#app> [--yes] [--json]',
     'agh resume <id> [-p [prompt]]',
     'agh tools [--session <key>] [--json]',
     'agh diagnostics export [--session <id>] --out <file>',
