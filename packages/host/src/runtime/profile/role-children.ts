@@ -9,6 +9,7 @@ import type { Host, HostSession } from '../lifecycle/host.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import type { CompositionContainer } from './composition-selection.js'
 import { roleToolBindingIdentity } from './role-tool-bindings.js'
+import { intersectRoleTools, recordRoleToolIntersection } from './role-tool-intersection.js'
 
 export function createRoleChildren(deps: {
   host(): Host
@@ -86,21 +87,19 @@ export function createRoleChildren(deps: {
         skills: intersectCapabilities(parentResources.skills, roleCapabilities.skills),
       }
       const rolePreset = candidate.host.kernel.o.preset
-      const tools = parentTools
-        .filter((parentTool) => {
-          const roleTool = candidate.host.kernel.tools.resolve(parentTool.name)
-          const bindingIdentity = parentBindingIdentities.get(parentTool.name)
-          const definitionIdentity = parentTool.definitionFingerprint
-          return (
-            roleTool &&
-            bindingIdentity !== undefined &&
-            bindingIdentity === roleToolBindingIdentity(candidate.host, roleTool) &&
-            roleTool.definitionFingerprint === definitionIdentity &&
-            enabled.includes(parentTool.name) &&
-            (rolePreset.tools.allow === undefined || rolePreset.tools.allow.includes(parentTool.name))
-          )
-        })
-        .map((tool) => tool.name)
+      const declared = reviewed.tree.selection.tools?.length
+        ? reviewed.tree.selection.tools
+        : (reviewed.tree.selection.toolPolicy?.allow ??
+          roleCapabilities.tools.filter((tool) => tool.enabled).map((tool) => tool.id))
+      const { tools, excluded } = intersectRoleTools({
+        declared,
+        parent: parentTools,
+        parentIdentities: parentBindingIdentities,
+        candidate: candidate.host,
+        enabled,
+        allow: rolePreset.tools.allow,
+      })
+      await recordRoleToolIntersection(parent, ref, declared, tools, excluded)
       const rolePermissions = roleCapabilities.permissions
       const roleReadOnly =
         rolePermissions?.readOnly === true ||
@@ -129,6 +128,18 @@ export function createRoleChildren(deps: {
       return {
         role,
         async open(key, options) {
+          const filtered = captured.tools.filter(
+            (name) =>
+              !options.toolFilter?.deny?.includes(name) &&
+              (options.toolFilter?.allow === undefined || options.toolFilter.allow.includes(name)),
+          )
+          if (filtered.length !== captured.tools.length)
+            await recordRoleToolIntersection(parent, ref, declared, filtered, [
+              ...excluded,
+              ...captured.tools
+                .filter((name) => !filtered.includes(name))
+                .map((tool) => ({ tool, reason: 'child-tool-filter-denied' })),
+            ])
           const binding = deps.pin({ sessionKey: key, tree, profile })
           const container = await deps.open(binding)
           const child = await container.host.createSession({
@@ -138,11 +149,7 @@ export function createRoleChildren(deps: {
             strict: true,
             roleDelegation: {
               ...captured,
-              tools: captured.tools.filter(
-                (name) =>
-                  !options.toolFilter?.deny?.includes(name) &&
-                  (options.toolFilter?.allow === undefined || options.toolFilter.allow.includes(name)),
-              ),
+              tools: filtered,
             },
             ...(options.delegation ? { delegation: options.delegation } : {}),
             writerRunId: options.writerRunId,

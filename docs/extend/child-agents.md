@@ -88,9 +88,15 @@ Skill resources are the intersection of both effective resource scopes captured 
 input uses the real workspace read/list view, filtered by its published root and exact plugin-row
 instance; a warmed composition or a stale discovery entry cannot add resources to another session. These
 snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
-Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
+Shared tools, nested invocations and PTC use the same resource gates. A role filesystem handle
+does not inherit the global Skill attachment read roots; use resource-gated Skill APIs for those files. Reopen restores the validated,
 trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a
 parent's fork prefix is not authority. Later parent changes do not alter this snapshot.
+The parent ledger records excluded declared tools and their refusal reasons in
+`x/host/role-tool-intersection`. If every declared tool is removed, including by an additional
+child tool filter, spawn fails with those reasons instead of starting a child with no tools.
+Built-in `write` and `edit` require destructive-operation approval, so a role must return their
+proposed changes to the main assistant even when a preset command table would otherwise allow them.
 See [applications](applications.md) for adoption and attribution.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
