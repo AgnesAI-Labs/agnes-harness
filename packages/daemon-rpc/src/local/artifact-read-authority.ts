@@ -47,7 +47,7 @@ type Row = {
 
 type SchemaRow = { type: unknown; name: unknown; tbl_name: unknown; sql: unknown }
 type SqlCapabilities = Pick<TableHandle, 'exec' | 'get' | 'all' | 'transaction'>
-// The table name is retained across the attested v1/v2 → v3 migration.
+// The table keeps its v1 name; schema version 3 is the only accepted layout.
 const TABLE = 'artifact_read_authority_v1'
 const META = 'artifact_read_authority_meta'
 const VERSION = 3
@@ -58,11 +58,6 @@ const COLUMNS = `session_id, lane_id, owner_id, sha256,
   CASE WHEN typeof(size) IN ('integer', 'real') THEN CAST(size AS REAL) ELSE NULL END AS size, mime`
 const META_DDL =
   'CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
-const LEGACY_TABLE_DDL =
-  'CREATE TABLE artifact_read_authority_v1 (' +
-  'session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, ' +
-  'sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, ' +
-  'PRIMARY KEY (session_id, lane_id, sha256))'
 const TABLE_DDL =
   'CREATE TABLE artifact_read_authority_v1 (' +
   'session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, ' +
@@ -188,17 +183,13 @@ function permits(
   )
 }
 
-function decodeRow(row: Row, version = VERSION): ArtifactAuthorityBinding | undefined {
+function decodeRow(row: Row): ArtifactAuthorityBinding | undefined {
   let mime: unknown = row.mime
   if (typeof mime !== 'string') return undefined
-  if (version === VERSION) {
-    try {
-      mime = JSON.parse(mime)
-      if (JSON.stringify(mime) !== row.mime) return undefined
-    } catch {
-      return undefined
-    }
-  } else if (!LEGACY_MIME.test(mime) || !Number.isSafeInteger(row.size)) {
+  try {
+    mime = JSON.parse(mime)
+    if (JSON.stringify(mime) !== row.mime) return undefined
+  } catch {
     return undefined
   }
   return snapshotBinding({
@@ -217,10 +208,10 @@ function normalizedDdl(value: string): string {
     .toLowerCase()
 }
 
-function requireSchema(sql: SqlCapabilities, version = VERSION): void {
+function requireSchema(sql: SqlCapabilities): void {
   const allowed = new Map<string, Readonly<{ type: 'table' | 'index'; table: string; ddl: string | null }>>([
     [META, { type: 'table', table: META, ddl: META_DDL }],
-    [TABLE, { type: 'table', table: TABLE, ddl: version === 1 ? LEGACY_TABLE_DDL : TABLE_DDL }],
+    [TABLE, { type: 'table', table: TABLE, ddl: TABLE_DDL }],
     [`sqlite_autoindex_${TABLE}_1`, { type: 'index', table: TABLE, ddl: null }],
     ['artifact_read_authority_v1_lane', { type: 'index', table: TABLE, ddl: INDEX_DDL }],
   ])
@@ -248,9 +239,9 @@ function requireTempSchemaEmpty(sql: SqlCapabilities): void {
   if (rows.length !== 0) throw new Error('unexpected temporary schema inventory')
 }
 
-function requireSoleVersion(sql: SqlCapabilities, version = VERSION): void {
+function requireSoleVersion(sql: SqlCapabilities): void {
   const versions = sql.all<{ id: unknown; version: unknown }>(`SELECT id, version FROM ${META} ORDER BY id`)
-  if (versions.length !== 1 || versions[0]?.id !== 1 || versions[0].version !== version)
+  if (versions.length !== 1 || versions[0]?.id !== 1 || versions[0].version !== VERSION)
     throw new Error('incompatible schema version')
 }
 
@@ -271,36 +262,6 @@ function initialize(sql: SqlCapabilities): void {
       sql.exec(TABLE_DDL)
       sql.exec(INDEX_DDL)
       sql.exec(`INSERT INTO ${META} (id, version) VALUES (?, ?)`, [1, VERSION])
-    } else {
-      const version = sql.get<{ version: unknown }>(`SELECT version FROM ${META} WHERE id = 1`)?.version
-      if (version === 1 || version === 2) {
-        requireSchema(sql, version)
-        requireSoleVersion(sql, version)
-        const legacy = sql.all<Row>(`SELECT ${COLUMNS} FROM ${TABLE} LIMIT ${MAX_ROWS + 1}`)
-        const bindings = legacy.map((row) => decodeRow(row, version))
-        if (legacy.length > MAX_ROWS || bindings.some((binding) => !binding))
-          throw new Error('invalid legacy authority rows')
-        sql.exec(`ALTER TABLE ${TABLE} RENAME TO artifact_read_authority_migration`)
-        sql.exec('DROP INDEX artifact_read_authority_v1_lane')
-        sql.exec(TABLE_DDL)
-        sql.exec(INDEX_DDL)
-        for (const binding of bindings) {
-          if (!binding) throw new Error('invalid legacy authority row')
-          sql.exec(
-            `INSERT INTO ${TABLE} (session_id, lane_id, owner_id, sha256, size, mime) VALUES (?, ?, ?, ?, ?, ?)`,
-            [
-              binding.sessionId,
-              binding.laneId,
-              binding.ownerId,
-              binding.artifact.sha256,
-              binding.artifact.size,
-              JSON.stringify(binding.artifact.mime),
-            ],
-          )
-        }
-        sql.exec('DROP TABLE artifact_read_authority_migration')
-        sql.exec(`UPDATE ${META} SET version = ? WHERE id = 1`, [VERSION])
-      }
     }
     attestStore(sql)
     const rows = sql.all<Row>(

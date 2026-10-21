@@ -6,6 +6,7 @@ export const CHANNEL_ERRORS = Object.freeze([
   'E_DAEMON_UNAVAILABLE',
   'E_CAPABILITY_MISSING',
   'E_NOT_IMPLEMENTED',
+  'E_STATE_STALE',
 ] as const)
 
 export type ChannelErrorCode = (typeof CHANNEL_ERRORS)[number]

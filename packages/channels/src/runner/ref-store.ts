@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { MessageRef } from '../adapter.js'
+import { ChannelError } from '../errors.js'
 
 export type RefPart = { ref: MessageRef; contentHash: string }
 export type RefRow = { ref: MessageRef; contentHash: string }
@@ -10,15 +11,6 @@ export type DeliveryRefRow = RefRow & {
 }
 
 type StoredRef = { content_hash: string; parts_json: string; complete: number; is_update: number }
-type LegacyRef = {
-  session_key: string
-  node_id: string
-  chat_id: string
-  message_id: string
-  card_biz_id: string | null
-  content_hash: string
-  updated_at: number
-}
 
 const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
 
@@ -27,20 +19,28 @@ export class RefStore {
   private readonly db: DatabaseSync
   private readonly clock: () => number
   private closed = false
+  private readonly path: string
 
   constructor(path: string, options: { clock?: () => number } = {}) {
     this.clock = options.clock ?? Date.now
+    this.path = path
     this.db = new DatabaseSync(path)
     this.db.exec('PRAGMA journal_mode = WAL')
     // WAL survives a power loss uncorrupted only if checkpoints reach the medium; on darwin that
     // takes F_FULLFSYNC.
     if (darwin) this.db.exec('PRAGMA checkpoint_fullfsync = ON')
-    this.migrate()
+    try {
+      this.initialize()
+    } catch (error) {
+      this.db.close()
+      throw error
+    }
   }
 
-  private migrate(): void {
+  private initialize(): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      this.requireCurrentLayout()
       this.db.exec(`CREATE TABLE IF NOT EXISTS refs_v2 (
       session_key TEXT NOT NULL,
       session_id TEXT NOT NULL,
@@ -52,49 +52,40 @@ export class RefStore {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (session_key, session_id, node_id)
     )`)
-      const columns = this.db.prepare('PRAGMA table_info(refs_v2)').all() as Array<{ name: string }>
-      if (!columns.some((column) => column.name === 'is_update')) {
-        this.db.exec('ALTER TABLE refs_v2 ADD COLUMN is_update INTEGER NOT NULL DEFAULT 0')
-      }
       this.db.exec(`CREATE TABLE IF NOT EXISTS ref_sessions (
         session_key TEXT NOT NULL,
         session_id TEXT NOT NULL,
         retired_at INTEGER,
         PRIMARY KEY (session_key, session_id)
       )`)
-      const legacyExists = this.db
-        .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'refs'")
-        .get()
-      if (legacyExists !== undefined) {
-        const insert = this.db.prepare(`INSERT OR IGNORE INTO refs_v2
-          (session_key, session_id, node_id, content_hash, parts_json, complete, is_update, updated_at)
-          VALUES (?, ?, ?, ?, ?, 1, 0, ?)`)
-        const activate = this.db.prepare(
-          'INSERT OR IGNORE INTO ref_sessions (session_key, session_id, retired_at) VALUES (?, ?, NULL)',
-        )
-        for (const row of this.db.prepare('SELECT * FROM refs').all() as LegacyRef[]) {
-          const ref: MessageRef = {
-            chatId: row.chat_id,
-            messageId: row.message_id,
-            ...(row.card_biz_id === null ? {} : { cardBizId: row.card_biz_id }),
-          }
-          insert.run(
-            row.session_key,
-            row.session_key,
-            row.node_id,
-            row.content_hash,
-            JSON.stringify([{ ref, contentHash: row.content_hash }]),
-            row.updated_at,
-          )
-          activate.run(row.session_key, row.session_key)
-        }
-        this.db.exec('DROP TABLE refs')
-      }
       this.db.exec('CREATE INDEX IF NOT EXISTS refs_v2_updated_at ON refs_v2(updated_at)')
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
+    }
+  }
+
+  private requireCurrentLayout(): void {
+    const present = new Set(
+      (
+        this.db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('refs', 'refs_v2')")
+          .all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    )
+    const columns = present.has('refs_v2')
+      ? (this.db.prepare('PRAGMA table_info(refs_v2)').all() as Array<{ name: string }>)
+      : []
+    if (
+      present.has('refs') ||
+      (present.has('refs_v2') && !columns.some((column) => column.name === 'is_update'))
+    ) {
+      throw new ChannelError(
+        'E_STATE_STALE',
+        `channel ref store ${this.path} was written by an older version; back it up and delete it to reset (cards sent before the reset will no longer update)`,
+        { path: this.path },
+      )
     }
   }
 

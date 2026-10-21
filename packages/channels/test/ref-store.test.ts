@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
+import { ChannelError } from '../src/errors.js'
 import { RefStore } from '../src/runner/ref-store.js'
 
 describe('RefStore', () => {
@@ -54,28 +55,40 @@ describe('RefStore', () => {
     refs.close()
   })
 
-  it('migrates the legacy refs table transactionally and removes it', () => {
+  it.each([
+    [
+      'a legacy refs table',
+      `CREATE TABLE refs (
+     session_key TEXT NOT NULL, node_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+     message_id TEXT NOT NULL, card_biz_id TEXT, content_hash TEXT NOT NULL,
+     updated_at INTEGER NOT NULL, PRIMARY KEY (session_key, node_id))`,
+    ],
+    [
+      'refs_v2 without is_update',
+      `CREATE TABLE refs_v2 (
+     session_key TEXT NOT NULL, session_id TEXT NOT NULL, node_id TEXT NOT NULL,
+     content_hash TEXT NOT NULL, parts_json TEXT NOT NULL, complete INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL, PRIMARY KEY (session_key, session_id, node_id))`,
+    ],
+  ])('refuses %s and leaves the file for the user to delete', (_name, ddl) => {
     const path = join(mkdtempSync(join(tmpdir(), 'agnes-legacy-refs-')), 'refs.sqlite')
     const legacy = new DatabaseSync(path)
-    legacy.exec(`CREATE TABLE refs (
-      session_key TEXT NOT NULL, node_id TEXT NOT NULL, chat_id TEXT NOT NULL,
-      message_id TEXT NOT NULL, card_biz_id TEXT, content_hash TEXT NOT NULL,
-      updated_at INTEGER NOT NULL, PRIMARY KEY (session_key, node_id)
-    )`)
-    legacy
-      .prepare('INSERT INTO refs VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('route', 'node', 'chat', 'message', 'card', 'hash', 10)
+    legacy.exec(ddl)
     legacy.close()
-
-    const refs = new RefStore(path)
-    expect(refs.get('route', 'node')).toEqual({
-      ref: { chatId: 'chat', messageId: 'message', cardBizId: 'card' },
-      contentHash: 'hash',
-    })
-    refs.close()
-    const inspect = new DatabaseSync(path)
-    expect(inspect.prepare("SELECT name FROM sqlite_master WHERE name = 'refs'").get()).toBeUndefined()
-    inspect.close()
+    let error: unknown
+    try {
+      new RefStore(path)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(ChannelError)
+    expect(error).toMatchObject({ code: 'E_STATE_STALE', detail: { path } })
+    expect((error as Error).message).toContain(path)
+    expect((error as Error).message).toContain('delete')
+    rmSync(path) // proves the handle was closed (Windows refuses otherwise)
+    const fresh = new RefStore(path)
+    expect(fresh.get('route', 'node')).toBeUndefined()
+    fresh.close()
   })
 
   it('does not invent cardBizId when the adapter returned none', () => {
