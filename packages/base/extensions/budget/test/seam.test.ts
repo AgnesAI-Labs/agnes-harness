@@ -1,7 +1,7 @@
 import type { BillingRow } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
 import { fakeSeamInit, type MemNamespace } from '../../../testkit/seam-init.js'
-import { budgetBilling } from '../src/seam.js'
+import { budgetBilling, USAGE_LEDGER_KEEP } from '../src/seam.js'
 
 const row = (over: Partial<BillingRow> = {}): BillingRow => ({
   sessionKey: 's',
@@ -35,6 +35,25 @@ describe('budget ledger', () => {
     })
     await seam.record(row({ effectId: 'e1', credits: 11 })) // 11 / 1100 tokens = 0.01/token
     await seam.record(row({ effectId: 'e2', credits: 99, creditSource: 'estimated' })) // estimated rows are excluded once a gateway row exists
+    expect(await seam.projected({ tokensEstimate: 500, model: 'm' })).toEqual({
+      credits: 5,
+      creditSource: 'estimated',
+    })
+  })
+
+  it('keeps only the newest USAGE_LEDGER_KEEP rows per model and credit source', async () => {
+    const init = fakeSeamInit()
+    const seam = await budgetBilling(init)
+    for (let i = 0; i < 25; i++) await seam.record(row({ effectId: `g${i}` }))
+    for (let i = 0; i < 25; i++) await seam.record(row({ effectId: `e${i}`, creditSource: 'estimated' }))
+    for (let i = 0; i < 3; i++) await seam.record(row({ effectId: `n${i}`, model: 'n' }))
+    const keys = (init.namespaces.get('usage_ledger')?.entries() ?? []).map(({ key }) => key)
+    expect(USAGE_LEDGER_KEEP).toBe(20)
+    expect(keys.filter((k) => k.startsWith('row:g'))).toHaveLength(20)
+    expect(keys.filter((k) => k.startsWith('row:e'))).toHaveLength(20)
+    expect(keys.filter((k) => k.startsWith('row:n'))).toHaveLength(3)
+    expect(keys).not.toContain('row:g4')
+    expect(keys).toContain('row:g5')
     expect(await seam.projected({ tokensEstimate: 500, model: 'm' })).toEqual({
       credits: 5,
       creditSource: 'estimated',

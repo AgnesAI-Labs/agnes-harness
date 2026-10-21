@@ -11,6 +11,9 @@ type HistRow = {
 }
 type Hist = { credits: number; tokens: number; creditSource: string }
 
+/** Rows kept per (model, credit source): exactly the window `projected` reads. */
+export const USAGE_LEDGER_KEEP = 20
+
 /**
  * The `ledger` seam's default implementation: one durable metadata namespace recording
  * every billed effect, and a same-model moving average for `projected`'s pre-flight estimate.
@@ -19,6 +22,10 @@ type Hist = { credits: number; tokens: number; creditSource: string }
  * core's cue to refuse the inference it was about to bill (regulated §4.3.1: a seam that fails is
  * a seam that is absent), so surfacing the table's own error message is the correct behavior, not
  * a gap to paper over.
+ *
+ * Each (model, credit source) keeps its newest USAGE_LEDGER_KEEP rows: exactly the window
+ * `projected` reads, so the estimate is unchanged. A replay older than the window records again;
+ * billing truth is the `cost/ledger` event.
  */
 export const budgetBilling: SeamFactory<BillingSeam> = async (ctx) => {
   const storage = ctx.adapters.storage.namespace('usage_ledger')
@@ -45,6 +52,14 @@ export const budgetBilling: SeamFactory<BillingSeam> = async (ctx) => {
           credit_source: r.creditSource,
           recorded_at: new Date().toISOString(),
         })
+        const same = storage
+          .entries()
+          .filter(({ key, value }) => {
+            const v = value as { model: string; credit_source: string }
+            return key.startsWith('row:') && v.model === r.model && v.credit_source === r.creditSource
+          })
+          .sort((a, b) => (b.value as { id: number }).id - (a.value as { id: number }).id)
+        for (const { key } of same.slice(USAGE_LEDGER_KEEP)) storage.delete(key)
       })
     },
     async projected(next) {
@@ -54,7 +69,7 @@ export const budgetBilling: SeamFactory<BillingSeam> = async (ctx) => {
         .map(({ value }) => value as HistRow & { id: number; model: string })
         .filter((r) => r.model === next.model)
         .sort((a, b) => b.id - a.id)
-        .slice(0, 20)
+        .slice(0, USAGE_LEDGER_KEEP)
       const hist: Hist[] = rows
         .filter((r) => r.credits !== null)
         .map((r) => ({
