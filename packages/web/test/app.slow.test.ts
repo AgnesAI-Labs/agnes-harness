@@ -1662,12 +1662,14 @@ describe('web session selection', () => {
       expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
     )
     const stale = deferred<Response>()
+    const firstCatalog = deferred<Response>()
     let loopReads = 0
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         if (url === '/admin/api/loops') {
-          if (++loopReads === 2) return stale.promise
+          if (++loopReads === 1) return firstCatalog.promise
+          if (loopReads === 2) return stale.promise
           return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
@@ -1692,6 +1694,11 @@ describe('web session selection', () => {
     expect(loopReads).toBe(0)
     newButton().click()
     await vi.waitFor(() => expect(loopReads).toBe(1))
+    // Detach the old view while catalogs are pending, without allowing an unready draft to send.
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalled())
+    expect(newButton().disabled).toBe(true)
+    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+    firstCatalog.resolve(Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] }))
     await vi.waitFor(() => expect(newButton().disabled).toBe(false))
     const workspaceDialog = document.getElementById('new-session') as HTMLDialogElement
     workspaceDialog.dispatchEvent(new Event('cancel', { cancelable: true }))

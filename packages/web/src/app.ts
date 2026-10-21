@@ -1679,7 +1679,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   sessionPending = true
   renderControls()
   let cleanupError: unknown
-  try {
+  // Catalog reads do not depend on detaching the old view. Start them together, but
+  // keep submission disabled until both the catalog and client roster are ready.
+  const catalogReady = (async () => {
     await refreshSessionCatalog()
     if (sessionBinding.isCurrent(epoch) && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
       const adminModel = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
@@ -1697,6 +1699,10 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
         : undefined
       if (preferred) knownSessionModel = modelDefaults(preferred)
     }
+  })().catch((error: unknown) => {
+    cleanupError = error
+  })
+  try {
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
       notice.setText(t('app.notice.oldSessionClosing'))
@@ -1711,6 +1717,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   } catch (error) {
     cleanupError ??= error
   } finally {
+    await catalogReady
     if (sessionBinding.isCurrent(epoch)) {
       sessionPending = false
       render()
@@ -2263,7 +2270,6 @@ run(async () => {
   if (startupRequest.get('new') === '1') {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    scheduleClientRosterRead(true)
     requestNewSession()
     sessionPending = false
     await beginNewDraft(configured)
@@ -2324,7 +2330,6 @@ run(async () => {
   else if (empty) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    scheduleClientRosterRead(true)
     await beginNewDraft(
       configured &&
         !startupSection &&
