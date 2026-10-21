@@ -2,9 +2,15 @@ import type { ClientContext } from '@agnes/web-client'
 import { SettingsTextArea } from '@agnes/web-ui'
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
 import type { BrowserPage } from './browser-client.js'
+import type { BrowserInteraction } from './browser-interaction.js'
 
 type Stream = Awaited<ReturnType<ClientContext['sessionStreams']['open']>>
-export type HumanControl = { operationId: string; pageId: string; controlEpoch: number }
+export type HumanControl = {
+  operationId: string
+  pageId: string
+  controlEpoch: number
+  channel?: BrowserInteraction
+}
 
 /** Canvas pixels and input epochs always come from one decoded frame, never a second iframe. */
 export type BrowserScreenHandle = {
@@ -14,17 +20,18 @@ export const BrowserScreen = forwardRef<
   BrowserScreenHandle,
   {
     ctx: ClientContext
+    interaction?: BrowserInteraction
     page: BrowserPage
     control?: HumanControl | undefined
     reconnect: number
     actualSize?: boolean
     t(key: string): string
     onError(message: string): void
-    onRequestControl?(): Promise<HumanControl | undefined>
+    onRequestControl?(pageEpoch?: number): Promise<HumanControl | undefined>
     onControlLost?(): void
   }
 >(function BrowserScreen(
-  { ctx, page, control, t, onError, onRequestControl, onControlLost, reconnect, actualSize },
+  { ctx, interaction, page, control, t, onError, onRequestControl, onControlLost, reconnect, actualSize },
   ref,
 ) {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -32,7 +39,9 @@ export const BrowserScreen = forwardRef<
   const meta = useRef<BrowserPage>(page)
   const target = useRef(page.pageId)
   target.current = page.pageId
-  const selectTarget = useRef<() => void>()
+  const expectedEpoch = useRef(page.pageEpoch)
+  expectedEpoch.current = page.pageEpoch
+  const selectTarget = useRef<(refresh?: boolean) => void>()
   const stream = useRef<Stream>()
   const sequence = useRef(0)
   const composing = useRef(false)
@@ -62,6 +71,14 @@ export const BrowserScreen = forwardRef<
       canvas.current.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height)
     selectTarget.current?.()
   }, [page.pageId])
+  useEffect(() => {
+    if (meta.current.pageId !== page.pageId || meta.current.pageEpoch >= page.pageEpoch) return
+    // History restores can stop the existing CDP capture. Rebind through the same
+    // admitted view stream, and keep old pixels non-interactive until the new image.
+    setConnected(false)
+    setConnecting(true)
+    selectTarget.current?.(true)
+  }, [page.pageId, page.pageEpoch])
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnect explicitly requests a new display subscription.
   useEffect(() => {
     const abort = new AbortController()
@@ -74,21 +91,33 @@ export const BrowserScreen = forwardRef<
       selected = '',
       revision = 0,
       ready = false
-    const select = () => {
-      if (!ready || abort.signal.aborted || selected === target.current) return
+    let selecting = false,
+      refresh = false
+    const select = (renew = false) => {
+      refresh ||= renew
+      if (!ready || abort.signal.aborted || (selected === target.current && !refresh) || selecting) return
+      refresh = false
       selected = target.current
       const selection = ++revision
-      void ctx.agnes.services
-        .effect(
-          'browser.view',
-          { viewId, pageId: selected, sequence: selection },
-          { operationId: crypto.randomUUID() },
-        )
+      selecting = true
+      void (
+        interaction
+          ? interaction.request({ type: 'view', viewId, pageId: selected, sequence: selection })
+          : ctx.agnes.services.effect(
+              'browser.view',
+              { viewId, pageId: selected, sequence: selection },
+              { operationId: crypto.randomUUID() },
+            )
+      )
         .catch((error) => {
           if (abort.signal.aborted || selection !== revision) return
           setConnected(false)
           setConnecting(false)
           onError(String(error))
+        })
+        .finally(() => {
+          selecting = false
+          select()
         })
     }
     selectTarget.current = select
@@ -105,6 +134,7 @@ export const BrowserScreen = forwardRef<
               abort.signal.aborted ||
               current !== frame.source ||
               frame.description.pageId !== target.current ||
+              frame.description.pageEpoch < expectedEpoch.current ||
               !canvas.current
             )
               continue
@@ -205,7 +235,7 @@ export const BrowserScreen = forwardRef<
       pending = undefined
       current?.close('view-closed')
     }
-  }, [ctx, reconnect, onError])
+  }, [ctx, interaction, reconnect, onError])
 
   useEffect(() => {
     sequence.current = 0
@@ -215,6 +245,31 @@ export const BrowserScreen = forwardRef<
       return
     }
     const abort = new AbortController()
+    if (control.channel) {
+      const channel = control.channel
+      const off = channel.onLost((pageId) => {
+        if (!pageId || pageId === control.pageId) {
+          setControlling(false)
+          onControlLost?.()
+        }
+      })
+      stream.current = {
+        send(input) {
+          void channel
+            .request({ type: 'input', pageId: control.pageId, input })
+            .catch((error) => onError(String(error)))
+          return 'accepted'
+        },
+      } as Stream
+      setControlling(true)
+      return () => {
+        off()
+        stream.current = undefined
+        void channel
+          .request({ type: 'pause', pageId: control.pageId, controlEpoch: control.controlEpoch })
+          .catch(() => {})
+      }
+    }
     let timer: ReturnType<typeof setTimeout>
     const connect = async () => {
       try {
@@ -301,7 +356,7 @@ export const BrowserScreen = forwardRef<
       requesting.current = true
       setTaking(true)
       pendingInput.current = { input, pageId: meta.current.pageId, pageEpoch: meta.current.pageEpoch }
-      void request()
+      void request(meta.current.pageEpoch)
         .then((granted) => {
           if (!granted) pendingInput.current = undefined
         })

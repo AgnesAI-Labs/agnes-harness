@@ -216,6 +216,19 @@ it('uses admitted pushes without idle queries, falls back after disconnect, and 
 it('accepts a new action after a known browser refusal without retaining an uncertain request', async () => {
   const { client, sessionEffect } = fixture()
   try {
+    let finish!: (result: unknown) => void
+    sessionEffect.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }) as never,
+    )
+    const running = client.effect('browser.open', { url: 'http://localhost:5173/' })
+    expect(client.pendingEffect()).toBeUndefined()
+    finish({ status: 'ok' })
+    await running
+    expect(client.pendingEffect()).toBeUndefined()
+    sessionEffect.mockClear()
     sessionEffect.mockResolvedValueOnce({ status: 'refused', code: 'PROTECTED_TARGET' } as never)
     await expect(client.effect('browser.open', { url: 'http://localhost:4180/' })).rejects.toMatchObject({
       code: 'PROTECTED_TARGET',

@@ -1,7 +1,8 @@
 import type { ClientContext } from '@agnes/web-client'
 import { Button, IconButton, Menu, SettingsInput, Tabs } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { BrowserClient, type BrowserPage } from './browser-client.js'
+import { BrowserInteraction } from './browser-interaction.js'
 import { browserCatalog } from './browser-locales.js'
 import { BrowserScreen, type BrowserScreenHandle, type HumanControl } from './browser-screen.js'
 
@@ -23,6 +24,12 @@ export function apply(ctx: ClientContext) {
     const [reconnect, setReconnect] = useState(0)
     const [showEvents, setShowEvents] = useState(false)
     const [actualSize, setActualSize] = useState(false)
+    // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations.
+    const interaction = useMemo(() => new BrowserInteraction(ctx), [state.sessionId])
+    useEffect(() => {
+      if (state.sessionId) void interaction.prepare().catch(() => {})
+      return () => interaction.close()
+    }, [interaction, state.sessionId])
     const releaseControl = useCallback(() => setControl(undefined), [])
     const [events, setEvents] = useState<{ seq: number; kind: string; detail: string }[]>([])
     const screen = useRef<BrowserScreenHandle>(null)
@@ -99,20 +106,34 @@ export function apply(ctx: ClientContext) {
         setBusy(false)
       }
     }
-    const takeControl = async () => {
+    const takeControl = async (pageEpoch = page?.pageEpoch) => {
       if (control) return control
       if (!pageId || taking.current || busy) return undefined
       taking.current = true
       try {
-        const reply = await effect('browser.control', { pageId, mode: 'human' })
-        if (!reply || target.current !== pageId) return undefined
-        const granted = {
-          operationId: reply.operationId,
+        const result = await interaction.request({
+          type: 'control',
           pageId,
-          controlEpoch: Number(reply.result.controlEpoch),
+          pageEpoch,
+          mode: 'human',
+        })
+        if (target.current !== pageId) {
+          void interaction
+            .request({ type: 'pause', pageId, controlEpoch: result.controlEpoch })
+            .catch(() => {})
+          return undefined
+        }
+        const granted = {
+          operationId: '',
+          pageId,
+          controlEpoch: Number(result.controlEpoch),
+          channel: interaction,
         }
         setControl(granted)
         return granted
+      } catch (error) {
+        setError(String(error))
+        return undefined
       } finally {
         taking.current = false
       }
@@ -122,6 +143,15 @@ export function apply(ctx: ClientContext) {
       <section className="agh-browser-panel">
         {page && (
           <Tabs
+            type="editable-card"
+            locale={{ removeAriaLabel: t('close') }}
+            hideAdd
+            onEdit={(key, action) => {
+              if (action !== 'remove' || busy) return
+              void effect('browser.close', { pageId: String(key) }).then((reply) => {
+                if (reply && control?.pageId === key) setControl(undefined)
+              })
+            }}
             className="agh-browser-tabs"
             size="small"
             activeKey={page.pageId}
@@ -134,6 +164,12 @@ export function apply(ctx: ClientContext) {
               const url = new URL(entry.url)
               return {
                 key: entry.pageId,
+                closable: !busy,
+                closeIcon: (
+                  <span role="img" aria-label={`${t('close')}: ${url.host + url.pathname}`}>
+                    ×
+                  </span>
+                ),
                 label: <span title={entry.url}>{url.host + (url.pathname === '/' ? '' : url.pathname)}</span>,
               }
             })}
@@ -191,9 +227,15 @@ export function apply(ctx: ClientContext) {
                 onClick={() => {
                   if (!control) void takeControl()
                   else
-                    void effect('browser.control', { pageId: page.pageId, mode: 'agent' }).then((reply) => {
-                      if (reply) setControl(undefined)
-                    })
+                    void interaction
+                      .request({
+                        type: 'control',
+                        pageId: page.pageId,
+                        pageEpoch: page.pageEpoch,
+                        mode: 'agent',
+                      })
+                      .then(() => setControl(undefined))
+                      .catch((error) => setError(String(error)))
                 }}
               />
               <Menu
@@ -255,6 +297,7 @@ export function apply(ctx: ClientContext) {
               ref={screen}
               key={state.sessionId}
               ctx={ctx}
+              interaction={interaction}
               page={page}
               control={control}
               reconnect={reconnect}

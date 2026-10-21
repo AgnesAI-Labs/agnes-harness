@@ -158,54 +158,60 @@ export async function showPage(runtime, input, context) {
         }
         let paintVersion = 0,
           snapshotting = false
-        const settle = () => {
+        const settle = (first = false) => {
           clearTimeout(capture.settle)
-          capture.settle = setTimeout(async () => {
-            capture.settle = undefined
-            if (snapshotting || item.capture !== capture || !item.viewers.size) return
-            const epoch = item.epoch,
-              version = paintVersion,
-              inputVersion = item.inputVersion
-            snapshotting = true
-            try {
-              runtime.get(session, input.pageId)
-              const { visualViewport } = await cdp.send('Page.getLayoutMetrics')
-              if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)
-                return
-              // Screencast remains CSS-sized even on Retina. A single idle image
-              // supplies real 2x pixels without rendering every moving frame at 2x.
-              const result = await cdp.send('Page.captureScreenshot', {
-                format: 'jpeg',
-                quality: 90,
-                fromSurface: true,
-                captureBeyondViewport: false,
-                clip: {
-                  x: visualViewport.pageX,
-                  y: visualViewport.pageY,
-                  width: Math.ceil(1280 / visualViewport.scale),
-                  height: Math.ceil(800 / visualViewport.scale),
-                  scale: 2 * visualViewport.scale,
-                },
-              })
-              runtime.get(session, input.pageId)
-              if (
-                item.capture !== capture ||
-                item.epoch !== epoch ||
-                paintVersion !== version ||
-                item.inputVersion !== inputVersion
-              )
-                return
-              const bytes = Buffer.from(result.data, 'base64')
-              if (bytes.length > 1_000_000) return
-              capture.bytes = bytes
-              capture.pageEpoch = epoch
-              capture.broadcast()
-            } catch {
-              // Optional sharpness never blocks the live stream or changes input authority.
-            } finally {
-              snapshotting = false
-            }
-          }, 250)
+          capture.settle = setTimeout(
+            async () => {
+              capture.settle = undefined
+              if (snapshotting || item.capture !== capture || !item.viewers.size) return
+              const epoch = item.epoch,
+                version = paintVersion,
+                inputVersion = item.inputVersion
+              snapshotting = true
+              try {
+                runtime.get(session, input.pageId)
+                const { visualViewport } = await cdp.send('Page.getLayoutMetrics')
+                if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)
+                  return
+                // Screencast remains CSS-sized even on Retina. A single idle image
+                // supplies real 2x pixels without rendering every moving frame at 2x.
+                const result = await cdp.send('Page.captureScreenshot', {
+                  format: 'jpeg',
+                  quality: 90,
+                  fromSurface: true,
+                  captureBeyondViewport: false,
+                  clip: {
+                    x: visualViewport.pageX,
+                    y: visualViewport.pageY,
+                    width: Math.ceil(1280 / visualViewport.scale),
+                    height: Math.ceil(800 / visualViewport.scale),
+                    scale: 2 * visualViewport.scale,
+                  },
+                })
+                runtime.get(session, input.pageId)
+                if (
+                  item.capture !== capture ||
+                  item.epoch !== epoch ||
+                  paintVersion !== version ||
+                  item.inputVersion !== inputVersion
+                )
+                  return
+                const bytes = Buffer.from(result.data, 'base64')
+                if (bytes.length > 1_000_000) return
+                capture.bytes = bytes
+                capture.pageEpoch = epoch
+                capture.broadcast()
+              } catch {
+                // Optional sharpness never blocks the live stream or changes input authority.
+              } finally {
+                snapshotting = false
+                if (item.capture === capture && item.epoch !== epoch) settle(true)
+              }
+              // Static tabs may not emit a screencast paint. Supply their first image
+              // immediately; only sharpening an already visible page waits for idle.
+            },
+            first ? 0 : 250,
+          )
         }
         const publish = () => {
           capture.timer = undefined
@@ -221,7 +227,13 @@ export async function showPage(runtime, input, context) {
           try {
             runtime.get(session, input.pageId)
             // Never stamp cached pixels from the previous document with a new target epoch.
-            if (!capture.bytes || capture.pageEpoch !== item.epoch) return
+            if (capture.pageEpoch !== item.epoch) {
+              // History restoration can change documents without a screencast paint.
+              // Capture new pixels; never relabel the old image with the new epoch.
+              if (!snapshotting && !capture.settle) settle(true)
+              return
+            }
+            if (!capture.bytes) return
             // URLs belong to the session page list, not to every image envelope.
             // Omitting them also keeps long addresses below the decoder's metadata limit.
             const { url: _url, ...description } = runtime.describe(item)
@@ -280,7 +292,7 @@ export async function showPage(runtime, input, context) {
             maxHeight: 800,
             everyNthFrame: 2,
           })
-          settle()
+          settle(true)
         } catch (error) {
           clearTimeout(capture.timer)
           clearTimeout(capture.retry)

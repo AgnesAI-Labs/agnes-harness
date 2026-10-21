@@ -839,6 +839,91 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
   120_000,
 )
 
+it.each(['update', 'probe'])(
+  'publishes a complete release after an interrupted %s without intermediate targets',
+  async (failure) => {
+    const s = setup()
+    await s.initializePolicy()
+    const helpers = DEFAULT_ENABLED_BUNDLED_PACKAGES.filter((helper) =>
+      ['@agnes/goal-ui', '@agnes/interaction-ui'].includes(helper.id),
+    )
+    let target: RuntimeTargetArtifact | undefined
+    for (const helper of helpers) {
+      const source = bundledPluginSource(helper.ref)!
+      const payload = join(s.root, 'release', helper.name)
+      cpSync(join(source.root, source.path), payload, {
+        recursive: true,
+        filter: (path) => !path.split(sep).includes('node_modules'),
+      })
+      payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
+      const preview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
+      await s.manager.install(s.profileDir, parseSource(helper.ref), { expectedIntegrity: preview.integrity })
+      await s.manager.trust(s.profileDir, helper.id, {
+        integrity: preview.integrity,
+        capabilityHash: preview.capabilityHash!,
+      })
+      await s.manager.setEnabled(s.profileDir, helper.id, true)
+      target = rebuildDesiredFromInventory({
+        previous: target,
+        inventory: await s.manager.inventory(s.profileDir),
+        packageId: helper.id,
+        operation: 'enable',
+      })
+      writeFileSync(join(payload, 'release-revision.txt'), 'new release bytes')
+    }
+    const before = target
+    const expected = new Map<string, string>()
+    for (const helper of helpers)
+      expected.set(helper.id, (await s.manager.inspect(s.profileDir, parseSource(helper.ref))).integrity)
+    const published: RuntimeTargetArtifact[] = []
+    const publish = async (next: RuntimeTargetArtifact) => {
+      const inventory = await s.manager.inventory(s.profileDir)
+      for (const helper of helpers) {
+        const pkg = inventory.packages.find((pkg) => pkg.id === helper.id)!
+        expect(pkg.entry.integrity).toBe(expected.get(helper.id))
+        expect(decodeRuntimeTargetArtifact(next).tree.rows).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              plugin: expect.stringContaining(`${helper.id}@`),
+              entryRevision: installedRuntimeSnapshotId(pkg),
+              disabled: false,
+            }),
+          ]),
+        )
+      }
+      published.push(next)
+      target = next
+    }
+    const options = { ...s, previous: () => target, publish }
+    const update = s.manager.update.bind(s.manager)
+    const spy = vi.spyOn(s.manager, 'update').mockImplementation(async (...args) => {
+      if (failure === 'update' && args[1] === helpers[1]!.id) throw new Error('interrupted update')
+      return update(...args)
+    })
+    await expect(
+      refreshDefaultHelpers({
+        ...options,
+        publish:
+          failure === 'probe'
+            ? async (next) => {
+                await publish(next)
+                target = before
+                throw new Error('interrupted probe')
+              }
+            : publish,
+      }),
+    ).rejects.toThrow(`interrupted ${failure}`)
+    expect(target).toBe(before)
+    spy.mockRestore()
+    published.length = 0
+    await refreshDefaultHelpers(options)
+    expect(published).toEqual([target])
+    await refreshDefaultHelpers(options)
+    expect(published).toEqual([target])
+  },
+  120_000,
+)
+
 it('retains a changed-capability release for explicit review, and preserves a different source and revoked trust', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)

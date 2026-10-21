@@ -46,20 +46,20 @@ it('switches tabs on one display connection and refuses late pixels from the pre
     mode: 'agent' as const,
   }
   const onError = vi.fn()
-  const render = (pageId: string) =>
+  const render = (pageId: string, pageEpoch = 0) =>
     flushSync(() =>
       root.render(
         createElement(BrowserScreen, {
           ctx,
-          page: { ...page, pageId },
+          page: { ...page, pageId, pageEpoch },
           reconnect: 0,
           t: (key) => key,
           onError,
         }),
       ),
     )
-  const pixels = (pageId: string) => {
-    const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageId }))
+  const pixels = (pageId: string, pageEpoch = 0) => {
+    const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageId, pageEpoch }))
     const frame = new Uint8Array(metadata.length + 5)
     new DataView(frame.buffer).setUint32(0, metadata.length)
     frame.set(metadata, 4)
@@ -90,9 +90,26 @@ it('switches tabs on one display connection and refuses late pixels from the pre
     expect(draw).not.toHaveBeenCalled()
     pixels('two')
     await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
+    // The same page can restore a different document without producing new CDP paints.
+    const priorCall = effect.mock.lastCall
+    if (!priorCall) throw new Error('Missing initial view selection')
+    const priorSelection = (priorCall[1] as { sequence: number }).sequence
+    render('two', 1)
+    await vi.waitFor(() =>
+      expect(effect.mock.lastCall?.[1]).toMatchObject({ pageId: 'two', sequence: priorSelection + 1 }),
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).toBeNull())
+    draw.mockClear()
+    pixels('two', 0)
+    await new Promise((done) => setTimeout(done, 0))
+    expect(draw).not.toHaveBeenCalled()
+    pixels('two', 1)
+    await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
     for (let index = 0; index < 12; index++) render(index % 2 ? 'two' : 'one')
     expect(open).toHaveBeenCalledTimes(1)
-    expect(effect.mock.lastCall?.[1]).toMatchObject({ pageId: 'two', sequence: 13 })
+    await vi.waitFor(() => expect(effect.mock.lastCall?.[1]).toMatchObject({ pageId: 'two' }))
+    pixels('two')
+    await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
     expect(onError).not.toHaveBeenCalled()
     flushSync(() => root.unmount())
     expect(close).toHaveBeenCalled()

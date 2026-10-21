@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { resolve } from 'node:path'
-import { settingsSections, workbenchPanels } from '@agnes/web-client'
+import { settingsSections, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
@@ -193,6 +193,65 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     for (const remove of plugins) remove()
     document.body.replaceChildren()
     localStorage.clear()
+  }
+})
+
+it('restores explicit dock visibility only for the same session, including new-chat remounts', () => {
+  localStorage.clear()
+  localStorage.setItem('agnes.workbench.layout.v1', JSON.stringify({ rightOpen: true, rightWidth: 540 }))
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls')!
+  const dock = document.getElementById('workbench-right')!
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frame = callback
+    return 1
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  const remove = workbenchPanels.register({
+    id: 'test.session-browser',
+    edge: 'right',
+    order: -100,
+    titleKey: 'Browser',
+    component: () => <p>Live browser</p>,
+  })
+  const renderSession = (id: string) => {
+    renderWorkbench(host, { t: (key) => key, data: { session: { id } } })
+    flushSync(() => frame?.(0))
+  }
+  try {
+    renderSession('first')
+    expect(dock.hidden).toBe(true) // Legacy global visibility cannot open a conversation's browser.
+    expect(dock.textContent).not.toContain('Live browser')
+    flushSync(() => {
+      expect(workbenchNavigation.open('test.session-browser')).toBe(true)
+    })
+    expect(dock.hidden).toBe(false)
+    unmountWorkbench(host)
+    renderSession('first') // Same-session refresh retains the reader's explicit choice.
+    expect(dock.hidden).toBe(false)
+    renderSession('second') // Direct sidebar switch must also isolate visibility.
+    expect(dock.hidden).toBe(true)
+    expect(dock.textContent).not.toContain('Live browser')
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-edge="right"]')!.click())
+    expect(dock.hidden).toBe(false)
+    unmountWorkbench(host) // New-chat draft unmounts the workbench before the first send.
+    renderSession('new-chat')
+    expect(dock.hidden).toBe(true)
+    renderSession('new-chat') // Ordinary reply refreshes do not open it.
+    expect(dock.hidden).toBe(true)
+    expect(JSON.parse(localStorage.getItem('agnes.workbench.layout.v1')!).rightWidth).toBe(540)
+    flushSync(() => {
+      expect(workbenchNavigation.open('test.session-browser')).toBe(true)
+    })
+    expect(dock.hidden).toBe(false) // Explicit links and controls still open the panel.
+  } finally {
+    unmountWorkbench(host)
+    remove()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+    document.body.replaceChildren()
   }
 })
 

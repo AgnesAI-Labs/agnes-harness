@@ -1,4 +1,5 @@
 import { empty, managed, parameters, readActions, services } from './src/contracts.mjs'
+import { interact } from './src/interaction.mjs'
 import { createLauncher } from './src/launcher.mjs'
 import { browserInstructions } from './src/policy.mjs'
 import { BrowserRuntime } from './src/runtime.mjs'
@@ -60,6 +61,13 @@ export const main = {
               return runtime.describe(runtime.get(context.session, input.pageId))
             case 'browser.view':
               return selectView(runtime, input, context)
+            case 'browser.connect':
+              if (!context.controlGrant) throw new Error('Native control admission missing.')
+              return { status: 'ok' }
+            case 'browser.close':
+              return browserEffect(runtime, () =>
+                runtime.closePage(context.session, input.pageId, context.signal),
+              )
             case 'browser.open':
               return browserEffect(runtime, () =>
                 runtime.act(context.session, { action: 'open', url: input.url }, context.signal),
@@ -100,6 +108,9 @@ export const main = {
     )
     ctx.profileRuntime.streams.register('browser.input', async (input, context) =>
       acceptInput(await resource.get(), input, context),
+    )
+    ctx.profileRuntime.streams.register('browser.interaction', async (input, context) =>
+      interact(await resource.get(), input, context),
     )
     ctx.hooks.register('context', async () => {
       let state = { enabled: false }

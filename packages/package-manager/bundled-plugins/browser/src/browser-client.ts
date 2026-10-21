@@ -23,6 +23,7 @@ export class BrowserClient {
     string,
     { service: string; input: Record<string, unknown>; operationId: string }
   >()
+  private inFlight = new Set<string>()
   private snapshot: BrowserState = { enabled: true, state: 'preparing', pages: [] }
   private listeners = new Set<() => void>()
   private stopped = false
@@ -235,7 +236,8 @@ export class BrowserClient {
     }
   }
   pendingEffect() {
-    return this.ctx.session.sessionId ? this.pending.get(this.ctx.session.sessionId) : undefined
+    const id = this.ctx.session.sessionId
+    return id && !this.inFlight.has(id) ? this.pending.get(id) : undefined
   }
   async effect(service: string, input: Record<string, unknown>) {
     const selected = this.ctx.session.readiness.getSnapshot()
@@ -245,6 +247,8 @@ export class BrowserClient {
       throw new Error('A previous browser action has an uncertain outcome. Check it before another action.')
     const operation = pending ?? { service, input: structuredClone(input), operationId: crypto.randomUUID() }
     this.pending.set(selected.sessionId, operation)
+    if (this.inFlight.has(selected.sessionId)) throw new Error('Browser action is still running.')
+    this.inFlight.add(selected.sessionId)
     try {
       const result = (await this.ctx.agnes.services.effect(service, input, {
         operationId: operation.operationId,
@@ -254,6 +258,11 @@ export class BrowserClient {
         throw new Error('The result belongs to the previous conversation; it was not applied to this view.')
       if (result.status === 'refused')
         throw Object.assign(new Error(String(result.code)), { code: result.code })
+      if (typeof result.closedPageId === 'string')
+        this.updatePages(
+          this.snapshot.pages.filter((page) => page.pageId !== result.closedPageId),
+          selected.sessionId,
+        )
       if (
         typeof result.pageId === 'string' &&
         typeof result.url === 'string' &&
@@ -286,6 +295,7 @@ export class BrowserClient {
         this.pending.delete(selected.sessionId)
       throw error
     } finally {
+      this.inFlight.delete(selected.sessionId)
       this.update({ ...this.snapshot })
     }
   }

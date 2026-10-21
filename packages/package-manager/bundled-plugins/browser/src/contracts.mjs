@@ -50,6 +50,12 @@ export const services = [
     ),
   ),
   service('browser.stream', 'query', 'session', viewInput),
+  // Admission prepares a bounded session channel; it does not take control of a page.
+  service('browser.connect', 'effect', 'session', empty, {
+    controlLeaseMs: 30_000,
+    controlSessionMs: 300_000,
+  }),
+  service('browser.close', 'effect', 'session', object({ pageId: text(100) }, ['pageId'])),
   service(
     'browser.view',
     'effect',
@@ -69,6 +75,18 @@ export const services = [
   }),
 ]
 export const streams = [
+  {
+    name: 'browser.interaction',
+    scope: 'session',
+    inputSchema: empty,
+    directions: ['inbound', 'outbound'],
+    lane: 'control',
+    maxFrameBytes: 4096,
+    maxBufferedBytes: 32768,
+    maxBytesPerSecond: 122880,
+    controlService: 'browser.connect',
+    readService: 'browser.pages',
+  },
   {
     name: 'browser.state',
     scope: 'profile',

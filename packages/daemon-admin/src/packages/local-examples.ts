@@ -80,11 +80,18 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     )
     return result
   }
-  await online()
+  // Catalog discovery is not runtime admission. Hash/inspect candidates only when
+  // the catalog is first requested, so unused examples cannot block daemon readiness.
+  let initialized = false
   // The catalog refuses overlapping reads, and a reload awaits its sources: serialize every read.
   let tail: Promise<unknown> = Promise.resolve()
   const read: LocalExamplesCatalog['read'] = (input = {}) => {
     const next = tail.then(async () => {
+      if (!initialized) {
+        const result = await online(input.signal)
+        initialized = true
+        return result
+      }
       if (!input.offline) return online(input.signal)
       const result = await catalog.read(input)
       return result.sources.some((source) => source.status === 'unavailable' && loaded.has(source.sourceId))

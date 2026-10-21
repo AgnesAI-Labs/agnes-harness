@@ -19,6 +19,87 @@ const { parameters } = await import(
   new URL('../bundled-plugins/browser/src/contracts.mjs', import.meta.url).href
 )
 const { main } = await import(new URL('../bundled-plugins/browser/index.mjs', import.meta.url).href)
+const { interact } = await import(
+  new URL('../bundled-plugins/browser/src/interaction.mjs', import.meta.url).href
+)
+
+it('prepares interaction without takeover, rejects foreign/stale input and preserves control across lease renewal', async () => {
+  const { runtime, session, pages } = fixture()
+  const page = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  const foreign = fixture()
+  const other = await foreign.runtime.act(
+    { key: 'other', lane: 'main' },
+    { action: 'open', url: 'http://localhost/' },
+  )
+  const open = (grantId = 'grant') => {
+    const abort = new AbortController()
+    let receive!: (frame: unknown) => void
+    const responses: Record<string, any>[] = []
+    interact(
+      runtime,
+      {},
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        actor: { id: 'viewer' },
+        control: { grantId, expiresAt: Date.now() + 30_000 },
+        signal: abort.signal,
+        stream: {
+          onFrame(fn: typeof receive) {
+            receive = fn
+          },
+          onDisconnect() {},
+          send(frame: Record<string, any>) {
+            responses.push(frame)
+          },
+        },
+      },
+    )
+    let id = 0
+    return {
+      abort,
+      async send(frame: object) {
+        const requestId = ++id
+        receive({ ...frame, id: requestId })
+        await vi.waitFor(() => expect(responses.some((r) => r.id === requestId)).toBe(true))
+        return responses.find((r) => r.id === requestId)!
+      },
+    }
+  }
+  const first = open()
+  try {
+    expect(runtime.get(session, page.pageId).mode).toBe('agent')
+    expect(
+      (await first.send({ type: 'control', pageId: other.pageId, pageEpoch: 0, mode: 'human' })).status,
+    ).toBe('error')
+    expect(
+      (await first.send({ type: 'control', pageId: page.pageId, pageEpoch: 5, mode: 'human' })).code,
+    ).toBe('STALE_INPUT')
+    const result = (await first.send({ type: 'control', pageId: page.pageId, pageEpoch: 0, mode: 'human' }))
+      .result
+    const input = { type: 'text', text: '中文', pageEpoch: 0, controlEpoch: result.controlEpoch, seq: 0 }
+    expect((await first.send({ type: 'input', pageId: page.pageId, input })).status).toBe('ok')
+    const next = open()
+    first.abort.abort()
+    expect(runtime.get(session, page.pageId).mode).toBe('human')
+    expect(
+      (await next.send({ type: 'input', pageId: page.pageId, input: { ...input, seq: 1 } })).status,
+    ).toBe('ok')
+    expect(pages[0]!.keyboard.insertText).toHaveBeenCalledWith('中文')
+    expect(
+      (await next.send({ type: 'input', pageId: page.pageId, input: { ...input, seq: 2, pageEpoch: 99 } }))
+        .code,
+    ).toBe('STALE_INPUT')
+    next.abort.abort()
+    expect(runtime.get(session, page.pageId).mode).toBe('paused')
+    await runtime.closePage(session, page.pageId)
+    expect(runtime.sessions.has(session.key)).toBe(false)
+    expect(foreign.runtime.sessions.has('other')).toBe(true)
+  } finally {
+    first.abort.abort()
+    await runtime.close()
+    await foreign.runtime.close()
+  }
+})
 
 function pageFixture(context: object) {
   const main = {}
@@ -579,8 +660,9 @@ it('does not publish an idle image captured before newer input', async () => {
         stream: { send: (frame: Uint8Array) => received.push(frame), close() {}, onDisconnect() {} },
       },
     )
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cdp.send).toHaveBeenCalledWith('Page.captureScreenshot', expect.anything())
     cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from('before-input').toString('base64') })
-    await vi.advanceTimersByTimeAsync(250)
     const actor = { id: 'synthetic' }
     const control = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor)
     await runtime.humanInput(session, { ...control, seq: 0, type: 'scroll', x: 0, y: 100 }, actor)
@@ -591,6 +673,30 @@ it('does not publish an idle image captured before newer input', async () => {
       return frame.subarray(frame.readUInt32BE() + 4).toString()
     })
     expect(pixels).not.toContain('stale-idle-image')
+    // Drain the prior paint's idle timer before restoring history without a new paint.
+    await vi.advanceTimersByTimeAsync(300)
+    cdp.send.mockImplementation(async (method) =>
+      method === 'Page.getLayoutMetrics'
+        ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
+        : method === 'Page.captureScreenshot'
+          ? { data: Buffer.from('restored-history-pixels').toString('base64') }
+          : undefined,
+    )
+    const page = runtime.get(session, opened.pageId).page
+    page.emit('framenavigated', page.mainFrame())
+    await vi.advanceTimersByTimeAsync(0)
+    const restored = Buffer.from(received.at(-1)!)
+    const restoredSize = restored.readUInt32BE()
+    const restoredMeta = JSON.parse(restored.subarray(4, restoredSize + 4).toString())
+    expect(restoredMeta.pageEpoch).toBe(1)
+    expect(restored.subarray(restoredSize + 4).toString()).toBe('restored-history-pixels')
+    await expect(
+      runtime.humanInput(
+        session,
+        { ...control, seq: 1, pageEpoch: restoredMeta.pageEpoch, type: 'key', key: 'Enter' },
+        actor,
+      ),
+    ).resolves.toMatchObject({ pageEpoch: 1 })
   } finally {
     abort.abort()
     vi.useRealTimers()

@@ -620,6 +620,26 @@ export class BrowserRuntime {
     )
   }
 
+  async closePage(identity, pageId, signal) {
+    const item = this.get(identity, pageId)
+    this.revoke(item)
+    const epoch = this.epoch,
+      controlEpoch = item.controlEpoch
+    const closing = item.queue.then(async () => {
+      this.guard(epoch)
+      signal?.throwIfAborted()
+      if (item.controlEpoch !== controlEpoch) throw failure('CONTROL_CHANGED', 'Page control changed.')
+      await item.page.close()
+      const session = this.sessions.get(identity.key)
+      if (session?.context === item.page.context() && !session.pages.size && !session.opening)
+        await this.closeSession(identity.key)
+      this.notify()
+    })
+    item.queue = closing.catch(() => {})
+    await closing
+    return { status: 'ok', closedPageId: pageId }
+  }
+
   async closeSession(key) {
     const session = this.sessions.get(key)
     if (!session) return

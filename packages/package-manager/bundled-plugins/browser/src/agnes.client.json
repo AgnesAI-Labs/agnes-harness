@@ -11,10 +11,12 @@
       "browser.pages",
       "browser.events",
       "browser.stream",
+      "browser.connect",
+      "browser.close",
       "browser.view",
       "browser.open",
       "browser.control"
     ],
-    "streams": ["browser.state", "browser.pages", "browser.frames", "browser.input"]
+    "streams": ["browser.interaction", "browser.state", "browser.pages", "browser.frames", "browser.input"]
   }
 }

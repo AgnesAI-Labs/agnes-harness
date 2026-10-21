@@ -25,8 +25,8 @@ and network summaries are bounded; HTTP failures and network failures are separa
 
 **Take control** pauses model writes and admits human input through a native
 session effect. Control is bound to the actor, session, page and original request.
-Clicking or scrolling the displayed page, or using its navigation controls, requests
-the same native control effect before forwarding that action. Typing and IME input
+Opening the panel prepares a native authorized interaction channel without taking control.
+Clicking, scrolling or navigating takes control through that channel before forwarding input. Typing and IME input
 stay within the page display; there is no separate visible text editor. An action
 captured before a document change during handover is discarded, not retargeted.
 Thirty-second input leases renew within a five-minute control session. Disconnect

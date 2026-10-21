@@ -6,17 +6,19 @@ English | [简体中文](browser.zh-CN.md)
 
 The official `@agnes/browser` plugin lets AGH and the workbench use the same web page. The backend runs a dedicated browser; the workbench displays its live pixels. Each conversation has separate cookies and page storage. A second iframe is not used to load another copy of the website.
 
+Workbench visibility is restored only when refreshing the same conversation. A new or different conversation does not inherit the previous conversation's open browser panel; panel size and tab preferences are retained.
+
 ## Enable and open a page
 
 Use the **Built-in browser** switch on the **Plugins** page. The plugin is enabled by default when permitted by the profile ceiling. Open the workbench's Browser tab yourself; plugin startup, conversation changes and AGH opening a page never expand or switch your panel automatically. There is no separate settings switch. Activation automatically downloads the pinned browser archive into the OS user cache and verifies its exact size and SHA-256. Preparation and errors appear in the panel; toggle the plugin off and on to retry a failed preparation. The obsolete independent off setting is ignored. An explicit disable on the Plugins page persists across restarts.
 
 Enter an absolute `http://` or `https://` address in the Browser workbench panel, or ask AGH to open it. For local projects, ask AGH to start the project with its existing shell or Jobs tools, use the actual port it reports, then inspect and test the page. Localhost refers to the backend computer. Browser shutdown does not stop project Jobs.
 
-AGH can inspect current elements, click, fill, type keys, scroll, navigate, wait for text, take screenshots, read recent console and network errors, and close tabs. The panel follows the page AGH most recently operates or observes in the selected conversation. Manual tab selection lasts until AGH next targets a page; human takeover keeps its page visible. Selecting another tab ends the current input connection. Up to two conversations can own browser contexts, with up to three tabs each; close unused tabs through AGH before opening more. Closing the last tab releases that conversation’s browser slot.
+AGH can inspect current elements, click, fill, type keys, scroll, navigate, wait for text, take screenshots, read recent console and network errors, and close tabs. The panel follows the page AGH most recently operates or observes in the selected conversation. Manual tab selection lasts until AGH next targets a page; human takeover keeps its page visible. Selecting another tab ends the current input connection. Up to two conversations can own browser contexts, with up to three tabs each; close unused tabs with the tab close button or through AGH before opening more. Closing the last tab releases that conversation’s browser slot.
 
 ## Human control
 
-Click the displayed page and type directly, including Chinese input, macOS Option characters, Windows AltGr characters and paste. The first click, wheel gesture or navigation action requests human control through the existing authenticated session effect before sending input; **Take control** remains available as an explicit alternative. No input is forwarded while approval is pending or after admission fails. If the document changes during handover, the old click is discarded. Escape returns keyboard focus to the local browser controls. **Return to AGH** ends human control; AGH must observe the current page before writing again.
+Click the displayed page and type directly, including Chinese input, macOS Option characters, Windows AltGr characters and paste. Opening the panel prepares an authenticated session interaction channel without taking page control. The first click, wheel gesture or navigation action takes control over that channel before sending input; **Take control** remains available as an explicit alternative. No input is forwarded while approval is pending or after admission fails. If the document changes during handover, the old click is discarded. Escape returns keyboard focus to the local browser controls. **Return to AGH** ends human control; AGH must observe the current page before writing again.
 
 The panel uses page tabs and one address bar; press Enter to visit an address in the current tab. Tab labels use the host and path. **Browser options** contains display reconnection and recent page errors. Text input uses an invisible focus target within the displayed page, rather than a separate visible editor.
 
@@ -26,7 +28,7 @@ Healthy authorized streams push browser status and the selected conversation's p
 
 Closing the panel stops its display, page subscriptions and recovery queries; reopening reconnects to the existing pages. It does not navigate, submit or replay input.
 
-Switching browser tabs reuses the panel's display connection and captures only the selected page. Old-page images are discarded during the switch. View selection stays bound to the authenticated user and conversation; it does not grant input control or increase transport limits.
+Switching browser tabs reuses the panel's display connection and captures only the selected page. Old-page images are discarded during the switch. Rapid tab changes coalesce to the latest selection on the prepared interaction channel. View selection stays bound to the authenticated user and conversation; it does not grant input control or increase transport limits.
 
 A temporary status-read failure shows an error while retaining the last page in that conversation. Input still needs a live authorized connection. Switching conversations clears the previous pages.
 

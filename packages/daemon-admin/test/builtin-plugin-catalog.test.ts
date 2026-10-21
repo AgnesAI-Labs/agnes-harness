@@ -129,7 +129,7 @@ it.each([
         integrity: expect.stringMatching(/^sha256-/),
       })
     expect(JSON.stringify(result.entries)).not.toContain('github.com')
-    expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('cached')
+    expect(result.sources.find((source) => source.sourceId === 'builtin-plugins')?.status).toBe('fresh')
     if (broken)
       expect(result.sources.find((source) => source.sourceId === 'local-examples')?.status).toBe(
         'unavailable',

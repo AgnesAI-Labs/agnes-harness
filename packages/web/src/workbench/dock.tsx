@@ -41,12 +41,13 @@ const defaults: Layout = {
   rightWidth: RIGHT_DEFAULT,
   bottomHeight: BOTTOM_DEFAULT,
 }
-function readLayout(): Layout {
+function readLayout(sessionId: string | undefined): Layout {
   try {
-    const value = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Layout>
+    const value = JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Layout> & { sessionId?: string }
+    const sameSession = !!sessionId && value.sessionId === sessionId
     return {
-      rightOpen: value.rightOpen === true,
-      bottomOpen: value.bottomOpen === true,
+      rightOpen: sameSession && value.rightOpen === true,
+      bottomOpen: sameSession && value.bottomOpen === true,
       // The stored width is what the reader chose; the window decides how much of it fits.
       rightWidth: Number.isFinite(value.rightWidth)
         ? Math.max(RIGHT_MIN, value.rightWidth ?? RIGHT_DEFAULT)
@@ -178,7 +179,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const bottomAvailable = workbenchPanels
     .entries()
     .some((panel) => panel.edge === 'bottom' && (panel.visibility !== 'contextual' || panel.when?.(context)))
-  const [layout, setLayout] = useState(readLayout)
+  const sessionId = (context.data as WorkbenchContext)?.session?.id
+  const [layout, setLayout] = useState(() => readLayout(sessionId))
   const [expanded, setExpanded] = useState(false)
   const [rightMax, setRightMax] = useState(() => maxRightWidth(window.innerWidth))
   const rightWidth = clampRightWidth(layout.rightWidth, rightMax)
@@ -186,7 +188,6 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
   }, [bottomAvailable])
   const returnFocus = useRef<Partial<Record<'right' | 'bottom', HTMLElement>>>({})
-  const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [selection, setSelection] = useState<unknown>()
   const [selected, setSelected] = useState(() => {
     try {
@@ -302,7 +303,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   )
   useEffect(() => {
     try {
-      localStorage.setItem(key, JSON.stringify(layout))
+      localStorage.setItem(key, JSON.stringify({ ...layout, sessionId }))
       localStorage.setItem('agnes.workbench.selection.v1', JSON.stringify(selected))
     } catch {
       /* in-memory layout remains usable */
@@ -318,7 +319,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       const host = surfaces[edge]
       if (host) host.hidden = !layout[`${edge}Open`] || (edge === 'bottom' && !bottomAvailable)
     }
-  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable])
+  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable, sessionId])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
@@ -572,7 +573,8 @@ export function renderWorkbench(host: HTMLElement, context: UiExtensionContext):
     renderer = createRegionRenderer(host, { notify: 'animation-frame' })
     workbenchRenderers.set(host, renderer)
   }
-  renderer.render(<Dock context={context} />)
+  // A conversation change must not inherit another conversation's open panels or selection payload.
+  renderer.render(<Dock key={(context.data as WorkbenchContext)?.session?.id} context={context} />)
   if (initial) renderer.flush()
 }
 

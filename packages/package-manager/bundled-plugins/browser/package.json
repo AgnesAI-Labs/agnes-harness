@@ -1,6 +1,6 @@
 {
   "name": "@agnes/browser",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -150,6 +150,64 @@
               },
               "timeoutMs": 30000,
               "maxResultBytes": 65536
+            },
+            {
+              "name": "browser.connect",
+              "kind": "effect",
+              "scope": "session",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              },
+              "controlLeaseMs": 30000,
+              "controlSessionMs": 300000
+            },
+            {
+              "name": "browser.close",
+              "kind": "effect",
+              "scope": "session",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "pageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "pageId"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
             },
             {
               "name": "browser.view",
@@ -368,6 +426,26 @@
             }
           ],
           "streams": [
+            {
+              "name": "browser.interaction",
+              "scope": "session",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              },
+              "directions": [
+                "inbound",
+                "outbound"
+              ],
+              "lane": "control",
+              "maxFrameBytes": 4096,
+              "maxBufferedBytes": 32768,
+              "maxBytesPerSecond": 122880,
+              "controlService": "browser.connect",
+              "readService": "browser.pages"
+            },
             {
               "name": "browser.state",
               "scope": "profile",

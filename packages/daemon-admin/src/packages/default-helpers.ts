@@ -142,10 +142,10 @@ export async function refreshDefaultHelpers(options: {
   previous(): RuntimeTargetArtifact | undefined
   publish(target: RuntimeTargetArtifact): Promise<void>
 }): Promise<void> {
+  let inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  const refreshed: string[] = []
   for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
-    const current = (await options.manager.inventory(options.profileDir, { fresh: true })).packages.find(
-      (pkg) => pkg.id === helper.id,
-    )
+    const current = inventory.packages.find((pkg) => pkg.id === helper.id)
     if (
       !current ||
       !isRuntimePackageEligible(current) ||
@@ -153,16 +153,20 @@ export async function refreshDefaultHelpers(options: {
       current.entry.source.ref !== helper.ref
     )
       continue
-    const source = parseSource(helper.ref)
-    const preview = await options.manager.inspect(options.profileDir, source)
-    if (
-      preview.id !== helper.id ||
-      preview.version === '0.0.0' ||
-      preview.blockers.length ||
-      preview.capabilityHash !== current.capabilityHash
-    )
-      continue
-    if (current.entry.integrity !== preview.integrity || current.entry.version !== preview.version) {
+    const bundled = bundledPluginSource(helper.ref)
+    if (!bundled) throw new Error('Bundled helper source unavailable')
+    // An unchanged release needs no staging copy or candidate inspection. This is a byte hash,
+    // not a version/mtime shortcut; installed trust and policy came from the verified inventory.
+    if (hashDirectory(join(bundled.root, bundled.path)) !== current.entry.integrity) {
+      const source = parseSource(helper.ref)
+      const preview = await options.manager.inspect(options.profileDir, source)
+      if (
+        preview.id !== helper.id ||
+        preview.version === '0.0.0' ||
+        preview.blockers.length ||
+        preview.capabilityHash !== current.capabilityHash
+      )
+        continue
       try {
         await options.manager.update(options.profileDir, helper.id, source, {
           expectedIntegrity: preview.integrity,
@@ -178,14 +182,24 @@ export async function refreshDefaultHelpers(options: {
         if (error instanceof PackageError && error.legacyCode === 'E_API_RANGE') continue
         throw error
       }
+      // A committed update can change other packages' dependency eligibility. Never carry the
+      // pre-update inventory into the next decision; update itself retains all admission checks.
+      inventory = await options.manager.inventory(options.profileDir, { fresh: true })
     }
-    const previous = options.previous()
-    const target = rebuildDesiredFromInventory({
-      previous,
-      inventory: await options.manager.inventory(options.profileDir, { fresh: true }),
-      packageId: helper.id,
+    refreshed.push(helper.id)
+  }
+  if (!refreshed.length) return
+  // Publish the complete release once. Failed publication leaves the installed versions available
+  // for the next boot to retry, including unchanged packages whose target was never published.
+  inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  const previous = options.previous()
+  let target = previous
+  for (const packageId of refreshed)
+    target = rebuildDesiredFromInventory({
+      previous: target,
+      inventory,
+      packageId,
       operation: 'update',
     })
-    if (target && target.digest !== previous?.digest) await options.publish(target)
-  }
+  if (target && target.digest !== previous?.digest) await options.publish(target)
 }
