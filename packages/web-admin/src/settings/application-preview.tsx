@@ -9,7 +9,7 @@ import {
   SettingsTechnicalDetails,
   useDocumentLanguage,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 export const PRESENTATION_ROLE_LABELS = {
   navigation: ['Navigation', '导航'],
@@ -130,6 +130,15 @@ export const navigationLabels: Record<string, [string, string]> = {
   plugins: ['Plugins', '插件'],
 }
 
+/** One key-value row in the review: the name on the left, its value on the right. */
+function ReviewRow({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <SettingsItem className="application-review-row" label={label}>
+      <span className="application-review-value">{value}</span>
+    </SettingsItem>
+  )
+}
+
 /** A projection of the reviewed payload only; the original digest and write contract stay intact. */
 export function ApplicationPreviewSummary({
   preview,
@@ -206,16 +215,6 @@ export function ApplicationPreviewSummary({
       }),
     ).values(),
   ]
-  // Replacing one interface usually declares UI rendering and nothing else. The abstract
-  // "Permissions / UI / Allowed" row adds no decision, so state the limit in one sentence instead.
-  // Any other capability keeps the full section.
-  const capabilities = preview.dependencies.map((value) => object(object(value)?.capabilities))
-  const presentationOnly =
-    !application &&
-    capabilities.length > 0 &&
-    capabilities.every(
-      (fields) => fields !== undefined && Object.keys(fields).length === 1 && fields.ui === true,
-    )
   return (
     <div className="application-review">
       <div className="agnes-settings-stack" data-testid="consent-summary">
@@ -245,22 +244,20 @@ export function ApplicationPreviewSummary({
           <SettingsGroup>
             {application && (
               <>
-                <SettingsItem
+                <ReviewRow
                   label={tr('Home page', '首页')}
-                  description={
-                    declaration.presentation?.home ? pageName(declaration.presentation.home) : host
-                  }
+                  value={declaration.presentation?.home ? pageName(declaration.presentation.home) : host}
                 />
-                <SettingsItem
+                <ReviewRow
                   label={tr('Navigation shown', '显示的导航')}
-                  description={list(
+                  value={list(
                     navigation?.entries?.map(pageName),
                     navigation?.entries ? none : tr('Official navigation', '官方导航'),
                   )}
                 />
-                <SettingsItem
+                <ReviewRow
                   label={tr('Official entries hidden', '隐藏的官方入口')}
-                  description={list([
+                  value={list([
                     ...new Set(
                       navigation?.hideBuiltin?.map((entry) =>
                         tr(...(navigationLabels[entry] ?? [entry, entry])),
@@ -273,31 +270,16 @@ export function ApplicationPreviewSummary({
             {preview.replacedRoles.map((value) => {
               const item = object(value)
               return (
-                <SettingsItem
+                <ReviewRow
                   key={JSON.stringify(value)}
                   label={role(text(item?.role))}
-                  description={strings(item?.visibleParts)
+                  value={strings(item?.visibleParts)
                     .map((part) => tr(...(partLabels[part] ?? [part, part])))
                     .join(', ')}
                 />
               )
             })}
-            {presentationOnly && (
-              <SettingsItem
-                icon="shield-check"
-                label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
-                description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
-              />
-            )}
           </SettingsGroup>
-          {presentationOnly && (
-            <p className="agnes-settings-note">
-              {tr(
-                'Replaces the interface only; no data, command or secret permissions are added.',
-                '仅替换界面展示，不新增数据、命令或密钥权限。',
-              )}
-            </p>
-          )}
         </SettingsSection>
         {application && (
           <SettingsSection title={tr('Included agents', '包含的智能体')}>
@@ -323,45 +305,43 @@ export function ApplicationPreviewSummary({
             )}
           </SettingsSection>
         )}
-        {!presentationOnly && (
-          <SettingsSection title={tr('Permissions', '权限')}>
-            <SettingsGroup>
-              {application &&
-                (access.size ? (
-                  [...access].map(([key, group]) => (
-                    <SettingsItem
-                      key={key}
-                      label={
-                        group.readOnly === undefined
-                          ? tr('Launch access unavailable', '启动权限尚不可用')
-                          : group.readOnly
-                            ? tr('Read-only tools', '只读工具')
-                            : tr('Tools can read and change data', '工具可读取及修改数据')
-                      }
-                      description={group.names.join(', ')}
-                    />
-                  ))
-                ) : (
-                  <SettingsItem
-                    label={tr('Launch configuration unavailable', '启动配置尚不可用')}
-                    description={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
+        <SettingsSection title={tr('Permissions', '权限')}>
+          <SettingsGroup>
+            {application &&
+              (access.size ? (
+                [...access].map(([key, group]) => (
+                  <ReviewRow
+                    key={key}
+                    label={
+                      group.readOnly === undefined
+                        ? tr('Launch access unavailable', '启动权限尚不可用')
+                        : group.readOnly
+                          ? tr('Read-only tools', '只读工具')
+                          : tr('Tools can read and change data', '工具可读取及修改数据')
+                    }
+                    value={group.names.join(', ')}
                   />
-                ))}
-              {permissions.map((permission) => (
-                <SettingsItem
-                  key={JSON.stringify(permission)}
-                  label={permission.label}
-                  description={permission.detail}
+                ))
+              ) : (
+                <ReviewRow
+                  label={tr('Launch configuration unavailable', '启动配置尚不可用')}
+                  value={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
                 />
               ))}
-              <SettingsItem
-                icon="shield-check"
-                label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
-                description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
+            {permissions.map((permission) => (
+              <ReviewRow
+                key={JSON.stringify(permission)}
+                label={permission.label}
+                value={permission.detail}
               />
-            </SettingsGroup>
-          </SettingsSection>
-        )}
+            ))}
+            <SettingsItem
+              icon="shield-check"
+              label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
+              description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
+            />
+          </SettingsGroup>
+        </SettingsSection>
         <p className="agnes-settings-note">
           {preview.signature === 'verified'
             ? tr('Verified publisher', '发布者已验证')
