@@ -963,6 +963,35 @@ describe('traceability and deliverables', () => {
     expect(projectPath(project, 'src/a.js')).toBe('devboard-projects/PRJ-2026-009/src/a.js')
     expect(() => projectPath({ id: 'PRJ-2025-042', live: false }, 'docs/SRS.md')).toThrow('不是现场项目')
   })
+
+  it('opens analysis/<object id>/ on any project, still refuses escapes, and never registers it', () => {
+    const order = { id: 'PRJ-2025-042', live: false }
+    expect(projectPath(order, 'analysis/QP-2026-007/D2-D4.md')).toBe(
+      'devboard-projects/PRJ-2025-042/analysis/QP-2026-007/D2-D4.md',
+    )
+    expect(
+      projectPath(
+        { id: 'PRJ-2026-009', live: true, workspaceDir: 'devboard-projects/PRJ-2026-009' },
+        'analysis/ECN-2026-003/a.md',
+      ),
+    ).toBe('devboard-projects/PRJ-2026-009/analysis/ECN-2026-003/a.md')
+    for (const bad of [
+      'analysis/x.md',
+      'analysis/../x.md',
+      'analysis/QP-1/../../x.md',
+      'docs/analysis/QP-1/a.md',
+    ])
+      expect(() => projectPath(order, bad)).toThrow(/不是现场项目|交付物路径越界/)
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    expect(() =>
+      recordArtifact(
+        state,
+        { projectId: p.id, kind: 'PLAN', stage: 'INITIATION', path: 'analysis/QP-2026-007/a.md' },
+        NOW,
+      ),
+    ).toThrow('不登记为交付物')
+  })
 })
 
 describe('live software project tool chain', () => {

@@ -749,11 +749,15 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
 
 // ── Live projects, artifacts, tests, defects, app address ──────────────────────────────────────
 
-/** A workspace path inside the live project's directory, normalised to the workspace-relative form. */
+/** Role working files for one object (QP-…, ECN-…, TT-…): analysis/<object id>/<file>; read and written, never registered. */
+const ANALYSIS_PATH = /^analysis\/[A-Za-z0-9][A-Za-z0-9-]*\/[^/]/
+
+/** A workspace path inside the project's directory, normalised to the workspace-relative form. Live projects take any file there; other projects only the analysis/ prefix. */
 export function projectPath(project, path) {
-  if (!project.live || !project.workspaceDir) fail(`${project.id} 不是现场项目，不能登记工作区文件`)
-  const dir = project.workspaceDir
   const raw = typeof path === 'string' ? path.trim() : ''
+  const live = project.live && project.workspaceDir
+  if (!live && !ANALYSIS_PATH.test(raw)) fail(`${project.id} 不是现场项目，不能登记工作区文件`)
+  const dir = live ? project.workspaceDir : `devboard-projects/${project.id}`
   const refuse = () => fail(`交付物路径越界：${raw || '（空）'} 必须是 ${dir}/ 内的相对路径`)
   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
   if (!raw || raw.startsWith('/') || /^[A-Za-z]:/.test(raw) || /[\\\x00-\x1f]/.test(raw)) refuse()
@@ -778,6 +782,8 @@ export function clip(markdown) {
 export function recordArtifact(state, input, now = Date.now()) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
   const path = projectPath(project, input.path)
+  if (path.startsWith(`${project.workspaceDir ?? `devboard-projects/${project.id}`}/analysis/`))
+    fail(`分析文件 ${input.path} 只读写，不登记为交付物`)
   const kind = oneOf(input.kind, Object.keys(LABELS.artifactKind), 'kind')
   const stage = oneOf(input.stage, STAGES, 'stage')
   const suffix = optional(input.suffix, 24).toUpperCase()
