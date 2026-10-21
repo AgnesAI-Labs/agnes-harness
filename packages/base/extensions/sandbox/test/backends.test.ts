@@ -26,6 +26,9 @@ describe('closed-network backend compilers', () => {
   it('builds a shell-free bwrap argv with deny mounts after writable mounts', () => {
     const confined = bwrapConfine(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'], options)
     expect(confined[0]).toBe('bwrap')
+    expect(() => bwrapConfine(['true'], { ...options, loopbackServe: true })).toThrow(
+      'loopback serving is unavailable on Linux',
+    )
     expect(confined).toEqual(
       expect.arrayContaining([
         '--ro-bind',

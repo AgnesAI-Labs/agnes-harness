@@ -77,11 +77,25 @@ it('fans daemon rebuild hints to the same-origin plugin SSE stream', async () =>
     if (!reader) throw new Error('SSE response has no body')
     const first = new TextDecoder().decode((await reader.read()).value)
     expect(first).toContain('event: graph')
+    const initial = await (await fetch(`${server.url}/plugins/changes`)).json()
+    expect(initial).toMatchObject({ cursor: 0, reset: false, events: [] })
     emit?.({ packageId: 'example/clock', revision: 'sha256-next' })
     const second = new TextDecoder().decode((await reader.read()).value)
     expect(second).toContain('event: rebuilt')
     expect(second).toContain('"id":"example/clock"')
     expect(second).toContain('"rev":"sha256-next"')
+    const nextUrl = `${server.url}/plugins/changes?epoch=${initial.epoch}&cursor=0`
+    const pages = await Promise.all(Array.from({ length: 8 }, () => fetch(nextUrl).then((r) => r.json())))
+    expect(pages.every((page) => page.cursor === 1 && page.events[0]?.id === 'example/clock')).toBe(true)
+    expect(
+      await (await fetch(`${server.url}/plugins/changes?epoch=${initial.epoch}&cursor=1`)).json(),
+    ).toMatchObject({ reset: false, events: [] })
+    expect(await (await fetch(`${server.url}/plugins/changes?epoch=old&cursor=1`)).json()).toMatchObject({
+      reset: true,
+    })
+    expect((await fetch(`${server.url}/plugins/changes?cursor=NaN`)).status).toBe(400)
+    for (let i = 0; i < 257; i++) emit?.({ packageId: 'example/clock', revision: String(i) })
+    expect(await (await fetch(nextUrl)).json()).toMatchObject({ reset: true, cursor: 258 })
   } finally {
     controller.abort()
     await server.close()

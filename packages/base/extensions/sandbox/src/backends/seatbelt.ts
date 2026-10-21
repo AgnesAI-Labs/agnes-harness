@@ -12,6 +12,7 @@ export function seatbeltConfine(argv: readonly string[], options: ClosedNetworkC
   const policy = validateClosedNetworkOptions(options)
   return seatbeltDenyNetworkArgv(command, {
     allowPaths: policy.allowPaths,
+    ...(policy.loopbackServe ? { loopbackServe: true } : {}),
     denyPaths: policy.denyPaths,
     ...(policy.readPaths ? { readPaths: policy.readPaths } : {}),
     ...(policy.network ? { network: policy.network } : {}),

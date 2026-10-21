@@ -1,9 +1,11 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { type LoopFactory, loopCheckpointCodec, type ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { toolAvailability } from '../src/execution/turn/tool-availability.js'
 import { createLoopContext } from '../src/loop/ports.js'
+import { onlyTools } from '../src/registry/tool-allow.js'
 import { AUTO_DEFER_MAX_TOOLS, ToolRegistry } from '../src/registry/tools.js'
 import { deferredToolsSection } from '../src/request/deferred-tools.js'
 import type { RequestHeaderData } from '../src/request/derive.js'
@@ -524,4 +526,52 @@ describe('the tool catalog of a loop that names its tools', () => {
       expect(toolNames(followed)).toEqual(['remote_5', 'tool_describe', 'tool_search'])
     })
   })
+})
+
+it('offers explicit session names without adding discovery authority or changing shared definitions', async () => {
+  const base = readTool() as ToolDef
+  const registry = new ToolRegistry()
+  for (const name of ['tool_search', 'tool_describe', 'explicit', 'outside'])
+    registry.add(
+      {
+        ...base,
+        name,
+        meta: {
+          ...base.meta,
+          deferLoading: name === 'explicit' || name === 'outside',
+          requiresApproval: 'always',
+        },
+      },
+      { source: 'test', trust: 'builtin' },
+    )
+  const view = onlyTools(registry, ['explicit'])
+  expect(view.snapshot(1).defs.map((d) => [d.name, d.meta.deferLoading])).toEqual([['explicit', false]])
+  expect(view.snapshot(1).byName.get('outside')).toBeUndefined()
+  expect(view.resolve('tool_describe')).toBeUndefined()
+  expect(registry.resolve('explicit')?.meta.deferLoading).toBe(true)
+  const asks: string[] = []
+  const provider = fakeProvider([toolTurn('explicit', {}), toolTurn('outside', {}), textTurn('done')])
+  const { session, storage } = await openSession({
+    registry,
+    provider,
+    preset: { ...presetDefaults(), tools: { ...presetDefaults().tools, allow: ['explicit'] } },
+    seams: fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asks.push(req.tool?.name ?? '')
+          return { verdict: 'rejected', answeredBy: actor }
+        },
+      },
+    }),
+  })
+  try {
+    await session.enqueue('explicit', { actor, content: [{ type: 'text', text: 'act' }] })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(asks).toEqual(['explicit'])
+    expect(JSON.stringify(await storage.scan(session.key, { type: 'tool/result' }))).toContain(
+      'TOOL_NOT_FOUND',
+    )
+  } finally {
+    await session.close()
+  }
 })

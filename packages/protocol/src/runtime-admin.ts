@@ -42,7 +42,12 @@ const securityPolicy = Type.Object(
       Type.Literal('allow-if-unimplemented'),
     ]),
     approvalPolicy: text,
-    networkMode: Type.Union([Type.Literal('deny'), Type.Literal('allow-list'), Type.Literal('unrestricted')]),
+    networkMode: Type.Union([
+      Type.Literal('deny'),
+      Type.Literal('allow-list'),
+      Type.Literal('loopback-serve'),
+      Type.Literal('unrestricted'),
+    ]),
   },
   { additionalProperties: false },
 )

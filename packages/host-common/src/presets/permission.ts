@@ -46,7 +46,7 @@ const isMap = (value: unknown): value is Record<string, unknown> =>
 const OVERLAY_FIELDS: Readonly<Record<string, readonly string[]>> = {
   providers: ['tool-policy'],
   approval: ['command_policy'],
-  sandbox: ['level', 'on_unavailable', 'extra_paths', 'deny_paths', 'network_allow'],
+  sandbox: ['level', 'on_unavailable', 'extra_paths', 'deny_paths', 'network_allow', 'loopback_serve'],
   subagent: ['isolation'],
 }
 
@@ -58,6 +58,7 @@ const RECIPE_FORBIDDEN: readonly (readonly [string, string])[] = [
   ['sandbox', 'extra_paths'],
   ['sandbox', 'deny_paths'],
   ['sandbox', 'network_allow'],
+  ['sandbox', 'loopback_serve'],
   ['subagent', 'isolation'],
 ]
 
