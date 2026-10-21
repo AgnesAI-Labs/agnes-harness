@@ -1,4 +1,5 @@
 import { collectPackageSkillFiles } from '@agnes/base'
+import { RUN_PROGRESS_EVENT_TYPES } from '@agnes/base/schedule'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import {
   SessionPreferencesStore,
@@ -7,8 +8,10 @@ import {
 import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
 import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import { APPROVAL_TICKET_EVENT_TYPES, indexApprovalTicket } from '@agnes/daemon-rpc/local/methods/agnes'
 import { createFeedbackOwner, type FeedbackOwner } from '@agnes/host'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { EventEnvelope } from '@agnes/protocol'
 import {
   deploymentMcpPolicy,
   installResourceServiceAdapters,
@@ -24,6 +27,7 @@ import {
 import { WorkerRegistry } from './registry.js'
 import { SupervisorRegistry, supervisorLister } from './registry-facade.js'
 import { wireResourceSnapshotNotifications } from './resource-snapshot-notifications.js'
+import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
@@ -109,27 +113,11 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     ...(o.workerExecArgv ? { execArgv: o.workerExecArgv } : {}),
     workerEntry,
 
-    onEvent: (sessionKey, e) => {
-      automationEvents.observe(sessionKey, e)
-      if (e.type === 'turn/start') pool.resetSessionRequests(sessionKey)
-      if (
-        e.type === 'x/core/preset-switch' &&
-        e.origin === 'system' &&
-        (e.data as { fromPermission?: string }).fromPermission === 'full-access'
-      ) {
-        pool.revokeSessionRequests(sessionKey)
-        pool.resetSessionRequests(sessionKey)
-      }
-      const control = e.data as { action?: unknown; outcome?: unknown }
-      if (
-        e.type === 'x/core/control' &&
-        e.origin === 'principal' &&
-        control.outcome === 'requested' &&
-        (control.action === 'cancel' || control.action === 'interrupt')
-      )
-        pool.revokeSessionRequests(sessionKey)
-      return deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces)
-    },
+    onEvent: (sessionKey, e) =>
+      deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces, () => {
+        automationEvents.observe(sessionKey, e)
+        observeSessionRequests(pool, sessionKey, e)
+      }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
     onDecisionsChanged: (detail) => {
       if (detail.profile === o.profile.name) notices.emit('decisions_changed', { detail })
@@ -158,7 +146,27 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     })
   })
   if (stopDesired) lifetime.own({ dispose: stopDesired })
-  const registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, workspaces)
+  const registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
+    workspaces,
+    history: [
+      {
+        types: SESSION_REQUEST_EVENT_TYPES,
+        observe: (key, e) => observeSessionRequests(pool, key, e),
+      },
+      { types: RUN_PROGRESS_EVENT_TYPES, observe: (key, e) => automationEvents.observe(key, e) },
+      ...(tickets
+        ? [
+            {
+              types: APPROVAL_TICKET_EVENT_TYPES,
+              observe: (key: string, e: EventEnvelope) => {
+                tickets.gc(clock())
+                indexApprovalTicket(tickets, key, e, registry.get(key)?.session.cwd)
+              },
+            },
+          ]
+        : []),
+    ],
+  })
   const prompter = new PrompterRouter({
     resolveActor: async (conn, key) =>
       o.ports?.resolveActor
