@@ -40,11 +40,12 @@ Type `/` to see the current menu. Common actions:
 
 | Action | Usage |
 | --- | --- |
-| New task / history | `/new`, `/sessions`, `/resume [id]` |
+| New task / history | `/new [DIR]`, `/sessions`, `/resume [id\|all]` (`all` lists every workspace), `/search QUERY` (admin connection) |
+| Session housekeeping | `/pin`, `/unpin`, `/rename TITLE`, `/archive` |
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
-| Fork | `/rewind SEQ` creates a new session; it does not roll back the filesystem |
+| Fork | `/rewind` opens a picker of completed turns; `/rewind SEQ` forks at a sequence number. Either creates a new session and does not roll back the filesystem |
 | Plugins | `/packages`, `/install SOURCE`, `/package ...` |
 | Resources | `/skills`, `/skill refresh ...`, `/mcp ...` |
 | Display / exit | `/theme [light\|dark\|mono]`, `/help`, `/quit` |
@@ -53,7 +54,7 @@ Choose what a new session may do when you start it, for example `node agnes.mjs 
 
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
-When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. The TUI has no command to disable full access.
+When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. `/yolo off` asks for routine approvals again.
 
 `/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
 

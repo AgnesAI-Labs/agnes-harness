@@ -20,7 +20,9 @@
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
 | `agh resume ID [-p prompt]` | 恢复入口 |
-| `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | 列表/详情 |
+| `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表（置顶行带标记，`--archived` 只看已归档）/详情 |
+| `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
+| `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |
 | `agh --connect TARGET` | 只连接目标，失败不回退 |
