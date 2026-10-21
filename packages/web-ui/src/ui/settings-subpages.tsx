@@ -333,6 +333,8 @@ export function SettingsExpand({
   leading,
   value,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
   children,
   ...props
 }: Omit<HTMLAttributes<HTMLDivElement>, 'title'> &
@@ -344,10 +346,19 @@ export function SettingsExpand({
     leading?: ReactNode
     value?: ReactNode
     defaultOpen?: boolean
+    /** Controlled expansion; omit to let the row keep its own state. */
+    open?: boolean
+    onOpenChange?(open: boolean): void
     children?: ReactNode
   }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
+  const open = controlledOpen ?? uncontrolledOpen
   const testId = props['data-testid']
+  const toggle = () => {
+    const next = !open
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   return (
     <div {...props} className={['agnes-settings-expand', props.className].filter(Boolean).join(' ')}>
       <button
@@ -355,7 +366,7 @@ export function SettingsExpand({
         className="agnes-settings-item agnes-settings-drill"
         aria-expanded={open}
         data-testid={testId ? `${testId}-toggle` : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
       >
         <RowCopy label={label} hint={hint} info={info} icon={icon} leading={leading} />
         {value !== undefined && value !== null && value !== false && (
