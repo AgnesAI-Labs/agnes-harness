@@ -13,25 +13,22 @@ export class SessionPreferencesStore {
     private readonly clock: () => number = Date.now,
   ) {
     table?.exec(`CREATE TABLE IF NOT EXISTS session_preferences (
-      session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0, pinned_at INTEGER
-    )`)
-    // Its own table rather than a column, so a store created before bookmarks needs no migration.
-    table?.exec(`CREATE TABLE IF NOT EXISTS session_bookmarks (
-      session_key TEXT PRIMARY KEY, ids TEXT NOT NULL
+      session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0, pinned_at INTEGER,
+      bookmarks TEXT
     )`)
   }
 
   get(sessionId: string): SessionPreferences {
     if (!this.table) return { archived: false, ...this.memory.get(sessionId) }
-    const row = this.table.get<{ title: string | null; archived: number; pinned_at: number | null }>(
-      'SELECT title, archived, pinned_at FROM session_preferences WHERE session_key = ?',
-      [sessionId],
-    )
-    const bookmarks = this.table.get<{ ids: string }>(
-      'SELECT ids FROM session_bookmarks WHERE session_key = ?',
-      [sessionId],
-    )
-    const ids = bookmarks ? (JSON.parse(bookmarks.ids) as string[]) : []
+    const row = this.table.get<{
+      title: string | null
+      archived: number
+      pinned_at: number | null
+      bookmarks: string | null
+    }>('SELECT title, archived, pinned_at, bookmarks FROM session_preferences WHERE session_key = ?', [
+      sessionId,
+    ])
+    const ids = row?.bookmarks ? (JSON.parse(row.bookmarks) as string[]) : []
     return {
       archived: row?.archived === 1,
       ...(row?.title ? { title: row.title } : {}),
@@ -121,11 +118,12 @@ export class SessionPreferencesStore {
     if (this.table) {
       if (ids.length)
         this.table.exec(
-          `INSERT INTO session_bookmarks (session_key, ids) VALUES (?, ?)
-         ON CONFLICT(session_key) DO UPDATE SET ids = excluded.ids`,
+          `INSERT INTO session_preferences (session_key, bookmarks) VALUES (?, ?)
+         ON CONFLICT(session_key) DO UPDATE SET bookmarks = excluded.bookmarks`,
           [sessionId, JSON.stringify(ids)],
         )
-      else this.table.exec('DELETE FROM session_bookmarks WHERE session_key = ?', [sessionId])
+      else
+        this.table.exec('UPDATE session_preferences SET bookmarks = NULL WHERE session_key = ?', [sessionId])
     } else {
       const { bookmarks: _previous, ...rest } = this.get(sessionId)
       this.memory.set(sessionId, { ...rest, ...(ids.length ? { bookmarks: ids } : {}) })

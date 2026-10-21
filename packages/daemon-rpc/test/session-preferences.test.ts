@@ -47,7 +47,6 @@ describe('session preferences', () => {
       store.archive('s', false)
       expect(store.pin('s', true).pinnedAt).toMatch(/^\d{4}-\d\d-\d\dT/)
       expect(storage.coreTableNames()).not.toContain('session_preferences')
-      expect(storage.coreTableNames()).not.toContain('session_bookmarks')
     } finally {
       await storage.close()
       await rm(dir, { recursive: true, force: true })
@@ -64,7 +63,7 @@ describe('session preferences', () => {
         .table('x')
         .all<{ name: string }>("SELECT name FROM pragma_table_info('session_preferences')")
         .map((c) => c.name),
-    ).toEqual(['session_key', 'title', 'archived', 'pinned_at'])
+    ).toEqual(['session_key', 'title', 'archived', 'pinned_at', 'bookmarks'])
     await tables.close()
   })
 
@@ -209,6 +208,22 @@ describe('session preferences', () => {
 })
 
 describe('session bookmarks', () => {
+  it('keeps bookmarks in a session_preferences column with no side table', async () => {
+    const tables = sqliteTables()
+    const t = tables.table('session_preferences')
+    const store = new SessionPreferencesStore(t)
+    store.setBookmarks('s', ['01JTURNA'])
+    expect(t.get("SELECT name FROM sqlite_master WHERE name = 'session_bookmarks'")).toBeUndefined()
+    expect(t.get('SELECT bookmarks FROM session_preferences WHERE session_key = ?', ['s'])).toEqual({
+      bookmarks: '["01JTURNA"]',
+    })
+    expect(store.setBookmarks('s', []).bookmarks).toBeUndefined()
+    expect(t.get('SELECT bookmarks FROM session_preferences WHERE session_key = ?', ['s'])).toEqual({
+      bookmarks: null,
+    })
+    await tables.close()
+  })
+
   it('replaces the whole list, keeps the first place of a repeat, and clears with an empty list', () => {
     const store = new SessionPreferencesStore()
     store.rename('s', '名称')
