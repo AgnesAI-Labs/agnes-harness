@@ -35,6 +35,23 @@ const READ_LIMIT = 256 * 1024
 const skill = readFileSync(new URL('./skills/devboard-playbook.md', import.meta.url), 'utf8')
 
 const write = { ...readOnlyTool, isReadOnly: false, isConcurrencySafe: false, replay: 'never' }
+const titles = {
+  board: '读取研发看板',
+  create_requirement: '录入研发需求',
+  create_task: '创建研发任务',
+  transition: '更新研发事项状态',
+  request_human: '请求人工决策',
+  project_create: '创建研发项目',
+  stage_update: '更新项目阶段',
+  artifact_record: '登记项目交付物',
+  req_upsert: '登记需求追溯条目',
+  gate_submit: '提交阶段评审',
+  gate_status: '读取评审决议',
+  test_record: '登记真实测试结果',
+  defect_upsert: '登记或更新缺陷',
+  change_upsert: '登记或更新变更',
+  app_register: '登记本地应用地址',
+}
 const result = Type.Object({ revision: Type.Integer(), data: Type.Unknown() }, strict)
 
 function tool(name, description, parameters, run, meta = write) {
@@ -43,7 +60,7 @@ function tool(name, description, parameters, run, meta = write) {
     description,
     parameters,
     result,
-    meta,
+    meta: { ...meta, presentation: { title: titles[name.slice('devboard_'.length)], description } },
     async execute(input, ctx) {
       ctx.signal.throwIfAborted()
       try {
