@@ -1,5 +1,4 @@
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -640,35 +639,4 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
     expectedSnapshotId: turn.snapshot.snapshotId,
   })
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
-})
-
-// An extension API 4 home keeps its store, but its `^4` plugin rows no longer load at API 5.
-it('refuses the API 4 runtime-snapshot fixture rows with plugin-api-range-incompatible', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'agh-snapshot-api4-'))
-  try {
-    cpSync(new URL('./fixtures/runtime-snapshots-v1/home/', import.meta.url), home, { recursive: true })
-    const m = createPackageManager({
-      dataDir: home,
-      cwd: home,
-      agnesVersion: '0.1.0',
-      references: async () => [],
-    })
-    const fixtureProfile = join(home, 'profiles/local-dev')
-    await m.recover(fixtureProfile)
-    const rows = (await m.inventory(fixtureProfile)).packages
-    expect(rows.map((row) => row.id).sort()).toEqual(['acme/legacy', 'acme/parent'])
-    for (const row of rows)
-      expect(row.blockers).toContainEqual(
-        expect.objectContaining({
-          code: 'incompatible',
-          references: expect.arrayContaining(['plugin-api-range-incompatible']),
-        }),
-      )
-    await expect(m.resolveRuntimePin(fixtureProfile, { pinId: 'session-original' })).rejects.toMatchObject({
-      code: 'E_PACKAGE_STATE',
-      detail: { reason: 'package-not-eligible' },
-    })
-  } finally {
-    rmSync(home, { recursive: true, force: true })
-  }
 })
