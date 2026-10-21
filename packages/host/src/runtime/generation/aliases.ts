@@ -1,4 +1,5 @@
 import type { PluginGenerationSnapshot } from '@agnes/package-manager'
+import { sameGenerationCodeAndSources } from '@agnes/package-manager'
 import type { Host, HostSession } from '../lifecycle/host.js'
 
 type Generation = { snapshot: PluginGenerationSnapshot; host: Host }
@@ -16,31 +17,11 @@ export function inheritedGenerationId(
   return parent && live.get(parent.generationId)?.host === host ? parent.generationId : fallback
 }
 
-/** Different durable ids may attest identical code. Never infer this from versions or mtimes. */
-export function sameGenerationCode(a: PluginGenerationSnapshot, b: PluginGenerationSnapshot): boolean {
-  const sources = (snapshot: PluginGenerationSnapshot) =>
-    snapshot.sources.map((source) => ({
-      ...source,
-      snapshot: { ...source.snapshot, directory: '' },
-    }))
-  return (
-    !!a.seams &&
-    !!b.seams &&
-    a.resourcesDigest !== undefined &&
-    a.compatibility === b.compatibility &&
-    a.artifact.digest === b.artifact.digest &&
-    a.resourcesDigest === b.resourcesDigest &&
-    JSON.stringify(a.seams) === JSON.stringify(b.seams) &&
-    JSON.stringify(a.packages) === JSON.stringify(b.packages) &&
-    JSON.stringify(sources(a)) === JSON.stringify(sources(b))
-  )
-}
-
 export function assertGenerationAlias(
   archived: PluginGenerationSnapshot,
   loaded: PluginGenerationSnapshot,
 ): void {
-  if (!sameGenerationCode(archived, loaded))
+  if (!sameGenerationCodeAndSources(archived, loaded))
     throw new Error('E_GENERATION_INTEGRITY: retained generation alias changed')
 }
 

@@ -23,6 +23,7 @@ import {
 } from '@agnes/system-node/owner-lock'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
+import { type GenerationReuseInputs, matchesGenerationBuildInputs } from './generation-equivalence.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
   corrupt,
@@ -129,20 +130,6 @@ export type PluginGenerationSnapshot = Readonly<{
   resourcesDigest?: string
   resources?: RuntimeGenerationResourceSnapshot
 }>
-/** The recorded inputs a generation is reused for; any difference means snapshotting afresh. */
-export type GenerationReuseInputs = Readonly<{
-  artifactDigest: string
-  compatibility: string
-  packages: PluginGenerationSnapshot['packages']
-  resourcesDigest?: string
-  seams?: GenerationSeams
-}>
-const recordedFrom = (snapshot: PluginGenerationSnapshot, expected: GenerationReuseInputs): boolean =>
-  snapshot.artifact.digest === expected.artifactDigest &&
-  snapshot.compatibility === expected.compatibility &&
-  snapshot.resourcesDigest === expected.resourcesDigest &&
-  JSON.stringify(snapshot.packages) === JSON.stringify(expected.packages) &&
-  JSON.stringify(snapshot.seams ?? null) === JSON.stringify(expected.seams ?? null)
 export type SessionGenerationPin = Readonly<{
   /** Monotonic integer of the format the pin was written in. */
   formatVersion: number
@@ -740,7 +727,7 @@ export class RuntimeGenerationSnapshotStore {
         file,
         GENERATION_SNAPSHOT_VERSION,
       )
-      return recordedFrom(record, expected)
+      return matchesGenerationBuildInputs(record, expected)
     } catch {
       return false
     }
@@ -749,7 +736,7 @@ export class RuntimeGenerationSnapshotStore {
   /** The generation when it reads cleanly and was built from exactly these inputs, adopted; else undefined. */
   #reuse(id: string, expected: GenerationReuseInputs): PluginGenerationSnapshot | undefined {
     try {
-      if (!recordedFrom(this.read(id), expected)) return undefined
+      if (!matchesGenerationBuildInputs(this.read(id), expected)) return undefined
       // Register before trusting the generation, then confirm the record survived a concurrent collection.
       this.#adopt(id)
       return this.read(id)

@@ -1,4 +1,4 @@
-import { mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
+import { isMcpServerRowId, mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
@@ -54,6 +54,9 @@ describe('mcpServerRowsFromDefinitions', () => {
       expect(row.manifest.id).toBe(row.spec.id)
       expect(row.spec.package).toBe('@agnes/base')
     }
+    for (const row of rows) expect(isMcpServerRowId(`ext:${row.spec.id}`)).toBe(true)
+    for (const id of ['ext:agnes/mcp-search', 'ext:agnes/mcp-gh-xyz', 'agnes/mcp-gh-12345678'])
+      expect(isMcpServerRowId(id)).toBe(false)
     // Distinct servers get distinct ids.
     expect(rows[0]?.spec.id).not.toBe(rows[1]?.spec.id)
   })

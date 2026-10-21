@@ -1,3 +1,4 @@
+import { isMcpServerRowId } from '@agnes/extension-api/mcp-naming'
 import type { OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -11,7 +12,7 @@ export const targetRows = (target: RuntimeTarget) => [
   ).values(),
 ]
 
-export const liveResource = (id: string) => /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)
+export const liveResource = isMcpServerRowId
 export const liveResourceRow = (row: ReturnType<typeof targetRows>[number]) =>
   liveResource(row.id) && row.plugin.startsWith('builtin:@agnes/base/')
 export const codeRow = (row: ReturnType<typeof targetRows>[number]) => {

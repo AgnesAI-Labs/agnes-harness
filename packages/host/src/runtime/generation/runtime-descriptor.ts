@@ -1,7 +1,12 @@
 import type { ProviderCatalogEntry } from '@agnes/extension-api'
 import type { PluginGenerationSnapshot, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
-import type { SessionCapabilitySet, SessionRuntimeDescriptor } from '@agnes/protocol'
+import {
+  publicErrorContract,
+  type SessionCapabilitySet,
+  type SessionRuntimeDescriptor,
+} from '@agnes/protocol'
 import type { Host } from '../lifecycle/host.js'
+import { type GenerationFailure, generationFailure } from './failure.js'
 
 type Provider = SessionRuntimeDescriptor['providers'][number]
 type Pending = NonNullable<Provider['pending']>
@@ -361,7 +366,7 @@ export function generationStatusSnapshots(
   ids: Iterable<string>,
   live: ReadonlyMap<string, { snapshot: PluginGenerationSnapshot }>,
   failed: ReadonlyMap<string, PluginGenerationSnapshot>,
-  errors: Map<string, string>,
+  errors: Map<string, GenerationFailure>,
   read: (id: string) => GenerationDescription,
 ): Map<string, GenerationDescription> {
   const snapshots = new Map<string, GenerationDescription>([
@@ -373,20 +378,25 @@ export function generationStatusSnapshots(
     try {
       snapshots.set(id, read(id))
     } catch (error) {
-      errors.set(id, String(error))
+      errors.set(id, generationFailure(error))
     }
   }
   return snapshots
 }
 
-/** Freeze the public view and redact exception text identically for sync and cooperative reads. */
+/** Freeze the public view; only schema-owned error identifiers may leave the Host. */
 export function freezeGenerationStatus(status: GenerationStatus): GenerationStatus {
-  const safe = <T extends { error?: string }>(item: T) => ({
-    ...item,
-    ...(item.error
-      ? { error: item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.' }
-      : {}),
-  })
+  const safe = <T extends { error?: string }>(item: T) =>
+    Object.freeze({
+      ...item,
+      ...(item.error
+        ? {
+            error: publicErrorContract(item.error)
+              ? item.error
+              : 'Plugin generation failed; inspect local logs.',
+          }
+        : {}),
+    })
   return Object.freeze({
     ...status,
     ...(status.blocked ? { blocked: Object.freeze(status.blocked.slice(0, 256)) } : {}),

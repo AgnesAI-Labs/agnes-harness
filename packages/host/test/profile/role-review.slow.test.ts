@@ -343,6 +343,14 @@ it('review-role: cleared, cross-profile and tampered application inputs cannot m
     await f.save()
     await expect(f.create(ref('assistant'))).rejects.toThrow('not delegable')
     await expect(f.create(ref('unknown'))).rejects.toThrow()
+    await f.save({ ...f.selection, applicationId: 'other-app' })
+    await expect(f.create()).rejects.toThrow('not delegable')
+    const altered = structuredClone(f.selection)
+    altered.consentSnapshot.declaration.brand = { name: { en: 'forged' } }
+    const { consentDigest: _digest, ...body } = altered.consentSnapshot
+    altered.consentDigest = altered.consentSnapshot.consentDigest = digest(body)
+    await f.save(altered)
+    await expect(f.create()).rejects.toThrow('not delegable')
     await f.save({ ...f.selection, consentDigest: '0'.repeat(64) })
     await expect(f.create()).rejects.toThrow('not delegable')
     await f.save({
