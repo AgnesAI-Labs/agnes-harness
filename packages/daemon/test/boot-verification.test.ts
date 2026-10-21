@@ -9,6 +9,7 @@ import {
   withoutPackageVerification,
 } from '../../package-manager/src/verification-operation.js'
 import { openBootVerification } from '../src/supervisor/boot-verification.js'
+import { resolveDaemonProfile } from '../src/supervisor/scope.js'
 import { runAgnesd, type startProductionSupervisor } from '../src/supervisor/supervisor.js'
 
 const roots: string[] = []
@@ -162,3 +163,33 @@ it('hashes each installed tree once across runAgnesd boot reads, while gates and
   await late
   expect(trees.get(installed)).toBe(1)
 }, 120_000)
+
+it('closes the boot boundary when runAgnesd throws between bound steps', async () => {
+  const { dir, identity } = fixture()
+  const temporary = mkdtempSync(join(tmpdir(), 'agh-boot-throw-'))
+  roots.push(temporary)
+  const home = join(temporary, 'home')
+  createPrivateDirectorySync(home)
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let late!: Promise<string>
+  await expect(
+    runAgnesd(
+      { profile: 'local-dev', home, workspace: home },
+      {
+        // A bound step memoizes the tree and leaves a task behind; the local Web check then throws.
+        resolveProfile: async (...input) => {
+          verifiedDirectoryDigest(dir, identity)
+          late = gate.then(() => verifiedDirectoryDigest(dir, identity))
+          return resolveDaemonProfile(...input)
+        },
+        localWeb: { addr: '127.0.0.1:0', origin: '' },
+      },
+    ),
+  ).rejects.toThrow('local Web requires both address and exact origin')
+  writeFileSync(join(dir, 'payload'), 'changed after a failed boot')
+  release()
+  expect(await late).not.toBe(identity.treeIntegrity)
+})
