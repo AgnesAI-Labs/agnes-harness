@@ -116,7 +116,8 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       await live?.fullVerified()
       raw(file, TAMPER, 'k', 10)
       const log = live ?? (await SessionLogImpl.open(options(storage, 'r1')))
-      if (live) await expect(live.verifyHistory()).resolves.toBe(50)
+      // A live log already hashed its prefix; only a full recheck hashes it again.
+      if (live) await expect(live.verifyHistory({ rehashPrefix: true })).resolves.toBe(50)
       expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
       expect(log.historyVerified).toBe(false)
       // Issued while the verification is still running: held, then refused, and nothing lands.
@@ -139,6 +140,25 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       })
     },
   )
+
+  it('reopening a live log skips its hashed prefix: a changed old row is found by the next cold open', async () => {
+    const file = await built()
+    const storage = sqlite(file)
+    const live = await SessionLogImpl.open(options(storage, 'r1'))
+    await live.fullVerified()
+    raw(file, TAMPER, 'k', 10)
+    await expect(live.verifyHistory()).resolves.toBe(50)
+    await live.fullVerified()
+    expect(live.faulted).toBe(false)
+    await expect(live.append([input('model-side write')])).resolves.toMatchObject({ firstSeq: 51 })
+    await live.close()
+    const cold = await SessionLogImpl.open(options(storage, 'r2'))
+    await expect(cold.fullVerified()).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 10 },
+    })
+    await cold.close()
+  })
 
   it('a row changed after the checkpoint: the unverified tail is hashed at open, which fails', async () => {
     const file = await built()

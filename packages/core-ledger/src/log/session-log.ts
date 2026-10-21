@@ -170,6 +170,9 @@ export class SessionLogImpl {
   private readonly verifyAbort = new AbortController()
   /** When this process last finished verifying the full chain it extends. */
   private verifiedFullAtMs: number
+  // Whether this process has hashed the whole chain this log extends. Reopening such a log rechecks
+  // only the tail after its checkpoint, not the prefix again.
+  private chainHashed = false
   /** Set once by `open`; a child opened from a live parent reports the zero value. */
   openStats: SessionOpenStats
   // Appends are serialized through a promise chain rather than run concurrently: seq assignment and
@@ -240,9 +243,12 @@ export class SessionLogImpl {
           : { used: false, reason: decision.reason },
       }
       if (decision.use) log.fullVerifyPromise = log.startBackgroundVerify(decision.head)
-      // Everything was verified just now, under this writer's lease, so the head is a verified head.
-      // It replaces a checkpoint the open could not use: one past the head would otherwise stay.
-      else void log.writeHead(true).catch(() => undefined)
+      else {
+        // Everything was verified just now, under this writer's lease, so the head is a verified head.
+        // It replaces a checkpoint the open could not use: one past the head would otherwise stay.
+        log.chainHashed = true
+        void log.writeHead(true).catch(() => undefined)
+      }
       return log
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
@@ -319,8 +325,16 @@ export class SessionLogImpl {
     return this.closed
   }
 
-  /** Recheck the tail now and the checkpointed prefix behind the execution gate, as on cold open. */
-  async verifyHistory(options: import('./integrity.js').VerificationOptions = {}): Promise<number> {
+  /**
+   * Recheck the tail after the checkpoint now. A prefix this process has not hashed yet is hashed behind
+   * the execution gate, as on cold open; one it already hashed is hashed again only when `rehashPrefix`
+   * asks for a full recheck. A row changed before the checkpoint of a live log is otherwise found by
+   * the next cold open, not by reopening it.
+   */
+  async verifyHistory(
+    options: import('./integrity.js').VerificationOptions & { rehashPrefix?: boolean } = {},
+  ): Promise<number> {
+    const { rehashPrefix = false, ...verification } = options
     // Serialize verification cycles too: a previous completion must never release a newer gate.
     while (this.fullVerifyState === 'pending')
       await waitForVerification(this.fullVerifyPromise, options.signal)
@@ -334,7 +348,7 @@ export class SessionLogImpl {
       this.guard()
       const expected = { ...this.integrityState }
       const result = await verifyCheckpointHistory(this.storage, this.key, expected.lastSeq, {
-        ...options,
+        ...verification,
         signal: this.verifyAbort.signal,
         onProgress: (progress) => {
           if (!options.signal?.aborted) options.onProgress?.(progress)
@@ -351,12 +365,13 @@ export class SessionLogImpl {
     this.fullVerifyPromise = foreground.then(
       async ({ decision }) => {
         if (this.closed) return this.failVerification(new CoreError('E_CLOSED', 'session closed'))
-        if (decision.use) {
+        if (decision.use && (rehashPrefix || !this.chainHashed))
           await this.startBackgroundVerify(decision.head)
-        } else {
+        else {
           this.fullVerifyState = 'done'
-          this.verifiedFullAtMs = this.o.clock()
-          await this.writeHead(true).catch(() => undefined)
+          // Without a usable checkpoint the foreground just hashed everything.
+          if (!decision.use) this.verifiedFullAtMs = this.o.clock()
+          await this.writeHead(!decision.use).catch(() => undefined)
         }
       },
       (error: unknown) => this.failVerification(error),
@@ -420,6 +435,7 @@ export class SessionLogImpl {
     const completion = verified.then(
       async () => {
         this.fullVerifyState = 'done'
+        this.chainHashed = true
         this.verifiedFullAtMs = this.o.clock()
         report()
         // A log that closed meanwhile has handed its lease back; it writes nothing more.

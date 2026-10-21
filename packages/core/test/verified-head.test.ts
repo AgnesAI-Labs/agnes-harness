@@ -190,6 +190,8 @@ function held(
   }
 }
 
+// A live log already hashed its prefix; these rechecks ask for it again (`rehashPrefix`), which hashes it
+// in the background behind the execution gate, as a cold open does.
 describe('warm checkpoint rechecks', () => {
   it.each(['tail', 'checkpoint'] as const)(
     'refuses a changed %s in the foreground and seals before admitting another write',
@@ -243,7 +245,9 @@ describe('warm checkpoint rechecks', () => {
     await log.append([input('tail')])
     slow.arm()
     const progress: number[] = []
-    expect(await log.verifyHistory({ onProgress: (p) => progress.push(p.verifiedSeq) })).toBe(11)
+    expect(
+      await log.verifyHistory({ rehashPrefix: true, onProgress: (p) => progress.push(p.verifiedSeq) }),
+    ).toBe(11)
     expect(progress).toEqual([10, 11])
     await slow.reached
     expect(log.historyVerified).toBe(false)
@@ -256,6 +260,7 @@ describe('warm checkpoint rechecks', () => {
       .fullVerified()
       .then(() =>
         log.verifyHistory({
+          rehashPrefix: true,
           onProgress: () => {
             checkingAgain = true
           },
@@ -296,7 +301,7 @@ describe('warm checkpoint rechecks', () => {
     await log.fullVerified()
     slow.arm()
     tamper(storage, 'k', 2)
-    await expect(log.verifyHistory()).resolves.toBe(10)
+    await expect(log.verifyHistory({ rehashPrefix: true })).resolves.toBe(10)
     await slow.reached
     const fork = log.forkInto(5, 'child', {
       actor,
@@ -334,10 +339,10 @@ describe('warm checkpoint rechecks', () => {
     await second.log.fullVerified()
     slow.arm()
     const controller = new AbortController()
-    await second.session.verifyHistory({ signal: controller.signal })
+    await second.session.verifyHistory({ rehashPrefix: true, signal: controller.signal })
     await slow.reached
     // A second observer waiting for that same live log can leave without releasing its gate.
-    const cancelled = second.session.verifyHistory({ signal: controller.signal })
+    const cancelled = second.session.verifyHistory({ rehashPrefix: true, signal: controller.signal })
     controller.abort()
     await expect(cancelled).rejects.toMatchObject({ code: 'E_CLOSED' })
     await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
@@ -356,7 +361,7 @@ describe('warm checkpoint rechecks', () => {
     await log.fullVerified()
     const head = await storage.readVerifiedHead('k')
     slow.arm()
-    await log.verifyHistory()
+    await log.verifyHistory({ rehashPrefix: true })
     await slow.reached
     const waiting = log.append([input('model-side')])
     await log.close()
@@ -413,6 +418,53 @@ describe('warm checkpoint rechecks', () => {
       await log.close()
     },
   )
+})
+
+describe('reopening a live log this process already verified', () => {
+  it.each(['checkpoint', 'full'] as const)(
+    'checks only the tail after the checkpoint, not the prefix again (opened from %s)',
+    async (opened) => {
+      const storage = await seeded(1200)
+      // Without a checkpoint the open hashes everything in the foreground instead of in the background.
+      if (opened === 'full') await storage.deleteVerifiedHead('k')
+      let rows = 0
+      const counted: StorageAdapter = Object.create(storage)
+      counted.scanIntegrity = async (key, q) => {
+        const page = await storage.scanIntegrity(key, q)
+        rows += page.length
+        return page
+      }
+      const log = await SessionLogImpl.open(options(counted, 'live'))
+      expect(log.openStats.checkpoint.used).toBe(opened === 'checkpoint')
+      await log.fullVerified()
+      await vi.waitFor(async () => expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(1200))
+      for (const text of ['a', 'b', 'c']) await log.append([input(text)])
+      rows = 0
+      await expect(log.verifyHistory()).resolves.toBe(1203)
+      expect(log.historyVerified).toBe(true)
+      await log.fullVerified()
+      expect(rows).toBe(3)
+      await log.close()
+    },
+  )
+
+  it('no longer notices a changed row before the checkpoint; a cold open still does', async () => {
+    const storage = await seeded(10)
+    const log = await SessionLogImpl.open(options(storage, 'live'))
+    await log.fullVerified()
+    tamper(storage, 'k', 2)
+    await expect(log.verifyHistory()).resolves.toBe(10)
+    await log.fullVerified()
+    expect(log.faulted).toBe(false)
+    await expect(log.append([input('model-side')])).resolves.toMatchObject({ firstSeq: 11 })
+    await log.close()
+    const cold = await SessionLogImpl.open(options(storage, 'cold'))
+    await expect(cold.fullVerified()).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 2 },
+    })
+    await cold.close()
+  })
 })
 
 describe('the background verification', () => {
@@ -823,7 +875,8 @@ describe('perf3-review: live checkpoint regression matrix', () => {
         force: true,
       })
     }
-    const checked = log.verifyHistory().then(
+    // A changed prefix of a live log is found only by a full recheck; the other changes by any recheck.
+    const checked = log.verifyHistory(change === 'prefix' ? { rehashPrefix: true } : {}).then(
       (value) => ({ value }),
       (error) => ({ error }),
     )
@@ -868,7 +921,7 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       const head = await storage.readVerifiedHead('k')
       reports.length = 0
       armed = true
-      await log.verifyHistory().catch(() => undefined)
+      await log.verifyHistory({ rehashPrefix: stage === 'background' }).catch(() => undefined)
       await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
       await expect(log.append([input('normal')])).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
       await expect(log.append([input('queued input')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
@@ -907,7 +960,7 @@ describe('perf3-review: live checkpoint regression matrix', () => {
     })
     await entered
     slow.arm()
-    const checking = log.verifyHistory()
+    const checking = log.verifyHistory({ rehashPrefix: true })
     expect(log.historyVerified).toBe(false)
     release()
     await expect(admitted).resolves.toMatchObject({ firstSeq: 11 })
@@ -940,10 +993,10 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       const head = await storage.readVerifiedHead('k')
       slow.arm()
       tamper(storage, 'k', 2)
-      await log.verifyHistory()
+      await log.verifyHistory({ rehashPrefix: true })
       await slow.reached
       const controller = new AbortController()
-      const next = log.verifyHistory({ signal: controller.signal }).then(
+      const next = log.verifyHistory({ rehashPrefix: true, signal: controller.signal }).then(
         (value) => ({ value }),
         (error) => ({ error }),
       )
@@ -991,7 +1044,7 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       await second.log.fullVerified()
       slow.arm()
       tamper(storage, 'k', 1)
-      await second.session.verifyHistory()
+      await second.session.verifyHistory({ rehashPrefix: true })
       await slow.reached
       const stepping = second.session.step().then(
         (value) => ({ value }),
@@ -1076,7 +1129,7 @@ it('waits for failed checkpoint deletion before close hands back the writer', as
   try {
     await log.fullVerified()
     tamper(storage, 'k', 2)
-    await log.verifyHistory().catch(() => undefined)
+    await log.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
     await vi.waitFor(() => expect(removing).toBe(true))
     const closing = log.close().then(() => {
       finished = true
