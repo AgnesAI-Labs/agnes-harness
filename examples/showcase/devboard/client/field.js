@@ -1,5 +1,6 @@
 import { Badge, Button, PushPage, Select, Table } from '@agnes/web-ui'
 import React from 'react'
+import { ApprovalEntry } from './approvals.js'
 import {
   byId,
   day,
@@ -12,9 +13,10 @@ import {
   stateBadge,
   TransitionBar,
   time,
+  useDetail,
   useProject,
 } from './board.js'
-import { inProject, stateLabels, useDetail } from './records.js'
+import { inProject, stateLabels } from './records.js'
 
 const DAY = 86_400_000
 const resultBadge = (data, result) =>
@@ -60,7 +62,7 @@ function DraftChange({ trial, board, role }) {
   )
 }
 
-export function Trials({ data, board, role }) {
+export function Trials({ data, board, role, setRole }) {
   const [selected, open] = useDetail()
   const [projectId, setProjectId] = useProject(data, true)
   const [type, setType] = React.useState('')
@@ -169,6 +171,7 @@ export function Trials({ data, board, role }) {
             !item.changeId &&
             item.state !== 'APPROVED' &&
             h(DraftChange, { trial: item, board, role }),
+          h(ApprovalEntry, { data, board, role, setRole, type: 'trial', id: item.id }),
           h(TransitionBar, {
             key: item.id,
             data,
@@ -176,6 +179,7 @@ export function Trials({ data, board, role }) {
             item,
             board,
             role,
+            hidden: ['APPROVED'],
             fields: [
               { key: 'reportNo', label: '报告号（出具报告时必填）' },
               {
@@ -261,7 +265,7 @@ const stepChips = (problem) =>
     STEPS.map((s) => h(Badge, { key: s, tone: problem.steps?.[s]?.done ? 'ok' : 'off' }, s)),
   )
 
-export function Service({ data, board, role }) {
+export function Service({ data, board, role, setRole }) {
   const [selected, open] = useDetail()
   const [projectId, setProjectId] = useProject(data, true)
   const [signal, setSignal] = React.useState('')
@@ -411,6 +415,7 @@ export function Service({ data, board, role }) {
             { className: 'devboard-muted' },
             '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或写明无需变更的理由。',
           ),
+          h(ApprovalEntry, { data, board, role, setRole, type: 'problem', id: problem.id }),
           h(TransitionBar, {
             key: problem.id,
             data,
@@ -418,6 +423,7 @@ export function Service({ data, board, role }) {
             item: problem,
             board,
             role,
+            hidden: ['CLOSED'],
             fields: [
               { key: 'rootCause', label: '根本原因（进入措施前必填）' },
               { key: 'noChangeReason', label: '无需变更的理由（无关联变更时关闭必填）' },

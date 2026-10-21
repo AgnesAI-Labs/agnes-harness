@@ -1,5 +1,6 @@
 import { Badge, Button, Field, PushPage, Select, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
+import { ApprovalEntry } from './approvals.js'
 import {
   byId,
   continueWork,
@@ -193,9 +194,16 @@ export function Overview({ data, board, role }) {
   const interventions = data.interventions.filter((i) => i.state === 'OPEN' || i.state === 'EXPIRED')
   const ccb = data.changes.filter((c) => c.state === 'CCB_REVIEW')
   const overdue = data.projects.filter((p) => p.metrics.overdue)
+  const lateFlows = data.approvals.filter((a) => a.overdue)
   return h(
     React.Fragment,
     null,
+    lateFlows.length > 0 &&
+      h(
+        'p',
+        { className: 'devboard-alert', role: 'alert' },
+        `${lateFlows.length} 个审批节点已超时：${lateFlows.map((a) => `${a.id}（${a.nodes[a.current].name}）`).join('、')}，见「我的待办」。`,
+      ),
     overdue.length > 0 &&
       h(
         'p',
@@ -207,6 +215,7 @@ export function Overview({ data, board, role }) {
       { className: 'devboard-kpis' },
       [
         ['待决议评审门', pending.length],
+        ['审批中的流程', data.approvals.filter((a) => a.state === 'RUNNING').length],
         ['待处理人工介入', interventions.length],
         ['待 CCB 决议变更', ccb.length],
         ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
@@ -730,7 +739,12 @@ export function Projects({ data, board, role, setRole }) {
           title: `${artifact.id} ${artifact.title}`,
           description: `${artifact.version} · ${data.labels.state[artifact.status]} · ${artifact.authorRole}`,
         },
-        h(ArtifactPreview, { board, artifact }),
+        h(
+          'div',
+          { className: 'devboard-detail' },
+          h(ApprovalEntry, { data, board, role, setRole, type: 'artifact', id: artifact.id }),
+          h(ArtifactPreview, { board, artifact }),
+        ),
       ),
     gate &&
       h(

@@ -96,6 +96,19 @@ function useStored(key, fallback, valid) {
 /** Demo identity only: it signs actions and gates a few buttons; it is not a security boundary. */
 export const useRole = () => useStored(ROLE_KEY, '项目经理', (r) => r.length > 0 && r.length <= 32)
 
+/** Open a detail page of a list: remember which row and push the page by id. */
+export function useDetail() {
+  const push = usePushStack()
+  const [selected, setSelected] = React.useState('')
+  return [
+    selected,
+    (id, page = 'detail') => {
+      setSelected(id)
+      push.open(page)
+    },
+  ]
+}
+
 /** The project selected on one page stays selected on the others in this tab. */
 export function useProject(data, allowAll = false) {
   const ids = data.projects.map((p) => p.id)

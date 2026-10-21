@@ -1,10 +1,11 @@
 import { Button } from '@agnes/web-ui'
 import React from 'react'
+import { MyTodo } from './approvals.js'
 import { h, Shell, useBoard, useRole } from './board.js'
 import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
 import { Panorama } from './panorama.js'
-import { Changes, Quality, Reviews, Tasks, Trace } from './records.js'
+import { Changes, Quality, Tasks, Trace } from './records.js'
 
 /** id → [zh title, en title, icon, view, description]; order is the navigation order. */
 const PAGES = {
@@ -39,11 +40,11 @@ const PAGES = {
     '缺陷状态流转、缺陷趋势与测试运行记录。',
   ],
   'devboard-reviews': [
-    '评审待办',
-    'Reviews',
+    '我的待办',
+    'My to-dos',
     'shield',
-    Reviews,
-    '待决议的评审门与人工介入请求；只有门要求的审批角色能签署，会签门每个角色各签一次。',
+    MyTodo,
+    '待我处理、我发起的与已办：审批流程节点、评审门与人工介入请求；只有节点或门要求的角色能处理，非处理角色只读并可一键切换角色。',
   ],
   panorama: [
     '研发全景',

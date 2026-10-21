@@ -662,4 +662,74 @@
       position: static;
     }
   }
+  /* Approval flows: the node graph and the three to-do columns. */
+  .devboard-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 170px;
+    max-width: 260px;
+    padding: 10px 12px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-node + .devboard-node::before {
+    content: "\2192";
+    position: absolute;
+    inset-inline-start: -14px;
+    top: 12px;
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-node-current {
+    border-color: var(--agnes-brand-focus-ring);
+    box-shadow: 0 0 0 1px var(--agnes-brand-focus-ring);
+  }
+  .devboard-node-waiting,
+  .devboard-node-skipped {
+    opacity: 0.7;
+  }
+  .devboard-node-overdue {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
+  .devboard-overdue-text {
+    color: var(--agnes-status-danger-text);
+    font-size: 12px;
+  }
+  .devboard-inline {
+    width: 200px;
+  }
+  .devboard-todo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .devboard-todo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .devboard-todo-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+  }
+  .devboard-todo-overdue {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
 }

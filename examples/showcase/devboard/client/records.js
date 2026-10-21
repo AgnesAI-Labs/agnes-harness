@@ -1,11 +1,9 @@
 import { Badge, Button, Field, PushPage, Segmented, Select, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
+import { ApprovalEntry } from './approvals.js'
 import {
   byId,
-  continueWork,
   fact,
-  gateBadge,
-  gateName,
   HistoryTable,
   h,
   idLink,
@@ -14,32 +12,17 @@ import {
   options,
   ProjectSelect,
   pct,
-  RoleHint,
-  signProgress,
-  stageName,
   stateBadge,
   TransitionBar,
   time,
+  useDetail,
   useProject,
 } from './board.js'
-import { GatePanel } from './lifecycle.js'
 
 export const stateLabels = (data, kind) =>
   Object.fromEntries(Object.keys(data.machines[kind]).map((s) => [s, data.labels.state[s]]))
 export const inProject = (projectId) => (x) => !projectId || x.projectId === projectId
 const ProjectCell = (id) => id ?? '—'
-
-export function useDetail() {
-  const push = usePushStack()
-  const [selected, setSelected] = React.useState('')
-  return [
-    selected,
-    (id, page = 'detail') => {
-      setSelected(id)
-      push.open(page)
-    },
-  ]
-}
 
 // ── Requirements and traceability ──────────────────────────────────────────────────────────────
 
@@ -555,7 +538,7 @@ function RetrofitBar({ change, board, role }) {
   )
 }
 
-export function Changes({ data, board, role }) {
+export function Changes({ data, board, role, setRole }) {
   const [selected, open] = useDetail()
   const [projectId, setProjectId] = useProject(data, true)
   const rows = data.changes.filter(inProject(projectId))
@@ -655,10 +638,11 @@ export function Changes({ data, board, role }) {
           h(
             'p',
             { className: 'devboard-muted' },
-            '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；批准后生成 ECN 与新的设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
+            '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；CCB 批准只能经 ECR 审批流程（专业会签 → CCB 决议），批准后生成 ECN，ECN 发布流程批准后生成设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
           ),
           item.retrofit && h(RetrofitBar, { change: item, board, role }),
-          h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role }),
+          h(ApprovalEntry, { data, board, role, setRole, type: 'change', id: item.id }),
+          h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role, hidden: ['APPROVED'] }),
           h(HistoryTable, { data, history: item.history }),
         ),
       ),
@@ -831,154 +815,3 @@ export function Quality({ data, board, role }) {
 }
 
 // ── Reviews: gates and human interventions ─────────────────────────────────────────────────────
-
-export function Reviews({ data, board, role, setRole }) {
-  const [selected, open] = useDetail()
-  const [view, setView] = React.useState('pending')
-  const stage = (g) => byId(data.stages, g.stageId)
-  const gates = data.gates
-    .filter((g) => (view === 'pending' ? g.decision === 'PENDING' : g.decision !== 'PENDING'))
-    .sort(
-      (a, b) => Date.parse(b.decidedAt ?? b.submittedAt ?? 0) - Date.parse(a.decidedAt ?? a.submittedAt ?? 0),
-    )
-  const gate = byId(data.gates, selected)
-  const intervention = byId(data.interventions, selected)
-  const hidden = /工程师$/.test(role) ? ['CLAIMED'] : []
-  return h(
-    React.Fragment,
-    null,
-    h(
-      'div',
-      { className: 'devboard-filters' },
-      h(Segmented, {
-        label: '评审门',
-        value: view,
-        onChange: setView,
-        options: [
-          {
-            value: 'pending',
-            label: `待决议（${data.gates.filter((g) => g.decision === 'PENDING').length}）`,
-          },
-          { value: 'decided', label: '已决议' },
-        ],
-      }),
-      h(
-        'span',
-        { className: 'devboard-muted' },
-        '只有门要求的审批角色能签署；会签门每个角色各签一次，最后一位签署时需关闭全部意见；编写角色不能审批。',
-      ),
-    ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '评审门',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: gates,
-      empty: view === 'pending' ? '没有待决议的评审门' : '暂无已决议的评审门',
-      columns: [
-        {
-          title: '评审点',
-          render: (_v, g) =>
-            h(Button, { appearance: 'link', onClick: () => open(g.id, 'gate') }, gateName(g)),
-          width: 220,
-        },
-        {
-          title: '项目 / 阶段',
-          render: (_v, g) =>
-            `${stage(g)?.projectId} ${stageName(data, stage(g)?.projectId, stage(g)?.stage)}`,
-          width: 240,
-        },
-        { title: '审批角色', render: (_v, g) => g.approverRoles.join('、'), width: 130 },
-        { title: '会签', render: (_v, g) => signProgress(g), width: 160 },
-        { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 70 },
-        { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
-        ...(view === 'decided'
-          ? [{ title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 }]
-          : []),
-        {
-          title: '',
-          render: (_v, g) =>
-            g.decision === 'PENDING'
-              ? stage(g)?.author === role
-                ? h(Badge, { tone: 'warn' }, '编写角色不能审批')
-                : h(
-                    RoleHint,
-                    { gate: g, role, setRole },
-                    h(Button, { appearance: 'primary', onClick: () => open(g.id, 'gate') }, '批准'),
-                  )
-              : byId(data.projects, stage(g)?.projectId)?.live &&
-                h(Button, { onClick: () => continueWork(board, { type: 'gate', id: g.id }) }, '继续推进'),
-          width: 240,
-        },
-      ],
-    }),
-    h('h2', { className: 'devboard-heading' }, '人工介入请求'),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '人工介入请求',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: data.interventions,
-      rowClassName: (r) => (r.state === 'EXPIRED' ? 'devboard-overdue' : ''),
-      columns: [
-        {
-          title: '编号',
-          dataIndex: 'id',
-          render: (id) => h(Button, { appearance: 'link', onClick: () => open(id, 'intervention') }, id),
-          width: 90,
-        },
-        { title: '类型', dataIndex: 'type', render: (t) => data.labels.interventionType[t], width: 90 },
-        { title: '问题', dataIndex: 'ask' },
-        { title: '项目', dataIndex: 'projectId', render: ProjectCell, width: 120 },
-        { title: '截止', dataIndex: 'dueAt', render: time, width: 140 },
-        { title: '处理人', dataIndex: 'handler', render: (v) => v ?? '—', width: 100 },
-        { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 90 },
-      ],
-    }),
-    gate &&
-      h(
-        PushPage,
-        { id: 'gate', title: gateName(gate), description: gate.id },
-        h(GatePanel, { key: gate.id, data, gate, board, role, setRole }),
-      ),
-    intervention &&
-      h(
-        PushPage,
-        {
-          id: 'intervention',
-          title: `${intervention.id} ${data.labels.interventionType[intervention.type]}`,
-          description: intervention.ask,
-        },
-        h(
-          'div',
-          { className: 'devboard-detail' },
-          intervention.state === 'EXPIRED' &&
-            h('p', { className: 'devboard-alert', role: 'alert' }, '该请求已超过截止时间。'),
-          h(
-            'dl',
-            { className: 'devboard-facts' },
-            fact('状态', stateBadge(data, intervention.state)),
-            fact('关联', intervention.entity.id),
-            fact('发起人', intervention.requestedBy),
-            fact('截止时间', time(intervention.dueAt)),
-            fact('处理人', intervention.handler),
-            fact('处理结论', intervention.resolution),
-          ),
-          hidden.length > 0 &&
-            intervention.state !== 'CLAIMED' &&
-            h(Badge, { tone: 'warn' }, '工程师角色不能认领介入请求，请切换演示角色。'),
-          h(TransitionBar, {
-            key: intervention.id,
-            data,
-            kind: 'intervention',
-            item: intervention,
-            board,
-            role,
-            hidden,
-            noteLabel: '处理结论 / 备注',
-          }),
-          h(HistoryTable, { data, history: intervention.history }),
-        ),
-      ),
-  )
-}
