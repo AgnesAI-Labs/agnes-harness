@@ -454,7 +454,7 @@ export const tools = [
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Leave CCB decisions to people unless told otherwise. 登记或推进变更。',
+    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
     Type.Object(
       {
         id: Type.Optional(id),

@@ -9,10 +9,13 @@ const fail = (message) => {
   throw new DomainError(message)
 }
 
-/** "质量工程师 韩雪" and "质量工程师" both sign as 质量工程师; "RAMS 工程师 唐力" keeps its inner space. */
+/** Names and role specialities share the canonical role; RAMS keeps its inner space. */
 export const roleOf = (by) => {
   const text = String(by ?? '').trim()
-  return ROLES.find((r) => text === r || text.startsWith(`${r} `)) ?? text.split(/\s+/)[0]
+  return (
+    ROLES.find((r) => text === r || [' ', '（', '('].some((suffix) => text.startsWith(r + suffix))) ??
+    text.split(/\s+/)[0]
+  )
 }
 
 const HOUR = 3_600_000

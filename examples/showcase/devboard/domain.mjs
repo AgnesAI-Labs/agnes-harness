@@ -983,7 +983,7 @@ function createChange(state, input, at, now) {
     state: 'SUBMITTED',
     history: [],
   }
-  record(item, at, by, null, 'SUBMITTED', '提交')
+  record(item, at, by, null, 'SUBMITTED', (!input.to && optional(input.note, 2000)) || '提交')
   state.changes.push(item)
   // A change drafted from a trial (source TYPE_TEST, ref = trial id) becomes that trial's linked change.
   const trial = item.source.type === 'TYPE_TEST' && state.trials.find((t) => t.id === item.source.ref)
@@ -1033,6 +1033,10 @@ export function updateChange(state, input, now = Date.now()) {
       ...(trialId ? { trialId } : {}),
     }
   }
+  const note = optional(input.note, 2000)
+  // A transition records its own note; an analysis-only update must preserve it too.
+  if (note && !input.to)
+    record(cr, new Date(now).toISOString(), input.by || '未署名', cr.state, cr.state, note)
   return cr
 }
 
@@ -1408,7 +1412,7 @@ const AUTHOR_FALLBACK = {
 function authorRole(type, subject) {
   const role =
     type === 'artifact'
-      ? subject.authorRole
+      ? roleOf(subject.authorRole)
       : roleOf(
           type === 'change'
             ? subject.raisedBy
@@ -1416,7 +1420,9 @@ function authorRole(type, subject) {
               ? subject.owner
               : subject.history?.[0]?.by,
         )
-  return ROLES.includes(role) ? role : AUTHOR_FALLBACK[type]
+  if (ROLES.includes(role)) return role
+  if (type === 'artifact' && subject.authorRole != null) fail('无法识别编制角色，请填写已知岗位后再发起审批')
+  return AUTHOR_FALLBACK[type]
 }
 
 /** What a subject must look like for its template to start. */

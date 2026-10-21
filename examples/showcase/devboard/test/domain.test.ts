@@ -707,26 +707,59 @@ describe('change requests and the field-to-design loop', () => {
     const { state, p } = inService()
     const cr = create(
       state,
-      { kind: 'change', projectId: p.id, title: '缓冲头 B → C', reason: 'r', ...bufferChange },
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '缓冲头 B → C',
+        reason: 'r',
+        ...bufferChange,
+        note: '方案依据：模拟阈值 300 N',
+        by: '软件设计师 张衡',
+      },
       NOW,
     )
     expect(cr.source).toEqual({ type: 'FIELD', ref: 'QP-2026-001' })
+    expect(cr.history[0]).toMatchObject({ by: '软件设计师 张衡', note: '方案依据：模拟阈值 300 N' })
     expect(() => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)).toThrow(
       '缺少失效原因分析',
     )
-    updateChange(state, { id: cr.id, rootCause: '材料耐磨不足' })
-    expect(transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
-      'ANALYZED',
+    updateChange(
+      state,
+      { id: cr.id, rootCause: '材料耐磨不足', note: '补充根因依据', by: '质量工程师 韩雪' },
+      NOW,
     )
+    expect(cr.history.at(-1)).toMatchObject({
+      from: 'SUBMITTED',
+      to: 'SUBMITTED',
+      by: '质量工程师 韩雪',
+      note: '补充根因依据',
+    })
+    const moving = { id: cr.id, to: 'ANALYZED', note: '分析完成', by: 'x' }
+    updateChange(state, moving, NOW)
+    expect(transition(state, { kind: 'change', ...moving }, NOW).state).toBe('ANALYZED')
+    expect(cr.history.filter((entry: Item) => entry.note === moving.note)).toHaveLength(1)
     const internal = create(
       state,
-      { kind: 'change', projectId: p.id, title: 'i', reason: 'r', impact: { reqs: ['CUS-001'] } },
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: 'i',
+        reason: 'r',
+        impact: { reqs: ['CUS-001'] },
+        to: 'ANALYZED',
+        note: '内部分析完成',
+      },
       NOW,
     )
     expect(internal.source).toEqual({ type: 'INTERNAL' })
-    expect(transition(state, { kind: 'change', id: internal.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
-      'ANALYZED',
-    )
+    expect(
+      transition(
+        state,
+        { kind: 'change', id: internal.id, to: 'ANALYZED', by: 'x', note: '内部分析完成' },
+        NOW,
+      ).state,
+    ).toBe('ANALYZED')
+    expect(internal.history.filter((entry: Item) => entry.note === '内部分析完成')).toHaveLength(1)
     const typeTest = create(
       state,
       {
@@ -1141,6 +1174,27 @@ describe('approval flows', () => {
     // a rejected flow frees the object for a new one
     act(state, flow.id, '机械设计师', 'REJECT', { comment: '不合格' })
     expect(doc(state).id).toBe('AP-2026-0002')
+    for (const author of [
+      '软件设计师',
+      '软件设计师 张衡',
+      '软件设计师（架构）',
+      '软件设计师（开发） 张衡',
+      '软件设计师(架构)',
+    ]) {
+      const other = setup().state
+      other.artifacts[0].authorRole = author
+      const release = doc(other)
+      expect(release.initiator.role).toBe('软件设计师')
+      expect(release.nodes[0].roles).not.toContain('软件设计师')
+      expect(() => act(other, release.id, author, 'APPROVE')).toThrow('需由')
+    }
+    const unknown = setup().state
+    unknown.artifacts[0].authorRole = '未知编制岗位'
+    expect(() => doc(unknown)).toThrow('无法识别编制角色')
+    expect(unknown.approvals).toEqual([])
+    const legacy = setup().state
+    delete legacy.artifacts[0].authorRole
+    expect(doc(legacy).initiator.role).toBe('系统设计师')
   })
 
   it('walks SERIAL nodes to APPROVED, baselines the deliverable and refuses the wrong role, node and a finished flow', () => {
