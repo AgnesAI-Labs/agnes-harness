@@ -6,9 +6,9 @@ import { createRefineHarness, packageStorage, RefineQueue } from '@agnes/base'
 import {
   CoreError,
   defaultIds,
-  SessionLogImpl,
-  makeVerifiedHead,
   LEDGER_INTEGRITY_ALGORITHM,
+  makeVerifiedHead,
+  SessionLogImpl,
 } from '@agnes/core'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {

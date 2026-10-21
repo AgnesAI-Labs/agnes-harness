@@ -1,4 +1,3 @@
-import { withLock } from '@agnes/package-manager'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,7 +12,13 @@ import {
 } from '@agnes/daemon-rpc/local/prompter'
 import { resolveToolCallPolicy, type ToolDef } from '@agnes/extension-api'
 import type { HostSession, PluginManageInvocation } from '@agnes/host'
-import { createPackageManager, emptyLock, readDevelopmentPlugin, writeLock } from '@agnes/package-manager'
+import {
+  createPackageManager,
+  emptyLock,
+  readDevelopmentPlugin,
+  withLock,
+  writeLock,
+} from '@agnes/package-manager'
 import type { AuthoringCandidate, AuthoringTests, InferenceEvent } from '@agnes/protocol'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'

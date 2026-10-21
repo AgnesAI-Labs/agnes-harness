@@ -139,11 +139,25 @@ it('ships all official example payloads with runnable community entries and no c
 it('packages a declared TypeScript entry and public Markdown without a family privilege or prebuilt dist', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-example-source-'))
   roots.push(root)
-  const source = join(root, 'source'), output = join(root, 'payload')
+  const source = join(root, 'source'),
+    output = join(root, 'payload')
   await mkdir(join(source, 'src'), { recursive: true })
-  await writeFile(join(source, 'package.json'), JSON.stringify({ name: '@fictional/quality', version: '1.0.0', type: 'module', exports: './dist/index.js', files: ['dist', 'DEMO.md', 'DOMAIN-NOTES.md'] }))
-  await writeFile(join(source, 'src/index.ts'), 'const value: string = "fictional"; export const main = { apply() {} }; export { value };')
-  for (const name of ['DEMO.md', 'DOMAIN-NOTES.md', 'unpublished.md']) await writeFile(join(source, name), name)
+  await writeFile(
+    join(source, 'package.json'),
+    JSON.stringify({
+      name: '@fictional/quality',
+      version: '1.0.0',
+      type: 'module',
+      exports: './dist/index.js',
+      files: ['dist', 'DEMO.md', 'DOMAIN-NOTES.md'],
+    }),
+  )
+  await writeFile(
+    join(source, 'src/index.ts'),
+    'const value: string = "fictional"; export const main = { apply() {} }; export { value };',
+  )
+  for (const name of ['DEMO.md', 'DOMAIN-NOTES.md', 'unpublished.md'])
+    await writeFile(join(source, name), name)
   await copyExamplePayload(source, output)
   const loaded = await import(pathToFileURL(join(output, 'dist/index.js')).href)
   expect(loaded.value).toBe('fictional')

@@ -1048,29 +1048,16 @@
           "const": "workbench.panel"
         },
         "view": {
-          "enum": [
-            "page",
-            "signatures",
-            "evidence"
-          ]
+          "enum": ["page", "signatures", "evidence"]
         },
         "page": {
           "$ref": "#/$defs/ApplicationPageRef"
         },
         "when": {
-          "enum": [
-            "session",
-            "object"
-          ]
+          "enum": ["session", "object"]
         }
       },
-      "required": [
-        "id",
-        "title",
-        "order",
-        "slot",
-        "view"
-      ]
+      "required": ["id", "title", "order", "slot", "view"]
     },
     "ApplicationWorkAction": {
       "type": "object",
@@ -1099,11 +1086,7 @@
           "$ref": "#/$defs/ApplicationWorkObject"
         }
       },
-      "required": [
-        "id",
-        "title",
-        "prompt"
-      ]
+      "required": ["id", "title", "prompt"]
     },
     "ApplicationWorkObject": {
       "type": "object",
@@ -1121,17 +1104,12 @@
           "maxLength": 128
         }
       },
-      "required": [
-        "type",
-        "id"
-      ]
+      "required": ["type", "id"]
     },
     "ApplicationWorkbenchText": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "en"
-      ],
+      "required": ["en"],
       "properties": {
         "en": {
           "type": "string",

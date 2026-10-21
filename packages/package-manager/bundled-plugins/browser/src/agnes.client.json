@@ -2,9 +2,7 @@
   "client": {
     "id": "browser",
     "entry": "./client.js",
-    "styles": [
-      "./browser.css"
-    ],
+    "styles": ["./browser.css"],
     "lifetime": "profile",
     "slotCatalogVersion": "dsh-client-slots/v1",
     "slots": [],
@@ -17,11 +15,6 @@
       "browser.open",
       "browser.control"
     ],
-    "streams": [
-      "browser.state",
-      "browser.pages",
-      "browser.frames",
-      "browser.input"
-    ]
+    "streams": ["browser.state", "browser.pages", "browser.frames", "browser.input"]
   }
 }

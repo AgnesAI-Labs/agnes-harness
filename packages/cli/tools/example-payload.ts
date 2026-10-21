@@ -10,15 +10,38 @@ export async function copyExamplePayload(source: string, destination: string): P
     files?: unknown
   }
   const declared = Array.isArray(manifest.files) ? manifest.files : []
-  const payload = (await readdir(source)).filter((file) =>
-    ['package.json', 'LICENSE', 'fixtures', 'skills', 'client', 'assets', 'dist', 'resources', 'NOTICE', 'mcp', 'dag', 'provider.example.json'].includes(file) ||
-    file.startsWith('README') ||
-    (file.endsWith('.md') && declared.includes(file)) ||
-    (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
+  const payload = (await readdir(source)).filter(
+    (file) =>
+      [
+        'package.json',
+        'LICENSE',
+        'fixtures',
+        'skills',
+        'client',
+        'assets',
+        'dist',
+        'resources',
+        'NOTICE',
+        'mcp',
+        'dag',
+        'provider.example.json',
+      ].includes(file) ||
+      file.startsWith('README') ||
+      (file.endsWith('.md') && declared.includes(file)) ||
+      (/\.(mjs|mts|json)$/.test(file) && file !== 'tsconfig.json'),
   )
   await mkdir(destination, { recursive: true })
   for (const file of payload) await cp(join(source, file), join(destination, file), { recursive: true })
   const entry = join(source, 'src', 'index.ts')
   if (manifest.exports === './dist/index.js' && existsSync(entry))
-    await build({ entryPoints: [entry], outfile: join(destination, 'dist', 'index.js'), bundle: true, platform: 'node', format: 'esm', target: ['node24'], packages: 'external', legalComments: 'eof' })
+    await build({
+      entryPoints: [entry],
+      outfile: join(destination, 'dist', 'index.js'),
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      target: ['node24'],
+      packages: 'external',
+      legalComments: 'eof',
+    })
 }
