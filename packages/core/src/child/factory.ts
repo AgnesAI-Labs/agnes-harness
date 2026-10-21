@@ -16,15 +16,15 @@ import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agn
 import type { Actor } from '@agnes/protocol'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
+import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
-import { childExecutionReceipt } from './execution-receipt.js'
 import { childModels, resolveChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import type { ResolvedChildRole } from './roles.js'
 import { bindChildFactory, childBackend } from './sessions.js'
-import { snapshotFromLedger, snapshotFromRecord } from './status.js'
+import { snapshotFromLedger, snapshotFromLive, snapshotFromRecord } from './status.js'
 
 /**
  * The tree cap a deployment gets for free when its preset never names `subagent.tree_budget_credits`.
@@ -217,6 +217,14 @@ export class KernelChildren implements ChildrenFactory {
 
   get(childKey: string): ChildHandle | undefined {
     return this.handles.get(childKey)
+  }
+
+  async collected(childKey: string, completionId: string, resultSeq: number): Promise<void> {
+    const parent = this.parent()
+    const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+    if (!record || !this.owns(record, parent.key))
+      throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+    await recordChildResultCollected(parent, childKey, completionId, resultSeq)
   }
 
   /** A spawned child runs detached from the tool call that started it; the Host admits it. */
@@ -638,7 +646,6 @@ export class KernelChildren implements ChildrenFactory {
       record.state === 'running' && !opts.recovering ? 'running' : 'ready'
     let ended = false
     let cachedText = ''
-    let cachedSeq = 0
     const lastText = async (): Promise<string> => {
       const rows = await child.scan({ type: 'assistant/message', order: 'desc', limit: 1 })
       const content = (rows[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
@@ -790,7 +797,6 @@ export class KernelChildren implements ChildrenFactory {
           this.stopReady.get(record.childKey)?.()
           this.turnSignals.delete(record.childKey)
           cachedText = await lastText().catch(() => cachedText)
-          cachedSeq = child.lastSeq
           if (!residentHold) {
             const outcome = state === 'done' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'failed'
             await emitEnd(outcome)
@@ -799,19 +805,12 @@ export class KernelChildren implements ChildrenFactory {
           }
         }
       },
-      status: async (): Promise<ChildStatus> => {
-        const terminal = state === 'done' || state === 'error' || state === 'cancelled'
-        const text = terminal ? cachedText : await lastText().catch(() => cachedText)
-        return {
-          state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
-          lastSeq: terminal ? cachedSeq : child.lastSeq,
-          ...(opts.resident && state === 'ready' && this.continued.has(record.childKey)
-            ? { idle: true }
-            : {}),
-          ...(text ? { text } : {}),
-          receipt: await childExecutionReceipt(parent, record),
-        }
-      },
+      status: () =>
+        snapshotFromLive(parent, record, {
+          state,
+          lastSeq: child.lastSeq,
+          idle: opts.resident === true && state === 'ready' && this.continued.has(record.childKey),
+        }),
       close: async () => {
         this.humanStopped.delete(record.childKey)
         this.stopReady.get(record.childKey)?.()

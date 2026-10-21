@@ -92,7 +92,7 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 - `data`：`{ childKey, status, continuable?, result?, truncated?, credits? }`。`status` 取 `completed`、`failed`、`cancelled` 或 `budget_stopped`。`continuable: true` 表示子代理空闲，仍可用 `subagent_send_message` 继续。`result` 是最后一条助手文本，最多 4000 个字符；完整文本用 `subagent_collect` 读取。
 - `summary`：给模型看的简短一行，带结果开头。`presentation`：`{ kind: "child-completed", status, label }`；网页显示本地化的状态行，可展开查看数据。
 
-空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。
+空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。 当 `subagent_spawn` 的 `wait: true` 或 `subagent_collect` 返回已完成结果（包括常驻子代理的空闲回合）后，Core 持久记录该结果已收取，并撤回对应的待处理通知。之后迟到的投递或会话重开不会再为同一结果唤醒父会话，委派卡和子任务轨迹仍保留已完成状态。仍在运行的快照或等待超时不会确认收取；未收取的结果（包括常驻子代理后续回合）仍会唤醒父会话。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。
 
 ## 父会话外观
 
