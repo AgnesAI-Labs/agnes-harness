@@ -37,6 +37,7 @@ async function setup(
     liveMcp?: boolean
     stableSkills?: boolean
     scopedRuntimeSkill?: boolean
+    warmedBridge?: 'ptc' | 'deferred'
     config?: 'same' | 'canonical' | 'absent-empty'
   } = {},
 ) {
@@ -75,6 +76,21 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
 }
 `,
       },
+      ...(recheck.warmedBridge
+        ? [
+            {
+              exportName: 'sharedBridge',
+              rowId: 'ext:fixture/review-bridge',
+              body: `ctx.tools.register({ ...tool('warmed_shared_bridge'), meta: { ...tool('warmed_shared_bridge').meta, deferLoading: ${recheck.warmedBridge === 'deferred'} }, execute: async (_args, ctx) => {
+${
+  recheck.warmedBridge === 'ptc'
+    ? `const reply = await createBridge(ctx)({ jsonrpc: '2.0', id: 'warmed-review', method: 'bridge.tools.invoke', params: { name: 'skill_read', args: {name: 'review-role-skill'} } }); return {content: [{type: 'text', text: JSON.stringify(reply)}], isError: 'error' in reply}`
+    : `return await ctx.tools.invoke('skill_read', {name: 'review-role-skill'})`
+}
+} })`,
+            },
+          ]
+        : []),
     ],
     { vendor },
   )
@@ -115,6 +131,7 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
       if (requestCall?.name === 'ptc_resource_bridge') profile.tools.push('ptc_resource_bridge')
       if (recheck.deferred) profile.tools.push('deferred_resource_bridge')
       if (recheck.disclose) profile.tools.push('tool_describe', 'tool_search')
+      if (recheck.warmedBridge) profile.tools.push('warmed_shared_bridge')
       profile[resource === 'mcp' ? 'mcp' : 'skills'] = [
         `review-${recheck.commonResources ? 'role' : scope}-${resource === 'mcp' ? 'server' : 'skill'}`,
       ]
@@ -242,6 +259,9 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
             }),
           ]
         : [row]),
+      ...(recheck.warmedBridge
+        ? [pluginRow('ext:fixture/review-bridge', 'sharedBridge', false, { vendor })]
+        : []),
     ]),
   )
   const config = createConfigurationService({
@@ -755,6 +775,56 @@ it.each(resourceRechecks)(
     } finally {
       await f.fixture.host.close()
       unbind()
+    }
+  },
+  90_000,
+)
+
+it.each(['ptc', 'deferred'] as const)(
+  'second-recheck-role: a warmed runtime Skill stays refused through an eligible %s bridge',
+  async (path) => {
+    const f = await setup({ name: 'warmed_shared_bridge', args: {} }, true, 'skill', {
+      commonResources: true,
+      disclose: true,
+      scopedRuntimeSkill: true,
+      warmedBridge: path,
+    })
+    try {
+      await f.save()
+      await f.parent.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Read the Skill through the bridge' }],
+        actor: f.parent.d.actor,
+      })
+      await f.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      const parentRows = await f.parent.scan({ type: 'tool/result', limit: 100 })
+      expect(JSON.stringify(parentRows)).toContain('PARENT_PUBLIC_SKILL')
+      expect(JSON.stringify(parentRows)).not.toContain('ROLE_PRIVATE_SKILL')
+      expect(parentRows.some(refused)).toBe(false)
+      for (const input of ['Inspect', 'Inspect after warming']) {
+        const handle = await f.create(ref('reader'), { input })
+        const child = f.fixture.host.kernel.get(handle.key)!
+        // The bridge has a separate, identical Host binding in both compositions. Refusal
+        // must come from the resource ceiling, rather than excluding a differently configured tool.
+        expect(child.d.roleDelegation?.tools).toContain('warmed_shared_bridge')
+        expect(child.d.roleDelegation?.tools).toContain('skill_read')
+        expect(child.d.roleDelegation?.tools).not.toContain('configured_read')
+        expect(child.d.roleDelegation?.resources?.skills).toEqual([])
+        expect(child.currentTools().resolve('warmed_shared_bridge')?.meta.deferLoading).toBe(
+          path === 'deferred',
+        )
+        await handle.run(input)
+        const rows = await f.parent.d.log.storage.scan(handle.key, { type: 'tool/result', limit: 100 })
+        const disclosure = rows.find((row) => row.origin === 'tool:tool_describe')
+        expect(disclosure).toBeDefined()
+        expect(refused(disclosure!)).toBe(false)
+        expect(JSON.stringify(disclosure)).toContain('warmed_shared_bridge')
+        expect(rows.some((row) => row.origin === 'tool:warmed_shared_bridge')).toBe(true)
+        expect(rows.some(refused)).toBe(true)
+        expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_SKILL')
+        await handle.cancel?.()
+      }
+    } finally {
+      await f.fixture.host.close()
     }
   },
   90_000,
