@@ -21,44 +21,98 @@ export type SlashCommand = {
   args?: string
   /** Locale key of the one-line description; translated when the menu renders. */
   descriptionKey: ExtendedKey
+  /** Locale key of the short summary shown beside the name in the slash menu. */
+  summaryKey: ExtendedKey
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { name: '/help', descriptionKey: 'commands.help' },
-  { name: '/quit', descriptionKey: 'commands.quit' },
-  { name: '/new', descriptionKey: 'commands.new' },
-  { name: '/resume', args: '[id]', descriptionKey: 'commands.resume' },
-  { name: '/sessions', descriptionKey: 'commands.sessions' },
-  { name: '/cost', descriptionKey: 'commands.cost' },
-  { name: '/usage', descriptionKey: 'commands.usage' },
-  { name: '/computer-use', args: 'status', descriptionKey: 'commands.computerUse' },
-  { name: '/doctor', args: 'computer-use', descriptionKey: 'commands.doctor' },
-  { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind' },
-  { name: '/compact', args: '[instructions]', descriptionKey: 'commands.compact' },
-  { name: '/goal', args: '[create|edit|pause|resume|complete|clear] ...', descriptionKey: 'commands.goal' },
-  { name: '/plan', args: '[on|off|status|pending|instruction]', descriptionKey: 'commands.plan' },
-  { name: '/preset', args: '<name>', descriptionKey: 'commands.preset' },
-  { name: '/theme', args: '[light|dark|mono]', descriptionKey: 'commands.theme' },
+  { name: '/help', descriptionKey: 'commands.help', summaryKey: 'commands.helpSummary' },
+  { name: '/quit', descriptionKey: 'commands.quit', summaryKey: 'commands.quitSummary' },
+  { name: '/new', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
+  { name: '/resume', args: '[id]', descriptionKey: 'commands.resume', summaryKey: 'commands.resumeSummary' },
+  { name: '/sessions', descriptionKey: 'commands.sessions', summaryKey: 'commands.sessionsSummary' },
+  { name: '/cost', descriptionKey: 'commands.cost', summaryKey: 'commands.costSummary' },
+  { name: '/usage', descriptionKey: 'commands.usage', summaryKey: 'commands.usageSummary' },
+  {
+    name: '/computer-use',
+    args: 'status',
+    descriptionKey: 'commands.computerUse',
+    summaryKey: 'commands.computerUseSummary',
+  },
+  {
+    name: '/doctor',
+    args: 'computer-use',
+    descriptionKey: 'commands.doctor',
+    summaryKey: 'commands.doctorSummary',
+  },
+  { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
+  {
+    name: '/compact',
+    args: '[instructions]',
+    descriptionKey: 'commands.compact',
+    summaryKey: 'commands.compactSummary',
+  },
+  {
+    name: '/goal',
+    args: '[create|edit|pause|resume|complete|clear] ...',
+    descriptionKey: 'commands.goal',
+    summaryKey: 'commands.goalSummary',
+  },
+  {
+    name: '/plan',
+    args: '[on|off|status|pending|instruction]',
+    descriptionKey: 'commands.plan',
+    summaryKey: 'commands.planSummary',
+  },
+  {
+    name: '/preset',
+    args: '<name>',
+    descriptionKey: 'commands.preset',
+    summaryKey: 'commands.presetSummary',
+  },
+  {
+    name: '/theme',
+    args: '[light|dark|mono]',
+    descriptionKey: 'commands.theme',
+    summaryKey: 'commands.themeSummary',
+  },
   {
     name: '/model',
     args: '[<slot> <route>/<model> [<thinking>]]',
     descriptionKey: 'commands.model',
+    summaryKey: 'commands.modelSummary',
   },
-  { name: '/yolo', descriptionKey: 'commands.yolo' },
-  { name: '/attach', args: '<path>', descriptionKey: 'commands.attach' },
-  { name: '/export', descriptionKey: 'commands.export' },
-  { name: '/refine', descriptionKey: 'commands.refine' },
-  { name: '/packages', descriptionKey: 'commands.packages' },
-  { name: '/install', args: '<source>|confirm|cancel', descriptionKey: 'commands.install' },
+  { name: '/yolo', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
+  {
+    name: '/attach',
+    args: '<path>',
+    descriptionKey: 'commands.attach',
+    summaryKey: 'commands.attachSummary',
+  },
+  { name: '/export', descriptionKey: 'commands.export', summaryKey: 'commands.exportSummary' },
+  { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
+  { name: '/packages', descriptionKey: 'commands.packages', summaryKey: 'commands.packagesSummary' },
+  {
+    name: '/install',
+    args: '<source>|confirm|cancel',
+    descriptionKey: 'commands.install',
+    summaryKey: 'commands.installSummary',
+  },
   {
     name: '/package',
     args: '[status|catalog|inspect|trust|enable|disable|update|rollback|remove|operation|cancel] ...',
     descriptionKey: 'commands.package',
+    summaryKey: 'commands.packageSummary',
   },
-  { name: '/skills', descriptionKey: 'commands.skills' },
-  { name: '/skill', args: 'invoke <name> [arguments]|refresh|trust ...', descriptionKey: 'commands.skill' },
-  { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp' },
-  { name: '/context', descriptionKey: 'commands.context' },
+  { name: '/skills', descriptionKey: 'commands.skills', summaryKey: 'commands.skillsSummary' },
+  {
+    name: '/skill',
+    args: 'invoke <name> [arguments]|refresh|trust ...',
+    descriptionKey: 'commands.skill',
+    summaryKey: 'commands.skillSummary',
+  },
+  { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp', summaryKey: 'commands.mcpSummary' },
+  { name: '/context', descriptionKey: 'commands.context', summaryKey: 'commands.contextSummary' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -69,10 +123,14 @@ export function slashCommand(name: string): SlashCommand | undefined {
 export function slashCommandFor(
   name: string,
   locale: string,
-): (SlashCommand & { description: string }) | undefined {
+): (SlashCommand & { description: string; summary: string }) | undefined {
   const command = slashCommand(name)
   if (!command) return undefined
-  return { ...command, description: tt(command.descriptionKey, locale) }
+  return {
+    ...command,
+    description: tt(command.descriptionKey, locale),
+    summary: tt(command.summaryKey, locale),
+  }
 }
 
 export type ModelChoice = {

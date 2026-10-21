@@ -405,16 +405,11 @@ describe('Editor @ menu', () => {
 
 describe('Editor slash menu rendering (pi style)', () => {
   // All seven names share the '/' prefix, so a single keystroke opens the full menu. Two of them
-  // carry an args shape and all of them a description, so one fixture exercises every row kind.
+  // carry an args shape, so one fixture exercises both row kinds.
   const SEVEN = ['/a', '/b', '/c', '/d', '/e', '/f', '/g'] as const
-  const INFO: Record<string, { args?: string; description: string }> = {
-    '/a': { description: '命令 A' },
-    '/b': { description: '命令 B' },
-    '/c': { description: '命令 C' },
-    '/d': { description: '命令 D' },
-    '/e': { description: '命令 E' },
-    '/f': { args: '[id]', description: '命令 F' },
-    '/g': { args: '<seq>', description: '命令 G' },
+  const INFO: Record<string, { args?: string }> = {
+    '/f': { args: '[id]' },
+    '/g': { args: '<seq>' },
   }
   const menuEditor = () =>
     new Editor({
@@ -428,7 +423,7 @@ describe('Editor slash menu rendering (pi style)', () => {
   it('shows at most five candidates and a dim count of what is hidden below', () => {
     const e = menuEditor()
     type(e, '/')
-    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
+    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
   })
 
   it('frames the menu in a rounded border that hugs the widest row', () => {
@@ -440,7 +435,6 @@ describe('Editor slash menu rendering (pi style)', () => {
     expect(rows.at(-1)).toBe('╰────────────╯')
     expect(rows[1]).toBe('│ ❯ /a       │')
     expect(rows[6]).toBe('│   ↓ 2 more │')
-    expect(rows[7]).toBe('│ 命令 A     │')
     for (const row of rows) expect(displayWidth(row)).toBe(14)
   })
 
@@ -448,50 +442,16 @@ describe('Editor slash menu rendering (pi style)', () => {
     const e = menuEditor()
     type(e, '/')
     for (let i = 0; i < 5; i++) e.handleInput('\x1b[B')
-    expect(unbox(menuRows(e))).toEqual([
-      '  /b',
-      '  /c',
-      '  /d',
-      '  /e',
-      '❯ /f [id]',
-      '  ↑ 1 more  ↓ 1 more',
-      '命令 F',
-    ])
+    expect(unbox(menuRows(e))).toEqual(['  /b', '  /c', '  /d', '  /e', '❯ /f [id]', '  ↑ 1 more  ↓ 1 more'])
     e.handleInput('\x1b[B') // last candidate: only the count above remains
-    expect(unbox(menuRows(e))).toEqual([
-      '  /c',
-      '  /d',
-      '  /e',
-      '  /f [id]',
-      '❯ /g <seq>',
-      '  ↑ 2 more',
-      '命令 G',
-    ])
+    expect(unbox(menuRows(e))).toEqual(['  /c', '  /d', '  /e', '  /f [id]', '❯ /g <seq>', '  ↑ 2 more'])
     e.handleInput('\x1b[B') // wraps to the first candidate; the window follows back to the top
-    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more', '命令 A'])
+    expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
     e.handleInput('\x1b[A') // up from the first wraps to the last and scrolls to the bottom
-    expect(unbox(menuRows(e))).toEqual([
-      '  /c',
-      '  /d',
-      '  /e',
-      '  /f [id]',
-      '❯ /g <seq>',
-      '  ↑ 2 more',
-      '命令 G',
-    ])
+    expect(unbox(menuRows(e))).toEqual(['  /c', '  /d', '  /e', '  /f [id]', '❯ /g <seq>', '  ↑ 2 more'])
   })
 
-  it('keeps the dim description line in sync with the highlighted candidate', () => {
-    const e = menuEditor()
-    type(e, '/')
-    expect(unbox(menuRows(e)).at(-1)).toBe('命令 A')
-    e.handleInput('\x1b[B')
-    expect(unbox(menuRows(e)).at(-1)).toBe('命令 B')
-    e.handleInput('\x1b[A')
-    expect(unbox(menuRows(e)).at(-1)).toBe('命令 A')
-  })
-
-  it('shows no description line when the completer has no info for the candidates', () => {
+  it('shows only the candidate rows when the completer has no info for them', () => {
     const e = new Editor({ onSubmit: () => {}, complete: (p) => SEVEN.filter((c) => c.startsWith(p)) })
     type(e, '/')
     expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
@@ -510,12 +470,11 @@ describe('Editor slash menu rendering (pi style)', () => {
     const rows = menuRows(e)
     const side = tone('border', '│')
     const pointer = ansi.bold(tone('accent', '❯'))
-    // The frame takes the border tone; the highlight and description keep their own styling inside it.
+    // The frame takes the border tone; the highlight keeps its own styling inside it.
     expect(rows[0]).toBe(tone('border', '╭────────────╮'))
     expect(rows[1]).toBe(`${side}${ansi.bg('selection', ` ${pointer} ${ansi.bold('/a')}       `)}${side}`)
     expect(rows[2]).toBe(`${side}   ${ansi.bold('/b')}       ${side}`)
     expect(rows[6]).toBe(`${side}   ${tone('faint', '↓ 2 more')} ${side}`)
-    expect(rows[7]).toBe(`${side} ${tone('muted', '命令 A')}     ${side}`)
     // The args shape rides inside the highlighted row, faint within the highlight.
     for (let i = 0; i < 5; i++) e.handleInput('\x1b[B')
     const highlighted = menuRows(e)[5] as string
@@ -536,7 +495,79 @@ describe('Editor slash menu rendering (pi style)', () => {
     // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting zero escapes is the point
     for (const line of e.render(40)) expect(line.replace(CURSOR_MARKER, '')).not.toMatch(/\x1b/)
     expect(unbox(menuRows(e))).toContain('  ↓ 2 more')
-    expect(unbox(menuRows(e)).at(-1)).toBe('命令 A')
+  })
+
+  describe('summary column', () => {
+    const SUM: Record<string, { args?: string; summary?: string }> = {
+      '/a': { summary: 'Alpha thing' },
+      '/b': { args: '[id]', summary: 'Beta thing' },
+      '/c': { args: '[one|two|three|four|five|six|seven]', summary: 'Gamma thing' },
+      '/d': {},
+    }
+    const names = ['/a', '/b', '/c', '/d']
+    const sumEditor = (info: typeof SUM, ansi?: ReturnType<TuiTheme['ansi']>) =>
+      new Editor({
+        onSubmit: () => {},
+        complete: (p) => names.filter((c) => c.startsWith(p)),
+        menuInfo: (n) => info[n],
+        ...(ansi ? { ansi } : {}),
+      })
+    const rowsAt = (e: Editor, width: number) => e.render(width).slice(0, -1)
+
+    it('aligns summaries in one column, truncating only long args with an ellipsis', () => {
+      const e = sumEditor(SUM)
+      type(e, '/')
+      // Left column is capped at 30 columns (args cut with …); summaries start at column 32.
+      expect(unbox(rowsAt(e, 100))).toEqual([
+        `❯ /a${' '.repeat(26)}  Alpha thing`,
+        `  /b [id]${' '.repeat(21)}  Beta thing`,
+        '  /c [one|two|three|four|five…  Gamma thing',
+        '  /d',
+      ])
+    })
+
+    it('omits every summary when the column cannot keep 8 columns, and bounds all rows', () => {
+      const e = sumEditor(SUM)
+      type(e, '/')
+      // left 30 + 2 + 8 = 40 > 38 available at width 42 (frame 2 + padding 2).
+      const rows = unbox(rowsAt(e, 42))
+      expect(rows.slice(0, 4).join('')).not.toContain('thing')
+      for (const width of [1, 2, 3, 4, 5, 10, 20, 41, 42, 43, 44, 60, 100])
+        for (const row of rowsAt(e, width))
+          expect(displayWidth(row), `width ${width}`).toBeLessThanOrEqual(width)
+      // Rows still carry the pointer/name layout of the no-summary menu.
+      expect(rows[0]).toBe('❯ /a')
+    })
+
+    it('renders exactly the old layout when menuInfo supplies no summary', () => {
+      const bare = Object.fromEntries(
+        Object.entries(SUM).map(([k, v]) => [k, v.args ? { args: v.args } : {}]),
+      )
+      const e = sumEditor(bare)
+      type(e, '/')
+      expect(unbox(rowsAt(e, 100)).slice(0, 4)).toEqual([
+        '❯ /a',
+        '  /b [id]',
+        '  /c [one|two|three|four|five|six|seven]',
+        '  /d',
+      ])
+    })
+
+    it('paints summaries muted, spans the selection background over the row, none tier has no escapes', () => {
+      const ansi = new TuiTheme('light').ansi(createAnsi('256'))
+      const e = sumEditor(SUM, ansi)
+      type(e, '/')
+      const rows = rowsAt(e, 100)
+      expect(rows[1]).toContain(ansi.fg('muted', 'Alpha thing'))
+      // The selection background wraps the whole row, summary included.
+      const [open, close] = ansi.bg('selection', '@').split('@') as [string, string]
+      expect(rows[1]?.indexOf(open)).toBeLessThan(rows[1]?.indexOf('Alpha thing') ?? -1)
+      expect(rows[1]?.lastIndexOf(close)).toBeGreaterThan(rows[1]?.indexOf('Alpha thing') ?? Infinity)
+      const plain = sumEditor(SUM, new TuiTheme('light').ansi(createAnsi('none')))
+      type(plain, '/')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting zero escapes is the point
+      for (const line of plain.render(100)) expect(line.replace(CURSOR_MARKER, '')).not.toMatch(/\x1b/)
+    })
   })
 
   it('esc clears the draft and with it the menu', () => {
@@ -703,7 +734,7 @@ describe('Editor on screen', () => {
     const e = new Editor({
       onSubmit: () => {},
       complete: () => ['/resume', '/rewind'],
-      menuInfo: () => ({ description: 'a deliberately long description' }),
+      menuInfo: () => ({ summary: 'a deliberately long summary' }),
     })
     type(e, '/')
     for (const width of [1, 2, 3, 4, 5]) {

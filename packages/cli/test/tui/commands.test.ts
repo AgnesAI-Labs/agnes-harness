@@ -16,7 +16,7 @@ import {
   slashCommand,
   slashCommandFor,
 } from '../../src/tui/commands.js'
-import { FakeTerminal } from '../../src/tui/terminal.js'
+import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { scriptedEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
@@ -163,6 +163,15 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/nope')).toBeUndefined()
     for (const c of SLASH_COMMANDS)
       expect(slashCommandFor(c.name, 'zh-CN')?.description.length).toBeGreaterThan(0)
+    // Every command carries a one-line summary in both locales: <= 28 columns, args-free.
+    for (const locale of ['en', 'zh-CN'])
+      for (const c of SLASH_COMMANDS) {
+        const summary = slashCommandFor(c.name, locale)?.summary ?? ''
+        expect(summary.length, `${locale} ${c.name}`).toBeGreaterThan(0)
+        expect(displayWidth(summary), `${locale} ${c.name}`).toBeLessThanOrEqual(28)
+        expect(summary, `${locale} ${c.name}`).not.toContain('<')
+        if (locale === 'zh-CN') expect([...summary].length, c.name).toBeLessThanOrEqual(14)
+      }
   })
 })
 
