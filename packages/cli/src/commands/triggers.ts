@@ -20,7 +20,7 @@ type IO = { stdout: NodeJS.WritableStream; stderr: NodeJS.WritableStream }
 const TAKEN = new Set(['pending', 'accepted', 'waiting_approval', 'needs_attention', 'ran'])
 
 /** A file, or `-` for stdin. Invalid JSON stops here, before any request is made. */
-function readJson(source: string, what: string): unknown {
+export function readJson(source: string, what: string): unknown {
   let text: string
   try {
     text = readFileSync(source === '-' ? 0 : source, 'utf8')

@@ -64,6 +64,10 @@ When an approval card appears, inspect the tool, arguments, and scope, then choo
 
 `agh schedules` and `agh triggers` manage the same scheduled tasks and webhook rules as the Web automation page, and need an admin connection. A task that repeats every minute: `agh schedules add --prompt "Summarise new issues" --every 1m --cwd .`; `agh schedules run ID` runs it now, `pause` and `resume` stop and restart it, `archive` removes it, and `show ID` lists its recent runs. Webhook rules are written as JSON (`agh triggers add --file rule.json`); the JSON is checked against the protocol schema before anything is sent, and `agh triggers test RULE` runs a synthetic delivery. A refusal prints its code and exits 1; `--json` prints what the daemon returned.
 
+## Plugin configuration, tree and applications
+
+These commands mirror the Web admin pages and need an admin connection. `agh plugins config get ID` lists a plugin's configuration rows with their value, schema summary and whether the value is valid; fields the schema marks `x-secret`, `writeOnly` or `credential-reference`, and keys that look like credentials, are printed as `[redacted]` in text and `--json`. Values are written from a JSON file, never from the command line: `agh plugins config validate ID [ROW] --file value.json` only checks, `set` checks first and saves nothing (exit 1) when the value is invalid. A refusal from the daemon is printed as is and exits 1.
+
 <a id="退出码"></a>
 
 ## Exit codes

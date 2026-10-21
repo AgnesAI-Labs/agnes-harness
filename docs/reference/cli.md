@@ -95,6 +95,8 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh dev FOLDER` / `plugins reload [ID]` | Authorize local development / publish changed local code for new sessions |
 | `agh plugins candidates list\|show\|approve\|reject` | Read and review agent-authored candidates; approval/rejection binds candidate and review hashes |
 | `agh plugins provenance ID [--json]` | Read installation origin and trust evidence |
+| `agh plugins config get ID [--json]` | Show a plugin's configuration rows: value, schema summary and validity. Secret and credential fields print as `[redacted]`, also in `--json` |
+| `agh plugins config validate ID [ROW] --file VALUE.json\|-` / `set ID [ROW] --file VALUE.json\|-` | Validate a row value without saving / validate then save; an invalid value is listed and not saved (exit 1). ROW may be omitted when the plugin has one row |
 | `agh plugins publication-status [--json]` | Read per-container convergence results |
 | `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
 | `agh app clear [--profile NAME] [--json]` | Clear the application and all explicit interface role choices before plugin boot; uses the shared configuration CAS |

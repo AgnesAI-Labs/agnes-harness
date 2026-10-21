@@ -744,7 +744,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
     if (
       (p.command === 'plugins' &&
-        !['reload', 'publication-status', 'provenance', 'candidates'].includes(p.positional[0] ?? '')) ||
+        !/^(reload|publication-status|provenance|candidates|config)$/.test(
+          p.positional[0] ?? '',
+        )) ||
       p.command === 'package' ||
       p.command === 'install'
     ) {
@@ -775,11 +777,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     if (p.command === 'plugins' || p.command === 'dev') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
-        const { runPluginDevelopmentCommand } = await import('./commands/plugins.js')
-        await runPluginDevelopmentCommand({ ...p, profile: booted.profileName }, booted.client, (text) =>
-          io.stdout.write(text),
-        )
-        return ExitCode.OK
+        const { runPluginDevelopmentCommand: run } = await import('./commands/plugins.js')
+        const w = (t: string) => io.stdout.write(t)
+        return (await run({ ...p, profile: booted.profileName }, booted.client, w)) ?? ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }

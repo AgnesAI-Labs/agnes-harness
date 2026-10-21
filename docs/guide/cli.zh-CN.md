@@ -58,6 +58,10 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 `agh schedules` 和 `agh triggers` 管理与 Web 自动化页相同的定时任务和 webhook 规则，需要管理员连接。每分钟运行一次的任务：`agh schedules add --prompt "汇总新增问题" --every 1m --cwd .`；`agh schedules run ID` 立即运行一次，`pause`、`resume` 暂停和恢复，`archive` 归档，`show ID` 列出最近的运行记录。Webhook 规则以 JSON 编写（`agh triggers add --file rule.json`），发送前先按协议 schema 校验；`agh triggers test RULE` 用模拟投递试跑。拒绝时打印 code 并以 1 退出；`--json` 原样输出 daemon 的返回。
 
+## 插件配置、插件树与应用
+
+这些命令对应 Web 管理页，需要管理员连接。`agh plugins config get ID` 列出插件的配置行及当前值、schema 摘要和是否有效；schema 标为 `x-secret`、`writeOnly` 或 `credential-reference` 的字段，以及名字像凭据的键，文本和 `--json` 都显示为 `[redacted]`。配置值只从 JSON 文件读取，不走命令行：`agh plugins config validate ID [ROW] --file value.json` 只校验，`set` 先校验，值无效时不保存并以 1 退出。后台的拒绝原样显示并以 1 退出。
+
 ## 退出码
 
 | 码 | 意义 |
