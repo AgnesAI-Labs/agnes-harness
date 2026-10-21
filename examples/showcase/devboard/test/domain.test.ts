@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { view } from '../approvals.mjs'
+import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
 import {
   actApproval,
@@ -1506,6 +1506,7 @@ describe('blockers', () => {
     state.trials = state.trials.filter((t: Item) => t.result !== 'FAIL')
     state.changes = state.changes.filter((c: Item) => c.state !== 'CCB_REVIEW')
     state.problems = state.problems.filter((p: Item) => p.state !== 'ANALYZING')
+    delete state.approvals
     return state
   }
 
@@ -1516,12 +1517,17 @@ describe('blockers', () => {
         'GATE_PENDING',
         'GATE_FINDING',
         'STAGE_OVERDUE',
+        'APPROVAL_ACTIVE',
+        'APPROVAL_OVERDUE',
         'TRIAL_FAILED',
         'CHANGE_CCB',
         'PROBLEM_STALLED',
       ]),
     )
     expect(kinds(list).every((k) => k in BLOCKER_KINDS)).toBe(true)
+    const late = list.filter((b) => b.kind === 'APPROVAL_OVERDUE')
+    expect(late.map((b) => b.role)).toEqual(['软件设计师', '工艺工程师', '质量工程师'])
+    expect(late.every((b) => b.ref.type === 'approval' && b.title.includes('CR-2026-031'))).toBe(true)
     expect(list.filter((b) => b.kind === 'GATE_PENDING').map((b) => b.role)).toEqual(['客户代表'])
     expect(snapshot(seed(NOW), NOW).blockers).toEqual(list)
     const one = snapshot(seed(NOW), NOW, 'PRJ-2025-042').blockers as Item[]
@@ -1597,36 +1603,35 @@ describe('blockers', () => {
     const state = clean()
     expect(state.approvals).toBeUndefined()
     expect(blockers(state, NOW)).toEqual([])
-    state.approvals = [
-      {
-        id: 'AP-1',
-        projectId: 'PRJ-2025-042',
-        title: 'ECR CR-2026-031',
-        state: 'RUNNING',
-        current: 0,
-        nodes: [
-          {
-            id: 'N1',
-            name: '专业会签',
-            mode: 'ALL',
-            roles: ['机械设计师', '电气设计师'],
-            dueHours: 48,
-            state: 'ACTIVE',
-            enteredAt: at(1),
-          },
-        ],
-        actions: [
-          { nodeId: 'N1', role: '机械设计师', by: '机械设计师 沈岳', action: 'APPROVE', at: at(0.5) },
-        ],
-      },
-      { id: 'AP-2', projectId: 'PRJ-2025-042', state: 'APPROVED', current: 0, nodes: [], actions: [] },
-    ]
+    const ecr = newFlow({
+      id: 'AP-1',
+      projectId: 'PRJ-2025-042',
+      template: 'ECR',
+      subject: { type: 'change', id: 'CR-2026-031' },
+      title: 'ECR CR-2026-031',
+      initiator: { role: '项目经理', by: '项目经理 周宁' },
+      now: Date.parse(at(1)),
+    })
+    act(ecr, { action: 'APPROVE', by: '机械设计师 沈岳' }, Date.parse(at(0.5)))
+    const done = newFlow({
+      id: 'AP-2',
+      projectId: 'PRJ-2025-042',
+      template: 'TRIAL_REPORT',
+      subject: { type: 'trial', id: 'TR-1' },
+      title: 'done',
+      initiator: { role: '质量工程师', by: '质量工程师 林' },
+      now: Date.parse(at(1)),
+    })
+    done.state = 'APPROVED'
+    state.approvals = [ecr, done]
     let list = blockers(state, NOW) as Item[]
-    expect(list.map((b) => [b.kind, b.role])).toEqual([['APPROVAL_ACTIVE', '电气设计师']])
-    state.approvals[0].nodes[0].enteredAt = at(3)
+    expect(list.map((b) => [b.kind, b.role])).toEqual(
+      ['电气设计师', '软件设计师', '工艺工程师', '质量工程师'].map((r) => ['APPROVAL_ACTIVE', r]),
+    )
+    ecr.nodes[0].enteredAt = at(4)
     list = blockers(state, NOW)
-    expect(list.map((b) => b.kind)).toEqual(['APPROVAL_OVERDUE'])
-    expect(list[0]).toMatchObject({ overdue: true, days: 3 })
+    expect(new Set(list.map((b) => b.kind))).toEqual(new Set(['APPROVAL_OVERDUE']))
+    expect(list[0]).toMatchObject({ overdue: true, days: 4 })
   })
 })
 

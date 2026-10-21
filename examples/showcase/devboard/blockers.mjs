@@ -1,6 +1,7 @@
 // DevBoard blockers: everything currently standing in a project's way, derived from state on every
 // read and never stored. One blocker = one role that has to act, so "who is in the way" is a group-by.
 // No host imports and no import of domain.mjs (which includes this in its snapshot).
+import { isOverdue, waitingRoles } from './approvals.mjs'
 import { ROLES } from './profiles.mjs'
 
 const HOUR = 3_600_000
@@ -112,15 +113,11 @@ export function blockers(state, now = Date.now(), projectId) {
   }
 
   for (const a of state.approvals ?? []) {
-    if (a.state !== 'RUNNING') continue
     const node = a.nodes?.[a.current]
-    if (node?.state !== 'ACTIVE') continue
-    const done = (a.actions ?? [])
-      .filter((x) => x.nodeId === node.id && x.action === 'APPROVE' && !(ms(node.enteredAt) > ms(x.at)))
-      .map((x) => x.role)
-    const waiting = (node.roles ?? []).filter((r) => node.mode !== 'ALL' || !done.includes(r))
-    const due = (ms(node.enteredAt) ?? now) + (node.dueHours ?? Number.POSITIVE_INFINITY) * HOUR
-    const overdue = due < now
+    const waiting = waitingRoles(a)
+    if (!waiting.length) continue
+    const overdue = isOverdue(a, node, now)
+    const due = ms(node.enteredAt) + node.dueHours * HOUR
     for (const role of waiting)
       add(
         overdue ? 'APPROVAL_OVERDUE' : 'APPROVAL_ACTIVE',
