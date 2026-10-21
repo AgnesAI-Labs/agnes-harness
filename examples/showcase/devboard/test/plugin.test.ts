@@ -172,6 +172,8 @@ describe('DevBoard plugin contract', () => {
       expect(application.agents).toContain(ref)
       const role = bundles[ref.split('#')[1]]
       expect(role.profile.tools).toEqual(role.profile.toolPolicy.allow)
+      expect(role.profile.skills).toEqual([])
+      expect(role.profile.toolPolicy.readOnly).toBe(ref.endsWith('#reviewer') ? true : undefined)
       expect(role.profile.tools.every((name: string) => coordinator.profile.tools.includes(name))).toBe(
         true,
       )
