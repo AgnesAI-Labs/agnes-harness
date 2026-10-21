@@ -24,7 +24,7 @@ import {
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
-import { PackageError } from './errors.js'
+import { PackageError, packageSourceError as sourceError } from './errors.js'
 import { hashFileReads, mapFileChecks } from './file-read-pool.js'
 import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
@@ -64,9 +64,6 @@ const PACKAGE_ID =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 const PROFILE = /^[a-z][a-z0-9.-]{0,63}$/
 const DEFAULT_EXCLUDES = ['node_modules', '.git', 'fixtures/out'] as const
-
-const sourceError = (message: string, reason: string, extraDetail?: Record<string, unknown>): PackageError =>
-  new PackageError('E_DEP_MISSING', message, { detail: { reason, ...extraDetail } })
 
 function safeRelative(value: string, prefix: './' | 'extensions/'): boolean {
   if (!value.startsWith(prefix) || value.length === prefix.length || isAbsolute(value)) return false
@@ -164,13 +161,13 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
     root = nativeRealpathSync(dir)
   } catch (error) {
     if (error instanceof PackageError) throw error
-    throw sourceError('package directory is unavailable', 'directory-unavailable')
+    throw sourceError('package directory is unavailable', 'directory-unavailable', undefined, error)
   }
   try {
     if (!statSync(root).isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
   } catch (error) {
     if (error instanceof PackageError) throw error
-    throw sourceError('package directory changed while hashing', 'tree-changed')
+    throw sourceError('package directory changed while hashing', 'tree-changed', undefined, error)
   }
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
   const files: Array<{ rel: string; file: string }> = []
@@ -190,8 +187,8 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       let actual: string
       try {
         actual = nativeRealpathSync(file)
-      } catch {
-        throw sourceError('package file changed while hashing', 'tree-changed')
+      } catch (error) {
+        throw sourceError('package file changed while hashing', 'tree-changed', undefined, error)
       }
       if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
       files.push({ rel, file })
@@ -220,7 +217,7 @@ export async function hashDirectoryAsync(
     root = await asyncFs.realpath(dir)
   } catch (error) {
     if (error instanceof PackageError) throw error
-    throw sourceError('package directory is unavailable', 'directory-unavailable')
+    throw sourceError('package directory is unavailable', 'directory-unavailable', undefined, error)
   }
   const rootStat = await asyncFs.stat(root)
   if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')

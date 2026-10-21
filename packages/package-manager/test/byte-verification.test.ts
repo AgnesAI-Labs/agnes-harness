@@ -1,3 +1,4 @@
+import * as syncFs from 'node:fs'
 import {
   cpSync,
   linkSync,
@@ -27,6 +28,8 @@ import { verifiedDirectoryDigestAsync, withoutPackageVerification } from '../src
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
 }))
+vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()) }))
+const actualVolumeSupport = trees.supportsTreeIdentity
 
 let root: string, directory: string, file: string
 let now: number, wall: number
@@ -526,4 +529,400 @@ it('bounds repeated observation resets as busy without permanently quarantining 
   expect(imported).not.toHaveBeenCalled()
   await setImmediate()
   expect(fault).not.toHaveBeenCalled()
+})
+
+it.each(['foreground', 'background'] as const)(
+  'review: a real metadata EIO during %s verification is unavailable evidence, not a mismatch',
+  async (phase) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault, softMs: 0 })
+    await read(authority, expected)
+    const original = fs.lstat
+    const unavailable = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      if (String(args[0]).startsWith(realpathSync(directory)))
+        throw Object.assign(new Error('synthetic filesystem I/O outage'), { code: 'EIO' })
+      return original(...args)
+    })
+    if (phase === 'foreground') await expect(read(authority, expected)).rejects.toThrow()
+    else await authority.recheck()
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+    unavailable.mockRestore()
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+  },
+)
+
+it('review: unsupported-volume EACCES from the actual full verifier never revokes trust', async () => {
+  const fault = vi.fn(),
+    expected = identity(),
+    authority = owner({ onMismatch: fault })
+  vi.mocked(trees.supportsTreeIdentity).mockReturnValue(false)
+  const original = fs.lstat
+  const unavailable = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+    if (String(args[0]).startsWith(realpathSync(directory)))
+      throw Object.assign(new Error('synthetic permission outage'), { code: 'EACCES' })
+    return original(...args)
+  })
+  await expect(read(authority, expected)).rejects.toThrow()
+  await setImmediate()
+  expect(fault).not.toHaveBeenCalled()
+  unavailable.mockRestore()
+  expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+})
+
+it.each(['sync', 'async'] as const)(
+  'review: a proven symlink violation at the %s gate notifies and seals until a control change',
+  async (mode) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault })
+    await read(authority, expected)
+    rmSync(file)
+    symlinkSync(join(directory, 'z.mjs'), file)
+    if (mode === 'sync')
+      expect(() => authority.run(() => collectRead(directoryDigestSteps(directory, expected)))).toThrow()
+    else await expect(read(authority, expected)).rejects.toThrow()
+    await setImmediate()
+    // Merely replacing the file is not a new control/trust decision.
+    rmSync(file)
+    writeFileSync(file, 'GOOD')
+    const repaired = await read(authority, expected).then(
+      () => 'accepted',
+      () => 'refused',
+    )
+    expect({ notified: fault.mock.calls.length > 0, repaired }).toEqual({
+      notified: true,
+      repaired: 'refused',
+    })
+  },
+)
+
+it.each(['same-owner', 'another-owner', 'constructed-object'] as const)(
+  'review: an admission cannot be replayed after assembly through %s',
+  async (mode) => {
+    const expected = identity(),
+      parent = owner(),
+      child = owner()
+    await read(parent, expected)
+    const issued = await parent.admission()
+    await child.boot(issued, () => read(child, expected))
+    writeFileSync(file, 'EVIL')
+    const replay =
+      mode === 'constructed-object'
+        ? {
+            binding: packageByteBinding(root),
+            trees: [{ directory: realpathSync(directory), identity: expected }],
+          }
+        : issued
+    const target = mode === 'same-owner' ? child : owner()
+    const imported = vi.fn(async () => ({ main: { apply() {} } }))
+    const result = await target
+      .boot(replay, () =>
+        target.run(() =>
+          loadPackagePlugins({
+            snapshot: {
+              ...expected,
+              snapshotId: expected.integrity,
+              profile: 'p',
+              packageId: 'acme/test',
+              directory,
+              contributions: [],
+            },
+            generation: 1,
+            importModule: imported,
+          }),
+        ),
+      )
+      .then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+    // Owning a separate verifier is not authority over the executable's original verifier.
+    // Keep this boundary assertion alongside the public boot() single-use contract probe.
+    await expect(read(parent, expected)).resolves.not.toBe(expected.treeIntegrity)
+    expect({ refused: 'error' in result, imported: imported.mock.calls.length > 0 }).toEqual({
+      refused: true,
+      imported: false,
+    })
+  },
+)
+
+it('review: a changed source-policy binding cannot turn a delayed old full success into a new hit', async () => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  const original = sources.hashDirectoryAsync
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(async (...args) => {
+    const actual = await original(...args)
+    entered()
+    await gate
+    return actual
+  })
+  const pending = read(authority, expected).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  )
+  try {
+    await reached
+    writeFileSync(join(root, 'package-sources.json'), JSON.stringify({ version: 1, changed: true }))
+    release()
+    expect(await pending).toHaveProperty('error')
+    hash.mockRestore()
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+  } finally {
+    release()
+    await pending
+  }
+})
+
+it.each([
+  ['darwin', 0x1an, true],
+  ['darwin', 0xef53n, false],
+  ['linux', 0xef53n, true],
+  ['linux', 0x58465342n, true],
+  ['linux', 0x1an, false],
+  ['linux', 0n, false],
+  ['win32', 0x1an, false],
+  ['win32', 0x58465342n, false],
+] as const)('review: volume allowlist on %s with type %s is %s', (platform, type, expected) => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+  const actual = syncFs.statfsSync(directory, { bigint: true })
+  vi.spyOn(syncFs, 'statfsSync').mockReturnValue({ ...actual, type })
+  try {
+    Object.defineProperty(process, 'platform', { value: platform })
+    expect(actualVolumeSupport(directory)).toBe(expected)
+  } finally {
+    Object.defineProperty(process, 'platform', descriptor)
+  }
+})
+
+it.each([
+  ['sync', true],
+  ['async', true],
+  ['sync', false],
+  ['async', false],
+] as const)(
+  'drops %s evidence on EIO (identity supported %s) and requires a new full proof',
+  async (mode, supported) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault })
+    const hash = vi.spyOn(sources, mode === 'sync' ? 'hashDirectory' : 'hashDirectoryAsync')
+    const use = () =>
+      mode === 'sync'
+        ? Promise.resolve().then(() => authority.readSync(directory, expected))
+        : read(authority, expected)
+    expect(await use()).toBe(expected.treeIntegrity)
+    vi.mocked(trees.supportsTreeIdentity).mockReturnValue(supported)
+    const outage = Object.assign(new Error('storage unavailable'), { code: 'EIO' })
+    const canonical = realpathSync(file)
+    const originalSync = syncFs.lstatSync,
+      originalAsync = fs.lstat
+    const sync = vi.spyOn(syncFs, 'lstatSync').mockImplementation((...args) => {
+      if (String(args[0]) === canonical) throw outage
+      return originalSync(...args)
+    })
+    const async = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      if (String(args[0]) === canonical) throw outage
+      return originalAsync(...args)
+    })
+    await expect(use()).rejects.toThrow()
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+    sync.mockRestore()
+    async.mockRestore()
+    const before = hash.mock.calls.length
+    expect(await use()).toBe(expected.treeIntegrity)
+    expect(hash.mock.calls.length).toBe(before + 1)
+  },
+)
+
+it.each(['sync', 'async'] as const)(
+  'preserves root errno through the %s full hasher without turning it into success',
+  async (mode) => {
+    const outage = Object.assign(new Error('root unavailable'), { code: 'EIO' })
+    const originalSync = syncFs.lstatSync,
+      originalAsync = fs.lstat
+    vi.spyOn(syncFs, 'lstatSync').mockImplementation((...args) => {
+      if (String(args[0]) === directory) throw outage
+      return originalSync(...args)
+    })
+    vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      if (String(args[0]) === directory) throw outage
+      return originalAsync(...args)
+    })
+    const result =
+      mode === 'sync'
+        ? Promise.resolve().then(() => sources.hashDirectory(directory))
+        : sources.hashDirectoryAsync(directory)
+    await expect(result).rejects.toMatchObject({
+      code: 'E_PACKAGE_SOURCE',
+      detail: { reason: 'directory-unavailable' },
+      cause: outage,
+    })
+  },
+)
+
+it.each([
+  ['sync', 'root'],
+  ['async', 'root'],
+  ['sync', 'full-fallback'],
+  ['async', 'full-fallback'],
+  ['sync', 'after-full'],
+  ['async', 'after-full'],
+  ['sync', 'after-full-root'],
+  ['async', 'after-full-root'],
+] as const)(
+  'closes a confirmed structural violation at the %s %s gate until a control decision',
+  async (mode, gate) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault })
+    const use = () =>
+      mode === 'sync'
+        ? Promise.resolve().then(() => authority.readSync(directory, expected))
+        : read(authority, expected)
+    expect(await use()).toBe(expected.treeIntegrity)
+    const breakLeaf = () => {
+      rmSync(file)
+      symlinkSync(join(directory, 'z.mjs'), file)
+    }
+    const saved = directory + '-saved'
+    const breakRoot = () => {
+      renameSync(directory, saved)
+      symlinkSync(saved, directory, 'dir')
+    }
+    const corrupt = gate.includes('root') ? breakRoot : breakLeaf
+    if (gate === 'root') corrupt()
+    if (gate === 'full-fallback') {
+      vi.mocked(trees.supportsTreeIdentity).mockReturnValue(false)
+      breakLeaf()
+    }
+    if (gate.startsWith('after-full')) {
+      authority.invalidate()
+      if (mode === 'sync') {
+        const original = sources.hashDirectory
+        vi.spyOn(sources, 'hashDirectory').mockImplementationOnce((...args) => {
+          const digest = original(...args)
+          corrupt()
+          return digest
+        })
+      } else {
+        const original = sources.hashDirectoryAsync
+        vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(async (...args) => {
+          const digest = await original(...args)
+          corrupt()
+          return digest
+        })
+      }
+    }
+    await expect(use()).rejects.toThrow()
+    await setImmediate()
+    expect(fault).toHaveBeenCalled()
+    if (gate.includes('root')) {
+      rmSync(directory)
+      renameSync(saved, directory)
+    } else {
+      rmSync(file)
+      writeFileSync(file, 'GOOD')
+    }
+    await expect(use()).rejects.toThrow()
+    symlinkSync(join(root, 'packages'), join(root, 'alias'), 'dir')
+    for (const path of [realpathSync(directory), join(root, 'alias/payload')]) {
+      const aliasRead =
+        mode === 'sync'
+          ? Promise.resolve().then(() => authority.readSync(path, expected))
+          : authority.read(path, expected)
+      await expect(aliasRead).rejects.toThrow()
+    }
+    writeFileSync(join(root, 'agnes-lock.json'), 'a new control decision')
+    expect(await use()).toBe(expected.treeIntegrity)
+  },
+)
+
+it('drops positives when background control-file IO is unavailable before scanning a tree', async () => {
+  const control = join(root, 'agnes-lock.json')
+  writeFileSync(control, 'control')
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault, softMs: 0 })
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync')
+  await read(authority, expected)
+  const original = syncFs.readFileSync
+  const outage = vi.spyOn(syncFs, 'readFileSync').mockImplementation((...args) => {
+    if (String(args[0]) === control) throw Object.assign(new Error('control IO unavailable'), { code: 'EIO' })
+    return original(...args)
+  })
+  await expect(authority.recheck()).rejects.toThrow()
+  outage.mockRestore()
+  await setImmediate()
+  expect(fault).not.toHaveBeenCalled()
+  const before = hash.mock.calls.length
+  expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+  expect(hash.mock.calls.length).toBe(before + 1)
+})
+
+it.each(['sync', 'async'] as const)('refuses a %s use when the volume probe reports EIO', async (mode) => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  const use = () =>
+    mode === 'sync'
+      ? Promise.resolve().then(() => authority.readSync(directory, expected))
+      : read(authority, expected)
+  const hash = vi.spyOn(sources, mode === 'sync' ? 'hashDirectory' : 'hashDirectoryAsync')
+  await use()
+  vi.mocked(trees.supportsTreeIdentity).mockImplementation(actualVolumeSupport)
+  const outage = vi.spyOn(syncFs, 'statfsSync').mockImplementation(() => {
+    throw Object.assign(new Error('volume IO unavailable'), { code: 'EIO' })
+  })
+  await expect(use()).rejects.toThrow()
+  outage.mockRestore()
+  await setImmediate()
+  expect(fault).not.toHaveBeenCalled()
+  const before = hash.mock.calls.length
+  expect(await use()).toBe(expected.treeIntegrity)
+  expect(hash.mock.calls.length).toBe(before + 1)
+})
+
+it('refuses a torn full scan without treating unchanged repaired bytes as a trust violation', async () => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  await read(authority, expected)
+  authority.invalidate()
+  const canonical = realpathSync(file),
+    original = fs.open
+  let changed = false
+  const scan = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await original(...args)
+    if (String(args[0]) === canonical && !changed) {
+      changed = true
+      const stat = handle.stat.bind(handle)
+      vi.spyOn(handle, 'stat').mockImplementationOnce(async () => {
+        const before = await stat()
+        writeFileSync(file, 'GOOD')
+        return before
+      })
+    }
+    return handle
+  })
+  await expect(read(authority, expected)).rejects.toMatchObject({ detail: { reason: 'tree-changed' } })
+  scan.mockRestore()
+  await setImmediate()
+  expect(changed).toBe(true)
+  expect(fault).not.toHaveBeenCalled()
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync')
+  expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+  expect(hash).toHaveBeenCalled()
 })

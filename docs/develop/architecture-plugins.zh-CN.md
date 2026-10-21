@@ -134,6 +134,8 @@ daemon 及其自有 worker 为安装树、不可变 runtime/generation 副本保
 
 安装、信任、更新、启用、回滚、复制/发布、恢复、fresh inventory、doctor 与公开 full-hash API 继续读取真实字节。实时资源保留原完整校验。daemon 在 spawn 前检查已知包输入，经现有私有 fork IPC 传递绑定实例和 profile 的启动准入；它只覆盖初始装配，结束即丢弃，不是持久正向凭据或授权租约。没有 owner 的 standalone/SEA 保持 full。
 
+同步、异步、后台和 full fallback 使用相同的故障分类。只有实际摘要不符或已确认的非法结构才封禁并撤权；不稳定观察作废，元数据变化可按原次数上限重新取得 full 证明。I/O 不可用拒绝本次读取、丢弃正向观察，恢复后的下一次使用必须 full；未知异常不当作完整性证据。完整 hasher 包装异常时保留原 cause/errno，I/O 故障不算校验成功，也不改写信任或启用状态。启动输入每个 owner 最多消费一次；进程内签发的对象不可变且只可消费一次，worker 的 JSON 输入只由私有 IPC 接收器安装，不是可向任意 owner 出示的凭据。
+
 每个 owner 在完整验证满15分钟后独立排程重哈希，一次一树、有限文件 IO、payload 按16 MiB/s节流；满30分钟后的新读盘必须 full。时钟不连续或疑似休眠先丢弃观察。已加载的内存回调不加到期门。后台 mismatch 停止受影响 worker 执行，撤销原包授权并清理可执行恢复目标；保留持久 session pin 和取证字节。故障处理在 profile/publication 读锁之外运行，不持 profile 锁等 worker ack；晚到故障不能撤销新信任周期。没有正向 sidecar、新隔离格式或逐 dispatch 过期锁。
 
 身份证据弱于刚完成的全量内容哈希。保持所有身份字段的篡改可能运行到 full 才被发现；检查前恢复的短暂篡改可能漏过，最后检查到 import 也仍有窗口。此机制不隔离具有用户 OS 权限的受信 Node 插件。当前 grant、角色和应用同意独立检查，字节观察不能恢复已撤销权限。

@@ -34,11 +34,16 @@ export class PackageError extends Error {
   constructor(
     readonly legacyCode: LegacyPackageCode,
     reason: string,
-    opts: { source?: PackageErrorSource; detail?: Record<string, unknown>; code?: OperationErrorCode } = {},
+    opts: {
+      source?: PackageErrorSource
+      detail?: Record<string, unknown>
+      code?: OperationErrorCode
+      cause?: unknown
+    } = {},
   ) {
     const leaked = looksLikeSecret(reason)
     const code = opts.code ?? DOMAIN_CODES[legacyCode]
-    super(`${code}: ${leaked ? REDACTED_ERROR_MESSAGE : reason}`)
+    super(`${code}: ${leaked ? REDACTED_ERROR_MESSAGE : reason}`, { cause: opts.cause })
     this.name = 'PackageError'
     this.code = code
     this.reason = leaked ? REDACTED_ERROR_MESSAGE : reason
@@ -49,4 +54,13 @@ export class PackageError extends Error {
 }
 export function isPackageError(error: unknown, code?: LegacyPackageCode): error is PackageError {
   return error instanceof PackageError && (code === undefined || error.legacyCode === code)
+}
+
+export function packageSourceError(
+  message: string,
+  reason: string,
+  extraDetail?: Record<string, unknown>,
+  cause?: unknown,
+): PackageError {
+  return new PackageError('E_DEP_MISSING', message, { detail: { reason, ...extraDetail }, cause })
 }
