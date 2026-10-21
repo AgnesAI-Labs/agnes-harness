@@ -744,7 +744,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
     if (
       (p.command === 'plugins' &&
-        !/^(reload|publication-status|provenance|candidates|config)$/.test(
+        !/^(reload|publication-status|provenance|candidates|config|tree|generations)$/.test(
           p.positional[0] ?? '',
         )) ||
       p.command === 'package' ||

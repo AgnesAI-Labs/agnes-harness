@@ -88,6 +88,8 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins candidates list\|show\|approve\|reject` | 读取与审阅 Agent 候选；批准/拒绝绑定候选与审阅摘要 |
 | `agh plugins config get ID [--json]` | 显示插件配置行：当前值、schema 摘要和是否有效。secret 与凭据字段显示为 `[redacted]`，`--json` 也一样 |
 | `agh plugins config validate ID [ROW] --file VALUE.json\|-` / `set ID [ROW] --file VALUE.json\|-` | 只校验一行的值/校验后保存；校验失败时逐条列出且不保存（退出码 1）。插件只有一行时可省略 ROW |
+| `agh plugins tree [list]` / `tree show` / `plugins generations [--json]` | 读取插件树（`show --json` 含 artifact）/运行代（generation） |
+| `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | 应用一个插件树 artifact/回滚到上一个；不带 `--yes` 只打印将要做什么，不发请求 |
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |

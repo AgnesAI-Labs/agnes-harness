@@ -20,6 +20,8 @@ export async function runPluginDevelopmentCommand(
   const profile = p.profile ?? 'local-dev'
   if (p.command === 'plugins' && p.positional[0] === 'config')
     return (await import('./plugin-config.js')).pluginConfigCommand(p, client, write)
+  if (p.command === 'plugins' && ['tree', 'generations'].includes(p.positional[0] ?? ''))
+    return (await import('./plugin-tree.js')).pluginTreeCommand(p, client, write)
   if (p.command === 'plugins' && p.positional[0] === 'candidates') {
     const action = p.positional[1],
       candidateId = p.positional[2]
