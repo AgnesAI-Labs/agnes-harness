@@ -206,6 +206,16 @@ export function ApplicationPreviewSummary({
       }),
     ).values(),
   ]
+  // Replacing one interface usually declares UI rendering and nothing else. The abstract
+  // "Permissions / UI / Allowed" row adds no decision, so state the limit in one sentence instead.
+  // Any other capability keeps the full section.
+  const capabilities = preview.dependencies.map((value) => object(object(value)?.capabilities))
+  const presentationOnly =
+    !application &&
+    capabilities.length > 0 &&
+    capabilities.every(
+      (fields) => fields !== undefined && Object.keys(fields).length === 1 && fields.ui === true,
+    )
   return (
     <div className="application-review">
       <div className="agnes-settings-stack" data-testid="consent-summary">
@@ -272,7 +282,22 @@ export function ApplicationPreviewSummary({
                 />
               )
             })}
+            {presentationOnly && (
+              <SettingsItem
+                icon="shield-check"
+                label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
+                description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
+              />
+            )}
           </SettingsGroup>
+          {presentationOnly && (
+            <p className="agnes-settings-note">
+              {tr(
+                'Replaces the interface only; no data, command or secret permissions are added.',
+                '仅替换界面展示，不新增数据、命令或密钥权限。',
+              )}
+            </p>
+          )}
         </SettingsSection>
         {application && (
           <SettingsSection title={tr('Included agents', '包含的智能体')}>
@@ -298,43 +323,45 @@ export function ApplicationPreviewSummary({
             )}
           </SettingsSection>
         )}
-        <SettingsSection title={tr('Permissions', '权限')}>
-          <SettingsGroup>
-            {application &&
-              (access.size ? (
-                [...access].map(([key, group]) => (
+        {!presentationOnly && (
+          <SettingsSection title={tr('Permissions', '权限')}>
+            <SettingsGroup>
+              {application &&
+                (access.size ? (
+                  [...access].map(([key, group]) => (
+                    <SettingsItem
+                      key={key}
+                      label={
+                        group.readOnly === undefined
+                          ? tr('Launch access unavailable', '启动权限尚不可用')
+                          : group.readOnly
+                            ? tr('Read-only tools', '只读工具')
+                            : tr('Tools can read and change data', '工具可读取及修改数据')
+                      }
+                      description={group.names.join(', ')}
+                    />
+                  ))
+                ) : (
                   <SettingsItem
-                    key={key}
-                    label={
-                      group.readOnly === undefined
-                        ? tr('Launch access unavailable', '启动权限尚不可用')
-                        : group.readOnly
-                          ? tr('Read-only tools', '只读工具')
-                          : tr('Tools can read and change data', '工具可读取及修改数据')
-                    }
-                    description={group.names.join(', ')}
+                    label={tr('Launch configuration unavailable', '启动配置尚不可用')}
+                    description={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
                   />
-                ))
-              ) : (
+                ))}
+              {permissions.map((permission) => (
                 <SettingsItem
-                  label={tr('Launch configuration unavailable', '启动配置尚不可用')}
-                  description={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
+                  key={JSON.stringify(permission)}
+                  label={permission.label}
+                  description={permission.detail}
                 />
               ))}
-            {permissions.map((permission) => (
               <SettingsItem
-                key={JSON.stringify(permission)}
-                label={permission.label}
-                description={permission.detail}
+                icon="shield-check"
+                label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
+                description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
               />
-            ))}
-            <SettingsItem
-              icon="shield-check"
-              label={tr('Runtime restrictions and approvals still apply', '继续遵循运行限制与审批')}
-              description={tr('Each agent uses its own reviewed tools.', '各角色使用各自已审阅的工具。')}
-            />
-          </SettingsGroup>
-        </SettingsSection>
+            </SettingsGroup>
+          </SettingsSection>
+        )}
         <p className="agnes-settings-note">
           {preview.signature === 'verified'
             ? tr('Verified publisher', '发布者已验证')
