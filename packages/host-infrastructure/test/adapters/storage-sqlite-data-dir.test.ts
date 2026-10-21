@@ -150,6 +150,8 @@ describe('data directory version', () => {
         detail: { reason: 'older', dataDir: dir, file, tablesDir, found: 1, supported: 1 },
       })
       expect(error.message).toContain('was created by an older AGH')
+      expect(error.message).toContain('(data format 1; an older AGH wrote into it after it was stamped)')
+      expect(error.message).not.toContain('this build supports')
       expect(error.message).toContain(reset())
       expect(snapshot()).toEqual(before)
       expect(userVersion(file)).toBe(1)

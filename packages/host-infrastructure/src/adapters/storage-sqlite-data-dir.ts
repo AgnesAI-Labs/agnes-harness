@@ -73,12 +73,19 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
       )
     return 'fresh'
   }
-  if (found < DATA_DIR_VERSION || olderBuildWrote)
+  if (found < DATA_DIR_VERSION || olderBuildWrote) {
+    // A stamped directory reads as the current format, so "(data format N; this build supports N)"
+    // would say the two match while refusing.
+    const origin =
+      found >= DATA_DIR_VERSION
+        ? `was created by an older AGH and cannot be used (data format ${found}; an older AGH wrote into it after it was stamped)`
+        : `was created by an older AGH (data format ${found}; this build supports ${DATA_DIR_VERSION})`
     throw new CoreError(
       'E_DATA_DIR_STALE',
-      `data directory ${dataDir} was created by an older AGH (data format ${found}; this build supports ${DATA_DIR_VERSION}). ${resetInstructions(paths)}`,
+      `data directory ${dataDir} ${origin}. ${resetInstructions(paths)}`,
       stale('older'),
     )
+  }
   return 'current'
 }
 
