@@ -135,6 +135,15 @@ describe('Host excludes official business identities/implementations; reviewed l
     expect(hostViolations([finding], [{ ...entry, path: 'packages/host/**' }], [])).not.toEqual([])
   })
   it('a wire namespace does not conceal an additional business identity in the same string', () => {
+    const file = join(scratch, 'mixed-peer.ts')
+    writeFileSync(file, "import '@agnes/daemon-admin/@agnes/base'")
+    expect(
+      withSourceTrees([file], (trees) =>
+        trees.flatMap((tree) =>
+          hostFindings(tree, 'packages/daemon/src/supervisor/assembly-runtime.ts', catalogue),
+        ),
+      ),
+    ).toHaveLength(1)
     expect(
       templateFindings('id: "x/agnes/intelligent-ui/action @agnes/base"', 'template.yaml', catalogue),
     ).toHaveLength(1)

@@ -130,7 +130,7 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
       const text = ts.isRegularExpressionLiteral(node) ? node.getText(tree) : node.text
       const kind = role(node)
       // Daemon assembly composes its own split owners; Host still cannot import these owners.
-      const daemonPeer = /^@agnes\/daemon-(?:admin|foundation|rpc|surfaces)(?:\/|$)/.test(text)
+      const daemonPeer = /^@agnes\/daemon-(?:admin|foundation|rpc|surfaces)(?:\/[\w./-]+)?$/.test(text)
       if (kind === 'import' && path.startsWith('packages/daemon/') && daemonPeer) return
       if (officialTokens(text, catalogue).length) add(text, kind)
     }
