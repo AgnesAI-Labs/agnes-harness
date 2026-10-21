@@ -20,7 +20,9 @@ const dimensions = (columns: number, rows: number) => {
     throw new Error('terminal dimensions must be integers between 1 and 1000')
 }
 /** Raw Host spawner. Only the policy-bound sandbox provider may call it. */
-export async function openLocalProcess(request: SandboxProcessRequest): Promise<SandboxProcess> {
+export async function openLocalProcess(
+  request: SandboxProcessRequest & { loopbackFd?: number },
+): Promise<SandboxProcess> {
   request.signal?.throwIfAborted()
   if (!request.argv.length) throw new Error('process argv is empty')
   const windows = createWin32Platform().matches()
@@ -34,7 +36,12 @@ export async function openLocalProcess(request: SandboxProcessRequest): Promise<
     env: { ...baseEnvironment(), TERM: 'xterm-256color', ...request.env },
     detached: !windows,
     windowsHide: true,
-    stdio: request.pty ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+    stdio:
+      request.loopbackFd !== undefined
+        ? ['pipe', 'pipe', 'pipe', request.pty ? 'pipe' : 'ignore', request.loopbackFd]
+        : request.pty
+          ? ['pipe', 'pipe', 'pipe', 'pipe']
+          : ['pipe', 'pipe', 'pipe'],
   })
   const listeners = new Set<(chunk: ProcessOutput) => void>()
   const pending: ProcessOutput[] = []

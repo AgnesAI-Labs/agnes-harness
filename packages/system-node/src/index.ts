@@ -28,6 +28,7 @@ const windows = process.platform === 'win32' // guards-allow-platform: shared sy
 const darwin = process.platform === 'darwin' // guards-allow-platform: shared system leaf, independent of Host.
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
+  openLoopbackListener?(ipv6: boolean): { fd: number; port: number }
   openCanonicalFile?(path: string): number
   openCanonicalWritableFile?(path: string): number
   openCanonicalExclusiveFile?(path: string): number
@@ -65,6 +66,18 @@ type Native = {
   appendPrivateFile(path: string, bytes: Buffer, flush: boolean): void
   protectPrivateDirectory(path: string): void
   protectPrivateFile?(path: string): void
+}
+
+/** Bind an ephemeral TCP listener strictly to one numeric loopback address; caller owns the fd. */
+export function openLoopbackListener(family: 'ipv4' | 'ipv6' = 'ipv4'): { fd: number; port: number } {
+  if (family !== 'ipv4' && family !== 'ipv6') throw new Error('Invalid loopback address family')
+  const implementation = darwin ? native().openLoopbackListener : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(
+      new Error('Loopback socket activation requires the macOS native module; rebuild it'),
+      { code: 'E_SYSTEM_NATIVE_UNAVAILABLE' },
+    )
+  return implementation(family === 'ipv6')
 }
 
 /** Read-only kernel availability query; this does not establish a command boundary. */

@@ -302,6 +302,16 @@ describe('sandbox providers', () => {
     await expect(dispatch.openProcess!(['$SHELL_STDIN'], { cwd, sandbox: binding })).rejects.toThrow(
       /configured stdin shells/,
     )
+    const loopback = {
+      ...binding,
+      policy: { ...policy, network: { mode: 'loopback-serve' as const, hosts: [] } },
+    }
+    await expect(dispatch.run(['echo'], { cwd, sandbox: loopback })).rejects.toThrow(
+      'loopback serving requires the local macOS L1 provider',
+    )
+    await expect(dispatch.openProcess!(['bash'], { cwd, sandbox: loopback })).rejects.toThrow(
+      'loopback serving requires the local macOS L1 provider',
+    )
     expect(seen).toHaveLength(4)
     await slot.selected!.dispose()
     expect(await handle.exited).toEqual({ code: 137 })
@@ -333,6 +343,30 @@ describe('sandbox providers', () => {
     await expect(dispatch.run(['echo', 'ok'], { cwd, sandbox: binding })).resolves.toMatchObject({
       stdout: 'local-provider',
     })
+    const loopback = { ...policy, network: { mode: 'loopback-serve' as const, hosts: [] } }
+    const loopbackDispatch = createSandboxDispatchExec(
+      { ...createExec(), killAll: async () => {} },
+      {
+        selected: {
+          ...instance,
+          async exec(request) {
+            expect(request.network).toBe(false)
+            expect(request.policy?.network.mode).toBe('loopback-serve')
+            return {
+              code: 0,
+              stdout: 'bound-listener',
+              stderr: '',
+              truncated: false,
+              timedOut: false,
+              enforcement,
+            }
+          },
+        },
+      },
+    )
+    await expect(
+      loopbackDispatch.run(['echo'], { cwd, sandbox: { ...binding, policy: loopback } }),
+    ).resolves.toMatchObject({ stdout: 'bound-listener' })
     expect(calls).toHaveLength(1)
     await expect(instance.exec({ argv: ['echo'], cwd })).rejects.toThrow(/bound execution policy/)
     const peerRoot = join(cwd, 'peer')

@@ -44,6 +44,7 @@ describe('Host workspace policy compiler', () => {
     for (const sandbox of [
       { level: 'L0', loopback_serve: true },
       { level: 'L1', loopback_serve: 'true' },
+      { level: 'L1', loopback_serve: null },
       { level: 'L1', loopback_serve: true, on_unavailable: 'allow' },
       { level: 'L1', loopback_serve: true, network_allow: ['example.com'] },
     ])

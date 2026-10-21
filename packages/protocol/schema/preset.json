@@ -337,7 +337,7 @@
             },
             "loopback_serve": {
               "type": "boolean",
-              "description": "Explicit inbound-only TCP loopback serving on macOS L1; outbound network remains denied. Requires on_unavailable deny."
+              "description": "Explicit inherited TCP loopback listener on macOS L1; all new binds and outbound connections remain denied. Applications consume AGH_LOOPBACK_FD. Requires on_unavailable deny."
             },
             "network_allow": {
               "type": "array",

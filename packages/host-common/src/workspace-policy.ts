@@ -87,7 +87,7 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     throw fault('sandbox.on_unavailable is invalid')
   if (level !== 'L1' && onUnavailable === 'allow-if-unimplemented')
     throw fault('allow-if-unimplemented requires an L1 request')
-  const loopbackServe = input.loopback_serve ?? false
+  const loopbackServe = input.loopback_serve === undefined ? false : input.loopback_serve
   if (typeof loopbackServe !== 'boolean') throw fault('sandbox.loopback_serve is not boolean')
   if (
     loopbackServe &&

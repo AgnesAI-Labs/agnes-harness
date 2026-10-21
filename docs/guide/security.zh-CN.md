@@ -131,6 +131,12 @@ permissions:
 
 若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt。命令批准后，Host 将 TCP listener 绑定到数值地址 `127.0.0.1`，再通过继承的文件描述符交给该命令。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。
+
+此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在进程启动/结束或失败时关闭自己的描述符副本；原有 job 取消及工作区清理负责停止持有它的子进程。
+
+本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。
+
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 
 Computer Use 是另一个高权限面：本地 profile 有启用配置，但仍需要运行组件、可用模型和操作系统授权。`computer-use permissions grant` 会触发授权流程，`install/restart` 会改变运行组件；只读排查先用 `computer-use status` 和 `doctor computer-use`，不要为文档自动授予系统权限。
@@ -184,8 +190,3 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 Windows 使用 PowerShell 时，没有进程隔离的命令 Hook 还须取得 `commandHooks.trustedUnconfined` 授权，精确匹配配置来源、内容摘要和规范化工作区。Hook 使用当前工作区绑定的 Host 执行接口，由 Host 判断能否执行，包括 `allow-if-unimplemented`、显式拒绝和 `required: true`；授权按每次调用的规范化工作区核对，覆盖其他工作区中的会话。Hook 信任不能覆盖这项判断。未受信任的工作区 Hook 不会进入本次调用；受信任但执行被拒的 Hook 仍按对应事件原有的失败规则处理。macOS/Linux 的隔离要求、工具审批，以及前述 Windows 记忆保护限制均不改变。
 
 完全访问会话会在无人值守策略交接前自动允许权限决定，因此不会因等待审批进入 `waiting_approval`；其他会话继续遵循交接或拒绝设置。
-
-
-经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt：允许 TCP 绑定 `127.0.0.1`、`::1` 并响应入站连接，禁止通配地址、UDP 和所有主动连接（含 localhost）。应用必须显式绑定回环地址。此声明不能与 `network_allow`、完全访问或无沙箱降级组合；Linux、Windows、远端和外部 provider 会明确拒绝，不会报告虚假的可访问 URL。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行该命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。
-
-本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。

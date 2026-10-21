@@ -81,8 +81,10 @@ export function seatbeltDenyNetworkArgv(
       : policy.loopbackServe
         ? [
             // Default deny still blocks outbound, UDP, Unix sockets and wildcard binds.
-            // localhost is Seatbelt's numeric IPv4/IPv6 loopback filter, not DNS.
-            '(allow network-bind network-inbound (local tcp "localhost:*"))',
+            // Host supplies an already-bound loopback listener. Never grant bind: Seatbelt's
+            // localhost inbound filter also matches wildcard/LAN addresses on this host.
+            '(allow network-inbound (local tcp "localhost:*"))',
+            '(deny network-bind)',
           ]
         : ['(deny network*)']),
   ].join('\n')

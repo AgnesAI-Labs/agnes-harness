@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,6 +14,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
+import { openLoopbackListener } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
@@ -155,9 +157,10 @@ seatbelt('serves real IPv4/IPv6 loopback HTTP without wildcard binds or outbound
       socket.setTimeout(1000, () => { socket.destroy(); resolve('TIMEOUT'); });
     });
     (async () => {
+      const activated = await Promise.all([4,5].map(fd => new Promise((resolve,reject) => { const s=http.createServer((_,r)=>r.end('loopback-only'));s.on('error',reject);s.listen({fd},()=>resolve({host:s.address().address,port:s.address().port})) })));
       const binds = await Promise.all(['127.0.0.1','::1','0.0.0.0','::'].map(bind));
       const outbound = await Promise.all(['127.0.0.1','192.0.2.1'].map(connect));
-      console.log(JSON.stringify({ binds, outbound }));
+      console.log(JSON.stringify({ activated, binds, outbound }));
     })();
   `
   const argv = seatbeltDenyNetworkArgv([process.execPath, '-e', program], {
@@ -165,19 +168,31 @@ seatbelt('serves real IPv4/IPv6 loopback HTTP without wildcard binds or outbound
     denyPaths: [],
     loopbackServe: true,
   })
-  const child = spawn(argv[0]!, argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] })
+  const descriptors: number[] = []
+  let child: ReturnType<typeof spawn>
+  try {
+    descriptors.push(openLoopbackListener('ipv4').fd)
+    descriptors.push(openLoopbackListener('ipv6').fd)
+    child = spawn(argv[0]!, argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe', 'ignore', ...descriptors] })
+  } catch (error) {
+    await new Promise<void>((resolve) => control.close(() => resolve()))
+    throw error
+  } finally {
+    for (const fd of descriptors) closeSync(fd)
+  }
   let stdout = '',
     stderr = ''
-  child.stderr.on('data', (chunk) => {
+  child.stderr!.on('data', (chunk) => {
     stderr += chunk
   })
   try {
     const facts = await new Promise<{
+      activated: { host: string; port: number }[]
       binds: { host: string; port?: number; error?: string }[]
       outbound: string[]
     }>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error(`server did not start: ${stderr}`)), 5000)
-      child.stdout.on('data', (chunk) => {
+      child.stdout!.on('data', (chunk) => {
         stdout += chunk
         if (stdout.includes('\n')) {
           clearTimeout(timeout)
@@ -194,15 +209,14 @@ seatbelt('serves real IPv4/IPv6 loopback HTTP without wildcard binds or outbound
       })
     })
     for (const host of ['127.0.0.1', '::1']) {
-      const bind = facts.binds.find((bind) => bind.host === host)!
-      expect(bind.error, stderr).toBeUndefined()
+      const bind = facts.activated.find((bind) => bind.host === host)
+      if (!bind) throw new Error('missing activated listener: ' + JSON.stringify(facts))
       const response = await fetch(`http://${host === '::1' ? '[::1]' : host}:${bind.port}/`)
       expect(await response.text()).toBe('loopback-only')
     }
     expect(
-      facts.binds
-        .filter((bind) => ['0.0.0.0', '::'].includes(bind.host))
-        .every((bind) => bind.error === 'EPERM' || bind.error === 'EACCES'),
+      facts.binds.every((bind) => bind.error === 'EPERM' || bind.error === 'EACCES'),
+      JSON.stringify(facts),
     ).toBe(true)
     expect(facts.outbound.every((code) => code === 'EPERM' || code === 'EACCES')).toBe(true)
   } finally {

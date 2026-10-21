@@ -63,6 +63,8 @@ export type ExecAdapter = {
       signal?: AbortSignal
       maxOutputBytes?: number
       sandbox?: SandboxExecBinding
+      /** Host-private inherited listener; never accepted from a tool request. */
+      loopbackFd?: number
     },
   ): Promise<ExecResult>
   killAll(): Promise<void>
@@ -217,7 +219,12 @@ export function createExec(
           env: { ...base, ...(o.env ?? {}) },
           detached: opts.detached ?? true,
           windowsHide: true,
-          stdio: o.bridge ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+          stdio:
+            o.loopbackFd !== undefined
+              ? ['pipe', 'pipe', 'pipe', o.bridge ? 'pipe' : 'ignore', o.loopbackFd]
+              : o.bridge
+                ? ['pipe', 'pipe', 'pipe', 'pipe']
+                : ['pipe', 'pipe', 'pipe'],
         })
         live.add(child)
         const closeBridge = o.bridge ? attachProcessBridge(child, o.bridge, () => killGroup(child)) : () => {}
