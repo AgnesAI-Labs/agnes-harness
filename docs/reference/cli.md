@@ -28,6 +28,12 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | Session preferences; `--json` prints the stored preferences |
 | `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | List the files a session delivered / download one: sha256 and size are checked, only the name's last path segment is used, an existing file is refused without `--force` |
 | `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | List the approval grants in force for a session / revoke one (admin connection; a refusal is printed as the daemon sends it) |
+| `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | List scheduled tasks (all by default) / one task with its recent runs |
+| `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [same flags]` | Create or change a task; `--every` runs from 60s to 366d, a task with neither `--session` nor `--new-session` opens a new session in the current directory, and `edit` changes only the flags given |
+| `agh schedules pause\|resume\|run\|archive ID [--json]` | Pause, resume, run now, or archive a task (admin connection; a refusal prints its code and exits 1) |
+| `agh triggers [list] [--json]` / `agh triggers remove RULE` | List webhook trigger rules and the listener configuration / delete a rule |
+| `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | Save a rule or the configuration from JSON (`-` reads stdin); the JSON is checked against the protocol schema before anything is sent |
+| `agh triggers test RULE [--payload FILE\|-]` | Run a synthetic delivery through a rule; a delivery that is not accepted prints its status and exits 1. `deliver` is webhook-only and not offered |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |

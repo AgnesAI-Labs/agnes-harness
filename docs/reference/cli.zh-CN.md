@@ -24,6 +24,12 @@
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
 | `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
 | `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|
+| `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | 列出定时任务（默认全部）/查看一个任务及其最近运行 |
+| `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [同上]` | 新建或修改任务；`--every` 范围为 60 秒到 366 天，未给 `--session` 或 `--new-session` 时在当前目录新开会话运行，`edit` 只改动给出的参数 |
+| `agh schedules pause\|resume\|run\|archive ID [--json]` | 暂停、恢复、立即运行或归档任务（需管理员连接；拒绝时打印 code 并以 1 退出）|
+| `agh triggers [list] [--json]` / `agh triggers remove RULE` | 列出 webhook 触发规则和监听配置/删除一条规则 |
+| `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | 用 JSON 保存规则或配置（`-` 读标准输入）；发送前先按协议 schema 校验 |
+| `agh triggers test RULE [--payload FILE\|-]` | 用模拟投递跑一次规则；投递未被接受时打印状态并以 1 退出。`deliver` 仅限 webhook 入站，CLI 不提供 |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |
