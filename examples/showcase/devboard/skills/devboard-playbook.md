@@ -25,7 +25,7 @@
 
 ## 现场项目：车门健康监测看板
 
-建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 只绑定 `127.0.0.1`，提供页面和公开 JSON 接口；数据是生成的模拟门控器故障码和开关门时间；按线路、车辆、车门三级展示健康评分与故障排行；测试用 `node --test`。端口由现场指定或选择空闲端口，禁止使用 4177/4178。
+建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 提供页面和公开 JSON 接口：在 AGH 中接管 Host 预先绑定的 loopback listener；在没有 socket activation 的普通部署中才绑定 `127.0.0.1` 与指定端口；数据是生成的模拟门控器故障码和开关门时间；按线路、车辆、车门三级展示健康评分与故障排行；测试用 `node --test`。端口由现场指定或选择空闲端口，禁止使用 4177/4178。
 
 项目目录是 `devboard_project_create` 返回的 `workspaceDir`（`devboard-projects/<项目编号>/`），所有文件都写在这里面：
 
@@ -42,15 +42,30 @@ src/…  test/…  server.js  README.md
 2. 需求分析：派需求分析师子智能体写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
 3. 架构设计：派架构师写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
 4. 开发实现：派开发写 `src/`、`server.js` 和单元测试；再派代码评审子智能体评审（检查代码与测试是否覆盖 SWR）；登记 CODE 交付物（路径如 `src/README.md` 或 `README.md`），把评审意见作为 findings 提交；修复并由代码评审角色复核后关闭意见，自动通过。
-5. 测试验证：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记（含命令、cwd、通过/失败/跳过数和日志摘要），回传结果给测试角色完成 `docs/TEST-REPORT.md`；失败项用 `devboard_defect_upsert` 登记缺陷。验收必须启动真实 TCP listener，通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
-6. 发布验收：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，用公开 HTTP 接口检查服务就绪；请人在真实浏览器打开页面并操作线路、车辆、车门与故障排行，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记 `http://127.0.0.1:<端口>/` → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
+5. 测试验证：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记（含命令、cwd、通过/失败/跳过数和日志摘要），回传结果给测试角色完成 `docs/TEST-REPORT.md`；`node --test` 记录单元测试结果，公开 HTTP/页面验收由真实浏览器执行测试角色的断言或逐条 TC 步骤，分别记录实际计数；失败项用 `devboard_defect_upsert` 登记缺陷。验收必须启动真实 TCP listener，由沙箱外真实浏览器通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
+6. 发布验收：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，读取实际输出的 `AGH_LOOPBACK_URL`，请演示者从真实浏览器通过公开 HTTP 接口检查就绪；请人在真实浏览器打开页面并操作线路、车辆、车门与故障排行，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记实际 `AGH_LOOPBACK_URL`（`http://127.0.0.1:<实际端口>/`） → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
 
 ### 命令
 
 - 所有 shell 命令（包括 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；命令保持简单，不要用 `;`、`&&`、`|`、重定向等 shell 元字符，并等用户批准。
-- shell 默认工作目录是工作区根目录。测试传明确文件，例如 `node --test devboard-projects/<项目编号>/test/unit.test.js devboard-projects/<项目编号>/test/acceptance.test.js`；先确认实际文件名。不要把 `test/` 目录作为 Node 的位置参数。
-- 也可将 shell 的 `cwd` 设置为项目目录 `devboard-projects/<项目编号>/`，直接运行 `node --test` 自动发现；服务同样设项目 `cwd` 后运行 `node server.js --port <端口>`。不要把工作区 cwd 与项目 cwd 混用。
+- shell 默认工作目录是工作区根目录。测试传明确文件，例如 `node --test devboard-projects/<项目编号>/test/unit.test.js`；先确认实际文件名。不要把 `test/` 目录作为 Node 的位置参数。
+- 也可将 shell 的 `cwd` 设置为项目目录 `devboard-projects/<项目编号>/`，直接运行 `node --test` 自动发现；服务同样设项目 `cwd` 后运行 `node server.js --port <端口>`。不要把工作区 cwd 与项目 cwd 混用。Host socket activation 会选择实际端口；`--port` 仅用于无 activation 的普通部署，不得据它猜测运行地址。
 - 子角色无法请求审批或签署，因此所有测试和服务命令均交给协调员执行，再把原始结果交回角色复核。避免 `node --version`、`pwd` 等无必要 shell 探测；用文件工具读取需要的项目内容。不要探测凭据或环境变量。
+
+### 本地服务与公开接口验收
+
+平台只授入站能力，不授命令 bind/connect 权限。服务入口必须支持 Host 交接的 listener：
+
+```js
+const fd = process.env.AGH_LOOPBACK_FD
+server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
+  console.log(process.env.AGH_LOOPBACK_URL ?? `http://127.0.0.1:${port}/`)
+})
+```
+
+不要自行设置这两个环境变量，或把 fd/URL 写死。使用 shell 后台 job 的真实输出读取 URL；`devboard_app_register` 只能登记该 URL。命令沙箱内的 `curl` / `fetch` 即使连接自己的服务也会被拒绝；不要因此反复探测、放宽网络或回退内部函数。
+
+测试角色把公开 HTTP 的正常/拒绝路径断言与页面操作检查步骤（TC→SWR）写入测试交付物，可附 `test/acceptance.browser.js`。协调员请演示者在沙箱外真实浏览器执行，回传响应、通过/失败数量和截图等证据后再登记系统验收。`node --test` 的单元测试与这些浏览器检查分开计数；后者未执行就保留质量缺口，不能拿单元测试绿色结果代替。
 
 ## 角色子智能体
 
