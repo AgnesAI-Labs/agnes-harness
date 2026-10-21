@@ -3,6 +3,7 @@ import { homeVersionMessage } from '@agnes/host'
 /** CLI startup and home errors use fixed text, never an upstream error body. */
 const en = {
   home: 'Home',
+  daemonStarting: 'Starting the Agnes background service…',
   configBaseUrl:
     'baseUrl: This endpoint is invalid for the serving adapter. Check the URL scheme, host and path.',
   configApiKey: 'apiKey: Enter the API key again to authorize sending it to the changed endpoint.',
@@ -29,6 +30,7 @@ const en = {
 } as const
 const zh: Record<keyof typeof en, string> = {
   home: '运行目录',
+  daemonStarting: '正在启动 Agnes 后台服务…',
   configBaseUrl: 'baseUrl：此适配器不支持该端点，请检查 URL 协议、主机和路径。',
   configApiKey: 'apiKey：请重新输入 API key，授权将其发送到更改后的端点。',
   configCredentialRef: 'credentialRef：请重新选择凭据，授权将其发送到更改后的端点。',
