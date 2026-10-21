@@ -6,7 +6,14 @@ import type {
   SandboxSeam,
   Verdict,
 } from '@agnes/core'
-import type { FsEntry, FsStat, Logger, PersistenceMetadataNamespace, SessionRef } from '@agnes/extension-api'
+import type {
+  ChildControlStore,
+  FsEntry,
+  FsStat,
+  Logger,
+  PersistenceMetadataNamespace,
+  SessionRef,
+} from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
@@ -150,6 +157,12 @@ export interface SessionTasks {
   ): Promise<string | undefined>
 }
 
+/** The two primary-key child-control calls a subagent worktree binding needs, and nothing else. */
+export type ChildWorktreePort = Readonly<{
+  lookupByKey: ChildControlStore['lookupByKey']
+  updateWorkspace: NonNullable<ChildControlStore['updateWorkspace']>
+}>
+
 export type SeamInitContext = {
   sessionTasks?: SessionTasks
   searchProvider?: import('@agnes/extension-api').SearchProvider
@@ -193,6 +206,9 @@ export type SeamInitContext = {
   /** Supplied only to the exact trusted computer-use extension after platform driver admission. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: ComputerUseToolOptions
+  /** Host-owned child-control port, supplied only to `@agnes/base`; Base forwards it only to
+   *  agnes/subagent (see `ecosystemInitFor`). */
+  childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
 }

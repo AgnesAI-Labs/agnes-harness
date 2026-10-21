@@ -244,7 +244,6 @@ export function sqliteChildControl(
       'UPDATE child_workspaces SET phase = ?, path = ?, root = ?, branch = ? WHERE workspace_id = ?',
     ),
     updateTaskCwd: db.prepare('UPDATE child_tasks SET cwd = ? WHERE child_key = ?'),
-    wsByChild: db.prepare('SELECT * FROM child_workspaces WHERE child_key = ?'),
     maxPermit: db.prepare(
       `SELECT permit_id FROM budget_reservations WHERE permit_id LIKE 'p%' ORDER BY length(permit_id) DESC, permit_id DESC LIMIT 1`,
     ),

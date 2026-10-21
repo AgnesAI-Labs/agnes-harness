@@ -167,6 +167,7 @@ export {
   validateLockedPackageArchive,
 } from './computer-use/locked-package-archive.js'
 export {
+  childControlWorktreePersist,
   createEcosystemExtensions,
   ecosystem,
   type HooksRunnerEcosystemDeps,
@@ -208,6 +209,7 @@ export {
   READ_MCP_RESOURCE,
 } from './mcp/resources.js'
 export type {
+  ChildWorktreePort,
   HostExec,
   HostExecResult,
   HostFs,

@@ -1,4 +1,4 @@
-import type { SeamImplementations } from '@agnes/core'
+import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
@@ -27,6 +27,16 @@ export function createEcosystemContexts(
   const { baseContext } = seamContexts
   const sessionTasks: { current?: SeamInitContext['sessionTasks'] } = {}
   const privacyTrajectory: { current?: SeamInitContext['privacyTrajectory'] } = {}
+  const storage = adapters.storage
+  // Only the two primary-key calls subagent worktree binding needs, never the whole store. It goes
+  // to the @agnes/base owner like sessionTasks; Base forwards it only to agnes/subagent.
+  const childControl =
+    hasChildControl(storage) && storage.updateWorkspace
+      ? Object.freeze({
+          lookupByKey: storage.lookupByKey.bind(storage),
+          updateWorkspace: storage.updateWorkspace.bind(storage),
+        })
+      : undefined
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -43,7 +53,12 @@ export function createEcosystemContexts(
     return {
       ...baseContext(owner),
       sandbox: seams.sandbox,
-      ...(owner === '@agnes/base' && sessionTasks.current ? { sessionTasks: sessionTasks.current } : {}),
+      ...(owner === '@agnes/base'
+        ? {
+            ...(sessionTasks.current ? { sessionTasks: sessionTasks.current } : {}),
+            ...(childControl ? { childControl } : {}),
+          }
+        : {}),
       ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
         ? { searchProvider: deps.searchProvider }
         : {}),
