@@ -73,7 +73,12 @@ describe('built-in base tools', () => {
   it('renders the question, deliverable and schedule surfaces through ui_render', async () => {
     const dataDir = scratch()
     writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
-    const schedulerStorage = createSqliteStorage({ file: join(dataDir, 'scheduler.db') })
+    // Its own tables directory: the host below owns `<dataDir>/tables`, and package tables without
+    // the host's sessions.db are a refused data directory.
+    const schedulerStorage = createSqliteStorage({
+      file: join(dataDir, 'scheduler.db'),
+      tablesDir: join(dataDir, 'scheduler-tables'),
+    })
     cleanup.push(() => schedulerStorage.close())
     const table = schedulerStorage.tables('fixture/scheduler').table('schedules')
     const schedules = openScheduleCatalog({
