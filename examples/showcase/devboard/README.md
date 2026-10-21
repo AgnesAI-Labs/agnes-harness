@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 An R&D and quality workbench demo for a rail door-system manufacturer: review gates that follow the project kind, multi-discipline traceability, type tests and first-article inspection, and the loop from field alarms back to design. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines, trains, parts and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, SLM, MES …) is contacted. Gate names, limits and safety-integrity statements are assumptions ("inferred" or "project specification assumption"), not any real company's process.
 
-After installing and adopting DevBoard 3.0.0 on the Agents page, the workbench shows nine pages and an **R&D Coordinator** agent. Four projects are seeded:
+After installing and adopting DevBoard 3.1.0 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
 
 | Project | Kind | Shows |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforc
 
 ### Demo script and checkpoints
 
-0. **Uninstall 2.0.0 first**: an in-place upgrade from 2.0.0 reports `E_PACKAGE_STATE`. On the Agents page uninstall DevBoard 2.0.0, install 3.0.0, then adopt it.
+0. **Uninstall 2.0.0 first**: an in-place upgrade from 2.0.0 reports `E_PACKAGE_STATE`. On the Agents page uninstall DevBoard 2.0.0, install 3.1.0, then adopt it.
 1. Portfolio: four projects with gate codes and owning centres; PRJ-2023-011 shows alarms, open problems, retrofit progress and baseline gap.
 2. Reviews → the design liaison 2 gate of PRJ-2026-008: signing as 质量工程师 is refused with "本门需由 … 审批"; signing as a role the gate names records one signature and leaves the gate pending; the last signature is refused while findings are open; close them and sign the remaining role to pass the gate and move on to design freeze.
 3. Trials & first article: the failed low-temperature clamping-force trial of PRJ-2025-042 points at its change; submitting the type-test gate adds a finding for every trial not yet approved.
@@ -111,4 +111,4 @@ Everything below is an assumption in this demo and should be confirmed before re
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 data is kept; uninstall 2.0.0 before installing 3.0.0. To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
+Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); uninstall 2.0.0 before installing 3.1.0. To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
