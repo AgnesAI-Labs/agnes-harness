@@ -1,8 +1,18 @@
-import type { RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
+import type { EntryRow, RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
 import type { Host } from './host.js'
 import { HOST_MEMBER_SCOPES, type HostFacadeOverrides, memberScope } from './host-routing.js'
 
 const sources = new WeakMap<Host, () => Host>()
+const executionRows = new WeakMap<Host, () => readonly Readonly<EntryRow>[]>()
+
+/** Host-private execution evidence; published targets omit static rows merged at mount time. */
+export function registerHostExecutionRows(host: Host, rows: () => readonly Readonly<EntryRow>[]): void {
+  executionRows.set(host, rows)
+}
+
+export function hostExecutionRows(host: Host): readonly Readonly<EntryRow>[] | undefined {
+  return executionRows.get(hostInspectionSource(host))?.()
+}
 
 /** Only Host-created facades may expose their owning object to descriptor-based inspection. */
 export function hostInspectionSource(host: Host): Host {

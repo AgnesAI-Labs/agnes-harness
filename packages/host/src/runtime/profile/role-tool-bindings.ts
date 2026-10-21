@@ -1,6 +1,7 @@
 import { canonicalJson, type RegisteredTool, sha256Hex } from '@agnes/core'
 import { pluginConfigDigest } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
+import { hostExecutionRows } from '../lifecycle/host-facade.js'
 
 /** Prove the registration still describes the verified row configuration in this Host. */
 export function roleToolBindingIdentity(host: Host, tool: RegisteredTool): string | undefined {
@@ -15,13 +16,27 @@ export function roleToolBindingIdentity(host: Host, tool: RegisteredTool): strin
     !/^[0-9a-f]{64}$/.test(binding.configDigest)
   )
     return undefined
+  // The execution tree merges verified Host-static rows with the external target. Only
+  // Host-created instances/facades can provide this evidence; keep the legacy target path
+  // for embedded Hosts without the private registration.
   const target = host.runtimeTargetSnapshot?.()
-  const rows = target
-    ? [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)]
-    : host.extensionRows.current()
-  const row = rows.find((row) => row.id === binding.rowId && !row.disabled)
+  const mountedRows = hostExecutionRows(host)
+  if (
+    !mountedRows &&
+    target &&
+    Object.entries(target.resource.rows).some(([id, row]) => id === binding.rowId && row === null)
+  )
+    return undefined
+  const rows =
+    mountedRows ??
+    (target
+      ? [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)]
+      : host.extensionRows.current())
+  const row = rows.find((row) => row.id === binding.rowId)
   if (
     !row ||
+    row.disabled ||
+    (row.plugin.startsWith('builtin:') && tool.source.trust !== 'builtin') ||
     binding.configDigest !==
       pluginConfigDigest(tool.source.trust === 'builtin' ? (row.config ?? {}) : row.config)
   )

@@ -216,7 +216,7 @@ export async function openAdapters(
      */
     sandboxDispatch?: SandboxProviderSlot
     /** Skill directories the workspace fence may read; ignored in remote mode. */
-    skillReadRoots?: () => readonly string[]
+    skillReadRoots?: (sessionKey?: string) => readonly string[]
     /** The installation's own state: readable but never writable by the file tools under full access. */
     fullAccessReadOnlyRoots?: () => readonly string[]
     /** Selects the session store. Omitted means the built-in `sqlite` provider. A change applies on the next start. */
