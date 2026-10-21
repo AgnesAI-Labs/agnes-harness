@@ -669,6 +669,9 @@
 }
 
 @layer app {
+  .profile-attention-dialog .approval-impact:empty {
+    display: none;
+  }
   .profile-attention-dialog .approval-actions {
     margin-top: var(--s4);
   }

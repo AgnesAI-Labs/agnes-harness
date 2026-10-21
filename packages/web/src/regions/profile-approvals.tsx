@@ -266,7 +266,9 @@ export function ProfileApprovals({
           hidden={!open}
           aria-label={zh ? '待处理' : 'Needs attention'}
         >
-          <p>{zh ? '查看需要你确认或处理的事项。' : 'Review items that need your attention.'}</p>
+          {!view.decision && (
+            <p>{zh ? '查看需要你确认或处理的事项。' : 'Review items that need your attention.'}</p>
+          )}
           {(error || readFailed) && (
             <p role="alert">
               {zh ? '审批不可用，请刷新重试。' : 'Approval unavailable. Refresh and try again.'}
@@ -323,8 +325,8 @@ export function ProfileApprovals({
             const title = operation
               ? `${zh ? '插件' : 'Plugin'}${name ? ` ${name}` : ''} · ${operation}`
               : zh
-                ? `${name ? `${name} 插件` : '插件'}请求执行一个操作`
-                : `${name ? `${name} plugin` : 'A plugin'} requests an operation`
+                ? `${name || '插件'} · 请求执行一个操作`
+                : `${name || 'Plugin'} · requests an operation`
             return (
               <ProfileApproval
                 key={snapshot.handle.id}
@@ -333,13 +335,9 @@ export function ProfileApprovals({
                 view={{
                   key: snapshot.handle.id,
                   title,
-                  summary: zh
-                    ? '请核对操作详情，再选择允许一次或拒绝。'
-                    : 'Review the operation details, then allow once or reject.',
+                  summary: zh ? '仅对此次操作生效。' : 'Applies only to this operation.',
                   ...(presentation ? { presentation } : {}),
-                  impact: zh
-                    ? '在此允许一次或拒绝；仅适用于所示操作。'
-                    : 'Allow once or reject here; applies only to the operation shown.',
+                  impact: '',
                   risk: 'always',
                   preview: JSON.stringify(
                     { handle: snapshot.handle, revision: snapshot.revision, request: snapshot.request },

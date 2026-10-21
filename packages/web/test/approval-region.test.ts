@@ -362,13 +362,14 @@ it.each(['en', 'zh-CN'] as const)(
         language === 'en' ? 'Publish the reviewed report' : '发布已审阅报表',
       )
       expect(surface()?.querySelector('.approval-summary-text')?.textContent).toContain(
-        language === 'en' ? 'Review the operation details' : '请核对操作详情',
+        language === 'en' ? 'Applies only to this operation.' : '仅对此次操作生效。',
       )
       expect(surface()?.closest('.sidebar')).toBeNull()
       expect(surface()?.textContent).toContain(language === 'en' ? 'Plugin Reports' : '插件 报表')
       expect(surface()?.textContent).toContain(language === 'en' ? 'Plugin requests' : '插件请求')
+      expect(surface()?.querySelector('.approval-impact')?.textContent).toBe('')
       expect(surface()?.textContent).toContain(
-        language === 'en' ? 'Allow once or reject here' : '在此允许一次或拒绝',
+        language === 'en' ? 'Review items that need your attention.' : '查看需要你确认或处理的事项。',
       )
       expect(surface()?.querySelector('h2')?.textContent).not.toContain('plugin/report')
       listUnavailable = true
@@ -654,12 +655,17 @@ it.each(['en', 'zh-CN'] as const)(
       await vi.waitFor(() => expect(panel()?.hidden).toBe(false))
       await vi.waitFor(() =>
         expect(panel()?.querySelector('h2')?.textContent).toBe(
-          language === 'en'
-            ? 'Aerospace example plugin requests an operation'
-            : '航空示例 插件请求执行一个操作',
+          language === 'en' ? 'Aerospace example · requests an operation' : '航空示例 · 请求执行一个操作',
         ),
       )
       expect(panel()?.closest('.sidebar')).toBeNull()
+      expect(panel()?.textContent).not.toContain(
+        language === 'en' ? 'Review items that need your attention.' : '查看需要你确认或处理的事项。',
+      )
+      expect(panel()?.querySelector('.approval-summary-text')?.textContent).toBe(
+        language === 'en' ? 'Applies only to this operation.' : '仅对此次操作生效。',
+      )
+      expect(panel()?.querySelector('.approval-impact')?.textContent).toBe('')
       expect(toggle()).toBeNull()
       expect(panel()?.textContent).toContain(
         language === 'en' ? 'Rule TVAC-LOT-001 · Revision 2' : '规则 TVAC-LOT-001 · 修订 2',
