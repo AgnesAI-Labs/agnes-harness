@@ -979,6 +979,17 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
+// The sidebar's application switch asks for the settings page in place; its href stays the fallback.
+const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
+  const section = (event as CustomEvent<{ section?: string }>).detail?.section
+  if (!section) return
+  event.preventDefault()
+  settingsRegion.open('model')
+  run(async () => {
+    await settings.open()
+    settingsRegion.route(section)
+  })
+})
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
@@ -2151,6 +2162,7 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  stopSurfaceSettings()
   stopSettingsRouting()
   statusCheck.dispose()
   stopHomeRouting()
