@@ -2,9 +2,20 @@
  * to the assembling seam; this leaf does not claim a backend is available. */
 export function seatbeltDenyNetworkArgv(
   argv: string[],
-  policy: { allowPaths: string[]; denyPaths: string[]; readPaths?: string[]; network?: 'deny' | 'allow' },
+  policy: {
+    allowPaths: string[]
+    denyPaths: string[]
+    readPaths?: string[]
+    network?: 'deny' | 'allow'
+    loopbackServe?: boolean
+  },
 ): string[] {
   const invalid = () => new Error('invalid sandbox policy')
+  if (
+    (policy.loopbackServe !== undefined && typeof policy.loopbackServe !== 'boolean') ||
+    (policy.loopbackServe && policy.network === 'allow')
+  )
+    throw invalid()
   const quote = (value: string): string => {
     if (
       typeof value !== 'string' ||
@@ -65,7 +76,15 @@ export function seatbeltDenyNetworkArgv(
         }),
       ),
     ].map((path) => `(deny file-write-unlink (literal ${quote(path)}))`),
-    policy.network === 'allow' ? '(allow network*)' : '(deny network*)',
+    ...(policy.network === 'allow'
+      ? ['(allow network*)']
+      : policy.loopbackServe
+        ? [
+            // Default deny still blocks outbound, UDP, Unix sockets and wildcard binds.
+            // localhost is Seatbelt's numeric IPv4/IPv6 loopback filter, not DNS.
+            '(allow network-bind network-inbound (local tcp "localhost:*"))',
+          ]
+        : ['(deny network*)']),
   ].join('\n')
   return ['/usr/bin/sandbox-exec', '-p', profile, ...argv]
 }

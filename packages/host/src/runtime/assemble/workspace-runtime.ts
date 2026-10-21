@@ -68,6 +68,16 @@ function createReadinessManager(
       throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
         detail: { reason: 'workspace-policy-missing' },
       })
+    if (
+      plan.staticConfig.loopbackServe &&
+      (adapters.transport ||
+        sandboxProviderIdFrom(ctx.profile) !== LOCAL_SANDBOX_PROVIDER_ID ||
+        adapters.platform.os !== 'darwin')
+    )
+      throw new HostError(
+        'E_SANDBOX_WORKSPACE',
+        'loopback serving is available only with the local macOS L1 Seatbelt provider',
+      )
     if (adapters.transport && plan.staticConfig.onUnavailable === 'allow-if-unimplemented')
       throw new HostError(
         'E_SANDBOX_WORKSPACE',

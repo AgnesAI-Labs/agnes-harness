@@ -37053,6 +37053,10 @@
                         "type": "string"
                       },
                       {
+                        "const": "loopback-serve",
+                        "type": "string"
+                      },
+                      {
                         "const": "unrestricted",
                         "type": "string"
                       }
@@ -37125,6 +37129,10 @@
                       },
                       {
                         "const": "allow-list",
+                        "type": "string"
+                      },
+                      {
+                        "const": "loopback-serve",
                         "type": "string"
                       },
                       {

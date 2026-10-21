@@ -60,6 +60,26 @@ describe('sandboxWorkspaceProbe', () => {
       message: expect.stringContaining('explicitly select full-access'),
     })
   })
+  it('refuses unsupported loopback serving and never treats the flag as permission to degrade', async () => {
+    for (const platform of ['linux', 'win32', 'unknown']) {
+      await expect(
+        sandboxWorkspaceProbe(
+          input({ level: 'L1', platform, options: { ...input().options, loopbackServe: true } }),
+        ),
+      ).rejects.toThrow('loopback serving requires the macOS L1 Seatbelt backend')
+    }
+    await expect(
+      sandboxWorkspaceProbe(
+        input({
+          level: 'L1',
+          platform: 'darwin',
+          onUnavailable: 'allow',
+          options: { ...input().options, loopbackServe: true },
+        }),
+      ),
+    ).rejects.toThrow('cannot fall back')
+  })
+
   it('runs the trusted Windows unimplemented policy without an OS probe', async () => {
     const request = input({
       level: 'L1',

@@ -133,3 +133,84 @@ it.runIf(existsSync('/usr/bin/sandbox-exec') && existsSync('/bin/zsh'))(
     }
   },
 )
+
+seatbelt('serves real IPv4/IPv6 loopback HTTP without wildcard binds or outbound connections', async () => {
+  const { spawn } = await import('node:child_process')
+  const { once } = await import('node:events')
+  const control = createServer((_req, res) => res.end('control'))
+  await new Promise<void>((resolve) => control.listen(0, '127.0.0.1', resolve))
+  const address = control.address()
+  if (!address || typeof address === 'string') throw new Error('missing control address')
+  const program = `
+    const http = require('node:http'), net = require('node:net');
+    const bind = host => new Promise(resolve => {
+      const server = http.createServer((_, res) => res.end('loopback-only'));
+      server.once('error', error => resolve({ host, error: error.code }));
+      server.listen(0, host, () => resolve({ host, port: server.address().port }));
+    });
+    const connect = host => new Promise(resolve => {
+      const socket = net.connect({host, port: ${address.port}});
+      socket.on('error', error => resolve(error.code));
+      socket.on('connect', () => { socket.destroy(); resolve('CONNECTED'); });
+      socket.setTimeout(1000, () => { socket.destroy(); resolve('TIMEOUT'); });
+    });
+    (async () => {
+      const binds = await Promise.all(['127.0.0.1','::1','0.0.0.0','::'].map(bind));
+      const outbound = await Promise.all(['127.0.0.1','192.0.2.1'].map(connect));
+      console.log(JSON.stringify({ binds, outbound }));
+    })();
+  `
+  const argv = seatbeltDenyNetworkArgv([process.execPath, '-e', program], {
+    allowPaths: [],
+    denyPaths: [],
+    loopbackServe: true,
+  })
+  const child = spawn(argv[0]!, argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] })
+  let stdout = '',
+    stderr = ''
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk
+  })
+  try {
+    const facts = await new Promise<{
+      binds: { host: string; port?: number; error?: string }[]
+      outbound: string[]
+    }>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error(`server did not start: ${stderr}`)), 5000)
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk
+        if (stdout.includes('\n')) {
+          clearTimeout(timeout)
+          resolve(JSON.parse(stdout.trim()))
+        }
+      })
+      child.once('error', (error) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
+      child.once('exit', () => {
+        clearTimeout(timeout)
+        reject(new Error(`server exited: ${stderr}`))
+      })
+    })
+    for (const host of ['127.0.0.1', '::1']) {
+      const bind = facts.binds.find((bind) => bind.host === host)!
+      expect(bind.error, stderr).toBeUndefined()
+      const response = await fetch(`http://${host === '::1' ? '[::1]' : host}:${bind.port}/`)
+      expect(await response.text()).toBe('loopback-only')
+    }
+    expect(
+      facts.binds
+        .filter((bind) => ['0.0.0.0', '::'].includes(bind.host))
+        .every((bind) => bind.error === 'EPERM' || bind.error === 'EACCES'),
+    ).toBe(true)
+    expect(facts.outbound.every((code) => code === 'EPERM' || code === 'EACCES')).toBe(true)
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit')
+      child.kill('SIGKILL')
+      await exited
+    }
+    await new Promise<void>((resolve) => control.close(() => resolve()))
+  }
+})

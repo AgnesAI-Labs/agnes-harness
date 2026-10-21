@@ -184,3 +184,8 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 Windows 使用 PowerShell 时，没有进程隔离的命令 Hook 还须取得 `commandHooks.trustedUnconfined` 授权，精确匹配配置来源、内容摘要和规范化工作区。Hook 使用当前工作区绑定的 Host 执行接口，由 Host 判断能否执行，包括 `allow-if-unimplemented`、显式拒绝和 `required: true`；授权按每次调用的规范化工作区核对，覆盖其他工作区中的会话。Hook 信任不能覆盖这项判断。未受信任的工作区 Hook 不会进入本次调用；受信任但执行被拒的 Hook 仍按对应事件原有的失败规则处理。macOS/Linux 的隔离要求、工具审批，以及前述 Windows 记忆保护限制均不改变。
 
 完全访问会话会在无人值守策略交接前自动允许权限决定，因此不会因等待审批进入 `waiting_approval`；其他会话继续遵循交接或拒绝设置。
+
+
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt：允许 TCP 绑定 `127.0.0.1`、`::1` 并响应入站连接，禁止通配地址、UDP 和所有主动连接（含 localhost）。应用必须显式绑定回环地址。此声明不能与 `network_allow`、完全访问或无沙箱降级组合；Linux、Windows、远端和外部 provider 会明确拒绝，不会报告虚假的可访问 URL。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行该命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。
+
+本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。

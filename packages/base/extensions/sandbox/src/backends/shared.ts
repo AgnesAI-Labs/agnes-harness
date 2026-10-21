@@ -8,6 +8,7 @@ export type ClosedNetworkConfineOptions = Readonly<{
   networkAllow?: readonly string[]
   readPaths?: readonly string[]
   network?: 'deny' | 'allow'
+  loopbackServe?: boolean
   /** Host-selected full access retains an explicit private-store deny floor. */
   fullAccess?: boolean
 }>
@@ -89,8 +90,13 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
   denyPaths: string[]
   readPaths?: string[]
   network?: 'deny' | 'allow'
+  loopbackServe?: boolean
 } {
   requireClosedNetwork(options.networkAllow)
+  if (options.loopbackServe !== undefined && typeof options.loopbackServe !== 'boolean')
+    throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid loopback service grant')
+  if (options.loopbackServe && options.network === 'allow')
+    throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'loopback service cannot grant outbound network')
   if (options.fullAccess && options.denyPaths.length === 0)
     throw backendCompileFault(
       'E_SANDBOX_BACKEND_POLICY',
@@ -100,6 +106,7 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
   if (!cwd) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'missing cwd')
   return {
     cwd,
+    ...(options.loopbackServe ? { loopbackServe: true } : {}),
     ...(options.readPaths ? { readPaths: validateAbsolutePaths(options.readPaths, 'deny') } : {}),
     ...(options.network ? { network: options.network } : {}),
     allowPaths: validateAbsolutePaths(options.allowPaths, 'allow', options.fullAccess),

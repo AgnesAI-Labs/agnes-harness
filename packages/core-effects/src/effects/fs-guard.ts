@@ -37,6 +37,8 @@ export type FsPolicy = {
   workspaceRoot: string
   rules: readonly FsRule[]
   networkAllow: readonly string[]
+  /** Explicit inbound-only loopback service grant; absence denies. */
+  loopbackServe?: boolean
   digest: string
 }
 
@@ -146,6 +148,9 @@ export function validateFsPolicy(policy: FsPolicy): void {
     bad('digest is not sha256 hex')
   if (!Array.isArray(policy.networkAllow) || policy.networkAllow.some((h) => typeof h !== 'string'))
     bad('networkAllow is not a string list')
+  if (policy.loopbackServe !== undefined && typeof policy.loopbackServe !== 'boolean')
+    bad('loopbackServe is not boolean')
+  if (policy.loopbackServe && policy.networkAllow.length) bad('loopbackServe cannot grant network hosts')
 }
 
 /** Decode persisted policy data at the owning boundary, without exposing its rule list to Core. */

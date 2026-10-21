@@ -1,5 +1,5 @@
 import type { ClosedNetworkConfineOptions } from './shared.js'
-import { validateArgv, validateClosedNetworkOptions } from './shared.js'
+import { backendCompileFault, validateArgv, validateClosedNetworkOptions } from './shared.js'
 
 /**
  * Compile a closed-network bubblewrap argv. This is an exec-file argument vector, never shell
@@ -9,6 +9,11 @@ import { validateArgv, validateClosedNetworkOptions } from './shared.js'
 export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConfineOptions): string[] {
   const command = validateArgv(argv)
   const policy = validateClosedNetworkOptions(options)
+  if (policy.loopbackServe)
+    throw backendCompileFault(
+      'E_SANDBOX_BACKEND_POLICY',
+      'loopback serving is unavailable on Linux: isolated loopback is not reachable from the host browser',
+    )
   const visibleDenies = policy.denyPaths.filter((path) =>
     [...(policy.readPaths ?? ['/']), ...policy.allowPaths].some(
       (root) => root === '/' || path === root || path.startsWith(`${root}/`),

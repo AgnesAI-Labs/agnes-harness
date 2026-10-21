@@ -335,6 +335,10 @@
                 "type": "string"
               }
             },
+            "loopback_serve": {
+              "type": "boolean",
+              "description": "Explicit inbound-only TCP loopback serving on macOS L1; outbound network remains denied. Requires on_unavailable deny."
+            },
             "network_allow": {
               "type": "array",
               "items": {

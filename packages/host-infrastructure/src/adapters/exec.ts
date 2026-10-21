@@ -373,7 +373,14 @@ export function createPolicyOperation<T>(
         deny: denied,
       }),
       network: Object.freeze({
-        mode: state.access === 'full-access' ? 'allow' : policy.networkAllow.length ? 'hosts' : 'deny',
+        mode:
+          state.access === 'full-access'
+            ? 'allow'
+            : policy.loopbackServe
+              ? 'loopback-serve'
+              : policy.networkAllow.length
+                ? 'hosts'
+                : 'deny',
         hosts: Object.freeze([...policy.networkAllow]),
       }),
       requiredEnforcement: Object.freeze(

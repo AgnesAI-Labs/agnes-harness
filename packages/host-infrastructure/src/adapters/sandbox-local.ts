@@ -93,7 +93,7 @@ export function createLocalSandboxProvider(
             )
           if (config.workspaceRoot && request.policy.workspaceRoot !== config.workspaceRoot)
             throw sandboxUnavailable('the execution policy names a different workspace')
-          if (request.network && request.policy.network.mode === 'deny')
+          if (request.network && ['deny', 'loopback-serve'].includes(request.policy.network.mode))
             throw sandboxUnavailable('the local sandbox provider does not grant network access')
           const actual = request.enforcement
           const required = request.policy.requiredEnforcement
