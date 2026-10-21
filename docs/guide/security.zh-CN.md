@@ -134,9 +134,9 @@ permissions:
 
 若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
-经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt。命令批准后，Host 将 TCP listener 绑定到数值地址 `127.0.0.1`，再通过继承的文件描述符交给该命令。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt。命令批准后，Host 独占绑定到数值地址 `127.0.0.1` 的 TCP listener，将连接转发至通过继承的文件描述符交给命令的私有 Unix listener。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。应使用普通前台或后台 shell 命令；持久 shell 会话和 PTY 的进程寿命超出单条已批准命令，因此明确拒绝。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。该描述符是私有传输，公开地址必须使用 `AGH_LOOPBACK_URL`，不要从 `server.address()` 推导。已批准的命令结束、取消、超时或沙箱实例释放时，Host 关闭公开 listener 和所有转发连接。即使后代进程复制该描述符并脱离进程组或转为 daemon，也无法保留公开服务能力。Unix 主动连接与新建 Unix bind 仍被拒绝。即使工作区写权限较宽，沙箱也无法修改私有传输路径。
 
-此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在进程启动/结束或失败时关闭自己的描述符副本；原有 job 取消及工作区清理负责停止持有它的子进程。
+此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在调用期间保留撤权入口，启动失败也会回收入口。job 取消和工作区释放会先撤销服务能力，再等待进程清理。
 
 本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。
 
