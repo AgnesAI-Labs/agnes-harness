@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { JOBS_DDL, JOBS_INDEXES } from '@agnes/base/schedule'
+import { JOBS_DDL, JOBS_INDEXES, type ScheduleJobs } from '@agnes/base/schedule'
 import { type JobSpec, rpcError, type Schedule } from '@agnes/protocol'
 import { ensure, type TableHandle } from '../storage/table.js'
 
@@ -89,53 +89,100 @@ export class JobsRepo {
   }
 
   insert(job: JobRow): boolean {
-    return this.table.transaction(() => {
-      const existing = this.get(job.idempotencyKey)
-      if (existing) {
-        const request = (row: JobRow) => ({
-          sessionKey: row.sessionKey,
-          profileHash: row.profileHash,
-          payload: row.payload,
-          schedule: row.schedule,
-          maxAttempts: row.maxAttempts,
-          budget: row.budget,
-          protected: row.protected,
+    return this.table.transaction(() => this.insertRow(job))
+  }
+
+  /** Inserts a job, or checks it against the stored one. Runs in the caller's transaction. */
+  private insertRow(job: JobRow): boolean {
+    const existing = this.get(job.idempotencyKey)
+    if (existing) {
+      const request = (row: JobRow) => ({
+        sessionKey: row.sessionKey,
+        profileHash: row.profileHash,
+        payload: row.payload,
+        schedule: row.schedule,
+        maxAttempts: row.maxAttempts,
+        budget: row.budget,
+        protected: row.protected,
+      })
+      if (!isDeepStrictEqual(request(existing), request(job)))
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'JOB_IDENTITY_CONFLICT' })
+      return false
+    }
+    this.table.exec(
+      `INSERT INTO jobs (
+        idempotency_key, session_key, profile_hash, payload, schedule, status,
+        attempts, max_attempts, backoff_ms, delay_until, lease_owner, lease_until,
+        heartbeat, stalled_counter, budget, protected, result, error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        job.idempotencyKey,
+        job.sessionKey,
+        job.profileHash,
+        JSON.stringify(job.payload),
+        JSON.stringify(job.schedule),
+        job.status,
+        job.attempts,
+        job.maxAttempts,
+        job.backoffMs,
+        job.delayUntil,
+        job.leaseOwner ?? null,
+        job.leaseUntil ?? null,
+        job.heartbeat ?? null,
+        job.stalledCounter,
+        job.budget ?? null,
+        job.protected ? 1 : 0,
+        job.result === undefined ? null : JSON.stringify(job.result),
+        job.error ?? null,
+        job.createdAt,
+        job.updatedAt,
+      ],
+    )
+    return true
+  }
+
+  /** The jobs operations the schedule catalog needs. They run in the catalog's transaction, on its connection. */
+  scheduleJobs(): ScheduleJobs {
+    return {
+      add: ({ key, sessionKey, prompt, schedule, delayUntil, now }) => {
+        this.insertRow({
+          idempotencyKey: key,
+          sessionKey,
+          profileHash: 'schedule',
+          payload: { prompt },
+          schedule,
+          status: 'waiting',
+          attempts: 0,
+          maxAttempts: 3,
+          backoffMs: 1000,
+          delayUntil,
+          stalledCounter: 0,
+          protected: false,
+          createdAt: now,
+          updatedAt: now,
         })
-        if (!isDeepStrictEqual(request(existing), request(job)))
-          throw rpcError('SEMANTIC_REJECTED', { reason: 'JOB_IDENTITY_CONFLICT' })
-        return false
-      }
-      this.table.exec(
-        `INSERT INTO jobs (
-          idempotency_key, session_key, profile_hash, payload, schedule, status,
-          attempts, max_attempts, backoff_ms, delay_until, lease_owner, lease_until,
-          heartbeat, stalled_counter, budget, protected, result, error, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          job.idempotencyKey,
-          job.sessionKey,
-          job.profileHash,
-          JSON.stringify(job.payload),
-          JSON.stringify(job.schedule),
-          job.status,
-          job.attempts,
-          job.maxAttempts,
-          job.backoffMs,
-          job.delayUntil,
-          job.leaseOwner ?? null,
-          job.leaseUntil ?? null,
-          job.heartbeat ?? null,
-          job.stalledCounter,
-          job.budget ?? null,
-          job.protected ? 1 : 0,
-          job.result === undefined ? null : JSON.stringify(job.result),
-          job.error ?? null,
-          job.createdAt,
-          job.updatedAt,
-        ],
-      )
-      return true
-    })
+      },
+      cancelQueued: (key, now) => {
+        this.table.exec(
+          `UPDATE jobs SET status = 'cancelled', lease_owner = NULL, lease_until = NULL, heartbeat = NULL, updated_at = ?
+           WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
+          [now, key],
+        )
+      },
+      status: (key) => this.get(key)?.status,
+      setPrompt: (key, prompt, now) => {
+        this.table.exec(
+          `UPDATE jobs SET payload = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
+          [JSON.stringify({ prompt }), now, key],
+        )
+      },
+      runNow: (key, now) => {
+        this.table.exec(
+          `UPDATE jobs SET status = 'waiting', delay_until = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
+          [now, now, key],
+        )
+      },
+    }
   }
 
   get(key: string): JobRow | undefined {

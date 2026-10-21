@@ -106,8 +106,10 @@ it('records a scheduled park and notifies the owner and bound channel through th
     clock: () => now,
     endpoints: () => [owner, channel].map((ep) => ({ ep, conn: ep.conn })),
   })
+  const repo = new JobsRepo(tables.table('jobs'), () => now)
   const tasks = scheduledTasks({
     db: openDaemonScheduleDb(tables.table('schedules')),
+    jobs: repo.scheduleJobs(),
     clock: () => now,
     socketPath: '/synthetic-unused',
     serverIdentity: { pid: 1, processStartId: 'synthetic' },
@@ -161,7 +163,7 @@ it('records a scheduled park and notifies the owner and bound channel through th
     },
   }
   const scheduler = new Scheduler({
-    repo: new JobsRepo(tables.table('jobs'), () => now),
+    repo,
     registry: { open: async () => entry, get: () => entry, keys: () => ['s'] },
     notices,
     clock: () => now,
@@ -295,8 +297,10 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
     )) as import('../src/supervisor/schedule-sessions.js').ScheduleCatalog
   const tables = sqliteTables()
   let now = 10_000
+  const repo = new JobsRepo(tables.table('jobs'), () => now)
   const tasks = scheduledTasks({
     db: openDaemonScheduleDb(tables.table('schedules')),
+    jobs: repo.scheduleJobs(),
     clock: () => now,
     socketPath: '/synthetic-unused',
     serverIdentity: { pid: 1, processStartId: 'synthetic' },
@@ -337,7 +341,7 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
     sources = [changed]
     await expect(host.resolveAgent!(plan.ref)).rejects.toThrow('unknown agent')
     now += 60_000
-    const job = new JobsRepo(tables.table('jobs'), () => now).claimDue(now, 'synthetic', 1000, 1)[0]
+    const job = repo.claimDue(now, 'synthetic', 1000, 1)[0]
     if (!job) throw new Error('schedule job missing')
     expect(await tasks.hooks.prepare(job)).toEqual({ sessionKey: opened[0]!.key })
     expect(opened[0]!.preset.name).toBe('safe')

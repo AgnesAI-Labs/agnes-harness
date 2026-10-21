@@ -43,6 +43,27 @@ export type ScheduleDb = {
   transaction<T>(fn: () => T): T
 }
 
+/** Jobs-table operations the schedule catalog needs. Each runs inside the caller's ScheduleDb
+ *  transaction on the same connection; none opens its own. */
+export type ScheduleJobs = {
+  /** Queues a waiting job. Same key and same request: no-op. Same key, different request: throws JOB_IDENTITY_CONFLICT. */
+  add(job: {
+    key: string
+    sessionKey: string
+    prompt: string
+    schedule: JobSchedule
+    delayUntil: number
+    now: number
+  }): void
+  /** Cancels the job only while it is waiting or delayed; a running job finishes. */
+  cancelQueued(key: string, now: number): void
+  status(key: string): string | undefined
+  /** Replaces the prompt of a waiting or delayed job. */
+  setPrompt(key: string, prompt: string, now: number): void
+  /** Makes a waiting or delayed job due now. */
+  runNow(key: string, now: number): void
+}
+
 type DaemonTable = {
   exec(sql: string, params?: unknown[]): void
   get<T>(sql: string, params?: unknown[]): T | undefined
@@ -103,7 +124,6 @@ export function openDaemonScheduleDb(table: DaemonTable): ScheduleDb {
 }
 
 function ensureScheduleSchema(db: ScheduleDb): void {
-  for (const ddl of [JOBS_DDL, ...JOBS_INDEXES]) db.exec(ddl)
   db.exec(`CREATE TABLE IF NOT EXISTS schedules (
     id TEXT PRIMARY KEY,
     session_key TEXT NOT NULL,
@@ -191,60 +211,6 @@ function jobSession(id: string, target: ScheduleTarget): string {
   return target.kind === 'session' ? target.sessionKey : `schedule:${id}`
 }
 
-function insertJob(
-  db: ScheduleDb,
-  key: string,
-  sessionKey: string,
-  prompt: string,
-  schedule: JobSchedule,
-  delay: number,
-  now: number,
-): void {
-  db.exec(
-    `INSERT INTO jobs (
-      idempotency_key, session_key, profile_hash, payload, schedule, status,
-      attempts, max_attempts, backoff_ms, delay_until, lease_owner, lease_until,
-      heartbeat, stalled_counter, budget, protected, result, error, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      key,
-      sessionKey,
-      'schedule',
-      JSON.stringify({ prompt }),
-      JSON.stringify(schedule),
-      'waiting',
-      0,
-      3,
-      1000,
-      delay,
-      null,
-      null,
-      null,
-      0,
-      null,
-      0,
-      null,
-      null,
-      now,
-      now,
-    ],
-  )
-}
-
-function cancelQueued(db: ScheduleDb, key: string | null, now: number): void {
-  if (!key) return
-  db.exec(
-    `UPDATE jobs SET status = 'cancelled', lease_owner = NULL, lease_until = NULL, heartbeat = NULL, updated_at = ?
-     WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
-    [now, key],
-  )
-}
-
-function jobStatus(db: ScheduleDb, key: string | null): string | undefined {
-  if (!key) return undefined
-  return db.get<{ status: string }>('SELECT status FROM jobs WHERE idempotency_key = ?', [key])?.status
-}
-
 const clipDetail = (value: string | undefined) => (value ? value.slice(0, 500) : undefined)
 
 export type ScheduleCatalog = {
@@ -286,7 +252,11 @@ type RunRow = {
   detail: string | null
 }
 
-export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => Date.now()): ScheduleCatalog {
+export function openScheduleCatalog(
+  db: ScheduleDb,
+  jobs: ScheduleJobs,
+  clock: () => number = () => Date.now(),
+): ScheduleCatalog {
   ensureScheduleSchema(db)
   const load = (id: string): ScheduleRow | undefined =>
     db.get<ScheduleRow>('SELECT * FROM schedules WHERE id = ?', [id])
@@ -397,7 +367,14 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
     const next = delayFor(schedule, now)
     const revision = row.revision + 1
     const key = jobKey(row.id, revision)
-    insertJob(db, key, jobSession(row.id, target), row.prompt, schedule, next, now)
+    jobs.add({
+      key,
+      sessionKey: jobSession(row.id, target),
+      prompt: row.prompt,
+      schedule,
+      delayUntil: next,
+      now,
+    })
     return { key, revision, next }
   }
   return {
@@ -408,7 +385,14 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const key = jobKey(id, 1)
       const delay = delayFor(compiled.schedule, now)
       db.transaction(() => {
-        insertJob(db, key, jobSession(id, compiled.target), compiled.prompt, compiled.schedule, delay, now)
+        jobs.add({
+          key,
+          sessionKey: jobSession(id, compiled.target),
+          prompt: compiled.prompt,
+          schedule: compiled.schedule,
+          delayUntil: delay,
+          now,
+        })
         db.exec(
           `INSERT INTO schedules (
              id, session_key, title, prompt, selector, status, job_key, revision, next_run_at, created_at, updated_at,
@@ -450,7 +434,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const promptChanged = compiled.prompt !== row.prompt
       const selectorChanged = stored !== row.selector
       const targetChanged = JSON.stringify(compiled.target) !== JSON.stringify(before.target)
-      const status = jobStatus(db, row.job_key)
+      const status = row.job_key ? jobs.status(row.job_key) : undefined
       if (status === 'active' && (promptChanged || selectorChanged || targetChanged))
         return { updated: false, code: 'schedule_conflict' }
       const paused = row.status === 'paused'
@@ -473,24 +457,20 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
           targetChanged ||
           (promptChanged && status !== 'waiting' && status !== 'delayed')
         ) {
-          cancelQueued(db, key, now)
+          if (key) jobs.cancelQueued(key, now)
           revision += 1
           key = jobKey(row.id, revision)
           next = delayFor(compiled.schedule, now)
-          insertJob(
-            db,
+          jobs.add({
             key,
-            jobSession(row.id, compiled.target),
-            compiled.prompt,
-            compiled.schedule,
-            next,
+            sessionKey: jobSession(row.id, compiled.target),
+            prompt: compiled.prompt,
+            schedule: compiled.schedule,
+            delayUntil: next,
             now,
-          )
+          })
         } else if (promptChanged && key) {
-          db.exec(
-            `UPDATE jobs SET payload = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
-            [JSON.stringify({ prompt: compiled.prompt }), now, key],
-          )
+          jobs.setPrompt(key, compiled.prompt, now)
         }
         db.exec(
           `UPDATE schedules
@@ -521,9 +501,9 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const row = load(id)
       if (row?.status !== 'active' && row?.status !== 'paused') return { deleted: false }
       const now = clock()
-      const status = jobStatus(db, row.job_key)
+      const status = row.job_key ? jobs.status(row.job_key) : undefined
       db.transaction(() => {
-        if (status === 'waiting' || status === 'delayed') cancelQueued(db, row.job_key, now)
+        if ((status === 'waiting' || status === 'delayed') && row.job_key) jobs.cancelQueued(row.job_key, now)
         db.exec(
           `UPDATE schedules SET status = 'archived', updated_at = ? WHERE id = ? AND status IN ('active', 'paused')`,
           [now, id],
@@ -535,13 +515,13 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const row = load(id)
       if (!row) return { updated: false, code: 'schedule_not_found' }
       const now = clock()
-      const status = jobStatus(db, row.job_key)
+      const status = row.job_key ? jobs.status(row.job_key) : undefined
       if (action === 'pause') {
         if (row.status === 'paused') return viewOf(row)
         if (row.status !== 'active') return { updated: false, code: 'schedule_ended' }
         db.transaction(() => {
           // A run already in progress finishes; it just does not schedule another.
-          cancelQueued(db, row.job_key, now)
+          if (row.job_key) jobs.cancelQueued(row.job_key, now)
           db.exec(
             `UPDATE schedules SET status = 'paused', next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'`,
             [now, id],
@@ -573,10 +553,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
         if (status !== 'waiting' && status !== 'delayed') return { updated: false, code: 'schedule_ended' }
         // The next scheduler tick claims it. A repeating rule continues from this run as usual.
         db.transaction(() => {
-          db.exec(
-            `UPDATE jobs SET status = 'waiting', delay_until = ?, updated_at = ? WHERE idempotency_key = ? AND status IN ('waiting', 'delayed')`,
-            [now, now, row.job_key],
-          )
+          if (row.job_key) jobs.runNow(row.job_key, now)
           db.exec('UPDATE schedules SET next_run_at = ?, updated_at = ? WHERE id = ?', [now, now, id])
         })
       }
@@ -723,10 +700,11 @@ export type ScheduleTargetCheck = (target: NewSessionTarget) => Promise<Schedule
 
 export function createSchedulesPort(
   db: ScheduleDb,
+  jobs: ScheduleJobs,
   clock: () => number = () => Date.now(),
   check?: ScheduleTargetCheck,
 ) {
-  const catalog = openScheduleCatalog(db, clock)
+  const catalog = openScheduleCatalog(db, jobs, clock)
   const verify = async (target: unknown) => {
     const compiled = compileTarget(target)
     if (compiled.kind === 'new-session' && check) {

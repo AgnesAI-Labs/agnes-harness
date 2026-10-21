@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, it } from 'vitest'
+import { memoryScheduleJobs } from '../../../testkit/index.js'
 import {
   createSchedulesPort,
   openScheduleCatalog,
@@ -9,6 +11,8 @@ import {
 } from '../src/catalog.js'
 
 const NOW = Date.parse('2026-09-07T00:00:00Z')
+
+type Jobs = ReturnType<typeof memoryScheduleJobs>
 
 function sqlOf(db: DatabaseSync): ScheduleDb {
   return {
@@ -39,11 +43,12 @@ function sqlOf(db: DatabaseSync): ScheduleDb {
 
 function memory(now = NOW) {
   const db = new DatabaseSync(':memory:')
-  return { db, catalog: openScheduleCatalog(sqlOf(db), () => now) }
+  const jobs = memoryScheduleJobs()
+  return { db, jobs, catalog: openScheduleCatalog(sqlOf(db), jobs, () => now) }
 }
 
-function openScheduleCatalogAt(db: DatabaseSync, clock: () => number) {
-  return openScheduleCatalog(sqlOf(db), clock)
+function openScheduleCatalogAt(db: DatabaseSync, jobs: Jobs, clock: () => number) {
+  return openScheduleCatalog(sqlOf(db), jobs, clock)
 }
 
 function daily(sessionKey = 'sess') {
@@ -55,11 +60,19 @@ function daily(sessionKey = 'sess') {
   }
 }
 
-function job(db: DatabaseSync, id: string) {
-  return db
-    .prepare('SELECT status, payload, schedule FROM jobs WHERE idempotency_key LIKE ?')
-    .get(`schedule:${id}:%`) as { status: string; payload: string; schedule: string }
+function job(jobs: Jobs, id: string) {
+  return [...jobs.rows].find(([key]) => key.startsWith(`schedule:${id}:`))?.[1]
 }
+
+function activate(jobs: Jobs, prefix: string) {
+  for (const [key, row] of jobs.rows) if (key.startsWith(prefix)) row.status = 'active'
+}
+
+it('has no jobs SQL in the catalog', () => {
+  expect(readFileSync(new URL('../src/catalog.ts', import.meta.url), 'utf8')).not.toMatch(
+    /(INSERT INTO|UPDATE|FROM) jobs\b/,
+  )
+})
 
 it('creates a daily reminder, lists it, and accepts a title change', () => {
   const { catalog } = memory()
@@ -97,9 +110,9 @@ it('stores a trimmed cron expression and the Vixie day-field match', () => {
 })
 
 it('refuses a prompt change while the job is active and still updates the title', () => {
-  const { db, catalog } = memory()
+  const { jobs, catalog } = memory()
   const created = catalog.create(daily())
-  db.prepare(`UPDATE jobs SET status = 'active' WHERE idempotency_key LIKE ?`).run(`schedule:${created.id}:%`)
+  activate(jobs, `schedule:${created.id}:`)
   expect(catalog.update({ ...daily(), id: created.id, prompt: 'Other' })).toEqual({
     updated: false,
     code: 'schedule_conflict',
@@ -107,24 +120,22 @@ it('refuses a prompt change while the job is active and still updates the title'
   const titled = catalog.update({ ...daily(), id: created.id, title: 'Later' }) as ScheduleView
   expect(titled.title).toBe('Later')
   expect(titled.prompt).toBe('Check mail')
-  expect(job(db, created.id).status).toBe('active')
+  expect(job(jobs, created.id)?.status).toBe('active')
 })
 
 it('cancels a waiting job on archive and leaves an in-flight job running', () => {
   const waiting = memory()
   const queued = waiting.catalog.create(daily())
   expect(waiting.catalog.archive(queued.id)).toEqual({ deleted: true })
-  expect(job(waiting.db, queued.id).status).toBe('cancelled')
+  expect(job(waiting.jobs, queued.id)?.status).toBe('cancelled')
   expect(waiting.catalog.stillWaiting(`schedule:${queued.id}:1`)).toBe(false)
   expect(waiting.catalog.archive(queued.id)).toEqual({ deleted: false })
 
   const live = memory()
   const running = live.catalog.create(daily())
-  live.db
-    .prepare(`UPDATE jobs SET status = 'active' WHERE idempotency_key LIKE ?`)
-    .run(`schedule:${running.id}:%`)
+  activate(live.jobs, `schedule:${running.id}:`)
   expect(live.catalog.archive(running.id)).toEqual({ deleted: true })
-  expect(job(live.db, running.id).status).toBe('active')
+  expect(job(live.jobs, running.id)?.status).toBe('active')
   expect(live.catalog.stillWaiting(`schedule:${running.id}:1`)).toBe(false)
   live.catalog.noteSettlement(`schedule:${running.id}:1`, { nextRunAt: NOW + 86_400_000 })
   expect(live.catalog.read(running.id)?.status).toBe('archived')
@@ -180,7 +191,7 @@ it('keeps the target on the schedule row and run progress on the run row', () =>
 })
 
 it('validates a target shape and stores a new-session target with a placeholder job session', () => {
-  const { db, catalog } = memory()
+  const { jobs, catalog } = memory()
   const created = catalog.create({
     ...fresh({
       loop: { id: 'data-report', version: '1.0.0' },
@@ -201,10 +212,7 @@ it('validates a target shape and stores a new-session target with a placeholder 
   expect(created.origin).toBe('sess')
   // The session that created it lists it; the job waits on a placeholder the daemon replaces per run.
   expect(catalog.list({ sessionKey: 'sess' }).map((row) => row.id)).toEqual([created.id])
-  const row = db
-    .prepare('SELECT session_key FROM jobs WHERE idempotency_key = ?')
-    .get(`schedule:${created.id}:1`) as { session_key: string }
-  expect(row.session_key).toBe(`schedule:${created.id}`)
+  expect(jobs.rows.get(`schedule:${created.id}:1`)?.sessionKey).toBe(`schedule:${created.id}`)
   expect(catalog.targetOf(`schedule:${created.id}:1`)).toMatchObject({
     id: created.id,
     title: 'Daily report',
@@ -240,18 +248,12 @@ it('reads a schedule row with no stored target as its session target', () => {
 })
 
 it('moves a task between targets and back, issuing a new job each time', () => {
-  const { db, catalog } = memory()
+  const { jobs, catalog } = memory()
   const created = catalog.create(daily())
   const moved = catalog.update({ ...fresh(), id: created.id, owner: 'sess' }) as ScheduleView
   expect(moved).toMatchObject({ target: { kind: 'new-session', cwd: '/work/report' }, revision: 2 })
   expect(catalog.list({ sessionKey: 'sess' }).map((row) => row.id)).toEqual([created.id])
-  expect(
-    (
-      db.prepare('SELECT status FROM jobs WHERE idempotency_key = ?').get(`schedule:${created.id}:1`) as {
-        status: string
-      }
-    ).status,
-  ).toBe('cancelled')
+  expect(jobs.rows.get(`schedule:${created.id}:1`)?.status).toBe('cancelled')
   // Another session cannot change it.
   expect(catalog.update({ ...daily(), id: created.id, owner: 'other' })).toEqual({
     updated: false,
@@ -264,7 +266,7 @@ it('moves a task between targets and back, issuing a new job each time', () => {
 it('records run outcomes: started then ran, joined a running turn, and failed with a reason', () => {
   let now = NOW
   const base = memory()
-  const catalog = openScheduleCatalogAt(base.db, () => now)
+  const catalog = openScheduleCatalogAt(base.db, base.jobs, () => now)
   const created = catalog.create({ ...fresh(), origin: 'sess' })
   const key = `schedule:${created.id}:1`
   catalog.recordDispatch(key, { at: now, reason: 'prompt', sessionKey: 'run-1' })
@@ -290,12 +292,12 @@ it('records run outcomes: started then ran, joined a running turn, and failed wi
 })
 
 it('pauses, resumes and runs a task now', () => {
-  const { db, catalog } = memory()
+  const { jobs, catalog } = memory()
   const created = catalog.create(daily())
   expect(catalog.control(created.id, 'resume')).toMatchObject({ status: 'active' })
   const paused = catalog.control(created.id, 'pause') as ScheduleView
   expect(paused).toMatchObject({ status: 'paused', nextRunAt: null })
-  expect(job(db, created.id).status).toBe('cancelled')
+  expect(job(jobs, created.id)?.status).toBe('cancelled')
   expect(catalog.control(created.id, 'run')).toEqual({ updated: false, code: 'schedule_paused' })
   expect(catalog.stillWaiting(`schedule:${created.id}:1`)).toBe(false)
   // A paused task stays listed and editable.
@@ -312,11 +314,12 @@ it('pauses, resumes and runs a task now', () => {
   })
   const now = catalog.control(created.id, 'run') as ScheduleView
   expect(now.nextRunAt).toBe(NOW)
-  const queued = db
-    .prepare('SELECT status, delay_until FROM jobs WHERE idempotency_key = ?')
-    .get(`schedule:${created.id}:2`) as { status: string; delay_until: number }
-  expect(queued).toEqual({ status: 'waiting', delay_until: NOW })
-  db.prepare(`UPDATE jobs SET status = 'active' WHERE idempotency_key = ?`).run(`schedule:${created.id}:2`)
+  const queued = jobs.rows.get(`schedule:${created.id}:2`)
+  expect({ status: queued?.status, delayUntil: queued?.delayUntil }).toEqual({
+    status: 'waiting',
+    delayUntil: NOW,
+  })
+  activate(jobs, `schedule:${created.id}:2`)
   expect(catalog.control(created.id, 'run')).toEqual({ updated: false, code: 'schedule_running' })
   expect(catalog.control('sched_ffffffffffffffff', 'run')).toEqual({
     updated: false,
@@ -329,7 +332,7 @@ it('pauses, resumes and runs a task now', () => {
 it('refuses to resume a one-time task whose moment has passed', () => {
   let now = NOW
   const base = memory()
-  const catalog = openScheduleCatalogAt(base.db, () => now)
+  const catalog = openScheduleCatalogAt(base.db, base.jobs, () => now)
   const created = catalog.create({ ...daily(), selector: { at: '2026-09-07T01:00:00Z' } })
   catalog.control(created.id, 'pause')
   now = Date.parse('2026-09-08T00:00:00Z')
@@ -341,6 +344,7 @@ it('checks a new-session target through the port before saving it', async () => 
   const checked: unknown[] = []
   const port = createSchedulesPort(
     sqlOf(base.db),
+    base.jobs,
     () => NOW,
     async (target) => {
       checked.push(target)
@@ -365,8 +369,8 @@ it.each(['approve', 'expire', 'refuse'] as const)(
   'tracks a parked run through %s without reporting it ran',
   (action) => {
     let now = NOW
-    const { db } = memory()
-    let catalog = openScheduleCatalogAt(db, () => now)
+    const { db, jobs } = memory()
+    let catalog = openScheduleCatalogAt(db, jobs, () => now)
     const created = catalog.create({
       ...daily(),
       target: {
@@ -399,7 +403,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
     catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run', sessionKey: 'sess' })
     expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual(['waiting_approval', 'failed'])
     // Reopening the catalog retains both the pending deadline and the recurring schedule.
-    catalog = openScheduleCatalogAt(db, () => now)
+    catalog = openScheduleCatalogAt(db, jobs, () => now)
     if (action === 'approve') {
       catalog.observeSession(
         'sess',
@@ -475,6 +479,7 @@ it('finds the open run of a job through the schedule_runs_schedule index', () =>
         return base.get<T>(sql, params)
       },
     },
+    memoryScheduleJobs(),
     () => NOW,
   )
   const created = catalog.create(daily())

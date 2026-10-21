@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { JOBS_DDL, JOBS_INDEXES } from '@agnes/base/schedule'
+import { JOBS_DDL, JOBS_INDEXES, openDaemonScheduleDb, openScheduleCatalog } from '@agnes/base/schedule'
 import { describe, expect, it } from 'vitest'
 import { type JobRow, JobsRepo } from '../src/jobs/repo.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -92,5 +92,41 @@ describe('JobsRepo', () => {
     repo.settle('j', { status: 'completed', result: { seq: 1 } })
     expect(repo.get('j')?.status).toBe('cancelled')
     expect(repo.get('j')?.result).toBeUndefined()
+  })
+
+  it('backs the schedule catalog: queued through insert checks, on the catalog connection', () => {
+    const tables = sqliteTables()
+    const repo = new JobsRepo(tables.table('jobs'), () => 0)
+    const catalog = openScheduleCatalog(
+      openDaemonScheduleDb(tables.table('schedules')),
+      repo.scheduleJobs(),
+      () => 1_000,
+    )
+    const created = catalog.create({
+      target: { kind: 'session', sessionKey: 's' },
+      title: 'T',
+      prompt: 'P',
+      selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+    })
+    const key = `schedule:${created.id}:1`
+    expect(repo.get(key)).toMatchObject({
+      status: 'waiting',
+      sessionKey: 's',
+      profileHash: 'schedule',
+      payload: { prompt: 'P' },
+      maxAttempts: 3,
+    })
+    expect(() =>
+      repo.scheduleJobs().add({
+        key,
+        sessionKey: 'other',
+        prompt: 'P',
+        schedule: { kind: 'once' },
+        delayUntil: 0,
+        now: 1_000,
+      }),
+    ).toThrow(expect.objectContaining({ data: expect.objectContaining({ reason: 'JOB_IDENTITY_CONFLICT' }) }))
+    catalog.control(created.id, 'pause')
+    expect(repo.get(key)?.status).toBe('cancelled')
   })
 })

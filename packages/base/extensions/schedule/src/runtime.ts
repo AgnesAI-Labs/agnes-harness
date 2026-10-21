@@ -5,6 +5,7 @@ export type {
   ScheduleCatalog,
   ScheduleCode,
   ScheduleDb,
+  ScheduleJobs,
   ScheduleRun,
   ScheduleSelector,
   ScheduleTarget,

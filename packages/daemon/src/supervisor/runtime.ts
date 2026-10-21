@@ -1818,23 +1818,25 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const lister = withSessionPreferences(rawLister, preferences)
 
     const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
-    const schedules = jobTables
-      ? scheduledTasks({
-          db: openDaemonScheduleDb(jobTables.table('schedules')),
-          clock,
-          socketPath: o.config.socketPath,
-          serverIdentity: lock.owner,
-          sources: {
-            workspaces: async () => (await workspaceCatalog.list()).items,
-            normalize: async (path) => (await workspaceCatalog.validate(path)).path,
-            catalog: async () =>
-              (await (
-                await pool.acquireSharedWorker()
-              ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
-            presets: () => host.profile.presets.allowed,
-          },
-        })
-      : undefined
+    const schedules =
+      jobTables && jobsRepo
+        ? scheduledTasks({
+            db: openDaemonScheduleDb(jobTables.table('schedules')),
+            jobs: jobsRepo.scheduleJobs(),
+            clock,
+            socketPath: o.config.socketPath,
+            serverIdentity: lock.owner,
+            sources: {
+              workspaces: async () => (await workspaceCatalog.list()).items,
+              normalize: async (path) => (await workspaceCatalog.validate(path)).path,
+              catalog: async () =>
+                (await (
+                  await pool.acquireSharedWorker()
+                ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
+              presets: () => host.profile.presets.allowed,
+            },
+          })
+        : undefined
     automationEvents.schedules = schedules
     if (schedules) startupCleanup.push(() => schedules.close())
     const profilePorts = createSupervisorProfileServices({
