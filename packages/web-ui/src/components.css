@@ -2022,6 +2022,15 @@
     border-top: 1px solid var(--agnes-line-primary);
     pointer-events: none;
   }
+  /* Prose that is not made of setting rows keeps the card's own inset and one rhythm. */
+  .agnes-settings-prose {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-prose > :is(p, section) {
+    margin: 0;
+  }
   .agnes-settings-item {
     display: flex;
     align-items: center;
