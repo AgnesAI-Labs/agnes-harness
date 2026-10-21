@@ -6,7 +6,7 @@ import {
   saveDeliverable,
 } from '@agnes/cli-tui'
 import type { NodeClient } from '@agnes/sdk'
-import { ExitCode, UsageError } from '../errors.js'
+import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs } from '../types.js'
 
 type IO = { stdout: NodeJS.WritableStream; stderr: NodeJS.WritableStream }
@@ -25,10 +25,14 @@ export async function deliverablesCommand(p: ParsedArgs, client: NodeClient, io:
   if (p.save !== undefined) {
     const file = findDeliverable(files, p.save)
     if (!file) throw new UsageError(`no deliverable ${escapeControl(p.save)}`)
+    // A plain Error would reach the user only as "The request failed": a refusal to overwrite or a
+    // digest mismatch has to be said, so it travels as a CommandError (message kept to one inert line).
     const saved = await saveDeliverable(client, sessionId, file, {
       cwd: p.cwd ?? process.cwd(),
       ...(p.out ? { out: p.out } : {}),
       force: p.force,
+    }).catch((error: unknown) => {
+      throw new CommandError(escapeControl(error instanceof Error ? error.message : String(error)))
     })
     io.stdout.write(
       p.json

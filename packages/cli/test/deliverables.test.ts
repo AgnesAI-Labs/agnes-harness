@@ -97,7 +97,10 @@ describe('sessions deliverables', () => {
     expect(readFileSync(path)).toEqual(small)
     expect(r.out).toBe(`saved ${path} (${small.length} bytes, sha256 ${sha(small)})\n`)
     const again = await run(['sessions', 'deliverables', 's1', '--save', '1'])
-    expect(String((again.exit as Error).message)).toContain('use --force')
+    expect(again.exit).toMatchObject({
+      name: 'CommandError',
+      message: expect.stringContaining('use --force'),
+    })
     expect(again.calls.some((c) => c.method === '_agnes/v1/artifact.read')).toBe(false)
     writeFileSync(path, 'old')
     expect((await run(['sessions', 'deliverables', 's1', '--save', '1', '--force'])).exit).toBe(0)
@@ -119,7 +122,10 @@ describe('sessions deliverables', () => {
     const bad = await run(['sessions', 'deliverables', 's1', '--save', '1', '--out', 'x.txt'], {
       tamper: true,
     })
-    expect(String((bad.exit as Error).message)).toContain('digest mismatch')
+    expect(bad.exit).toMatchObject({
+      name: 'CommandError',
+      message: expect.stringContaining('digest mismatch'),
+    })
     const refused = await run(['sessions', 'deliverables', 's1', '--save', '1', '--out', 'x.txt'], {
       refuse: true,
     })
