@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
 import {
   artifactBody,
   coverage,
@@ -1050,6 +1051,7 @@ describe('snapshot', () => {
     expect(Object.keys(view).sort()).toEqual(
       [
         'artifacts',
+        'blockers',
         'changes',
         'configBaselines',
         'counts',
@@ -1087,6 +1089,144 @@ describe('snapshot', () => {
     expect(view.counts).toMatchObject({ trial: { PLANNED: 0 }, fault: { NEW: 0 }, problem: { OPEN: 0 } })
     expect(view.labels.level.SWR).toBe('子系统需求')
     expect(snapshot(state, NOW, p.id).stages).toHaveLength(6)
+  })
+})
+
+describe('blockers', () => {
+  const at = (days: number) => new Date(NOW - days * DAY).toISOString()
+  const kinds = (list: Item[]) => list.map((b) => b.kind)
+  const clean = () => {
+    const state = structuredClone(seed(NOW))
+    state.gates = state.gates.map((g: Item) => ({
+      ...g,
+      decision: 'APPROVED',
+      findings: g.findings.map((f: Item) => ({ ...f, closed: true })),
+    }))
+    for (const s of state.stages) s.plannedEnd = '2099-01-01T00:00:00.000Z'
+    state.trials = state.trials.filter((t: Item) => t.result !== 'FAIL')
+    state.changes = state.changes.filter((c: Item) => c.state !== 'CCB_REVIEW')
+    state.problems = state.problems.filter((p: Item) => p.state !== 'ANALYZING')
+    return state
+  }
+
+  it('derives the seeded blockers and puts them into the snapshot, narrowed by project', () => {
+    const list = blockers(seed(NOW), NOW) as Item[]
+    expect(new Set(kinds(list))).toEqual(
+      new Set([
+        'GATE_PENDING',
+        'GATE_FINDING',
+        'STAGE_OVERDUE',
+        'TRIAL_FAILED',
+        'CHANGE_CCB',
+        'PROBLEM_STALLED',
+      ]),
+    )
+    expect(kinds(list).every((k) => k in BLOCKER_KINDS)).toBe(true)
+    expect(list.filter((b) => b.kind === 'GATE_PENDING').map((b) => b.role)).toEqual(['客户代表'])
+    expect(snapshot(seed(NOW), NOW).blockers).toEqual(list)
+    const one = snapshot(seed(NOW), NOW, 'PRJ-2025-042').blockers as Item[]
+    expect(one.length).toBeGreaterThan(0)
+    expect(one.every((b) => b.projectId === 'PRJ-2025-042')).toBe(true)
+  })
+
+  it('reads no blocker from a state without any', () => {
+    expect(blockers(clean(), NOW)).toEqual([])
+  })
+
+  it('counts the waiting days of a pending gate from the stage entering review and drops signed roles', () => {
+    const state = clean()
+    const gate = state.gates.find((g: Item) => g.id === 'GATE-PRJ-2026-008-DL2-1')
+    gate.decision = 'PENDING'
+    gate.signatures = [{ role: '项目经理', by: '项目经理 王海涛', at: at(1) }]
+    state.stages.find((s: Item) => s.id === gate.stageId).history.push({ at: at(3), to: 'IN_REVIEW' })
+    const list = blockers(state, NOW) as Item[]
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ kind: 'GATE_PENDING', role: '客户代表', days: 3 })
+    gate.superseded = true
+    expect(blockers(state, NOW)).toEqual([])
+  })
+
+  it('reports open review findings to the stage author and stage overdue until it passes', () => {
+    const state = clean()
+    state.gates[0].findings = [{ id: 'F-09', text: '缺少接口清单', by: '客户代表', closed: false }]
+    const stage = state.stages.find((s: Item) => s.id === state.gates[0].stageId)
+    stage.plannedEnd = at(5)
+    stage.state = 'IN_PROGRESS'
+    const list = blockers(state, NOW) as Item[]
+    expect(kinds(list)).toEqual(['GATE_FINDING', 'STAGE_OVERDUE'])
+    expect(list[0].role).toBe(stage.author)
+    expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
+    stage.state = 'PASSED'
+    expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])
+  })
+
+  it('derives a failed trial without a change, a change in CCB review and a stalled 8D', () => {
+    const state = clean()
+    const trial = seed(NOW).trials.find((t: Item) => t.id === 'TT-2026-011')
+    const crs = seed(NOW).changes.find((c: Item) => c.id === 'CR-2026-031')
+    const qp = seed(NOW).problems.find((p: Item) => p.id === 'QP-2026-007')
+    state.trials.push(trial)
+    state.changes.push(crs)
+    state.problems.push(qp)
+    expect(kinds(blockers(state, NOW))).toEqual(['TRIAL_FAILED', 'CHANGE_CCB', 'PROBLEM_STALLED'])
+    state.trials[state.trials.length - 1] = { ...trial, changeId: crs.id }
+    expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB', 'PROBLEM_STALLED'])
+    // exactly 7 days in ANALYZING is still on time
+    state.problems[state.problems.length - 1] = {
+      ...qp,
+      history: [{ at: at(7), from: 'OPEN', to: 'ANALYZING' }],
+    }
+    expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB'])
+  })
+
+  it('derives the maintained baseline lagging the designed one', () => {
+    const state = clean()
+    const project = 'PRJ-2023-011'
+    const maintained = state.configBaselines.filter(
+      (b: Item) => b.projectId === project && b.type === 'AS_MAINTAINED',
+    )
+    expect(blockers(state, NOW)).toEqual([])
+    maintained[maintained.length - 1].revs['NC-DR-1218'] = 'A'
+    const list = blockers(state, NOW) as Item[]
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ kind: 'BASELINE_GAP', projectId: project, role: '配置管理员' })
+    expect(list[0].reason).toContain('NC-DR-1218')
+  })
+
+  it('works without approvals and derives active, ALL-mode and overdue approval nodes when present', () => {
+    const state = clean()
+    expect(state.approvals).toBeUndefined()
+    expect(blockers(state, NOW)).toEqual([])
+    state.approvals = [
+      {
+        id: 'AP-1',
+        projectId: 'PRJ-2025-042',
+        title: 'ECR CR-2026-031',
+        state: 'RUNNING',
+        current: 0,
+        nodes: [
+          {
+            id: 'N1',
+            name: '专业会签',
+            mode: 'ALL',
+            roles: ['机械设计师', '电气设计师'],
+            dueHours: 48,
+            state: 'ACTIVE',
+            enteredAt: at(1),
+          },
+        ],
+        actions: [
+          { nodeId: 'N1', role: '机械设计师', by: '机械设计师 沈岳', action: 'APPROVE', at: at(0.5) },
+        ],
+      },
+      { id: 'AP-2', projectId: 'PRJ-2025-042', state: 'APPROVED', current: 0, nodes: [], actions: [] },
+    ]
+    let list = blockers(state, NOW) as Item[]
+    expect(list.map((b) => [b.kind, b.role])).toEqual([['APPROVAL_ACTIVE', '电气设计师']])
+    state.approvals[0].nodes[0].enteredAt = at(3)
+    list = blockers(state, NOW)
+    expect(list.map((b) => b.kind)).toEqual(['APPROVAL_OVERDUE'])
+    expect(list[0]).toMatchObject({ overdue: true, days: 3 })
   })
 })
 

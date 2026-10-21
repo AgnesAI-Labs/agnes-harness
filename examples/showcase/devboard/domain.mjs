@@ -3,6 +3,7 @@
 // the v1 requirement / task / human-intervention machines, derived metrics and store persistence.
 // No host imports, so tests run against a plain in-memory store.
 import { readFileSync } from 'node:fs'
+import { blockers } from './blockers.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from './profiles.mjs'
 import { buildSeed } from './seed-data.mjs'
 
@@ -1463,6 +1464,7 @@ export function snapshot(state, now = Date.now(), projectId) {
     requirements: pick(state.requirements),
     tasks: pick(state.tasks),
     interventions,
+    blockers: blockers(state, now, projectId),
     counts: {
       requirement: count(pick(state.requirements), 'requirement'),
       task: count(pick(state.tasks), 'task'),
