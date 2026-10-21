@@ -926,3 +926,195 @@ it('refuses a torn full scan without treating unchanged repaired bytes as a trus
   expect(await read(authority, expected)).toBe(expected.treeIntegrity)
   expect(hash).toHaveBeenCalled()
 })
+
+it.each(
+  (['sync', 'async'] as const).flatMap((mode) =>
+    (['cold', 'hit', 'full-fallback'] as const).flatMap((gate) =>
+      (['EIO', 'ABORT_ERR', 'unknown', 'ESTALE'] as const).map((code) => [mode, gate, code] as const),
+    ),
+  ),
+)('recheck: %s %s refuses a one-shot %s without success or revocation', async (mode, gate, code) => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  const use = () =>
+    mode === 'sync'
+      ? Promise.resolve().then(() => authority.readSync(directory, expected))
+      : read(authority, expected)
+  if (gate === 'hit') expect(await use()).toBe(expected.treeIntegrity)
+  if (gate === 'full-fallback') vi.mocked(trees.supportsTreeIdentity).mockReturnValue(false)
+  const canonical = realpathSync(file),
+    originalSync = syncFs.lstatSync,
+    originalAsync = fs.lstat
+  let injected = false
+  const error =
+    code === 'unknown'
+      ? new Error('unclassified storage failure')
+      : Object.assign(new Error('synthetic storage failure'), { code })
+  const sync = vi.spyOn(syncFs, 'lstatSync').mockImplementation((...args) => {
+    if (mode === 'sync' && String(args[0]) === canonical && !injected) {
+      injected = true
+      throw error
+    }
+    return originalSync(...args)
+  })
+  const async = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+    if (mode === 'async' && String(args[0]) === canonical && !injected) {
+      injected = true
+      throw error
+    }
+    return originalAsync(...args)
+  })
+  const outcome = await use().then(
+    () => 'accepted',
+    () => 'refused',
+  )
+  sync.mockRestore()
+  async.mockRestore()
+  await setImmediate()
+  const hash = vi.spyOn(sources, mode === 'sync' ? 'hashDirectory' : 'hashDirectoryAsync')
+  expect(await use()).toBe(expected.treeIntegrity)
+  expect({
+    injected,
+    outcome,
+    revoked: fault.mock.calls.length > 0,
+    newFull: hash.mock.calls.length > 0,
+  }).toEqual({ injected: true, outcome: 'refused', revoked: false, newFull: true })
+})
+
+it.each(['EIO', 'ABORT_ERR', 'unknown', 'ESTALE'] as const)(
+  'recheck: background %s drops positive evidence without revoking or renewing it',
+  async (code) => {
+    const expected = identity(),
+      fault = vi.fn(),
+      authority = owner({ onMismatch: fault, softMs: 0 })
+    await read(authority, expected)
+    const canonical = realpathSync(file),
+      original = fs.lstat
+    let injected = false
+    const outage = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      if (String(args[0]) === canonical && !injected) {
+        injected = true
+        throw code === 'unknown'
+          ? new Error('unknown storage failure')
+          : Object.assign(new Error('synthetic outage'), { code })
+      }
+      return original(...args)
+    })
+    await authority.recheck()
+    outage.mockRestore()
+    await setImmediate()
+    const hash = vi.spyOn(sources, 'hashDirectoryAsync')
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+    expect({ injected, revoked: fault.mock.calls.length > 0, newFull: hash.mock.calls.length > 0 }).toEqual({
+      injected: true,
+      revoked: false,
+      newFull: true,
+    })
+  },
+)
+
+it.each(['sync', 'async'] as const)(
+  'recheck: confirmed %s symlink evidence survives a subsequent root EIO',
+  async (mode) => {
+    const expected = identity(),
+      fault = vi.fn(),
+      authority = owner({ onMismatch: fault })
+    await read(authority, expected)
+    rmSync(file)
+    symlinkSync(join(directory, 'z.mjs'), file)
+    const physical = realpathSync(directory),
+      leaf = join(physical, 'a.mjs'),
+      originalSync = syncFs.lstatSync,
+      originalAsync = fs.lstat
+    let confirmed = false,
+      unavailable = false
+    const sync = vi.spyOn(syncFs, 'lstatSync').mockImplementation((...args) => {
+      const path = String(args[0])
+      if (mode === 'sync' && confirmed && (path === directory || path === physical)) {
+        unavailable = true
+        throw Object.assign(new Error('root failed after structural evidence'), { code: 'EIO' })
+      }
+      const stat = originalSync(...args)
+      if (!stat) throw new Error('expected an actual lstat observation')
+      if (mode === 'sync' && path === leaf && stat.isSymbolicLink()) confirmed = true
+      return stat
+    })
+    const async = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      const path = String(args[0])
+      if (mode === 'async' && confirmed && (path === directory || path === physical)) {
+        unavailable = true
+        throw Object.assign(new Error('root failed after structural evidence'), { code: 'EIO' })
+      }
+      const stat = await originalAsync(...args)
+      if (mode === 'async' && path === leaf && stat.isSymbolicLink()) confirmed = true
+      return stat
+    })
+    const use = () =>
+      mode === 'sync'
+        ? Promise.resolve().then(() => authority.readSync(directory, expected))
+        : read(authority, expected)
+    await expect(use()).rejects.toThrow()
+    sync.mockRestore()
+    async.mockRestore()
+    await setImmediate()
+    rmSync(file)
+    writeFileSync(file, 'GOOD')
+    const repaired = await use().then(
+      () => 'accepted',
+      () => 'refused',
+    )
+    expect({ confirmed, unavailable, notified: fault.mock.calls.length > 0, repaired }).toEqual({
+      confirmed: true,
+      unavailable: true,
+      notified: true,
+      repaired: 'refused',
+    })
+  },
+)
+
+it.each(['success', 'reject', 'wrong-binding', 'throwing-binding'] as const)(
+  'recheck: boot consumption is one-shot after %s and never survives its assembly scope',
+  async (mode) => {
+    const expected = identity(),
+      parent = owner(),
+      child = owner()
+    await read(parent, expected)
+    const admission = await parent.admission()
+    const input = mode === 'wrong-binding' ? { ...admission, binding: 'stale' } : admission
+    if (mode === 'throwing-binding') {
+      const path = join(root, 'agnes-lock.json')
+      writeFileSync(path, 'control')
+      const original = syncFs.readFileSync
+      const outage = vi.spyOn(syncFs, 'readFileSync').mockImplementation((...args) => {
+        if (String(args[0]) === path) throw Object.assign(new Error('binding outage'), { code: 'EIO' })
+        return original(...args)
+      })
+      await expect(child.boot(input, async () => undefined)).rejects.toThrow()
+      outage.mockRestore()
+      rmSync(path)
+    } else if (mode === 'reject') {
+      await expect(
+        child.boot(input, async () => {
+          throw new Error('assembly rejected')
+        }),
+      ).rejects.toThrow('assembly rejected')
+    } else {
+      await child.boot(input, () => read(child, expected))
+    }
+    writeFileSync(file, 'EVIL')
+    const refuse = async () => {
+      const result = await read(child, expected)
+      if (result !== expected.treeIntegrity) throw new Error('bad bytes refused')
+    }
+    await expect(child.boot(admission, refuse)).rejects.toThrow()
+    const third = owner()
+    await expect(
+      third.boot(admission, async () => {
+        if ((await read(third, expected)) !== expected.treeIntegrity) throw new Error('bad bytes refused')
+      }),
+    ).rejects.toThrow()
+    expect(Object.isFrozen(admission)).toBe(true)
+    expect(Object.isFrozen(admission.trees)).toBe(true)
+  },
+)
