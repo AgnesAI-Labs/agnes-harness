@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
   chmod,
@@ -9,7 +9,6 @@ import {
   realpath,
   rename,
   rm,
-  rmdir,
   stat,
   writeFile,
 } from 'node:fs/promises'
@@ -21,6 +20,11 @@ import { failure } from './policy.mjs'
 const VERSION = '1.63.0'
 const packaged = new URL('../dist/runtime/playwright/package.json', import.meta.url)
 const require = createRequire(existsSync(packaged) ? packaged : new URL('../package.json', import.meta.url))
+const packagedLock = new URL('../dist/runtime/owner-lock.mjs', import.meta.url)
+const { acquireOwnerFileLock, pidExists, readLockOwner, releaseOwnerFileLock, takeOverOwnerFileLock } =
+  await import(
+    existsSync(packagedLock) ? packagedLock.href : require.resolve('@agnes/system-node/owner-lock')
+  )
 let engine
 function load() {
   if (!engine) {
@@ -97,60 +101,73 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
         if (!(await installed(info))) {
           await mkdir(info.base, { recursive: true })
           const lock = owned(info.base, info.cache + '.lock')
-          await mkdir(lock).catch(() => {
+          const owner = { pid: process.pid, token: randomUUID() }
+          while (!acquireOwnerFileLock(lock, owner)) {
+            const held = readLockOwner(lock)
+            if (held && !pidExists(held.pid)) {
+              takeOverOwnerFileLock(lock, held.token)
+              continue
+            }
             throw failure(
               'INSTALL_BUSY',
-              'Another browser installation owns the cache lock. Retry after it finishes.',
+              held
+                ? `Browser install lock ${lock} is held by process ${held.pid} (live or unknown). Retry after installation finishes; remove this lock manually only after confirming no installer is running.`
+                : `Browser install lock ${lock} has no readable owner (possibly an old directory lock). Confirm no installer is running, then remove this lock manually and retry.`,
             )
-          })
+          }
           let staging
           try {
-            staging = owned(info.base, await mkdtemp(info.cache + '.tmp-'))
-            const zip = owned(staging, join(staging, 'browser.zip'))
-            const download = await fetchArchive(info.url, {
-              signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
-            })
-            if (!download.ok || !download.body)
-              throw failure('DOWNLOAD_FAILED', 'Browser download failed: ' + download.status)
-            const output = await open(zip, 'wx')
-            const hash = createHash('sha256')
-            let bytes = 0
-            try {
-              for await (const chunk of download.body) {
-                signal.throwIfAborted()
-                bytes += chunk.length
-                if (bytes > info.size)
-                  throw failure('INTEGRITY', 'Browser archive exceeded its reviewed size.')
-                hash.update(chunk)
-                await output.write(chunk)
+            if (!(await installed(info))) {
+              staging = owned(info.base, await mkdtemp(info.cache + '.tmp-'))
+              const zip = owned(staging, join(staging, 'browser.zip'))
+              const download = await fetchArchive(info.url, {
+                signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
+              })
+              if (!download.ok || !download.body)
+                throw failure('DOWNLOAD_FAILED', 'Browser download failed: ' + download.status)
+              const output = await open(zip, 'wx')
+              const hash = createHash('sha256')
+              let bytes = 0
+              try {
+                for await (const chunk of download.body) {
+                  signal.throwIfAborted()
+                  bytes += chunk.length
+                  if (bytes > info.size)
+                    throw failure('INTEGRITY', 'Browser archive exceeded its reviewed size.')
+                  hash.update(chunk)
+                  await output.write(chunk)
+                }
+              } finally {
+                await output.close()
               }
-            } finally {
-              await output.close()
-            }
-            if (bytes !== info.size || hash.digest('hex') !== info.sha256)
-              throw failure('INTEGRITY', 'Browser archive checksum did not match the reviewed manifest.')
-            signal.throwIfAborted()
-            const unpacked = owned(staging, join(staging, 'unpacked'))
-            await mkdir(unpacked)
-            await load().extractZip(zip, { dir: unpacked })
-            signal.throwIfAborted()
-            const executable = owned(unpacked, join(unpacked, info.relativeExecutable))
-            owned(unpacked, await realpath(executable))
-            await chmod(executable, 0o755)
-            await writeFile(
-              join(unpacked, 'agnes-install.json'),
-              JSON.stringify({ sha256: info.sha256, revision: info.revision }),
-            )
-            // An existing cache is not overwritten or deleted underneath another profile.
-            if (existsSync(info.cache))
-              throw failure(
-                'CACHE_INVALID',
-                'The existing browser cache is incomplete; inspect it before repair.',
+              if (bytes !== info.size || hash.digest('hex') !== info.sha256)
+                throw failure('INTEGRITY', 'Browser archive checksum did not match the reviewed manifest.')
+              signal.throwIfAborted()
+              const unpacked = owned(staging, join(staging, 'unpacked'))
+              await mkdir(unpacked)
+              await load().extractZip(zip, { dir: unpacked })
+              signal.throwIfAborted()
+              const executable = owned(unpacked, join(unpacked, info.relativeExecutable))
+              owned(unpacked, await realpath(executable))
+              await chmod(executable, 0o755)
+              await writeFile(
+                join(unpacked, 'agnes-install.json'),
+                JSON.stringify({ sha256: info.sha256, revision: info.revision }),
               )
-            await rename(unpacked, info.cache)
+              // An existing cache is not overwritten or deleted underneath another profile.
+              if (existsSync(info.cache))
+                throw failure(
+                  'CACHE_INVALID',
+                  'The existing browser cache is incomplete; inspect it before repair.',
+                )
+              await rename(unpacked, info.cache)
+            }
           } finally {
-            if (staging) await rm(owned(info.base, staging), { recursive: true, force: true })
-            await rmdir(lock)
+            try {
+              if (staging) await rm(owned(info.base, staging), { recursive: true, force: true })
+            } finally {
+              releaseOwnerFileLock(lock, owner.token)
+            }
           }
         }
         runtime.guard(epoch)
@@ -161,7 +178,8 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
         .catch((error) => {
           if (runtime.enabled && epoch === runtime.epoch) {
             runtime.state = 'failed'
-            runtime.error = String(error.message).slice(0, 500)
+            runtime.error =
+              error.code === 'INSTALL_BUSY' ? error.message : String(error.message).slice(0, 500)
             runtime.notify()
           }
         })

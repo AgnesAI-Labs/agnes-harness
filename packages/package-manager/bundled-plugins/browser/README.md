@@ -11,8 +11,13 @@ the profile ceiling. Open the workbench's Browser tab manually; activation, ordi
 chat and page updates never expand or switch the panel. Activation prepares the
 reviewed Chromium archive in the OS user cache, verifying its size and SHA-256.
 There is no independent settings switch. Preparation errors appear in the panel;
-toggle the plugin off and on to retry. Legacy browser.enabled values are ignored,
-while an explicit package disable remains disabled across restart.
+toggle the plugin off and on to retry. The install lock records a process ID and owner
+token. A confirmed dead process is recovered automatically; a live or unknown owner
+is refused. The error names the exact lock path and process when readable. For an
+old directory lock or unreadable owner, confirm no installer is running before
+manually removing only the named lock and retrying. Lock age never permits takeover.
+Legacy browser.enabled values are ignored, while an explicit package disable remains
+disabled across restart.
 
 Use the Browser workbench panel or ask AGH to open an http(s) URL. Start local
 projects with the existing shell/Jobs tools first. A URL's localhost belongs to the
