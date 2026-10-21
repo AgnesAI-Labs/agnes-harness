@@ -249,7 +249,8 @@
               "write",
               "edit"
             ]
-          }
+          },
+          "skills": []
         },
         "presets": {
           "devboard": {
@@ -293,7 +294,8 @@
               "write",
               "edit"
             ]
-          }
+          },
+          "skills": []
         },
         "presets": {
           "devboard": {
@@ -337,7 +339,8 @@
               "write",
               "edit"
             ]
-          }
+          },
+          "skills": []
         },
         "presets": {
           "devboard": {
@@ -376,8 +379,10 @@
               "ls",
               "find",
               "grep"
-            ]
-          }
+            ],
+            "readOnly": true
+          },
+          "skills": []
         },
         "presets": {
           "devboard": {
@@ -421,7 +426,8 @@
               "write",
               "edit"
             ]
-          }
+          },
+          "skills": []
         },
         "presets": {
           "devboard": {
