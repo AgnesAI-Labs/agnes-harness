@@ -5,7 +5,12 @@ const scaffold = await readFile(new URL('create-agh-plugin.mjs', templatesRoot),
 const templateNames = ['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop']
 const files = {}
 async function collect(url, prefix) {
-  for (const entry of await readdir(url, { withFileTypes: true })) {
+  // Filesystem enumeration differs across platforms; generated assets need one byte order.
+  const entries = (await readdir(url, { withFileTypes: true })).sort((a, b) => {
+    if (a.name === b.name) return 0
+    return a.name < b.name ? -1 : 1
+  })
+  for (const entry of entries) {
     const path = `${prefix}/${entry.name}`
     if (entry.isDirectory()) await collect(new URL(`${entry.name}/`, url), path)
     else files[path] = await readFile(new URL(entry.name, url), 'utf8')
