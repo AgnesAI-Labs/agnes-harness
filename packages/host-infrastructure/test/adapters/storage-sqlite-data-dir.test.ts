@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -47,6 +47,10 @@ describe('data directory version', () => {
     for (const statement of statements) db.exec(statement)
     db.close()
   }
+
+  // Every byte of sessions.db and its sidecar files, or null for a file that does not exist.
+  const snapshot = () =>
+    [file, `${file}-wal`, `${file}-shm`].map((path) => (existsSync(path) ? readFileSync(path) : null))
 
   it('stamps a new data directory with the current version', async () => {
     const s = open()
@@ -120,6 +124,7 @@ describe('data directory version', () => {
 
   it('refuses a data directory written by a newer build', () => {
     rawCreate(file, 'CREATE TABLE events (x)', 'PRAGMA user_version = 2')
+    const before = snapshot()
     const error = refusal(open)
     expect(error).toMatchObject({
       code: 'E_DATA_DIR_NEWER',
@@ -129,7 +134,27 @@ describe('data directory version', () => {
       `E_DATA_DIR_NEWER: data directory ${dir} was written by a newer AGH (data format 2; this build supports 1); upgrade AGH. Nothing was changed.`,
     )
     expect(userVersion(file)).toBe(2)
+    expect(snapshot()).toEqual(before)
   })
+
+  it.each(['ledger_heads', 'child_control_meta'])(
+    'refuses a stamped directory that an older build wrote %s into, and changes nothing',
+    async (table) => {
+      const s = open()
+      await s.close()
+      rawCreate(file, `CREATE TABLE ${table} (session_key TEXT PRIMARY KEY)`)
+      const before = snapshot()
+      const error = refusal(open)
+      expect(error).toMatchObject({
+        code: 'E_DATA_DIR_STALE',
+        detail: { reason: 'older', dataDir: dir, file, tablesDir, found: 1, supported: 1 },
+      })
+      expect(error.message).toContain('was created by an older AGH')
+      expect(error.message).toContain(reset())
+      expect(snapshot()).toEqual(before)
+      expect(userVersion(file)).toBe(1)
+    },
+  )
 
   it('is refused the same way through the Host persistence provider', () => {
     rawCreate(file, 'CREATE TABLE events (x)')

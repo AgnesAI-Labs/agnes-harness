@@ -4,12 +4,15 @@ import type { DatabaseSync } from 'node:sqlite'
 import { CoreError } from '@agnes/core'
 
 /**
- * The version of everything persisted under one data directory: `sessions.db` and `tables/*.db`.
- * It lives in `PRAGMA user_version` of the raw `sessions.db` connection because the SQL gateway
- * refuses `PRAGMA` on `tables/*.db`. It is also the downgrade guard: an older build refuses a
- * directory a newer one stamped, instead of reading tables it no longer understands.
+ * The version of everything persisted under one data directory. It is stamped in `sessions.db`
+ * only, in `PRAGMA user_version` of the raw connection, because the SQL gateway refuses `PRAGMA`
+ * on `tables/*.db`; those files have no version of their own and are covered by this one. It also
+ * replaces the downgrade guard `child_control_meta` used to give: a build refuses a directory a
+ * newer one stamped, instead of reading tables it no longer understands.
  *
- * A change that alters the persisted schema of either file must raise this by one.
+ * Raise this by one in the same change whenever the persisted shape of a table that an existing
+ * stamped directory already contains changes. Adding or dropping a table that only new code reads
+ * or writes does not need a bump.
  */
 export const DATA_DIR_VERSION = 1
 
@@ -34,10 +37,19 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
   // One statement, so one snapshot: another process committing between two reads would show tables
   // with a version that does not yet include them.
   const row = db
-    .prepare('SELECT user_version, (SELECT count(*) FROM sqlite_master) AS objects FROM pragma_user_version')
-    .get() as { user_version: number; objects: number }
+    .prepare(
+      `SELECT user_version,
+        (SELECT count(*) FROM sqlite_master) AS objects,
+        (SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('ledger_heads', 'child_control_meta')) AS legacy
+      FROM pragma_user_version`,
+    )
+    .get() as { user_version: number; objects: number; legacy: number }
   const found = row.user_version
   const empty = row.objects === 0
+  // Builds from before the version stamp never read it, yet re-create these two tables when they
+  // open a directory. Seeing either in a stamped directory means such a build has written to it,
+  // and what it wrote is not understood here.
+  const olderBuildWrote = row.legacy > 0
   const stale = (reason: 'older' | 'orphan-tables') => ({
     reason,
     dataDir,
@@ -61,7 +73,7 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
       )
     return 'fresh'
   }
-  if (found < DATA_DIR_VERSION)
+  if (found < DATA_DIR_VERSION || olderBuildWrote)
     throw new CoreError(
       'E_DATA_DIR_STALE',
       `data directory ${dataDir} was created by an older AGH (data format ${found}; this build supports ${DATA_DIR_VERSION}). ${resetInstructions(paths)}`,
