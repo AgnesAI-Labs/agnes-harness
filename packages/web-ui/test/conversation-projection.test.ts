@@ -90,7 +90,11 @@ describe('conversation projection store', () => {
       status: 'completed',
       summary: 'Delegated investigation',
       delegatedRole: { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } },
-      delegatedTask: { childKey: 'internal-child', task: '核查偏差证据\n供子代理执行的详细步骤', status: 'running' },
+      delegatedTask: {
+        childKey: 'internal-child',
+        task: '核查偏差证据\n供子代理执行的详细步骤',
+        status: 'running',
+      },
       resultPreview: 'started internal-child; follow up with subagent_send_message',
     }
     const projection = {
