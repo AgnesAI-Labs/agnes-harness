@@ -104,6 +104,10 @@
 | D7 回收 | 是规则而非数据：若有 pin、所记录的头部或实时容器引用某代次，或其创建者或采用者仍在运行，则保留。“在运行”同时比较 pid **与进程启动标识**（与 C6 相同），所以被复用的 pid 不会保住任何东西；没有启动标识的平台只比较裸 pid，只会多保留，绝不会提前删除 | `collect`，在发布、释放、迁移与空闲关闭后调用（`host.ts:435`） | Host | 无 | 被引用的代次从不删除；任何无法解码的 pin 或头部（由 `corruptEntries()` 列出，`scanDamage()` 还会把它们作为 `blocked` 行放进管理端代次状态）都会使整轮停手，因为读不出的条目无法证明某代次未被引用。回收者先把目录重命名为认领名，再重新读取 pin、头部与采用者后才删除；采用、pin、头部与迁移都先发布引用再确认代次仍在（缺口 G11，已关闭） | 空闲容器在 `worker.generation_idle_close_ms`（默认 60 秒，`host.ts:132-137`）后关闭；之后再打开即从 D1 冷恢复 |
 | D8 代次宿主的每容器状态 | `preparedRows`、`rowsByGeneration`、`latestSkills`、`failures`、`failedSnapshots`（`host.ts:105-113`） | 宿主的串行队列（`enqueue`） | 同一宿主 | **缓存**；持久对应物是 D1 的 `resources`，以及由 `restoreGenerationRows` 重建的声明（`packages/host/src/runtime/generation/resources.ts`） | 冷重建时以快照资源为准 | 重启即丢，之后重建 |
 
+快照输入捕获由 `generation/snapshotter.ts` 负责，状态投影由 `generation/status.ts` 负责。内部 `GenerationReuseMode` 明确区分新建、启动时复用头部、发布时复用等价归档。发布排除同进程任意 Host 仍持有的代次、失败候选和带已接受实时配置的归档；持久 pin 对归档的保留独立于实时容器。
+
+`packages/package-manager/src/generation-equivalence.ts` 统一拥有构建输入及两种比较。`matchesGenerationBuildInputs` 比较 artifact、兼容性、包、资源与 seam；`sameGenerationCodeAndSources` 还要求已记录 seam/资源，并比较完整来源元数据（忽略归档目录），才能让不同持久 ID 共用容器。两者服务于不同合同。
+
 ### 三种“代次”
 
 三个不同的计数共用这个词，不可互换。*插件代次*（plugin generation）是 D1 中不可变的代码归档，也是会话 pin 的单位。*运行时注册表修订*（runtime registry revision）标识 Core 的工具与钩子注册表，驱动写时复制的会话重绑定（`runtime-target-publisher.ts:58`）。*资源代次*（resource generation）是 `ResourceGenerationCell` 持有的实时资源集（`packages/host-providers/src/resource-generation-cell.ts:190`）。一次发布可以只推进其中一个。
@@ -179,7 +183,7 @@ pin 锁。`<pin>.json.lock` 是发布时已带所有者（`pid`、启动标识�
 | 快照 | 来源 | 构建位置 | 过期性与规则 |
 | --- | --- | --- | --- |
 | `RuntimeAdminSnapshot`（`packages/protocol/src/runtime-admin.ts:88`） | **共享 worker** Host 的 `host.providers.catalog()`、预设、发布状态与安全状态，加本地插件根目录 | 按请求：`session.catalog` 命令（`packages/worker-runtime/src/commands.ts:805`），在 `packages/daemon/src/supervisor/runtime.ts:2414` 组装 | 实时读取，无缓存。它描述的是共享 worker 的头部，而不是某个会话的容器；每个会话的视图是会话运行时描述符（已关闭缺口 G3） |
-| `PluginGenerationStatus`（`host.ts:36,496`） | pin（D2）、实时容器、快照（D1）、`failures` | 在代次宿主中按请求计算，由组合宿主包装 | 派生。失败字符串在离开宿主前被收缩为一个 `E_` 代码 |
+| `PluginGenerationStatus`（`host.ts:36,496`） | pin（D2）、实时容器、快照（D1）、`failures` | 在代次宿主中按请求计算，由组合宿主包装 | 派生。通过 protocol 错误 helper 捕获公开 code/reason；状态只暴露 schema 拥有的代码，不再解析异常消息 |
 | `pluginTreeActual`（`plugin-tree-surface.ts:36`） | 当前 worker 代的 C1 `acknowledged` 与 `report` 行 | daemon | 观测；没有 worker 代时报告“未运行” |
 | 配置快照的 `effect`（`packages/protocol/src/runtime-admin.ts:172`） | E7 revision 对比已应用 revision | `configurationApplication.present` | 见 E9 |
 | 包列表与操作状态 | B1、B5 与 C1 观测 | 包管理 handler | 按请求读取；操作记录与激活观测之间是最终一致 |

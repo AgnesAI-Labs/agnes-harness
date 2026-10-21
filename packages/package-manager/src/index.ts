@@ -22,6 +22,7 @@ export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'
 export * from './errors.js'
+export * from './generation-equivalence.js'
 export {
   capabilityHash,
   type InstalledInventory,

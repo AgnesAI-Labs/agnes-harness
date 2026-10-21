@@ -2,12 +2,18 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { approvalKind } from '@agnes/extension-api/seams'
+import { HostError } from '@agnes/host-common/errors'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
-import { decodeRuntimeTargetArtifact, normalizePluginExport } from '@agnes/plugin-runtime/host'
+import {
+  decodeRuntimeTargetArtifact,
+  encodeRuntimeTargetArtifact,
+  normalizePluginExport,
+} from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it } from 'vitest'
-import { createTestHost } from '../../testkit/index.js'
+import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -452,21 +458,92 @@ it('publishes a delivered target on the generation an earlier worker recorded fo
   expect(generations()).toEqual(before)
 })
 
-it('publishes afresh rather than on a generation another Host in this process still runs', async () => {
+it('fences two Hosts through a failed candidate, live config, collection and reopen', async () => {
   const root = scratch()
   const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
-  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  let refuseProvider = false
+  const options = {
+    dataDir: root,
+    disableSessionTitle: true,
+    provider: (profile) => {
+      if (refuseProvider)
+        throw new HostError('E_SEAM_INIT', 'refused E_LEASE_EXPIRED is diagnostic text', {
+          detail: { reason: 'provider-unavailable' },
+        })
+      return new ScriptedProvider({
+        scripts: [],
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+      })
+    },
+  } satisfies TestHostOptions
+  const first = await createTestHost(options)
   let second: Awaited<ReturnType<typeof createTestHost>> | undefined
+  let reopened: Awaited<ReturnType<typeof createTestHost>> | undefined
+  const sessions: Awaited<ReturnType<typeof first.host.createSession>>[] = []
   try {
     await first.host.applyRuntimeTarget(delivered)
     const running = first.host.lastChange?.()?.generationId
-    // A second worker on the same composition snapshots its boot target over the first one's head.
-    second = await createTestHost({ dataDir: root, disableSessionTitle: true })
+    const firstSession = await first.host.createSession({ key: 'first', cwd: root })
+    sessions.push(firstSession)
+    // The second boot replaces the durable head while the first Host still runs it.
+    second = await createTestHost(options)
+    const boot = second.host.runtimeTargetSnapshot!()
     await second.host.applyRuntimeTarget(delivered)
     const published = second.host.lastChange?.()?.generationId
     expect(published).toBeDefined()
     expect(published).not.toBe(running)
+    const secondSession = await second.host.createSession({ key: 'second', cwd: root })
+    sessions.push(secondSession)
+    refuseProvider = true
+    await expect(second.host.applyRuntimeTarget(boot)).rejects.toMatchObject({ code: 'E_SEAM_INIT' })
+    expect(second.host.lastChange?.()).toMatchObject({
+      outcome: 'rejected',
+      recovered: true,
+      failures: [{ code: 'E_SEAM_INIT', reason: 'provider-unavailable' }],
+    })
+    const failed = second.host.pluginGenerationStatus?.().generations.find((g) => g.state === 'failed')
+    expect(failed).toMatchObject({ error: 'E_SEAM_INIT', boundSessions: 0, live: false })
+    expect(second.host.kernel.get('second')).toBe(secondSession)
+    refuseProvider = false
+    await second.host.applyRuntimeTarget(boot)
+    const recovered = second.host.lastChange?.()?.generationId
+    expect(recovered).toBeDefined()
+    expect(recovered).not.toBe(failed?.id)
+    // Keep an equivalent archive by a durable pin, with accepted live config. It must not
+    // become a publication candidate even after its live holder has closed.
+    const store = snapshotsOf(root)
+    const snapshot = store.read(published!)
+    const configured = store.create(
+      decodeRuntimeTargetArtifact(snapshot.artifact),
+      snapshot.sources,
+      snapshot.compatibility,
+      snapshot.packages,
+      snapshot.resources,
+      snapshot.seams,
+    )
+    store.saveLiveConfig(published!, encodeRuntimeTargetArtifact(delivered))
+    store.pin('configured', configured.id, store.session('second')!.seams!)
+    store.saveLiveConfig(configured.id, encodeRuntimeTargetArtifact(delivered))
+    for (const session of sessions.splice(0)) await session.close()
+    await second.host.close()
+    second = undefined
+    await store.collect(new Set())
+    expect(store.read(configured.id).id).toBe(configured.id)
+    expect(store.session('first')?.generationId).toBe(running)
+    reopened = await createTestHost(options)
+    await reopened.host.applyRuntimeTarget(delivered)
+    expect(reopened.host.lastChange?.()?.generationId).not.toBe(running)
+    expect(reopened.host.lastChange?.()?.generationId).not.toBe(configured.id)
+    expect(reopened.host.lastChange?.()?.generationId).not.toBe(published)
+    const resumed = await reopened.host.createSession({ key: 'second', cwd: root })
+    sessions.push(resumed)
+    expect(resumed.pluginGenerationId).toBe(published)
+    expect(store.liveConfig(configured.id)?.digest).toBe(encodeRuntimeTargetArtifact(delivered).digest)
+    expect(() => store.read(failed!.id)).toThrow('E_GENERATION_SNAPSHOT_MISSING')
   } finally {
+    refuseProvider = false
+    for (const session of sessions) await session.close()
+    await reopened?.host.close()
     await second?.host.close()
     await first.host.close()
   }

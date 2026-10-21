@@ -45,3 +45,18 @@ export function mcpPublicToolName(serverId: string, remoteName: string, taken?: 
   }
   return name
 }
+
+/** Stable backend extension identity, independent of a server's current definition revision. */
+export function mcpServerExtensionId(serverId: string): string {
+  const slug = serverId
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+  return `agnes/mcp-${slug || 'server'}-${hash8(serverId)}`
+}
+
+/** Recognizes the row wire format produced by mcpServerExtensionId. */
+export function isMcpServerRowId(id: string): boolean {
+  return /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)
+}

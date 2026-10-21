@@ -297,14 +297,6 @@
   },
   {
     "path": "packages/host/src/runtime/generation/target-code.ts",
-    "symbol": "<module>/VariableDeclaration:liveResource/ArrowFunction:0",
-    "literal": "/^ext:agnes\\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/",
-    "role": "comparison",
-    "max": 1,
-    "removal": "A3: consume validated resource-instance classification while retaining code pins"
-  },
-  {
-    "path": "packages/host/src/runtime/generation/target-code.ts",
     "symbol": "<module>/VariableDeclaration:liveResourceRow/ArrowFunction:0",
     "literal": "builtin:@agnes/base/",
     "role": "comparison",

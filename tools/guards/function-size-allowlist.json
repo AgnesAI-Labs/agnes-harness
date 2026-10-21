@@ -6,7 +6,7 @@
   "packages/core/src/execution/turn/resume.ts#<module>/FunctionDeclaration:resumeSession": 270,
   "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:approveAndExecute": 1260,
   "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:runToolsPhase": 229,
-  "packages/host/src/runtime/generation/host.ts#<module>/FunctionDeclaration:createRuntimeGenerationHost": 1231,
+  "packages/host/src/runtime/generation/host.ts#<module>/FunctionDeclaration:createRuntimeGenerationHost": 1149,
   "packages/host/src/runtime/generation/migration-state.ts#<module>/FunctionDeclaration:assertMigrationSettled": 237,
   "packages/daemon/src/supervisor/mcp-manage-requests.ts#<module>/FunctionDeclaration:createMcpManageRequests": 379,
   "packages/daemon/src/supervisor/mcp-manage-requests.ts#<module>/FunctionDeclaration:createMcpManageRequests/Block:0/ReturnStatement:0/ArrowFunction:0": 356,
