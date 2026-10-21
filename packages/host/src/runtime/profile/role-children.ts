@@ -91,7 +91,7 @@ export function createRoleChildren(deps: {
       if (!candidate.host.captureSessionCapabilities)
         throw new HostError('E_PRESET_UNSUPPORTED', 'Role resource workspace is unavailable')
       const roleCapabilities = await candidate.host.captureSessionCapabilities('', workspace)
-      const enabled = intersectCapabilities(parentResources.tools, roleCapabilities.tools)
+      const enabled = roleCapabilities.tools.filter((tool) => tool.enabled).map((tool) => tool.id)
       const resources = {
         mcp: intersectCapabilities(parentResources.mcp, roleCapabilities.mcp),
         skills: intersectCapabilities(parentResources.skills, roleCapabilities.skills),
