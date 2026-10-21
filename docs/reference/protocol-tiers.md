@@ -88,6 +88,7 @@ Older servers may refuse this additive action; clients must not emulate it with 
 
 - `_agnes/v1/session.runtime`
 - `_agnes/v1/session.tools`
+- `_agnes/v1/session.integrity`
 - `_agnes/v1/session.readToolDetail`
 - `_agnes/v1/session.deliverables`
 - `_agnes/v1/session.jobs.read`

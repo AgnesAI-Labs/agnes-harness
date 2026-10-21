@@ -18,6 +18,7 @@ The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld,
 | `discoveryGroup` | Optional one-line label, such as an MCP server name. Deferred tools sharing a label are listed to the model as one line with their count. |
 | `requiresApproval` | Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies. |
 | `isPresentational` | Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask. |
+| `attestsHistory` | Optional. Evidence exports and reports wait for full session history verification before dispatch. Omission means ordinary execution; it does not attest ledger integrity. |
 | `invalidArgumentLimit` | Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn. |
 | `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |
 | `requiresImageInput` | Optional, defaults to false. Only a model with native image input can discover or execute this tool. |

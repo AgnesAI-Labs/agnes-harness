@@ -164,6 +164,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.runtime': 'client',
   '_agnes/v1/agents.resolve': 'client',
   '_agnes/v1/session.tools': 'client',
+  '_agnes/v1/session.integrity': 'client',
   '_agnes/v1/session.jobs.read': 'client',
   '_agnes/v1/session.jobs.control': 'client',
   '_agnes/v1/session.workspace.list': 'client',

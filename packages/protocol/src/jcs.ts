@@ -87,6 +87,92 @@ export function jcsWrite(value: unknown, write: (chunk: string) => void): void {
   }
 }
 
+/** Incremental RFC 8785 tokens for cooperative consumers; large strings are split at code-point boundaries. */
+export function* jcsChunks(value: unknown): Generator<string> {
+  const invalid = () => new Error('invalid JCS input')
+  const active = new Set<object>()
+  function* string(text: string): Generator<string> {
+    yield '"'
+    const size = 64 * 1024
+    for (let at = 0; at < text.length; ) {
+      let end = Math.min(text.length, at + size)
+      const code = text.charCodeAt(end - 1)
+      if (end < text.length && code >= 0xd800 && code <= 0xdbff) end--
+      const part = text.slice(at, end)
+      // Reuse the synchronous encoder's strict surrogate validation and ECMAScript escaping.
+      let token = ''
+      jcsWrite(part, (value) => {
+        token = value
+      })
+      yield token.slice(1, -1)
+      at = end
+    }
+    yield '"'
+  }
+  const scalar = (item: unknown): string | undefined => {
+    if (item === null) return 'null'
+    if (typeof item === 'boolean') return item ? 'true' : 'false'
+    if (typeof item === 'number') {
+      if (!Number.isFinite(item)) throw invalid()
+      return JSON.stringify(item)
+    }
+    return undefined
+  }
+  function* encode(item: unknown): Generator<string> {
+    if (typeof item === 'string') {
+      yield* string(item)
+      return
+    }
+    const text = scalar(item)
+    if (text !== undefined) {
+      yield text
+      return
+    }
+    if (typeof item !== 'object' || item === null || active.has(item)) throw invalid()
+    const array = Array.isArray(item)
+    const prototype = Object.getPrototypeOf(item)
+    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
+      throw invalid()
+    active.add(item)
+    try {
+      const descriptors = Object.getOwnPropertyDescriptors(item)
+      const keys = Reflect.ownKeys(descriptors)
+      if (keys.some((key) => typeof key !== 'string')) throw invalid()
+      const get = (key: string): unknown => {
+        const property = descriptors[key]
+        if (!Object.hasOwn(descriptors, key) || !property?.enumerable || !Object.hasOwn(property, 'value'))
+          throw invalid()
+        return property.value
+      }
+      if (array) {
+        if (keys.length !== item.length + 1) throw invalid()
+        yield '['
+        for (let i = 0; i < item.length; i++) {
+          if (i) yield ','
+          yield* encode(get(String(i)))
+        }
+        yield ']'
+        return
+      }
+      yield '{'
+      for (const [index, key] of (keys as string[]).sort().entries()) {
+        if (index) yield ','
+        yield* string(key)
+        yield ':'
+        yield* encode(get(key))
+      }
+      yield '}'
+    } finally {
+      active.delete(item)
+    }
+  }
+  try {
+    yield* encode(value)
+  } catch {
+    throw invalid()
+  }
+}
+
 /** RFC 8785 serialization of an already-parsed JSON value. Duplicate raw JSON keys must be
  * rejected by its parser; they cannot be recovered from a JavaScript object.
  * An optional UTF-8 byte budget stops encoding at the first oversized token. */

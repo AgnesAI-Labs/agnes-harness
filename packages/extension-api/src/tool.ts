@@ -65,6 +65,9 @@ export interface WorkspacePathArgument {
   nonWorkspaceSchemes?: readonly string[]
 }
 export interface ToolMeta {
+  /** Evidence exports/reports must wait for the session history hash check before dispatch. */
+  attestsHistory?: boolean
+
   /** Display text only; never changes authorization or substitutes for the raw arguments. */
   presentation?: import('@agnes/protocol').ToolPresentation
 
@@ -532,6 +535,8 @@ export function checkToolMeta(meta: unknown): CheckResult {
       Number(m.invalidArgumentLimit) > 5)
   )
     problems.push('invalidArgumentLimit: expected integer 1–5 | undefined')
+  if (m.attestsHistory !== undefined && typeof m.attestsHistory !== 'boolean')
+    problems.push('attestsHistory: expected boolean | undefined')
   if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
     problems.push('isPresentational: expected boolean | undefined')
   if (m.isPresentational === true && m.isDestructive === true)

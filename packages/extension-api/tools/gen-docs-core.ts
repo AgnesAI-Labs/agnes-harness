@@ -122,6 +122,7 @@ export function generateAll(): Record<string, string> {
     'discoveryGroup',
     'requiresApproval',
     'isPresentational',
+    'attestsHistory',
     'invalidArgumentLimit',
     'modelVisible',
     'requiresImageInput',
