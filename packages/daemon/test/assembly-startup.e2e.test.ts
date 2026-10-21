@@ -14,6 +14,7 @@ import * as listener from '../src/supervisor/assembly-worker-listener.js'
 import * as workers from '../src/supervisor/assembly-workers.js'
 import { DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { acquireOwnerLock } from '../src/supervisor/owner-lock.js'
+import { canonicalPath } from '../src/supervisor/scope.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { runAgnesd, startSupervisor } from '../src/supervisor/supervisor.js'
@@ -192,11 +193,17 @@ it('closes the same owners once on normal close and after discovery failure', as
   await Promise.all([sup.close(), sup.close()])
   await f.released()
   const fault = new Error('discovery failed')
+  const discoveryHome = await canonicalPath(join(f.home, 'discovery-home'))
   await expect(
     runAgnesd(
-      { home: join(f.home, 'discovery-home'), workspace: f.home },
+      { home: discoveryHome, dataDir: join(f.home, 'separate-data'), workspace: f.home },
       {
-        startProduction: async () => await startSupervisor(f.options),
+        startProduction: async (options) => {
+          expect(options.packageRuntime?.clientModulesDirectory).toBe(
+            join(discoveryHome, 'daemon', 'client-modules'),
+          )
+          return await startSupervisor(f.options)
+        },
         publishDiscovery: async () => {
           throw fault
         },
