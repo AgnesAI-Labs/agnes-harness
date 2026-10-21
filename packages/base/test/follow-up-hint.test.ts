@@ -2,7 +2,7 @@ import type { HookContext, HookHandler, ServiceContext, ServiceDef } from '@agne
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
-import { createFollowUpHintExtension, normalizeHint } from '../extensions/follow-up-hint/src/index.js'
+import { createFollowUpHintExtension, FOLLOW_UP_HINT_SYSTEM, normalizeHint } from '../extensions/follow-up-hint/src/index.js'
 import type { SessionTasks } from '../src/seam-init.js'
 
 async function fixture() {
@@ -93,4 +93,15 @@ it('silently times out and rejects multiline or oversized output', async () => {
   for (const value of ['one\ntwo', '```question```', 'a'.repeat(81), '问'.repeat(41), '\u202eunsafe'])
     expect(normalizeHint(value)).toBeUndefined()
   expect(normalizeHint('「如何开始？」')).toBe('如何开始？')
+})
+
+it("asks for the user's own next message, never the assistant's voice", async () => {
+  const f = await fixture()
+  f.emit('completed')
+  const input = f.generate.mock.calls[0]?.[1] as { system: string; label: string }
+  expect(input.label).toBe('reply-suggestions')
+  expect(input.system).toBe(FOLLOW_UP_HINT_SYSTEM)
+  expect(input.system).toContain("user's point of view")
+  expect(input.system).toContain('Never write as the assistant')
+  await f.dispose?.()
 })
