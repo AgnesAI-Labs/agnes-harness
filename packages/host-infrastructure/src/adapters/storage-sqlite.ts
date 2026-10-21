@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -29,12 +29,14 @@ import { DDL } from './ddl.js'
 import { preparedStatement } from './prepared-statements.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
+import { assertDataDirVersion, enableWal, prepareDataDir } from './storage-sqlite-data-dir.js'
 import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
 import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
 export { DDL } from './ddl.js'
+export { DATA_DIR_VERSION } from './storage-sqlite-data-dir.js'
 
 /** The value kinds SQLite can carry in a bound parameter. */
 export type SqlParam = null | number | bigint | string | Uint8Array
@@ -278,12 +280,17 @@ export function createSqliteStorage(opts: {
   clock?: () => number
   tablesDir?: string
 }): SqliteStorage {
+  const existed = existsSync(opts.file)
   const db = new DatabaseSync(opts.file)
   try {
     return openSqliteStorage(db, opts)
   } catch (error) {
     // A refused or failed migration must not keep the file open; Windows cannot delete it then.
     db.close()
+    // A refusal must leave the directory as it found it, so a file created only to be probed goes.
+    // Any other failure may be a race with a process that is still using the file: leave it.
+    if (!existed && error instanceof CoreError && error.code.startsWith('E_DATA_DIR_'))
+      rmSync(opts.file, { force: true })
     throw error
   }
 }
@@ -296,11 +303,13 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   // Another process (the artifact GC, a second daemon) may hold the write lock briefly: wait for it
   // instead of failing the commit. The wait is synchronous and blocks this thread for up to 5 s.
   db.exec('PRAGMA busy_timeout = 5000')
-  db.exec('PRAGMA journal_mode = WAL')
+  // Before the first write, including the switch to WAL: a refused directory stays byte-identical.
+  assertDataDirVersion(db, { file: opts.file, tablesDir })
+  enableWal(db)
   db.exec('PRAGMA synchronous = NORMAL')
   syncCheckpointsToMedium(db)
   db.exec('PRAGMA foreign_keys = ON')
-  for (const ddl of DDL) db.exec(ddl)
+  prepareDataDir(db, { file: opts.file, tablesDir }, DDL)
   initializeStoredHeads(db)
   const eventColumns = new Set(
     (db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>).map((column) => column.name),

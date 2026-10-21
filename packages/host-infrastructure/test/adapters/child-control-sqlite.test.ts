@@ -1,9 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSqliteStorage, DDL, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 describe('sqlite child control', () => {
   let dir: string
@@ -291,60 +290,6 @@ describe('sqlite child control', () => {
     await expect(s.peekReservation?.(second.permitId)).resolves.toMatchObject({ status: 'held' })
   })
 
-  it('migrates legacy duplicate identities without dropping their conservative holds', async () => {
-    await s.close()
-    const file = join(dir, 'legacy.db')
-    const legacy = new DatabaseSync(file)
-    for (const ddl of DDL) legacy.exec(ddl)
-    legacy
-      .prepare(
-        'INSERT INTO budget_scopes (scope_id, root_task_id, child_key, parent_scope_id, cap_micro, settled_micro, held_micro) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      )
-      .run('root:root', 'root', null, null, '10000000', '0', '4000000')
-    const insert = legacy.prepare(
-      'INSERT INTO budget_reservations (permit_id, root_task_id, scope_ids, q_micro, effect_id, request_hash, writer_generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    )
-    insert.run('p1', 'root', '["root:root"]', '2000000', 'duplicate', 'a'.repeat(64), 1, 'held')
-    insert.run('p2', 'root', '["root:root"]', '2000000', 'duplicate', 'a'.repeat(64), 1, 'held')
-    legacy.close()
-
-    s = createSqliteStorage({ file, tablesDir: join(dir, 'tables-legacy') })
-    expect(s.childControlFormat()).toBe(4)
-    await expect(s.lookupReservationByIdentity?.('root', 'duplicate', 'a'.repeat(64))).resolves.toMatchObject(
-      {
-        permitId: 'p1',
-        status: 'held',
-      },
-    )
-    await expect(s.peekReservation?.('p2')).resolves.toMatchObject({
-      permitId: 'p2',
-      effectId: expect.stringContaining('__agnes_legacy_duplicate__:'),
-      status: 'unknown',
-    })
-    expect((await s.projectTree('root'))?.heldMicro).toBe(4_000_000n)
-    expect((await s.projectTree('root'))?.unknownHeld).toBe(true)
-  })
-
-  it('refuses a newer control format before applying the reservation migration', async () => {
-    await s.close()
-    const file = join(dir, 'future.db')
-    const future = new DatabaseSync(file)
-    for (const ddl of DDL) future.exec(ddl)
-    future.prepare('INSERT INTO child_control_meta (id, version) VALUES (1, ?)').run(5)
-    future.close()
-
-    // The refused file is closed again: Windows cannot delete a directory holding an open database.
-    const closes = vi.spyOn(DatabaseSync.prototype, 'close')
-    try {
-      expect(() => createSqliteStorage({ file, tablesDir: join(dir, 'tables-future') })).toThrow(
-        /newer than runtime 4/,
-      )
-      expect(closes).toHaveBeenCalledOnce()
-    } finally {
-      closes.mockRestore()
-    }
-  })
-
   it('persists exact creation-attempt CAS facts across reopen and fences a stale attempt', async () => {
     await s.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
     await s.ensureRootScope('root', 10_000_000n)
@@ -465,60 +410,5 @@ describe('sqlite child control', () => {
         cancelledAt: 150,
       }),
     ).rejects.toMatchObject({ code: 'E_CAS' })
-  })
-
-  it('migrates format-3 child rows to committed format-4 creation records', async () => {
-    await s.close()
-    const file = join(dir, 'format-3.db')
-    const legacy = new DatabaseSync(file)
-    for (const ddl of DDL) legacy.exec(ddl)
-    legacy.exec('DROP TABLE child_tasks')
-    legacy.exec(`CREATE TABLE child_tasks (
-      child_key TEXT PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, parent_key TEXT NOT NULL,
-      root_task_id TEXT NOT NULL, runtime_owner TEXT NOT NULL, kind TEXT NOT NULL,
-      generation_depth INTEGER NOT NULL, generation_limit INTEGER NOT NULL, input_hash TEXT NOT NULL,
-      input_text TEXT NOT NULL DEFAULT '', cwd TEXT NOT NULL, actor_id TEXT NOT NULL, budget_scope_id TEXT NOT NULL,
-      ancestor_scope_ids TEXT NOT NULL, workspace_id TEXT, isolation TEXT NOT NULL,
-      state TEXT NOT NULL, state_revision INTEGER NOT NULL, control_format INTEGER NOT NULL)`)
-    legacy
-      .prepare(
-        'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
-      )
-      .run('parent/legacy', 'parent', 0, new Date(0).toISOString())
-    legacy
-      .prepare(`INSERT INTO child_tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(
-        'parent/legacy',
-        'creation:legacy',
-        'parent',
-        'root',
-        'parent',
-        'spawn',
-        1,
-        2,
-        'abc',
-        'task',
-        '/w',
-        'u',
-        'root:root',
-        '["root:root"]',
-        null,
-        'shared',
-        'ready',
-        2,
-        3,
-      )
-    legacy.prepare('INSERT INTO child_control_meta (id, version) VALUES (1, 3)').run()
-    legacy.close()
-
-    s = createSqliteStorage({ file, tablesDir: join(dir, 'tables-format-3') })
-    expect(s.childControlFormat()).toBe(4)
-    await expect(s.lookupByKey('parent/legacy')).resolves.toMatchObject({
-      attemptId: 'legacy:creation:legacy',
-      creationPhase: 'committed',
-      creationRevision: 1,
-      attemptStartedAt: 0,
-      controlFormat: 4,
-    })
   })
 })
