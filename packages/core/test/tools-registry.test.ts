@@ -35,6 +35,32 @@ const codeOf = (fn: () => unknown): string => {
 }
 
 describe('ToolRegistry', () => {
+  it('execution binding comes only from Host registration and is detached from author data', () => {
+    const binding = {
+      rowId: 'ext:fixture',
+      exportName: 'read',
+      snapshotId: 'snapshot',
+      configDigest: 'a'.repeat(64),
+    }
+    const registry = new ToolRegistry()
+    registry.add({ ...def('unproved'), executionBinding: binding } as ToolDef, {
+      source: 'fixture',
+      trust: 'trusted',
+    })
+    expect(registry.resolve('unproved')?.executionBinding).toBeUndefined()
+    registry.add(def('proved'), {
+      source: 'fixture',
+      trust: 'trusted',
+      packageIdentity: '@fixture/tools',
+      packageVersion: '1.0.0',
+      executionBinding: binding,
+    })
+    const captured = structuredClone(binding)
+    binding.configDigest = 'b'.repeat(64)
+    expect(registry.resolve('proved')?.executionBinding).toEqual(captured)
+    expect(Object.isFrozen(registry.resolve('proved')?.executionBinding)).toBe(true)
+  })
+
   it('adds, resolves, lists, counts and disposes', () => {
     const r = new ToolRegistry()
     expect(r.size).toBe(0)

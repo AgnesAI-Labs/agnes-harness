@@ -47,7 +47,10 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
           return !!tree && skillRuntimeOwnerMatches(owner, tree.root, (rowId) => tree.tree.fiber(rowId))
         }) ?? input)
       : input
-    return compositionSkills(scoped, ctx.profile.composition ?? {}, owners)
+    return compositionSkills(scoped, ctx.profile.composition ?? {}, owners, (key) => {
+      const role = key ? ctx.live.kernel.peek()?.get(key)?.d.roleDelegation : undefined
+      return role ? (role.resources ?? { mcp: [], skills: [] }) : undefined
+    })
   }
   const preload = bind(deps.skillResources)
   const state: SkillState = {

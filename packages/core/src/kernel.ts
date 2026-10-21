@@ -42,6 +42,7 @@ import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protoco
 import { isProfileDecisionJournal } from '@agnes/protocol'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
+import { readRoleDelegation } from './child/role-snapshot.js'
 import { type ChildRolePort, ROLE_DELEGATION, type RoleDelegation } from './child/roles.js'
 import { bindChildFactory } from './child/sessions.js'
 import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
@@ -613,8 +614,8 @@ export class Kernel {
       const segments = Object.fromEntries(
         CORE_OPS.map((n) => [n, replacementFor(this.o.operations ?? [], n)] as const),
       ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
-      const capturedRole = log.latest(ROLE_DELEGATION) as RoleDelegation | undefined
-      if (capturedRole) so = { ...so, roleDelegation: capturedRole }
+      const capturedRole = await readRoleDelegation(this.o.storage, key)
+      if (capturedRole) so = { ...so, actor: capturedRole.actor, roleDelegation: capturedRole }
       const children = this.o.children ?? new KernelChildren(this, () => session)
       const toolFilter = so.toolFilter
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
@@ -758,7 +759,7 @@ export class Kernel {
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()
-        if (so.roleDelegation && !log.latest(ROLE_DELEGATION))
+        if (so.roleDelegation && !capturedRole)
           await log.append([
             session.ev(ROLE_DELEGATION, so.roleDelegation, { register: ROLE_DELEGATION, ignorable: true }),
           ])

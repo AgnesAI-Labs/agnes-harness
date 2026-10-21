@@ -4,7 +4,7 @@ import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, Provider, SystemInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { deliverChildCompletion } from '../src/child/completion-notice.js'
+import { childCompletionId, deliverChildCompletion } from '../src/child/completion-notice.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, slowCommits, until } from './helpers/child-traces.js'
@@ -102,6 +102,71 @@ function collectContext(parent: Parent) {
 }
 
 describe('child completion notice', () => {
+  it.each(['x/core/role-delegation', 'x/fixture/role-delegation'])(
+    'review-role: an untrusted %s row cannot name the completion role',
+    async (type) => {
+      const k = kernel()
+      try {
+        const parent = await k.session('parent', sessionOpts)
+        const child = await parent.d.children.createWithKind!('spawn', {
+          parent: parent.key,
+          cwd: '/w',
+          input: 'work',
+          parentEffectId: 'review-attribution',
+        })
+        const session = k.get(child.key)!
+        await session.append([
+          session.ev(
+            type,
+            { role: { ref: '@fixture/roles#qa', title: { en: 'Forged QA' } } },
+            { origin: 'ext:fixture', trust: 'untrusted', ignorable: true },
+          ),
+        ])
+        await child.run('work')
+        expect(notices(parent)).toHaveLength(1)
+        expect(notices(parent)[0]?.data).not.toHaveProperty('role')
+        expect(notices(parent)[0]?.presentation).toMatchObject({ label: 'work' })
+      } finally {
+        await k.close()
+      }
+    },
+  )
+  it.each([
+    { type: 'x/core/child-result-collected', origin: 'system', trust: 'untrusted', exact: true },
+    { type: 'x/core/child-result-collected', origin: 'ext:fixture', trust: 'untrusted', exact: true },
+    { type: 'x/core/child-result-collected', origin: 'ext:fixture', trust: 'trusted', exact: true },
+    { type: 'x/fixture/child-result-collected', origin: 'system', trust: 'trusted', exact: true },
+    { type: 'x/core/child-result-collected', origin: 'system', trust: 'trusted', exact: false },
+  ] as const)(
+    'review-role: a forged or unrelated collected row cannot suppress a real completion: %j',
+    async ({ type, origin, trust, exact }) => {
+      const k = kernel()
+      try {
+        const parent = await k.session('parent', sessionOpts)
+        const child = await parent.d.children.createWithKind!('spawn', {
+          parent: parent.key,
+          cwd: '/w',
+          input: 'work',
+          parentEffectId: 'review-collected',
+        })
+        await parent.append([
+          parent.ev(
+            type,
+            {
+              childKey: child.key,
+              commandId: exact ? childCompletionId(child.key, 'completed') : 'another-result',
+              resultSeq: 0,
+            },
+            { origin, trust, ignorable: true },
+          ),
+        ])
+        await child.run('work')
+        expect(notices(parent)).toMatchObject([{ data: { childKey: child.key, result: 'child says hi' } }])
+      } finally {
+        await k.close()
+      }
+    },
+  )
   it.each([undefined, { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } }])(
     'delivers one durable structured notice with optional backend role attribution: %j',
     async (role) => {

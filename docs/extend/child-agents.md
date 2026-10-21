@@ -74,6 +74,14 @@ The role starts fresh with its own composition; its tools and workspace authorit
 spawn-time parent snapshot recorded on the child ledger. All approval and business signature
 requests in that child are refused with instructions to hand the action back to the main assistant.
 `role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
+A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
+configuration digest match the parent's binding, in addition to its safety definition. Unprovable
+bindings are excluded; a matching name or schema fingerprint alone does not grant access. MCP and
+Skill resources are the intersection of both effective resource scopes captured at spawn. These
+snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
+Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
+trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a
+parent's fork prefix is not authority. Later parent changes do not alter this snapshot.
 See [applications](applications.md) for adoption and attribution.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.

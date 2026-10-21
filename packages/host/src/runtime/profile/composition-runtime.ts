@@ -266,6 +266,7 @@ export async function createCompositionHost(
           factory(generationProfile, {
             ...generationOptions,
             childRoles: lazyRoleChildren(() => ({
+              host: () => host,
               configuration,
               admission,
               resolve: prepareAgent,

@@ -12,7 +12,7 @@ import {
   type EntryMountAdapter,
   type EntryRow,
 } from '@agnes/cordis-loader'
-import { canonicalRowRevision } from './convergence.js'
+import { canonicalRowRevision, pluginConfigDigest } from './convergence.js'
 import { createBuiltinRowMountFactory } from './internal/host-mount.js'
 import { InternalMountGate } from './internal-gate.js'
 import { type FiberLease, FiberLeases } from './lease.js'
@@ -654,6 +654,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
     rowRevision: canonicalRowRevision(mount.boundRow),
+    configDigest: pluginConfigDigest(mount.boundRow.config),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
     declaredProvides: Object.freeze([...mount.row.provides]),

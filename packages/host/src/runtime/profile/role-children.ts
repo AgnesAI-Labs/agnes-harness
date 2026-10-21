@@ -9,8 +9,10 @@ import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import { type CompositionContainer, profileForComposition } from './composition-selection.js'
+import { roleToolBinding } from './role-tool-bindings.js'
 
 export function createRoleChildren(deps: {
+  host(): Host
   configuration: ConfigurationService
   admission(): ReturnType<typeof sessionAdmission>
   resolve: ReturnType<typeof createAgentResolver>
@@ -64,7 +66,12 @@ export function createRoleChildren(deps: {
           true
           ? 'read-only'
           : 'workspace-write'
+      const parentHost = deps.sessionOwners.get(parent.key)?.host ?? deps.host()
+      const parentResources = structuredClone(parentHost.sessionCapabilities?.(parent.key))
       const parentTools = [...parent.currentTools().snapshot(parent.lastSeq).byName.values()]
+      const parentBindings = new Map(
+        parentTools.map((tool) => [tool.name, roleToolBinding(parentHost, tool)]),
+      )
       const sandbox = (parent as HostSession).commandSandboxPolicy?.()
       if (!sandbox)
         throw new HostError('E_PRESET_UNSUPPORTED', 'Parent workspace policy snapshot is unavailable')
@@ -84,10 +91,30 @@ export function createRoleChildren(deps: {
           .sessionCapabilities?.('')
           ?.tools.filter((tool) => tool.enabled)
           .map((tool) => tool.id) ?? []
+      const roleCapabilities = candidate.host.sessionCapabilities?.('')
+      const resources = {
+        mcp: (parentResources?.mcp ?? [])
+          .filter(
+            (item) =>
+              item.enabled && roleCapabilities?.mcp.some((other) => other.enabled && other.id === item.id),
+          )
+          .map((item) => item.id),
+        skills: (parentResources?.skills ?? [])
+          .filter(
+            (item) =>
+              item.enabled && roleCapabilities?.skills.some((other) => other.enabled && other.id === item.id),
+          )
+          .map((item) => item.id),
+      }
       const rolePreset = candidate.host.kernel.o.preset
       const tools = parentTools
         .filter(
           (tool) =>
+            parentBindings.get(tool.name) !== undefined &&
+            parentBindings.get(tool.name) ===
+              (candidate.host.kernel.tools.resolve(tool.name)
+                ? roleToolBinding(candidate.host, candidate.host.kernel.tools.resolve(tool.name)!)
+                : undefined) &&
             enabled.includes(tool.name) &&
             (rolePreset.tools.allow === undefined || rolePreset.tools.allow.includes(tool.name)) &&
             candidate.host.kernel.tools.resolve(tool.name)?.definitionFingerprint ===
@@ -105,6 +132,7 @@ export function createRoleChildren(deps: {
         parentKey: parent.key,
         actor,
         tools,
+        resources,
         generationLimit: Math.min(parentPreset.generationLimit, rolePreset.generationLimit),
         maxFanOut: Math.min(parentPreset.maxFanOut, rolePreset.maxFanOut),
         permission: roleReadOnly ? 'read-only' : permission,

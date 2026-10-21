@@ -107,6 +107,17 @@ function snapshotJson(value: unknown, path = 'config'): unknown {
   return Object.freeze(output)
 }
 
+/** Host-owned digest of the plugin row's declarative configuration, including absence. */
+export function pluginConfigDigest(config: unknown): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        config === undefined ? { defined: false } : { defined: true, value: snapshotJson(config) },
+      ),
+    )
+    .digest('hex')
+}
+
 export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalidTree('row must be an object')
   if (canonicalRowObjects.has(value)) return value as Readonly<PluginRow>
