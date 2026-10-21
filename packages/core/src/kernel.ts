@@ -42,6 +42,7 @@ import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protoco
 import { isProfileDecisionJournal } from '@agnes/protocol'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
+import { type ChildRolePort, ROLE_DELEGATION, type RoleDelegation } from './child/roles.js'
 import { bindChildFactory } from './child/sessions.js'
 import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
@@ -99,6 +100,7 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  childRoles?: ChildRolePort
   systemPrompt?: SessionOptions['systemPrompt']
   /** Host binds public child providers to Core-minted parent facts. */
   loopChildren?: (parent: ChildAgentParentScope) => ChildAgentSessionService
@@ -178,6 +180,7 @@ export type KernelOptions = {
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
+  roleDelegation?: RoleDelegation
   systemPrompt?: {
     config: () => Promise<import('@agnes/protocol').SystemPromptConfig>
     resolve(selection?: { id: string; version: string }): import('@agnes/extension-api').SystemPromptProvider
@@ -610,6 +613,8 @@ export class Kernel {
       const segments = Object.fromEntries(
         CORE_OPS.map((n) => [n, replacementFor(this.o.operations ?? [], n)] as const),
       ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
+      const capturedRole = log.latest(ROLE_DELEGATION) as RoleDelegation | undefined
+      if (capturedRole) so = { ...so, roleDelegation: capturedRole }
       const children = this.o.children ?? new KernelChildren(this, () => session)
       const toolFilter = so.toolFilter
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
@@ -625,6 +630,9 @@ export class Kernel {
             }
           : {}),
         ...(memory ? { memory } : {}),
+        ...(so.roleDelegation ? { roleDelegation: so.roleDelegation } : {}),
+        ...(so.delegation ? { delegation: so.delegation } : {}),
+        ...(this.o.childRoles ? { childRoles: this.o.childRoles } : {}),
         log,
         tracker,
         surface,
@@ -689,7 +697,11 @@ export class Kernel {
         netFetch: this.o.netFetch,
         ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),
         ...(this.o.toolPolicySettings ? { toolPolicySettings: this.o.toolPolicySettings } : {}),
-        ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
+        ...(so.roleDelegation
+          ? { approvalMode: 'manual' as const }
+          : this.o.approvalMode
+            ? { approvalMode: this.o.approvalMode }
+            : {}),
         ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
         ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
         ...(this.o.imageInputTokenFallback
@@ -746,6 +758,10 @@ export class Kernel {
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()
+        if (so.roleDelegation && !log.latest(ROLE_DELEGATION))
+          await log.append([
+            session.ev(ROLE_DELEGATION, so.roleDelegation, { register: ROLE_DELEGATION, ignorable: true }),
+          ])
         creationSignal.throwIfAborted()
         forkChecks.get(log)?.()
         if (!(so.skipSessionStartHooks && reason === 'new'))

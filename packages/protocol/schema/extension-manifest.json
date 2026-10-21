@@ -820,6 +820,12 @@
             "$ref": "#/$defs/AgentRef"
           }
         },
+        "delegableAgents": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/AgentRef" }
+        },
         "brand": {
           "$ref": "#/$defs/ApplicationBrand"
         },

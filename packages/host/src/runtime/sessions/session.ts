@@ -54,6 +54,9 @@ export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
 
 export type CreateSessionOptions = {
+  /** Backend-only role admission; never part of session.new JSON. */
+  roleDelegation?: import('@agnes/core').RoleDelegation
+  delegation?: import('@agnes/core').SessionOptions['delegation']
   agent?: string
   agentDigest?: string
   strict?: boolean
@@ -435,6 +438,18 @@ export async function createSession(
     adapterCatalog: a.modelAdapterCatalog(),
   }).modelRoutes.value!
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
+  if (opts.roleDelegation)
+    view = {
+      ...view,
+      permission: opts.roleDelegation.permission,
+      generationLimit: opts.roleDelegation.generationLimit,
+      maxFanOut: opts.roleDelegation.maxFanOut,
+      approval: {
+        ...view.approval,
+        ...(view.approval.policy === 'full-access' ? { policy: 'default' } : {}),
+      },
+      tools: { ...view.tools, allow: opts.roleDelegation.tools },
+    }
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
   if (!parentSession && !opts.strict && a.sessionModelSlots) {
     const { slots, auto } = await a.sessionModelSlots()
@@ -481,7 +496,9 @@ export async function createSession(
   )
 
   // 3 the opener's Actor - host is the only caller of principals.resolve
-  const actor = await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
+  const actor = opts.roleDelegation
+    ? structuredClone(opts.roleDelegation.actor)
+    : await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
   if (parentSession) {
     const sameActor =
       parentSession.d.actor.id === actor.id &&
@@ -522,12 +539,21 @@ export async function createSession(
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
   const session = await a.kernel.session(key, {
+    ...(opts.roleDelegation
+      ? {
+          roleDelegation: { ...opts.roleDelegation, filesystem: structuredClone(sandbox.fsPolicy()) },
+          toolFilter: { allow: opts.roleDelegation.tools },
+        }
+      : {}),
+    ...(opts.delegation ? { delegation: opts.delegation } : {}),
     ...(a.systemPromptProvider
       ? {
           systemPrompt: {
             config: async () => ({
               ...view.model.systemPrompt,
-              ...(await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()),
+              ...(!opts.roleDelegation
+                ? await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()
+                : {}),
             }),
             resolve: (selection?: { id: string; version: string }) => a.systemPromptProvider!(selection),
           },

@@ -1486,3 +1486,31 @@ it('marks a core/unknown-outcome decision as a reconciliation of the tool it ask
   expect(permitted?.reconcile).toBeUndefined()
   expect(validateAgainst(UITimeline, { ...timeline, generation: 1 }).ok).toBe(true)
 })
+
+it('reconstructs role attribution from persisted delegation results', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data']): Event =>
+    ({ ...row(type, data), sessionKey: 'roles', lane: 'main', seq: ++seq, time: 1, id: `e${seq}` }) as Event
+  const delegatedRole = { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } }
+  const events = [
+    event('tool/call', {
+      toolUseId: 'spawn',
+      name: 'subagent_spawn',
+      args: { role: delegatedRole.ref, task: 'read' },
+      ordinal: 0,
+    }),
+    event('tool/result', {
+      toolUseId: 'spawn',
+      isError: false,
+      content: [{ type: 'text', text: 'started' }],
+      structured: { childKey: 'child', role: delegatedRole },
+    }),
+  ]
+  const projected = await projectUI(JSON.parse(JSON.stringify(events)), { sessionKey: 'roles' })
+  expect(kind(projected.nodes, 'tool')[0]?.delegatedRole).toEqual(delegatedRole)
+  const failed = structuredClone(events)
+  ;(failed[1]!.data as { isError: boolean }).isError = true
+  expect(
+    kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedRole,
+  ).toBeUndefined()
+})

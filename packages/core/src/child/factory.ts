@@ -20,10 +20,11 @@ import { deliverChildCompletion } from './completion-notice.js'
 import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
 import { childExecutionReceipt } from './execution-receipt.js'
 import { childModels, resolveChildModel } from './model-scope.js'
+import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
+import type { ResolvedChildRole } from './roles.js'
 import { bindChildFactory, childBackend } from './sessions.js'
 import { snapshotFromLedger, snapshotFromRecord } from './status.js'
-import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 
 /**
  * The tree cap a deployment gets for free when its preset never names `subagent.tree_budget_credits`.
@@ -40,10 +41,15 @@ type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
   start?: boolean
   /** Keep the child after each turn so a later message can continue it. */
   resident?: boolean
+  resolvedRole?: ResolvedChildRole
   recovering?: boolean
 }
 
 export class KernelChildren implements ChildrenFactory {
+  private readonly childSessions = new Map<string, SessionImpl>()
+  private session(key: string): SessionImpl | undefined {
+    return this.childSessions.get(key) ?? this.kernel.get(key)
+  }
   private readonly handles = new Map<string, ChildHandle>()
   private readonly runningTasks = new Map<string, Promise<unknown>>()
   private readonly residentTasks = new Map<string, Promise<unknown>>()
@@ -73,7 +79,7 @@ export class KernelChildren implements ChildrenFactory {
   ) {}
 
   async create(opts: Parameters<ChildrenFactory['create']>[0]): Promise<ChildHandle> {
-    return this.createWithKind('fork', opts)
+    return this.createWithKind(opts.role === undefined ? 'fork' : 'spawn', opts)
   }
 
   async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
@@ -89,6 +95,13 @@ export class KernelChildren implements ChildrenFactory {
     if (opts.preset !== undefined && opts.preset !== parent.preset.name)
       throw new CoreError('E_DEPTH_EXCEEDED', 'default child factory cannot resolve another preset')
 
+    if (opts.role !== undefined) {
+      if (kind !== 'spawn' || opts.model !== undefined)
+        throw new CoreError('E_ENVELOPE', 'role cannot be combined with fork or model')
+      const roles = this.kernel.o.childRoles
+      if (!roles) throw new CoreError('E_UNSUPPORTED', 'Application role delegation is unavailable')
+      opts = { ...opts, resolvedRole: await roles.resolve(parent, opts.role) }
+    }
     const store = requireChildControl(parent.d.log.storage)
     const mode = admitBudgetMode(parent.preset.budgetInherit)
     if (!mode.ok) throw new CoreError('E_UNSUPPORTED', mode.message)
@@ -99,7 +112,7 @@ export class KernelChildren implements ChildrenFactory {
     if (opts.input === undefined || opts.input.length === 0)
       throw new CoreError('E_ENVELOPE', 'child create requires task input')
 
-    const effectId = opts.parentEffectId ?? 'direct'
+    const effectId = (opts.parentEffectId ?? 'direct') + (opts.role ? ':role-' + sha256Hex(opts.role) : '')
     const inputHash = sha256Hex(opts.input)
     const prefix = `${parent.key}:${parent.lane}:${effectId}:`
     const reused = (await store.listByParent(parent.key)).find(
@@ -145,6 +158,7 @@ export class KernelChildren implements ChildrenFactory {
     const untrackAttempt = trackChildAttempt(attemptId)
     try {
       const created = await store.createDelegatedChild({
+        ...(opts.role ? { fresh: true } : {}),
         childKey,
         parentKey: parent.key,
         boundarySeq,
@@ -224,6 +238,7 @@ export class KernelChildren implements ChildrenFactory {
     this.turnSignals.delete(childKey)
     this.turnListeners.delete(childKey)
     if (this.kernel.sessions.get(childKey) === child) this.kernel.sessions.delete(childKey)
+    this.childSessions.delete(childKey)
     const cleanup = child.close()
     this.cleanups.set(childKey, cleanup)
     await cleanup
@@ -233,6 +248,10 @@ export class KernelChildren implements ChildrenFactory {
     if (this.boundKey === sessionKey) return
     this.boundKey = sessionKey
     bindChildFactory(sessionKey, this)
+  }
+
+  roles() {
+    return this.kernel.o.childRoles?.list(this.parent()) ?? Promise.resolve([])
   }
 
   models(): readonly { id: string; route: string; selector: string }[] {
@@ -350,7 +369,9 @@ export class KernelChildren implements ChildrenFactory {
       }
       if (isTerminalChildState(attempt.state) || attempt.state === 'cancelling')
         throw new CoreError('E_UNSUPPORTED', `child ${attempt.childKey} is ${attempt.state}`)
-      workspace = await parent.d.childWorkspaceRuntime?.reserve(parent.key, attempt.childKey)
+      workspace = opts.role
+        ? undefined
+        : await parent.d.childWorkspaceRuntime?.reserve(parent.key, attempt.childKey)
       checkParent()
       handle = await this.attach(kind, parent, attempt, opts, checkParent, modelTarget, delegation, workspace)
       checkParent()
@@ -375,7 +396,7 @@ export class KernelChildren implements ChildrenFactory {
       if (live.state === 'creating') await store.casState(live.childKey, live.stateRevision, 'ready')
       checkParent()
       this.handles.set(attempt.childKey, handle)
-      const child = this.kernel.get(attempt.childKey)
+      const child = this.session(attempt.childKey)
       if (child) forkChecks.delete(child.d.log)
       return handle
     } catch (error) {
@@ -411,7 +432,7 @@ export class KernelChildren implements ChildrenFactory {
         }
       }
       let workspaceCloseDelegated = false
-      const child = this.kernel.sessions.get(attempt.childKey)
+      const child = this.session(attempt.childKey)
       if (handle)
         await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
           () => undefined,
@@ -442,7 +463,7 @@ export class KernelChildren implements ChildrenFactory {
     const descendants = childBackend(childKey)
     const children = await store.listByParent(childKey)
     const handle = this.handles.get(childKey)
-    this.kernel.get(childKey)?.ac.abort()
+    this.session(childKey)?.ac.abort()
     const results = await Promise.allSettled(
       children.map((kid) =>
         descendants ? descendants.cancel(kid.childKey) : this.cancelTree(store, kid.childKey),
@@ -525,6 +546,7 @@ export class KernelChildren implements ChildrenFactory {
     let inner: ChildHandle | undefined
     const handle: ChildHandle = {
       key: record.childKey,
+      ...(opts.resolvedRole ? { role: opts.resolvedRole.role } : {}),
       run: (input) =>
         this.detached(async () => {
           const live = (await store.lookupByKey(record.childKey)) ?? record
@@ -582,55 +604,18 @@ export class KernelChildren implements ChildrenFactory {
     },
     workspace?: ChildWorkspaceLifecycle,
   ): Promise<ChildHandle> {
-    const childPreset = {
-      ...(modelTarget
-        ? {
-            ...parent.preset,
-            model: {
-              ...parent.preset.model,
-              route: { ...parent.preset.model.route, primary: modelTarget.route },
-              id: { ...parent.preset.model.id, primary: modelTarget.model },
-            },
-          }
-        : parent.preset),
-    }
     const store = requireChildControl(parent.d.log.storage)
-    const cwd = (await store.lookupByKey(record.childKey))?.cwd ?? record.cwd ?? opts.cwd
-    checkParent()
-    setChildAgentAllowlist(record.childKey, childAgentAllowlist(parent.key))
-    const filter = narrowChildToolFilter(childSessionToolFilter(parent), opts.toolFilter)
-    const child = await this.kernel.session(record.childKey, {
-      ...(filter ? { toolFilter: filter } : {}),
-      actor: parent.d.actor,
-      resolvedProfileHash: parent.d.resolvedProfileHash,
-      ...(!modelTarget && parent.d.resolvedPresetHash
-        ? { resolvedPresetHash: parent.d.resolvedPresetHash }
-        : {}),
-      ...(parent.d.policyDigest ? { policyDigest: parent.d.policyDigest } : {}),
-      preset: childPreset,
-      parent: {
-        key: parent.key,
-        boundarySeq: record.boundarySeq || parentBoundary(parent, opts, kind),
-      },
-      cwd,
-      writerRunId: `${parent.writerRunId}/child/${this.kernel.ids.ulid()}`,
-      lane: parent.lane,
-      ...(workspace
-        ? {
-            workspaceRuntime: workspace.runtime,
-            workspaceIdentity: workspace.runtime.identity,
-            workspaceLease: workspace,
-            ...(workspace.sandbox ? { seams: { sandbox: workspace.sandbox } } : {}),
-          }
-        : {}),
-      ...(parent.d.childWorkspaceRuntime ? { childWorkspaceRuntime: parent.d.childWorkspaceRuntime } : {}),
-      delegation: delegation ?? {
-        kind: record.kind,
-        creationId: record.creationId,
-        rootTaskId: record.rootTaskId,
-        generationDepth: record.generationDepth,
-      },
-    })
+    const child = await openDelegatedSession(
+      this.kernel,
+      parent,
+      record,
+      opts,
+      checkParent,
+      modelTarget,
+      delegation,
+      workspace,
+    )
+    this.childSessions.set(child.key, child)
     forkChecks.set(child.d.log, checkParent)
     checkParent()
     const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
@@ -701,6 +686,7 @@ export class KernelChildren implements ChildrenFactory {
     }
     const handle: ChildHandle = {
       key: record.childKey,
+      ...(child.d.roleDelegation ? { role: child.d.roleDelegation.role } : {}),
       run: async (input) => {
         const durable = await store.lookupByKey(record.childKey)
         if (durable && (isTerminalChildState(durable.state) || durable.state === 'cancelling'))
@@ -833,12 +819,14 @@ export class KernelChildren implements ChildrenFactory {
           const live = await store.lookupByKey(record.childKey)
           if (live) await store.casState(record.childKey, live.stateRevision, 'recovery_pending')
           await child.close()
+          this.childSessions.delete(record.childKey)
           this.kernel.sessions.delete(record.childKey)
           this.handles.delete(record.childKey)
           return
         }
         if (state === 'ready' || state === 'running') state = 'cancelled'
         await child.close()
+        this.childSessions.delete(record.childKey)
         this.kernel.sessions.delete(record.childKey)
         this.handles.delete(record.childKey)
         await emitEnd(state === 'done' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'failed')
@@ -905,7 +893,7 @@ export class KernelChildren implements ChildrenFactory {
     })
     const task = child.run(input.task).catch(async (error: unknown) => {
       // Cancellation can race deferred open: run may refuse before entering its finally.
-      const opened = this.kernel.get(child.key)
+      const opened = this.session(child.key)
       if (opened) await this.dropLocalChild(child.key, opened)
       const record = await requireChildControl(parent.d.log.storage).lookupByKey(child.key)
       this.finishChild(child.key, {
@@ -1027,7 +1015,7 @@ export class KernelChildren implements ChildrenFactory {
     const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
-    const child = this.kernel.get(childKey)
+    const child = this.session(childKey)
     if (!child)
       throw new CoreError('E_UNSUPPORTED', 'Child has no live control endpoint', { control: action })
     if (action === 'stop') {
@@ -1078,7 +1066,7 @@ export class KernelChildren implements ChildrenFactory {
     const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
-    const child = this.kernel.get(childKey)
+    const child = this.session(childKey)
     let totalTokens: number | null = null
     {
       const costs = await parent.d.log.storage.scan(childKey, {
@@ -1136,7 +1124,7 @@ export class KernelChildren implements ChildrenFactory {
 
   async interrupt(childKey: string): Promise<{ accepted: boolean }> {
     if (!this.residents.has(childKey)) return this.missingContinuable(childKey)
-    const child = this.kernel.get(childKey)
+    const child = this.session(childKey)
     if (!child?.op() || this.humanStopped.has(childKey)) return { accepted: false }
     try {
       await this.humanControl(childKey, 'stop', child.d.actor, this.kernel.ids.ulid())
@@ -1193,8 +1181,4 @@ function rootTaskIdOf(session: SessionImpl): string {
   if (start?.delegation?.rootTaskId) return start.delegation.rootTaskId
   const turn = session.state.openTurn.get(session.lane)
   return `${session.key}:${session.lane}:${turn?.startSeq ?? 0}`
-}
-
-function parentBoundary(parent: SessionImpl, opts: CreateOpts, kind: ChildKind): number {
-  return opts.forkAt ?? (kind === 'fork' ? parent.op()?.meta.triggerSeq : undefined) ?? parent.lastSeq
 }

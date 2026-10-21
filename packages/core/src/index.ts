@@ -1,3 +1,4 @@
+export type { ChildRolePort, ResolvedChildRole, RoleDelegation } from './child/roles.js'
 // The model seam is declared in protocol, the one package both sides of it may depend on, and is
 // re-exported here so a caller assembling a session against core does not have to reach past core
 // for the single interface its step machine calls every step.

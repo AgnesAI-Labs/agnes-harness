@@ -111,6 +111,18 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 
 [Acme 参考应用](../../examples/acme/README.zh-CN.md)提供工具、默认 Loop 智能体、品牌栅格资产、追加页面和可执行的 SDK 预览／采纳命令。
 
+
+应用可以通过 `delegableAgents` 声明最多八个可委派角色。每个引用也必须在 `agents` 中，且对应
+可启动的 Bundle。采纳应用后，后端会把这些角色加入该会话的 `subagent_spawn` 说明。
+例如 `{"role":"@acme/operations#reviewer","task":"复核证据"}` 会使用角色自己的配方、人格、
+工具和技能，创建不含父会话历史的新会话。未采纳应用、未知或不在名单内的角色，以及将 `role`
+与 `fork` 或 `model` 同时使用，都会明确报错。
+
+角色子代理在启动时捕获角色与父会话工具、文件、网络、沙箱及只读权限的交集，并在自己的账本
+记录快照；之后父会话的权限变化不向它传播。需要审批或业务签署的操作会自动拒绝，必须交回
+主助手处理，父会话使用“完全访问”也不例外。委派卡片和完成通知保留后端记录的角色归属，
+刷新后仍可查看。普通 spawn 保持原有行为。
+
 ## 启动 Acme 的前置条件
 
 在同一 home 和 profile 下，先启动选定 origin 的 Web 服务，再安装应用；或在安装后、启动 Web 前执行 `node agnes.mjs daemon stop`。`plugins add` 本身可能启动 daemon。若其 origin 不匹配，`serve --port 4198` 会拒绝并提示 `local daemon Web origin does not match the selected origin`。停止该 home 的 daemon 后重试同一 `serve` 命令即可；完整命令见 [Acme 部署流程](../../examples/acme/README.zh-CN.md#部署者采用流程)。

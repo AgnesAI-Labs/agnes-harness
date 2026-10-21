@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/pharma-gmp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -134,7 +134,9 @@
             "plugin_helper_install",
             "plugin_helper_guide",
             "plugin_candidate_read",
-            "plugin_candidate_write"
+            "plugin_candidate_write",
+            "subagent_spawn",
+            "subagent_list"
           ],
           "skills": [
             "gmp-review"
@@ -159,7 +161,9 @@
               "plugin_helper_install",
               "plugin_helper_guide",
               "plugin_candidate_read",
-              "plugin_candidate_write"
+              "plugin_candidate_write",
+              "subagent_spawn",
+              "subagent_list"
             ]
           }
         },
@@ -171,13 +175,18 @@
               "tool-policy": {
                 "provider": "sableleaf-quality"
               }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "You are the Quality Assistant / 质量助手, the single entry for this application. Delegate investigation to @agnes-showcase/pharma-gmp#investigator, batch review to #reviewer, environmental assessment to #em and pre-release checks to #release using subagent_spawn with each full package#bundle ref and a self-contained task. End the turn after starting a child; its findings arrive automatically. Summarize the specialist findings in the user language, clearly separating evidence from hypotheses. Specialists cannot approve or sign. After findings, perform explicitly requested signed pharma_record (investigate/review/advance) and pharma_release yourself in this main conversation, reading the latest revision and requesting Host consent through the business tool. Never ask a specialist to sign or invent missing evidence. 对 DEV-2410-017 的调查先委派偏差调查员；收到结果后中文概述，用户明确要求登记时在主对话调用受控签署工具。"
+              }
             }
           }
         },
         "launch": {
           "title": {
-            "en": "Quality Hub Assistant",
-            "zh-CN": "质量中枢助手"
+            "en": "Quality Assistant",
+            "zh-CN": "质量助手"
           },
           "description": {
             "en": "Inspect B-2410-017 and route review, investigation, EM and release work with tool evidence.",
@@ -233,6 +242,11 @@
             "providers": {
               "tool-policy": {
                 "provider": "sableleaf-quality"
+              }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "You are the Batch Record Reviewer / 批记录审核员. Independently inspect the selected batch CPP/IPC, ALCOA+, original LOD, calibration and retests. Return findings, blockers and the reviewed revision in the task language. Do not write or sign; the main Quality Assistant performs signed review after summarizing your findings."
               }
             }
           }
@@ -296,6 +310,11 @@
             "providers": {
               "tool-policy": {
                 "provider": "sableleaf-quality"
+              }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "You are the Deviation Investigator / 偏差调查员. Inspect the selected deviation and linked batch evidence, distinguish original readings, hypotheses and confirmed root causes, and return a concise investigation and CAPA recommendation in the task language. DEV-2410-017 links to batch B-2410-017. Do not write records or sign; hand all record/advance actions back to the main Quality Assistant with the evidence and reviewed revision. Never invent real evidence."
               }
             }
           }
@@ -366,6 +385,11 @@
               "tool-policy": {
                 "provider": "sableleaf-quality"
               }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "You are the EM Analyst / 环境监测分析员. Inspect environmental evidence, distinguish alert/action limits and assess linked batch impact. Preserve original values and return evidence-based findings in the task language. Do not schedule, write records or sign; hand consequential actions to the main Quality Assistant."
+              }
             }
           }
         },
@@ -428,6 +452,11 @@
             "providers": {
               "tool-policy": {
                 "provider": "sableleaf-quality"
+              }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "You are the QA pre-release checker / QA 放行前检查员. Read the latest batch dossier and every release prerequisite. Return the exact reviewed revision, evidence and blockers in the task language. Do not release or sign: the main Quality Assistant must reread current revision, summarize findings and perform any explicitly requested signed release itself. Missing evidence blocks release."
               }
             }
           }
@@ -544,7 +573,7 @@
               "en": "Investigate deviation",
               "zh-CN": "调查偏差"
             },
-            "agent": "@agnes-showcase/pharma-gmp#investigator",
+            "agent": "@agnes-showcase/pharma-gmp#hub",
             "prompt": {
               "en": "Read the selected deviation and linked batches; distinguish original findings, hypotheses and confirmed causes.",
               "zh-CN": "读取所选偏差与关联批次证据，区分原始发现、假设和确认根因。"
@@ -561,7 +590,7 @@
               "en": "Draft CAPA",
               "zh-CN": "起草 CAPA"
             },
-            "agent": "@agnes-showcase/pharma-gmp#investigator",
+            "agent": "@agnes-showcase/pharma-gmp#hub",
             "prompt": {
               "en": "Draft actions, owners and effectiveness checks for the selected deviation or CAPA; do not claim missing evidence is complete.",
               "zh-CN": "为所选偏差或 CAPA 起草措施、责任人与有效性检查，不将缺失证据描述为已完成。"
@@ -578,7 +607,7 @@
               "en": "Assess EM excursion",
               "zh-CN": "评估 EM 超限"
             },
-            "agent": "@agnes-showcase/pharma-gmp#em",
+            "agent": "@agnes-showcase/pharma-gmp#hub",
             "prompt": {
               "en": "Assess the selected EM result, alert/action limits and linked batch impact, retaining original values.",
               "zh-CN": "评估所选环境监测结果、警戒与行动限度及关联批次影响，保留原始数值。"
@@ -595,7 +624,7 @@
               "en": "Review batch record",
               "zh-CN": "批记录复核"
             },
-            "agent": "@agnes-showcase/pharma-gmp#reviewer",
+            "agent": "@agnes-showcase/pharma-gmp#hub",
             "prompt": {
               "en": "Review the selected batch originals, LOD, calibration, deviations and independent retest evidence.",
               "zh-CN": "复核所选批次的原始记录、LOD、设备校准、偏差与复验依据。"
@@ -612,7 +641,7 @@
               "en": "Request QA release",
               "zh-CN": "发起 QA 放行"
             },
-            "agent": "@agnes-showcase/pharma-gmp#release",
+            "agent": "@agnes-showcase/pharma-gmp#hub",
             "prompt": {
               "en": "Check release prerequisites for the selected batch; once complete, use Host confirmation under the current permission mode and generate the release certificate.",
               "zh-CN": "检查所选批次放行前提，完整后按当前权限提交宿主签署流程并生成放行证书。"
@@ -644,7 +673,13 @@
           "signatures",
           "reports"
         ]
-      }
+      },
+      "delegableAgents": [
+        "@agnes-showcase/pharma-gmp#investigator",
+        "@agnes-showcase/pharma-gmp#reviewer",
+        "@agnes-showcase/pharma-gmp#em",
+        "@agnes-showcase/pharma-gmp#release"
+      ]
     },
     "metadata": {
       "displayName": "Sableleaf GMP Quality Hub",

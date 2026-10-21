@@ -20,6 +20,9 @@ export function parseApplicationContract(
     !application.agents.includes(application.defaultAgent)
   )
     throw new TypeError('application defaultAgent must be in agents')
+  for (const ref of application.delegableAgents ?? [])
+    if (!application.agents?.includes(ref))
+      throw new TypeError('application delegableAgents must be in agents')
   const workbench = application.workbench
   for (const rows of [workbench?.tabs ?? [], workbench?.actions ?? []])
     if (new Set(rows.map((row) => row.id)).size !== rows.length)

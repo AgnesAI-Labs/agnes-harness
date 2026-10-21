@@ -79,6 +79,35 @@ const byId = (id: string) => host.querySelector<HTMLElement>(`[data-node-id="${i
 const turnElement = () => host.querySelector<HTMLElement>('[data-testid="conversation-turn"]')
 
 describe('conversation projection store', () => {
+  it('renders persisted delegation attribution after rebuilding the projection store', async () => {
+    document.documentElement.lang = 'zh-CN'
+    const node: UINode = {
+      kind: 'tool',
+      id: 'role',
+      seq: 2,
+      toolUseId: 'spawn',
+      name: 'subagent_spawn',
+      status: 'completed',
+      summary: 'Delegated investigation',
+      delegatedRole: { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } },
+    }
+    const projection = {
+      sessionId: 'roles',
+      upto: 3,
+      opState: null,
+      pendingInputs: [],
+      nodes: [node],
+      turns: [turn(['role'], 'completed', 'completed')],
+    }
+    await mount(createConversationProjectionStore(projection))
+    expect(host.textContent).toContain('由 读者 处理')
+    await act(async () => root.unmount())
+    root = createRoot(host)
+    sessionStorage.clear()
+    await mount(createConversationProjectionStore(JSON.parse(JSON.stringify(projection))))
+    expect(host.textContent).toContain('由 读者 处理')
+  })
+
   it('replaces same-ID stream and business states in place, one article per source ID', async () => {
     const user: UINode = {
       kind: 'user',

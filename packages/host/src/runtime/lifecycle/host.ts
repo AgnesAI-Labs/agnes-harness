@@ -1,5 +1,6 @@
 import { CoreError } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
+import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -95,11 +96,7 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
    *  background title generation every session otherwise gets. Production callers never set this. */
   disableSessionTitle?: boolean
   /** Host-private per-binding runtime constructor. Required for authenticated multi-workspace opens. */
-  openWorkspaceRuntime?(
-    binding: WorkspaceBinding,
-    preset?: PresetDoc,
-    invocation?: import('@agnes/core').WorkspaceInvocationPort,
-  ): Promise<SessionWorkspaceRuntime>
+  openWorkspaceRuntime?: Assembled['openWorkspaceRuntime']
 }
 
 export interface Host {
@@ -511,6 +508,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       })
       pendingSessionOpens.add(opening)
       try {
+        o = await restoreRolePolicy(a.adapters.storage, o)
         if (!o.parent && o.preset === undefined) {
           const existingKey = o.key ?? o.binding?.sessionKey
           const existing = existingKey
@@ -657,13 +655,14 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.permission !== undefined ? { permission: o.permission } : {}),
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
-          const runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
+          let runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
             ...a.sessionPresetLimits(),
             ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
             ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
           }).doc
+          runtimePreset = roleWorkspacePreset(runtimePreset, o.roleDelegation)
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
-            openWorkspaceRuntime(binding, runtimePreset, invocation),
+            openWorkspaceRuntime(binding, runtimePreset, invocation, o.roleDelegation?.filesystem),
           )
           workspace = Object.freeze({
             runtime,

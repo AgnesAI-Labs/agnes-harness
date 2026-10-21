@@ -596,7 +596,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       events: [],
       integrity: new Map(),
       registers: new RegisterMap(),
-      parent: { key: input.parentKey, boundarySeq: input.boundarySeq },
+      ...(input.fresh ? {} : { parent: { key: input.parentKey, boundarySeq: input.boundarySeq } }),
     })
 
     let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId
@@ -627,7 +627,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       kind: input.kind,
       generationDepth: input.generationDepth,
       generationLimit: input.generationLimit,
-      boundarySeq: input.boundarySeq,
+      boundarySeq: input.fresh ? 0 : input.boundarySeq,
       inputHash: input.inputHash,
       inputText: input.inputText,
       cwd: input.cwd,

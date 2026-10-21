@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { posix, win32 } from 'node:path'
 import type { FsPolicy, FsRule } from '@agnes/core'
-import { validateFsPolicy } from '@agnes/core'
+import { decideFsPath, validateFsPolicy } from '@agnes/core'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { presetProvider } from './presets/provider.js'
 
@@ -295,4 +295,60 @@ export async function compileWorkspacePolicy(
       ...(input.staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
     }),
   })
+}
+
+/** Materialize the conjunction at every rule boundary; no parent runtime capability is retained. */
+export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPolicy): WorkspacePolicyPlan {
+  if (parent.workspaceRoot !== plan.policy.workspaceRoot) throw fault('delegated workspace root differs')
+  const policies = [plan.policy, parent]
+  const boundaries = [...new Set(policies.flatMap((p) => p.rules.map((r) => r.path)))]
+  const rules: FsRule[] = boundaries.map((path) => {
+    const hard = policies
+      .flatMap((p) => p.rules)
+      .find((rule) => rule.path === path && rule.hard && rule.effect === 'deny')
+    return {
+      path,
+      effect: policies.every(
+        (p) => decideFsPath(p, path, { caseSensitive: plan.semantics.caseSensitive }).effect === 'allow',
+      )
+        ? 'allow'
+        : 'deny',
+      source: hard?.source ?? 'preset',
+      hard: hard !== undefined,
+    }
+  })
+  const networkAllow = plan.policy.networkAllow.filter(
+    (host) => parent.networkAllow.includes('*') || parent.networkAllow.includes(host),
+  )
+  const policy: FsPolicy = {
+    workspaceRoot: parent.workspaceRoot,
+    rules,
+    networkAllow,
+    digest: policyDigest(plan.semantics, parent.workspaceRoot, rules, networkAllow),
+  }
+  validateFsPolicy(policy)
+  const staticConfig: SandboxStaticConfig = {
+    ...plan.staticConfig,
+    access: plan.staticConfig.access === 'read-only' ? 'read-only' : 'workspace-write',
+    extraPaths: rules.filter((r) => r.effect === 'allow').map((r) => r.path),
+    denyPaths: rules.filter((r) => r.effect === 'deny').map((r) => r.path),
+    networkAllow,
+  }
+  const { fullAccess: _fullAccess, ...backend } = plan.backendOptions
+  return {
+    ...plan,
+    policy,
+    staticConfig,
+    staticConfigHash: sandboxStaticConfigHash(staticConfig),
+    backendOptions: {
+      ...backend,
+      network: 'deny',
+      networkAllow,
+      allowPaths:
+        plan.staticConfig.access === 'read-only'
+          ? []
+          : rules.filter((r) => r.effect === 'allow').map((r) => r.path),
+      denyPaths: rules.filter((r) => r.effect === 'deny').map((r) => r.path),
+    },
+  }
 }

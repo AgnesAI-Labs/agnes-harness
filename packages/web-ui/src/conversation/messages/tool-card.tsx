@@ -1,6 +1,7 @@
 import type { UITurn } from '@agnes/protocol'
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { useDocumentLanguage } from '../../document-language.js'
 import type { Translate } from '../../locales/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
@@ -67,6 +68,9 @@ export function ConversationToolCard({
   /** How the turn holding the call stands; a call still planned when the turn stopped never ran. */
   turnStatus?: UITurn['status'] | undefined
 }) {
+  const language = useDocumentLanguage()
+  const delegatedTitle =
+    node.delegatedRole?.title[language === 'zh-CN' ? 'zh-CN' : 'en'] ?? node.delegatedRole?.title.en
   const [expanded, setExpanded] = useState(false)
   const cardHost = useRef<HTMLDivElement>(null)
   const detailHost = useRef<HTMLDivElement>(null)
@@ -126,6 +130,11 @@ export function ConversationToolCard({
       {...(notRun ? { 'data-not-run': 'true' } : {})}
       data-expanded={expanded ? 'true' : undefined}
     >
+      {delegatedTitle && (
+        <p className="delegated-role-attribution" data-testid="delegated-role-attribution">
+          {t('timeline.handledBy', { role: delegatedTitle })}
+        </p>
+      )}
       <ActivityRow
         className="tool-detail"
         testId="tool-detail-toggle"

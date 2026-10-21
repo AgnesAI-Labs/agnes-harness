@@ -212,6 +212,7 @@ export function subagentForkToolWithDeps(deps: SubagentDeps): ToolDef<typeof for
 const spawnParameters = Type.Object(
   {
     task: Type.String({ minLength: 1 }),
+    role: Type.Optional(Type.String({ minLength: 1, maxLength: 384 })),
     model: Type.Optional(Type.String({ minLength: 1 })),
     isolation: Type.Optional(Type.Union([Type.Literal('worktree'), Type.Literal('shared')])),
     budget: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -247,6 +248,8 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
     },
     async execute(args, ctx) {
       if (args.task.length === 0) return fail('task must not be empty')
+      if (args.role && (fork || args.model !== undefined))
+        return fail('role cannot be combined with fork or model')
       if (args.budget !== undefined && (!Number.isSafeInteger(args.budget) || args.budget < 1))
         return fail('budget must be a positive integer')
       const refused = allowChild(ctx, args.model)
@@ -280,10 +283,11 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
       let worktree: string | undefined
       let childKey: string | undefined
       try {
-        const requested = args.isolation ?? deps.limits.isolation
+        const requested = args.isolation ?? (args.role ? 'shared' : deps.limits.isolation)
         if (requested === 'worktree' && !deps.worktrees.bind)
           return fail('worktree isolation requires a manager that binds the child working directory')
         const options = {
+          ...(args.role === undefined ? {} : { role: args.role }),
           ...(args.model === undefined ? {} : { model: args.model }),
           ...(args.budget === undefined ? {} : { budget: args.budget }),
           isolation: requested,
@@ -317,6 +321,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
 
         const details: Record<string, JsonValue> = {
           childKey: spawned.childKey,
+          ...(spawned.role ? { role: spawned.role } : {}),
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
@@ -328,6 +333,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
             },
           ],
           details,
+          ...(spawned.role ? { structured: details } : {}),
         }
       } catch (error) {
         if (childKey) await ctx.subagent.cancel(childKey)
@@ -335,6 +341,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
         if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
           return { ...fail(error.message), details: { code: error.code } }
+        if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
         state.pending -= 1
@@ -501,22 +508,32 @@ function listedChildren(
 
 export const subagentListTool = defineTool({
   name: 'subagent_list',
-  description: 'List child agents for this session. Continuable children accept subagent_send_message.',
+  description:
+    'List child agents and available application roles for this session. Continuable children accept subagent_send_message.',
   parameters: Type.Object({}, { additionalProperties: false }),
   meta: { ...controlMeta, isReadOnly: true, replay: 'safe' },
   async execute(_args, ctx) {
+    const roles = (await ctx.subagent.roles?.()) ?? []
     const local = (await ctx.subagent.list?.()) ?? []
     const external = externalChildren(ctx.session.key).map((child) => child.listing)
     const children = listedChildren(local, external)
-    const text =
+    const listed =
       children.length === 0
         ? 'no child agents'
         : children
             .map((child) => `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}`)
             .join('\n')
+    const available = roles.map(
+      (role) =>
+        `${role.ref}: ${[role.title.en, role.title['zh-CN']].filter(Boolean).join(' / ').slice(0, 100)}. ${role.description?.en.slice(0, 160) ?? ''}`,
+    )
+    const text = available.length
+      ? `${listed}\nAvailable application roles:\n${available.join('\n')}`
+      : listed
     return {
       content: [{ type: 'text', text }],
       details: {
+        roles: roles.map((role) => ({ ...role })),
         children: children.map((child) => ({
           id: child.id,
           providerId: child.providerId,
