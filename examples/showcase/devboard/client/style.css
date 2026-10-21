@@ -312,4 +312,56 @@
     border-left: 3px solid var(--agnes-line-primary);
     color: var(--agnes-text-secondary);
   }
+  .devboard-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .devboard-lag td {
+    background: var(--agnes-status-warning-bg);
+  }
+  .devboard-list {
+    margin: 0;
+    padding-inline-start: 18px;
+  }
+  .devboard-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding-inline-start: 0;
+    list-style: none;
+  }
+  /* Alarms by signal: one row per signal, one bar per week, newest on the right. */
+  .devboard-alarms {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-alarms li {
+    display: grid;
+    grid-template-columns: 110px 1fr 70px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .devboard-spark {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-items: end;
+    gap: 3px;
+    height: 28px;
+  }
+  .devboard-spark-bar {
+    display: block;
+    min-height: 2px;
+    border-radius: 2px;
+  }
+  .devboard-spark-bar:not(.devboard-tone-bad) {
+    background: var(--agnes-line-primary);
+  }
 }

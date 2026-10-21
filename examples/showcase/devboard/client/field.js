@@ -1,0 +1,430 @@
+import { Badge, Button, PushPage, Select, Table } from '@agnes/web-ui'
+import React from 'react'
+import {
+  byId,
+  day,
+  fact,
+  HistoryTable,
+  h,
+  idLink,
+  options,
+  ProjectSelect,
+  stateBadge,
+  TransitionBar,
+  time,
+  useProject,
+} from './board.js'
+import { inProject, stateLabels, useDetail } from './records.js'
+
+const DAY = 86_400_000
+const resultBadge = (data, result) =>
+  h(
+    Badge,
+    {
+      tone: result === 'PASS' ? 'ok' : result === 'FAIL' ? 'bad' : result === 'CONDITIONAL' ? 'warn' : 'off',
+    },
+    data.labels.trialResult[result] ?? result,
+  )
+
+// ── Trials and first-article inspection ────────────────────────────────────────────────────────
+
+/** A failed trial without a change gets a one-click draft: a SUBMITTED change whose source is the trial. */
+function DraftChange({ trial, board, role }) {
+  const draft = () =>
+    board.run(
+      'devboard.create',
+      {
+        kind: 'change',
+        by: role,
+        projectId: trial.projectId,
+        title: `${trial.id} 不合格：设计变更`,
+        reason: `${trial.title}（${trial.standard}）试验不合格，报告 ${trial.reportNo ?? '—'}。${(trial.deviations ?? []).join('；')}`,
+        source: { type: 'TYPE_TEST', ref: trial.id },
+      },
+      `${trial.id} 已起草变更，请在「变更」页补齐失效原因分析与影响分析`,
+    )
+  return h(
+    'section',
+    { className: 'devboard-actions', 'aria-label': '起草变更' },
+    h('p', null, '该试验不合格且尚未关联变更：可直接起草一份来源为型式试验的变更申请。'),
+    h(
+      'div',
+      { className: 'devboard-buttons' },
+      h(Button, { appearance: 'primary', disabled: board.busy, onClick: draft }, '起草变更'),
+      h(
+        'span',
+        { className: 'devboard-muted' },
+        '原因分析与影响分析由研发协调员补齐，批准后才能放行该试验。',
+      ),
+    ),
+  )
+}
+
+export function Trials({ data, board, role }) {
+  const [selected, open] = useDetail()
+  const [projectId, setProjectId] = useProject(data, true)
+  const [type, setType] = React.useState('')
+  const [state, setState] = React.useState('')
+  const rows = data.trials.filter(
+    (t) => inProject(projectId)(t) && (!type || t.type === type) && (!state || t.state === state),
+  )
+  const item = byId(data.trials, selected)
+  const changeOf = (t) => (t.changeId ? byId(data.changes, t.changeId) : undefined)
+  const columns = [
+    { title: '编号', dataIndex: 'id', render: idLink(open), width: 120 },
+    { title: '名称', dataIndex: 'title', width: 180 },
+    ...(projectId ? [] : [{ title: '项目', dataIndex: 'projectId', width: 120 }]),
+    { title: '类型', dataIndex: 'type', render: (v) => data.labels.trialType[v], width: 90 },
+    { title: '标准', dataIndex: 'standard', width: 200 },
+    { title: '样品 / 试验室', render: (_v, t) => `${t.sample} / ${t.lab}`, width: 170 },
+    { title: '报告号', dataIndex: 'reportNo', render: (v) => v ?? '—', width: 120 },
+    { title: '结论', dataIndex: 'result', render: (v) => resultBadge(data, v), width: 80 },
+    { title: '偏差', render: (_v, t) => t.deviations?.length ?? 0, width: 50 },
+    { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 110 },
+    { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+  ]
+  const table = (caption, list, empty) =>
+    h(Table, {
+      captionRepeatsHeading: true,
+      caption,
+      rowKey: 'id',
+      pagination: false,
+      size: 'small',
+      dataSource: list,
+      empty,
+      rowClassName: (t) => (t.result === 'FAIL' && t.state !== 'APPROVED' ? 'devboard-overdue' : ''),
+      columns,
+    })
+  return h(
+    React.Fragment,
+    null,
+    h(
+      'div',
+      { className: 'devboard-filters' },
+      h(ProjectSelect, { data, value: projectId, onChange: setProjectId, allowAll: true }),
+      h(Select, {
+        'aria-label': '按类型过滤',
+        value: type,
+        onChange: setType,
+        options: options(data.labels.trialType, '全部类型'),
+        style: { minWidth: 150 },
+      }),
+      h(Select, {
+        'aria-label': '按状态过滤',
+        value: state,
+        onChange: setState,
+        options: options(stateLabels(data, 'trial'), '全部状态'),
+        style: { minWidth: 140 },
+      }),
+    ),
+    table(
+      '试验（型式、例行、工厂验收）',
+      rows.filter((t) => t.type !== 'FAI'),
+      '没有符合条件的试验',
+    ),
+    table(
+      '首件检验（FAI）',
+      rows.filter((t) => t.type === 'FAI'),
+      '没有首件检验记录',
+    ),
+    item &&
+      h(
+        PushPage,
+        { id: 'detail', title: `${item.id} ${item.title}`, description: item.standard },
+        h(
+          'div',
+          { className: 'devboard-detail' },
+          h(
+            'dl',
+            { className: 'devboard-facts' },
+            fact('状态', stateBadge(data, item.state)),
+            fact('类型', data.labels.trialType[item.type]),
+            fact('项目', item.projectId),
+            fact('标准', item.standard),
+            fact('样品', item.sample),
+            fact('试验室', item.lab),
+            fact('见证', item.witness),
+            fact('计划日期', day(item.plannedAt)),
+            fact('试验日期', day(item.at)),
+            fact('报告号', item.reportNo),
+            fact('结论', resultBadge(data, item.result)),
+            fact('验证需求', item.verifies?.join('、') || '—'),
+            fact(
+              '关联变更',
+              item.changeId ? `${item.changeId}（${data.labels.state[changeOf(item)?.state] ?? '—'}）` : '—',
+            ),
+          ),
+          (item.deviations?.length ?? 0) > 0 &&
+            h(
+              'section',
+              { className: 'devboard-card' },
+              h('h2', null, '偏差'),
+              h(
+                'ul',
+                { className: 'devboard-list' },
+                item.deviations.map((d) => h('li', { key: d }, d)),
+              ),
+            ),
+          item.result === 'FAIL' &&
+            !item.changeId &&
+            item.state !== 'APPROVED' &&
+            h(DraftChange, { trial: item, board, role }),
+          h(TransitionBar, {
+            key: item.id,
+            data,
+            kind: 'trial',
+            item,
+            board,
+            role,
+            fields: [
+              { key: 'reportNo', label: '报告号（出具报告时必填）' },
+              {
+                key: 'result',
+                label: '结论（出具报告时必填）',
+                options: ['PASS', 'FAIL', 'CONDITIONAL'].map((v) => ({
+                  value: v,
+                  label: data.labels.trialResult[v],
+                })),
+              },
+              { key: 'deviations', label: '偏差（每行一条）', lines: true },
+              {
+                key: 'changeId',
+                label: '关联变更（不合格试验放行需已批准的变更）',
+                options: data.changes
+                  .filter((c) => c.projectId === item.projectId)
+                  .map((c) => ({ value: c.id, label: `${c.id} ${c.title}` })),
+              },
+            ],
+          }),
+          h(HistoryTable, { data, history: item.history }),
+        ),
+      ),
+  )
+}
+
+// ── Service and quality: PHM alarms and 8D problems ────────────────────────────────────────────
+
+const WEEKS = 12
+const STEPS = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8']
+
+/** Alarms by signal and week as plain CSS bars (newest week on the right); no chart library. */
+function AlarmChart({ data, faults }) {
+  const now = Date.parse(data.now)
+  const grid = Object.keys(data.labels.faultSignal).map((signal) => {
+    const weeks = Array.from({ length: WEEKS }, () => 0)
+    for (const f of faults.filter((x) => x.signal === signal)) {
+      const age = Math.floor((now - Date.parse(f.detectedAt)) / (7 * DAY))
+      if (age >= 0 && age < WEEKS) weeks[WEEKS - 1 - age]++
+    }
+    return { signal, weeks, total: faults.filter((x) => x.signal === signal).length }
+  })
+  const max = Math.max(1, ...grid.flatMap((g) => g.weeks))
+  return h(
+    'section',
+    { className: 'devboard-card', 'aria-label': '预警聚合' },
+    h('h2', null, `预警按信号与周聚合（近 ${WEEKS} 周，每格一周，最右为本周）`),
+    h(
+      'ul',
+      { className: 'devboard-alarms' },
+      grid.map((g) =>
+        h(
+          'li',
+          { key: g.signal },
+          h('span', null, data.labels.faultSignal[g.signal]),
+          h(
+            'span',
+            {
+              className: 'devboard-spark',
+              role: 'img',
+              'aria-label': `${data.labels.faultSignal[g.signal]} 近 ${WEEKS} 周 ${g.weeks.join(',')}`,
+            },
+            g.weeks.map((n, i) =>
+              h('span', {
+                key: i,
+                className: `devboard-spark-bar${n ? ' devboard-tone-bad' : ''}`,
+                style: { height: `${n ? Math.max(12, (n / max) * 100) : 4}%` },
+                title: `第 ${i + 1} 周 ${n} 条`,
+              }),
+            ),
+          ),
+          h('strong', null, `全部 ${g.total}`),
+        ),
+      ),
+    ),
+  )
+}
+
+const stepChips = (problem) =>
+  h(
+    'span',
+    { className: 'devboard-chips' },
+    STEPS.map((s) => h(Badge, { key: s, tone: problem.steps?.[s]?.done ? 'ok' : 'off' }, s)),
+  )
+
+export function Service({ data, board, role }) {
+  const [selected, open] = useDetail()
+  const [projectId, setProjectId] = useProject(data, true)
+  const [signal, setSignal] = React.useState('')
+  const [state, setState] = React.useState('')
+  const inScope = data.faults.filter(inProject(projectId))
+  const faults = inScope
+    .filter((f) => (!signal || f.signal === signal) && (!state || f.state === state))
+    .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
+  const problems = data.problems.filter(inProject(projectId))
+  const fault = byId(data.faults, selected)
+  const problem = byId(data.problems, selected)
+  return h(
+    React.Fragment,
+    null,
+    h(
+      'div',
+      { className: 'devboard-filters' },
+      h(ProjectSelect, { data, value: projectId, onChange: setProjectId, allowAll: true }),
+      h(Select, {
+        'aria-label': '按信号过滤',
+        value: signal,
+        onChange: setSignal,
+        options: options(data.labels.faultSignal, '全部信号'),
+        style: { minWidth: 150 },
+      }),
+      h(Select, {
+        'aria-label': '按状态过滤',
+        value: state,
+        onChange: setState,
+        options: options(stateLabels(data, 'fault'), '全部状态'),
+        style: { minWidth: 140 },
+      }),
+    ),
+    h(AlarmChart, { data, faults: inScope }),
+    h(Table, {
+      captionRepeatsHeading: true,
+      caption: '预警',
+      rowKey: 'id',
+      pagination: false,
+      size: 'small',
+      dataSource: faults,
+      empty: '没有符合条件的预警',
+      columns: [
+        { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'fault')), width: 130 },
+        { title: '信号', dataIndex: 'signal', render: (v) => data.labels.faultSignal[v], width: 100 },
+        { title: '车 / 厢 / 门', render: (_v, f) => `${f.train} / ${f.car} / ${f.door}`, width: 130 },
+        { title: '来源', dataIndex: 'source', render: (v) => data.labels.faultSource[v] ?? v, width: 90 },
+        { title: '健康分', dataIndex: 'healthScore', render: (v) => v ?? '—', width: 70 },
+        { title: '发现时间', dataIndex: 'detectedAt', render: time, width: 140 },
+        { title: '说明', dataIndex: 'detail' },
+        { title: '质量问题', dataIndex: 'problemId', render: (v) => v ?? '—', width: 120 },
+        { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+      ],
+    }),
+    h(Table, {
+      captionRepeatsHeading: true,
+      caption: '质量问题（8D）',
+      rowKey: 'id',
+      pagination: false,
+      dataSource: problems,
+      empty: '暂无质量问题',
+      columns: [
+        { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'problem')), width: 130 },
+        { title: '标题', dataIndex: 'title' },
+        { title: '等级', dataIndex: 'severity', width: 60 },
+        { title: '8D 进度', render: (_v, p) => stepChips(p), width: 300 },
+        { title: '根本原因', dataIndex: 'rootCause', render: (v) => v ?? '待分析', width: 220 },
+        { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 120 },
+        { title: '预警', render: (_v, p) => p.faultIds?.length ?? 0, width: 60 },
+        { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+      ],
+    }),
+    fault &&
+      h(
+        PushPage,
+        {
+          id: 'fault',
+          title: `${fault.id} ${data.labels.faultSignal[fault.signal]}`,
+          description: fault.detail,
+        },
+        h(
+          'div',
+          { className: 'devboard-detail' },
+          h(
+            'dl',
+            { className: 'devboard-facts' },
+            fact('状态', stateBadge(data, fault.state)),
+            fact('项目', fault.projectId),
+            fact('来源', data.labels.faultSource[fault.source] ?? fault.source),
+            fact('车 / 厢 / 门', `${fault.train} / ${fault.car} / ${fault.door}`),
+            fact('健康分', fault.healthScore),
+            fact('发现时间', time(fault.detectedAt)),
+            fact('质量问题', fault.problemId),
+          ),
+          h(TransitionBar, { key: fault.id, data, kind: 'fault', item: fault, board, role }),
+          h(HistoryTable, { data, history: fault.history }),
+        ),
+      ),
+    problem &&
+      h(
+        PushPage,
+        {
+          id: 'problem',
+          title: `${problem.id} ${problem.title}`,
+          description: `等级 ${problem.severity} · ${problem.owner}`,
+        },
+        h(
+          'div',
+          { className: 'devboard-detail' },
+          h(
+            'dl',
+            { className: 'devboard-facts' },
+            fact('状态', stateBadge(data, problem.state)),
+            fact('项目', problem.projectId),
+            fact('负责人', problem.owner),
+            fact('根本原因', problem.rootCause),
+            fact('临时措施', problem.containment),
+            fact(
+              '关联变更',
+              problem.changeId
+                ? `${problem.changeId}（${data.labels.state[byId(data.changes, problem.changeId)?.state] ?? '—'}）`
+                : problem.noChangeReason
+                  ? `无（${problem.noChangeReason}）`
+                  : '—',
+            ),
+            fact('关联预警', problem.faultIds?.join('、') || '—'),
+          ),
+          h(
+            'ol',
+            { className: 'devboard-steps', 'aria-label': '8D 步骤' },
+            STEPS.map((s) =>
+              h(
+                'li',
+                { key: s },
+                h(
+                  Badge,
+                  { tone: problem.steps?.[s]?.done ? 'ok' : 'off' },
+                  `${s}${problem.steps?.[s]?.done ? ' 完成' : ' 未完成'}`,
+                ),
+                ' ',
+                problem.steps?.[s]?.text ?? '',
+              ),
+            ),
+          ),
+          h(
+            'p',
+            { className: 'devboard-muted' },
+            '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或写明无需变更的理由。',
+          ),
+          h(TransitionBar, {
+            key: problem.id,
+            data,
+            kind: 'problem',
+            item: problem,
+            board,
+            role,
+            fields: [
+              { key: 'rootCause', label: '根本原因（进入措施前必填）' },
+              { key: 'noChangeReason', label: '无需变更的理由（无关联变更时关闭必填）' },
+            ],
+          }),
+          h(HistoryTable, { data, history: problem.history }),
+        ),
+      ),
+  )
+}

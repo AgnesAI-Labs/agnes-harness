@@ -1,5 +1,7 @@
 import { Button } from '@agnes/web-ui'
+import React from 'react'
 import { h, Shell, useBoard, useRole } from './board.js'
+import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
 import { Changes, Quality, Reviews, Tasks, Trace } from './records.js'
 
@@ -40,7 +42,21 @@ const PAGES = {
     'Reviews',
     'shield',
     Reviews,
-    '待决议的评审门与人工介入请求；在这里批准或驳回。',
+    '待决议的评审门与人工介入请求；只有门要求的审批角色能签署，会签门每个角色各签一次。',
+  ],
+  trials: [
+    '试验与首件',
+    'Trials & FAI',
+    'shield-check',
+    Trials,
+    '型式试验、例行试验、工厂验收与首件检验：标准、样品、试验室、报告号、结论与偏差；不合格可直接起草变更。',
+  ],
+  service: [
+    '运维与质量',
+    'Service & quality',
+    'triangle-alert',
+    Service,
+    'PHM 预警按信号与时间聚合，质量问题 8D 进度、根本原因与关联变更；现场到设计的闭环入口。',
   ],
 }
 
@@ -53,6 +69,11 @@ export function apply(ctx) {
     function DevBoardPage() {
       const board = useBoard(ctx)
       const [role, setRole] = useRole()
+      const roles = board.data?.roles
+      // A role saved by an older version (or not offered any more) falls back to the first one.
+      React.useEffect(() => {
+        if (roles?.length && !roles.includes(role)) setRole(roles[0])
+      }, [roles, role, setRole])
       const reset =
         id === 'devboard-overview' &&
         h(
@@ -63,7 +84,7 @@ export function apply(ctx) {
       return h(
         Shell,
         { id, title, description, board, role, setRole, actions: reset },
-        board.data && h(View, { data: board.data, board, role }),
+        board.data && h(View, { data: board.data, board, role, setRole }),
       )
     }
     ctx.homeEntries.register({

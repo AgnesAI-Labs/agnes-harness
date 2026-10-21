@@ -482,6 +482,21 @@ describe('trials and first-article inspection', () => {
       transition(state, { kind: 'change', id: cr.id, to, by: 'CCB' }, NOW)
     expect(upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW).state).toBe('APPROVED')
 
+    // A change drafted with the trial as its source links itself to the trial.
+    const drafted = upsertTrial(state, plan(p, { title: '寿命' }), NOW)
+    const draft = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: 'd',
+        reason: 'r',
+        source: { type: 'TYPE_TEST', ref: drafted.id },
+      },
+      NOW,
+    )
+    expect(drafted.changeId).toBe(draft.id)
+
     const retest = upsertTrial(state, plan(p), NOW)
     upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
     upsertTrial(state, { id: retest.id, to: 'REPORTED', reportNo: 'R-3', result: 'FAIL' }, NOW)

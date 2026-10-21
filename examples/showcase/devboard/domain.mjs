@@ -925,6 +925,9 @@ function createChange(state, input, at, now) {
   }
   record(item, at, by, null, 'SUBMITTED', '提交')
   state.changes.push(item)
+  // A change drafted from a trial (source TYPE_TEST, ref = trial id) becomes that trial's linked change.
+  const trial = item.source.type === 'TYPE_TEST' && state.trials.find((t) => t.id === item.source.ref)
+  if (trial && trial.projectId === project.id && !trial.changeId) trial.changeId = item.id
   return item
 }
 

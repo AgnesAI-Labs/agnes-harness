@@ -98,6 +98,30 @@
           "icon": "shield",
           "order": 16
         }
+      },
+      {
+        "id": "trials",
+        "placement": "primary",
+        "navigation": {
+          "title": "Trials & FAI",
+          "titles": {
+            "zh-CN": "试验与首件"
+          },
+          "icon": "shield-check",
+          "order": 17
+        }
+      },
+      {
+        "id": "service",
+        "placement": "primary",
+        "navigation": {
+          "title": "Service & quality",
+          "titles": {
+            "zh-CN": "运维与质量"
+          },
+          "icon": "triangle-alert",
+          "order": 18
+        }
       }
     ]
   }

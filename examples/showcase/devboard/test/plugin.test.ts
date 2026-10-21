@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -386,22 +386,6 @@ describe('DevBoard plugin contract', () => {
         recursive: true,
         filter: (src) => !/\/(node_modules|test)(\/|$)/.test(src),
       })
-      // The pages `trials` and `service` are declared by this package and implemented by the client
-      // descriptor; until the client lands, the copy under inspection carries the two entries.
-      const descriptor = join(root, 'devboard/client/agnes.client.json')
-      const client = JSON.parse(readFileSync(descriptor, 'utf8'))
-      const have = new Set(client.client.homeEntries.map((e: Any) => e.id))
-      for (const [id, title, order] of [
-        ['trials', '试验与首件', 17],
-        ['service', '运维与质量', 18],
-      ] as const)
-        if (!have.has(id))
-          client.client.homeEntries.push({
-            id,
-            placement: 'primary',
-            navigation: { title: id, titles: { 'zh-CN': title }, icon: 'activity', order },
-          })
-      writeFileSync(descriptor, JSON.stringify(client))
       writeLock(profile, {
         ...emptyLock('local-dev', '0.1.0'),
         resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
