@@ -16,6 +16,10 @@ it.each([
   'timeout',
   'disconnect',
   'unsupported',
+  'string-generation',
+  'bad-binding',
+  'too-many-refs',
+  'non-hash-integrity',
 ])('handles %s before Host or session initialization and releases input listeners', async (mode) => {
   const home = mkdtempSync(join(tmpdir(), 'agh-boot-admission-')),
     file = join(home, 'profile.json')
@@ -39,10 +43,29 @@ it.each([
           kind: 'package-byte-admission',
           token: mode === 'wrong-token' ? 'other' : 'token',
           profileHash: mode === 'wrong-profile' ? 'other' : 'profile-hash',
-          generation: mode === 'wrong-generation' ? 1 : 2,
+          generation: mode === 'wrong-generation' ? 1 : mode === 'string-generation' ? '2' : 2,
           admission: {
-            binding: packageByteBinding(join(home, 'profiles/p')),
-            trees: mode === 'bad-refs' ? [{ directory: '/arbitrary' }] : mode === 'null-ref' ? [null] : [],
+            binding: mode === 'bad-binding' ? null : packageByteBinding(join(home, 'profiles/p')),
+            trees:
+              mode === 'bad-refs'
+                ? [{ directory: '/arbitrary' }]
+                : mode === 'null-ref'
+                  ? [null]
+                  : mode === 'too-many-refs'
+                    ? Array.from({ length: 4097 }, () => ({}))
+                    : mode === 'non-hash-integrity'
+                      ? [
+                          {
+                            directory: home,
+                            identity: {
+                              version: '1',
+                              capabilityHash: 'cap',
+                              integrity: 'integrity',
+                              treeIntegrity: 'unverified',
+                            },
+                          },
+                        ]
+                      : [],
           },
         })
       })

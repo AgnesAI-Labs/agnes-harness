@@ -83,6 +83,7 @@ export async function workerByteAdmission(
   const profileDir = join(home, 'profiles', profile.name)
   const owner = new PackageByteVerification({
     profileDir,
+    startupAdmission: admission,
     roots: [profileDir, join(profile.dataDir, 'profiles', profile.name, 'packages')],
     onMismatch(failure) {
       // Only a negative observation crosses back. Stop the process instead of waiting for a

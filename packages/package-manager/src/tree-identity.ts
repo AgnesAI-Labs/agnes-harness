@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { mapFileChecks } from './file-read-pool.js'
+import { treeVerificationError } from './tree-verification-error.js'
 
 type NodeIdentity = Readonly<{ path: string; stamp: string; children?: readonly string[] }>
 export type TreeIdentity = Readonly<{
@@ -15,14 +16,15 @@ export type TreeIdentity = Readonly<{
 
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const fail = (): never => {
-  throw new Error('package file identity changed')
+  throw treeVerificationError('tree-changed')
 }
 function contained(root: string, path: string): boolean {
   const rel = relative(root, path)
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
 }
 function stamp(stat: BigIntStats): string {
-  if ((!stat.isFile() && !stat.isDirectory()) || stat.isSymbolicLink()) fail()
+  if (stat.isSymbolicLink()) throw treeVerificationError('symlink')
+  if (!stat.isFile() && !stat.isDirectory()) throw treeVerificationError('special-entry')
   return [stat.mode, stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, stat.nlink].join(':')
 }
 function reusable(stat: BigIntStats): boolean {
@@ -41,14 +43,18 @@ export function supportsTreeIdentity(directory: string): boolean {
     return process.platform === 'darwin' // guards-allow-platform: file-identity volume adapter.
       ? type === 0x1an
       : process.platform === 'linux' && (type === 0xef53n || type === 0x58465342n) // guards-allow-platform: file-identity volume adapter.
-  } catch {
-    return false
+  } catch (error) {
+    if (['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP'].includes((error as NodeJS.ErrnoException).code ?? ''))
+      return false
+    throw error
   }
 }
 
 export function treeIdentitySync(directory: string): TreeIdentity {
   const lexical = resolve(directory)
-  if (!lstatSync(lexical).isDirectory() || lstatSync(lexical).isSymbolicLink()) fail()
+  const first = lstatSync(lexical)
+  if (first.isSymbolicLink()) throw treeVerificationError('symlink')
+  if (!first.isDirectory()) throw treeVerificationError('not-directory')
   const root = nativeRealpathSync(lexical),
     nodes: NodeIdentity[] = []
   let latestChangeMs = 0
@@ -80,19 +86,18 @@ export function treeIdentitySync(directory: string): TreeIdentity {
     if (node.children && JSON.stringify(readdirSync(path).sort(compare)) !== JSON.stringify(node.children))
       fail()
   }
-  if (
-    lstatSync(lexical).isSymbolicLink() ||
-    nativeRealpathSync(lexical) !== root ||
-    stamp(lstatSync(lexical, { bigint: true })) !== nodes[0]?.stamp
-  )
-    fail()
+  const final = lstatSync(lexical, { bigint: true })
+  if (final.isSymbolicLink()) throw treeVerificationError('symlink')
+  if (!final.isDirectory()) throw treeVerificationError('not-directory')
+  if (nativeRealpathSync(lexical) !== root || stamp(final) !== nodes[0]?.stamp) fail()
   return { root, nodes, bytes, cacheable, latestChangeMs }
 }
 
 export async function treeIdentity(directory: string): Promise<TreeIdentity> {
   const lexical = resolve(directory),
     first = await fs.lstat(lexical)
-  if (!first.isDirectory() || first.isSymbolicLink()) fail()
+  if (first.isSymbolicLink()) throw treeVerificationError('symlink')
+  if (!first.isDirectory()) throw treeVerificationError('not-directory')
   const root = await fs.realpath(lexical),
     nodes: NodeIdentity[] = []
   let latestChangeMs = 0
@@ -132,12 +137,10 @@ export async function treeIdentity(directory: string): Promise<TreeIdentity> {
     )
       fail()
   })
-  if (
-    (await fs.lstat(lexical)).isSymbolicLink() ||
-    (await fs.realpath(lexical)) !== root ||
-    stamp(await fs.lstat(lexical, { bigint: true })) !== nodes[0]?.stamp
-  )
-    fail()
+  const final = await fs.lstat(lexical, { bigint: true })
+  if (final.isSymbolicLink()) throw treeVerificationError('symlink')
+  if (!final.isDirectory()) throw treeVerificationError('not-directory')
+  if ((await fs.realpath(lexical)) !== root || stamp(final) !== nodes[0]?.stamp) fail()
   return { root, nodes, bytes, cacheable, latestChangeMs }
 }
 

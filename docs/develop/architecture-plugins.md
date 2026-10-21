@@ -158,6 +158,8 @@ instance/profile-bound startup admission over the existing private fork IPC. Thi
 valid only for initial assembly and is then discarded; it is neither a stored positive record nor
 an authorization lease. Standalone/SEA paths without an owner retain full verification.
 
+Sync, async, background and full fallback use the same failure classification. Only a digest mismatch or confirmed illegal structure seals and revokes. Unstable evidence is discarded; metadata changes can obtain a new full proof under the existing retry bound. Unavailable IO refuses the current read and drops positive evidence, so the next use must verify fully. Unknown exceptions are not integrity evidence. Full hashers preserve the original cause/errno when wrapping errors. An outage never counts as verification success and never changes trust or enable state. Startup inputs are consumed at most once per owner; locally issued objects are immutable and single-use. Worker JSON is installed only by the private IPC receiver, not treated as a credential for arbitrary owners.
+
 Each owner schedules independent full rehashes after 15 minutes, one tree at a time with bounded
 file IO and 16 MiB/s payload pacing. A new disk read after 30 minutes requires full verification.
 Clock discontinuity or suspected suspend discards observations before the next use. Expiry does
