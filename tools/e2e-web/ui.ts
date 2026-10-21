@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises'
 import type { Page } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { settled } from './quality.js'
@@ -404,6 +405,7 @@ export async function closeSettings(page: Page, _locale = 'en') {
 }
 
 export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'workspace'>, locale = 'en') {
+  const workspacePath = await realpath(runtime.workspace)
   const skip = page.getByTestId('first-run-skip')
   // Diagnostics can finish after the workspace chip is ready and open the first-run overlay.
   await page.addLocatorHandler(
@@ -421,20 +423,37 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
   await expect
     .poll(async () => (await skip.isVisible()) || (await workspace.isVisible()) || (await chip.isVisible()))
     .toBe(true)
-  // The picker opens on its own only when no workspace is available; otherwise the chip opens it.
+  // The chip opens the workspace switcher; adding a workspace opens the full dialog.
   if (!(await workspace.isVisible())) {
     await expect(chip).toBeEnabled()
     await chip.click()
-  }
-  await expect(workspace).toBeVisible()
-  await workspace.locator('#new-session-cwd').fill(runtime.workspace)
-  await workspace
-    .getByRole('button', {
-      name: locale === 'en' ? 'Use' : '使用',
+    const picker = page.getByRole('region', {
+      name: locale === 'en' ? 'Select workspace' : '选择工作区',
       exact: true,
     })
-    .click()
+    await expect(picker).toBeVisible()
+    const existing = picker.getByTitle(workspacePath, { exact: true })
+    if (await existing.count()) {
+      await existing.click()
+      await expect(picker).toBeHidden()
+    } else {
+      await picker
+        .getByRole('button', { name: locale === 'en' ? 'New workspace…' : '新建工作区…', exact: true })
+        .click()
+      await expect(workspace).toBeVisible()
+    }
+  }
+  if (await workspace.isVisible()) {
+    await workspace.locator('#new-session-cwd').fill(workspacePath)
+    await workspace
+      .getByRole('button', {
+        name: locale === 'en' ? 'Use' : '使用',
+        exact: true,
+      })
+      .click()
+  }
   await expect(workspace).toBeHidden()
+  await expect(chip).toHaveAttribute('title', workspacePath)
   const names = page.locator('.workspace-heading .workspace-name')
   await expect(names.filter({ hasText: /^w$/ })).toHaveCount(1)
   expect((await names.allTextContents()).every((name) => name.trim().length > 0)).toBe(true)
