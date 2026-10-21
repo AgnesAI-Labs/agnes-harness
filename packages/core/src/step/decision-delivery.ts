@@ -1,10 +1,29 @@
 import { CoreError, type EventInput } from '@agnes/core-common/types'
-import { isPending } from '@agnes/core-effects/effects/approval-answer'
-import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
+import type { ApprovalAnswer, ApprovalRequest, Pending } from '@agnes/core-effects/effects/seams'
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import { delegatedApprovalRequest } from '../child/approval.js'
+import { childLifecycle } from '../child/lifecycle.js'
 import type { DecisionSource } from './decisions.js'
+import { runCoreReplacement } from './reentry.js'
 import type { SessionImpl } from './session.js'
+
+export async function askApprovalAnswer(
+  s: SessionImpl,
+  request: ApprovalRequest,
+  signal: AbortSignal,
+): Promise<ApprovalAnswer | Pending> {
+  signal = AbortSignal.any([signal, s.ac.signal])
+  const offered = structuredClone(request)
+  const raw = s.d.segments?.Approval
+    ? await runCoreReplacement(s, 'Approval', s.operationContext(), { request, signal }, () =>
+        s.d.runtime.approvalAsk(request, signal),
+      )
+    : await s.d.runtime.approvalAsk(request, signal)
+  // A replacement that answers outside the set is refused like a seam that does.
+  if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
+  return normalizeApproval(raw, offered) ?? { verdict: 'unavailable', reason: 'invalid-answer' }
+}
 
 /** Delivery can end without an answer; the persisted request remains the only pending authority. */
 export async function deliverDecision(
@@ -22,9 +41,21 @@ export async function deliverDecision(
   },
 ): Promise<{ snapshot: DecisionSnapshot; park?: EventInput; pending?: boolean }> {
   if (!snapshot.result && !snapshot.invalidation) {
+    const lifecycle = childLifecycle(s)
+    lifecycle.assertActive()
+    const source: DecisionSource = {
+      owner: snapshot.request.owner,
+      operationId: snapshot.request.operationId,
+      sourcePackage: snapshot.request.sourcePackage,
+      packageVersion: snapshot.request.packageVersion,
+      alive() {},
+    }
+    const request = await delegatedApprovalRequest(s, snapshot, offered)
+    if (!request) return { snapshot: await s.decisions.withdraw(snapshot.handle, source, 'no-approver') }
+    offered = request
     const local = new AbortController()
-    const deliverySignal = AbortSignal.any([signal, local.signal])
-    offered = await delegatedApprovalRequest(s, snapshot, offered)
+    const deliverySignal = AbortSignal.any([signal, local.signal, lifecycle.signal])
+    lifecycle.assertActive()
     const delivery = s
       .askApprovalAnswer(
         {
@@ -36,13 +67,6 @@ export async function deliverDecision(
         deliverySignal,
       )
       .then((answer) => ({ kind: 'delivery' as const, answer }))
-    const source: DecisionSource = {
-      owner: snapshot.request.owner,
-      operationId: snapshot.request.operationId,
-      sourcePackage: snapshot.request.sourcePackage,
-      packageVersion: snapshot.request.packageVersion,
-      alive() {},
-    }
     const waiting = s.decisions
       .port(source)
       .wait(snapshot.handle, { signal: deliverySignal })
@@ -55,6 +79,7 @@ export async function deliverDecision(
       await Promise.allSettled([delivery, waiting])
     }
     signal.throwIfAborted()
+    lifecycle.assertActive()
     if (winner.kind === 'state') return { snapshot: await s.decisions.get(snapshot.handle) }
     const answer = winner.answer
     if (
@@ -77,6 +102,7 @@ export async function deliverDecision(
             category: 'human',
             authorize() {
               signal.throwIfAborted()
+              lifecycle.assertActive()
               authorize()
             },
           },
