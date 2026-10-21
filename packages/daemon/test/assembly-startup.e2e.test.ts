@@ -94,6 +94,11 @@ it.each([
       if (phase === 'pool') throw fault
       return ready
     })
+    const openStores = stores.openStores
+    const listenWorkers = listener.listenWorkers
+    const initializeRuntime = runtime.initializeRuntime
+    const rebuildClientModules = modules.rebuildClientModules
+    const listenClients = clients.listenClients
     const after =
       <A extends unknown[], R>(original: (...args: A) => Promise<R>) =>
       async (...args: A) => {
@@ -101,15 +106,14 @@ it.each([
         throw fault
       }
     if (phase === 'owner') vi.spyOn(stores, 'openStores').mockRejectedValue(fault)
-    if (phase === 'stores') vi.spyOn(stores, 'openStores').mockImplementation(after(stores.openStores))
+    if (phase === 'stores') vi.spyOn(stores, 'openStores').mockImplementation(after(openStores))
     if (phase === 'worker-listen')
-      vi.spyOn(listener, 'listenWorkers').mockImplementation(after(listener.listenWorkers))
+      vi.spyOn(listener, 'listenWorkers').mockImplementation(after(listenWorkers))
     if (phase === 'runtime')
-      vi.spyOn(runtime, 'initializeRuntime').mockImplementation(after(runtime.initializeRuntime))
+      vi.spyOn(runtime, 'initializeRuntime').mockImplementation(after(initializeRuntime))
     if (phase === 'modules')
-      vi.spyOn(modules, 'rebuildClientModules').mockImplementation(after(modules.rebuildClientModules))
-    if (phase === 'client-listen')
-      vi.spyOn(clients, 'listenClients').mockImplementation(after(clients.listenClients))
+      vi.spyOn(modules, 'rebuildClientModules').mockImplementation(after(rebuildClientModules))
+    if (phase === 'client-listen') vi.spyOn(clients, 'listenClients').mockImplementation(after(listenClients))
     const active = new Set<ReturnType<typeof setInterval>>()
     const interval = globalThis.setInterval
     const clear = globalThis.clearInterval
