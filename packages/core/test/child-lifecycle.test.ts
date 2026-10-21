@@ -336,6 +336,39 @@ it('invalidates live descendants on rebind and follows only their current parent
   }
 })
 
+it("appends the projection notice only when a child's permission binding really changes", async () => {
+  const k = kernel({
+    preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 3, maxFanOut: 4 },
+  })
+  try {
+    const parent = await k.session('notice-parent', sessionOpts)
+    const other = await k.session('notice-other', sessionOpts)
+    const created = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'child' })
+    const child = k.get(created.key)!
+    const notices = async () => {
+      // The append is not awaited by the caller that triggers it, so let it land first.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return (await child.d.log.scan({ type: 'x/core/permission-projection-invalidated', limit: 20 })).length
+    }
+    // Opening the child bound it to its parent for the first time: nothing changed, nothing is recorded.
+    expect(await notices()).toBe(0)
+    // Opening it again under the same parent (the already-open path of `Kernel.session`) changes nothing.
+    child.inheritAutomaticPermissions(parent)
+    expect(await notices()).toBe(0)
+    // A real permission switch of the parent is recorded exactly once and wakes the live child.
+    await invalidatesProjection([child], () => parent.setYolo(true, actor), true)
+    expect(await notices()).toBe(1)
+    // So is rebinding it to a different parent.
+    await invalidatesProjection([child], () => child.inheritAutomaticPermissions(other), false)
+    expect(await notices()).toBe(2)
+    // Binding it to the parent it already has is not a change.
+    child.inheritAutomaticPermissions(other)
+    expect(await notices()).toBe(2)
+  } finally {
+    await k.close()
+  }
+})
+
 it('reopened children cannot recover full access from a copied preset without their live parent', async () => {
   const storage = new MemoryStorage()
   const preset = {

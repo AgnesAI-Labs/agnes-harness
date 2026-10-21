@@ -704,8 +704,18 @@ export class SessionImpl {
     this.authorization.revoke()
   }
 
-  /** Backend child admission binds permission to the live parent, including later revocation. */
+  /** The live parent permission is bound to; `false` until the first binding, which happens at open. */
+  private permissionParent: SessionImpl | undefined | false = false
+
+  /**
+   * Backend child admission binds permission to the live parent, including later revocation. The
+   * projection notice is appended only when this changes the binding of a session that was bound
+   * before: the first binding happens as the session opens, when no reader is watching it, and a
+   * reader that attaches later reads the projection as it stands.
+   */
   inheritAutomaticPermissions(parent: SessionImpl | undefined): void {
+    const rebound = this.permissionParent !== false && this.permissionParent !== parent
+    this.permissionParent = parent
     this.authorization.inherit(
       parent ? () => parent.permissionContext : undefined,
       parent
@@ -716,7 +726,7 @@ export class SessionImpl {
             })
         : undefined,
     )
-    invalidatePermissionProjection(this)
+    if (rebound) invalidatePermissionProjection(this)
   }
 
   constructor(deps: SessionDeps) {

@@ -199,10 +199,9 @@ describe('reopening a delegated child on its live parent', () => {
         delegation,
       })
     const again = await reopen('r2')
-    // Nothing waits for a background check any more, so the ignorable row that opening appends may
-    // already have landed; it is the only thing added.
-    const added = await again.scan({ fromSeq: lastSeq + 1, limit: 10 })
-    expect(added.every((e) => e.type === 'x/core/permission-projection-invalidated')).toBe(true)
+    // Opening appends nothing, not even a late fire-and-forget notice.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(again.lastSeq).toBe(lastSeq)
     expect(JSON.stringify(again.surface().map((n) => n.seq))).toBe(state)
     await again.close()
     tamper(storage, child.key, b + 2, (e) => ({ ...e, ts: '2000-01-01T00:00:00.000Z' }))
