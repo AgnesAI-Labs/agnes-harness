@@ -32,6 +32,7 @@ import type {
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
 import { workerStderrEvidence } from './runtime-log.js'
+import { evictIdleWorkers, SharedWorkerPrewarm } from './shared-worker-prewarm.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 import { waitForWorkerExit } from './worker-process-exit.js'
@@ -120,6 +121,7 @@ export class WorkerPool {
   >()
   private readonly bootFailures = new WorkerBootFailures()
   private runtimeTargetDigest: string | undefined
+  private readonly prewarm = new SharedWorkerPrewarm(() => this.acquireWorker('@shared', { kind: 'session' }))
   private stopping = false
   private nextGeneration = 1
   private activationOperation: string | undefined
@@ -253,7 +255,7 @@ export class WorkerPool {
       return this.acquireWorker(sessionKey, opts)
     }
     assertWorkspaceBindingEnvelope(opts.binding)
-    const link = await this.acquireWorker('@shared', { ...opts, kind: 'session' })
+    const link = await this.acquireSharedWorker()
     const slot = this.slots.get('@shared')
     if (!slot) throw new Error('shared worker slot disappeared')
     const existing = slot.channels.get(sessionKey)
@@ -631,7 +633,12 @@ export class WorkerPool {
   }
 
   acquireSharedWorker(): Promise<WorkerLink> {
-    return this.acquireWorker('@shared', { kind: 'session' })
+    return this.prewarm.foreground()
+  }
+
+  /** Same single-flight admission and lifecycle as ordinary acquire, with no session channel. */
+  prewarmSharedWorker(): Promise<WorkerLink> {
+    return this.prewarm.background()
   }
 
   /** Explicit retry, also used after configuration or package inputs change. */
@@ -800,21 +807,7 @@ export class WorkerPool {
 
   evictIdle(now: number, busy: (sessionKey: string) => boolean): number {
     if (this.activationOperation) return 0
-    let n = 0
-    for (const [k, s] of this.slots)
-      if (
-        // Kept up from daemon start for MCP connections and Skill scans, not just for sessions.
-        k !== '@shared' &&
-        s.link?.alive &&
-        [...s.sessions].every((sessionKey) => !busy(sessionKey)) &&
-        !busy(k) &&
-        now - s.lastUsed > this.o.config.limits.workerIdleEvictMs
-      ) {
-        s.intentionalExit = true
-        s.link.close('idle')
-        n++
-      }
-    return n
+    return evictIdleWorkers(this.slots, now, this.o.config.limits.workerIdleEvictMs, busy)
   }
 
   touch(sessionKey: string): void {

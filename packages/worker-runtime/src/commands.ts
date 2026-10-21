@@ -788,6 +788,10 @@ export async function handleServiceCommand(
   // Resource-only workers supply their narrow runtime port first and generation fifth so neither
   // control plane can reinterpret the other's input. Service dispatch no longer consults generation.
   const resources = typeof resourcesOrWorkerGeneration === 'number' ? undefined : resourcesOrWorkerGeneration
+  if (cmd.method === 'runtime.prewarm') {
+    host?.prewarmDefaultComposition?.()
+    return { ok: true }
+  }
   if (cmd.method === 'configuration.apply') {
     if (!host || !cmd.params.profile || typeof cmd.params.profile !== 'object')
       throw new TypeError('invalid model configuration')

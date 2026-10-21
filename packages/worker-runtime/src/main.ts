@@ -18,6 +18,7 @@ import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { runtimeSkillView } from './skill-view.js'
 import { connectSupervisor } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
+import { workerHostLog } from './worker-host-log.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
 
@@ -253,24 +254,7 @@ export async function runWorker(
       return sharedChannel.ask(req, opts)
     },
   }
-  const sessionLog: NonNullable<WorkerHostDeps['log']> = Object.fromEntries(
-    (['debug', 'info', 'warn', 'error'] as const).map((level) => [
-      level,
-      (message: string, fields?: { traceId?: unknown; spanId?: unknown }) => {
-        try {
-          sharedChannel.log(
-            level,
-            message,
-            typeof fields?.traceId === 'string' && typeof fields?.spanId === 'string'
-              ? { traceId: fields.traceId, spanId: fields.spanId }
-              : undefined,
-          )
-        } catch {
-          // Host assembly and worker-wide maintenance have no session context.
-        }
-      },
-    ]),
-  ) as NonNullable<WorkerHostDeps['log']>
+  const sessionLog = workerHostLog(sharedChannel, send)
 
   // Named and kept (not inlined into the bootstrapWorkerResources() call below) so a later stale
   // reload can re-run bootstrapWorkerResources() against the same env/profile/createBarrier/
@@ -422,6 +406,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          log: deps.log ?? sessionLog,
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           boundWakes,

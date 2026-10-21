@@ -167,6 +167,31 @@ it.each([true, false])(
   },
 )
 
+it('acknowledges a prewarm hint without opening a session', async () => {
+  let scheduled = false
+  const host = {
+    prewarmDefaultComposition() {
+      scheduled = true
+    },
+    createSession() {
+      throw new Error('prewarm must not open a session')
+    },
+  } as unknown as Host
+  await expect(
+    handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'prewarm',
+        method: 'runtime.prewarm',
+        params: {},
+      },
+      new Map(),
+    ),
+  ).resolves.toEqual({ ok: true })
+  expect(scheduled).toBe(true)
+})
+
 it('routes controls to the pinned session while Host publication changes', async () => {
   const apply = vi.fn(async () => 99)
   const state = { controls: { pause: true }, paused: true, pending: [] }

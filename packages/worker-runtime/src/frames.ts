@@ -63,6 +63,7 @@ export type WorkerMethod =
   | 'pluginGenerations.migrate'
   | 'pluginGenerations.collect'
   | 'configuration.apply'
+  | 'runtime.prewarm'
   | 'session.catalog'
   | 'agents.resolve'
   | 'session.runtime'

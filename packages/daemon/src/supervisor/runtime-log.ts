@@ -80,6 +80,17 @@ export function openRuntimeLog(
           ? (record.detail as Record<string, unknown>)
           : record
       const detail: Record<string, unknown> = {}
+      const prewarm =
+        record.kind === 'worker.log' && typeof record.message === 'string'
+          ? /^Default composition prewarm (ready|failed|reused) rssBefore=(\d+) rssAfter=(\d+)$/.exec(
+              record.message,
+            )
+          : null
+      if (prewarm && Number.isSafeInteger(Number(prewarm[2])) && Number.isSafeInteger(Number(prewarm[3]))) {
+        detail.prewarm = prewarm[1]
+        detail.rssBefore = Number(prewarm[2])
+        detail.rssAfter = Number(prewarm[3])
+      }
       for (const key of ['pid', 'bytes', 'lines', 'exitCode'])
         if (Number.isSafeInteger(data[key]) && Number(data[key]) >= 0) detail[key] = data[key]
       if (typeof data.level === 'string' && ['info', 'warn', 'error'].includes(data.level))

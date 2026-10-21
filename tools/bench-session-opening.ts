@@ -2,8 +2,11 @@
  * Uses only a fresh synthetic home and an ephemeral loopback port. --events 20000 --runs 5 --cold-each-run
  * Optional spans from an instrumented local build are read from session-opening-spans.jsonl in its home.
  */
+
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { loadavg } from 'node:os'
 import { join } from 'node:path'
 import {
   defaultIds,
@@ -27,6 +30,7 @@ const events = number('--events', 20_000)
 const runs = number('--runs', 3)
 const coldOnly = process.argv.includes('--cold-only')
 const coldEachRun = process.argv.includes('--cold-each-run') || coldOnly
+const idleSeconds = process.argv.includes('--idle-seconds') ? number('--idle-seconds', 10) : 0
 const eventIds = defaultIds()
 const runtime = await isolatedRuntime()
 const browser = await chromium.launch({
@@ -116,11 +120,27 @@ try {
   } finally {
     await storage.close()
   }
-  const startup: { run: number; restartMs: number }[] = []
+  const memory = async () => {
+    const discovery = JSON.parse(await readFile(join(runtime.home, 'daemon/discovery.json'), 'utf8'))
+    const processes = execFileSync('ps', ['-axo', 'pid=,ppid=,rss='], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).map(Number))
+    const pids = new Set<number>([discovery.owner.pid])
+    for (let size = 0; size !== pids.size; ) {
+      size = pids.size
+      for (const [pid, parent] of processes) if (pids.has(parent!)) pids.add(pid!)
+    }
+    return processes.filter(([pid]) => pids.has(pid!)).map(([pid, ppid, rssKiB]) => ({ pid, ppid, rssKiB }))
+  }
+  const startup: unknown[] = []
   const restart = async (run: number) => {
     const start = performance.now()
     await runtime.restart()
-    startup.push({ run, restartMs: performance.now() - start })
+    const restartMs = performance.now() - start
+    const readyMemory = await memory()
+    if (idleSeconds) await new Promise((resolve) => setTimeout(resolve, idleSeconds * 1000))
+    startup.push({ run, restartMs, readyMemory, beforeOpenMemory: await memory(), load: loadavg() })
   }
   await restart(0)
   const page = await browser.newPage()
@@ -200,6 +220,8 @@ try {
       visibleMs,
       editableMs,
       sendableMs,
+      load: loadavg(),
+      memory: await memory(),
       ...received,
       resources: await page.evaluate(() =>
         performance.getEntriesByType('resource').map((entry) => {
@@ -252,10 +274,17 @@ try {
         eventsPerSession: events,
         runs,
         coldEachRun,
+        idleSeconds,
         port: new URL(runtime.url).port,
         startup,
         serverStarts: runtime.starts(),
         measurements,
+        prewarm: (await readFile(join(runtime.home, 'data/audit/runtime.jsonl'), 'utf8').catch(() => ''))
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+          .filter((record) => record.detail?.prewarm),
         trace: (await readFile(join(runtime.home, 'session-opening-spans.jsonl'), 'utf8').catch(() => ''))
           .trim()
           .split('\n')

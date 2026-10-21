@@ -150,6 +150,11 @@ it('does not expose AGNES_WORKER_ROOT as a shared session worker workspace Skill
 it('still calls buildHost when bootstrap produced no Skill resources', async () => {
   const fixture = await skillWorkspace()
   let received: WorkerHostSkillResources | undefined
+  const link = new PassThrough()
+  let wire = ''
+  link.on('data', (chunk) => {
+    wire += String(chunk)
+  })
   await expect(
     runWorker(
       workerEnv({
@@ -158,16 +163,18 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
         dataDir: fixture.dataDir,
         homeDir: fixture.homeDir,
       }),
-      { connect: async () => new PassThrough(), gate: null },
+      { connect: async () => link, gate: null },
       {
         buildHost: async (_profile, _prompter, resources) => {
           received = resources
+          resources.log?.info('Default composition prewarm ready rssBefore=100 rssAfter=200')
           throw new Error('stop-after-empty')
         },
       },
     ),
   ).rejects.toThrow('stop-after-empty')
   expect(received).toEqual({
+    log: expect.objectContaining({ info: expect.any(Function), warn: expect.any(Function) }),
     decisionsChanged: expect.any(Function),
     restoreGenerationExtension: expect.any(Function),
     boundWakes: expect.any(Function),
@@ -178,6 +185,17 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
     serviceAuthority: expect.objectContaining({ resolve: expect.any(Function) }),
     mcpManage: expect.any(Function),
     pluginManage: expect.any(Function),
+  })
+  expect(
+    wire
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line)),
+  ).toContainEqual({
+    kind: 'log',
+    sessionKey: '@shared',
+    level: 'info',
+    message: 'Default composition prewarm ready rssBefore=100 rssAfter=200',
   })
 })
 

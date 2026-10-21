@@ -125,7 +125,7 @@ walks. Extension and plugin-configuration schema compilers retain at most 64 suc
 and 4 MiB of schema keys each, keyed by the complete inspected JSON snapshot. Every call still
 inspects author input, validates current values and checks authority independently. Compilers keep
 isolated reference namespaces; changed schemas, invalid defaults, async or remote schemas never
-inherit an earlier verdict. These caches are populated by normal use, not startup prewarming.
+inherit an earlier verdict. These caches are populated as containers assemble.
 Resource archives share successful tree digests only within that admission's verification operation;
 the next operation and mutation gates discard those observations. Canonical rows and target encodings
 may reuse only deeply immutable objects issued by their own builders, with weak ownership tracking.
@@ -136,6 +136,21 @@ content (at most four cached states and 4 MiB of keys), returning independent wo
 verification and current trust/activation decisions remain outside this metadata cache.
 
 ### Publication and recovery
+
+The daemon keeps one shared business worker ready. After startup and package, application or model
+changes, the Host opportunistically assembles the current default composition after foreground
+admissions drain. A concurrent open joins that assembly through the existing admission queue;
+preparation failure is diagnostic only and ordinary open retries normally. Open still rereads source
+bytes, current trust and durable composition/generation/seam pins. Only an exactly matching binding
+reuses a prepared container; no trust decision is cached by prewarming. Assembly uses the existing
+operation-scoped directory verification, discarded when the operation finishes.
+
+Extra speculative containers use `worker.generation_idle_close_ms` (60 seconds by default) and are
+not periodically rebuilt after idle reclamation. The shared worker and initial control container
+remain resident for profile services and MCP. Replacing an unused speculative default closes it;
+containers owning work retain their ordinary lifecycle. Shutdown cancels scheduled preparation and
+drains admitted assembly before closing its containers. Prewarm diagnostics record worker RSS before
+and after preparation.
 
 Cold composition admission restores its durable generation directly, without first assembling or
 archiving a temporary default generation. Current desired code can still fork a separate container;

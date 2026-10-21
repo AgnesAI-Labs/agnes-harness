@@ -34,6 +34,7 @@ export const HOST_MEMBER_SCOPES = {
   inspectService: 'session',
   authorizeServiceControl: 'session',
   applyModelProfile: 'deployment',
+  prewarmDefaultComposition: 'deployment',
   profile: 'deployment',
   kernel: 'session',
   provider: 'deployment',

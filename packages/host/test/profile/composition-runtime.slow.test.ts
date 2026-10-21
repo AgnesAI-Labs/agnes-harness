@@ -29,6 +29,7 @@ import {
   capabilityHash,
   emptyLock,
   hashDirectory,
+  RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
   writeLock,
 } from '@agnes/package-manager'
@@ -218,19 +219,172 @@ ${
   return { ids, sources, options, row }
 }
 
+it.each(['join', 'failure', 'close'] as const)(
+  'handles %s during default prewarm without publishing a session',
+  async (mode) => {
+    const { sources, options } = bundleFixture()
+    let hold = false
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let failed = false
+    let preparedIds: string[] = []
+    const fixture = await pluginHost(sources, {
+      ...options,
+      runtimePluginSources: async () => {
+        if (hold) {
+          entered()
+          await gate
+          if (mode === 'failure') throw new Error('synthetic prewarm source failure')
+        }
+        return sources
+      },
+      log: {
+        info(message) {
+          if (message.startsWith('Default composition prewarm ready'))
+            preparedIds = fixture.host.pluginGenerationStatus!().generations.map(({ id }) => id)
+        },
+        warn(message) {
+          if (message.startsWith('Default composition prewarm failed')) failed = true
+        },
+        debug() {},
+        error() {},
+      },
+    })
+    try {
+      hold = true
+      fixture.host.prewarmDefaultComposition?.()
+      await started
+      expect(fixture.host.kernel.sessions.size).toBe(0)
+      if (mode === 'close') {
+        const closing = fixture.host.close()
+        release()
+        await closing
+        await expect(fixture.host.createSession({ key: 'closed', cwd: fixture.dataDir })).rejects.toThrow(
+          'closed',
+        )
+      } else {
+        const opening =
+          mode === 'join' ? fixture.host.createSession({ key: 'joined', cwd: fixture.dataDir }) : undefined
+        release()
+        if (mode === 'failure') await vi.waitFor(() => expect(failed).toBe(true))
+        hold = false
+        const session = await (opening ?? fixture.host.createSession({ key: 'retry', cwd: fixture.dataDir }))
+        if (mode === 'join') expect(preparedIds).toContain(session.pluginGenerationId)
+        expect(session.key).toBe(mode === 'join' ? 'joined' : 'retry')
+        await session.close()
+      }
+    } finally {
+      hold = false
+      release()
+      await fixture.host.close()
+    }
+  },
+  30_000,
+)
+
+it('releases an unused speculative default under the generation idle policy without periodic rewarming', async () => {
+  const { ids, sources, options, row } = bundleFixture()
+  let ready = false
+  let disposed = 0
+  const fixture = await pluginHost(sources, {
+    ...options,
+    limits: { 'worker.generation_idle_close_ms': 60_000 },
+    onSeamClose: () => {
+      disposed++
+    },
+    log: {
+      debug() {},
+      warn() {},
+      error() {},
+      info(message) {
+        if (message.startsWith('Default composition prewarm ready')) ready = true
+      },
+    },
+  })
+  try {
+    await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor))))
+    await vi.waitFor(() => expect(ready).toBe(true))
+    const before = disposed
+    await fixture.host.collectPluginGenerations?.()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 60_001)
+    await fixture.host.collectPluginGenerations?.()
+    expect(disposed).toBeGreaterThan(before)
+    vi.useRealTimers()
+    const collected = disposed
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(disposed).toBe(collected)
+    const session = await fixture.host.createSession({ key: 'after-idle-prewarm', cwd: fixture.dataDir })
+    expect(session.currentTools().resolve('fixture_2')).toBeDefined()
+    await session.close()
+  } finally {
+    vi.useRealTimers()
+    await fixture.host.close()
+  }
+}, 30_000)
+
 it.each([false, true])(
   'isolates bundle tools from default and other bundles (boot snapshots=%s)',
   async (bootSnapshots) => {
     const { ids, sources, options, row } = bundleFixture()
+    let ready = false
     const fixture = await pluginHost(sources, {
       ...options,
+      log: {
+        info: (message) => {
+          if (message.startsWith('Default composition prewarm ready')) ready = true
+        },
+        debug() {},
+        warn() {},
+        error() {},
+      },
       ...(bootSnapshots ? { runtimePluginSnapshots: sources } : {}),
     })
     const dataDir = fixture.dataDir
     const target = targetOf(ids.map((vendor) => row(vendor)))
     try {
       await fixture.host.applyRuntimeTarget(target)
-      const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
+      await vi.waitFor(() => expect(ready).toBe(true))
+      const preparedGenerations = fixture.host.pluginGenerationStatus!()
+        .generations.map(({ id }) => id)
+        .sort()
+      let normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
+      expect(
+        fixture.host.pluginGenerationStatus!()
+          .generations.map(({ id }) => id)
+          .sort(),
+      ).toEqual(preparedGenerations)
+      await normal.close()
+      ready = false
+      fixture.host.prewarmDefaultComposition?.()
+      await vi.waitFor(() => expect(ready).toBe(true))
+      const archived = await new RuntimeGenerationSnapshotStore(
+        join(dataDir, 'profiles', 'local-dev'),
+      ).readAsync(normal.pluginGenerationId!)
+      const source = archived.sources.find(({ snapshot }) => snapshot.packageId === ids[2])
+      if (!source) throw new Error('fixture generation lacks the general plugin')
+      const codeFile = join(source.snapshot.directory, 'index.js')
+      const originalCode = readFileSync(codeFile, 'utf8')
+      try {
+        writeFileSync(codeFile, originalCode + '\n// synthetic archive tampering\n')
+        const refusal = await fixture.host.createSession({ key: normal.key, cwd: dataDir }).then(
+          async (session) => {
+            await session.close()
+            return 'unexpectedly admitted'
+          },
+          (error: unknown) => String(error),
+        )
+        expect(refusal).toMatch(/integrity|snapshot/i)
+      } finally {
+        writeFileSync(codeFile, originalCode)
+      }
+      normal = await fixture.host.createSession({ key: normal.key, cwd: dataDir })
       // A default composition uses the same declared-source vocabulary as its control container.
       if (bootSnapshots)
         expect((await fixture.host.applyRuntimeTarget(target)).publication?.containers).toHaveLength(1)

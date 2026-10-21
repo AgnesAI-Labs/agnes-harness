@@ -2177,6 +2177,7 @@ export function registerPackageAdmin(
   endpoint: LocalEndpoint,
   service: PackageAdminService,
   authority: PackageAdminAuthorityResolver,
+  onApplicationChange?: () => void,
 ): void {
   for (const method of Object.keys(PACKAGE_ADMIN_METHODS) as PackageAdminMethodName[])
     endpoint.register(method, async (params, context) => {
@@ -2185,6 +2186,8 @@ export function registerPackageAdmin(
       // notices. Transport/auth kind alone is insufficient: Unix launchers and denied remote clients
       // can share the same profile but must not receive browser roster events.
       if (method === '_agnes/v1/clientModules.list') context.conn.clientModuleNotices = true
+      if (method === '_agnes/v1/applications.adopt' || method === '_agnes/v1/applications.clear')
+        onApplicationChange?.()
       return result
     })
 }

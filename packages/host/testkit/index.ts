@@ -142,6 +142,7 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 }
 
 export type TestHostOptions = {
+  log?: HostOptions['log']
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
@@ -422,7 +423,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     homeDir: o.dataDir,
     hostRoot: process.cwd(),
     loader,
-    log,
+    log: o.log ?? log,
     platform: o.platform ?? fakePlatform(o.platformCaps ?? {}),
     sandboxSeam: o.sandboxSeam ?? seamsImpl.sandbox,
     agnesVersion: '0.1.0',

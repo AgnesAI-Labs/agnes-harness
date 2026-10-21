@@ -24,7 +24,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
-import { mergeGenerationStatus, projectGenerationStatus } from '../generation/runtime-descriptor.js'
+import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
@@ -50,12 +50,14 @@ import {
   sessionAdmission,
   verifyAgentPin,
 } from './agent-plan.js'
+import { mergeCompositionGenerationStatuses } from './composition-generation-status.js'
 import { compositionPresets } from './composition-presets.js'
 import {
   type CompositionContainer as Container,
   profileForComposition,
   projectCompositionRows,
 } from './composition-selection.js'
+import { defaultCompositionPrewarm, verifyPreparedComposition } from './default-prewarm.js'
 import { modelCatalogPublisher } from './model-catalog-publication.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
@@ -80,6 +82,7 @@ export async function createCompositionHost(
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
   store.sweepOrphans((digest) => generations.pinFileState(digest))
   const containers = new Map<string, Container>()
+  const warmth: { container?: Container | undefined } = {}
   const builtinRows = new WeakMap<Host, readonly PluginRow[]>()
   const opening = new Map<string, Promise<Container>>()
   const openingFailures = new Map<string, string>()
@@ -174,13 +177,15 @@ export async function createCompositionHost(
     const identity = containerKey(binding)
     const found = containers.get(identity)
     if (found) {
+      if (binding.sessionKey && found === warmth.container)
+        await verifyPreparedComposition(found, binding, generations, profile, options)
       idleSince.delete(found)
       return found
     }
     const pending = opening.get(identity)
     if (pending) return pending
     let attemptedGeneration: string | undefined
-    const started = (async () => {
+    const started = withPackageVerification(async () => {
       const target = latestTarget ?? bootTarget?.()
       const pinned = generations.session(binding.sessionKey)
       attemptedGeneration = pinned?.generationId
@@ -311,7 +316,7 @@ export async function createCompositionHost(
         await host.close()
         throw error
       }
-    })()
+    })
     opening.set(identity, started)
     try {
       return await started
@@ -406,7 +411,14 @@ export async function createCompositionHost(
       rows: [...rows.values()],
     }
   }
-  const collectIdle = () => collectIdleContainers(containers, initial, idleSince, idleMs)
+  const collectIdle = async () => {
+    try {
+      await collectIdleContainers(containers, initial, idleSince, idleMs)
+    } finally {
+      if (warmth.container && ![...containers.values()].includes(warmth.container))
+        warmth.container = undefined
+    }
+  }
   let collectionQueued = false
   const scheduleCollection = () => {
     if (closed || collectionQueued) return
@@ -465,6 +477,21 @@ export async function createCompositionHost(
       options,
       activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
     )
+  // Use exactly the default session selection. No session or durable session pin is created here.
+  const prewarm = defaultCompositionPrewarm({
+    profile,
+    initial,
+    state: warmth,
+    containers,
+    idleSince,
+    calls,
+    admission,
+    open,
+    adminLoop: () => readAdminLoopDefault(configuration),
+    key: containerKey,
+    closed: () => closed,
+    log: options.log,
+  })
   const prepareAgent = createAgentResolver({
     admission,
     host: initial.host,
@@ -472,67 +499,14 @@ export async function createCompositionHost(
     adminLoop: () => readAdminLoopDefault(configuration),
     open,
   })
-  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]): PluginGenerationStatus => {
-    const first = statuses[0]
-    if (!first) throw new Error('Plugin generation status is unavailable')
-    const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-    const all = new Map<string, PluginGenerationStatus['generations'][number]>()
-    for (const status of statuses)
-      for (const item of status.generations) {
-        const previous = all.get(item.id)
-        all.set(item.id, previous ? mergeGenerationStatus(previous, item, opened.values()) : item)
-      }
-    for (const [id, error] of openingFailures) {
-      const generation = all.get(id)
-      if (generation) all.set(id, { ...generation, state: 'failed', error })
-    }
-    const blocked = [
-      ...new Map(
-        statuses.flatMap((status) => status.blocked ?? []).map((item) => [item.file, item]),
-      ).values(),
-    ]
-    return {
-      ...first,
-      ...(blocked.length ? { blocked } : {}),
-      generations: [...all.values()],
-      plugins: [
-        ...new Map(
-          statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
-        ).values(),
-      ].map((plugin) => {
-        if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
-        const relevant = [...all.values()].filter((generation) =>
-          generation.packages.some((pkg) => pkg.id === plugin.id),
-        )
-        const failed = relevant.find((generation) => generation.state === 'failed')
-        return {
-          ...plugin,
-          ...(failed?.error ? { error: failed.error } : {}),
-          state: failed
-            ? ('failed' as const)
-            : relevant.some((generation) => generation.state === 'active')
-              ? ('active' as const)
-              : relevant.some((generation) => generation.openSessions > 0)
-                ? ('draining' as const)
-                : ('historical' as const),
-          boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
-          historicalSessions: relevant.reduce(
-            (count, generation) =>
-              count +
-              (generation.state === 'active'
-                ? 0
-                : Math.max(0, generation.boundSessions - generation.openSessions)),
-            0,
-          ),
-          drainingSessions: relevant.reduce(
-            (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
-            0,
-          ),
-        }
-      }),
-    }
-  }
+  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]) =>
+    mergeCompositionGenerationStatuses(
+      statuses,
+      new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions])).values(),
+      openingFailures,
+    )
   const overrides: HostFacadeOverrides = {
+    prewarmDefaultComposition: () => prewarm.invalidate(),
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
     // Display-only metadata captures an immutable profile/target view; actual session admission
     // remains serialized and freshly verified. A directory scan must not occupy the mutation queue.
@@ -628,6 +602,7 @@ export async function createCompositionHost(
                 ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
               })
               if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
+              if (warmth.container === container) warmth.container = undefined
               sessionOwners.set(key, container)
               if (session.pluginGenerationId) openingFailures.delete(session.pluginGenerationId)
               const close = session.close.bind(session)
@@ -719,11 +694,13 @@ export async function createCompositionHost(
           latestRows = undefined
           await publishAdapters()
         }
+        prewarm.invalidate()
         return convergence(target)
       }),
     refreshSkillRow: (fresh) =>
       calls.enqueue(async () => {
         currentSkills = fresh
+        prewarm.invalidate()
         return broadcast('skills', (container) => container.host.refreshSkillRow(fresh))
       }),
     reloadEcosystemExtension: async (id, input) => {
@@ -761,6 +738,7 @@ export async function createCompositionHost(
           ),
         )
         if (report.ok) await publishAdapters()
+        prewarm.invalidate()
         return report
       }),
     extensionRows: {
@@ -777,6 +755,7 @@ export async function createCompositionHost(
       apply: (rows) =>
         calls.enqueue(async () => {
           await refreshTrust()
+          prewarm.invalidate()
           latestRows = rows
           const selected = new Set(rows.map((row) => row.id))
           for (const id of prepared.keys()) if (!selected.has(`ext:${id}`)) prepared.delete(id)
@@ -800,6 +779,7 @@ export async function createCompositionHost(
     close() {
       if (closing) return closing
       closed = true
+      prewarm.close()
       clearInterval(statusTimer)
       idleSince.clear()
       const hosts = new Map([...containers.values()].map(({ host }) => [host, host.close()]))

@@ -721,50 +721,72 @@ describe('WorkerPool', () => {
     expect(pool.isQuarantined('@shared')).toBe(false)
   })
 
-  it('multiplexes two sessions through one shared worker and closes them independently', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-'))
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
-    const config: DaemonConfig = {
-      profileName: 'p',
-      dataDir: dir,
-      socketPath: join(dir, 'a.sock'),
-      workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
-    }
-    const pool = new WorkerPool({
-      config,
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile,
-      execPath: process.execPath,
-      workerEntry: fakeWorker,
-      execArgv: ['--import', 'tsx'],
-      clock: () => 0,
-      onEvent: () => undefined,
-      onRequest: async () => undefined,
-      notices: { emit() {} },
-    })
-    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
-    try {
-      const [a, b] = await Promise.all([
-        acquire(pool, 'agnes:t:a:x:dm:shared-a', { cwd: dir }),
-        acquire(pool, 'agnes:t:a:x:dm:shared-b', { cwd: dir }),
-      ])
-      expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
-      expect(await a.command('ping', {})).toEqual({ ok: true })
-      await a.closeSession()
-      expect(pool.businessWorker()?.link.alive).toBe(true)
-      expect(await b.command('ping', {})).toEqual({ ok: true })
-      const reopened = await acquire(pool, 'agnes:t:a:x:dm:shared-a', { cwd: dir, resume: true })
-      expect(reopened).not.toBe(a)
-      expect(await reopened.command('ping', {})).toEqual({ ok: true })
-      expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
-    } finally {
-      await pool.closeAll(1_000)
-      await server.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 60_000)
+  it.each(['cold', 'pending', 'ready', 'failed'])(
+    'multiplexes sessions through one shared worker after %s prewarm and closes them independently',
+    async (warm) => {
+      const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-'))
+      const profileFile = join(dir, 'profile.json')
+      writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+      const config: DaemonConfig = {
+        profileName: 'p',
+        dataDir: dir,
+        socketPath: join(dir, 'a.sock'),
+        workersSocketPath: workerSocket(dir),
+        limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
+      }
+      const pool = new WorkerPool({
+        config,
+        profile: { name: 'p', hash: 'h1' } as never,
+        profileFile,
+        execPath: process.execPath,
+        workerEntry: fakeWorker,
+        execArgv: ['--import', 'tsx'],
+        clock: () => 0,
+        onEvent: () => undefined,
+        onRequest: async () => undefined,
+        notices: { emit() {} },
+      })
+      const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+      try {
+        let refuse = warm === 'failed'
+        pool.setLinkInitializer(async () => {
+          if (refuse) {
+            refuse = false
+            throw new Error('synthetic prewarm failure')
+          }
+        })
+        const preparing =
+          warm === 'cold'
+            ? undefined
+            : pool.prewarmSharedWorker().then(
+                (link) => ({ link }),
+                (error: unknown) => ({ error }),
+              )
+        if (warm === 'ready') await preparing
+        const [a, b] = await Promise.all([
+          acquire(pool, 'agnes:t:a:x:dm:shared-a', { cwd: dir }),
+          acquire(pool, 'agnes:t:a:x:dm:shared-b', { cwd: dir }),
+        ])
+        const prepared = await preparing
+        if (warm === 'failed') expect(prepared).toHaveProperty('error')
+        else if (prepared) expect(prepared).toEqual({ link: pool.businessWorker()?.link })
+        expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
+        expect(await a.command('ping', {})).toEqual({ ok: true })
+        await a.closeSession()
+        expect(pool.businessWorker()?.link.alive).toBe(true)
+        expect(await b.command('ping', {})).toEqual({ ok: true })
+        const reopened = await acquire(pool, 'agnes:t:a:x:dm:shared-a', { cwd: dir, resume: true })
+        expect(reopened).not.toBe(a)
+        expect(await reopened.command('ping', {})).toEqual({ ok: true })
+        expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
+      } finally {
+        await pool.closeAll(1_000)
+        await server.close()
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+    60_000,
+  )
 
   it('exposes only Host-owning links to package activation while a resource lifecycle worker is live', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-activation-links-'))
@@ -1344,13 +1366,17 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
-  it.each(['timeout', 'shutdown', 'kill', 'fail-stop'])(
-    'attributes a start that never became ready: %s',
-    async (cause) => {
+  it.each(
+    ['timeout', 'shutdown', 'kill', 'fail-stop'].flatMap((cause) =>
+      [false, true].map((prewarm) => ({ cause, prewarm })),
+    ),
+  )(
+    'attributes a start that never became ready: $cause (prewarm=$prewarm)',
+    async ({ cause, prewarm }) => {
       await withBoot(bootstrapOnly, async ({ pool, store, notices, booting }) => {
-        const starting = expect(pool.acquireSharedWorker()).rejects.toThrow(
-          cause === 'timeout' ? 'did not boot_ready' : 'shut down during startup',
-        )
+        const starting = expect(
+          prewarm ? pool.prewarmSharedWorker() : pool.acquireSharedWorker(),
+        ).rejects.toThrow(cause === 'timeout' ? 'did not boot_ready' : 'shut down during startup')
         if (cause !== 'timeout') {
           await booting
           if (cause === 'shutdown') await pool.closeAll(1_000)

@@ -325,6 +325,7 @@ export async function createPackagedHost(
     home: string
     cwd: string
     entryFile: string
+    log?: HostOptions['log']
   } & Pick<
     HostOptions,
     | 'scheduling'
@@ -338,7 +339,7 @@ export async function createPackagedHost(
     | 'serviceAuthority'
   >,
 ) {
-  const { home, cwd, entryFile, ...resources } = options
+  const { home, cwd, entryFile, log, ...resources } = options
   const ordinaryPluginLayers = await loadChildEnginePluginLayers({ home, profile: profile.name })
   return createHost(profile, {
     dataDir: profile.dataDir,
@@ -347,7 +348,7 @@ export async function createPackagedHost(
     hostRoot: dirname(entryFile),
     agnesVersion: '0.0.0',
     prompter,
-    log: { debug() {}, info() {}, warn() {}, error() {} },
+    log: log ?? { debug() {}, info() {}, warn() {}, error() {} },
     ...packagedPackages(profile, home, entryFile),
     ...resources,
     ...(ordinaryPluginLayers ? { ordinaryPluginLayers } : {}),

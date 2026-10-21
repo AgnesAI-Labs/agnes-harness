@@ -199,6 +199,8 @@ export interface Host {
     signal?: AbortSignal,
   ): ReturnType<Assembled['authorizeServiceControl']>
   applyModelProfile(next: ResolvedProfile): Promise<void | HostPublicationReport>
+  /** Advisory only: schedule the current default without creating a session or granting admission. */
+  prewarmDefaultComposition?(): void
   readonly profile: ResolvedProfile
   readonly kernel: Kernel
   /** ERRATA B19: cli reads it for `agnes models` and for --probe. */

@@ -33,7 +33,6 @@ import {
   type PackageProfileDirectory,
   type PackageReferenceFactReader,
   type RuntimePinsAdapter,
-  registerPackageAdmin,
   requireLocalAdminAuthority,
   runtimeArtifactsFromStore,
   scopedPackageProfileDirectory,
@@ -206,6 +205,7 @@ import { startChildMaintenance } from './child-maintenance.js'
 import { type Args, buildConfig, type DaemonConfig } from './config.js'
 import { configurationApplication } from './configuration.js'
 import { bindConnection } from './connection.js'
+import { defaultPrewarmNotifier } from './default-prewarm.js'
 import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
@@ -1716,10 +1716,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       }
     }
     runtimeDelivery?.completeStartup()
+    const prewarmDefault = defaultPrewarmNotifier(pool, o.profile.name, notices)
     if (effectivePackageAdmin) {
-      stopClientModuleNotices = effectivePackageAdmin.service.subscribeClientModules((event) =>
-        notices.emit('packages_changed', { detail: event }),
-      )
+      stopClientModuleNotices = effectivePackageAdmin.service.subscribeClientModules(prewarmDefault.changed)
       startupCleanup.push(() => {
         stopClientModuleNotices?.()
         effectivePackageAdmin?.service.closeClientModules()
@@ -1902,7 +1901,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     }
     // The shared worker is up from here on rather than from the first session.
     const keeper = keepSharedWorker({
-      acquire: () => pool.acquireSharedWorker(),
+      acquire: () => pool.prewarmSharedWorker(),
       onRetry: (listener) => pool.onBootRetry(listener),
       log: console,
     })
@@ -2376,7 +2375,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
       if (effectivePackageAdmin)
-        registerPackageAdmin(
+        prewarmDefault.registerAdmin(
           ep,
           effectivePackageAdmin.service,
           transport === 'unix'
