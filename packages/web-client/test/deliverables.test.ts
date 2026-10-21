@@ -937,6 +937,56 @@ it('reports a failed read on both paths without discarding the published records
   store.dispose()
 })
 
+it('detects again instead of projecting when the baseline drops while apis.list is pending', async () => {
+  const source = seeded()
+  const connection = source.connect()
+  const offer = offering(connection)
+  const { store, lifecycle } = offer.mounted()
+  await loaded(store)
+  // The listing in flight belongs to the closed connection and fails.
+  let release!: () => void
+  offer.apis.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+    throw new Error('closed')
+  })
+  lifecycle.get('reconnected')?.()
+  await vi.waitFor(() => expect(release).toBeDefined())
+  // A reconnect drops the baseline again (gap, readiness epoch) before the first listing answers.
+  lifecycle.get('gap')?.()
+  release()
+  await vi.waitFor(() => expect(connection.deliverables.mock.calls.length).toBeGreaterThanOrEqual(2))
+  expect(offer.apis).toHaveBeenCalledTimes(3)
+  expect(store.getSnapshot().files).toEqual(await fullRead(source))
+  unprojected(connection)
+  store.dispose()
+})
+
+it('detects again instead of projecting when a deliverables read fails across a baseline drop', async () => {
+  const source = seeded()
+  const connection = source.connect()
+  const offer = offering(connection)
+  const { store, lifecycle } = offer.mounted()
+  await loaded(store)
+  let fail!: () => void
+  connection.deliverables.mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        fail = () => reject(new Error('closed'))
+      }),
+  )
+  void store.refresh()
+  await vi.waitFor(() => expect(fail).toBeDefined())
+  lifecycle.get('reconnected')?.()
+  fail()
+  await vi.waitFor(() => expect(connection.deliverables.mock.calls.length).toBeGreaterThanOrEqual(3))
+  expect(offer.apis).toHaveBeenCalledTimes(2)
+  expect(store.getSnapshot().files).toEqual(await fullRead(source))
+  unprojected(connection)
+  store.dispose()
+})
+
 it('does not publish a deliverables read that a newer readiness epoch overtook', async () => {
   const source = seeded()
   const connection = source.connect()
