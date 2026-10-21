@@ -13,6 +13,7 @@ import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
+import { jobsSlash } from './job-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
@@ -155,6 +156,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[stop <n|id>|resume <n|id> <message>]',
     descriptionKey: 'commands.agents',
     summaryKey: 'commands.agentsSummary',
+  },
+  {
+    name: '/jobs',
+    args: '[stop <n|id>]',
+    descriptionKey: 'commands.jobs',
+    summaryKey: 'commands.jobsSummary',
   },
 ]
 
@@ -435,6 +442,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return deliverablesSlash(app, line)
     case '/agents':
       return agentsSlash(app, line)
+    case '/jobs':
+      return jobsSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':

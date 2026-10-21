@@ -115,7 +115,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(35)
+    expect(SLASH_COMMANDS).toHaveLength(36)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -152,6 +152,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/mcp',
       '/context',
       '/agents',
+      '/jobs',
     ])
   })
 
@@ -167,6 +168,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/package')?.args).toContain('rollback')
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
     expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
+    expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
@@ -339,6 +341,63 @@ describe('runSlash', () => {
       expect((await runSlash(app, '/agents stop 9')).text).toBe('没有子智能体 9')
       expect(ep.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(2)
     } finally {
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/jobs reads session.jobs.read and kills through session.jobs.control, showing refusals', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const job = (id: string, over: Record<string, unknown> = {}) => ({
+      id,
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: `npm run \u001b[31m${id}\n${'x'.repeat(100)}`,
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+      ...over,
+    })
+    const jobs = [job('dev'), job('lint', { status: 'completed', code: 0, owner: 'agent' })]
+    ep.on('_agnes/v1/session.jobs.read', () => ({ jobs, completions: [] }))
+    ep.on('_agnes/v1/session.jobs.control', (params) => {
+      if ((params as { jobId?: string }).jobId === 'lint')
+        throw rpcError('CAPABILITY_DENIED', { code: 'CAPABILITY_DENIED' })
+      return { output: job('dev', { status: 'killed', code: null }) }
+    })
+    try {
+      const rows = (await runSlash(app, '/jobs')).text?.split('\n') ?? []
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatch(/^1\. npm run \[31mdev x{63}… \[running\] · shell · human$/)
+      expect(rows[1]).toMatch(/\[completed\] · shell · agent · 退出码 0$/)
+      expect((await runSlash(app, '/jobs stop 1')).text).toBe('已请求终止任务 dev')
+      expect((await runSlash(app, '/jobs stop dev')).text).toBe('已请求终止任务 dev')
+      const controls = ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control')
+      expect(controls.map((call) => call.params)).toMatchObject([
+        { operation: 'kill', jobId: 'dev', sessionId: app.session.id },
+        { operation: 'kill', jobId: 'dev', sessionId: app.session.id },
+      ])
+      expect(ep.calls.find((call) => call.method === '_agnes/v1/session.jobs.read')?.params).toEqual({
+        sessionId: app.session.id,
+      })
+      for (const line of ['/jobs stop', '/jobs kill 1', '/jobs stop 1 2'])
+        expect((await runSlash(app, line)).text).toBe('用法：/jobs [stop <序号|id>]')
+      expect((await runSlash(app, '/jobs stop 0')).text).toBe('没有任务 0')
+      expect(ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control')).toHaveLength(2)
+      // The daemon refuses a job an agent owns; the refusal surfaces as the standard error notice.
+      await app.start()
+      await app.runInput('/jobs stop lint')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain(
+          formatTuiErrorNotice(rpcError('CAPABILITY_DENIED', { code: 'CAPABILITY_DENIED' }), 'zh-CN'),
+        ),
+      )
+      ep.on('_agnes/v1/session.jobs.read', () => ({ jobs: [], completions: [] }))
+      expect((await runSlash(app, '/jobs')).text).toBe('没有后台任务')
+    } finally {
+      await app.stop()
       await client.close()
       await ep.close()
     }
