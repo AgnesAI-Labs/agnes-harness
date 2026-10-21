@@ -91,7 +91,7 @@ retain their existing scopes and semantics.
 Build a replacement using public exports: [Build a presentation plugin](presentations.md).
 
 
-An application can expose up to twelve `delegableAgents`. Every ref must also appear in `agents` and
+An application can expose up to 64 `delegableAgents`. Every ref must also appear in `agents` and
 resolve to a launchable bundle. After adoption, the backend advertises those roles in the session's
 `subagent_spawn` description. For example, `{"role":"@acme/operations#reviewer","task":"Review the evidence"}`
 starts that role with its own recipe, persona, tools and skills in a fresh conversation. A missing
