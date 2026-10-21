@@ -253,10 +253,16 @@ describe('real subagent tools on sqlite', () => {
       await parent1.enqueue('next-turn', { content: [{ type: 'text', text: 'spawn' }], actor })
       await parent1.run({ until: 'turn-end', signal: new AbortController().signal })
       const spawned = (await parent1.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
-        | { details?: { childKey?: string }; content?: Array<{ text?: string }> }
+        | { isError?: boolean; content?: Array<{ text?: string }> }
         | undefined
-      const childKey =
-        spawned?.details?.childKey ?? spawned?.content?.[0]?.text?.replace(/^spawned /, '') ?? ''
+      expect(spawned?.isError).toBe(false)
+      expect(spawned?.content?.[0]?.text).toContain('Use subagent_list for the handle')
+      // The same backend catalog exposed by subagent_list, rather than parsing a UI receipt.
+      const children = await parent1.d.children.list?.()
+      expect(children).toHaveLength(1)
+      const childKey = children?.[0]?.id
+      if (!childKey) throw new Error('child catalog did not return a handle')
+      expect(spawned?.content?.[0]?.text).not.toContain(childKey)
       expect(childKey.includes('/')).toBe(true)
       log.push(`pass ${pass} spawned ${childKey}`)
       await k1.close()

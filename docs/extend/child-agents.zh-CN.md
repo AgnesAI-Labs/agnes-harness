@@ -64,8 +64,14 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 
 这些工具保持原名：
 
-- `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
-- `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。 设置 `wait: true` 可在同一次调用中等待并收取调查结论，一条用户消息即可完成后续汇总与已明确要求的主会话签署。默认后台模式仍保留异步完成通知。
+- `subagent_fork` 在后台启动继承父历史的子代理。
+- `subagent_spawn` 在后台启动子代理。fork 和 spawn 都保留子代理以接受后续消息。 设置 `wait: true` 可在同一次调用中等待并收取调查结论，一条用户消息即可完成后续汇总与已明确要求的主会话签署。默认后台模式仍保留异步完成通知。
+
+后台 fork/spawn 的确认文本刻意不向模型暴露子代理句柄。需要后续控制时，调用
+`subagent_list {}`，把列出的子代理 id 作为 `childKey` 交给 `subagent_collect`、
+`subagent_send_message`、`subagent_interrupt` 或 `subagent_cancel`。列表包含待启动的子代理，
+无需等到完成通知才能发现它。后台回执详情和应用任务卡用于展示；模型控制普通子代理时，
+应读取 list 的工具内容。不要在面向用户的回复中重复内部句柄。
 
 
 已采纳应用可声明 `delegableAgents`（最多八个可启动引用，也必须在 `agents` 中）。

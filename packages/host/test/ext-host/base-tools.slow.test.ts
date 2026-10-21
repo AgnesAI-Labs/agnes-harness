@@ -1527,12 +1527,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         | { isError?: boolean; content?: Array<{ type?: string; text?: string }> }
         | undefined
       expect(result?.isError, JSON.stringify(result)).toBe(false)
-      const started = result?.content?.[0]?.text?.match(
-        /^started (.+); its result arrives as a notice, use subagent_send_message to follow up$/,
-      )
-      expect(started).not.toBeNull()
-      const childKey = started?.[1]
-      if (!childKey) throw new Error('fork did not return a child identity')
+      expect(result?.content?.[0]?.text).toContain('Use subagent_list for the handle')
+      const children = await session.d.children.list?.()
+      expect(children).toHaveLength(1)
+      const childKey = children?.[0]?.id
+      if (!childKey) throw new Error('child catalog did not return a handle')
+      expect(result?.content?.[0]?.text).not.toContain(childKey)
       const child = host.kernel.get(childKey)
       expect(child).toBeDefined()
       await vi.waitFor(async () => {

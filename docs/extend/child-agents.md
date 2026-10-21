@@ -64,8 +64,15 @@ If Core refuses child creation with `E_CHILD_LIMIT` before returning a child han
 
 These tools keep their current names:
 
-- `subagent_fork` starts a background child seeded from parent history and returns its key.
+- `subagent_fork` starts a background child seeded from parent history.
 - `subagent_spawn` starts a background child. Set `wait: true` to collect its findings in the same call and finish the request in one user turn. Default background mode keeps the asynchronous completion notice. Both fork and spawn stay open for follow-ups.
+
+Background fork/spawn acknowledgements deliberately omit the child handle from model-visible text.
+For follow-up control, call `subagent_list` with `{}` and use the listed child id as `childKey`
+for `subagent_collect`, `subagent_send_message`, `subagent_interrupt` or `subagent_cancel`.
+The list includes pending children, so callers do not need to wait for a completion notice to discover
+them. Backend receipt details and application task cards are presentation data; a model must not
+parse those UI details to control an ordinary child. Keep handles out of user-facing replies.
 
 
 An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
