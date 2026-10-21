@@ -58,7 +58,7 @@ The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforc
 
 ### Demo script and checkpoints
 
-0. **Uninstall 2.0.0 first**: an in-place upgrade from 2.0.0 reports `E_PACKAGE_STATE`. On the Agents page uninstall DevBoard 2.0.0, install 3.1.0, then adopt it.
+0. **Upgrading from 2.x: uninstall the old version first**: installing 3.1.0 over an installed 2.x (2.0.0 or 2.1.0) fails. On the Agents page disable DevBoard, uninstall 2.x, install 3.1.0, trust and enable it, then adopt it. Whether data written by 2.x survives the uninstall is not yet confirmed; 3.1.0 ships its own seed data, and the **重置演示数据** (reset demo data) button on the Portfolio page restores the demo state.
 1. Portfolio: four projects with gate codes and owning centres; PRJ-2023-011 shows alarms, open problems, retrofit progress and baseline gap.
 2. Reviews → the design liaison 2 gate of PRJ-2026-008: signing as 质量工程师 is refused with "本门需由 … 审批"; signing as a role the gate names records one signature and leaves the gate pending; the last signature is refused while findings are open; close them and sign the remaining role to pass the gate and move on to design freeze.
 3. Trials & first article: the failed low-temperature clamping-force trial of PRJ-2025-042 points at its change; submitting the type-test gate adds a finding for every trial not yet approved.
@@ -111,4 +111,4 @@ Everything below is an assumption in this demo and should be confirmed before re
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); uninstall 2.0.0 before installing 3.1.0. To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
+Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); upgrading from 2.x requires disabling and uninstalling the old version first (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
