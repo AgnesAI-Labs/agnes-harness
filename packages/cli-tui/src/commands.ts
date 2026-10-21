@@ -15,6 +15,7 @@ import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
@@ -163,6 +164,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.jobs',
     summaryKey: 'commands.jobsSummary',
   },
+  {
+    name: '/queue',
+    args: '[edit <n>|drop <n>]',
+    descriptionKey: 'commands.queue',
+    summaryKey: 'commands.queueSummary',
+  },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -204,6 +211,8 @@ export type SlashResult = {
   prompt?: string
   content?: ContentBlock[]
   details?: boolean
+  /** Text to put in the editor, replacing what it holds (the line that ran the command is already gone). */
+  draft?: string
   /** Long-lived local output belongs in the transcript; omitted text is a short status notice. */
   presentation?: 'transcript'
   title?: string
@@ -444,6 +453,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return agentsSlash(app, line)
     case '/jobs':
       return jobsSlash(app, line)
+    case '/queue':
+      return queueSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':

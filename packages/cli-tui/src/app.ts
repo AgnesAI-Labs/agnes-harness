@@ -79,7 +79,8 @@ export class TuiApp {
   private turnStartedAt: number | undefined
   private currentTurn = 0
   private ticker: ReturnType<typeof setInterval> | undefined
-  private readonly pendingPrompts: ContentBlock[][] = []
+  /** Messages typed during a turn, sent in order once it ends; /queue lists, edits and drops them. */
+  readonly pendingPrompts: ContentBlock[][] = []
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   private flushingQueued = false
   private queuedWake: ReturnType<typeof setTimeout> | undefined
@@ -864,6 +865,7 @@ export class TuiApp {
         this.statusBar.setNotice(r.text)
       }
     }
+    if (r.draft !== undefined) this.editor.setText(r.draft)
     if (r.modelChoices) {
       this.statusBar.setNotice(undefined)
       this.modelPicker.show(r.modelChoices)

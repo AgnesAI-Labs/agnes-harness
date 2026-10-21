@@ -115,7 +115,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(36)
+    expect(SLASH_COMMANDS).toHaveLength(37)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -153,6 +153,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/context',
       '/agents',
       '/jobs',
+      '/queue',
     ])
   })
 
@@ -169,6 +170,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
     expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
     expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
+    expect(slashCommand('/queue')?.args).toBe('[edit <n>|drop <n>]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
@@ -396,6 +398,43 @@ describe('runSlash', () => {
       )
       ep.on('_agnes/v1/session.jobs.read', () => ({ jobs: [], completions: [] }))
       expect((await runSlash(app, '/jobs')).text).toBe('没有后台任务')
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/queue edit puts a queued message back in the editor, and /queue drop discards one, client-side only', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    try {
+      await app.start()
+      const before = ep.calls.length
+      app.pendingPrompts.push(
+        [{ type: 'text', text: 'first message' }],
+        [{ type: 'text', text: 'second\nmessage' }],
+      )
+      await app.runInput('/queue')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 90, 24)).join('\n')
+        expect(screen).toContain('1. first message')
+        expect(screen).toContain('2. second message')
+      })
+      await app.runInput('/queue edit 2')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 90, 24)).join('\n')
+        expect(screen).toContain('第 2 条已放回输入框')
+        expect(screen).toMatch(/❯ second\s*$/m)
+      })
+      await app.runInput('/queue drop 1')
+      expect(app.pendingPrompts).toEqual([])
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 90, 24)).join('\n')).toContain('已丢弃第 1 条'),
+      )
+      // The queue is the client's own: no daemon call was made for any of it.
+      expect(
+        ep.calls.slice(before).filter((call) => /submit|prompt|control|queue/i.test(call.method)),
+      ).toEqual([])
     } finally {
       await app.stop()
       await client.close()
