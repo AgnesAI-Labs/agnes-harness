@@ -6,7 +6,15 @@ import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
-import { packageDirs, scratch, settle } from './plugin-extension-fixture.js'
+import {
+  packageDirs,
+  pluginHost,
+  pluginRow,
+  pluginSource,
+  targetOf as pluginTarget,
+  scratch,
+  settle,
+} from './plugin-extension-fixture.js'
 
 const EXAMPLE = fileURLToPath(new URL('../../../../examples/packages/hot-tool-plugin', import.meta.url))
 const PACKAGE = '@agnes-examples/hot-tool-plugin'
@@ -98,4 +106,53 @@ describe('the hot-tool-plugin example', () => {
     expect(host.kernel.tools.list().map((t) => t.name)).not.toContain('demo_text_stats')
     await host.close()
   })
+})
+
+it('preserves request availability through the production ordinary plugin bridge', async () => {
+  const plugin = pluginSource(`
+    ctx.tools.register({ ...tool('availability_probe'), async execute(_, context) {
+      const states = ['availability_probe', 'later', 'image_only', 'outside'].map(name => [name, context.tools.availability?.(name)])
+      return { content: [{ type: 'text', text: JSON.stringify(states) }] }
+    } })
+    ctx.tools.register({ ...tool('later'), meta: { ...tool('later').meta, deferLoading: true } })
+    ctx.tools.register({ ...tool('image_only'), meta: { ...tool('image_only').meta, requiresImageInput: true } })
+  `)
+  const { host, dataDir } = await pluginHost(plugin, {
+    script: [
+      [
+        {
+          type: 'toolcall_end',
+          via: 'native',
+          call: { toolUseId: '', name: 'availability_probe', args: {}, ordinal: 0 },
+        },
+        { type: 'done', reason: 'toolUse' },
+      ],
+      [
+        { type: 'text_delta', delta: 'done' },
+        { type: 'done', reason: 'stop' },
+      ],
+    ],
+  })
+  try {
+    await host.applyRuntimeTarget(pluginTarget([pluginRow()]))
+    const session = await host.createSession({ cwd: dataDir })
+    try {
+      await session.enqueue('check-availability', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'check' }],
+      })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      const text = JSON.stringify(results.map((r) => r.data))
+      expect(text).toContain('offered')
+      expect(text).toContain('deferred')
+      expect(text).toContain('model_capability')
+      expect(text).toContain('catalog')
+      expect(text).not.toContain('snapshot unavailable')
+    } finally {
+      await session.close()
+    }
+  } finally {
+    await host.close()
+  }
 })

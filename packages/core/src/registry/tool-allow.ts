@@ -4,9 +4,15 @@ import { type RegistrySnapshot, ToolRegistry } from './tools.js'
 /** A live catalog view. Tool policy still decides what each visible tool may do. */
 export class ToolRegistryView extends ToolRegistry {
   private readonly allowed: () => ReadonlySet<string>
-  constructor(source: ToolRegistry, names: readonly string[] | (() => readonly string[])) {
+  private readonly eager: ReadonlySet<string>
+  constructor(
+    source: ToolRegistry,
+    names: readonly string[] | (() => readonly string[]),
+    eager: readonly string[] = [],
+  ) {
     super()
     this.source = source
+    this.eager = new Set(eager)
     this.add = source.add.bind(source)
     this.registrations = source.registrations.bind(source)
     this.prepareOwnerReplacement = source.prepareOwnerReplacement.bind(source)
@@ -30,12 +36,20 @@ export class ToolRegistryView extends ToolRegistry {
   override snapshot(seq: number): RegistrySnapshot {
     const original = this.source.snapshot(seq)
     const allowed = this.allowed()
-    const defs = Object.freeze(original.defs.filter((tool) => allowed.has(tool.name)))
-    if (defs.length === original.defs.length) return original
+    // Eager names affect disclosure only after the authoritative visibility filter.
+    const defs = Object.freeze(
+      original.defs.filter((tool) => allowed.has(tool.name)).map((tool) =>
+        this.eager.has(tool.name) && tool.meta.deferLoading === true
+          ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
+          : tool,
+      ),
+    )
+    if (defs.length === original.defs.length && defs.every((tool, i) => tool === original.defs[i]))
+      return original
     return Object.freeze({
       ...original,
       defs,
-      byName: new Map([...original.byName].filter(([name]) => allowed.has(name))),
+      byName: new Map(defs.map((tool) => [tool.name, tool])),
       hash: sha256Hex(canonicalJson(defs.map(({ name, parameters }) => ({ name, parameters })))),
     })
   }

@@ -57,6 +57,9 @@ When to defer: every visible schema is sent with every request, so a tool the mo
 
 Auto deferral also requires model-visible, eager `tool_search` and `tool_describe` in the catalog; image-only or themselves deferred discovery tools do not qualify. Without this discovery pair, auto tools remain visible, including third-party auto tools. Explicit `true` and `false` declarations are unchanged. Official job/PTY, subagent, schedule, workflow and goal tools use auto mode; `present`, daily tools and discovery stay eager.
 
+
+An agent's explicit `tools` list (the resolved session's non-empty `tools.allow`) is its eager working set: named tools are offered from the first request even when their global definition uses `true` or `auto` deferral. No discovery tool is added implicitly, and names outside that list remain inaccessible. An absent allowlist retains ordinary deferral; an explicit empty allowlist still exposes no tools. Model visibility, image capability, custom Loop selection, validation and approvals still apply. Role subagents receive only the captured intersection of role and parent tools; this rule adds no authority.
+
 Set `meta.discoveryGroup` to a one-line label (at most 120 characters) to list deferred tools that belong together as a single line with their count, such as `"Earlier sessions (search, read and trace past sessions)"`. `tool_search` also matches that label. Without it, each deferred tool gets its own line.
 
 ## Model-assisted policies

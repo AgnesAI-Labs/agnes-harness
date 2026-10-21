@@ -819,7 +819,7 @@ export class SessionImpl {
     if (allow === undefined) return tools
     // One view per registry and list, so repeated lookups in a turn share it.
     if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
-      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow) }
+      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
     return this.allowedTools.view
   }
   private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }

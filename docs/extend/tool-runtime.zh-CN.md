@@ -63,3 +63,5 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 策略结果可以携带协议拥有的 `ToolReviewFact`：模型、提示词哈希、参数/范围哈希、`allow/deny/escalate` 决定、风险、理由、延迟、成本、成本来源，以及 `model/human-override/fallback` 来源。决定必须与 effect 一致（`escalate` 对应 `ask`）。Core 在副作用之前保存并复用绑定事实。可选 `scopePreview` 包含有长度限制的 `args`、`cwd` 和 `mode` 展示文本。工具节点与轨迹跨度使用相同的 `ToolReviewFact` 契约；预览文本不授予权限。公开 `_agnes/v1/autoReview.get` 与 `.save` 使用 `AutoReviewConfig`；Node SDK 提供 `client.autoReview.get()` 和 `.save(config)`，浏览器通过同源管理接口操作。
 
 输出一致性、工具范围、自动放行风险和显式未来规则由策略插件拥有；Core 仅提供模型执行、预算预留与事实持久化，不内置审查算法。硬拒绝与私有状态限制不可由模型推翻。默认值和操作流程见[安全与信任](../guide/security.zh-CN.md#审批)。
+
+智能体显式的 `tools` 清单（解析后会话的非空 `tools.allow`）是直接提供 schema 的工作集：即使工具全局声明 `true` 或 `auto` 延迟加载，名单内工具也从首次请求提供。不隐式加入发现工具，名单外工具仍不可访问。未设置允许清单时继续使用普通延迟规则；显式空清单仍不暴露任何工具。模型可见性、图像能力、自定义 Loop 选择、参数验证与审批独立生效。角色子智能体只取得角色与父工具快照的交集，此规则不扩大权限。

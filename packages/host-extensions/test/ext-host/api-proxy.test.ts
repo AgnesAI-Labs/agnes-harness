@@ -271,12 +271,26 @@ describe('complete extension API capability boundary', () => {
     h.api.registerTool(def)
     const raw = {
       net: { fetch: vi.fn() },
-      tools: { list: vi.fn(() => []), invoke: vi.fn() },
+      tools: {
+        list: vi.fn(() => []),
+        invoke: vi.fn(),
+        availability: (name: string) => ({
+          status: name === 'offered' ? 'offered' : name === 'later' ? 'deferred' : 'unavailable',
+          ...(name === 'refused' ? { reason: 'policy' } : {}),
+          message: name,
+        }),
+      },
       artifacts: { put: vi.fn(), get: vi.fn(), submitJob: vi.fn(), poll: vi.fn(), cancel: vi.fn() },
       subagent: { fork: vi.fn(), spawn: vi.fn(), collect: vi.fn() },
     } as unknown as ToolContext
     await h.tools.resolve('fx_one')?.execute({}, raw)
 
+    expect(projected?.tools.availability?.('offered')).toMatchObject({ status: 'offered' })
+    expect(projected?.tools.availability?.('later')).toMatchObject({ status: 'deferred' })
+    expect(projected?.tools.availability?.('refused')).toMatchObject({
+      status: 'unavailable',
+      reason: 'policy',
+    })
     expect(() => projected?.net.fetch('https://example.test')).toThrow('E_CAPABILITY_UNDECLARED')
     expect(() => projected?.tools.invoke('other', {})).toThrow('E_CAPABILITY_UNDECLARED')
     expect(() => projected?.artifacts.get({ sha256: 'x', size: 1, mime: 'text/plain' })).toThrow(
