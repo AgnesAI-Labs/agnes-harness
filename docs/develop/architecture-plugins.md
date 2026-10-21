@@ -118,7 +118,19 @@ Composite-target readers reread SQLite on every access and may reuse validation 
 stored bytes. Decoded targets are reused only for immutable artifacts issued by that store. Historical
 client assets keep per-generation publication queues; overlapping archive verification is keyed by
 the exact generation record and discarded on completion or failure. Unchanged client-roster state
-is not rewritten; byte verification, revocation and expiry checks still run on every read.
+is not rewritten; byte verification, revocation and expiry checks still run on every read, except for
+the display reads described next.
+
+The client-module roster, the application state and client-module asset reads may reuse the last
+completely verified installed inventory (`inventory(…, { settled: true })`) instead of taking the
+package lock and hashing every installed tree again. It is reused only until a package write starts
+or ends in this process, or the lock, capability-policy or source-configuration file changes, and it is
+dropped when a verifying read fails. Hand edits to installed package files made in between are noticed
+at the next package write, `fresh` read, session admission or daemon restart; asset bytes are still
+checked against their snapshot hashes when served. Publication, authorization, service and effect calls,
+and application or role adoption keep their ordinary or `fresh` reads. A package that declares nothing
+but the `ui` capability needs no backend confirmation: its descriptor-declared client row is published
+from the daemon's own desired tree without waiting for a worker report.
 
 Cold composition/generation restoration uses cooperative archive reads rather than synchronous tree
 walks. Extension and plugin-configuration schema compilers retain at most 64 successful validators

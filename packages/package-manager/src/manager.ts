@@ -131,8 +131,14 @@ export interface PackageManager {
   trust(profileDir: string, id: string, decision?: TrustDecision, opts?: OperationOptions): Promise<LockEntry>
   untrust(profileDir: string, id: string, decision: TrustDecision): Promise<LockEntry>
   /** Ordinary concurrent reads share only their in-flight scan. Publication/authorization reads
-   * use fresh to establish a new verification boundary. Completed inventories are never retained. */
-  inventory(profileDir: string, opts?: Readonly<{ fresh?: boolean }>): Promise<InstalledInventory>
+   * use fresh to establish a new verification boundary. A completed inventory is returned again only
+   * to callers that pass `settled`, and only until a package write or a change to the lock, policy
+   * or source files: it spares display reads the lock and a full re-hash of the installed trees,
+   * and gives up noticing hand edits to installed bytes until the next ordinary or fresh read. */
+  inventory(
+    profileDir: string,
+    opts?: Readonly<{ fresh?: boolean; settled?: boolean }>,
+  ): Promise<InstalledInventory>
   /** Lock-free, validated snapshot read for a worker while daemon package effects hold the lock. */
   runtimePluginSnapshots(profileDir: string): Promise<readonly RuntimePluginSnapshot[]>
   recover(profileDir: string): Promise<void>
@@ -275,6 +281,16 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 export function createPackageManager(options: ManagerOptions): PackageManager {
   const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
+  // The last complete read per profile, for `settled` callers only. `inventoryEpoch` counts every
+  // event that may change an inventory's content; a read registers itself only if none happened
+  // while it ran.
+  const settledInventories = new Map<string, { boundary: string; inventory: InstalledInventory }>()
+  let inventoryEpoch = 0
+  const forgetInventory = (key: string): void => {
+    inventoryReads.delete(key)
+    settledInventories.delete(key)
+    inventoryEpoch++
+  }
   const readRuntimePluginSnapshots = createRuntimeSourceReader()
   const profileKey = (directory: string): string =>
     existsSync(directory) ? nativeRealpathSync(directory) : resolve(directory)
@@ -380,9 +396,16 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     fn: () => Promise<T>,
     op: OperationOptions = {},
     ordinaryRead = false,
+    // Pin bookkeeping takes the lock but leaves the lockfile and the installed trees alone.
+    changesInventory = !ordinaryRead,
   ): Promise<T> => {
     const key = profileKey(profileDir)
-    if (!ordinaryRead) inventoryReads.delete(key)
+    const cut = (): void => {
+      if (ordinaryRead) return
+      if (changesInventory) forgetInventory(key)
+      else inventoryReads.delete(key)
+    }
+    cut()
     return withPackageAdmission(op.admission, () =>
       (ordinaryRead ? withPackageVerification : withoutPackageVerification)(() =>
         withLock(
@@ -410,9 +433,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           op,
         ),
       ),
-    ).finally(() => {
-      if (!ordinaryRead) inventoryReads.delete(key)
-    })
+    ).finally(cut)
   }
   if (options.auditActor !== undefined && !/^[a-zA-Z0-9_.-]{1,128}$/.test(options.auditActor))
     throw new TypeError('invalid audit actor')
@@ -661,7 +682,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       localReload = reload
     },
     reportLocalPluginFailure(profileDir, id) {
-      inventoryReads.delete(profileKey(profileDir))
+      forgetInventory(profileKey(profileDir))
       const entry = own(load(profileDir).packages, id)
       if (entry?.source.type === 'local')
         localFailures.set(entry.source.ref, {
@@ -688,10 +709,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           async reloadPlugin(id) {
             const owner = reload ?? localReload
             if (!owner) return
-            inventoryReads.delete(profileKey(profileDir))
+            forgetInventory(profileKey(profileDir))
             await owner.reloadPlugin(id)
             localPending.delete(id)
-            inventoryReads.delete(profileKey(profileDir))
+            forgetInventory(profileKey(profileDir))
           },
         },
         onError(id, error) {
@@ -707,12 +728,17 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       await locked(profileDir, async () => {})
     },
     async inventory(profileDir, opts = {}) {
+      if (opts.settled && !opts.fresh) {
+        const kept = settledInventories.get(profileKey(profileDir))
+        if (kept && kept.boundary === readBoundary(profileDir)) return kept.inventory
+      }
       return (opts.fresh ? withoutPackageVerification : withPackageVerification)(async () => {
         const key = profileKey(profileDir)
         const boundary = readBoundary(profileDir)
-        if (opts.fresh) inventoryReads.delete(key)
+        if (opts.fresh) forgetInventory(key)
         const existing = inventoryReads.get(key)
         if (existing?.boundary === boundary) return existing.promise
+        const epoch = inventoryEpoch
         let reading: Promise<InstalledInventory>
         const clear = () => {
           if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
@@ -739,10 +765,26 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           await setImmediate()
           return read()
         }
-        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
+        reading = (
+          existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh, false) : scan()
+        ).finally(clear)
         // Ordinary readers may join this unfinished verification, including a fresh one.
         // A fresh admission still discards any prior read above and starts independently.
         inventoryReads.set(key, { boundary, promise: reading })
+        reading.then(
+          (inventory) => {
+            try {
+              if (epoch === inventoryEpoch && boundary === readBoundary(profileDir))
+                settledInventories.set(key, { boundary, inventory })
+            } catch {
+              /* An unreadable boundary file simply leaves nothing to reuse. */
+            }
+          },
+          () => {
+            // A verifying read that failed says the earlier complete one can no longer be trusted.
+            if (epoch === inventoryEpoch) settledInventories.delete(key)
+          },
+        )
         return reading
       })
     },
@@ -756,36 +798,60 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async pinRuntimeSnapshot(profileDir, request) {
       const frozen = structuredClone(request)
-      return locked(profileDir, async () => {
-        const lock = load(profileDir),
-          store = storeFor(profileDir)
-        writable(lock)
-        return pinRuntimeSnapshotStore(
-          store,
-          lock,
-          frozen,
-          (id) => installed(store, lock, id, false, ceiling(lock)),
-          ceiling(lock),
-        )
-      })
+      return locked(
+        profileDir,
+        async () => {
+          const lock = load(profileDir),
+            store = storeFor(profileDir)
+          writable(lock)
+          return pinRuntimeSnapshotStore(
+            store,
+            lock,
+            frozen,
+            (id) => installed(store, lock, id, false, ceiling(lock)),
+            ceiling(lock),
+          )
+        },
+        {},
+        false,
+        false,
+      )
     },
     async resolveRuntimePin(profileDir, request) {
       const frozen = { ...request }
-      return locked(profileDir, async () => {
-        const lock = load(profileDir)
-        const inventory = readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
-        return resolveRuntimePinStore(storeFor(profileDir), frozen, lock, (id) => {
-          const row = inventory.packages.find((candidate) => candidate.id === id)
-          return row?.trusted === true && row.blockers.length === 0
-        })
-      })
+      return locked(
+        profileDir,
+        async () => {
+          const lock = load(profileDir)
+          const inventory = readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
+          return resolveRuntimePinStore(storeFor(profileDir), frozen, lock, (id) => {
+            const row = inventory.packages.find((candidate) => candidate.id === id)
+            return row?.trusted === true && row.blockers.length === 0
+          })
+        },
+        {},
+        false,
+        false,
+      )
     },
     async releaseRuntimePin(profileDir, request) {
       const frozen = { ...request }
-      await locked(profileDir, async () => releaseRuntimePinStore(storeFor(profileDir), frozen))
+      await locked(
+        profileDir,
+        async () => releaseRuntimePinStore(storeFor(profileDir), frozen),
+        {},
+        false,
+        false,
+      )
     },
     async collectRuntimeSnapshots(profileDir) {
-      return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
+      return locked(
+        profileDir,
+        async () => collectRuntimeSnapshotsStore(storeFor(profileDir)),
+        {},
+        false,
+        false,
+      )
     },
     async listRuntimePins(profileDir) {
       return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)

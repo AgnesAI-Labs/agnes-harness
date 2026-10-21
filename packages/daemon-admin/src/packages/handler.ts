@@ -1151,7 +1151,10 @@ class Service implements PackageAdminService {
     sessionId?: string
   }): Promise<ClientModuleListResult> {
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    // A display read: it may reuse the last complete inventory until a package write or a change to
+    // the lock, policy or source files, so opening a page neither waits for the package lock nor
+    // hashes every installed tree again.
+    const inventory = await this.options.manager.inventory(directory, { settled: true })
     const result = await this.clientModules.list({
       ...(params.sessionId ? { sessionId: params.sessionId } : {}),
       profile: params.profile,
@@ -1171,7 +1174,7 @@ class Service implements PackageAdminService {
     path: string
   }): Promise<ClientModuleReadResult> {
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    const inventory = await this.options.manager.inventory(directory, { settled: true })
     return await this.clientModules.read({
       profile: params.profile,
       profileDirectory: directory,

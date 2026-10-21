@@ -431,6 +431,11 @@ function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
       requiresBackend,
     })
   }
+  // A descriptor row of a package whose manifest declares nothing but `ui` has no backend behavior to
+  // wait for either. An entry that declares nothing at all (older locks) stays strict.
+  const declaredCapabilities = row.entry.declaredCapabilities
+  const rowUiOnly =
+    declaredCapabilities !== undefined && Object.keys(declaredCapabilities).every((key) => key === 'ui')
   for (const owner of rowClients) {
     const manifestPath = cleanRelative(owner.path)
     if (!manifestPath) return []
@@ -456,7 +461,7 @@ function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
       entry,
       styles: styles as string[],
       extIds: [owner.id],
-      requiresBackend: true,
+      requiresBackend: !rowUiOnly,
       backendRowId: owner.rowId,
     })
   }
