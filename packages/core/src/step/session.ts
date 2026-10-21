@@ -1355,7 +1355,7 @@ export class SessionImpl {
   async enqueue(
     target: 'next-turn' | 'next-step',
     msg: EnqueueMsg,
-    options: { dedupeByCommandId?: boolean } = {},
+    options: { dedupeByCommandId?: boolean; skipIf?: () => boolean | Promise<boolean> } = {},
   ): Promise<Seq> {
     let content: ContentBlock[]
     const system = msg.system === undefined ? undefined : structuredClone(msg.system)
@@ -1370,6 +1370,8 @@ export class SessionImpl {
     }
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
+      // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (await options.skipIf?.()) return this.lastSeq
       if (options.dedupeByCommandId) {
         if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
         const rows = await scanAll((query) => this.scan(query), {

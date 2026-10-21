@@ -31,6 +31,9 @@ export type ChildStatus = {
   lastSeq: Seq
   text?: string
   idle?: boolean
+  /** Backend-only identity of the completed result returned by this snapshot. */
+  completionId?: string
+  completionSeq?: Seq
   receipt?: ChildResult['receipt']
 }
 export type ChildHandle = {
@@ -65,6 +68,7 @@ export type ChildrenFactory = {
   ): Promise<ChildHandle>
   get?(childKey: string): ChildHandle | undefined
   inspect?(childKey: string): Promise<ChildStatus | null>
+  collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
@@ -423,6 +427,8 @@ export function buildToolContext(
           const child = d.children.get?.(childKey)
           if (child) {
             const status = await child.status()
+            if (status.completionId)
+              await d.children.collected?.(childKey, status.completionId, status.completionSeq ?? 0)
             return {
               childKey: child.key,
               status: (status.idle
@@ -438,6 +444,8 @@ export function buildToolContext(
           }
           const snap = await d.children.inspect?.(childKey)
           if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+          if (snap.completionId)
+            await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
             childKey,
             status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as
