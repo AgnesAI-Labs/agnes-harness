@@ -139,6 +139,71 @@ function openSeed(): { dir: string; index: HistoryIndex; access: HistoryAccess }
 }
 
 describe('history index', () => {
+  it('creates the v3 schema: principal column, parent index and external-content FTS', () => {
+    const { dir, index } = openSeed()
+    index.close()
+    const db = new DatabaseSync(join(dir, 'history-index.db'), { readOnly: true })
+    try {
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 })
+      expect(
+        db
+          .prepare(`SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name`)
+          .all(),
+      ).toEqual([
+        { type: 'index', name: 'sessions_parent' },
+        { type: 'index', name: 'sessions_workspace' },
+        { type: 'table', name: 'docs' },
+        { type: 'table', name: 'docs_fts' },
+        { type: 'table', name: 'docs_fts_config' },
+        { type: 'table', name: 'docs_fts_data' },
+        { type: 'table', name: 'docs_fts_docsize' },
+        { type: 'table', name: 'docs_fts_idx' },
+        { type: 'table', name: 'meta' },
+        { type: 'table', name: 'sessions' },
+      ])
+      expect(
+        (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name),
+      ).toEqual(['session_id', 'workspace', 'title', 'created_at', 'parent_id', 'principal'])
+      const fts = db.prepare(`SELECT sql FROM sqlite_master WHERE name = 'docs_fts'`).get() as { sql: string }
+      expect(fts.sql).toMatch(/content\s*=\s*'docs'/)
+      expect(fts.sql).toMatch(/content_rowid\s*=\s*'rowid'/)
+      expect(
+        db
+          .prepare(
+            `SELECT session_id, principal FROM sessions WHERE session_id IN ('readerless', 'self') ORDER BY session_id`,
+          )
+          .all(),
+      ).toEqual([
+        { session_id: 'readerless', principal: null },
+        { session_id: 'self', principal: 'owner-a' },
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('drops a v2 index with a readers table and recreates it at v3', () => {
+    const dir = tempDir()
+    const path = join(dir, 'history-index.db')
+    const old = new DatabaseSync(path)
+    old.exec('PRAGMA application_id = 1095190616') // 0x41474858
+    old.exec('PRAGMA user_version = 2')
+    old.exec(
+      'CREATE TABLE readers (session_id TEXT NOT NULL, principal TEXT NOT NULL, PRIMARY KEY (session_id, principal))',
+    )
+    old.close()
+    const index = openHistoryIndex(path)
+    indexes.push(index)
+    index.close()
+    const db = new DatabaseSync(path, { readOnly: true })
+    try {
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 })
+      expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'readers'`).get()).toBeUndefined()
+    } finally {
+      db.close()
+    }
+  })
+
   it('finds a literal phrase and hides other workspaces, owners, and the caller', () => {
     const { dir, index, access } = openSeed()
     const ledger = sha(join(dir, 'sessions.db'))
@@ -154,6 +219,19 @@ describe('history index', () => {
     })
     expect(page.items.map((item) => item.sessionId).sort()).toEqual(['peer', 'readerless'])
     expect(page.items.some((item) => item.snippet.toLowerCase().includes('alpha'))).toBe(true)
+    // Whole-ledger hits for 'peer' are collapsed into its title row (titles fall back to the first
+    // prompt), so pin the FTS snippet column with a session-scoped search, which skips title matching.
+    const scoped = index.query({
+      access,
+      kind: 'search',
+      query: 'alpha bridge',
+      title: '',
+      workspace: '',
+      sessionId: 'peer',
+      omitSelf: true,
+      limit: 20,
+    })
+    expect(scoped.items.map((item) => item.snippet)).toEqual(['[alpha bridge] repair extra'])
     expect(sha(join(dir, 'sessions.db'))).toBe(ledger)
     const substring = index.query({
       access,
