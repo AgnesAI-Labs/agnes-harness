@@ -22,6 +22,8 @@ export function apply(ctx: ClientContext) {
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
     const [reconnect, setReconnect] = useState(0)
+    const [showRecovery, setShowRecovery] = useState(false)
+    const [copiedRecovery, setCopiedRecovery] = useState(false)
     const [showEvents, setShowEvents] = useState(false)
     const [actualSize, setActualSize] = useState(false)
     // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations.
@@ -241,6 +243,27 @@ export function apply(ctx: ClientContext) {
           )}
         </form>
         {(error || state.error) && <p role="alert">{error || state.error}</p>}
+        {state.error?.includes('Browser install lock ') && (
+          <section>
+            <Button onClick={() => setShowRecovery((shown) => !shown)}>{t('lockHelp')}</Button>
+            {showRecovery && (
+              <div>
+                <p>{t('lockRecovery')}</p>
+                <pre>{state.error}</pre>
+                <Button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(`${t('lockRecovery')}\n${state.error}`).then(
+                      () => setCopiedRecovery(true),
+                      () => setError(t('copyFailed')),
+                    )
+                  }}
+                >
+                  {t(copiedRecovery ? 'copied' : 'copyRecovery')}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
         {client.pendingEffect() && (
           <Button
             disabled={busy}
