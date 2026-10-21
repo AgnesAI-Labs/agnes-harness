@@ -11,7 +11,6 @@ import {
 } from '../../registry/tool-policy.js'
 import { domainDecisionEvents, domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
-import { continueVerifier, parkedGates } from '../../step/verifier-continuation.js'
 import { nestedOutcomeNote, nestedParentName } from './nested-note.js'
 import { TOOL_DECISION_OWNER, toolDecisionSource } from './tool-decision.js'
 
@@ -109,13 +108,6 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
           ),
         ])
       })
-  }
-  for (const value of parkedGates(s, false)) {
-    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
-      return 'waiting'
-    const snapshot = await s.decisions.get(value.handle)
-    const continuation = await continueVerifier(s, snapshot)
-    if (continuation === 'blocked') return continuation
   }
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (

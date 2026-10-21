@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
@@ -57,4 +58,15 @@ export function domainDecisionEvents(s: SessionImpl, snapshot: DecisionSnapshot,
       { ignorable: true },
     ),
   ]
+}
+
+/** Retired verifier decisions cannot be restored as current authorization or rewritten on resume. */
+export function assertCurrentDomainDecisions(s: SessionImpl): void {
+  for (const { value } of s.state.registers.decisionStates.values())
+    if (value.request.owner === 'core/gate' && value.request.sourcePackage === '@agnes/core')
+      throw new CoreError(
+        'E_RELATION',
+        'Retired verifier manual-approval format; select a new, empty AGH_HOME (clean home).',
+        { reason: 'clean-home-required' },
+      )
 }

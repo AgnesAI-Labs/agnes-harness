@@ -18,7 +18,6 @@ import type {
   StopGateReplacementOutput,
   TurnEndReason,
 } from '../../step/session.js'
-import { retireVerifierDecision } from '../../step/verifier-continuation.js'
 import { turnVerifyInput } from '../../step/verify-input.js'
 import { discloseTools, estimateTokens, resolveModel } from './inference.js'
 
@@ -284,27 +283,7 @@ export type GateResume = 'continue' | 'complete'
 /** The gate a turn has to pass to be allowed to finish. */
 async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
-  const persisted = [...s.state.registers.decisionStates.values()]
-    .map((cell) => cell.value)
-    .find(
-      (value) =>
-        value.request.owner === 'core/gate' &&
-        value.request.sourcePackage === '@agnes/core' &&
-        value.request.lane === s.lane &&
-        !value.consumption &&
-        (value.request.spec.subject as { turn?: number; step?: number }).turn === op.meta.turn &&
-        (value.request.spec.subject as { step?: number }).step === op.step,
-    )
-  if (persisted) await retireVerifierDecision(s, persisted)
-  const subject = persisted?.request.spec.subject as
-    | {
-        verdict: VerifierVerdict['verdict']
-        reasons: string[]
-      }
-    | undefined
-  const hook = persisted
-    ? { action: 'complete' as const }
-    : await s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' })
+  const hook = await s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' })
   if (hook.action === 'continue') {
     await s.transition(
       [s.ev('user/message', { content: [{ type: 'text', text: hook.note }], kind: 'runtime_context' })],
@@ -328,9 +307,11 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     disclosed: discloseTools(s),
     model: { slot: 'primary', route, model },
   }
-  const verdict: VerifierVerdict & { unavailable?: true } = subject
-    ? { verdict: subject.verdict, reasons: subject.reasons }
-    : await s.d.runtime.verify('turn', await turnVerifyInput(s, op.meta.triggerSeq), s.ac.signal)
+  const verdict: VerifierVerdict & { unavailable?: true } = await s.d.runtime.verify(
+    'turn',
+    await turnVerifyInput(s, op.meta.triggerSeq),
+    s.ac.signal,
+  )
   if (s.ac.signal.aborted) return finishAborted(s)
   const signal = s.ev('verifier/signal', {
     scope: 'turn',
@@ -373,9 +354,10 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
       lane: s.lane,
     })
   ).map((e) => e.data as unknown as RepairDecision)
-  const proposed = persisted
-    ? 'park'
-    : await s.d.runtime.repairDecide({ turn: op.meta.turn, round: history.length + 1, history }, verdict)
+  const proposed = await s.d.runtime.repairDecide(
+    { turn: op.meta.turn, round: history.length + 1, history },
+    verdict,
+  )
   if (s.ac.signal.aborted) return finishAborted(s)
   if (proposed === 'unavailable') return finishUnavailable('repair')
   const decision =

@@ -156,6 +156,7 @@ import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
@@ -183,7 +184,6 @@ import { invalidatePermissionProjection } from './session-permission-projection.
 import { sessionToolCatalog } from './tool-catalog.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
-import { settleParkedCompletion } from './verifier-continuation.js'
 
 type OperationCommon = {
   name: string
@@ -1016,6 +1016,7 @@ export class SessionImpl {
 
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
+    assertCurrentDomainDecisions(this)
     if (this.state.session) {
       const pinned = this.state.session.loop ?? LEGACY_LOOP
       if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
@@ -1949,10 +1950,6 @@ export class SessionImpl {
     const op = this.op()
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
-    if (!op) {
-      const settled = await settleParkedCompletion(this)
-      if (settled) return settled
-    }
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {

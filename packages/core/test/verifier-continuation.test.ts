@@ -249,9 +249,9 @@ describe('automatic verifier recovery', () => {
     }
   })
   it.each([false, true].flatMap((completes) => [false, true].map((answered) => ({ completes, answered }))))(
-    'retires legacy verifier approvals automatically (%j)',
+    'refuses retired verifier approvals without changing their history (%j)',
     async ({ completes, answered }) => {
-      let h = await openSession({ provider: fakeProvider([textTurn('historic unverified answer')]) })
+      const h = await openSession({ provider: fakeProvider([textTurn('historic unverified answer')]) })
       try {
         await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
         for (let i = 0; i < 10; i++) {
@@ -302,26 +302,10 @@ describe('automatic verifier recovery', () => {
           (current) => current,
         )
         await h.session.endTurn('parked')
-        const storage = h.storage
-        await h.session.close()
-        h = await openSession({
-          storage,
-          agnesVersion: '99.0.0',
-          provider: fakeProvider([textTurn('must not infer')]),
-        })
-        expect((await h.session.projectUI()).nodes.some((n) => n.kind === 'approval')).toBe(false)
-        expect((await run(h)).reason).toBe('blocked')
-        const retired = await h.session.decisions.get(handle)
-        expect(
-          retired.result?.reason === 'unavailable' || retired.invalidation?.code === 'verifier-system-error',
-        ).toBe(true)
-        expect(
-          (await h.session.projectUI()).nodes.some((n) => n.kind === 'approval' && n.state === 'pending'),
-        ).toBe(false)
-        expect((await h.log.scan({ type: 'x/core/verifier-recovery', limit: 5 }))[0]?.data).toMatchObject({
-          handling: 'blocked',
-          legacyDecisionId: handle.id,
-        })
+        const before = await h.storage.scan(h.session.key, { fromSeq: 1, limit: 500 })
+        await expect(h.session.start()).rejects.toThrow(/Retired verifier.*clean home/)
+        expect(await h.storage.scan(h.session.key, { fromSeq: 1, limit: 500 })).toEqual(before)
+        expect(await h.session.decisions.get(handle)).toMatchObject({ handle })
       } finally {
         await h.session.close()
       }
