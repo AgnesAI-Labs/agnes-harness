@@ -10,7 +10,7 @@
 
 提供器可以返回可选 `open().recovery: { diagnosticId, quarantineFile, validThroughSeq }`，但必须先持久隔离损坏字节并保留有效前缀。在同一恢复事务内持久保存禁止重放的取消/失败围栏：即使 Host 处理报告前崩溃，在途副作用也不得重新执行。Host 关闭在途操作并记录本地化恢复诊断。不得丢弃校验有效的后续事件，也不得将此入口用于格式迁移。
 
-Provider 可在 integrity port 上按 `PersistenceVerifiedHead` 合同提供可选的 `readVerifiedHead`、`writeVerifiedHead`、`deleteVerifiedHead` 和 `integrityDigestAt`。Core 只用它们在前台校验尾部，并在现有执行门禁之后重新哈希前缀；缺少这些方法时仍在前台全量验证。检查点默认只能前进，只有显式 `force` 才可替换；分叉子会话的摘要查询必须覆盖父前缀，丢弃会话时也须清理检查点。`ledgerStats` 是独立的可选诊断读取。这些方法不授予权限，也不替代追加水位。Core 按 log 对检查点写入与失败删除排序：封闭后拒绝新写入，已准入写入结束后再删除，close 等待该队列完成。全量验证后仍可强制替换不可用的 hint。
+Provider 可在 integrity port 上按 `PersistenceVerifiedHead` 合同提供可选的 `readVerifiedHead`、`writeVerifiedHead`、`deleteVerifiedHead` 和 `integrityDigestAt`。Core 只用它们在前台校验尾部，并在冷打开时于现有执行门禁之后重新哈希前缀；缺少这些方法时仍在前台全量验证。检查点默认只能前进，只有显式 `force` 才可替换；分叉子会话的摘要查询必须覆盖父前缀，丢弃会话时也须清理检查点。`ledgerStats` 是独立的可选诊断读取。这些方法不授予权限，也不替代追加水位。Core 按 log 对检查点写入与失败删除排序：封闭后拒绝新写入，已准入写入结束后再删除，close 等待该队列完成。全量验证后仍可强制替换不可用的 hint。
 
 ## 包存储与兼容
 

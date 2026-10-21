@@ -317,7 +317,7 @@ describe('local endpoint: ACP round trip', () => {
     { method: '_agnes/v1/session.open', cold: false },
     { method: '_agnes/v1/session.open', cold: true },
   ])(
-    '$method admits and verifies history (cold=$cold), replaying only for ACP load',
+    '$method admits a live reopen after checking the tail (cold=$cold), replaying only for ACP load',
     async ({ method, cold }) => {
       const h = await openTestHost({ script: [say('hi'), say('again')] })
       let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
@@ -360,6 +360,11 @@ describe('local endpoint: ACP round trip', () => {
           },
         }),
       ).toMatchObject({ result: {} })
+      // A cold open hashes the prefix in the background; let that finish before the rows change.
+      const live = h.host.kernel.get(ok.result.sessionId) as unknown as {
+        d: { log: { fullVerified(): Promise<void> } }
+      }
+      await live.d.log.fullVerified()
       const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
       const turns = raw
         .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
@@ -370,18 +375,20 @@ describe('local endpoint: ACP round trip', () => {
         )
         .run(ok.result.sessionId)
       raw.close()
-      await expect(
-        ep.handle({
-          jsonrpc: '2.0',
-          id: 5,
-          method,
-          params: {
-            sessionId: ok.result.sessionId,
-            cwd: h.dataDir,
-            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
-          },
-        }),
-      ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+      const second = await ep.handle({
+        jsonrpc: '2.0',
+        id: 5,
+        method,
+        params: {
+          sessionId: ok.result.sessionId,
+          cwd: h.dataDir,
+          ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
+        },
+      })
+      // The session is live in this process (after a cold endpoint too, whose first open hashed the
+      // prefix): reopening checks only the tail after the checkpoint, so changed old rows are admitted.
+      // The next cold open of the ledger refuses them (covered at the ledger level).
+      expect(second).toMatchObject({ result: {} })
       const replayed = (await drain(ep)).slice(before) as N[]
       const updates = replayed
         .filter((n) => n.method === 'session/update')
@@ -423,7 +430,11 @@ describe('local endpoint: ACP round trip', () => {
       // A cold connection can also receive the registry's historical live-tail backlog. Check
       // attribution on every frame above without making duplicate delivery part of this contract.
       if (cold) expect(said).toContain('hiagain')
-      else expect(said).toBe('hiagain')
+      // The second, admitted load replays the history again, changed rows included.
+      else expect(said).toBe('hiagainhiagain')
+      expect(
+        updates.some((u) => u.sessionUpdate === 'user_message_chunk' && u.content?.text === 'changed'),
+      ).toBe(true)
       await h.close()
     },
   )
