@@ -16,6 +16,7 @@ const COMMANDS = new Set<string>([
   'sessions',
   'approvals',
   'schedules',
+  'triggers',
   'export',
   'import',
   'doctor',
@@ -95,6 +96,8 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--weekly': 'weekly',
   '--tz': 'tz',
   '--unattended': 'unattended',
+  '--payload': 'payload',
+  '--file': 'file',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {

@@ -42,6 +42,8 @@ export function commandHelp(command?: Command, locale = 'en'): string {
       return 'Usage: agh approvals grants <sessionId> [--json] | revoke <sessionId> <grantId> [--json]\nList the approval grants in force for a session ("this session" and "always") and withdraw one. Needs an admin connection; the daemon refusal is shown as is.'
     case 'schedules':
       return 'Usage: agh schedules [list [--session <key>] [--archived]] | show <id> | pause|resume|run|archive <id> [--json]\nagh schedules add --prompt <text> (--every <90s|30m|2h|1d> | --cron <expr> | --at <iso> | --daily <HH:MM> | --weekly <mon,wed@HH:MM>) [--tz <zone>] [--title <t>] [--session <key> | --new-session [--cwd <dir>]] [--unattended notify|refuse]\nagh schedules edit <id> [same flags; only what is given changes]\nWith neither --session nor --new-session a task opens a new session in the current directory. run starts the task now. Needs an admin connection; a refusal prints its code and exits 1.'
+    case 'triggers':
+      return 'Usage: agh triggers [list] | add --file <rule.json|-> | edit <ruleId> --file <rule.json|-> | remove <ruleId> | test <ruleId> [--payload <payload.json|->] | configure --file <config.json|-> [--json]\nWebhook rules and the listener configuration. Rule and configuration JSON is checked against the protocol schema before anything is sent. Needs an admin connection; a refusal prints its code and exits 1.'
     case 'plugin':
       return 'Usage: agh plugin test [folder] [-- <test-runner args>]\nRun the package test script with installed author testkit dependencies, an isolated home and no inherited model keys. No backend or dependency installation is started.'
     case 'plugins':

@@ -25,6 +25,7 @@ export type Command =
   | 'diagnostics'
   | 'approvals'
   | 'schedules'
+  | 'triggers'
   | 'computer-use'
   | 'profile'
   | 'plugin'
@@ -107,6 +108,9 @@ export type ParsedArgs = {
   weekly?: string
   tz?: string
   unattended?: 'notify' | 'refuse'
+  /** `triggers`: a JSON file (or `-` for stdin) holding the rule, the configuration or the test payload. */
+  file?: string
+  payload?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */
