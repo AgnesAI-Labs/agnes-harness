@@ -314,7 +314,9 @@ export class Editor implements Component {
       labels: items.map((item) => (item.directory ? `${item.id}/` : item.id)),
       slash: false,
       accept: (i) => this.acceptMention(token.start, items[i] as MentionItem),
-      ...(items.length ? {} : { note: state.status === 'ready' ? notes.empty : notes[state.status] }),
+      ...(items.length
+        ? {}
+        : { note: state.status === 'ready' ? notes.empty : (state.reason ?? notes[state.status]) }),
     }
   }
 

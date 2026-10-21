@@ -9,7 +9,7 @@ import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
-import { attachmentsFrom, FileMentionSource, listWorkspaceFiles } from './file-mentions.js'
+import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
@@ -88,7 +88,7 @@ export class TuiApp {
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   private readonly editor: Editor
-  private readonly mentions: FileMentionSource
+  private readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
   private readonly themePicker: ThemePicker
@@ -140,6 +140,8 @@ export class TuiApp {
       copy?: (text: string) => void
       /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
       cwd?: string
+      /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
+      remote?: boolean
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
@@ -265,12 +267,16 @@ export class TuiApp {
         },
       },
     )
-    this.mentions = new FileMentionSource(
-      () => listWorkspaceFiles(this.cwd),
-      () => {
+    // Asks whichever session is current; applySwitch resets the cached answers.
+    this.mentions = createMentionSource({
+      session: { searchReferences: (query) => this.session.searchReferences(query) },
+      cwd: this.cwd,
+      remote: o.remote ?? false,
+      locale,
+      changed: () => {
         if (!this.stopped) this.renderer.requestRender()
       },
-    )
+    })
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
@@ -921,6 +927,7 @@ export class TuiApp {
     this.surfaceReadAgain = false
     this.attachmentController.abort()
     this.attachmentController = new AbortController()
+    this.mentions.reset()
     this.o.session = next
     this.previews.reset()
     this.previewEffects.length = 0

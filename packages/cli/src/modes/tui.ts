@@ -73,6 +73,7 @@ export async function runTui(
     const tui = new TuiApp({
       session,
       term,
+      remote: p.connect !== undefined,
       profile: booted.profileName,
       branding,
       locale: resolveLocale(io.env),
