@@ -148,3 +148,5 @@ root, through the documented toolchain and browser locks. It creates fresh isola
 no paid model.
 
 Version 1.1.0 updates the conversation workbench; existing 1.0.0 installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
+
+Version 1.1.1 declares report tools as history attestations. Report generation waits for the session's background history verification; ordinary work can proceed meanwhile. See [session integrity](../../../docs/guide/sessions.md).
