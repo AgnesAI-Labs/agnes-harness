@@ -243,19 +243,25 @@ export class DeliverablesStore {
   }
   /** A daemon that announces session.deliverables answers without a projection; otherwise project. */
   private async read(session: Session, presents: Map<string, PresentResult>): Promise<DeliverableRecord[]> {
-    const baseline = this.baseline
-    if (this.source === undefined) {
-      const offered = await this.offered()
-      if (baseline === this.baseline) this.source ??= offered ? 'query' : 'projection'
-    }
-    if (this.source === 'query' && baseline === this.baseline)
-      try {
-        return await readQueried(session)
-      } catch {
-        // A refused or oversized page, or a surface only the projection can file: stay on the projection.
-        if (baseline === this.baseline) this.source = 'projection'
+    for (;;) {
+      const baseline = this.baseline
+      if (this.source === undefined) {
+        const offered = await this.offered()
+        // A baseline dropped meanwhile (a reconnect drops it more than once) is detected again: what
+        // this listing saw no longer decides, and a full projection here would be the costly guess.
+        if (baseline !== this.baseline) continue
+        this.source = offered ? 'query' : 'projection'
       }
-    return readDeliverables(session, await this.project(session), presents)
+      if (this.source === 'query')
+        try {
+          return await readQueried(session)
+        } catch {
+          if (baseline !== this.baseline) continue
+          // A refused or oversized page, or a surface only the projection can file: stay on the projection.
+          this.source = 'projection'
+        }
+      return readDeliverables(session, await this.project(session), presents)
+    }
   }
   /** The first read per baseline is a full projection; later reads patch it. */
   private async project(session: Session): Promise<UITimeline> {
