@@ -8,7 +8,6 @@ import {
   type StorageAdapter,
 } from '@agnes/core'
 import {
-  DEFAULT_PERSISTENCE_PROVIDER_ID,
   definePersistenceProvider,
   type PersistenceCapability,
   type PersistenceLeaseClaim,
@@ -19,6 +18,7 @@ import {
   persistenceKind,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { retainProcessStore } from './storage-live.js'
 import { sqlitePersistenceProvider } from './storage-sqlite-provider.js'
 
@@ -417,7 +417,7 @@ export function createPersistenceProviderRegistry(
   registry.register('@agnes/host', sqlitePersistenceProvider)
   const add = (provider: PersistenceProvider, source: string): void => {
     const checked = accept(provider, source)
-    if (checked.id === DEFAULT_PERSISTENCE_PROVIDER_ID)
+    if (checked.id === RELEASE_DEFAULTS.persistenceProvider)
       throw new ProviderError('E_PROVIDER_DUPLICATE', 'the sqlite persistence provider is built in', {
         kind: 'persistence',
         provider: checked.id,
@@ -441,7 +441,7 @@ export async function openConfiguredPersistence(args: {
   providers?: readonly PersistenceProvider[]
 }): Promise<HostPersistence> {
   args.signal?.throwIfAborted()
-  const providerId = args.providerId ?? DEFAULT_PERSISTENCE_PROVIDER_ID
+  const providerId = args.providerId ?? RELEASE_DEFAULTS.persistenceProvider
   if (!PROVIDER_ID.test(providerId))
     throw new ProviderError('E_PROVIDER_INVALID', 'providers.persistence.provider id is invalid', {
       kind: 'persistence',

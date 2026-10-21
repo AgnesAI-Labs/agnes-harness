@@ -31,11 +31,10 @@ import {
 } from '@agnes/host-infrastructure/workspace-seam-contexts'
 import {
   bindStartupSandboxProvider,
-  LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
 import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
-import { isWorkspaceHooksTrusted } from '@agnes/package-manager'
+import { isWorkspaceHooksTrusted, RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -90,7 +89,7 @@ function createReadinessManager(
         },
       })
     const providerId = sandboxProviderIdFrom(ctx.profile)
-    if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
+    if (providerId !== RELEASE_DEFAULTS.sandboxProvider) {
       if (plan.staticConfig.loopbackServe)
         throw new HostError(
           'E_SANDBOX_WORKSPACE',
@@ -231,7 +230,7 @@ function workspaceSandboxPolicy(
   const { adapters } = proc
   const requestedSandbox = normalizeSandboxStaticConfig(preset)
   const implementation =
-    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === LOCAL_SANDBOX_PROVIDER_ID
+    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === RELEASE_DEFAULTS.sandboxProvider
       ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
       : 'unknown'
   const unconfined =
@@ -445,7 +444,7 @@ export function createWorkspaceRuntimeFactory(
           execBackend: posture.execBackend,
           enforcement: posture.enforcement,
           requiredFileIsolation: requiresFileIsolation,
-          ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
+          ...(providerId === RELEASE_DEFAULTS.sandboxProvider ? {} : { providerId }),
           exec: fence.exec,
           openProcess: fence.openProcess,
           binding: fence.binding,

@@ -1,6 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
-  LOCAL_SANDBOX_PROVIDER_ID,
   ProviderError,
   type SandboxCapabilities,
   type SandboxExecutionPolicy,
@@ -21,10 +20,11 @@ import {
 } from '@agnes/host-common/assemble/provider-registry'
 import { PROVIDER_ID, sandboxProviderIdFrom } from '@agnes/host-common/profile/sandbox-startup'
 import type { ExecAdapter } from '@agnes/host-infrastructure/adapters/exec'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 
+export { LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
 export { readSandboxStartupConfig, sandboxProviderIdFrom } from '@agnes/host-common/profile/sandbox-startup'
-export { LOCAL_SANDBOX_PROVIDER_ID }
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -364,13 +364,13 @@ export async function bindStartupSandboxProvider(
     return id
   }
   if (!slot.registry) {
-    if (id !== LOCAL_SANDBOX_PROVIDER_ID)
+    if (id !== RELEASE_DEFAULTS.sandboxProvider)
       throw new ProviderError('E_PROVIDER_UNKNOWN', `sandbox provider is not registered: ${id}`, {
         kind: 'sandbox',
         provider: id,
         operation: 'select',
       })
-    return LOCAL_SANDBOX_PROVIDER_ID
+    return RELEASE_DEFAULTS.sandboxProvider
   }
   if (slot.selected) {
     if (slot.selected.id !== id)
@@ -426,7 +426,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       if (opts.sandbox?.provider && opts.sandbox.provider !== selected.id)
         throw sandboxUnavailable('interactive provider binding differs')
       const actual =
-        selected.id === LOCAL_SANDBOX_PROVIDER_ID
+        selected.id === RELEASE_DEFAULTS.sandboxProvider
           ? opts.sandbox?.enforcement
           : externalEnforcement(selected, policy)
       if (
@@ -471,7 +471,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       opts.signal?.throwIfAborted()
       const required = policy.requiredEnforcement
       const offered =
-        selected.id === LOCAL_SANDBOX_PROVIDER_ID
+        selected.id === RELEASE_DEFAULTS.sandboxProvider
           ? opts.sandbox?.enforcement
           : externalEnforcement(selected, policy)
       if (

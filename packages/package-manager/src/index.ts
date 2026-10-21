@@ -18,6 +18,7 @@ export {
 export * from './capabilities.js'
 export * from './catalog.js'
 export * from './client-assets.js'
+export { demoProvider } from './demo-provider.js'
 export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'
@@ -65,6 +66,7 @@ export {
   verifyOfficialCatalog,
 } from './provenance.js'
 export { publishModelAdapterCatalog, readPublishedModelAdapters } from './published-model-adapters.js'
+export * from './release-policy.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,

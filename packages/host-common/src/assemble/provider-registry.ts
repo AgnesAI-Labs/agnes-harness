@@ -377,13 +377,19 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   builtinRegistration<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     selection: ProviderSelection,
+    ownerPackage: string,
   ): boolean {
     const owner = this.lookup(kind, 'bind').owner(selection)
     if (!this.origins) return true
     if (!owner) return false
     for (let fiber = owner.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
       const origin = this.origins.lookup(fiber)
-      if (origin) return origin.trustTier === 'builtin' && origin.packageId === 'builtin'
+      if (origin)
+        return (
+          origin.trustTier === 'builtin' &&
+          origin.packageId === 'builtin' &&
+          origin.ownerPackage === ownerPackage
+        )
     }
     return owner.fiber === this.ctx.root.fiber
   }

@@ -36,9 +36,15 @@ export async function readRunningModelCatalog(
       return undefined
     const rows = value.sources
     const intrinsic = (adapter: AdminModelAdapter) =>
+      !rows.some(
+        (row) =>
+          row &&
+          typeof row === 'object' &&
+          typeof row.plugin === 'string' &&
+          row.plugin.startsWith(`${adapter.sourcePackage}@`),
+      ) &&
       builtin.some(
         (entry) =>
-          entry.sourcePackage === '@agnes/ai' &&
           entry.id === adapter.id &&
           entry.version === adapter.version &&
           entry.sourcePackage === adapter.sourcePackage,

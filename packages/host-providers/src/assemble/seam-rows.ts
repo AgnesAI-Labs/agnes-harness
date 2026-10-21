@@ -213,10 +213,11 @@ export function seamBinding(kind: SeamKind, selection: ProviderSelection, input:
     const resolved = input.profile.packages.find((pkg) => pkg.id === sourcePackage)
     const builtin =
       (resolved ? resolved.trust === 'builtin' : sourcePackage.startsWith('@agnes/host')) &&
-      providers.builtinRegistration(SEAM_KIND_TOKENS[kind] as unknown as ProviderKind<SeamProvider<object>>, {
-        provider: provider.id,
-        version: provider.version,
-      })
+      providers.builtinRegistration(
+        SEAM_KIND_TOKENS[kind] as unknown as ProviderKind<SeamProvider<object>>,
+        { provider: provider.id, version: provider.version },
+        sourcePackage,
+      )
     const controller = new AbortController()
     const instance = await createWithin(
       kind,

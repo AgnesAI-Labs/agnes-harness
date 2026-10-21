@@ -5,9 +5,10 @@ import {
   type HostCapabilityGrant,
   type HostGrantDeclaration,
   hashDirectory,
+  RELEASE_HOOK_RANKS,
 } from '@agnes/package-manager'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
-import { BUILTIN_HOOK_RANKS, EXT_ROW_MOUNT_REVISION } from './ext-rows.js'
+import { EXT_ROW_MOUNT_REVISION } from './ext-rows.js'
 import type { PackageModule } from './packages.js'
 
 const empty: HostCapabilityGrant = Object.freeze({})
@@ -57,9 +58,11 @@ export function pinHostCapabilities(
       module: PackageModule
       embedded: PackageModule['embeddedExtensions']
       ecosystem: PackageModule['ecosystem']
+      isolated: PackageModule['isolatedEcosystem']
       entry: PackageModule['extensionEntry']
       image: boolean
       factories: NonNullable<PackageModule['ecosystem']>
+      isolatedFactories: NonNullable<PackageModule['isolatedEcosystem']>
     }
   >()
   const verified = (owner: string, module: PackageModule | undefined) => {
@@ -73,6 +76,7 @@ export function pinHostCapabilities(
       module !== proof.module ||
       module.embeddedExtensions !== proof.embedded ||
       module.ecosystem !== proof.ecosystem ||
+      module.isolatedEcosystem !== proof.isolated ||
       module.extensionEntry !== proof.entry ||
       module !== modules.get(owner) ||
       (!proof.image && !pin.retained)
@@ -111,9 +115,11 @@ export function pinHostCapabilities(
             module,
             embedded: module.embeddedExtensions,
             ecosystem: module.ecosystem,
+            isolated: module.isolatedEcosystem,
             entry: module.extensionEntry,
             image: !!module.embeddedExtensions || module.extensionEntry === undefined,
             factories: Object.freeze({ ...module.ecosystem }),
+            isolatedFactories: Object.freeze({ ...module.isolatedEcosystem }),
           },
         ]),
       )
@@ -124,7 +130,8 @@ export function pinHostCapabilities(
     extension(owner: string, id: string, module: PackageModule | undefined): HostCapabilityGrant {
       const pin = verified(owner, module)
       if (module?.ecosystem?.[id] !== bound.get(owner)?.factories[id]) return empty
-      const hookRank = BUILTIN_HOOK_RANKS.get(`ext:${id}`)
+      if (module?.isolatedEcosystem?.[id] !== bound.get(owner)?.isolatedFactories[id]) return empty
+      const hookRank = RELEASE_HOOK_RANKS.get(`ext:${id}`)
       return pin
         ? Object.freeze({
             ...pin.declaration.package,

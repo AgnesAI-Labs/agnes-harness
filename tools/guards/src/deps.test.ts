@@ -133,6 +133,7 @@ const LAYER: Record<string, number> = {
   '@agnes/code': 5,
   '@agnes/runtime-python': 6,
   '@agnes/package-manager': 2,
+  '@agnes/distribution': 5.5, // Release composition is above implementations and below Host owners.
   '@agnes/host-common': 6.01,
   '@agnes/host-infrastructure': 6.02,
   '@agnes/host-computer-use': 6.03,

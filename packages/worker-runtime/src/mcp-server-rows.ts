@@ -10,6 +10,7 @@ import {
   mcpStablePrefix,
 } from '@agnes/base'
 import type { DynamicExtension } from '@agnes/host'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import {
   type DesiredState,
@@ -113,7 +114,7 @@ export function mcpServerRowsFromDefinitions(
         generation: { kind: 'mcp-server', data: entry as unknown as import('@agnes/protocol').JsonValue },
         spec: Object.freeze({
           id: extensionId,
-          package: '@agnes/base',
+          package: RELEASE_DEFAULTS.extensionOwner,
           packageVersion: '0.0.0',
           dir: '',
           trust: 'builtin' as const,

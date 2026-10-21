@@ -2,6 +2,7 @@ import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
+import { HOST_CAPABILITY_GRANTS } from '@agnes/package-manager'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
 import { pinHostCapabilities } from '../../src/assemble/host-grants.js'
@@ -63,6 +64,21 @@ describe('verified ext: row privilege grants', () => {
     expect(h.authority.extension('@acme/package', ids[0], { id: '@acme/package' })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], { id: h.pkg.id })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], undefined)).toEqual({})
+    const alternate = fixture({ id: '@acme/release' })
+    const declaration = HOST_CAPABILITY_GRANTS[0]
+    if (!declaration) throw new Error('missing release declaration')
+    const other = pinHostCapabilities(
+      [alternate.pkg],
+      new Map([[alternate.pkg.id, alternate.directory]]),
+      [],
+      [{ ...declaration, packageId: alternate.pkg.id }],
+    )
+    other.bind(alternate.modules)
+    expect(other.extension(alternate.pkg.id, ids[2], alternate.module)).toEqual({
+      sessionTasks: true,
+      computerUse: true,
+      hookRank: 13,
+    })
   })
   it.each([
     { trust: 'trusted', source: 'file:./spoof' },

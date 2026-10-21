@@ -16,6 +16,7 @@ import {
   prepareGenerationOwnerReplacement,
 } from '@agnes/host-providers/runtime-generation-view'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { type EntryRow, pluginConfigDigest } from '@agnes/plugin-runtime/host'
 import type { Assembled } from './assembled.js'
 import type { BootRows } from './boot-rows.js'
@@ -175,7 +176,7 @@ function admittedExtensionIds(ctx: AssemblyContext, input: ExtensionRowsInput): 
   for (const extensionId of declaredExtensionIds) {
     // The Computer Use gate is a supply condition, not a grant condition: when it is off there is
     // nothing to load, so no row is built.
-    if (extensionId === 'agnes/computer-use' && !ctx.profile.computerUse.enabled) continue
+    if (extensionId === RELEASE_DEFAULTS.computerUseExtension && !ctx.profile.computerUse.enabled) continue
     const found = findBundledExtension(extensionId)
     if (!found) continue
     if (admitsExtensionRow(found)) extRowIds.push(extensionId)
@@ -239,7 +240,7 @@ export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionR
     const built = buildExtensionRow({
       extensionId: input.extensionId,
       liveResource: input.dynamic?.generation?.kind === 'mcp-server',
-      packageId: input.dynamic?.spec.package ?? found?.packageId ?? '@agnes/base',
+      packageId: input.dynamic?.spec.package ?? found?.packageId ?? RELEASE_DEFAULTS.extensionOwner,
       entryRevision:
         input.entryRevision ?? input.dynamic?.spec.revision ?? found?.spec.revision ?? EXT_ROW_MOUNT_REVISION,
       ...(liveResources === undefined ? {} : { liveResources }),

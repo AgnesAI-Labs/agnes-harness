@@ -202,6 +202,10 @@ export function hostInventory(root: string): { files: number; findings: HostFind
     // Core consumes Host attestations at these gates; it must not rediscover official identities.
     join(root, 'packages/core/src/registry/tools.ts'),
     join(root, 'packages/core/src/hooks/dispatch.ts'),
+    join(root, 'packages/core-effects/src/effects/tool-providers.ts'),
+    join(root, 'packages/daemon/src/supervisor/model-adapter-lookup.ts'),
+    join(root, 'packages/daemon/src/supervisor/model-catalog-read.ts'),
+    join(root, 'packages/daemon-admin/src/packages/builtin-client-services.ts'),
   ]
   const findings = withSourceTrees(files, (trees) =>
     trees.flatMap((tree, index) =>

@@ -24,6 +24,7 @@ import { withConfigurationLock } from '@agnes/host-common/configuration-lock'
 import { isHostError } from '@agnes/host-common/errors'
 import { fileSecretsDir } from '@agnes/host-common/paths'
 import type { RuntimeProfileManifest } from '@agnes/host-common/profile/types'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import {
   type ApplicationConfigSnapshot,
   ApplicationSelection,
@@ -1527,7 +1528,7 @@ export function createConfigurationService(
       return {
         adapters: { secrets },
         provider: {
-          package: '@agnes/ai',
+          package: RELEASE_DEFAULTS.modelAdapterPackage,
           routes: routeGroups.flat(),
           catalog: { include: [] },
         },

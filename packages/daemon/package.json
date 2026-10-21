@@ -39,7 +39,8 @@
     "@agnes/daemon-admin": "workspace:*",
     "@agnes/daemon-rpc": "workspace:*",
     "@agnes/observability": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/distribution": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

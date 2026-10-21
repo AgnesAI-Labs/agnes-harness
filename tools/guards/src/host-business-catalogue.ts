@@ -32,6 +32,7 @@ export const CONTRACT_PACKAGES = new Set([
   '@agnes/git-worktree-contract',
   '@agnes/intelligent-ui-contract',
   '@agnes/package-manager',
+  '@agnes/distribution',
   '@agnes/plugin-runtime',
   '@agnes/plugin-streams',
   '@agnes/protocol',

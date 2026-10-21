@@ -22,6 +22,7 @@ import {
   createCredentialStore,
   isSubscriptionCredential,
 } from '@agnes/host-infrastructure/adapters/credential-store'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RouteTable } from '@agnes/protocol'
 import {
   builtinModelAdaptersPlugin,
@@ -158,7 +159,8 @@ export async function buildProvider(
     const providers = ownedRoot.providers
     builtinModelAdaptersPlugin.apply({
       providers: {
-        register: (kind, provider) => providers.registerHost(kind, '@agnes/ai', provider),
+        register: (kind, provider) =>
+          providers.registerHost(kind, RELEASE_DEFAULTS.modelAdapterPackage, provider),
         catalog: () => providers.catalog(),
         resolve: (kind, selection) => providers.resolve(kind, selection),
         bindOwn: (kind) => providers.bindOwn(kind),

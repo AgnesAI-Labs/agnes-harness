@@ -21,42 +21,12 @@ export const EXT_ROW_MOUNT_REVISION = 'host-ext-row:v1'
 /** Only Host-owned live resource factories receive this mount identity. */
 export const LIVE_RESOURCE_MOUNT_REVISION = 'host-live-resource:v1'
 
-/** Builtin extensions supplied by their own `ext:` row. Skills has one Host-owned row refreshed
- * at the next turn; the retired mcp-client id remains reserved in the resource target format. */
-export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
-  'agnes/tools-core',
-  'agnes/tools-search',
-  'agnes/tools-web',
-  'agnes/interaction',
-  'agnes/intelligent-ui',
-  'agnes/goal',
-  'agnes/deliverables',
-  'agnes/jobs',
-  'agnes/jobs-web',
-  'agnes/compaction',
-  'agnes/refine',
-  'agnes/subagent',
-  'agnes/computer-use',
-  'agnes/code-mode',
-  'agnes/hooks-runner',
-  'agnes/privacy',
-  'agnes/plugin-creator',
-  'agnes/mcp-search',
-  'agnes/skills',
-  'agnes/plan-mode',
-  'agnes/mcp-resources',
-  'agnes/workflow',
-  'agnes/session-query',
-  'agnes/context-rules',
-  'agnes/time-context',
-  'agnes/follow-up-hint',
-  'agnes/schedule',
-])
+export {
+  RELEASE_EXTENSION_IDS as EXT_ROW_EXTENSION_IDS,
+  RELEASE_HOOK_RANKS as BUILTIN_HOOK_RANKS,
+} from '@agnes/package-manager'
 
-/** Stable dispatch ranks for the release row order. */
-export const BUILTIN_HOOK_RANKS: ReadonlyMap<string, number> = new Map(
-  [...new Set(['agnes/skills', ...EXT_ROW_EXTENSION_IDS])].map((id, index) => [`ext:${id}`, index]),
-)
+import { RELEASE_EXTENSION_IDS } from '@agnes/package-manager'
 
 /**
  * An extension that exists only at runtime, one instance per resource (an MCP server): stage 2b,
@@ -80,7 +50,7 @@ export type DynamicExtension = Readonly<{
 }>
 
 /** Migrated and declared row identities have identical membership. */
-export const MIGRATED_EXTENSION_IDS = EXT_ROW_EXTENSION_IDS
+export const MIGRATED_EXTENSION_IDS = RELEASE_EXTENSION_IDS
 
 export type ExtRowLoadResult = Readonly<{
   id: string

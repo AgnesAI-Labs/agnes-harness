@@ -1,5 +1,5 @@
 import { dirname } from 'node:path'
-import { type ApprovalGrantsPort, DEFAULT_LOOP, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
+import { type ApprovalGrantsPort, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
 import {
   type LeaseView,
   type MemorySession,
@@ -18,6 +18,7 @@ import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fe
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 import { assembleCompaction } from '@agnes/host-providers/assemble/compaction'
 import { correlatedLogger } from '@agnes/observability'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { createNetFetch } from '../adapters/index.js'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import { capabilityEnabled } from '../profile/session-capabilities.js'
@@ -57,7 +58,7 @@ async function selectCoreProviders(
     : undefined
   const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
   if (loop) ctx.profile = { ...ctx.profile, loop }
-  const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
+  const effectiveLoop = loop ?? view.loop ?? RELEASE_DEFAULTS.loop
   pluginTree.root.providers.select(
     'loop',
     { provider: effectiveLoop.id, version: effectiveLoop.version },
@@ -73,7 +74,7 @@ async function selectCoreProviders(
     pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
   const promptSelection = view.model.systemPrompt?.provider
     ? { provider: view.model.systemPrompt.provider.id, version: view.model.systemPrompt.provider.version }
-    : { provider: 'agnes.system-prompt', version: '1.0.0' }
+    : RELEASE_DEFAULTS.systemPrompt
   const systemPromptProvider = pluginTree.root.providers
     .catalog()
     .some((entry) => entry.kind === 'system-prompt')

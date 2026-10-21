@@ -213,13 +213,21 @@ describe('seam binding', () => {
   )
 
   it.each([
-    { id: '@acme/third', trust: 'trusted' },
-    { id: '@agnes/base', trust: 'builtin' },
-  ])('denies installed registration $id the privileged init and closes on dispose', async ({ id, trust }) => {
+    { id: '@acme/third', trust: 'trusted', packageId: '@acme/third', trustTier: 'third-party' },
+    { id: '@agnes/base', trust: 'builtin', packageId: '@agnes/base', trustTier: 'third-party' },
+    {
+      id: '@agnes/base',
+      trust: 'builtin',
+      packageId: 'builtin',
+      trustTier: 'builtin',
+      ownerPackage: '@acme/other',
+    },
+  ])('denies a mismatched registration $id the privileged init and closes on dispose', async (origin) => {
+    const { id, trust } = origin
     const closed = vi.fn()
     const { root, input, inits, register } = rig([{ id, trust, integrity: 'sha-third' } as never])
     root.providers.verifyRows({
-      lookup: () => ({ packageId: id, trustTier: 'third-party' }),
+      lookup: () => origin,
     } as never)
     register(id, verifier({ instance: { verify: async () => ({}), close: closed } }))
     await expect.poll(() => root.providers.catalog().length).toBe(1)

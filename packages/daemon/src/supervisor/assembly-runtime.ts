@@ -1,3 +1,4 @@
+import { releaseChildEngineOwner } from '@agnes/package-manager'
 import { join } from 'node:path'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
 import { activateDefaultHelpers, refreshDefaultHelpers } from '@agnes/daemon-admin/packages/default-helpers'
@@ -146,14 +147,14 @@ async function openRuntimeSurfaces(state: PackageInput, lifetime: AssemblyLifeti
       })
     : undefined
   await pinCoordinator?.recover()
-  const basePackage = o.profile.packages.find((pkg) => pkg.id === '@agnes/base')
+  const childEngineOwner = releaseChildEngineOwner(o.profile.packages)
   const publishChildEngines: PublishChildEngines | undefined =
-    runtimeStore && pinCoordinator && runtimeTargetProbe && basePackage
+    runtimeStore && pinCoordinator && runtimeTargetProbe && childEngineOwner
       ? (() => {
           const store = runtimeStore
           const coordinator = pinCoordinator
           const probe = runtimeTargetProbe
-          const integrity = basePackage.integrity
+          const integrity = childEngineOwner.integrity
           return async (engines) => {
             try {
               const previous = store.desired()
