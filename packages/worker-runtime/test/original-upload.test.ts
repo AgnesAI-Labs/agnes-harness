@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { actor, fakeProvider, fakeSeams, openSession, textTurn } from '@agnes/core/testkit'
 import type { AttachmentStore } from '@agnes/extension-api'
 import type { HostSession } from '@agnes/host'
@@ -12,6 +12,7 @@ import {
   IncrementalSha256,
 } from '@agnes/protocol'
 import { uploadAttachment } from '@agnes/sdk'
+import { hasPrivateDaclSync } from '@agnes/system-node'
 import { expect, it, vi } from 'vitest'
 import { OriginalUploads } from '../src/original-upload.js'
 
@@ -101,6 +102,14 @@ it.each([false, true])(
         ),
       ).rejects.toThrow('disconnected')
       expect(interrupted).toBe(true)
+      const staged = (await readdir(temporary, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name))
+      expect(staged.length).toBeGreaterThan(0)
+      for (const file of staged) {
+        expect(hasPrivateDaclSync(file)).toBe(true)
+        expect(hasPrivateDaclSync(dirname(file))).toBe(true)
+      }
       const previousChunk = calls.find((call) => call.operation === 'chunk')
       if (!previousChunk) throw new Error('missing chunk')
       expect(await intake.request(previousChunk)).toEqual({ offset: FILE_UPLOAD_CHUNK_BYTES })
