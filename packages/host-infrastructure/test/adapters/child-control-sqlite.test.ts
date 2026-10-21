@@ -16,6 +16,12 @@ describe('sqlite child control', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('reports the one child-control format without a format table', () => {
+    expect(s.childControlFormat()).toBe(4)
+    expect(() => s.assertWritableFormat()).not.toThrow()
+    expect(s.coreTableNames()).not.toContain('child_control_meta')
+  })
+
   it('persists a child identity and refuses a second overlapping reservation', async () => {
     await s.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
     await s.ensureRootScope('root', 10_000_000n)

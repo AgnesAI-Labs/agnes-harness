@@ -159,39 +159,7 @@ export function sqliteChildControl(
   tx: <T>(fn: () => T) => T,
   clock: () => number = Date.now,
 ): ChildControlStore {
-  // Keep the v3 reservation migration while advancing the store to v4 creation attempts. Older
-  // databases could contain duplicate reservation identities because reserve always allocated.
-  // Preserve those rows and their accounting, but quarantine every duplicate after the first; a
-  // held duplicate becomes unknown so recovery cannot mistake an orphaned hold for replayable work.
-  tx(() => {
-    const version = db.prepare('SELECT version FROM child_control_meta WHERE id = 1').get() as
-      | { version: number }
-      | undefined
-    if (version && version.version > CHILD_CONTROL_FORMAT)
-      throw new CoreError(
-        'E_FORMAT',
-        `child control format ${version.version} is newer than runtime ${CHILD_CONTROL_FORMAT}`,
-      )
-    db.exec(`WITH ranked AS (
-      SELECT rowid, ROW_NUMBER() OVER (PARTITION BY root_task_id, effect_id ORDER BY rowid) AS ordinal
-      FROM budget_reservations
-    )
-    UPDATE budget_reservations
-    SET effect_id = '__agnes_legacy_duplicate__:' || permit_id || ':' || rowid,
-        status = CASE WHEN status = 'held' THEN 'unknown' ELSE status END
-    WHERE rowid IN (SELECT rowid FROM ranked WHERE ordinal > 1)`)
-    db.exec(
-      'CREATE UNIQUE INDEX IF NOT EXISTS budget_reservations_root_effect ON budget_reservations (root_task_id, effect_id)',
-    )
-    db.prepare(
-      'INSERT INTO child_control_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version = excluded.version',
-    ).run(CHILD_CONTROL_FORMAT)
-  })
   const q = {
-    meta: db.prepare('SELECT version FROM child_control_meta WHERE id = 1'),
-    upsertMeta: db.prepare(
-      'INSERT INTO child_control_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version = excluded.version',
-    ),
     task: db.prepare(`${TASK_SELECT} WHERE t.child_key = ?`),
     byCreation: db.prepare(`${TASK_SELECT} WHERE t.creation_id = ?`),
     byParent: db.prepare(`${TASK_SELECT} WHERE t.parent_key = ?`),
@@ -282,21 +250,6 @@ export function sqliteChildControl(
       `SELECT permit_id FROM budget_reservations WHERE permit_id LIKE 'p%' ORDER BY length(permit_id) DESC, permit_id DESC LIMIT 1`,
     ),
   }
-  const format = (): number => {
-    const row = q.meta.get() as { version: number } | undefined
-    return row?.version ?? 1
-  }
-  const assertWritable = (): void => {
-    const v = format()
-    if (v > CHILD_CONTROL_FORMAT)
-      throw new CoreError(
-        'E_FORMAT',
-        `child control format ${v} is newer than runtime ${CHILD_CONTROL_FORMAT}`,
-      )
-  }
-  const mark = (): void => {
-    q.upsertMeta.run(CHILD_CONTROL_FORMAT)
-  }
   const scopeOf = (id: string) => {
     const row = q.scope.get(id) as
       | {
@@ -335,8 +288,8 @@ export function sqliteChildControl(
   }
 
   const store: ChildControlStore = {
-    childControlFormat: () => format(),
-    assertWritableFormat: () => assertWritable(),
+    childControlFormat: () => CHILD_CONTROL_FORMAT,
+    assertWritableFormat: () => {},
     async existsSession(key) {
       return Boolean(q.session.get(key))
     },
@@ -475,11 +428,9 @@ export function sqliteChildControl(
     },
     async ensureRootScope(rootTaskId, capMicro) {
       return tx(() => {
-        assertWritable()
         const existing = scopeOf(`root:${rootTaskId}`)
         if (existing) return existing
         q.insertScope.run(`root:${rootTaskId}`, rootTaskId, null, null, capMicro.toString(), '0', '0')
-        mark()
         const created = scopeOf(`root:${rootTaskId}`)
         if (!created) throw new CoreError('E_STORAGE_FAULT', 'failed to persist root budget scope')
         return created
@@ -491,7 +442,6 @@ export function sqliteChildControl(
     },
     async createDelegatedChild(input: CreateDelegatedChildInput): Promise<CreateDelegatedChildResult> {
       return tx(() => {
-        assertWritable()
         const existingRow = q.byCreation.get(input.creationId) as Record<string, unknown> | undefined
         if (existingRow) {
           const record = parseTask(existingRow)
@@ -582,7 +532,6 @@ export function sqliteChildControl(
           null,
         )
         q.insertWs.run(input.workspaceId, input.childKey, input.isolation, input.cwd, 'planned')
-        mark()
         return { status: 'created', record: parseTask(q.task.get(input.childKey) as Record<string, unknown>) }
       })
     },
@@ -625,7 +574,6 @@ export function sqliteChildControl(
     },
     async reserve(req: ReserveRequest): Promise<ReserveResult> {
       return tx(() => {
-        assertWritable()
         if (req.qMicro < 0n) return { ok: false, reason: 'invalid', message: 'reservation is negative' }
         const currentGen =
           (q.writerGen.get(req.rootTaskId) as { generation: number } | undefined)?.generation ?? 1

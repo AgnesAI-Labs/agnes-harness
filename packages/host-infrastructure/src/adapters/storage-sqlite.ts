@@ -30,7 +30,7 @@ import { preparedStatement } from './prepared-statements.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 import { assertDataDirVersion, enableWal, prepareDataDir } from './storage-sqlite-data-dir.js'
-import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
+import { assertStoredHead, recordStoredHead } from './storage-sqlite-head.js'
 import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
@@ -310,53 +310,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   syncCheckpointsToMedium(db)
   db.exec('PRAGMA foreign_keys = ON')
   prepareDataDir(db, { file: opts.file, tablesDir }, DDL)
-  initializeStoredHeads(db)
-  const eventColumns = new Set(
-    (db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>).map((column) => column.name),
-  )
-  for (const [name, declaration] of [
-    ['integrity_mode', 'TEXT'],
-    ['integrity_prev', 'TEXT'],
-    ['integrity_digest', 'TEXT'],
-  ] as const) {
-    if (!eventColumns.has(name)) db.exec(`ALTER TABLE events ADD COLUMN ${name} ${declaration}`)
-  }
-  const childTaskColumns = new Set(
-    (db.prepare('PRAGMA table_info(child_tasks)').all() as Array<{ name: string }>).map(
-      (column) => column.name,
-    ),
-  )
-  if (!childTaskColumns.has('input_text'))
-    db.exec(`ALTER TABLE child_tasks ADD COLUMN input_text TEXT NOT NULL DEFAULT ''`)
-  for (const [name, declaration] of [
-    ['attempt_id', 'TEXT'],
-    ['creation_phase', 'TEXT'],
-    ['creation_revision', 'INTEGER'],
-    ['attempt_started_at', 'INTEGER'],
-    ['deferred_fact', 'TEXT'],
-    ['cancelled_fact', 'TEXT'],
-  ] as const) {
-    if (!childTaskColumns.has(name)) db.exec(`ALTER TABLE child_tasks ADD COLUMN ${name} ${declaration}`)
-  }
-  db.exec(`UPDATE child_tasks
-    SET attempt_id = COALESCE(attempt_id, 'legacy:' || creation_id),
-        creation_phase = COALESCE(creation_phase, 'committed'),
-        creation_revision = COALESCE(creation_revision, 1),
-        attempt_started_at = COALESCE(attempt_started_at, 0),
-        control_format = CASE WHEN control_format < 4 THEN 4 ELSE control_format END
-    WHERE attempt_id IS NULL OR creation_phase IS NULL OR creation_revision IS NULL OR attempt_started_at IS NULL
-       OR control_format < 4`)
-  const workspaceColumns = new Set(
-    (db.prepare('PRAGMA table_info(child_workspaces)').all() as Array<{ name: string }>).map(
-      (column) => column.name,
-    ),
-  )
-  if (!workspaceColumns.has('root')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN root TEXT`)
-  if (!workspaceColumns.has('branch')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN branch TEXT`)
-  // The UI projection and the ledger state are rebuilt from the verified ledger on every open; their
-  // old cache tables go.
-  db.exec('DROP TABLE IF EXISTS ui_projection_cache')
-  db.exec('DROP TABLE IF EXISTS fold_cache')
   const q = {
     lease: db.prepare('SELECT run_id, until, ttl_ms FROM writer_claims WHERE session_key = ?'),
     upsertLease: db.prepare(
@@ -655,7 +608,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteRegisters.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
-        db.prepare('DELETE FROM ledger_heads WHERE session_key = ?').run(key)
         q.deleteVerifiedHead.run(key)
       })
     },

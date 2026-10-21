@@ -31,14 +31,12 @@ describe('storage-sqlite', () => {
     expect(s.coreTableNames()).toEqual([
       'budget_reservations',
       'budget_scopes',
-      'child_control_meta',
       'child_ordinals',
       'child_tasks',
       'child_workspaces',
       'child_writer_gens',
       'cost_origins',
       'events',
-      'ledger_heads',
       'ledger_verified_head_v1',
       'registers',
       'sessions',
@@ -46,6 +44,93 @@ describe('storage-sqlite', () => {
     ])
     expect(s.journalMode()).toBe('wal')
     expect(DDL.length).toBeGreaterThanOrEqual(4)
+  })
+  it('creates sessions.db exactly as the DDL declares it, indexes included', () => {
+    const raw = new DatabaseSync(s.file, { readOnly: true })
+    const ddlOnly = new DatabaseSync(':memory:')
+    for (const ddl of DDL) ddlOnly.exec(ddl)
+    const schema = (db: DatabaseSync) =>
+      db
+        .prepare(
+          "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+        )
+        .all()
+    expect(schema(raw)).toEqual(schema(ddlOnly))
+    expect(
+      (raw.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name),
+    ).toEqual([
+      'session_key',
+      'format_version',
+      'parent_key',
+      'boundary_seq',
+      'created_at',
+      'head_version',
+      'head_seq',
+      'head_digest',
+    ])
+    expect(
+      raw
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name")
+        .all()
+        .map((r) => r.name),
+    ).toEqual([
+      'budget_reservations_root_effect',
+      'child_tasks_creating',
+      'child_tasks_parent',
+      'child_tasks_root',
+      'child_workspaces_child',
+      'events_type',
+    ])
+    const plan = (sql: string, ...params: string[]) =>
+      (raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>)
+        .map((r) => r.detail)
+        .join(' | ')
+    const TASK =
+      'SELECT t.*, s.boundary_seq AS boundary_seq FROM child_tasks t LEFT JOIN sessions s ON s.session_key = t.child_key'
+    expect(plan(`${TASK} WHERE t.parent_key = ?`, 'p')).toContain(
+      'SEARCH t USING INDEX child_tasks_parent (parent_key=?)',
+    )
+    expect(plan(`${TASK} WHERE t.root_task_id = ?`, 'r')).toContain(
+      'SEARCH t USING INDEX child_tasks_root (root_task_id=?)',
+    )
+    expect(plan(`${TASK} WHERE t.creation_phase = 'creating'`)).toContain(
+      'SCAN t USING INDEX child_tasks_creating',
+    )
+    expect(plan('SELECT * FROM child_workspaces WHERE child_key = ?', 'c')).toContain(
+      'USING INDEX child_workspaces_child (child_key=?)',
+    )
+    raw.close()
+    ddlOnly.close()
+  })
+  it('keeps the append watermark on the session row', async () => {
+    await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
+    const head = () => {
+      const raw = new DatabaseSync(s.file, { readOnly: true })
+      try {
+        return raw
+          .prepare('SELECT head_version, head_seq, head_digest FROM sessions WHERE session_key = ?')
+          .get('k')
+      } finally {
+        raw.close()
+      }
+    }
+    expect(head()).toEqual({ head_version: 1, head_seq: 0, head_digest: null })
+    await s.commit('k', {
+      events: [ev('user/message', {}), ev('user/message', {})],
+      expectedWriterRunId: 'r1',
+    })
+    expect(head()).toEqual({ head_version: 1, head_seq: 2, head_digest: null })
+  })
+  it('refuses a second reservation for one root and effect', () => {
+    const raw = new DatabaseSync(s.file)
+    const insert = raw.prepare(
+      'INSERT INTO budget_reservations (permit_id, root_task_id, scope_ids, q_micro, effect_id, request_hash, writer_generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    insert.run('p1', 'root', '[]', '1', 'e', 'h', 1, 'held')
+    expect(() => insert.run('p2', 'root', '[]', '1', 'e', 'h', 1, 'held')).toThrow(
+      /UNIQUE constraint failed: budget_reservations\.root_task_id, budget_reservations\.effect_id/,
+    )
+    raw.close()
   })
   it('reports the stored size of one session in bytes, not characters', async () => {
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
@@ -594,11 +679,11 @@ describe('storage-sqlite', () => {
             : kind === 'empty-and-watermark'
               ? "DELETE FROM events WHERE session_key = 'tail'"
               : kind === 'watermark'
-                ? "DELETE FROM ledger_heads WHERE session_key = 'tail'"
+                ? "UPDATE sessions SET head_seq = NULL, head_digest = NULL WHERE session_key = 'tail'"
                 : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
       ).run()
       if (kind === 'tail-and-watermark' || kind === 'empty-and-watermark')
-        db.exec("DELETE FROM ledger_heads WHERE session_key = 'tail'")
+        db.exec("UPDATE sessions SET head_seq = NULL, head_digest = NULL WHERE session_key = 'tail'")
       db.close()
       await s.close()
       s = createSqliteStorage({ file: options.storage.file, clock: () => now })
