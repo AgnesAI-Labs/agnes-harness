@@ -13,9 +13,17 @@ export {
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
+export { revokePackageByteFailure } from './byte-revocation.js'
+export {
+  type ByteFailure,
+  type PackageBootAdmission,
+  PackageByteVerification,
+  packageByteBinding,
+} from './byte-verification.js'
 export * from './capabilities.js'
 export * from './catalog.js'
 export * from './client-assets.js'
+export { readRuntimePackageTreeDigest } from './cooperative-read.js'
 export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'

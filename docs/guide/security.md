@@ -22,6 +22,14 @@ AGH can execute tools, write files, and connect to external systems. Model text,
 
 Ordinary third-party Cordis plugins are trusted in-process code. Trusting one may let it use Node capabilities available to the process. The plugin facets constrain registrations, not arbitrary Node code. Review both source and declared capabilities before installing a third-party package.
 
+Plugin installation, trust, updates, enable and rollback fully verify content. Managed immutable
+copies can use file-identity checks on later disk reads, with independent periodic full rehashes.
+A change forces full verification; an integrity mismatch revokes the package and stops its worker.
+A matching identity is not fresh proof of every byte: tampering that preserves all metadata can
+remain undetected until a rehash, and temporary tampering may escape it. Already-loaded callbacks
+execute memory and have no byte-expiry dispatch gate. Grants and approval policy remain live.
+See [plugin byte verification](../develop/architecture-plugins.md#verification-of-plugin-bytes).
+
 <a id="审批"></a>
 
 ## Approvals
@@ -173,7 +181,7 @@ Implementation: [default profile](../../packages/host-common/templates/local-dev
 
 New installations record the resolved source and version, packed tree SHA256, publisher evidence when available, installation time, installer and trust decision. `agh plugins provenance <id> --json` reads that record; App Server `_agnes/v1/packages.provenance` and `_agnes/v1/packages.sourcePolicy` are admin read methods. The review dialog and plugin details display the same summary. A verified publisher does not isolate plugin code: in-process plugins still require review of their declared permissions.
 
-Install verifies downloaded bytes; loading installed packages and immutable generation snapshots rehashes the tree. A mismatch fails closed (`E_PACKAGE_INTEGRITY`); invalid provenance evidence uses `E_PACKAGE_PROVENANCE`. Existing lock records remain readable but gain no verified publisher identity automatically. npm attestations, when present, are verified with Sigstore and must name the exact pinned package/version and packed archive digest. Missing evidence remains visibly unverified; invalid evidence refuses installation.
+Install verifies downloaded bytes; loading installed packages and immutable generation snapshots verifies the tree through the managed byte checks described above, or full hashing without an owner. A mismatch fails closed (`E_PACKAGE_INTEGRITY`); invalid provenance evidence uses `E_PACKAGE_PROVENANCE`. Existing lock records remain readable but gain no verified publisher identity automatically. npm attestations, when present, are verified with Sigstore and must name the exact pinned package/version and packed archive digest. Missing evidence remains visibly unverified; invalid evidence refuses installation.
 
 Administrative provenance includes the declared resolved source location. Diagnostic messages remain fixed safe summaries and do not disclose unrelated local paths.
 

@@ -1,5 +1,9 @@
+import { runWorkerExecutable } from './worker-executable.js'
+
+export { runWorkerExecutable } from './worker-executable.js'
+
 import { createHash } from 'node:crypto'
-import { createReadStream, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -16,7 +20,6 @@ import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { runtimeSkillView } from './skill-view.js'
-import { connectSupervisor } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
@@ -186,7 +189,11 @@ function hostRootFrom(): string {
  */
 export async function runWorker(
   env: NodeJS.ProcessEnv,
-  io: { connect(path: string): Promise<Duplex>; gate: NodeJS.ReadableStream | null },
+  io: {
+    connect(path: string): Promise<Duplex>
+    gate: NodeJS.ReadableStream | null
+    byteVerification?: import('@agnes/package-manager').PackageByteVerification
+  },
   deps: WorkerHostDeps = {},
 ): Promise<void> {
   const token = env.AGNES_WORKER_TOKEN
@@ -331,6 +338,7 @@ export async function runWorker(
   const closeResources = async (): Promise<void> => {
     if (resourcesClosed) return
     resourcesClosed = true
+    await io.byteVerification?.close()
 
     await idleResourcePreparation
     await hostedSessions?.closeAll().catch(() => undefined)
@@ -896,21 +904,6 @@ export async function runWorker(
         if (String(d).startsWith('start')) resolve()
       })
     })
-}
-
-/** Start the worker wire loop with executable-owned package composition. */
-export function runWorkerExecutable(deps: WorkerHostDeps = {}): Promise<void> {
-  const env = { ...process.env }
-  const gateFd = Number(process.env.AGNES_GATE_FD ?? 3)
-  const gate = Number.isInteger(gateFd) && gateFd >= 0 ? createReadStream('', { fd: gateFd }) : null
-  return runWorker(
-    env,
-    {
-      connect: (path) => connectSupervisor(path, env),
-      gate,
-    },
-    deps,
-  )
 }
 
 declare const AGNES_COMPOSED_WORKER: boolean | undefined

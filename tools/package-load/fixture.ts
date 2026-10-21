@@ -5,6 +5,7 @@ import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
+  PackageByteVerification,
   parseSource,
   writeLock,
 } from '../../packages/package-manager/src/index.js'
@@ -14,9 +15,19 @@ import type { dataset } from './metrics.js'
 export async function createFixture(size: Pick<typeof dataset, 'packages' | 'files' | 'bytesPerFile'>) {
   const home = mkdtempSync(join(tmpdir(), 'agh-package-load-'))
   const profileDir = join(home, 'profiles', 'local-dev')
+  const verification = new PackageByteVerification({ profileDir, roots: [home] })
   const reader = () =>
-    createPackageManager({ dataDir: home, cwd: home, agnesVersion: '0.1.0', references: async () => [] })
-  const close = () => rmSync(home, { recursive: true, force: true })
+    createPackageManager({
+      byteVerification: verification,
+      dataDir: home,
+      cwd: home,
+      agnesVersion: '0.1.0',
+      references: async () => [],
+    })
+  const close = async () => {
+    await verification.close()
+    rmSync(home, { recursive: true, force: true })
+  }
   try {
     mkdirSync(profileDir, { recursive: true })
     writeLock(profileDir, {
@@ -82,9 +93,9 @@ export async function createFixture(size: Pick<typeof dataset, 'packages' | 'fil
         },
       })
     }
-    return { home, profileDir, reader, close }
+    return { home, profileDir, reader, close, verification }
   } catch (error) {
-    close()
+    await close()
     throw error
   }
 }

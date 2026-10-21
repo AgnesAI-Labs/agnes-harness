@@ -25,6 +25,7 @@ import {
   readInventoryAsync,
 } from './inventory.js'
 import { readBoundary } from './inventory-boundary.js'
+import { readInventoryOperation } from './inventory-read-operation.js'
 import {
   assertNoReferences,
   assertNoRuntimePins,
@@ -191,6 +192,8 @@ export interface PackageManager {
 }
 
 export type ManagerOptions = {
+  /** Only executable composition roots fit this private byte-observation owner. */
+  byteVerification?: import('./byte-verification.js').PackageByteVerification
   localPlugins?: LocalPluginRoots
 
   dataDir: string
@@ -273,6 +276,8 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
+  const byteRead = <T>(read: () => T): T =>
+    options.byteVerification ? options.byteVerification.run(read) : read()
   const inventoryVerifications: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   const readRuntimePluginSnapshots = createRuntimeSourceReader()
@@ -707,18 +712,14 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       await locked(profileDir, async () => {})
     },
     async inventory(profileDir, opts = {}) {
-      return (opts.fresh ? withoutPackageVerification : withPackageVerification)(async () => {
-        const key = profileKey(profileDir)
-        const boundary = readBoundary(profileDir)
-        if (opts.fresh) inventoryReads.delete(key)
-        const existing = inventoryReads.get(key)
-        if (existing?.boundary === boundary) return existing.promise
-        let reading: Promise<InstalledInventory>
-        const clear = () => {
-          if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
-        }
-        const read = async () => {
-          try {
+      return byteRead(() =>
+        readInventoryOperation({
+          profileDir,
+          key: profileKey(profileDir),
+          fresh: opts.fresh === true,
+          pending: inventoryReads,
+          lock: (read) => (existsSync(profileDir) ? locked(profileDir, read, {}, !opts.fresh) : read()),
+          read: async () => {
             const lock = load(profileDir)
             return projectLocal(
               await (opts.fresh ? readInventory : readInventoryAsync)(lock, {
@@ -727,28 +728,19 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
                 ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
               }),
             )
-          } finally {
-            // No reader may join a finished verification, even before Promise settlement is observed.
-            clear()
-          }
-        }
-        const scan = async () => {
-          // Let requests already arriving together join before the synchronous tree walk starts.
-          await setImmediate()
-          return read()
-        }
-        reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
-        if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
-        return reading
-      })
+          },
+        }),
+      )
     },
     async runtimePluginSnapshots(profileDir) {
-      return readRuntimePluginSnapshots(profileDir, {
-        store: storeFor(profileDir),
-        load: () => load(profileDir),
-        ceiling,
-        verificationCache: inventoryVerifications,
-      })
+      return byteRead(() =>
+        readRuntimePluginSnapshots(profileDir, {
+          store: storeFor(profileDir),
+          load: () => load(profileDir),
+          ceiling,
+          verificationCache: inventoryVerifications,
+        }),
+      )
     },
     async pinRuntimeSnapshot(profileDir, request) {
       const frozen = structuredClone(request)
@@ -784,7 +776,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)
+      return byteRead(() =>
+        locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true),
+      )
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

@@ -7,7 +7,7 @@ import {
   type Lockfile,
   packageDir,
   type RuntimePluginSnapshot,
-  verifiedDirectoryDigestAsync,
+  readRuntimePackageTreeDigest,
 } from '@agnes/package-manager'
 
 /** Read only enabled, trusted package data; never import a bundle's executable entry. */
@@ -51,7 +51,7 @@ export async function readRuntimeBundles(sources: readonly RuntimePluginSnapshot
     const { snapshot } = source
     if (
       !source.trusted ||
-      (await verifiedDirectoryDigestAsync(snapshot.directory, snapshot)) !== snapshot.treeIntegrity
+      (await readRuntimePackageTreeDigest(snapshot.directory, snapshot)) !== snapshot.treeIntegrity
     )
       throw new Error('E_COMPOSITION_BUNDLE_INTEGRITY: bundle source is not verified')
     const pkg = JSON.parse(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')) as {

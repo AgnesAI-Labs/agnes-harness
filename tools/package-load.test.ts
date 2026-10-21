@@ -20,7 +20,7 @@ it('executes the real package-load benchmark path at smoke scale and refuses war
     }
     await assertTamperRefused(f)
   } finally {
-    f.close()
+    await f.close()
   }
 })
 

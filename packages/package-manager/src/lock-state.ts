@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ProfileFragment } from '@agnes/protocol'
+import { withoutByteVerification } from './byte-verification.js'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { capabilityHash } from './integrity.js'
@@ -25,7 +26,8 @@ export function defaultVerifyIntegrity(
   dataDir: string,
   profile: string,
 ): (id: string, entry: LockEntry) => void {
-  return (id, entry) => collectRead(verifyIntegritySteps(dataDir, profile, id, entry))
+  return (id, entry) =>
+    withoutByteVerification(() => collectRead(verifyIntegritySteps(dataDir, profile, id, entry)))
 }
 
 /** Identical refusal rules, with cooperative hashing for interactive profile reads. */
@@ -33,7 +35,8 @@ export function defaultVerifyIntegrityAsync(
   dataDir: string,
   profile: string,
 ): (id: string, entry: LockEntry) => Promise<void> {
-  return (id, entry) => collectReadAsync(verifyIntegritySteps(dataDir, profile, id, entry))
+  return (id, entry) =>
+    withoutByteVerification(() => collectReadAsync(verifyIntegritySteps(dataDir, profile, id, entry)))
 }
 
 function* verifyIntegritySteps(

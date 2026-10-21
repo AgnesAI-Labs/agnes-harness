@@ -7,6 +7,7 @@ import { MessageChannel } from 'node:worker_threads'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   invalidatePackageVerification,
+  readRuntimePackageTreeDigest,
   verifiedDirectoryDigest,
   verifiedDirectoryDigestAsync,
   withoutPackageVerification,
@@ -203,6 +204,7 @@ it('shares pending async verification, retries failures/mismatches and isolates 
     expect(
       await Promise.all(Array.from({ length: 4 }, () => verifiedDirectoryDigestAsync(dir, identity))),
     ).toEqual(Array(4).fill(identity.treeIntegrity))
+    expect(await readRuntimePackageTreeDigest(dir, identity)).toBe(identity.treeIntegrity)
     expect(hash).toHaveBeenCalledTimes(1)
     expect(verifiedDirectoryDigest(dir, identity)).toBe(identity.treeIntegrity)
     invalidatePackageVerification()
