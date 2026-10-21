@@ -916,10 +916,15 @@ it.each(['update', 'probe'])(
     expect(target).toBe(before)
     spy.mockRestore()
     published.length = 0
+    const reads = vi.spyOn(s.manager, 'inventory')
     await refreshDefaultHelpers(options)
     expect(published).toEqual([target])
+    // Only a committed update re-reads fresh: the probe retry republishes without one.
+    expect(reads.mock.calls.filter(([, opts]) => opts?.fresh).length).toBe(failure === 'update' ? 1 : 0)
+    reads.mockClear()
     await refreshDefaultHelpers(options)
     expect(published).toEqual([target])
+    expect(reads.mock.calls).toEqual([[s.profileDir]])
   },
   120_000,
 )

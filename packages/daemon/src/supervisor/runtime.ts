@@ -202,6 +202,7 @@ import {
   type ProductionArtifactAuthorityProjection,
   type ProductionArtifactReadAuthority,
 } from './artifact-read.js'
+import { type BootVerification, openBootVerification } from './boot-verification.js'
 import { startChildMaintenance } from './child-maintenance.js'
 import { type Args, buildConfig, type DaemonConfig } from './config.js'
 import { configurationApplication } from './configuration.js'
@@ -643,6 +644,8 @@ export type StartSupervisorOptions = {
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
+  /** runAgnesd's boot read boundary; startup closes it before the client socket listens. */
+  bootVerification?: BootVerification
   /** PackageAdmin is composed once and registered on every matching transport endpoint. */
   packageAdmin?: {
     service: PackageAdminService
@@ -1310,7 +1313,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     })
     // Runtime initialization may validate or bootstrap active extensions in a real service worker,
     // so the private listener must exist before initialize() can acquire that worker.
-    const workersServer = await listenUnix(o.config.workersSocketPath, (socket) => pool.adopt(socket))
+    const listenWorkers = () => listenUnix(o.config.workersSocketPath, (socket) => pool.adopt(socket))
+    const workersServer = await (o.bootVerification?.outside(listenWorkers) ?? listenWorkers())
     startupCleanup.push(() => workersServer.close())
     let socketFailure: Error | undefined
     void workersServer.failed?.then((error) => {
@@ -1726,6 +1730,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       })
       await effectivePackageAdmin.service.rebuildClientModules(o.profile.name)
     }
+    // Package-runtime boot reads end here; nothing after this point shares their observations.
+    await o.bootVerification?.end()
     const supervisorRegistry = new SupervisorRegistry(registry, workspaces)
     o.packageRuntime?.bindAgentResolver?.(hostFacade.resolveApplicationAgent)
     const services = workerClientServices(pool, () => host.profile)
@@ -2796,7 +2802,9 @@ function secretsDirectory(profile: ResolvedProfile, config: DaemonConfig): strin
 
 export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = {}): Promise<void> {
   const platform = createPlatform().snapshot()
-  const scope = await (deps.resolveScope ?? resolveDaemonScope)({
+  // Scope and profile resolution already verify the installed trees; boot shares that pass.
+  const bootVerification = openBootVerification()
+  const scope = await bootVerification.bind(deps.resolveScope ?? resolveDaemonScope)({
     env: process.env,
     ...(platform.os === 'win32' ? { initializeHome: true } : {}),
     ...(args.home !== undefined ? { home: args.home } : {}),
@@ -2823,7 +2831,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
       return await resolveDaemonProfile(scope, { ...options, ignorePackageLock: true })
     }
   }
-  const loaded = await loadProfile()
+  const loaded = await bootVerification.bind(loadProfile)()
   const { profile, configuration } = loaded
   const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
     return (await loadProfile({ configuration, ...(adminBundles !== undefined ? { adminBundles } : {}) }))
@@ -2918,8 +2926,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   })
   try {
     const initializePolicy = () => snapshotPolicy(profileDir, profile, '0.0.0')
+    const bootDefaultHelpers = bootVerification.bind(initializeDefaultHelpers)
     if (deps.packageAdmin) await initializePolicy()
-    else await initializeDefaultHelpers({ profileDir, manager: packageManager, initializePolicy })
+    else await bootDefaultHelpers({ profileDir, manager: packageManager, initializePolicy })
   } catch (error) {
     // Helper inventory can encounter the same damaged lock before policy initialization.
     // Keep the recovery-only admin surface available; never replace or trust the damaged state.
@@ -3000,7 +3009,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   }
 
   const { record: audit, close: flushAudit } = openDaemonLogs(scope.dataDir)
-  const sup = await (deps.startProduction ?? startProductionSupervisor)({
+  const startProduction = bootVerification.bind(deps.startProduction ?? startProductionSupervisor)
+  const sup = await startProduction({
+    bootVerification,
     audit,
     config,
     profile,
@@ -3056,6 +3067,8 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }, flushAudit)
     throw error
   })
+  // Normally already closed by startSupervisor; an injected startProduction may not close it.
+  await bootVerification.end()
   let socketFailure: Error | undefined
   void sup.failed?.then((error) => {
     socketFailure = error

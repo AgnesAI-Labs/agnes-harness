@@ -142,7 +142,9 @@ export async function refreshDefaultHelpers(options: {
   previous(): RuntimeTargetArtifact | undefined
   publish(target: RuntimeTargetArtifact): Promise<void>
 }): Promise<void> {
-  let inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  // An ordinary read joins the boot verification boundary; only a committed update re-reads fresh.
+  let inventory = await options.manager.inventory(options.profileDir)
+  // Unchanged helpers stay listed so a target lost after an earlier commit is still republished.
   const refreshed: string[] = []
   for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const current = inventory.packages.find((pkg) => pkg.id === helper.id)
@@ -191,7 +193,7 @@ export async function refreshDefaultHelpers(options: {
   if (!refreshed.length) return
   // Publish the complete release once. Failed publication leaves the installed versions available
   // for the next boot to retry, including unchanged packages whose target was never published.
-  inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  // `inventory` is the read after the last committed update, or the first read when none ran.
   const previous = options.previous()
   let target = previous
   for (const packageId of refreshed)
