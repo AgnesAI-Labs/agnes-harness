@@ -256,58 +256,44 @@ describe('ensureLocalBackend', () => {
     },
   )
 
-  it.each([true, false])(
-    'cold-starts with one scope resolution and one client, announcing only on a TTY (tty=%s)',
-    async (isTTY) => {
-      const writes: string[] = []
-      const stderr = { isTTY, write: (text: string) => writes.push(text) }
-      const initialize = vi.fn(async () => ({ agnesVersion: '0.0.0-test' }))
-      const client = fakeClient({ initialize })
-      const createClientImpl = vi.fn((_options: CreateClientOptions) => client)
-      const spawnDaemon = vi.fn(() => {
-        writes.push('<spawn>')
-        vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
-        return fakeChild()
-      })
-      const booted = await bootDefault(
-        parseArgs(['sessions']),
-        {
-          home: scope.home,
-          cwd: '/tmp/agnes-test-cwd',
-          env: { AGNES_LOCALE: 'zh-CN' },
-          agnesVersion: '0.0.0-test',
-          log() {},
-          createClientImpl,
-        },
-        { backend: { resources: TEST_RESOURCES, spawnDaemon, stderr } },
-      )
-      expect(connection.connectionScope).toHaveBeenCalledOnce()
-      expect(daemon.resolveDaemonScope).not.toHaveBeenCalled()
-      expect(spawnDaemon).toHaveBeenCalledOnce()
-      expect(createClientImpl).toHaveBeenCalledOnce()
-      // The discovered address reaches the SDK unchanged, with session (not readiness) options.
-      const options = createClientImpl.mock.calls[0]?.[0]
-      expect(options).toMatchObject({
-        transport: { kind: 'unix', path: descriptor().socketPath },
-        locale: 'zh-CN',
-      })
-      expect(options).not.toHaveProperty('timeouts')
-      expect(initialize).toHaveBeenCalledOnce()
-      expect(booted.client).toBe(client)
-      expect(booted.resolvedProfileHash).toBe('profile-hash-1')
-      expect(writes).toEqual(isTTY ? ['正在启动 Agnes 后台服务…', '<spawn>', '\r\x1b[2K'] : ['<spawn>'])
-      await booted.close()
-    },
-  )
-
-  it('announces a serve cold start on a TTY and clears it before the launcher reports', async () => {
-    const writes: string[] = []
-    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((text) => {
-      writes.push(String(text))
-      return true
+  it('cold-starts with one scope resolution and one client', async () => {
+    const initialize = vi.fn(async () => ({ agnesVersion: '0.0.0-test' }))
+    const client = fakeClient({ initialize })
+    const createClientImpl = vi.fn((_options: CreateClientOptions) => client)
+    const spawnDaemon = vi.fn(() => {
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      return fakeChild()
     })
-    const tty = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY')
-    Object.defineProperty(process.stderr, 'isTTY', { value: true, configurable: true })
+    const booted = await bootDefault(
+      parseArgs(['sessions']),
+      {
+        home: scope.home,
+        cwd: '/tmp/agnes-test-cwd',
+        env: { AGNES_LOCALE: 'zh-CN' },
+        agnesVersion: '0.0.0-test',
+        log() {},
+        createClientImpl,
+      },
+      { backend: { resources: TEST_RESOURCES, spawnDaemon } },
+    )
+    expect(connection.connectionScope).toHaveBeenCalledOnce()
+    expect(daemon.resolveDaemonScope).not.toHaveBeenCalled()
+    expect(spawnDaemon).toHaveBeenCalledOnce()
+    expect(createClientImpl).toHaveBeenCalledOnce()
+    // The discovered address reaches the SDK unchanged, with session (not readiness) options.
+    const options = createClientImpl.mock.calls[0]?.[0]
+    expect(options).toMatchObject({
+      transport: { kind: 'unix', path: descriptor().socketPath },
+      locale: 'zh-CN',
+    })
+    expect(options).not.toHaveProperty('timeouts')
+    expect(initialize).toHaveBeenCalledOnce()
+    expect(booted.client).toBe(client)
+    expect(booted.resolvedProfileHash).toBe('profile-hash-1')
+    await booted.close()
+  })
+
+  it('closes the readiness client after a serve cold start', async () => {
     const discovery = descriptor({ web: { url: 'ws://127.0.0.1:49100', origin: 'http://127.0.0.1:4180' } })
     const client = fakeClient()
     vi.mocked(sdk.createClient).mockReturnValueOnce(client)
@@ -315,26 +301,16 @@ describe('ensureLocalBackend', () => {
       vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(discovery)
       return fakeChild() as unknown as host.DetachedChild
     })
-    try {
-      const backend = await ensureWebBackend({
-        env: {},
-        workspace: '/tmp/agnes-test-cwd',
-        webOrigin: 'http://127.0.0.1:4180',
-        webPort: 4180,
-        resources: TEST_RESOURCES,
-      })
-      writes.push('<ready>')
-      expect(
-        writes.filter((text) => ['Agnes', '\x1b', '<ready>'].some((part) => text.includes(part))),
-      ).toEqual(['Starting the Agnes background service…', '\r\x1b[2K', '<ready>'])
-      // Web keeps no SDK client: the readiness client is closed, not retained.
-      expect(backend.client).toBeUndefined()
-      expect(client.close).toHaveBeenCalledOnce()
-    } finally {
-      spy.mockRestore()
-      if (tty) Object.defineProperty(process.stderr, 'isTTY', tty)
-      else delete (process.stderr as { isTTY?: boolean }).isTTY
-    }
+    const backend = await ensureWebBackend({
+      env: {},
+      workspace: '/tmp/agnes-test-cwd',
+      webOrigin: 'http://127.0.0.1:4180',
+      webPort: 4180,
+      resources: TEST_RESOURCES,
+    })
+    // Web keeps no SDK client: the readiness client is closed, not retained.
+    expect(backend.client).toBeUndefined()
+    expect(client.close).toHaveBeenCalledOnce()
   })
 
   it('refuses unsafe sockets before initializing or sending configuration requests', async () => {

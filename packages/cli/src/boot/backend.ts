@@ -24,7 +24,6 @@ import {
 } from '@agnes/host'
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
-import { firstRunText } from '../commands/first-run-locales.js'
 import { BootError } from '../errors.js'
 import { connectionScope, validateConnectionSocket } from './connection-scope.js'
 import { localPipeFactories } from './pipe-factory.js'
@@ -79,8 +78,6 @@ export type EnsureLocalBackendOptions = {
   createClientImpl?: (options: CreateClientOptions) => Client
   /** Keep the readiness client as the caller's session connection, so the daemon sees one initialize. */
   retainClient?: { locale: string }
-  /** Receives the cold-start notice, written only to a TTY; defaults to process.stderr. */
-  stderr?: { isTTY?: boolean; write(text: string): unknown }
   /** Bounded readiness deadline. The default is deliberately finite. */
   readinessTimeoutMs?: number
   readinessPollMs?: number
@@ -407,16 +404,6 @@ async function sdkReady(
   }
 }
 
-/** Cold start only: one TTY line while this invocation starts the daemon. Returns its eraser. */
-function startupNotice(options: EnsureLocalBackendOptions): (() => void) | undefined {
-  const stream = options.stderr ?? process.stderr
-  if (!stream.isTTY) return undefined
-  stream.write(firstRunText(options.env ?? process.env, 'daemonStarting'))
-  return () => {
-    stream.write('\r\x1b[2K')
-  }
-}
-
 type DiscoveryResult = {
   discovery: DaemonDiscovery
   /** The retained readiness client, when requested and verified. */
@@ -481,7 +468,6 @@ async function discoverOrStart(
   let childStartId: string | undefined
   let childError: Error | undefined
   let diagnosticPath: string | undefined
-  let clearNotice: (() => void) | undefined
   try {
     // Recheck after taking the launcher lock: another process may have published while this caller
     // was resolving its scope or waiting for the lock.
@@ -495,7 +481,6 @@ async function discoverOrStart(
           }),
         )
         diagnosticPath = startupDiagnosticPath(scope.daemonDir)
-        clearNotice = startupNotice(options)
         child = launchChild(scope, options, requested ?? options.startupWeb, diagnosticPath)
       } catch (error) {
         throw asBootError('spawn', error)
@@ -533,7 +518,6 @@ async function discoverOrStart(
     }
     throw error
   } finally {
-    clearNotice?.()
     removeStartupDiagnostic(diagnosticPath)
     startupLock.release()
   }
