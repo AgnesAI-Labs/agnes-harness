@@ -72,6 +72,7 @@ export type RowExtensionApiInput = {
   version: string
   packageIdentity: string
   packageVersion: string
+  executionBinding?: RegMeta['executionBinding']
   lease: Lease
   signal: AbortSignal
   /** Set only when this row claims a builtin extension's own row id (third-party-transform-directive
@@ -115,6 +116,7 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
     trust: 'trusted',
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
+    ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),
   })
   const log = Object.freeze({
     debug: input.log.debug.bind(input.log),

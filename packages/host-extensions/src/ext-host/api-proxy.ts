@@ -29,6 +29,7 @@ type Options = {
   /** Resolved package identity/version supplied by Host inventory, never by extension code. */
   packageIdentity: string
   packageVersion: string
+  executionBinding?: RegMeta['executionBinding']
   trust: ExtensionContext['trust']
   lease: Lease
   ports: KernelPorts
@@ -63,6 +64,7 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
     trust: input.trust,
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
+    ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),
     ...(input.trust === 'builtin' && input.packageIdentity === '@agnes/base' && m.id === 'agnes/computer-use'
       ? { executionDomain: 'host-computer-use' as const }
       : {}),

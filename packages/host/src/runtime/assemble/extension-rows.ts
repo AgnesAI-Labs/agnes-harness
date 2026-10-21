@@ -16,7 +16,7 @@ import {
   prepareGenerationOwnerReplacement,
 } from '@agnes/host-providers/runtime-generation-view'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import type { EntryRow } from '@agnes/plugin-runtime/host'
+import { type EntryRow, pluginConfigDigest } from '@agnes/plugin-runtime/host'
 import type { Assembled } from './assembled.js'
 import type { BootRows } from './boot-rows.js'
 import type { BundledExtensions } from './bundled-extensions.js'
@@ -74,6 +74,7 @@ function createExtensionLoaders(input: ExtensionRowsInput) {
   const loadMigratedExtension = (
     extensionId: string,
     skillResources?: SkillRuntimeInput,
+    config?: unknown,
   ): Promise<BuiltinRowHandle> => {
     const found = findBundledExtension(extensionId)
     if (!found)
@@ -85,6 +86,12 @@ function createExtensionLoaders(input: ExtensionRowsInput) {
     return builtinRows.load({
       rowId: `ext:${extensionId}`,
       spec: found.spec,
+      executionBinding: {
+        rowId: `ext:${extensionId}`,
+        exportName: found.spec.id,
+        snapshotId: found.spec.integrity ?? found.spec.packageVersion,
+        configDigest: pluginConfigDigest(config),
+      },
       ...(found.embedded ? { embedded: found.embedded } : {}),
       factory: (token) =>
         (consumesSkills(extensionId)
@@ -246,10 +253,11 @@ export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionR
         : MIGRATED_EXTENSION_IDS.has(input.extensionId) || liveResources?.length
           ? {
               facade: {
-                load: () =>
+                load: (config) =>
                   loadMigratedExtension(
                     input.extensionId,
                     Object.hasOwn(input, 'skillResources') ? input.skillResources : deps.skillResources,
+                    config,
                   ),
               },
             }

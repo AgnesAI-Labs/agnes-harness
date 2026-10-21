@@ -17,6 +17,8 @@ export type RoleDelegation = {
   parentKey: string
   actor: Actor
   tools: string[]
+  /** Literal resource allowlists; empty means deny, unlike composition default selections. */
+  resources?: { mcp: string[]; skills: string[] }
   generationLimit: number
   maxFanOut: number
   permission: 'read-only' | 'workspace-write'

@@ -7,12 +7,20 @@ import { prepareToolSchema } from '../request/tool-schema.js'
 
 export type TrustTier = 'builtin' | 'trusted'
 export type ExecutionDomain = 'workspace' | 'host-computer-use'
+/** Execution provenance is set by Host registration, never by a ToolDef or model argument. */
+export type ToolExecutionBinding = Readonly<{
+  rowId: string
+  exportName: string
+  snapshotId: string
+  configDigest: string
+}>
 export type ToolSource = {
   source: string
   trust: TrustTier
   /** Host-attested package identity and manifest version; never copied from classifier output. */
   packageIdentity?: string
   packageVersion?: string
+  executionBinding?: ToolExecutionBinding
   /** Only Host assembly may request this, and the registry still verifies the exact built-in pair. */
   executionDomain?: ExecutionDomain
   /**
@@ -30,6 +38,7 @@ export type RegisteredTool = ToolDef & {
   packageVersion?: string
   executionDomain: ExecutionDomain
   definitionFingerprint: string
+  executionBinding?: ToolExecutionBinding | undefined
 }
 export type RegistrySnapshot = {
   readonly defs: ReadonlyArray<ToolDef>
@@ -106,6 +115,10 @@ export class ToolRegistry {
         : { packageVersion: registeredSource.packageVersion }),
       executionDomain,
       definitionFingerprint,
+      // Explicitly overwrite a same-named property smuggled into a plugin's ToolDef.
+      executionBinding: registeredSource.executionBinding
+        ? Object.freeze({ ...registeredSource.executionBinding })
+        : undefined,
     })
     prepareToolSchema(entry)
     return this.#table.add(registeredSource.source, registeredDefinition.name, entry)

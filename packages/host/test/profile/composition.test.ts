@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import { agentSelection } from '@agnes/host-common/profile/agent'
 import {
   assertCompositionCompatible,
@@ -592,3 +593,38 @@ it('resolves explicit agent presets at the session layer, with source dependency
   cyclic['acme/parent#parent']!.document.extends = ['acme/kit#writer']
   expect(() => agentSelection('acme/kit#writer', cyclic, sources)).toThrow('cycle')
 })
+
+it.each(['mcp', 'skills'] as const)(
+  'role %s resource bounds use canonical IDs and empty means refusal',
+  (kind) => {
+    const live = {
+      mcp: [{ id: 'mcp/common', name: 'Common MCP' }, { id: 'mcp/private' }],
+      skills: [{ id: 'skill/common', name: 'Common Skill' }, { id: 'skill/private' }],
+    }
+    const id = kind === 'mcp' ? 'mcp/common' : 'skill/common'
+    const input = {
+      selection: { mcp: [], skills: [] },
+      live,
+      installed: {
+        tools: [
+          { name: mcpStablePrefix('common') + 'read', readOnly: true },
+          { name: mcpStablePrefix('private') + 'read', readOnly: true },
+        ],
+      },
+      resourceRequest: { kind, id: kind === 'mcp' ? 'common' : 'Common Skill' },
+    }
+    const bound = resolveSessionCapabilities({
+      ...input,
+      resourceScope: { mcp: ['mcp/common'], skills: ['skill/common'] },
+    })
+    expect(bound[kind].filter((resource) => resource.enabled).map((resource) => resource.id)).toEqual([id])
+    expect(bound.resourceRequest?.enabled).toBe(true)
+    expect(bound.tools.filter((tool) => tool.enabled).map((tool) => tool.id)).toEqual([
+      mcpStablePrefix('common') + 'read',
+    ])
+    const empty = resolveSessionCapabilities({ ...input, resourceScope: { mcp: [], skills: [] } })
+    expect(empty[kind].every((resource) => !resource.enabled)).toBe(true)
+    expect(empty.resourceRequest?.enabled).toBe(false)
+    expect(empty.tools.every((tool) => !tool.enabled)).toBe(true)
+  },
+)

@@ -91,7 +91,16 @@ describe('published generation runtime view', () => {
     const cache = new Map()
     const tools = new ToolRegistry()
     const resources = new ResourceRegistry()
-    const source = { source: 'agnes/generation-test', trust: 'builtin' as const }
+    const source = {
+      source: 'agnes/generation-test',
+      trust: 'builtin' as const,
+      executionBinding: {
+        rowId: 'ext:fixture',
+        exportName: 'read',
+        snapshotId: 'snapshot',
+        configDigest: 'a'.repeat(64),
+      },
+    }
     tools.add(
       {
         name: 'generation_one',
@@ -118,6 +127,7 @@ describe('published generation runtime view', () => {
       hooks: noopHooks,
       seed: { tools, resources },
     })
+    expect(first.tools.resolve('generation_one')?.executionBinding).toEqual(source.executionBinding)
     tools.add(
       {
         name: 'generation_two',

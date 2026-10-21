@@ -56,6 +56,8 @@ export type SessionCapabilityInput = {
   childAllowlist?: ChildAgentAllowlist
   childRequest?: { providerId?: string; model?: string }
   resourceRequest?: { kind: 'mcp' | 'skills'; id: string }
+  /** Snapshot upper bound. These arrays are literal allowlists, including empty denial. */
+  resourceScope?: { mcp: readonly string[]; skills: readonly string[] }
   installed?: {
     plugins?: readonly { id: string; enabled: boolean; packageId?: string | undefined }[]
     tools?: readonly CapabilityTool[]
@@ -148,6 +150,11 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
     decision(item.id, [
       [packageEnabled(item.packageId), 'package-enabled', source('packages')],
       [listAllows(selection[kind], resourceIds(kind, item)), `${kind}-selection`, source(kind)],
+      [
+        input.resourceScope === undefined || input.resourceScope[kind].includes(item.id),
+        'role-resource-snapshot',
+        { layer: 'session', name: 'role-delegation' },
+      ],
     ])
   const resources = (kind: 'mcp' | 'skills') => {
     const live = input.live?.[kind] ?? []
@@ -194,6 +201,15 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
           mcpPrefixes.some((prefix) => tool.name.startsWith(prefix)),
         'mcp-selection',
         source('mcp'),
+      ],
+      [
+        !tool.name.startsWith('mcp_') ||
+          input.resourceScope === undefined ||
+          input.resourceScope.mcp.some((id) =>
+            tool.name.startsWith(mcpStablePrefix(id.replace(/^mcp\//, ''))),
+          ),
+        'role-resource-snapshot',
+        { layer: 'session', name: 'role-delegation' },
       ],
     ]),
   )

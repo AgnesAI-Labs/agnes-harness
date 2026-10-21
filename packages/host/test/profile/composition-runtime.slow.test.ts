@@ -708,7 +708,7 @@ it('publishes a restarted worker’s delivered target on each composition’s ea
   }
 }, 180_000)
 
-it('restricts Skill reads and optional panels to the selected resources and slots', () => {
+it('restricts Skill reads and optional panels to the selected resources and slots', async () => {
   let listed = [
     { resourceId: 'visible', name: 'read' },
     { resourceId: 'hidden', name: 'write' },
@@ -727,6 +727,30 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     code: 'UNAUTHORIZED',
   })
   expect(skills.readRoots?.()).toEqual([])
+  const bound = compositionSkills(input, { skills: [] }, new Map(), (key) =>
+    key === 'child'
+      ? { mcp: [], skills: ['visible'] }
+      : key === 'empty-child'
+        ? { mcp: [], skills: [] }
+        : undefined,
+  )!
+  expect(bound.read('visible', { sessionKey: 'child' })).toEqual({ ok: true })
+  expect(bound.read('hidden', { sessionKey: 'child' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
+  expect(bound.readFile('visible', 'revision', 'SKILL.md', { sessionKey: 'empty-child' })).toEqual({
+    ok: false,
+    code: 'UNAUTHORIZED',
+  })
+  expect(bound.readRoots?.()).toEqual(['/broad'])
+  const scoped = (key: string) =>
+    bound.scopeWorkspace!('/w', key, async () => {
+      await Promise.resolve()
+      return { ids: bound.list().map((skill) => skill.resourceId), roots: bound.readRoots?.() }
+    })
+  expect(await Promise.all([scoped('child'), scoped('fixture'), scoped('empty-child')])).toEqual([
+    { ids: ['visible'], roots: [] },
+    { ids: ['visible', 'hidden'], roots: ['/broad'] },
+    { ids: [], roots: [] },
+  ])
   // A live catalog may refresh between reads; each returned list must use one catalog snapshot.
   const snapshot = listed
   const refreshing = compositionSkills(
@@ -748,6 +772,7 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     { resourceId: 'added-hidden', name: 'write' },
   ]
   expect(skills.list().map((skill) => skill.resourceId)).toEqual(['replacement'])
+  expect(bound.read('replacement', { sessionKey: 'child' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   expect(skills.read('visible', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   expect(skills.read('added-hidden', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   const location = ['acme/skills', 'refund', 'skills/refund'].join('\0')

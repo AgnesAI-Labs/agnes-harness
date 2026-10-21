@@ -1,4 +1,4 @@
-import type { RoleDelegation, SessionImpl } from '@agnes/core'
+import { type RoleDelegation, readRoleDelegation, type SessionImpl } from '@agnes/core'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { CreateSessionOptions } from './session.js'
 
@@ -9,9 +9,8 @@ export async function restoreRolePolicy(
 ): Promise<CreateSessionOptions> {
   const key = options.key ?? options.binding?.sessionKey
   if (!key) return options
-  const [captured] = await storage.scan(key, { type: 'x/core/role-delegation', limit: 1 })
-  if (captured?.origin !== 'system' || captured.trust !== 'trusted') return options
-  return { ...options, roleDelegation: captured.data as unknown as RoleDelegation }
+  const captured = await readRoleDelegation(storage, key)
+  return captured ? { ...options, roleDelegation: captured } : options
 }
 
 /** The sandbox receives the snapshot's stricter access and isolation posture. */
