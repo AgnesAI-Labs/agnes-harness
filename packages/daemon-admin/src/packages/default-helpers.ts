@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import {
+  bundledPluginDigest,
   bundledPluginSource,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
@@ -159,7 +160,9 @@ export async function refreshDefaultHelpers(options: {
     if (!bundled) throw new Error('Bundled helper source unavailable')
     // An unchanged release needs no staging copy or candidate inspection. This is a byte hash,
     // not a version/mtime shortcut; installed trust and policy came from the verified inventory.
-    if (hashDirectory(join(bundled.root, bundled.path)) !== current.entry.integrity) {
+    // The build-time digest stands in for hashing the shipped source; update still verifies it.
+    const release = bundledPluginDigest(bundled) ?? hashDirectory(join(bundled.root, bundled.path))
+    if (release !== current.entry.integrity) {
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
       if (

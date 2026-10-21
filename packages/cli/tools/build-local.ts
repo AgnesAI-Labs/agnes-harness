@@ -7,7 +7,9 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   BUNDLED_EXAMPLES,
+  BUNDLED_PLUGIN_DIGESTS,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  hashDirectory,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '@agnes/package-manager'
 import { AGH_DIR } from '@agnes/protocol'
@@ -94,6 +96,14 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     await stampBundledPackageVersion(destination, version)
     await checkPackagedClientModules(destination)
   }
+  // Boot compares installed defaults with these final-payload digests instead of re-hashing them.
+  const digests = Object.fromEntries(
+    [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(({ name }) => [
+      `bundled-plugins/${name}`,
+      hashDirectory(join(outputDirectory, 'bundled-plugins', name)),
+    ]),
+  )
+  await writeFile(join(outputDirectory, BUNDLED_PLUGIN_DIGESTS), `${JSON.stringify(digests, null, 2)}\n`)
 }
 
 const bundleJitiTransform: Plugin = {

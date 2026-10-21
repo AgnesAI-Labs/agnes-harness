@@ -4,6 +4,7 @@ import { join, sep } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import { loadTemplate } from '@agnes/host'
 import {
+  BUNDLED_PLUGIN_DIGESTS,
   bundledPluginSource,
   createPackageManager,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
@@ -14,6 +15,7 @@ import {
 } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it, vi } from 'vitest'
+import * as sources from '../../package-manager/src/sources.js'
 import { createClientModuleRegistry } from '../src/packages/client-modules.js'
 import {
   activateDefaultHelpers,
@@ -928,6 +930,64 @@ it.each(['update', 'probe'])(
   },
   120_000,
 )
+
+it('compares installed defaults with the build-time digest manifest and falls back to hashing the source', async () => {
+  const s = setup()
+  await s.initializePolicy()
+  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === '@agnes/goal-ui')!
+  const source = bundledPluginSource(helper.ref)!
+  const release = join(s.root, 'release', helper.name)
+  cpSync(join(source.root, source.path), release, {
+    recursive: true,
+    filter: (path) => !path.split(sep).includes('node_modules'),
+  })
+  payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
+  const preview = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
+  await s.manager.install(s.profileDir, parseSource(helper.ref), { expectedIntegrity: preview.integrity })
+  await s.manager.trust(s.profileDir, helper.id, {
+    integrity: preview.integrity,
+    capabilityHash: preview.capabilityHash!,
+  })
+  await s.manager.setEnabled(s.profileDir, helper.id, true)
+  let target = rebuildDesiredFromInventory({
+    previous: undefined,
+    inventory: await s.manager.inventory(s.profileDir),
+    packageId: helper.id,
+    operation: 'enable',
+  })
+  const options = {
+    ...s,
+    previous: () => target,
+    publish: async (next: RuntimeTargetArtifact) => {
+      target = next
+    },
+  }
+  const manifest = join(s.root, BUNDLED_PLUGIN_DIGESTS)
+  const hash = vi.spyOn(sources, 'hashDirectory')
+  const update = vi.spyOn(s.manager, 'update')
+  const sourceHashes = () => hash.mock.calls.filter(([dir]) => dir === release).length
+  writeFileSync(manifest, JSON.stringify({ [`release/${helper.name}`]: preview.integrity }))
+  await refreshDefaultHelpers(options)
+  expect(sourceHashes()).toBe(0)
+  // A missing, partial or malformed manifest falls back to hashing the shipped source.
+  for (const content of ['{}', '{ damaged', JSON.stringify({ [`release/${helper.name}`]: 'sha256-short' })]) {
+    writeFileSync(manifest, content)
+    await refreshDefaultHelpers(options)
+  }
+  rmSync(manifest)
+  await refreshDefaultHelpers(options)
+  expect(sourceHashes()).toBe(4)
+  expect(update).not.toHaveBeenCalled()
+  // A changed release still goes through inspect and the fully verified update path.
+  writeFileSync(join(release, 'release-revision.txt'), 'new release bytes')
+  const next = sources.hashDirectory(release)
+  writeFileSync(manifest, JSON.stringify({ [`release/${helper.name}`]: next }))
+  await refreshDefaultHelpers(options)
+  expect(update).toHaveBeenCalledTimes(1)
+  expect(
+    (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)?.entry.integrity,
+  ).toBe(next)
+}, 120_000)
 
 it('retains a changed-capability release for explicit review, and preserves a different source and revoked trust', async () => {
   const s = setup()
