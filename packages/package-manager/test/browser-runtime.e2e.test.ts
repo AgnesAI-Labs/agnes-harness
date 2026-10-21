@@ -41,8 +41,13 @@ it.skipIf(!archive || !existsSync(archive))(
     let instance: { isConnected(): boolean } | undefined
     const runtime = new BrowserRuntime({
       launch: async () => {
-        instance = await launcher.launch()
-        return instance
+        const browser = await launcher.launch()
+        const newContext = browser.newContext.bind(browser)
+        // Exercise retina frames explicitly, independent of the machine's display scale.
+        browser.newContext = (options: Record<string, unknown>) =>
+          newContext({ ...options, deviceScaleFactor: 2 })
+        instance = browser
+        return browser
       },
       store: {
         get: (key: string) => store.get(key),
@@ -63,6 +68,7 @@ it.skipIf(!archive || !existsSync(archive))(
       const opened = await runtime.act(session, { action: 'open', url })
       const item = runtime.get(session, opened.pageId)
       const page = item.page
+      expect(await page.evaluate(() => devicePixelRatio)).toBe(2)
       let frames = 0,
         shownPage: string | undefined,
         shownEpoch: number | undefined,

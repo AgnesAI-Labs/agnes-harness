@@ -170,13 +170,13 @@ export async function showPage(runtime, input, context) {
               snapshotting = true
               try {
                 runtime.get(session, input.pageId)
-                // Capture the same viewport as the live stream. A scaled clip can
-                // include a different CSS area, making idle pixels and click coordinates disagree.
-                const result = await cdp.send('Page.captureScreenshot', {
-                  format: 'jpeg',
+                // Let the pinned engine resolve the scrolled viewport and device scale together.
+                // Raw CDP capture without that normalization can return only CSS-sized pixels.
+                const bytes = await item.page.screenshot({
+                  type: 'jpeg',
                   quality: 90,
-                  fromSurface: true,
-                  captureBeyondViewport: false,
+                  fullPage: false,
+                  scale: 'device',
                 })
                 runtime.get(session, input.pageId)
                 if (
@@ -186,7 +186,6 @@ export async function showPage(runtime, input, context) {
                   item.inputVersion !== inputVersion
                 )
                   return
-                const bytes = Buffer.from(result.data, 'base64')
                 if (bytes.length > 1_000_000) return
                 capture.bytes = bytes
                 capture.pageEpoch = epoch

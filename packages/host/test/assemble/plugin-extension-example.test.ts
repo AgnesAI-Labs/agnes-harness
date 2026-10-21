@@ -110,12 +110,14 @@ describe('the hot-tool-plugin example', () => {
 
 it('preserves request availability through the production ordinary plugin bridge', async () => {
   const plugin = pluginSource(`
-    ctx.tools.register({ ...tool('availability_probe'), async execute(_, context) {
+    const { Type } = await import(${JSON.stringify(import.meta.resolve('@sinclair/typebox'))})
+    const typed = name => ({ ...tool(name), parameters: Type.Object({}, { additionalProperties: false }) })
+    ctx.tools.register({ ...typed('availability_probe'), async execute(_, context) {
       const states = ['availability_probe', 'later', 'image_only', 'outside'].map(name => [name, context.tools.availability?.(name)])
       return { content: [{ type: 'text', text: JSON.stringify(states) }] }
     } })
-    ctx.tools.register({ ...tool('later'), meta: { ...tool('later').meta, deferLoading: true } })
-    ctx.tools.register({ ...tool('image_only'), meta: { ...tool('image_only').meta, requiresImageInput: true } })
+    ctx.tools.register({ ...typed('later'), meta: { ...tool('later').meta, deferLoading: true } })
+    ctx.tools.register({ ...typed('image_only'), meta: { ...tool('image_only').meta, requiresImageInput: true } })
   `)
   const { host, dataDir } = await pluginHost(plugin, {
     script: [
@@ -137,17 +139,23 @@ it('preserves request availability through the production ordinary plugin bridge
     await host.applyRuntimeTarget(pluginTarget([pluginRow()]))
     const session = await host.createSession({ cwd: dataDir })
     try {
-      await session.enqueue('check-availability', {
+      await session.enqueue('next-turn', {
         actor: session.d.actor,
         content: [{ type: 'text', text: 'check' }],
       })
       await session.run({ until: 'turn-end', signal: new AbortController().signal })
       const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
       const text = JSON.stringify(results.map((r) => r.data))
-      expect(text).toContain('offered')
-      expect(text).toContain('deferred')
-      expect(text).toContain('model_capability')
-      expect(text).toContain('catalog')
+      const result = results[0]
+      if (!result) throw new Error('missing availability result')
+      const states = JSON.parse((result.data as { content: { text: string }[] }).content[0]!.text)
+      // Host removes image-incompatible tools before Core freezes the catalog.
+      expect(states).toMatchObject([
+        ['availability_probe', { status: 'offered' }],
+        ['later', { status: 'deferred' }],
+        ['image_only', { status: 'unavailable', reason: 'catalog' }],
+        ['outside', { status: 'unavailable', reason: 'catalog' }],
+      ])
       expect(text).not.toContain('snapshot unavailable')
     } finally {
       await session.close()

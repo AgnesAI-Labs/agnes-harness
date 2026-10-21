@@ -113,9 +113,10 @@ export function createLocalSandboxProvider(
           const activation = loopbackActivation(request.policy, actual, os)
           const controller = new AbortController()
           controllers.add(controller)
-          const invocation = Promise.resolve()
-            .then(() =>
-              exec.run([...request.argv], {
+          let invocation: Promise<Awaited<ReturnType<ExecAdapter['run']>>>
+          try {
+            invocation = exec
+              .run([...request.argv], {
                 cwd: request.cwd,
                 ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
                 ...(activation ? { loopbackFd: activation.fd } : {}),
@@ -128,9 +129,13 @@ export function createLocalSandboxProvider(
                 ...(request.limits?.maxOutputBytes === undefined
                   ? {}
                   : { maxOutputBytes: request.limits.maxOutputBytes }),
-              }),
-            )
-            .finally(() => activation?.close())
+              })
+              .finally(() => activation?.close())
+          } catch (error) {
+            controllers.delete(controller)
+            activation?.close()
+            throw error
+          }
           pending.add(invocation)
           let result: Awaited<typeof invocation>
           try {

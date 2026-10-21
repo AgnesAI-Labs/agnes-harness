@@ -3,6 +3,7 @@ import {
   LOCAL_SANDBOX_PROVIDER_ID,
   ProviderError,
   type SandboxCapabilities,
+  type SandboxExecutionPolicy,
   type SandboxPlatform,
   type SandboxProvider,
   type SandboxProviderCatalogEntry,
@@ -388,6 +389,16 @@ export async function bindStartupSandboxProvider(
   return instance.id
 }
 
+/** External providers cannot attest the Host's inherited local listener. */
+function externalEnforcement(
+  selected: NonNullable<SandboxProviderSlot['selected']>,
+  policy: SandboxExecutionPolicy,
+) {
+  if (policy.network.mode === 'loopback-serve')
+    throw sandboxUnavailable('loopback serving requires the local macOS L1 provider')
+  return selected.capabilities.enforcement
+}
+
 /**
  * Every local and third-party execution uses the selected public instance after
  * the policy gate. Resolve by the authorized workspace, never the last fitted cwd.
@@ -405,8 +416,6 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
           workspaceRoot: policy.workspaceRoot,
           ...(slot.options ? { options: slot.options } : {}),
         })
-      if (policy.network.mode === 'loopback-serve' && selected.id !== LOCAL_SANDBOX_PROVIDER_ID)
-        throw sandboxUnavailable('loopback serving requires the local macOS L1 provider')
       if (!selected.capabilities.available || !selected.openProcess)
         throw sandboxUnavailable('the selected provider does not support interactive execution')
       if (
@@ -419,7 +428,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       const actual =
         selected.id === LOCAL_SANDBOX_PROVIDER_ID
           ? opts.sandbox?.enforcement
-          : selected.capabilities.enforcement
+          : externalEnforcement(selected, policy)
       if (
         !actual ||
         (policy.requiredEnforcement.level === 'full' && actual.level !== 'full') ||
@@ -459,14 +468,12 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         throw sandboxUnavailable('the request names a different sandbox provider')
       const policy = opts.sandbox?.policy
       if (!policy) throw sandboxUnavailable('the request carries no authorized execution policy')
-      if (policy.network.mode === 'loopback-serve' && selected.id !== LOCAL_SANDBOX_PROVIDER_ID)
-        throw sandboxUnavailable('loopback serving requires the local macOS L1 provider')
       opts.signal?.throwIfAborted()
       const required = policy.requiredEnforcement
       const offered =
         selected.id === LOCAL_SANDBOX_PROVIDER_ID
           ? opts.sandbox?.enforcement
-          : selected.capabilities.enforcement
+          : externalEnforcement(selected, policy)
       if (
         required.level === 'full' &&
         (offered?.level !== 'full' || required.scope.some((scope) => !offered.scope.includes(scope)))

@@ -719,7 +719,7 @@ it.each(['en', 'zh-CN'] as const)('uses one localized title for every declared b
   for (const [name, summary, expected] of [
     ['shell', 'Run command', baseToolTitle('shell', translateTool)],
     ['custom_review', '登记项目 · PRJ-009', '登记项目 · PRJ-009'],
-  ])
+  ] as const)
     expect(
       approvalSummary(
         {

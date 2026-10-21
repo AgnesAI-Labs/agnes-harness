@@ -723,19 +723,17 @@ it('does not publish an idle image captured before newer input', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const { runtime, cdp, session } = fixture()
   const abort = new AbortController()
-  let release!: (value: { data: string }) => void
-  const screenshot = new Promise<{ data: string }>((resolve) => {
+  let release!: (value: Buffer) => void
+  const screenshot = new Promise<Buffer>((resolve) => {
     release = resolve
   })
   cdp.send.mockImplementation(async (method) =>
-    method === 'Page.getLayoutMetrics'
-      ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
-      : method === 'Page.captureScreenshot'
-        ? screenshot
-        : undefined,
+    method === 'Page.getLayoutMetrics' ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } } : undefined,
   )
   try {
     const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    const page = runtime.get(session, opened.pageId).page
+    Object.assign(page, { screenshot: async () => screenshot })
     const received: Uint8Array[] = []
     await showPage(
       runtime,
@@ -747,12 +745,11 @@ it('does not publish an idle image captured before newer input', async () => {
       },
     )
     await vi.advanceTimersByTimeAsync(0)
-    expect(cdp.send).toHaveBeenCalledWith('Page.captureScreenshot', expect.anything())
     cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from('before-input').toString('base64') })
     const actor = { id: 'synthetic' }
     const control = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor)
     await runtime.humanInput(session, { ...control, seq: 0, type: 'scroll', x: 0, y: 100 }, actor)
-    release({ data: Buffer.from('stale-idle-image').toString('base64') })
+    release(Buffer.from('stale-idle-image'))
     await vi.advanceTimersByTimeAsync(0)
     const pixels = received.map((bytes) => {
       const frame = Buffer.from(bytes)
@@ -762,13 +759,9 @@ it('does not publish an idle image captured before newer input', async () => {
     // Drain the prior paint's idle timer before restoring history without a new paint.
     await vi.advanceTimersByTimeAsync(300)
     cdp.send.mockImplementation(async (method) =>
-      method === 'Page.getLayoutMetrics'
-        ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
-        : method === 'Page.captureScreenshot'
-          ? { data: Buffer.from('restored-history-pixels').toString('base64') }
-          : undefined,
+      method === 'Page.getLayoutMetrics' ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } } : undefined,
     )
-    const page = runtime.get(session, opened.pageId).page
+    Object.assign(page, { screenshot: async () => Buffer.from('restored-history-pixels') })
     page.emit('framenavigated', page.mainFrame())
     await vi.advanceTimersByTimeAsync(0)
     const restored = Buffer.from(received.at(-1)!)

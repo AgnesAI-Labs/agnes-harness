@@ -148,7 +148,7 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
               await load().extractZip(zip, { dir: unpacked })
               signal.throwIfAborted()
               const executable = owned(unpacked, join(unpacked, info.relativeExecutable))
-              owned(unpacked, await realpath(executable))
+              owned(await realpath(unpacked), await realpath(executable))
               await chmod(executable, 0o755)
               await writeFile(
                 join(unpacked, 'agnes-install.json'),
