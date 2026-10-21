@@ -26,14 +26,5 @@ export function roleToolBindingIdentity(host: Host, tool: RegisteredTool): strin
       pluginConfigDigest(tool.source.trust === 'builtin' ? (row.config ?? {}) : row.config)
   )
     return undefined
-  return sha256Hex(
-    canonicalJson([
-      tool.packageIdentity,
-      tool.packageVersion,
-      binding.rowId,
-      binding.exportName,
-      binding.snapshotId,
-      binding.configDigest,
-    ]),
-  )
+  return sha256Hex(canonicalJson([tool.packageIdentity, tool.packageVersion, binding]))
 }

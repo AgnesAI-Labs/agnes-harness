@@ -19,9 +19,7 @@ export const ceilingAllows = (ceiling: LiteralCeiling, id: string): boolean => c
 
 export type ResourceCeilings = { readonly mcp: LiteralCeiling; readonly skills: LiteralCeiling }
 export const resourceCeilings = (
-  resources:
-    | { mcp: readonly string[] | LiteralCeiling; skills: readonly string[] | LiteralCeiling }
-    | undefined,
+  resources?: Record<'mcp' | 'skills', readonly string[] | LiteralCeiling>,
 ): ResourceCeilings => ({
   mcp: literalCeiling(resources?.mcp ?? []),
   skills: literalCeiling(resources?.skills ?? []),
@@ -37,6 +35,7 @@ export function roleAuthority(snapshot: RoleDelegation): RoleAuthority {
 }
 
 function captureAuthority(snapshot: RoleDelegation) {
+  snapshot = structuredClone(snapshot)
   const ownPolicies = new WeakMap<ToolPolicy, WeakMap<ToolPolicy, ToolPolicy>>()
   return {
     ...snapshot,
@@ -86,10 +85,15 @@ function captureAuthority(snapshot: RoleDelegation) {
   }
 }
 
-export function ceilingAllowsMcpTool(ceiling: LiteralCeiling, name: string): boolean {
+export function mcpToolAllowed(
+  scope: DefaultSelection | LiteralCeiling,
+  name: string,
+  packageId = '',
+): boolean {
   return (
     !name.startsWith('mcp_') ||
-    ceiling.ids.some((id) => name.startsWith(mcpStablePrefix(id.replace(/^mcp\//, ''))))
+    (scope.kind === 'selection' && (scope.ids === undefined || scope.ids.includes(packageId))) ||
+    (scope.ids ?? []).some((id) => name.startsWith(mcpStablePrefix(id.replace(/^mcp\//, ''))))
   )
 }
 

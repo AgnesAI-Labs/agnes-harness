@@ -7,19 +7,16 @@ export class ToolRegistryView extends ToolRegistry {
   constructor(source: ToolRegistry, names: readonly string[] | (() => readonly string[])) {
     super()
     this.source = source
+    this.add = source.add.bind(source)
+    this.registrations = source.registrations.bind(source)
+    this.prepareOwnerReplacement = source.prepareOwnerReplacement.bind(source)
     const fixed = typeof names === 'function' ? undefined : new Set(names)
     this.allowed = () => fixed ?? new Set(typeof names === 'function' ? names() : names)
   }
   private readonly source: ToolRegistry
-  override add(...args: Parameters<ToolRegistry['add']>) {
-    return this.source.add(...args)
-  }
-  override registrations(owner: string) {
-    return this.source.registrations(owner)
-  }
-  override prepareOwnerReplacement(...args: Parameters<ToolRegistry['prepareOwnerReplacement']>) {
-    return this.source.prepareOwnerReplacement(...args)
-  }
+  override readonly add: ToolRegistry['add']
+  override readonly registrations: ToolRegistry['registrations']
+  override readonly prepareOwnerReplacement: ToolRegistry['prepareOwnerReplacement']
   override resolve(name: string) {
     return this.allowed().has(name) ? this.source.resolve(name) : undefined
   }

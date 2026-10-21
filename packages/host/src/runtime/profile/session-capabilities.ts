@@ -1,9 +1,9 @@
 import {
   ceilingAllows,
-  ceilingAllowsMcpTool,
   childAgentRefusal,
   DEFAULT_LOOP,
   defaultSelection,
+  mcpToolAllowed,
   modelAllowsTool,
   type PresetView,
   type ResourceCeilings,
@@ -13,7 +13,6 @@ import {
   type ToolRegistry,
 } from '@agnes/core'
 import type { ChildAgentAllowlist } from '@agnes/extension-api'
-import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { toPresetView } from '@agnes/host-common/presets/view'
 import {
@@ -178,7 +177,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
       }
     return actual
   }
-  const mcpPrefixes = (selection.mcp ?? []).map((id) => mcpStablePrefix(id.replace(/^mcp\//, '')))
+  const mcpSelection = defaultSelection(selection.mcp)
   const tools = (input.installed?.tools ?? []).map((tool) =>
     decision(tool.name, [
       [packageEnabled(tool.packageId), 'package-enabled', source('packages')],
@@ -213,16 +212,9 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         source('toolPolicy.allow'),
       ],
       [!selection.toolPolicy?.deny?.includes(tool.name), 'policy-deny', source('toolPolicy.deny')],
+      [mcpToolAllowed(mcpSelection, tool.name, tool.packageId), 'mcp-selection', source('mcp')],
       [
-        !tool.name.startsWith('mcp_') ||
-          !selection.mcp?.length ||
-          selection.mcp.includes(tool.packageId ?? '') ||
-          mcpPrefixes.some((prefix) => tool.name.startsWith(prefix)),
-        'mcp-selection',
-        source('mcp'),
-      ],
-      [
-        resourcesCeiling === undefined || ceilingAllowsMcpTool(resourcesCeiling.mcp, tool.name),
+        resourcesCeiling === undefined || mcpToolAllowed(resourcesCeiling.mcp, tool.name),
         'role-resource-snapshot',
         { layer: 'session', name: 'role-delegation' },
       ],
