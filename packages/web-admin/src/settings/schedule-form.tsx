@@ -8,7 +8,7 @@ import {
   SettingsChoice,
   SettingsGroup,
   SettingsInput,
-  SettingsSelect,
+  SettingsPickerSelect,
   SettingsState,
   SettingsTextArea,
   StateSwitch,
@@ -336,8 +336,9 @@ export function ScheduleEditor({
         {draft.target === 'new-session' ? (
           <>
             <Field label={ux('workspace')} error={usable.length === 0 ? ux('workspaceNone') : undefined}>
-              <SettingsSelect
+              <SettingsPickerSelect
                 data-testid="schedules-workspace"
+                label={ux('workspace')}
                 disabled={busy || usable.length === 0}
                 value={draft.cwd}
                 onChange={(event) => set('cwd', event.target.value)}
@@ -348,12 +349,13 @@ export function ScheduleEditor({
                     {item.name || folderName(item.path)}
                   </option>
                 ))}
-              </SettingsSelect>
+              </SettingsPickerSelect>
             </Field>
             {(choices.modes.length > 0 || savedOnly(draft.mode, choices.modes)) && (
               <Field label={ux('mode')}>
-                <SettingsSelect
+                <SettingsPickerSelect
                   data-testid="schedules-mode"
+                  label={ux('mode')}
                   disabled={busy}
                   value={draft.mode}
                   onChange={(event) => set('mode', event.target.value)}
@@ -382,13 +384,14 @@ export function ScheduleEditor({
                       ))}
                     </optgroup>
                   )}
-                </SettingsSelect>
+                </SettingsPickerSelect>
               </Field>
             )}
             {choices.presets.length > 0 && (
               <Field label={ux('preset')}>
-                <SettingsSelect
+                <SettingsPickerSelect
                   data-testid="schedules-preset"
+                  label={ux('preset')}
                   disabled={busy}
                   value={draft.preset}
                   onChange={(event) => set('preset', event.target.value)}
@@ -399,13 +402,14 @@ export function ScheduleEditor({
                       {presetName(preset, t)}
                     </option>
                   ))}
-                </SettingsSelect>
+                </SettingsPickerSelect>
               </Field>
             )}
             {(choices.models.length > 0 || savedOnly(draft.model, choices.models)) && (
               <Field label={ux('model')}>
-                <SettingsSelect
+                <SettingsPickerSelect
                   data-testid="schedules-model"
+                  label={ux('model')}
                   disabled={busy}
                   value={draft.model}
                   onChange={(event) => set('model', event.target.value)}
@@ -421,7 +425,7 @@ export function ScheduleEditor({
                       {item.label}
                     </option>
                   ))}
-                </SettingsSelect>
+                </SettingsPickerSelect>
               </Field>
             )}
           </>
@@ -455,15 +459,16 @@ export function ScheduleEditor({
           />
         </Field>
         <Field label={ux('approvalBehavior')}>
-          <SettingsSelect
+          <SettingsPickerSelect
             data-testid="schedules-approval-behavior"
+            label={ux('approvalBehavior')}
             disabled={busy}
             value={draft.unattendedApproval ?? 'notify'}
             onChange={(event) => set('unattendedApproval', event.target.value as 'notify' | 'refuse')}
           >
             <option value="notify">{ux('approvalNotify')}</option>
             <option value="refuse">{ux('approvalRefuse')}</option>
-          </SettingsSelect>
+          </SettingsPickerSelect>
         </Field>
         <Field label={ux('frequency')}>
           <Segmented<Frequency>
@@ -510,8 +515,9 @@ export function ScheduleEditor({
                 value={draft.every}
                 onChange={(event) => set('every', event.target.value)}
               />
-              <SettingsSelect
+              <SettingsPickerSelect
                 data-testid="schedules-unit"
+                label={ux('interval')}
                 aria-label={ux('interval')}
                 disabled={busy}
                 value={draft.unit}
@@ -520,7 +526,7 @@ export function ScheduleEditor({
                 <option value="seconds">{ux('unit.seconds')}</option>
                 <option value="minutes">{ux('unit.minutes')}</option>
                 <option value="hours">{ux('unit.hours')}</option>
-              </SettingsSelect>
+              </SettingsPickerSelect>
             </span>
           </Field>
         )}

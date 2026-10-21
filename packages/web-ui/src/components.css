@@ -2566,6 +2566,11 @@
     align-items: center;
     gap: var(--s4);
   }
+  /* The themed trigger sizes itself inside the shrink-to-fit preset row. */
+  .agnes-settings-preset > .select-picker-trigger {
+    flex: 1 1 auto;
+    min-width: 7rem;
+  }
   .agnes-settings-preset-custom > input {
     width: 6rem;
     text-align: end;
