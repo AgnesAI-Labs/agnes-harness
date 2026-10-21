@@ -1,12 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
-import {
-  bindChildAgentSession,
-  CoreError,
-  childAgentAllowlist,
-  IN_PROCESS_CHILD_PROVIDER_ID,
-  inProcessChildAgentProvider,
-  setChildAgentAllowlist,
-} from '@agnes/core'
+import { bindChildAgentSession, CoreError, childAgentAllowlist, setChildAgentAllowlist } from '@agnes/core'
 import type {
   ChildAgentAllowlist,
   ChildAgentCatalogEntry,
@@ -26,8 +19,8 @@ import {
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
-import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
-import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
+import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 
 declare module '@agnes/cordis' {
@@ -35,14 +28,6 @@ declare module '@agnes/cordis' {
     childAgents: ChildAgentRegistry
   }
 }
-
-const CAPABILITIES = [
-  'continuable',
-  'interrupt',
-  'modelSelection',
-  'inheritsParentContext',
-  'worktree',
-] as const
 
 export class ChildAgentRegistry extends Service implements ChildAgentService {
   private readonly registry: ProviderRegistry<ChildAgentProvider>
@@ -74,13 +59,12 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     provider: ChildAgentProvider,
     sourcePackage?: string,
   ): () => Promise<void> {
-    this.registry.validate(sourcePackage ?? '@agnes/base', provider)
     const record = {
       provider,
       entry: Object.freeze({
         id: provider.id,
         version: provider.version,
-        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/base'),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage),
         capabilities: Object.freeze({ ...provider.capabilities }),
       }),
       lifetime: new AbortController(),
@@ -158,7 +142,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     options: ChildAgentStartOptions,
     recovering: boolean,
   ): Promise<ChildAgentHandle> {
-    const provider = this.registry.resolve(providerId ?? this.selection ?? IN_PROCESS_CHILD_PROVIDER_ID)
+    const provider = this.registry.resolve(providerId ?? this.selection ?? RELEASE_DEFAULTS.childProvider)
     providerId = provider.id
     const record = this.records.get(provider)!
     if (record.lifetime.signal.aborted)
@@ -316,40 +300,6 @@ export function installChildAgents(
   launch?: ChildAgentProviderStartOptions['launch'],
 ): ChildAgentRegistry {
   return new ChildAgentRegistry(root, origins, selection, launch)
-}
-
-/** Supply the in-process child provider through the same ordinary row and registry as community providers. */
-export function withBuiltinChildAgents(
-  modules: ReadonlyMap<string, PackageModule>,
-): ReadonlyMap<string, PackageModule> {
-  const builtin = modules.get('@agnes/base')
-  if (!builtin || builtin.plugins?.some((row) => row.declaration.id === 'child-agent:in-process'))
-    return modules
-  const provider = inProcessChildAgentProvider()
-  const result = new Map(modules)
-  result.set('@agnes/base', {
-    ...builtin,
-    plugins: [
-      ...(builtin.plugins ?? []),
-      {
-        declaration: {
-          id: 'child-agent:in-process',
-          export: 'childAgentPlugin',
-          default: true,
-          inject: ['providers'],
-          provide: [],
-          runtime: 'in-process',
-        },
-        entry: normalizePluginExport({
-          inject: ['providers'],
-          apply(ctx: Context) {
-            ctx.providers.registerHost(childAgentKind, '@agnes/base', provider)
-          },
-        }),
-      },
-    ],
-  })
-  return result
 }
 
 export function childAgentCatalog(root: Context): readonly ChildAgentCatalogEntry[] {

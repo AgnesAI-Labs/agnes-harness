@@ -20,7 +20,7 @@ export function assertHostPackageCoverage(root: string): void {
   if (unexpected.length)
     throw new Error(`Unclassified Host package: ${unexpected.map((pkg) => pkg.name).join(', ')}`)
 }
-// Explicit substrate/contract leaves. Implementation packages (including observability) are absent.
+// Explicit substrate/contracts and release assembly. Plugin implementations (including observability) are absent.
 export const CONTRACT_PACKAGES = new Set([
   '@agnes/cordis',
   '@agnes/core',
@@ -32,6 +32,7 @@ export const CONTRACT_PACKAGES = new Set([
   '@agnes/git-worktree-contract',
   '@agnes/intelligent-ui-contract',
   '@agnes/package-manager',
+  '@agnes/distribution',
   '@agnes/plugin-runtime',
   '@agnes/plugin-streams',
   '@agnes/protocol',

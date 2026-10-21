@@ -40,7 +40,8 @@
     "@agnes/host-providers": "workspace:*",
     "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/intelligent-ui-contract": "workspace:*",
-    "@agnes/observability": "workspace:*"
+    "@agnes/observability": "workspace:*",
+    "@agnes/distribution": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",

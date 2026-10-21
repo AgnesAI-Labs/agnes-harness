@@ -45,7 +45,7 @@ describe('Computer Use artifact retention', () => {
     const retention = inspect(dataDir(), false)
     expect(retention.required).toBe(false)
     expect(retention.metadataPresent).toBe(false)
-    expect('privateArtifactStore' in retention.contextFor('@agnes/base', 'artifacts')).toBe(
+    expect('privateArtifactStore' in retention.contextFor({ privateArtifactStore: true })).toBe(
       privateArtifactDeleteAvailable(),
     )
   })
@@ -58,15 +58,15 @@ describe('Computer Use artifact retention', () => {
     expect(retention.metadataPresent).toBe(true)
   })
 
-  it('hands the private artifact store only to the base artifacts seam', () => {
+  it('hands the private artifact store only to the Host-granted artifacts seam', () => {
     const retention = inspect(dataDir(), true)
-    expect(retention.contextFor('@agnes/other', 'artifacts')).toEqual({})
-    expect(retention.contextFor('@agnes/base', 'sandbox')).toEqual({})
+    expect(retention.contextFor({})).toEqual({})
+    expect(retention.contextFor({ computerUse: true })).toEqual({})
   })
 
   it('never retains for a platform other than the one the process runs on', () => {
     const retention = inspect(dataDir(), true, process.platform === 'linux' ? 'darwin' : 'linux')
-    expect(retention.contextFor('@agnes/base', 'artifacts')).toEqual({})
+    expect(retention.contextFor({ privateArtifactStore: true })).toEqual({})
     expect(retention.startCollector()).toBeUndefined()
   })
 })
@@ -90,7 +90,7 @@ describe('Computer Use mount', () => {
     const { host, rollback } = mount(false, process.platform)
     expect(host.backend).toBeUndefined()
     expect(host.hostToolDispatch).toBeUndefined()
-    expect(host.extensionContext('@agnes/base', 'agnes/computer-use')).toEqual({})
+    expect(host.extensionContext({ computerUse: true })).toEqual({})
     expect(host.status.status()).toEqual({ availability: expect.anything() })
     await rollback.unwind()
   })

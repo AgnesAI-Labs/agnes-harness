@@ -44,6 +44,9 @@ Type `/` to see the current menu. Common actions:
 | Session housekeeping | `/pin`, `/unpin`, `/rename TITLE`, `/archive` |
 | Approval grants | `/grants` lists what lets tools run unasked in this session ("this session" and "always"); `/grants revoke N\|ID` withdraws one (admin connection) |
 | Deliverables | `/deliverables` lists the files this session delivered; `/deliverables save N\|ID [PATH]` downloads one after checking size and sha256 |
+| Subagents | `/agents` lists the subagents this session can control; `/agents stop N\|ID` interrupts one and `/agents resume N\|ID MESSAGE` sends it more work. The daemon decides what is allowed and its refusal is shown |
+| Background jobs | `/jobs` lists this session's background jobs; `/jobs stop N\|ID` kills one (the daemon refuses jobs an agent owns) |
+| Queued messages | `/queue` lists the messages typed during a turn with Enter that wait for it to end; `/queue edit N` moves one back into the editor, `/queue drop N` discards it. The queue is kept by the TUI and is lost on exit. Alt+Enter during a turn still hands the message to the daemon's follow-up queue, which `/queue` does not show |
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
@@ -55,6 +58,8 @@ Type `/` to see the current menu. Common actions:
 Choose what a new session may do when you start it, for example `node agnes.mjs --permission read-only`; `--preset NAME` picks the recipe independently (see [permissions and presets](security.md#permissions-and-presets)). `/preset NAME` switches the open session's preset and keeps its permission; a different permission needs a new session.
 
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
+
+Ctrl-O expands the latest tool card and reads the whole call and result from the daemon; while it loads, or if it cannot be read, the card keeps its preview and says why. Plan, subagent, job and workflow tool calls get cards of their own: a plan shows one row per step with its state, the others show their name, state, run time when the timeline has it, and a one-line summary.
 
 When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. `/yolo off` asks for routine approvals again.
 

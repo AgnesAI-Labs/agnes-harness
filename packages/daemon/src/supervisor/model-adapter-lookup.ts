@@ -1,9 +1,5 @@
-import {
-  builtinModelAdapterCatalog,
-  builtinModelSelectionData,
-  conversationModelAdapters,
-  type ResolvedProfile,
-} from '@agnes/host'
+import { builtinModelAdapterCatalog, builtinModelSelectionData } from '@agnes/distribution'
+import { conversationModelAdapters, type ResolvedProfile } from '@agnes/host'
 import {
   type RuntimePluginSnapshot,
   readPublishedModelAdapters,

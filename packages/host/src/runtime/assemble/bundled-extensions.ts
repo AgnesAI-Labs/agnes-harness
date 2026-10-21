@@ -72,8 +72,8 @@ export function createBundledExtensions(
             dir: extensionDirectory,
             trust: pkg.trust,
             enabled: true,
-            integrity: pkg.integrity,
-            revision: pkg.integrity,
+            integrity: pkgs.grants.integrity(pkg.id) ?? pkg.integrity,
+            revision: pkgs.grants.integrity(pkg.id) ?? pkg.integrity,
           },
           packageId: pkg.id,
           packageDirectory,
@@ -91,8 +91,8 @@ export function createBundledExtensions(
             dir: packageDirectory,
             trust: 'builtin',
             enabled: true,
-            integrity: pkg.integrity,
-            revision: pkg.integrity,
+            integrity: pkgs.grants.integrity(pkg.id) ?? pkg.integrity,
+            revision: pkgs.grants.integrity(pkg.id) ?? pkg.integrity,
           },
           packageId: pkg.id,
           packageDirectory,
@@ -154,7 +154,7 @@ export function createBundledExtensions(
       return owner !== undefined && owner !== rowId
     },
     governance: new Map(
-      ['agnes/privacy', 'agnes/hooks-runner'].map((extensionId) => {
+      pkgs.grants.governance().map((extensionId) => {
         const manifest = authorManifestOf(extensionId)
         return [
           `ext:${extensionId}`,

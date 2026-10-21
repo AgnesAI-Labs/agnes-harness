@@ -2,6 +2,7 @@ import type { PresetView } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
 import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-selection'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { ModelRecord, RouteTable, RouteTarget, SlotName } from '@agnes/protocol'
 import { SLOT_NAMES } from '@agnes/protocol'
 
@@ -64,7 +65,9 @@ export function materializeRoutes(
     if (!SLOTS.has(slot)) bad('unknown-slot', `${slot} is not a protocol SlotName`, { slot, preset: named })
     // The built-in demo is a fallback; configured routes keep their declaration order. A route that
     // only answers payloads is a fallback too: it cannot hold the conversation `default` stands for.
-    const configured = declared.filter((route) => route.route !== 'demo' || route.api !== 'scripted')
+    const configured = declared.filter(
+      (route) => route.route !== RELEASE_DEFAULTS.demo.route || route.api !== RELEASE_DEFAULTS.demo.api,
+    )
     const decl =
       name === SENTINEL
         ? (configured.find((route) => !payloadOnly.has(route.route)) ??

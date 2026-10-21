@@ -31,9 +31,6 @@
       "path": "../host-infrastructure"
     },
     {
-      "path": "../model-adapters"
-    },
-    {
       "path": "../package-manager"
     },
     {
@@ -44,6 +41,9 @@
     },
     {
       "path": "../history-index"
+    },
+    {
+      "path": "../distribution"
     }
   ]
 }

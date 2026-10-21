@@ -18,55 +18,15 @@ import type { HostBuiltinRowClaim } from './seams-cordis.js'
  * (packages/package-manager/src/plugin-manifest.ts:72), so routing on the prefix would hijack
  * ordinary third-party Cordis rows. */
 export const EXT_ROW_MOUNT_REVISION = 'host-ext-row:v1'
+/** Only Host-owned live resource factories receive this mount identity. */
+export const LIVE_RESOURCE_MOUNT_REVISION = 'host-live-resource:v1'
 
-/** Builtin extensions supplied by their own `ext:` row. Skills has one Host-owned row refreshed
- * at the next turn; the retired mcp-client id remains reserved in the resource target format. */
-export const EXT_ROW_EXTENSION_IDS: ReadonlySet<string> = new Set([
-  'agnes/tools-core',
-  'agnes/tools-search',
-  'agnes/tools-web',
-  'agnes/interaction',
-  'agnes/intelligent-ui',
-  'agnes/goal',
-  'agnes/deliverables',
-  'agnes/jobs',
-  'agnes/jobs-web',
-  'agnes/compaction',
-  'agnes/refine',
-  'agnes/subagent',
-  'agnes/computer-use',
-  'agnes/code-mode',
-  'agnes/hooks-runner',
-  'agnes/privacy',
-  'agnes/plugin-creator',
-  'agnes/mcp-search',
-  'agnes/skills',
-  'agnes/plan-mode',
-  'agnes/mcp-resources',
-  'agnes/workflow',
-  'agnes/session-query',
-  'agnes/context-rules',
-  'agnes/time-context',
-  'agnes/follow-up-hint',
-  'agnes/schedule',
-])
+export {
+  RELEASE_EXTENSION_IDS as EXT_ROW_EXTENSION_IDS,
+  RELEASE_HOOK_RANKS as BUILTIN_HOOK_RANKS,
+} from '@agnes/package-manager'
 
-/**
- * Fixed dispatch position for the built-in hook layer (third-party-transform-directive-hooks design
- * §3 point 2), keyed the same way `EXTENSION_ROW_GRANTS` below is (`ext:<extension id>`). The order
- * is measured, not assumed: `agnes/skills` has a dedicated early row and also appears in
- * `EXT_ROW_EXTENSION_IDS`; deduplicating gives it the early rank exactly once. Every other
- * ext-row id follows `EXT_ROW_EXTENSION_IDS`'s own declared iteration order, which is what
- * actually drives row-build order today (`assemble.ts`'s `for (const extensionId of
- * EXT_ROW_EXTENSION_IDS)` loops) - `base-tools.test.ts`'s `host.extensions()` order assertion is the
- * empirical proof for every id present in that profile. `agnes/code-mode` is not enabled in that
- * profile, so its rank is inferred from its position in the same declared list rather than
- * separately measured. A fixed table, not registration order, survives hot-reload/reconciliation
- * re-registering a built-in: registration order alone would push it behind the third-party layer.
- */
-export const BUILTIN_HOOK_RANKS: ReadonlyMap<string, number> = new Map(
-  [...new Set(['agnes/skills', ...EXT_ROW_EXTENSION_IDS])].map((id, index) => [`ext:${id}`, index]),
-)
+import { RELEASE_EXTENSION_IDS } from '@agnes/package-manager'
 
 /**
  * An extension that exists only at runtime, one instance per resource (an MCP server): stage 2b,
@@ -89,36 +49,8 @@ export type DynamicExtension = Readonly<{
   generation?: Readonly<{ kind: string; data: import('@agnes/protocol').JsonValue }>
 }>
 
-/** Builtin extensions whose `ext:` row supplies them through the shared row host. */
-export const MIGRATED_EXTENSION_IDS: ReadonlySet<string> = new Set([
-  'agnes/tools-search',
-  'agnes/tools-core',
-  'agnes/tools-web',
-  'agnes/interaction',
-  'agnes/intelligent-ui',
-  'agnes/goal',
-  'agnes/deliverables',
-  'agnes/jobs',
-  'agnes/jobs-web',
-  'agnes/compaction',
-  'agnes/code-mode',
-  'agnes/subagent',
-  'agnes/refine',
-  'agnes/privacy',
-  'agnes/plugin-creator',
-  'agnes/computer-use',
-  'agnes/hooks-runner',
-  'agnes/mcp-search',
-  'agnes/skills',
-  'agnes/plan-mode',
-  'agnes/mcp-resources',
-  'agnes/workflow',
-  'agnes/session-query',
-  'agnes/context-rules',
-  'agnes/time-context',
-  'agnes/follow-up-hint',
-  'agnes/schedule',
-])
+/** Migrated and declared row identities have identical membership. */
+export const MIGRATED_EXTENSION_IDS = RELEASE_EXTENSION_IDS
 
 export type ExtRowLoadResult = Readonly<{
   id: string
@@ -222,6 +154,7 @@ export function buildExtensionRow(
     extensionId: string
     packageId: string
     entryRevision: string
+    liveResource?: boolean
     liveResources?: readonly string[]
     liveResourceRevision?: string
     /** Set for a migrated id; otherwise the managed host's `loader` and `owners` carry the lifecycle. */
@@ -246,43 +179,13 @@ export function buildExtensionRow(
     ...(input.liveResources === undefined ? {} : { liveResources: input.liveResources }),
     ...(input.liveResourceRevision === undefined ? {} : { liveResourceRevision: input.liveResourceRevision }),
     extrasRevision: EMPTY_EXTRAS_REVISION,
-    mountRevision: EXT_ROW_MOUNT_REVISION,
+    mountRevision: input.liveResource ? LIVE_RESOURCE_MOUNT_REVISION : EXT_ROW_MOUNT_REVISION,
     ...(input.config === undefined ? {} : { config: input.config }),
     inject: [],
     provides: [],
     ...(input.disabled === undefined ? {} : { disabled: input.disabled }),
   })
   return Object.freeze({ row, claim: Object.freeze({ row, entry, ownerPackage: input.packageId }) })
-}
-
-/** Privileged inputs a builtin ext: row may receive, keyed on the ROW id. A row is the only way an
- * id gets here through the tree - a third-party ROW never obtains a builtin claim (the publisher
- * refuses it with E_RUNTIME_TARGET_STATIC_CLAIM) and `host:`/`spine:` ids and provides are refused
- * outright (plugin-runtime/src/row-mount.ts:502-509). The table is NOT self-sufficient, though:
- * its consumer (`buildEcosystemContext`) runs for every extension the factory selector loads, rows
- * and non-rows alike, so the owner must be checked too - see `extensionRowGrantFor`. */
-export const EXTENSION_ROW_GRANTS: ReadonlyMap<string, Readonly<{ computerUse: true }>> = new Map([
-  ['ext:agnes/computer-use', Object.freeze({ computerUse: true as const })],
-])
-
-/** The only package whose extensions may receive a builtin row's privileged inputs. */
-const BUILTIN_ROW_OWNER = '@agnes/base'
-
-/**
- * The privileged inputs `extensionId` may receive when supplied by `owner`, or undefined.
- *
- * Two independent conditions, deliberately. The row-id table decides WHICH extension gets a grant.
- * The owner check is defence in depth and stays until stage 2: nothing reserves the `agnes/` id
- * scope at runtime, so a TRUSTED THIRD-PARTY package whose root manifest id is `agnes/computer-use`
- * is loaded by assemble's own `specs` loop with the same extension id, reaching the same context
- * builder without ever being a row. On the row-id table alone it would be handed the Computer Use
- * backend provider.
- */
-export function extensionRowGrantFor(
-  owner: string,
-  extensionId: string,
-): Readonly<{ computerUse: true }> | undefined {
-  return owner === BUILTIN_ROW_OWNER ? EXTENSION_ROW_GRANTS.get(`ext:${extensionId}`) : undefined
 }
 
 /** The part of the published target this module reads. Structural on purpose: the guard on the
@@ -316,7 +219,7 @@ export function composeExtensionRowTarget(
   rows: readonly Readonly<PluginRow>[]
   resources: Readonly<{ mcp: unknown; skills: unknown }>
 }> {
-  const owned = new Set([...EXT_ROW_EXTENSION_IDS].map((id) => `ext:${id}`))
+  const owned = new Set([...RELEASE_EXTENSION_IDS].map((id) => `ext:${id}`))
   for (const id of input.extraOwnedRowIds ?? []) owned.add(id)
   const published: readonly Readonly<PluginRow>[] = input.live
     ? [

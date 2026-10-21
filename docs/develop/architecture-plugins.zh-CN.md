@@ -197,3 +197,7 @@ plugin-runtime 提供所有 kind 的 defineX helper，extension-api/testkit 提�
 只读后端状态依赖可以注册 `workspaceStateKind`，它不授予执行、账本或写入端口。Base 的计划后端提供 `plan-mode` 状态提供方，审批策略在清单中声明可选的 `planMode` 依赖；卸载客户端视图不会移除审批约束。计划操作使用普通服务：`plan.status` 查询和 `plan.command` 效果。后者接受 `/plan` 命令语法，并要求已认证的人工工作区控制授权。
 
 调用方可以通过 `Host.resolveService(sessionId, names)` 解析整个服务合同。解析使用会话锁定的 Host，并要求同一所有者提供全部所需服务；缺失或存在歧义的合同不授予权限。后续调用仍执行原有服务授权、主体、工作区及查询／效果检查。共享任务界面由此支持社区后端，无需按包名分发。
+
+Host 持有的特权能力由发行装配声明，与作者 manifest 权限分开。Host 将每项 grant 绑定到已启用的发行包、已加载模块及 factory。文件 loader 在授予前固定并复验代码树和目录身份；保留扩展行通过现有 generation pin 记录代码树 revision。嵌入式及内部内存 loader 绑定 Host 持有的代码映像。同名安装快照不能借用发行 grant。Core 消费 Host 提供的执行域证明，不识别包名。Host 持有的 live resource 行携带私有 mount revision，不由名称决定是否计入代码代际。
+
+发行包 distribution 装配发行 provider 行与模型元数据；package-manager 拥有发行策略、内置载荷目录和 profile 模板。Host 通过普通行路径消费该装配。子引擎归属与内置客户端查询桥接来自同一发行策略；包自身的声明优先于兼容默认值。

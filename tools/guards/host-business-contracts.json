@@ -24,38 +24,6 @@
     "reason": "Host composition control-plane source; no business capability grant"
   },
   {
-    "path": "packages/host/src/runtime/assemble/workspace-runtime.ts",
-    "symbol": "<module>",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-import",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; transport mismatch remains refused"
-  },
-  {
-    "path": "packages/host/src/runtime/assemble/workspace-runtime.ts",
-    "symbol": "<module>/FunctionDeclaration:createReadinessManager/Block:0/VariableDeclaration:readinessManager/NewExpression:0/ArrowFunction:0",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; transport mismatch remains refused"
-  },
-  {
-    "path": "packages/host/src/runtime/assemble/workspace-runtime.ts",
-    "symbol": "<module>/FunctionDeclaration:workspaceSandboxPolicy/Block:0/VariableDeclaration:implementation",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; transport mismatch remains refused"
-  },
-  {
-    "path": "packages/host/src/runtime/assemble/workspace-runtime.ts",
-    "symbol": "<module>/FunctionDeclaration:createWorkspaceRuntimeFactory/Block:0/VariableDeclaration:openWorkspaceRuntime/ArrowFunction:0/Block:0/ReturnStatement:0/CallExpression:0/ObjectLiteralExpression:0/PropertyAssignment:fitSandbox/ArrowFunction:0",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; transport mismatch remains refused"
-  },
-  {
     "path": "packages/host/src/runtime/feedback/contract.ts",
     "symbol": "<module>/VariableDeclaration:FEEDBACK_OWNER",
     "literal": "agnes/feedback",
@@ -110,22 +78,6 @@
     "role": "comparison",
     "max": 1,
     "reason": "Historical UI origin wire identity for trace receipt validation"
-  },
-  {
-    "path": "packages/host-computer-use/src/computer-use/host-enforcement.ts",
-    "symbol": "<module>/TypeAliasDeclaration:ComputerUseHostAuthority",
-    "literal": "agnes/computer-use",
-    "role": "literal",
-    "max": 1,
-    "reason": "Backend CU receipt source and verification contract; never an author grant"
-  },
-  {
-    "path": "packages/host-computer-use/src/computer-use/host-enforcement.ts",
-    "symbol": "<module>/FunctionDeclaration:validateAuthority",
-    "literal": "agnes/computer-use",
-    "role": "comparison",
-    "max": 1,
-    "reason": "Backend CU receipt source and verification contract; never an author grant"
   },
   {
     "path": "packages/host-infrastructure/src/adapters/codex-credentials.ts",
@@ -256,62 +208,6 @@
     "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
   },
   {
-    "path": "packages/host-infrastructure/src/adapters/sandbox-local.ts",
-    "symbol": "<module>",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-import",
-    "max": 1,
-    "reason": "Backend local sandbox implementation identity; no official business grant"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/sandbox-local.ts",
-    "symbol": "<module>/FunctionDeclaration:createLocalSandboxProvider",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-literal",
-    "max": 1,
-    "reason": "Backend local sandbox implementation identity; no official business grant"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/sandbox-local.ts",
-    "symbol": "<module>/FunctionDeclaration:createLocalSandboxProvider/Block:0/ReturnStatement:0/ObjectLiteralExpression:0/MethodDeclaration:create",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-literal",
-    "max": 1,
-    "reason": "Backend local sandbox implementation identity; no official business grant"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/storage-provider.ts",
-    "symbol": "<module>",
-    "literal": "DEFAULT_PERSISTENCE_PROVIDER_ID",
-    "role": "default-import",
-    "max": 1,
-    "reason": "Backend sqlite identity and duplicate-provider refusal"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/storage-provider.ts",
-    "symbol": "<module>/FunctionDeclaration:createPersistenceProviderRegistry/Block:0/VariableDeclaration:add/ArrowFunction:0",
-    "literal": "DEFAULT_PERSISTENCE_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Backend sqlite identity and duplicate-provider refusal"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/storage-sqlite-provider.ts",
-    "symbol": "<module>",
-    "literal": "DEFAULT_PERSISTENCE_PROVIDER_ID",
-    "role": "default-import",
-    "max": 1,
-    "reason": "Backend sqlite implementation identity and lifecycle enforcement"
-  },
-  {
-    "path": "packages/host-infrastructure/src/adapters/storage-sqlite-provider.ts",
-    "symbol": "<module>/VariableDeclaration:sqlitePersistenceProvider",
-    "literal": "DEFAULT_PERSISTENCE_PROVIDER_ID",
-    "role": "default-literal",
-    "max": 1,
-    "reason": "Backend sqlite implementation identity and lifecycle enforcement"
-  },
-  {
     "path": "packages/host-infrastructure/src/codex-login.ts",
     "symbol": "<module>/FunctionDeclaration:createCodexLogin/Block:0/ReturnStatement:0/ArrowFunction:0",
     "literal": "openai-codex",
@@ -374,46 +270,6 @@
     "role": "literal",
     "max": 1,
     "reason": "Historical managed worktree branch wire format and ownership validation"
-  },
-  {
-    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
-    "symbol": "<module>",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-import",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; remote must not fall back to local"
-  },
-  {
-    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
-    "symbol": "<module>/FunctionDeclaration:bindStartupSandboxProvider",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; remote must not fall back to local"
-  },
-  {
-    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
-    "symbol": "<module>/FunctionDeclaration:bindStartupSandboxProvider",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-literal",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; remote must not fall back to local"
-  },
-  {
-    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
-    "symbol": "<module>/FunctionDeclaration:createSandboxDispatchExec/Block:0/ReturnStatement:0/ObjectLiteralExpression:0/MethodDeclaration:openProcess/Block:0/VariableDeclaration:actual",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; remote must not fall back to local"
-  },
-  {
-    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
-    "symbol": "<module>/FunctionDeclaration:createSandboxDispatchExec/Block:0/ReturnStatement:0/ObjectLiteralExpression:0/MethodDeclaration:run/Block:0/VariableDeclaration:offered",
-    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
-    "role": "default-comparison",
-    "max": 1,
-    "reason": "Local execution-domain enforcement; remote must not fall back to local"
   },
   {
     "path": "packages/host-providers/src/adapters/sandbox-providers.ts",

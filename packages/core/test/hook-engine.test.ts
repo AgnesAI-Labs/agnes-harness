@@ -2,6 +2,7 @@ import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
 import type { HookContext, HookHandler, HookPayloadMap } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
+import { HookBlockedError } from '../src/hooks/block.js'
 import { HookEngine } from '../src/hooks/engine.js'
 import { contextReturnToWire } from '../src/hooks/returns.js'
 import { HookRegistry } from '../src/registry/hooks.js'
@@ -213,6 +214,32 @@ describe('HookEngine typed invocation', () => {
     await e.dispatch('before_step', () => payload, context())
     expect(count).toBe(1)
   })
+
+  it.each([
+    [{ source: 'acme/hooks', trust: 'builtin' as const, contextBlocking: true }, true],
+    [{ source: 'agnes/hooks-runner', trust: 'builtin' as const, contextBlocking: false }, false],
+    [{ source: 'agnes/hooks-runner', trust: 'trusted' as const, contextBlocking: true }, false],
+  ] as const)(
+    'uses Host attestation rather than hook names for context refusal: %j',
+    async (source, allowed) => {
+      const e = engine()
+      e.on(
+        'context',
+        () => {
+          throw new HookBlockedError('reviewed refusal')
+        },
+        source,
+      )
+      const result = await e.dispatch(
+        'context',
+        () => ({ sections: [], surfaceDigest: { nodes: 0, tokensEstimate: 0 }, getSurface: () => [] }),
+        context(),
+      )
+      expect(result.kind).toBe('rejected')
+      if (allowed) expect(result).toMatchObject({ blocked: { reason: 'reviewed refusal' } })
+      else expect(result).not.toHaveProperty('blocked')
+    },
+  )
 
   it('validates author returns before accepting changes or running downstream handlers', async () => {
     const e = engine()

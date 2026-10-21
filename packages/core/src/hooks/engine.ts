@@ -138,6 +138,7 @@ export class HookEngine {
       event,
       entries.map((registration) => ({
         source: registration.meta.source,
+        contextBlocking: registration.meta.trust === 'builtin' && registration.meta.contextBlocking === true,
         invoke: async ({ signal, replayed }) => {
           const lease = this.options.leaseFor ? this.options.leaseFor(registration.meta.source) : legacyLease
           if (!lease) throw new CoreError('E_ENVELOPE', 'hook source lease unavailable')

@@ -1,4 +1,5 @@
 import { LOCALES, type Locale, type LocaleKey } from './locale.js'
+import { CONTROL_DICT, type ControlKey } from './locale-control.js'
 
 /** 既有 cli-tui 字典的扩展域（C1）：命令说明、用量明细、工具卡、欢迎横幅、主题选择与连接提示。 */
 export const EXTENDED_KEYS = [
@@ -251,9 +252,10 @@ export const EXTENDED_KEYS = [
   'deliverables.saved',
 ] as const
 
-export type ExtendedKey = (typeof EXTENDED_KEYS)[number]
+type BaseKey = (typeof EXTENDED_KEYS)[number]
+export type ExtendedKey = BaseKey | ControlKey
 
-const DICT: Record<Locale, Record<ExtendedKey, string>> = {
+const BASE: Record<Locale, Record<BaseKey, string>> = {
   en: {
     'commands.help': 'List every slash command with its usage',
     'commands.helpSummary': 'List all commands',
@@ -737,6 +739,11 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     'composer.level.xhigh': '超高',
     'composer.level.max': '最高',
   },
+}
+
+const DICT: Record<Locale, Record<ExtendedKey, string>> = {
+  en: { ...BASE.en, ...CONTROL_DICT.en },
+  'zh-CN': { ...BASE['zh-CN'], ...CONTROL_DICT['zh-CN'] },
 }
 
 export function tt(

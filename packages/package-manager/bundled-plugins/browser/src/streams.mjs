@@ -401,6 +401,7 @@ export async function showPage(runtime, input, context) {
           clearTimeout(capture.settle)
           runtime.listeners.delete(capture.broadcast)
           item.capture = undefined
+          await capture.stopAudio?.()
           await cdp.detach().catch(() => {})
           throw error
         }

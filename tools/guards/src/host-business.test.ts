@@ -51,6 +51,8 @@ const cases = [
     'namespace destructured default',
     `import * as core from '@agnes/core'; const { DEFAULT_LOOP: choice } = core;`,
   ],
+  ['daemon peer import', `import type { PublishChildEngines } from '@agnes/daemon-rpc/local/methods/config'`],
+  ['daemon peer name branch', `if (owner === '@agnes/daemon-admin') bind()`],
   [
     'typed capabilities',
     `const declaration = { kind: 'child-agent', capabilities: { tools: true, artifacts: true }, owner: community };`,
@@ -69,13 +71,21 @@ const cases = [
   ],
 ] as const
 const paths = cases.map(([, source], index) => {
-  const file = join(scratch, `case-${index}${CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]}`)
+  const extension = /\b(?:import\s+type|type\s+\w+\s*=)/.test(source)
+    ? '.ts'
+    : CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]
+  const file = join(scratch, `case-${index}${extension}`)
   writeFileSync(file, source)
   return file
 })
-const results = withSourceTrees(paths, (trees) =>
-  trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
-)
+const classified = withSourceTrees(paths, (trees) => ({
+  host: trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
+  core: trees.map((tree) => hostFindings(tree, 'packages/core/src/registry/tools.ts', catalogue)),
+  daemon: trees.map((tree) =>
+    hostFindings(tree, 'packages/daemon/src/supervisor/assembly-runtime.ts', catalogue),
+  ),
+}))
+const results = classified.host
 
 describe('Host excludes official business identities/implementations; reviewed legacy only shrinks', () => {
   it('checks production sources, templates and dependency manifests', () => {
@@ -104,7 +114,9 @@ describe('Host excludes official business identities/implementations; reviewed l
   it.each(cases.map(([name], index) => [name, index] as const))(
     '%s is classified correctly',
     (_name, index) => {
-      expect((results[index]?.length ?? 0) > 0).toBe(index < 16)
+      expect((results[index]?.length ?? 0) > 0).toBe(index < 18)
+      expect((classified.core[index]?.length ?? 0) > 0).toBe(index < 18)
+      expect((classified.daemon[index]?.length ?? 0) > 0).toBe(index < 16 || index === 17)
     },
   )
   it('rejects occurrence growth, a new comparison branch, moved symbols, stale/additional/enlarged allowances', () => {
@@ -126,6 +138,15 @@ describe('Host excludes official business identities/implementations; reviewed l
     expect(hostViolations([finding], [{ ...entry, path: 'packages/host/**' }], [])).not.toEqual([])
   })
   it('a wire namespace does not conceal an additional business identity in the same string', () => {
+    const file = join(scratch, 'mixed-peer.ts')
+    writeFileSync(file, "import '@agnes/daemon-admin/@agnes/base'")
+    expect(
+      withSourceTrees([file], (trees) =>
+        trees.flatMap((tree) =>
+          hostFindings(tree, 'packages/daemon/src/supervisor/assembly-runtime.ts', catalogue),
+        ),
+      ),
+    ).toHaveLength(1)
     expect(
       templateFindings('id: "x/agnes/intelligent-ui/action @agnes/base"', 'template.yaml', catalogue),
     ).toHaveLength(1)

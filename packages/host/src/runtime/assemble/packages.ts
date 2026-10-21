@@ -1,4 +1,8 @@
 import { HostError } from '@agnes/host-common/errors'
+import {
+  type HostCapabilityAuthority,
+  pinHostCapabilities,
+} from '@agnes/host-extensions/assemble/host-grants'
 import type { LoadedRuntimePackage, PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { loadRuntimePackage } from '@agnes/host-extensions/assemble/packages'
 import { isolationInventory } from '@agnes/host-providers/assemble/isolation-inventory'
@@ -10,6 +14,7 @@ import { prepareRuntimeSelection } from './runtime-prepare.js'
 export type PackageSet = Readonly<{
   /** Package id to the directory its exports and bundled extensions are read from. */
   dirs: ReadonlyMap<string, string>
+  grants: HostCapabilityAuthority
   modules: Map<string, PackageModule>
   runtimePackages: ReadonlyMap<string, LoadedRuntimePackage>
   runtimePackageIds: ReadonlySet<string>
@@ -73,6 +78,11 @@ export async function loadPackages(ctx: AssemblyContext): Promise<PackageSet> {
   for (const [name, pkg] of Object.entries(profile.seams))
     if (typeof pkg === 'string' && name !== 'platform' && !dirs.has(pkg))
       refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
+  const grants = pinHostCapabilities(
+    enabled.filter((pkg) => !runtimePackageIds.has(pkg.id) && !managedExtensionPackages.has(pkg.id)),
+    dirs,
+    deps.generationBuiltinRows,
+  )
   const inventory = isolationInventory(profile, deps, dirs)
   const runtimePackages = await loadRuntimeSelection(activeRuntimeSources)
   const modules = new Map<string, PackageModule>()
@@ -84,6 +94,7 @@ export async function loadPackages(ctx: AssemblyContext): Promise<PackageSet> {
           ? { id, extensionEntry: dir }
           : await deps.loader.importPackage(id, dir)),
     )
+  grants.bind(modules)
   deps.onGenerationBasePackages?.(
     [...modules]
       .filter(
@@ -94,6 +105,7 @@ export async function loadPackages(ctx: AssemblyContext): Promise<PackageSet> {
   )
   return {
     dirs,
+    grants,
     modules,
     runtimePackages,
     runtimePackageIds,

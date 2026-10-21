@@ -1,4 +1,5 @@
-import { LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
+
 import { HostError } from '../errors.js'
 
 export const PROVIDER_ID = /^[a-z][a-z0-9-]{0,63}$/
@@ -28,7 +29,7 @@ export function readSandboxStartupConfig(
   )
     throw new HostError('E_PROFILE_FRAGMENT_KEY', 'sandbox.options must be a mapping of strings')
   if (record.provider === undefined && record.options === undefined) return undefined
-  const provider = record.provider ?? LOCAL_SANDBOX_PROVIDER_ID
+  const provider = record.provider ?? RELEASE_DEFAULTS.sandboxProvider
   if (typeof provider !== 'string' || !PROVIDER_ID.test(provider))
     throw new HostError('E_PROFILE_FRAGMENT_KEY', 'providers.sandbox.provider must be a provider id', {
       detail: { field: 'providers.sandbox.provider' },
@@ -43,5 +44,5 @@ export function sandboxProviderIdFrom(
   config: { sandbox?: { provider?: string; options?: Readonly<Record<string, string>> } } | undefined,
 ): string {
   const id = config?.sandbox?.provider
-  return id === undefined || id === '' ? LOCAL_SANDBOX_PROVIDER_ID : id
+  return id === undefined || id === '' ? RELEASE_DEFAULTS.sandboxProvider : id
 }

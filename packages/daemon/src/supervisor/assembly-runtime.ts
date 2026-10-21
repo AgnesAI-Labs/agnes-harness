@@ -19,7 +19,7 @@ import {
   createSecretsFile,
   overlayChildEngineTarget,
 } from '@agnes/host'
-import { activeRuntimePinId, isRuntimePackageEligible } from '@agnes/package-manager'
+import { activeRuntimePinId, isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { HARNESS_VERSION } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -146,14 +146,14 @@ async function openRuntimeSurfaces(state: PackageInput, lifetime: AssemblyLifeti
       })
     : undefined
   await pinCoordinator?.recover()
-  const basePackage = o.profile.packages.find((pkg) => pkg.id === '@agnes/base')
+  const childEngineOwner = releaseChildEngineOwner(o.profile.packages)
   const publishChildEngines: PublishChildEngines | undefined =
-    runtimeStore && pinCoordinator && runtimeTargetProbe && basePackage
+    runtimeStore && pinCoordinator && runtimeTargetProbe && childEngineOwner
       ? (() => {
           const store = runtimeStore
           const coordinator = pinCoordinator
           const probe = runtimeTargetProbe
-          const integrity = basePackage.integrity
+          const integrity = childEngineOwner.integrity
           return async (engines) => {
             try {
               const previous = store.desired()

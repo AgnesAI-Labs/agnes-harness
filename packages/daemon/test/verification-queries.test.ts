@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createPackageAdminService } from '@agnes/daemon-admin/packages/handler'
 import { FilePackageOperationStore } from '@agnes/daemon-admin/packages/operations'
@@ -322,7 +322,9 @@ it('opens a real Host session with bounded source verification and still refuses
     for (const [directory] of [...hash.mock.calls, ...asyncHash.mock.calls])
       counts.set(directory, (counts.get(directory) ?? 0) + 1)
     const installed = [...counts].filter(
-      ([dir]) => dir.includes(`${sep}packages${sep}`) && !dir.includes('.runtime-snapshots'),
+      ([dir]) =>
+        dir.startsWith(join(f.root, 'profiles', 'local-dev', 'packages')) &&
+        !dir.includes('.runtime-snapshots'),
     )
     const snapshots = [...counts].filter(([dir]) => dir.includes('.runtime-snapshots'))
     const generations = [...counts].filter(([dir]) => dir.includes('.runtime-generations'))

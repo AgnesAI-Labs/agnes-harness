@@ -35,6 +35,9 @@ node agnes.mjs
 | 操作 | 用法 |
 | --- | --- |
 | 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区）、`/search QUERY`（需管理员连接） |
+| 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
+| 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
+| 排队消息 | `/queue` 列出回合进行中按 Enter 输入、等回合结束后发送的消息；`/queue edit N` 放回输入框修改，`/queue drop N` 丢弃。队列由 TUI 保存，退出即丢失。回合中按 Alt+Enter 仍交给 daemon 的后续消息队列，`/queue` 不显示 |
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
@@ -49,6 +52,8 @@ node agnes.mjs
 启动时选择新会话能做什么，例如 `node agnes.mjs --permission read-only`；`--preset NAME` 独立选择配方（见[权限与预设](security.zh-CN.md#permissions-and-presets)）。`/preset NAME` 切换当前会话的预设并保留其权限；更换权限需新建会话。
 
 TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.zh-CN.md)为准。
+
+Ctrl-O 展开最近一张工具卡，并向 daemon 读取完整的调用与结果；读取期间或读取失败时，卡片保留预览并说明原因。计划、子智能体、后台任务和工作流的工具调用有各自的卡片：计划每步一行并标出状态，其余显示名称、状态、时间线里有的耗时和一行摘要。
 
 审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 为当前会话启用完全权限：跳过工具审批，允许读写工作区内外的文件。策略中的明确禁令、操作系统权限和已配置的命令沙箱限制仍然有效。新会话会沿用已保存的权限选择。`/yolo off` 恢复常规审批询问。
 

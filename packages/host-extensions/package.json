@@ -51,7 +51,8 @@
     "./profile/owned-store": "./src/profile/owned-store.ts",
     "./profile/wakes": "./src/profile/wakes.ts",
     "./profile/managed": "./src/profile/managed.ts",
-    "./profile/streams": "./src/profile/streams.ts"
+    "./profile/streams": "./src/profile/streams.ts",
+    "./assemble/host-grants": "./src/assemble/host-grants.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

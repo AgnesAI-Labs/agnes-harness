@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createAnsi, EXTENDED_KEYS, Text, tt } from '@agnes/cli-tui'
+import { CONTROL_KEYS, createAnsi, EXTENDED_KEYS, Text, tt } from '@agnes/cli-tui'
 import { describe, expect, it } from 'vitest'
 import { LOCALE_KEYS, LOCALES, resolveLocale, t } from '../../src/tui/locale.js'
 import { displayWidth } from '../../src/tui/terminal.js'
@@ -19,7 +19,7 @@ describe('locale (cli 稿 §9.4)', () => {
 
   it('has every extended key populated in every locale', () => {
     for (const locale of LOCALES) {
-      for (const key of EXTENDED_KEYS) {
+      for (const key of [...EXTENDED_KEYS, ...CONTROL_KEYS]) {
         expect(tt(key, locale), `${locale} ${key}`).toBeTruthy()
         expect(tt(key, locale)).not.toBe(key)
       }

@@ -1,3 +1,4 @@
+import { RELEASE_CLIENT_QUERIES } from '@agnes/package-manager'
 import {
   type ClientModuleServiceCallParams,
   type ExtensionCallResult,
@@ -14,13 +15,12 @@ export function callBuiltinClientQuery(
       ) => Promise<ExtensionCallResult>)
     | undefined,
 ): Promise<ExtensionCallResult> | undefined {
-  const extension =
-    params.rowId === 'web:builtin:agnes/reply-suggestions' && params.service === 'replies.read'
-      ? 'agnes/follow-up-hint'
-      : undefined
-  if (!extension) return undefined
+  const bridge = RELEASE_CLIENT_QUERIES.find(
+    (entry) => entry.rowId === params.rowId && entry.service === params.service,
+  )
+  if (!bridge) return undefined
   if (!call) return Promise.reject(rpcError('CAPABILITY_DENIED'))
-  return call({ ...params, packageId: '@agnes/base', extension }).then((result) => {
+  return call({ ...params, packageId: bridge.packageId, extension: bridge.extension }).then((result) => {
     if (!validatePackageAdminCall('_agnes/v1/clientModules.callService', 'result', result).ok)
       throw rpcError('INTERNAL_ERROR')
     return result

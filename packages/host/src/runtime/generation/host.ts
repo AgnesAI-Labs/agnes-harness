@@ -65,7 +65,6 @@ import { describeGenerationStatus, type PluginGenerationStatus } from './status.
 import {
   codeRevision,
   codeRow,
-  liveResource,
   liveResourceRow,
   pluginWorkspaceLayers,
   registryCodeRevision,
@@ -316,7 +315,7 @@ export async function createRuntimeGenerationHost(
         : [...(rowsByGeneration.get(snapshot.id) ?? preparedRows).values()]
       const restored = new Map(
         savedRows
-          .filter((input) => !liveResource(`ext:${input.extensionId}`))
+          .filter((input) => input.dynamic?.generation?.kind !== 'mcp-server')
           .map((input) => [input.extensionId, input]),
       )
       for (const input of preparedRows.values()) {
@@ -331,7 +330,7 @@ export async function createRuntimeGenerationHost(
         restored.set(input.extensionId, { ...input, dynamic })
       }
       for (const input of rowsByGeneration.get(snapshot.id)?.values() ?? [])
-        if (!liveResource(`ext:${input.extensionId}`)) restored.set(input.extensionId, input)
+        if (input.dynamic?.generation?.kind !== 'mcp-server') restored.set(input.extensionId, input)
       const builtins = host.extensionRows.current()
       for (const row of targetRows(target)) {
         if (!builtins.some((boot) => boot.id === row.id && boot.plugin === row.plugin)) continue
@@ -379,10 +378,10 @@ export async function createRuntimeGenerationHost(
       // explicitly selected resource rows above have already replaced their claims with live inputs.
       if (rowIds)
         await host.extensionRows.apply([
-          ...rowIds.filter((id) => !liveResource(id)).flatMap((id) => claims.get(id) ?? []),
+          ...rowIds.flatMap((id) => claims.get(id) ?? []).filter((row) => !liveResourceRow(row)),
           ...targetRows(target)
             .filter(
-              (row) => liveResource(row.id) || (!!row.liveResources?.length && !rowIds.includes(row.id)),
+              (row) => liveResourceRow(row) || (!!row.liveResources?.length && !rowIds.includes(row.id)),
             )
             .flatMap((row) => claims.get(row.id) ?? []),
         ])
@@ -659,7 +658,7 @@ export async function createRuntimeGenerationHost(
         await host.refreshSkillRow(skillInput ? createGenerationSkills(skillInput).input : undefined)
       const resources = resourceInputs.map((input) => host.extensionRows.prepare(input))
       await host.extensionRows.apply([
-        ...host.extensionRows.current().filter((row) => !liveResource(row.id)),
+        ...host.extensionRows.current().filter((row) => !liveResourceRow(row)),
         ...resources,
       ])
       const retained = host.runtimeTargetSnapshot?.()

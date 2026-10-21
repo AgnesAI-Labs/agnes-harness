@@ -191,6 +191,7 @@ export function createExtensionHost(
       modules,
       inventory,
       contextFor,
+      grantsFor: (owner, id) => pkgs.grants.extension(owner, id, modules.get(owner)),
       managed: {
         setIsolation: (id, isolation) => {
           managed.setIsolation(id, isolation)

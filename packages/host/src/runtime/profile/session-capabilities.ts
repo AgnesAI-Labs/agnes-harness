@@ -1,7 +1,6 @@
 import {
   ceilingAllows,
   childAgentRefusal,
-  DEFAULT_LOOP,
   defaultSelection,
   mcpToolAllowed,
   modelAllowsTool,
@@ -26,7 +25,11 @@ import {
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { materializeRoutes } from '@agnes/host-providers/assemble/routes'
-import { clientModuleRowIdForContribution, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import {
+  clientModuleRowIdForContribution,
+  RELEASE_DEFAULTS,
+  type RuntimePluginSnapshot,
+} from '@agnes/package-manager'
 import type { LoopSelection, RouteTable, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 
 export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
@@ -258,7 +261,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         toBound(input.admin?.composition ?? {}).loop ??
         selection.loop)) ??
     preset?.loop ??
-    DEFAULT_LOOP
+    RELEASE_DEFAULTS.loop
   const routes =
     input.routes ??
     (input.profile && preset ? materializeRoutes(preset, input.profile, input.adapterCatalog) : undefined)

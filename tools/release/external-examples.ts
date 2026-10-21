@@ -325,7 +325,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
           await Promise.all(
             ['local-dev', 'enterprise'].map(async (name) => [
               name,
-              await readFile(join(repo, 'packages/host-common/templates', `${name}.yaml`), 'utf8'),
+              await readFile(join(repo, 'packages/package-manager/templates', `${name}.yaml`), 'utf8'),
             ]),
           ),
         ),

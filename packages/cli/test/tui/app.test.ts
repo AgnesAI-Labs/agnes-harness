@@ -583,6 +583,205 @@ it("mints a fresh requestSeq for every real action click, never the slot fill's 
   }
 })
 
+// Ctrl+O on a tool card asks the daemon for the whole record; the previews stay on screen until the
+// answer lands, and when it cannot be had the card keeps them and names the reason on one line.
+it.each([
+  ['replaces the previews with the full record', false],
+  ['keeps the previews and says why the record could not be read', true],
+])('Ctrl+O %s', async (_name, refuse) => {
+  const SID = 'agnes:local:default:cli:dm:detail'
+  const record = {
+    call: { toolUseId: 'c1', name: 'query', args: { sql: 'select 1', limit: 3 }, ordinal: 0 },
+    result: {
+      toolUseId: 'c1',
+      content: [{ type: 'text', text: 'full line one\nfull line two' }],
+      isError: false,
+      enforcement: { level: 'none', scope: [] },
+      authz: { decisionId: 'd1' },
+    },
+  }
+  const body = JSON.stringify(record)
+  const reads: unknown[] = []
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [
+        {
+          kind: 'tool',
+          id: 't1',
+          seq: 1,
+          resultSeq: 2,
+          toolUseId: 'c1',
+          name: 'query',
+          status: 'completed',
+          summary: '2 rows',
+          argsPreview: '{"sql":"sel…',
+          resultPreview: 'preview only',
+        },
+      ],
+    }))
+    .on('_agnes/v1/session.readToolDetail', (params) => {
+      reads.push(params)
+      if (refuse) throw rpcError('INTERNAL_ERROR', { reason: 'boom' })
+      return {
+        sessionId: SID,
+        callSeq: 1,
+        resultSeq: 2,
+        offset: 0,
+        totalBytes: Buffer.byteLength(body),
+        data: Buffer.from(body).toString('base64'),
+        nextOffset: null,
+      }
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 20 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 20)).join('\n')).toContain('◆ query  2 rows'),
+    )
+    term.feed('\x0f')
+    // Expanding is immediate and shows the previews; the fetch is asked for exactly this call/result pair.
+    await vi.waitFor(() => expect(reads).toEqual([{ sessionId: SID, callSeq: 1, resultSeq: 2, offset: 0 }]))
+    await vi.waitFor(async () => {
+      const screen = (await screenOf(term, 80, 20)).join('\n')
+      if (refuse) {
+        expect(screen).toContain('preview only')
+        expect(screen).toContain('Full record unavailable (Request failed (INTERNAL_ERROR)')
+      } else {
+        expect(screen).toContain('full line two')
+        expect(screen).toContain('"sql": "select 1"')
+        expect(screen).not.toContain('preview only')
+      }
+    })
+    // Closing and opening again retries only a failed fetch.
+    term.feed('\x0f')
+    term.feed('\x0f')
+    await vi.waitFor(() => expect(reads).toHaveLength(refuse ? 2 : 1))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+// The plan, subagent and job tools get cards of their own, built from the projected timeline alone:
+// a subagent's state and time come from the trace spans, which change while its node does not.
+it('draws plan, subagent and job cards from the projected timeline', async () => {
+  const SID = 'agnes:local:default:cli:dm:cards'
+  const span = (over: Record<string, unknown>) => ({
+    id: 'sp',
+    kind: 'other',
+    name: 'n',
+    status: 'completed',
+    startSeq: 1,
+    startedAt: '2026-10-22T00:00:00Z',
+    children: [],
+    nodeIds: [],
+    ...over,
+  })
+  const tool = (id: string, seq: number, over: Record<string, unknown>) => ({
+    kind: 'tool',
+    id,
+    seq,
+    toolUseId: id,
+    status: 'completed',
+    summary: '',
+    ...over,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 3,
+      generation: 1,
+      opState: null,
+      turns: [
+        {
+          id: 'turn-1',
+          turn: 1,
+          startSeq: 1,
+          startedAt: '2026-10-22T00:00:00Z',
+          status: 'completed',
+          nodeIds: [],
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            reasoningComplete: true,
+            billingComplete: true,
+            calls: [],
+          },
+          inherited: false,
+          forkable: false,
+          trace: span({
+            kind: 'turn',
+            children: [span({ kind: 'subagent', childSessionKey: 'kid', durationMs: 4_200 })],
+          }),
+        },
+      ],
+      nodes: [
+        tool('p', 1, {
+          name: 'update_plan',
+          argsPreview: JSON.stringify({
+            plan: [
+              { step: 'read the code', status: 'completed' },
+              { step: 'write the card', status: 'in_progress' },
+            ],
+          }),
+        }),
+        tool('a', 2, {
+          name: 'subagent_spawn',
+          summary: 'spawned',
+          delegatedTask: { childKey: 'kid', task: 'check the build', status: 'running' },
+        }),
+        tool('j', 3, { name: 'job_list', summary: '2 jobs' }),
+      ],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => {
+      const screen = (await screenOf(term, 80, 24)).join('\n')
+      expect(screen).toContain('Plan  1/2 done')
+      expect(screen).toContain('[x] read the code')
+      expect(screen).toContain('[>] write the card')
+      expect(screen).toContain('Subagent  check the build')
+      // Its node still says running; the child's finished turn span has the final state and time.
+      expect(screen).toMatch(/Subagent {2}check the build\s+done · 4\.2s/)
+      expect(screen).toMatch(/Job job_list {2}2 jobs\s+done/)
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('shows contextual F1 actions only when projected and dispatches the selected action', async () => {
   const SID = 'agnes:local:default:cli:dm:hints'
   const calls: Array<{ requestSeq: number; action: string; data?: unknown }> = []

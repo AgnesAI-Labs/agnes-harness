@@ -21,7 +21,7 @@ export type ToolSource = {
   packageIdentity?: string
   packageVersion?: string
   executionBinding?: ToolExecutionBinding
-  /** Only Host assembly may request this, and the registry still verifies the exact built-in pair. */
+  /** Only Host assembly may request this, and the registry verifies the Host attestation shape. */
   executionDomain?: ExecutionDomain
   /**
    * Fixed dispatch position among the built-in hook layer (third-party-transform-directive-hooks
@@ -31,6 +31,8 @@ export type ToolSource = {
    * registration order. Meaningless for tool registrations; only `HookRegistry` reads it.
    */
   hookRank?: number
+  /** Host-attested permission to convert context hook refusal into a blocked turn. */
+  contextBlocking?: boolean
 }
 export type RegisteredTool = ToolDef & {
   source: ToolSource
@@ -318,8 +320,6 @@ function cloneFrozenSchema<T>(value: T, seen = new WeakMap<object, object>()): T
   return Object.freeze(clone) as T
 }
 
-const COMPUTER_USE_PACKAGE = '@agnes/base'
-const COMPUTER_USE_EXTENSION = 'agnes/computer-use'
 const IDENTITY_LIMIT = 256
 const VERSION_LIMIT = 128
 
@@ -335,12 +335,12 @@ function attestExecutionDomain(meta: ToolSource): ExecutionDomain {
     domain === 'host-computer-use' &&
     !(
       meta.trust === 'builtin' &&
-      meta.packageIdentity === COMPUTER_USE_PACKAGE &&
-      meta.source === COMPUTER_USE_EXTENSION &&
+      presentString(meta.packageIdentity, IDENTITY_LIMIT) &&
+      presentString(meta.source, IDENTITY_LIMIT) &&
       presentString(meta.packageVersion, VERSION_LIMIT)
     )
   )
-    throw new CoreError('E_TOOLDEF_META', 'host-computer-use requires exact built-in package attestation', {
+    throw new CoreError('E_TOOLDEF_META', 'host-computer-use requires Host execution-domain attestation', {
       source: meta.source,
       trust: meta.trust,
       packageIdentity: meta.packageIdentity,

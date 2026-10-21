@@ -128,7 +128,11 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
       ts.isRegularExpressionLiteral(node)
     ) {
       const text = ts.isRegularExpressionLiteral(node) ? node.getText(tree) : node.text
-      if (officialTokens(text, catalogue).length) add(text, role(node))
+      const kind = role(node)
+      // Daemon assembly composes its own split owners; Host still cannot import these owners.
+      const daemonPeer = /^@agnes\/daemon-(?:admin|foundation|rpc|surfaces)(?:\/[\w./-]+)?$/.test(text)
+      if (kind === 'import' && path.startsWith('packages/daemon/') && daemonPeer) return
+      if (officialTokens(text, catalogue).length) add(text, kind)
     }
     if (ts.isBindingElement(node) && node.name && ts.isObjectBindingPattern(node.parent)) {
       const declaration = node.parent.parent
@@ -197,7 +201,17 @@ export function templateFindings(source: string, path: string, catalogue: Busine
 export function hostInventory(root: string): { files: number; findings: HostFinding[]; manifests: number } {
   assertHostPackageCoverage(root)
   const catalogue = businessCatalogue(root)
-  const files = HOST_PACKAGES.flatMap((name) => productionFiles(join(root, 'packages', name, 'src')))
+  const files = [
+    ...HOST_PACKAGES.flatMap((name) => productionFiles(join(root, 'packages', name, 'src'))),
+    // Core consumes Host attestations at these gates; it must not rediscover official identities.
+    join(root, 'packages/core/src/registry/tools.ts'),
+    join(root, 'packages/core/src/hooks/dispatch.ts'),
+    join(root, 'packages/core-effects/src/effects/tool-providers.ts'),
+    join(root, 'packages/daemon/src/supervisor/assembly-runtime.ts'),
+    join(root, 'packages/daemon/src/supervisor/model-adapter-lookup.ts'),
+    join(root, 'packages/daemon/src/supervisor/model-catalog-read.ts'),
+    join(root, 'packages/daemon-admin/src/packages/builtin-client-services.ts'),
+  ]
   const findings = withSourceTrees(files, (trees) =>
     trees.flatMap((tree, index) =>
       hostFindings(tree, relative(root, files[index] as string).replaceAll('\\', '/'), catalogue),

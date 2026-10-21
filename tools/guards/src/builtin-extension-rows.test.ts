@@ -19,9 +19,9 @@ function resourceOwnedIds(): string[] {
 }
 
 function extRowIds(): string[] {
-  const source = read('packages/host-extensions/src/assemble/ext-rows.ts')
-  const block = /EXT_ROW_EXTENSION_IDS[\s\S]*?new Set\(\[([\s\S]*?)\]\)/.exec(source)
-  expect(block, 'EXT_ROW_EXTENSION_IDS must be a literal Set of string literals').toBeTruthy()
+  const source = read('packages/package-manager/src/release-policy.ts')
+  const block = /RELEASE_EXTENSION_IDS[\s\S]*?new Set\(\[([\s\S]*?)\]\)/.exec(source)
+  expect(block, 'RELEASE_EXTENSION_IDS must be a literal Set of string literals').toBeTruthy()
   return [...(block?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1] as string)
 }
 

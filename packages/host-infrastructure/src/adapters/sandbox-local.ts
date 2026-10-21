@@ -1,10 +1,10 @@
 import {
-  LOCAL_SANDBOX_PROVIDER_ID,
   type SandboxCapabilities,
   type SandboxPlatform,
   type SandboxProvider,
   sandboxUnavailable,
 } from '@agnes/extension-api'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { ExecAdapter } from './exec.js'
 import { loopbackActivation } from './loopback-activation.js'
 
@@ -35,7 +35,7 @@ export function createLocalSandboxProvider(
     ...(platform.length > 0 ? {} : { unavailableReason: `unsupported platform ${os}` }),
   })
   return {
-    id: LOCAL_SANDBOX_PROVIDER_ID,
+    id: RELEASE_DEFAULTS.sandboxProvider,
     version: '0.0.0',
     capabilities,
     create(config, signal) {
@@ -69,7 +69,7 @@ export function createLocalSandboxProvider(
       const processes = new Set<import('@agnes/extension-api').SandboxProcess>()
       const pending = new Set<Promise<Awaited<ReturnType<ExecAdapter['run']>>>>()
       return {
-        id: LOCAL_SANDBOX_PROVIDER_ID,
+        id: RELEASE_DEFAULTS.sandboxProvider,
         capabilities,
         async openProcess(request) {
           if (disposed || !exec.openProcess)

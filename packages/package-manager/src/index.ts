@@ -18,11 +18,13 @@ export {
 export * from './capabilities.js'
 export * from './catalog.js'
 export * from './client-assets.js'
+export { demoProvider } from './demo-provider.js'
 export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'
 export * from './errors.js'
 export * from './generation-equivalence.js'
+export { HOST_CAPABILITY_GRANTS, type HostCapabilityGrant, type HostGrantDeclaration } from './host-grants.js'
 export {
   capabilityHash,
   type InstalledInventory,
@@ -64,6 +66,7 @@ export {
   verifyOfficialCatalog,
 } from './provenance.js'
 export { publishModelAdapterCatalog, readPublishedModelAdapters } from './published-model-adapters.js'
+export * from './release-policy.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,

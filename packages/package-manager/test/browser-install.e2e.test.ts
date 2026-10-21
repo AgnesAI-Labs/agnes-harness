@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 
 // Copy the production ESM unchanged; only the reviewed payload and engine are synthetic.
-async function fixture() {
+async function fixture(packagedLock = true) {
   const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-'))
   const plugin = join(root, 'plugin')
   const key = process.platform + '-' + process.arch
@@ -26,10 +26,16 @@ async function fixture() {
       join(plugin, 'src', name),
     )
   const require = createRequire(import.meta.url)
-  await copyFile(
-    require.resolve('@agnes/system-node/owner-lock'),
-    join(plugin, 'dist/runtime/owner-lock.mjs'),
-  )
+  const lockModule = packagedLock
+    ? join(plugin, 'dist/runtime/owner-lock.mjs')
+    : join(plugin, 'dist/runtime/playwright/node_modules/@agnes/system-node/owner-lock.mjs')
+  await mkdir(join(lockModule, '..'), { recursive: true })
+  if (!packagedLock)
+    await writeFile(
+      join(lockModule, '../package.json'),
+      JSON.stringify({ name: '@agnes/system-node', exports: { './owner-lock': './owner-lock.mjs' } }),
+    )
+  await copyFile(require.resolve('@agnes/system-node/owner-lock'), lockModule)
   const engine = join(plugin, 'dist/runtime/playwright/node_modules/playwright-core')
   await mkdir(join(engine, 'lib'), { recursive: true })
   await writeFile(join(plugin, 'dist/runtime/playwright/package.json'), '{}')
@@ -89,25 +95,28 @@ async function fixture() {
   }
 }
 
-it('recovers a dead owner and completes installation without network access', async () => {
-  const f = await fixture()
-  try {
-    const old = await f.worker()
-    const exited = once(old.child, 'exit')
-    old.child.kill('SIGKILL')
-    await exited
-    await writeFile(f.lock, JSON.stringify({ pid: old.child.pid, token: 'dead' }))
-    const next = await f.worker()
-    next.child.send('prepare')
-    await next.wait('downloading')
-    next.child.send('continue')
-    await next.wait('state', 'ready')
-    expect(await f.downloads()).toBe(1)
-    await expect.poll(() => existsSync(f.lock)).toBe(false)
-  } finally {
-    await f.close()
-  }
-})
+it.each([true, false])(
+  'recovers a dead owner without network access (packaged lock: %s)',
+  async (packaged) => {
+    const f = await fixture(packaged)
+    try {
+      const old = await f.worker()
+      const exited = once(old.child, 'exit')
+      old.child.kill('SIGKILL')
+      await exited
+      await writeFile(f.lock, JSON.stringify({ pid: old.child.pid, token: 'dead' }))
+      const next = await f.worker()
+      next.child.send('prepare')
+      await next.wait('downloading')
+      next.child.send('continue')
+      await next.wait('state', 'ready')
+      expect(await f.downloads()).toBe(1)
+      await expect.poll(() => existsSync(f.lock)).toBe(false)
+    } finally {
+      await f.close()
+    }
+  },
+)
 
 it.each(['live', 'unknown-liveness', 'unreadable', 'legacy-directory'])(
   'refuses a %s owner and gives the exact recovery path',

@@ -1,5 +1,5 @@
 import { createReadStream, existsSync } from 'node:fs'
-import { lstat, mkdtemp, open, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -68,7 +68,7 @@ function webm(packet: Buffer) {
 it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
   'renders authorized files in the pinned background browser and publishes sharp frames with responsive input',
   async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agh-browser-files-中文-'))
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'agh-browser-files-中文-')))
     const launcher = createLauncher()
     const runtime = new BrowserRuntime({ launch: () => launcher.launch() })
     const session = { key: 'file-test', lane: 'main' }
@@ -113,7 +113,20 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
         .toFile(join(root, 'image.png'))
       await writeFile(join(root, 'data.json'), '{"message":"中文"}')
       await writeFile(join(root, 'data.xml'), '<test>XML</test>')
-      await writeFile(join(root, 'note.txt'), 'Readable text')
+      await writeFile(join(root, 'note.txt'), 'Readable text 中文')
+      await writeFile(join(root, 'utf8.html'), '<!doctype html><p>中文预览</p>')
+      await writeFile(
+        join(root, 'legacy.html'),
+        Buffer.concat([
+          Buffer.from('<meta charset="gbk"><p>'),
+          Buffer.from('d6d0cec4', 'hex'),
+          Buffer.from('</p>'),
+        ]),
+      )
+      await writeFile(
+        join(root, 'bom.txt'),
+        Buffer.concat([Buffer.from([255, 254]), Buffer.from('中文', 'utf16le')]),
+      )
       // One second of PCM audio: no proprietary codec or external fixture dependency.
       const wave = Buffer.alloc(44 + 16000)
       wave.write('RIFF')
@@ -261,6 +274,9 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
         'data.json',
         'data.xml',
         'note.txt',
+        'utf8.html',
+        'legacy.html',
+        'bom.txt',
         'audio.wav',
         'video.webm',
         'document.pdf',
@@ -323,7 +339,8 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
             })
             .toBe(32)
         }
-        if (name.endsWith('.txt')) expect(await page.locator('body').innerText()).toContain('Readable text')
+        if (['note.txt', 'utf8.html', 'legacy.html', 'bom.txt'].includes(name))
+          expect(await page.locator('body').innerText()).toContain('中文')
         if (name.endsWith('.pdf')) {
           await expect
             .poll(

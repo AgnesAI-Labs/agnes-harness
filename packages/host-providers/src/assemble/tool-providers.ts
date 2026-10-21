@@ -1,5 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
-import { defaultToolPolicy, defaultToolRuntimeProvider, LoopEventRegistry } from '@agnes/core'
+import { defaultToolRuntimeProvider, LoopEventRegistry } from '@agnes/core'
 import type {
   LoopEventContext,
   LoopEventHandler,
@@ -18,9 +18,7 @@ import {
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
-import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -138,38 +136,4 @@ export function installToolProviders(root: Context, origins?: RowOriginLookup): 
   installToolRuntimes(root, origins)
   installToolPolicies(root, origins)
   new LoopEventsService(root)
-}
-
-/** Legacy embeddings can supply Base's seam table without its new named plugin export. Supply
- * the same ordinary default row, so those Hosts retain their existing approval behavior. */
-export function withBuiltinToolPolicies(
-  modules: ReadonlyMap<string, PackageModule>,
-): ReadonlyMap<string, PackageModule> {
-  const base = modules.get('@agnes/base')
-  if (!base || base.plugins?.some((row) => row.declaration.id === 'tool-policy:default')) return modules
-  const result = new Map(modules)
-  result.set('@agnes/base', {
-    ...base,
-    plugins: [
-      ...(base.plugins ?? []),
-      {
-        declaration: {
-          id: 'tool-policy:default',
-          export: 'toolPolicyPlugin',
-          apiRange: '^4.0.0',
-          default: true,
-          inject: ['providers'],
-          provide: [],
-          runtime: 'in-process',
-        },
-        entry: normalizePluginExport({
-          inject: ['providers'],
-          apply(ctx: Context) {
-            ctx.providers.registerHost(toolPolicyKind, '@agnes/base', defaultToolPolicy)
-          },
-        }),
-      },
-    ],
-  })
-  return result
 }

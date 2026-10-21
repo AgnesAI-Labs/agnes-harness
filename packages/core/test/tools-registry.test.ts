@@ -109,7 +109,7 @@ describe('ToolRegistry', () => {
     expect(changed.resolve('computer_use')?.definitionFingerprint).not.toBe(first)
   })
 
-  it('only accepts the host-computer-use domain for the exact built-in package and extension', () => {
+  it('accepts Host execution-domain data without knowing the package or extension', () => {
     const exact = {
       source: 'agnes/computer-use',
       trust: 'builtin' as const,
@@ -120,16 +120,23 @@ describe('ToolRegistry', () => {
     const accepted = new ToolRegistry()
     accepted.add(def('computer_use'), exact)
     expect(accepted.resolve('computer_use')?.executionDomain).toBe('host-computer-use')
+    const communityDistribution = new ToolRegistry()
+    communityDistribution.add(def('computer_use'), {
+      ...exact,
+      source: 'acme/device',
+      packageIdentity: '@acme/distribution',
+    })
+    expect(communityDistribution.resolve('computer_use')?.executionDomain).toBe('host-computer-use')
 
     for (const forged of [
-      { ...exact, source: 'third-party/computer-use' },
+      { ...exact, source: '' },
       { ...exact, trust: 'trusted' as const },
-      { ...exact, packageIdentity: 'third-party' },
+      { ...exact, packageIdentity: '' },
       { ...exact, packageVersion: '' },
     ]) {
       const registry = new ToolRegistry()
       expect(() => registry.add(def('computer_use'), forged)).toThrow(
-        /host-computer-use requires exact built-in package attestation/,
+        /host-computer-use requires Host execution-domain attestation/,
       )
       expect(registry.size).toBe(0)
     }

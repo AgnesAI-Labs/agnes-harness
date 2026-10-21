@@ -256,7 +256,9 @@ describe('real subagent tools on sqlite', () => {
         | { isError?: boolean; content?: Array<{ text?: string }> }
         | undefined
       expect(spawned?.isError).toBe(false)
-      expect(spawned?.content?.[0]?.text).toContain('Use subagent_list for the handle')
+      // This fixture offers spawn/fork/collect, so the unavailable list tool must not be suggested.
+      expect(spawned?.content?.[0]?.text).toContain('Keep the task reference for follow-up')
+      expect(spawned?.content?.[0]?.text).not.toContain('Use subagent_list')
       // The same backend catalog exposed by subagent_list, rather than parsing a UI receipt.
       const children = await parent1.d.children.list?.()
       expect(children).toHaveLength(1)

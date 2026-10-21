@@ -63,7 +63,7 @@ export type ComputerUseHostAuthority = Readonly<{
   deliveryMode: ComputerUseDeliveryMode
   bringToFront: boolean
   executionDomain: 'host-computer-use'
-  source: 'agnes/computer-use'
+  source: string
   trust: 'builtin'
   definitionFingerprint: string
   policyHash: string
@@ -396,7 +396,7 @@ function validateAuthority(value: unknown): ComputerUseHostAuthority | undefined
       (value.deliveryMode !== 'background' && value.deliveryMode !== 'foreground') ||
       typeof value.bringToFront !== 'boolean' ||
       value.executionDomain !== 'host-computer-use' ||
-      value.source !== 'agnes/computer-use' ||
+      !boundedIdentity(value.source, 256) ||
       value.trust !== 'builtin' ||
       typeof value.definitionFingerprint !== 'string' ||
       !SHA256.test(value.definitionFingerprint) ||

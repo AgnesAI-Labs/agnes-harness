@@ -77,7 +77,7 @@ async function openFoundation(ctx: AssemblyContext): Promise<Foundation> {
 
 async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundation) {
   ctx.done('seams')
-  const seamContexts = openSeamContexts(ctx, proc, presets)
+  const seamContexts = openSeamContexts(ctx, proc, presets, pkgs)
   const seamSet = openSeamSet(ctx, proc, seamContexts)
   const { seams, approvalGrantControl } = seamSet
   const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts, seams)
@@ -108,7 +108,7 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     rollback: ctx.rollback,
   })
   ctx.say('seams.assembled', { seams: ctx.profile.seams, fsDigest: proc.adapters.fs.fence().digest })
-  const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse, seams)
+  const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse, seams, pkgs)
   return {
     seamContexts,
     workspaceRuntime,
@@ -189,6 +189,7 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
     runtimeTarget: t.runtimeTarget,
     host,
     bundled,
+    pkgs: f.pkgs,
     skillState: t.skillState,
     buildEcosystemContext: t.ecosystem.buildEcosystemContext,
   })

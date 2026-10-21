@@ -707,6 +707,43 @@ it('displays the final frame of a burst and cancels delayed frames when the view
   }
 })
 
+it('releases audio capture if the display fails to start', async () => {
+  const { runtime, cdp, session, pages } = fixture()
+  const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  let audioEnabled = false
+  const page = pages[0]!
+  Object.assign(page, {
+    exposeBinding: async () => {},
+    evaluate: async (_fn: unknown, input: { enabled: boolean }) => {
+      audioEnabled = input.enabled
+    },
+  })
+  cdp.send.mockImplementation(async (method) => {
+    if (method === 'Page.startScreencast') throw new Error('Display unavailable')
+  })
+  const abort = new AbortController()
+  try {
+    await expect(
+      showPage(
+        runtime,
+        { pageId: opened.pageId, displayVersion: 2 },
+        {
+          scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+          signal: abort.signal,
+          stream: { send() {}, close() {}, onDisconnect() {} },
+        },
+      ),
+    ).rejects.toThrow('Display unavailable')
+    expect(audioEnabled).toBe(false)
+    page.emit('domcontentloaded')
+    await Promise.resolve()
+    expect(audioEnabled).toBe(false)
+  } finally {
+    abort.abort()
+    await runtime.close()
+  }
+})
+
 it('keeps long addresses intact and retries the latest static pixels after backpressure', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const { runtime, pages, cdp, session } = fixture()

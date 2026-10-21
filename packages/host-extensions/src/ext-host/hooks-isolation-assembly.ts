@@ -101,7 +101,7 @@ export async function startHooksIsolationRunner(input: {
     nonce,
     packageDigest,
     manifestDigest,
-    extensionId: 'agnes/hooks-runner',
+    extensionId: input.api.ctx.extId,
     data: { ...input.preparation.data, lease: input.api.ctx.lease, platform: input.api.ctx.platform },
   }
   return connectIsolatedHooksRunner(child, bootstrap, (method, value, signal, invocation) =>

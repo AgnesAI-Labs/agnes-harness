@@ -1,12 +1,12 @@
 import { join } from 'node:path'
 import type { StorageAdapter } from '@agnes/core'
 import {
-  DEFAULT_PERSISTENCE_PROVIDER_ID,
   definePersistenceProvider,
   PERSISTENCE_EFFECT,
   type PersistenceProvider,
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { createSqliteStorage, type TableStore } from './storage-sqlite.js'
 
 /**
@@ -14,7 +14,7 @@ import { createSqliteStorage, type TableStore } from './storage-sqlite.js'
  * exposed through the same public capability ports as every other provider.
  */
 export const sqlitePersistenceProvider: PersistenceProvider = definePersistenceProvider({
-  id: DEFAULT_PERSISTENCE_PROVIDER_ID,
+  id: RELEASE_DEFAULTS.persistenceProvider,
   version: '1.0.0',
   state: { effect: PERSISTENCE_EFFECT },
   capabilities: {

@@ -72,6 +72,7 @@ describe('host boundaries', () => {
             '@agnes/observability',
             '@agnes/history-index',
             '@agnes/package-manager',
+            '@agnes/distribution',
             '@agnes/plugin-runtime',
             '@agnes/resource-control-runtime',
             '@agnes/sandbox-remote',

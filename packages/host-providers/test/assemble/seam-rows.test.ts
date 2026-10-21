@@ -212,15 +212,27 @@ describe('seam binding', () => {
     },
   )
 
-  it('gives only builtin packages the privileged init and closes the instance on dispose', async () => {
+  it.each([
+    { id: '@acme/third', trust: 'trusted', packageId: '@acme/third', trustTier: 'third-party' },
+    { id: '@agnes/base', trust: 'builtin', packageId: '@agnes/base', trustTier: 'third-party' },
+    {
+      id: '@agnes/base',
+      trust: 'builtin',
+      packageId: 'builtin',
+      trustTier: 'builtin',
+      ownerPackage: '@acme/other',
+    },
+  ])('denies a mismatched registration $id the privileged init and closes on dispose', async (origin) => {
+    const { id, trust } = origin
     const closed = vi.fn()
-    const { root, input, inits, register } = rig([
-      { id: '@acme/third', trust: 'trusted', integrity: 'sha-third' } as never,
-    ])
-    register('@acme/third', verifier({ instance: { verify: async () => ({}), close: closed } }))
+    const { root, input, inits, register } = rig([{ id, trust, integrity: 'sha-third' } as never])
+    root.providers.verifyRows({
+      lookup: () => origin,
+    } as never)
+    register(id, verifier({ instance: { verify: async () => ({}), close: closed } }))
     await expect.poll(() => root.providers.catalog().length).toBe(1)
     const dispose = await seamBinding('verifier', { provider: 'alt' }, input)(root, preset)
-    expect(inits).toEqual([{ source: '@acme/third', builtin: false }])
+    expect(inits).toEqual([{ source: id, builtin: false }])
     await dispose()
     expect(closed).toHaveBeenCalledOnce()
     await root.fiber.dispose()

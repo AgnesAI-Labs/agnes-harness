@@ -1,9 +1,5 @@
-import { DEFAULT_LOOP, IN_PROCESS_CHILD_PROVIDER_ID, type PresetView } from '@agnes/core'
-import {
-  LOCAL_SANDBOX_PROVIDER_ID,
-  type ProviderCatalogEntry,
-  type ProviderSelection,
-} from '@agnes/extension-api'
+import type { PresetView } from '@agnes/core'
+import type { ProviderCatalogEntry, ProviderSelection } from '@agnes/extension-api'
 import { SEAM_KINDS, type SeamKind } from '@agnes/extension-api/seams'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import {
@@ -14,6 +10,7 @@ import {
   readProviderSelection,
 } from '@agnes/host-common/profile/provider-selection'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 
 export {
   PROVIDER_KINDS,
@@ -130,15 +127,15 @@ export function providerConfigurationScopes(
       : []
   const defaults: ProviderSelections = {
     loop: {
-      provider: preset.loop?.id ?? DEFAULT_LOOP.id,
-      version: preset.loop?.version ?? DEFAULT_LOOP.version,
+      provider: preset.loop?.id ?? RELEASE_DEFAULTS.loop.id,
+      version: preset.loop?.version ?? RELEASE_DEFAULTS.loop.version,
     },
     compaction: { provider: profile.compaction?.engine ?? 'default' },
     persistence: { provider: profile.persistence?.provider ?? 'sqlite' },
-    sandbox: { provider: profile.sandbox?.provider ?? LOCAL_SANDBOX_PROVIDER_ID },
+    sandbox: { provider: profile.sandbox?.provider ?? RELEASE_DEFAULTS.sandboxProvider },
     'tool-runtime': { provider: preset.tools.runtime ?? 'default' },
     'tool-policy': { provider: preset.approval.policy ?? 'default' },
-    'child-agent': { provider: IN_PROCESS_CHILD_PROVIDER_ID },
+    'child-agent': { provider: RELEASE_DEFAULTS.childProvider },
     memory: { provider: 'file', version: '1.0.0' },
   }
   const fallback = defaults[entry.kind as ProviderKindName]

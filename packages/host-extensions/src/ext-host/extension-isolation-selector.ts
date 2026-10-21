@@ -49,6 +49,7 @@ export function createExtensionFactorySelector(input: {
   target: string
   modules: ReadonlyMap<string, PackageModule>
   inventory?: ReadonlyMap<string, InstalledPackage>
+  grantsFor?(packageId: string, extensionId: string): import('@agnes/package-manager').HostCapabilityGrant
   contextFor(packageId: string, extensionId: string): SeamInitContext
   managed: Managed
   audit(kind: string, detail: Record<string, unknown>): void
@@ -99,7 +100,7 @@ export function createExtensionFactorySelector(input: {
     }
     const prepare = input.modules.get(packageId)?.isolatedEcosystem?.[extensionId]
     const generic = input.inventory?.get(packageId)
-    const fixed = packageId === '@agnes/base' && extensionId === 'agnes/hooks-runner' && prepare
+    const fixed = input.grantsFor?.(packageId, extensionId).isolatedHooks && prepare
     if (
       (!fixed && !generic) ||
       (generic && Object.keys(author.capabilities).some((key) => !['hooks', 'events'].includes(key)))

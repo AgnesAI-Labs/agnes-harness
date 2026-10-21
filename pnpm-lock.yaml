@@ -704,6 +704,9 @@ importers:
       '@agnes/daemon-surfaces':
         specifier: workspace:*
         version: link:../daemon-surfaces
+      '@agnes/distribution':
+        specifier: workspace:*
+        version: link:../distribution
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
@@ -925,6 +928,33 @@ importers:
         specifier: workspace:*
         version: link:../web-server
 
+  packages/distribution:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/model-adapters':
+        specifier: workspace:*
+        version: link:../model-adapters
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/error-sanitization: {}
 
   packages/extension-api:
@@ -956,6 +986,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/distribution':
+        specifier: workspace:*
+        version: link:../distribution
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -1196,6 +1229,9 @@ importers:
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1227,6 +1263,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/distribution':
+        specifier: workspace:*
+        version: link:../distribution
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
@@ -1242,9 +1281,6 @@ importers:
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
-      '@agnes/model-adapters':
-        specifier: workspace:*
-        version: link:../model-adapters
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager

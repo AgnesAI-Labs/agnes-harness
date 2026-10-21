@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ContentBlock } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
@@ -255,5 +256,45 @@ describe('/deliverables', () => {
     expect(deliverableBasename('C:\\x\\y.txt')).toBe('y.txt')
     for (const bad of ['', '.', '..', 'a/..', 'a\u0000b', 'x\u001b[0m'])
       expect(() => deliverableBasename(bad), JSON.stringify(bad)).toThrow('not a usable file name')
+  })
+})
+
+describe('/queue', () => {
+  const text = (value: string): ContentBlock => ({ type: 'text', text: value })
+  const link: ContentBlock = { type: 'resource_link', uri: 'file:///w/a.txt', name: 'a.txt' }
+  const queued = (...items: ContentBlock[][]) =>
+    ({ ...appWith({}), pendingPrompts: items }) as unknown as TuiApp & { pendingPrompts: ContentBlock[][] }
+
+  it('lists the client queue as inert lines, moves one back to the editor and drops another', async () => {
+    const app = queued([text('fix\nthe\u001b[2J bug')], [text('read @a.txt'), link], [text('x'.repeat(100))])
+    const rows = (await runSlash(app, '/queue')).text?.split('\n') ?? []
+    expect(rows).toEqual([
+      '1. fix the[2J bug',
+      `2. read @a.txt${tt('queue.extra', 'en', { count: 1 })}`,
+      `3. ${'x'.repeat(79)}…`,
+    ])
+    // Edit takes the message out of the queue and hands its text to the editor.
+    expect(await runSlash(app, '/queue edit 1')).toEqual({
+      text: tt('queue.edited', 'en', { n: 1 }),
+      draft: 'fix\nthe\u001b[2J bug',
+    })
+    expect(app.pendingPrompts).toHaveLength(2)
+    // A message with attachments or file links cannot become editor text: it stays where it is.
+    expect((await runSlash(app, '/queue edit 1')).text).toBe(tt('queue.attached', 'en', { n: 1 }))
+    expect(app.pendingPrompts).toHaveLength(2)
+    expect(await runSlash(app, '/queue drop 1')).toEqual({ text: tt('queue.dropped', 'en', { n: 1 }) })
+    expect(app.pendingPrompts).toEqual([[text('x'.repeat(100))]])
+  })
+
+  it('refuses what it cannot place and never reaches the session', async () => {
+    const app = queued([text('only')])
+    for (const line of ['/queue drop', '/queue edit 1 2', '/queue move 1', '/queue drop one'])
+      expect((await runSlash(app, line)).text, line).toBe(
+        line === '/queue drop one' ? tt('queue.unknown', 'en', { key: 'one' }) : tt('queue.usage', 'en'),
+      )
+    for (const key of ['0', '2', '-1', '1.5'])
+      expect((await runSlash(app, `/queue drop ${key}`)).text).toBe(tt('queue.unknown', 'en', { key }))
+    expect(app.pendingPrompts).toHaveLength(1)
+    expect((await runSlash(queued(), '/queue')).text).toBe(tt('queue.none', 'en'))
   })
 })

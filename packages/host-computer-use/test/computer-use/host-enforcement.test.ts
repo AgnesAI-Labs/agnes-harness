@@ -91,6 +91,13 @@ describe('Computer Use Host enforcement', () => {
     })
     expect(Object.isFrozen(decision)).toBe(true)
     expect(Object.isFrozen(decision.binding)).toBe(true)
+    expect(evaluateComputerUseHostPolicy(input, authority(input, { source: 'acme/device' }))).toMatchObject({
+      allowed: true,
+    })
+    expect(evaluateComputerUseHostPolicy(input, authority(input, { source: '' }))).toMatchObject({
+      allowed: false,
+      code: 'untrusted_host_authority',
+    })
   })
 
   it('treats application launch as an approved, never-replayed mutation', () => {

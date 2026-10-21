@@ -7,12 +7,15 @@ import type {
   ThinkingLevel,
 } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
+import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
+import { jobsSlash } from './job-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
@@ -149,6 +152,24 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp', summaryKey: 'commands.mcpSummary' },
   { name: '/context', descriptionKey: 'commands.context', summaryKey: 'commands.contextSummary' },
+  {
+    name: '/agents',
+    args: '[stop <n|id>|resume <n|id> <message>]',
+    descriptionKey: 'commands.agents',
+    summaryKey: 'commands.agentsSummary',
+  },
+  {
+    name: '/jobs',
+    args: '[stop <n|id>]',
+    descriptionKey: 'commands.jobs',
+    summaryKey: 'commands.jobsSummary',
+  },
+  {
+    name: '/queue',
+    args: '[edit <n>|drop <n>]',
+    descriptionKey: 'commands.queue',
+    summaryKey: 'commands.queueSummary',
+  },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -190,6 +211,8 @@ export type SlashResult = {
   prompt?: string
   content?: ContentBlock[]
   details?: boolean
+  /** Text to put in the editor, replacing what it holds (the line that ran the command is already gone). */
+  draft?: string
   /** Long-lived local output belongs in the transcript; omitted text is a short status notice. */
   presentation?: 'transcript'
   title?: string
@@ -426,6 +449,12 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return grantsSlash(app, line)
     case '/deliverables':
       return deliverablesSlash(app, line)
+    case '/agents':
+      return agentsSlash(app, line)
+    case '/jobs':
+      return jobsSlash(app, line)
+    case '/queue':
+      return queueSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':
