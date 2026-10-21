@@ -54,9 +54,3 @@ export function wireResourceSnapshotNotifications(o: {
     })
   })
 }
-
-/**
- * Assembles and runs one `agnesd` supervisor process: main-instance lock, worker pool, client and
- * worker unix sockets, per-connection RPC wiring, idle-worker reclaim. Startup takes the main lock,
- * opens worker and client listeners, wires connections, starts the idle timer, then reports ready.
- */

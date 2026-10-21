@@ -100,7 +100,8 @@ export async function initializeRuntime(
                 composition: () => composition,
                 snapshotDirectory: (profile) =>
                   join(
-                    packageRuntime.clientModulesDirectory ?? join(o.config.dataDir, 'daemon', 'client-modules'),
+                    packageRuntime.clientModulesDirectory ??
+                      join(o.config.dataDir, 'daemon', 'client-modules'),
                     profile,
                   ),
                 runtimeArtifacts: () =>
