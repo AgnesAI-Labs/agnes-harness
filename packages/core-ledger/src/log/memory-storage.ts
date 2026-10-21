@@ -511,10 +511,21 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     childKey: SessionKey,
     expectedRevision: number,
     next: ChildTaskRecord['state'],
+    admission?: { maxFanOut: number },
   ): Promise<boolean> {
     const row = this.childTasks.get(childKey)
     if (!row || row.stateRevision !== expectedRevision) return false
     if (!canTransitionChildState(row.state, next)) return false
+    if (!isActiveChildState(row.state) && isActiveChildState(next) && next !== 'cancelling') {
+      if (!admission) return false
+      const rows = [...this.childTasks.values()]
+      const fan = admitFanOut(
+        rows.filter((task) => task.parentKey === row.parentKey && isActiveChildState(task.state)).length,
+        rows.filter((task) => task.rootTaskId === row.rootTaskId && isActiveChildState(task.state)).length,
+        admission.maxFanOut,
+      )
+      if (!fan.ok) throw new CoreError('E_CHILD_LIMIT', fan.message)
+    }
     row.state = next
     row.stateRevision += 1
     return true

@@ -47,7 +47,15 @@ export function canTransitionChildState(from: ChildExecutionState, to: ChildExec
   if (from === to) return true
   if (from === 'cancelled' || from === 'failed' || from === 'completed') return false
   if (from === 'cancelling') return to === 'cancelled' || to === 'failed'
-  if (to === 'running') return from === 'ready' || from === 'waiting_approval' || from === 'creating'
+  if (to === 'running')
+    return (
+      from === 'ready' ||
+      from === 'idle' ||
+      from === 'interrupted' ||
+      from === 'waiting_approval' ||
+      from === 'creating' ||
+      from === 'recovery_pending'
+    )
   return true
 }
 

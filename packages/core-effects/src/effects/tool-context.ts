@@ -69,6 +69,8 @@ export type ChildrenFactory = {
   get?(childKey: string): ChildHandle | undefined
   inspect?(childKey: string): Promise<ChildStatus | null>
   collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
+  /** Backend recovery on an explicit owning-session run; not a model operation. */
+  recover?(): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
