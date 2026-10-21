@@ -100,6 +100,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--html': 'html',
   '--raw': 'raw',
   '--resolved': 'resolved',
+  '--archived': 'archived',
   '--probe': 'probe',
   '--yes': 'yes',
   '--help': 'help',
@@ -132,6 +133,7 @@ function defaults(): ParsedArgs {
     html: false,
     raw: false,
     resolved: false,
+    archived: false,
     probe: false,
   }
 }

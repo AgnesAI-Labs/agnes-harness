@@ -87,6 +87,8 @@ export type ParsedArgs = {
   from?: 'claude-code' | 'codex' | 'pi' | 'auto'
   key?: string
   resolved: boolean
+  /** `sessions list --archived`: only archived sessions. */
+  archived: boolean
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */
