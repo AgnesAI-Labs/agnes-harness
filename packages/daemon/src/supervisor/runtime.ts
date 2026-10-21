@@ -1272,7 +1272,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, workspaces)
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({

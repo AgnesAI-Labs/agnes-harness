@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Disposer } from '@agnes/daemon-foundation/local/tail'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '@agnes/daemon-foundation/registry'
+import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/lister'
 import type { SessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
 import {
   assertWorkspaceBindingEnvelope,
@@ -143,6 +144,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   constructor(
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
+    /** Folds a replayed history into the session's sidebar row in one batch. */
+    private readonly workspaces?: Pick<SessionWorkspacePort, 'batch'>,
   ) {}
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
@@ -464,9 +467,23 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
           }
           // Draining may yield while projecting. Any frame that arrives during that await is appended
           // to the same array and is picked up by this loop before the replay buffer is removed.
-          while (replayBuffer.length > 0) {
-            const buffered = replayBuffer.shift()
-            if (!buffered) break
+          // Walk it by index: shifting a long replay re-copies the array once per frame.
+          let index = 0
+          const frame = () => replayBuffer[index] as (typeof replayBuffer)[number]
+          // The tail begins at seq 1, so it commonly repeats rows already covered by the scan. Those
+          // frames publish without awaiting; their sidebar folds share one row read and one write.
+          const replayed = () => {
+            for (; index < replayBuffer.length && frame().event.seq <= replayedThrough; index++) {
+              if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
+                throw new Error('artifact authority session is unavailable')
+              frame().beforePublish?.()
+              this.publish(key, frame().event)
+            }
+          }
+          if (this.workspaces?.batch) this.workspaces.batch(key, replayed)
+          else replayed()
+          for (; index < replayBuffer.length; index++) {
+            const buffered = frame()
             const current = this.entries.get(key)
             if (current !== entry || entry.ac.signal.aborted)
               throw new Error('artifact authority session is unavailable')

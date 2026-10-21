@@ -260,10 +260,15 @@ export class SidebarSessions implements SidebarSessionPort {
             [end.seq, row.key],
           )
           let sequence = row.seq
-          for (const event of batch) {
-            if (event.seq !== ++sequence || event.seq > end.seq) throw new Error('incomplete session history')
-            this.workspaces.observe(row.key, event)
+          const fold = () => {
+            for (const event of batch) {
+              if (event.seq !== ++sequence || event.seq > end.seq)
+                throw new Error('incomplete session history')
+              this.workspaces.observe(row.key, event)
+            }
           }
+          if (this.workspaces.batch) this.workspaces.batch(row.key, fold)
+          else fold()
           if (!batch.length) throw new Error('incomplete session history')
         })
       } catch {
