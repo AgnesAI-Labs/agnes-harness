@@ -62,7 +62,11 @@ import {
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
 import { readStoredSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
-import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
+import {
+  type HostConvergenceReport,
+  type HostPublicationReport,
+  registerHostExecutionRows,
+} from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
 import { closeHost } from './lifecycle.js'
 import { reopenSelection } from './reopen-selection.js'
@@ -842,6 +846,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       return closePromise
     },
   }
+  registerHostExecutionRows(host, () => a.pluginTree.currentRows())
   return registerHostIdle(host, () => {
     const state = a.activationBarrier.snapshot()
     return (
