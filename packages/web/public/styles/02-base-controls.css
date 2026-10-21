@@ -93,6 +93,8 @@
     margin: 0;
     display: grid;
     grid-template-columns: 288px minmax(0, 1fr);
+    /* The rail keeps its width change visible instead of snapping. Reduced motion zeroes the token. */
+    transition: grid-template-columns var(--transition);
     overflow: hidden;
   }
   /* Public region hooks retain skin-facing surface properties; the skin layer owns their overrides. */
