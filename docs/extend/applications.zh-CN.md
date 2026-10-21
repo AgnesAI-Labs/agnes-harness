@@ -112,7 +112,7 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 [Acme 参考应用](../../examples/acme/README.zh-CN.md)提供工具、默认 Loop 智能体、品牌栅格资产、追加页面和可执行的 SDK 预览／采纳命令。
 
 
-应用可以通过 `delegableAgents` 声明最多十二个可委派角色。每个引用也必须在 `agents` 中，且对应
+应用可以通过 `delegableAgents` 声明最多 64 个可委派角色。每个引用也必须在 `agents` 中，且对应
 可启动的 Bundle。采纳应用后，后端会把这些角色加入该会话的 `subagent_spawn` 说明。
 例如 `{"role":"@acme/operations#reviewer","task":"复核证据"}` 会使用角色自己的配方、人格、
 工具和技能，创建不含父会话历史的新会话。未采纳应用、未知或不在名单内的角色，以及将 `role`
