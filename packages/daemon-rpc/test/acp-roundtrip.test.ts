@@ -413,7 +413,7 @@ describe('local endpoint: ACP round trip', () => {
           const gate = deferred()
           const reached = deferred()
           let folded = false
-          // Ignore single-row authority probes. Cold open folds the prefix, then rehashes it in the background.
+          // Ignore single-row authority probes. Cold open folds the prefix; the explicit full verification rehashes it.
           const hold = vi.spyOn(storage, 'scanIntegrity').mockImplementation(async (key, query) => {
             if (key === ok.result.sessionId && query.fromSeq === 1 && query.toSeq > 1) {
               if (folded) {
@@ -426,11 +426,15 @@ describe('local endpoint: ACP round trip', () => {
           })
           try {
             await expect(load()).resolves.toMatchObject({ result: {} })
-            await reached.promise
             const session = h.host.kernel.sessions.get(ok.result.sessionId)
             if (!session) throw new Error('cold load did not open the session')
             const log = session.d.log
             expect(log.openStats.checkpoint).toMatchObject({ used: true })
+            // Opening does not hash the prefix, so the load succeeded past the changed rows; the
+            // explicit full verification is what hashes it, behind the execution gate.
+            expect(log.historyVerified).toBe(true)
+            await log.verifyHistory({ rehashPrefix: true })
+            await reached.promise
             expect(log.historyVerified).toBe(false)
             infer.mockClear()
             const queued = deferred()

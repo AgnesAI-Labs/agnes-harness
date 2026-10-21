@@ -383,9 +383,10 @@ describe('StateTracker', () => {
       ).toEqual([])
   })
 
-  // The wrapped adapter has no readVerifiedHead, so this reopen verifies every row from the first;
-  // a reopen from a checkpoint folds that prefix first and is covered in verified-head.test.ts.
-  it('without a checkpoint, does not let a reopen past a tampered prefix row', async () => {
+  // The wrapped adapter has no readVerifiedHead, so this reopen hashes only the last 32 rows; a row
+  // earlier than that is folded unhashed (an explicit full verification finds it). A reopen from a
+  // checkpoint folds that prefix first and is covered in verified-head.test.ts.
+  it('without a checkpoint, does not let a reopen past a tampered row in the hashed tail', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
     await first.log.append(
@@ -400,7 +401,7 @@ describe('StateTracker', () => {
       scanIntegrity: async (key, query) => {
         const rows = await storage.scanIntegrity(key, query)
         return rows.map((row) =>
-          row.event.seq === 1
+          row.event.seq === 190
             ? { ...row, event: { ...row.event, data: { content: [{ type: 'text', text: 'tampered' }] } } }
             : row,
         )

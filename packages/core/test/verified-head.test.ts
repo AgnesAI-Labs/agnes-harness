@@ -33,6 +33,16 @@ const options = (storage: StorageAdapter, writerRunId = 'w'): OpenLogOptions => 
   timers,
 })
 
+/**
+ * A cold open no longer hashes the prefix, so the background verification these tests exercise is the
+ * explicit full one: it hashes the prefix behind the same execution gate.
+ */
+async function openRehashed(o: OpenLogOptions): Promise<SessionLogImpl> {
+  const log = await SessionLogImpl.open(o)
+  await log.verifyHistory({ rehashPrefix: true })
+  return log
+}
+
 async function seeded(rows: number) {
   const storage = new MemoryStorage()
   const log = await SessionLogImpl.open(options(storage))
@@ -92,7 +102,7 @@ describe('verified head checkpoint', () => {
       backgroundStarted = true
       return storage.scanIntegrity(key, q)
     }
-    const log = await SessionLogImpl.open(options(slow, 'b'))
+    const log = await openRehashed(options(slow, 'b'))
     const userInput = log.append([input('typed while verifying')], { beforeFullVerify: 'allow' })
     const turn = log.append([input('a model-side write')])
     await expect(userInput).resolves.toMatchObject({ firstSeq: 601 })
@@ -114,7 +124,7 @@ describe('verified head checkpoint', () => {
           ? { ...row, event: { ...row.event, data: { content: [{ type: 'text', text: 'changed' }] } } }
           : row,
       )
-    const log = await SessionLogImpl.open(options(tampered, 'b'))
+    const log = await openRehashed(options(tampered, 'b'))
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await expect(log.append([input('x')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
@@ -448,7 +458,7 @@ describe('reopening a live log this process already verified', () => {
     },
   )
 
-  it('no longer notices a changed row before the checkpoint; a cold open still does', async () => {
+  it('no longer notices a changed row before the checkpoint; only an explicit full verification does', async () => {
     const storage = await seeded(10)
     const log = await SessionLogImpl.open(options(storage, 'live'))
     await log.fullVerified()
@@ -459,6 +469,10 @@ describe('reopening a live log this process already verified', () => {
     await expect(log.append([input('model-side')])).resolves.toMatchObject({ firstSeq: 11 })
     await log.close()
     const cold = await SessionLogImpl.open(options(storage, 'cold'))
+    // A cold open does not hash the prefix either; the explicit full verification finds the row.
+    await cold.fullVerified()
+    expect(cold.faulted).toBe(false)
+    await cold.verifyHistory({ rehashPrefix: true })
     await expect(cold.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 2 },
@@ -482,11 +496,12 @@ describe('the background verification', () => {
       yields++
     })
     try {
+      await log.verifyHistory({ rehashPrefix: true })
       await log.fullVerified()
     } finally {
       restore()
     }
-    // The open folded in one page; the verification read the same rows in pages of at most 32.
+    // The open folded in one page; the explicit verification read the same rows in pages of at most 32.
     expect(limits[0]).toBe(500)
     expect(limits.slice(1).every((limit) => limit <= 32)).toBe(true)
     expect(yields).toBeGreaterThanOrEqual(100)
@@ -499,7 +514,7 @@ describe('verified head checkpoint under attack', () => {
     const storage = await seeded(30)
     tamper(storage, 'k', 12)
     const reports: FullVerifyReport[] = []
-    const log = await SessionLogImpl.open({ ...options(storage, 'b'), onFullVerify: (r) => reports.push(r) })
+    const log = await openRehashed({ ...options(storage, 'b'), onFullVerify: (r) => reports.push(r) })
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 30 })
     const write = log.append([input('model-side')])
     await expect(write).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 12 } })
@@ -540,7 +555,7 @@ describe('verified head checkpoint under attack', () => {
         writtenAtMs: 0,
       }),
     )
-    const log = await SessionLogImpl.open(options(storage, 'b'))
+    const log = await openRehashed(options(storage, 'b'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 10 })
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 3 } })
     await log.close()
@@ -553,11 +568,11 @@ describe('verified head checkpoint under attack', () => {
     const storage = await seeded(10)
     const head = (await storage.readVerifiedHead('k'))!
     await storage.writeVerifiedHead(makeVerifiedHead({ ...head, legacyThroughSeq: 4 }), { force: true })
-    const log = await SessionLogImpl.open(options(storage, 'b'))
+    const log = await openRehashed(options(storage, 'b'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 10 })
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()
-    // Nothing was wrong with the ledger itself: the next open verifies all of it and succeeds.
+    // Nothing was wrong with the ledger itself: the next open has no checkpoint to use and succeeds.
     const next = await SessionLogImpl.open(options(storage, 'c'))
     expect(next.openStats.checkpoint).toEqual({ used: false, reason: 'absent' })
     await next.close()
@@ -574,7 +589,7 @@ describe('verified head checkpoint under attack', () => {
     expect(await decideCheckpoint(storage, 'k', 10)).toEqual({ use: false, reason: 'self-check' })
   })
 
-  it('a checkpoint that cannot be read is not used, and the open verifies everything', async () => {
+  it('a checkpoint that cannot be read is not used, and the open treats the session as having none', async () => {
     const storage = await seeded(10)
     const failing: StorageAdapter = Object.create(storage)
     failing.readVerifiedHead = async () => {
@@ -603,7 +618,7 @@ describe('verified head checkpoint under attack', () => {
     const storage = await seeded(10)
     tamper(storage, 'k', 2)
     const { storage: slow, release } = held(storage)
-    const log = await SessionLogImpl.open(options(slow, 'b'))
+    const log = await openRehashed(options(slow, 'b'))
     const fork = log.forkInto(5, 'child', {
       actor,
       agnesVersion: '0.0.1',
@@ -623,7 +638,7 @@ describe('verified head checkpoint under attack', () => {
   it('a write queued behind a pending verify is refused, not written, when the log closes first', async () => {
     const storage = await seeded(10)
     const { storage: slow, release } = held(storage)
-    const log = await SessionLogImpl.open(options(slow, 'b'))
+    const log = await openRehashed(options(slow, 'b'))
     await log.append([input('typed')], { beforeFullVerify: 'allow' })
     const waiting = log.append([input('model-side')])
     await log.close()
@@ -638,7 +653,7 @@ describe('verified head checkpoint under attack', () => {
   it('a write that waited is refused when the log closes while the verification passes', async () => {
     const storage = await seeded(10)
     const { storage: slow, release, reached } = held(storage)
-    const log = await SessionLogImpl.open(options(slow, 'b'))
+    const log = await openRehashed(options(slow, 'b'))
     await reached
     const waiting = log.append([input('model-side')])
     const closing = log.close()
@@ -654,7 +669,7 @@ describe('verified head checkpoint under attack', () => {
     const storage = await seeded(10)
     const before = await storage.readVerifiedHead('k')
     const { storage: slow, release, reached } = held(storage)
-    const log = await SessionLogImpl.open({ ...options(slow, 'b'), clock: () => 99 })
+    const log = await openRehashed({ ...options(slow, 'b'), clock: () => 99 })
     await reached
     await log.close()
     release()
@@ -682,6 +697,7 @@ describe('verified head checkpoint under attack', () => {
         return fn()
       },
     })
+    await second.session.verifyHistory({ rehashPrefix: true })
     let settled = false
     // Nothing is queued, so this step would write nothing: only the step itself can hold it.
     const step = second.session.step().finally(() => {
@@ -710,6 +726,7 @@ describe('verified head checkpoint under attack', () => {
       provider: fakeProvider([]),
       writerRunId: 'r2',
     })
+    await second.session.verifyHistory({ rehashPrefix: true })
     // Shown while the verification runs: the opening is what the history looks like so far.
     await expect(second.session.projectUIOpening()).resolves.toBeDefined()
     release()
@@ -731,7 +748,7 @@ describe('verified head checkpoint under attack', () => {
       folded = true
       return storage.scanIntegrity(key, q)
     }
-    const log = await SessionLogImpl.open(options(failing, 'b'))
+    const log = await openRehashed(options(failing, 'b'))
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
     await expect(log.append([input('x')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
       code: 'E_STORAGE_FAULT',
@@ -753,7 +770,7 @@ describe('verified head checkpoint under attack', () => {
       folded = true
       return storage.scanIntegrity(key, q)
     }
-    const log = await SessionLogImpl.open(options(failing, 'b'))
+    const log = await openRehashed(options(failing, 'b'))
     expect(log.historyVerified).toBe(false)
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
     // Whether the history is intact is unknown, not bad: the next open can still start from the checkpoint.
@@ -771,6 +788,7 @@ describe('verified head checkpoint under attack', () => {
     const provider = fakeProvider([textTurn('two')])
     const second = await openSession({ storage: slow as MemoryStorage, provider, writerRunId: 'r2' })
     expect(second.log.openStats.checkpoint).toMatchObject({ used: true })
+    await second.session.verifyHistory({ rehashPrefix: true })
     const before = second.log.lastSeq
     await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
     expect(second.log.lastSeq).toBe(before + 1)
@@ -795,6 +813,7 @@ describe('verified head checkpoint under attack', () => {
     const { storage: slow, release } = held(storage)
     const provider = fakeProvider([textTurn('two')])
     const second = await openSession({ storage: slow as MemoryStorage, provider, writerRunId: 'r2' })
+    await second.session.verifyHistory({ rehashPrefix: true })
     await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
     const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
     release()
@@ -816,7 +835,7 @@ describe('a storage that vouches for the wrong digest', () => {
     const liar = Object.create(storage) as MemoryStorage
     liar.integrityDigestAt = async (key, seq) =>
       seq === head.throughSeq ? forged : storage.integrityDigestAt(key, seq)
-    const log = await SessionLogImpl.open(options(liar, 'r2'))
+    const log = await openRehashed(options(liar, 'r2'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: head.throughSeq })
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()

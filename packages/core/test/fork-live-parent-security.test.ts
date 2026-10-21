@@ -150,7 +150,7 @@ describe('what creating a delegated child still detects', () => {
 })
 
 describe('what creating a delegated child no longer detects (approved)', () => {
-  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and a cold open refuses it once the history is verified', async () => {
+  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and an explicit full verification refuses it', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const provider = script()
     const { k, parent, c } = await parentReady(storage, provider)
@@ -176,25 +176,29 @@ describe('what creating a delegated child no longer detects (approved)', () => {
     expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
     const childKey = child.key
     await k.close()
-    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
-    // is hashed again; the background verification refuses the row and seals the session.
+    // Closing wrote each session's verified-head checkpoint, so a cold open does not hash the prefix;
+    // the explicit full verification refuses the row and seals the session.
     const again = kernel(storage, fakeProvider([]))
     for (const [key, writerRunId] of [
       ['parent', 'r3'],
       [childKey, 'r4'],
     ] as const) {
       const reopened = await again.session(key, { ...sessionOpts, writerRunId })
+      await reopened.d.log.verifyHistory({ rehashPrefix: true })
       await expect(reopened.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     }
     await again.close()
-    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
+    // The failure dropped both checkpoints. A later cold open has none to use and does not hash the
+    // prefix either, so it opens; the explicit full verification still refuses the row.
     const third = kernel(storage, fakeProvider([]))
-    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
+    for (const [key, writerRunId] of [
+      ['parent', 'r5'],
+      [childKey, 'r6'],
+    ] as const) {
+      const reopened = await third.session(key, { ...sessionOpts, writerRunId })
+      await reopened.d.log.verifyHistory({ rehashPrefix: true })
+      await expect(reopened.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    }
     await third.close()
   })
 
