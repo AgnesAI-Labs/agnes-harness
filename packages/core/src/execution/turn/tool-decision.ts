@@ -3,6 +3,7 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionHandle, DecisionSnapshot } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
+import { childLifecycle } from '../../child/lifecycle.js'
 import type { AskRewrite } from '../../step/approval-ask.js'
 import type { DecisionSource } from '../../step/decisions.js'
 import type { SessionImpl } from '../../step/session.js'
@@ -12,11 +13,13 @@ export const TOOL_DECISION_OWNER = 'core/tool-permission'
 export function toolDecisionSource(
   s: SessionImpl,
   call: Pick<PlannedCall, 'name' | 'toolUseId' | 'definitionFingerprint'>,
+  admitting = false,
 ): DecisionSource {
   const def = s.currentTools().resolve(call.name)
   if (!def || def.definitionFingerprint !== call.definitionFingerprint)
     throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
   const signal = s.ac.signal
+  const lifecycle = childLifecycle(s)
   return s.decisions.bindSource({
     permission: true,
     owner: TOOL_DECISION_OWNER,
@@ -24,6 +27,9 @@ export function toolDecisionSource(
     sourcePackage: '@agnes/core',
     packageVersion: s.d.agnesVersion ?? '0.0.0',
     alive() {
+      lifecycle.assertActive()
+      if (admitting && s.roleAuthority && !lifecycle.hasParent)
+        throw new CoreError('E_CLOSED', 'Delegated effect requires a live owning session')
       if (s.currentTools().resolve(call.name)?.definitionFingerprint !== call.definitionFingerprint)
         throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
       signal.throwIfAborted()

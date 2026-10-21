@@ -3,13 +3,14 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
+import { childLifecycle } from './lifecycle.js'
 
 /** Delivery metadata never moves the decision, its consumption or the effect out of the child. */
 export async function delegatedApprovalRequest(
   child: SessionImpl,
   decision: DecisionSnapshot,
   offered: ApprovalRequest,
-): Promise<ApprovalRequest> {
+): Promise<ApprovalRequest | null> {
   const role = child.roleAuthority
   if (
     !role ||
@@ -18,6 +19,9 @@ export async function delegatedApprovalRequest(
     decision.request.spec.purpose !== 'tool.permission'
   )
     return offered
+  const lifecycle = childLifecycle(child)
+  lifecycle.assertActive()
+  if (!lifecycle.hasParent) return null
   const store = requireChildControl(child.d.log.storage)
   let record = await store.lookupByKey(child.key)
   if (!record || record.parentKey !== role.parentKey)
@@ -44,6 +48,7 @@ export async function delegatedApprovalRequest(
     role.parentTainted !== false || offered.taint
       ? 'Untrusted evidence (taint)'
       : (offered.context ?? offered.summary)
+  lifecycle.assertActive(parentKey)
   return {
     ...offered,
     sessionKey: parentKey,

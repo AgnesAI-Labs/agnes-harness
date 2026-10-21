@@ -112,7 +112,11 @@ and policy reason. Only an authenticated human can allow that effect once or ref
 child nor the coordinator model can answer. `approvalPolicy: never` continues to prohibit the role
 from approving or signing; it does not prevent already admitted work. Business signatures remain
 refused. With no human surface, including headless or unattended work, an effect needing a human is
-refused. Cancellation withdraws the question. Cold recovery reuses the child's original decision and
+refused. Stopping or closing a parent or ancestor withdraws descendant questions and revokes their
+pending allowances before an answer or effect can commit. A previously created role handle cannot
+start work after that parent lifecycle has ended; a closed session instance cannot run again. A process crash does not record
+this explicit withdrawal. Opening a role child alone does not reopen its parent's approval surface.
+Cold recovery reuses the child's original decision and
 pinned composition when the owning session explicitly continues.
 The snapshot also retains the parent's taint. Policy sees that captured taint or the role's current
 turn taint, so a fresh or reopened role cannot erase it. An older snapshot without that evidence is

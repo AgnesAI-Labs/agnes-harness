@@ -1108,7 +1108,11 @@ export async function approveAndExecute(
         events: [started.intent],
         next: (cur) => {
           chain[1]!.events.push(
-            ...s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId),
+            ...s.decisions.consumptionEvents(
+              approvalRefs,
+              toolDecisionSource(s, call, true),
+              started.effectId,
+            ),
           )
           return updateCall(cur, call.toolUseId, {
             status: 'dispatch_pending',
@@ -1133,7 +1137,7 @@ export async function approveAndExecute(
     const [, startedSeqs] = await s.transitionChain(chain, {
       beforeCommit: () => recheckPermission?.(),
       commitCheck: () => {
-        s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId)
+        s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call, true), started.effectId)
       },
     })
     for (const key of sessionActivations) s.sessionAllows.add(key)

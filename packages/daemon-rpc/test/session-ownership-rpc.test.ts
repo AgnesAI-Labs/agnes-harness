@@ -370,22 +370,33 @@ describe('authenticated session ownership RPC guard', () => {
         params: { cwd: h.dataDir, mcpServers: [] },
       })) as { result: { sessionId: string } }
       tickets.put('foreign-ticket', created.result.sessionId, Date.now() + 60_000, h.dataDir)
-      const response = await stranger.handle({
-        jsonrpc: '2.0',
-        id: 3,
-        method: '_agnes/v1/approval.decide',
-        params: {
-          sessionId: created.result.sessionId,
-          id: 'foreign-decision',
-          revision: 1,
-          commandId: 'c',
-          response: { option: 'rejected', value: null },
-        },
+      const session = h.host.kernel.get(created.result.sessionId)!
+      const handle = await session.decisions.port(session.loopDecisionSource()).request({
+        key: 'known-live-decision',
+        purpose: 'tool.permission',
+        subject: { path: 'synthetic.md' },
+        prompt: 'Review',
+        options: ['allowed-once', 'rejected'],
       })
-      expect(response).toMatchObject({
-        error: { data: { code: 'APPROVAL_REJECTED', reason: 'DECISION_NOT_FOUND' } },
-      })
-      expect(JSON.stringify(response)).not.toContain(created.result.sessionId)
+      for (const option of ['allowed-once', 'rejected']) {
+        const response = await stranger.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: '_agnes/v1/approval.decide',
+          params: {
+            sessionId: created.result.sessionId,
+            id: handle.id,
+            revision: 1,
+            commandId: 'c',
+            response: { option, value: null },
+          },
+        })
+        expect(response).toMatchObject({
+          error: { data: { code: 'APPROVAL_REJECTED', reason: 'DECISION_NOT_FOUND' } },
+        })
+        expect(JSON.stringify(response)).not.toContain(created.result.sessionId)
+      }
+      expect((await session.decisions.get(handle)).result).toBeNull()
     } finally {
       await Promise.all([owner.close(), stranger.close()])
       await h.close()
