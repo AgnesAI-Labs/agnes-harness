@@ -14,7 +14,7 @@ import {
   installResourceServiceAdapters,
   writePackageSkillInventory,
 } from '@agnes/resource-control-daemon'
-import { type AssemblyLifetime, assemblyPort } from './assembly-lifetime.js'
+import { type AssemblyLifetime, assemblyPort, assemblyTasks } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
 import type { StoresState } from './assembly-stores.js'
 import {
@@ -60,8 +60,16 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
         hash: artifact.digest,
       },
     })
+  const references = o.packageRuntime?.references
+  if (references) lifetime.own({ dispose: () => references.close() })
   const runtimeFailure = assemblyPort<() => Promise<void>>()
-  lifetime.own({ dispose: () => runtimeFailure.close() })
+  const runtimeWork = assemblyTasks()
+  lifetime.own({
+    dispose: async () => {
+      runtimeFailure.close()
+      await runtimeWork.close()
+    },
+  })
   const runtimeDelivery = runtimeStore
     ? new CompositeRuntimeDelivery(runtimeStore, {
         onFailureRecorded: () => runtimeFailure.read()(),
@@ -217,6 +225,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     runtimeStore,
     notifyRuntimeTarget,
     runtimeFailure,
+    runtimeWork,
     runtimeDelivery,
     runtimeTargetProbe,
     automationEvents,

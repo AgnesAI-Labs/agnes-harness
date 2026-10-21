@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { AssemblyLifetime, assemblyPort } from '../src/supervisor/assembly-lifetime.js'
+import { AssemblyLifetime, assemblyPort, assemblyTasks } from '../src/supervisor/assembly-lifetime.js'
 
 it('uses one reverse owner list for successful and partial initialization, and closes only once', async () => {
   for (const failAfter of [0, 1, 2, 3]) {
@@ -65,4 +65,31 @@ it('refuses every unready or closed bootstrap callback with the same closed erro
   port.close()
   expect(() => port.read()(1)).toThrow('E_PACKAGE_STATE: daemon port is not ready')
   expect(() => port.initialize((n) => n)).toThrow('E_PACKAGE_STATE')
+})
+
+it('waits for already-started runtime recovery before releasing the owner and refuses late work', async () => {
+  const lifetime = new AssemblyLifetime()
+  const events: string[] = []
+  lifetime.own({
+    dispose: () => {
+      events.push('lock')
+    },
+  })
+  const tasks = assemblyTasks()
+  lifetime.own({ dispose: () => tasks.close() })
+  let finish!: () => void
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const running = tasks.run(async () => {
+    await gate
+    events.push('recovery')
+  })
+  const closing = lifetime.dispose()
+  await Promise.resolve()
+  expect(events).toEqual([])
+  expect(() => tasks.run(async () => undefined)).toThrow('E_PACKAGE_STATE')
+  finish()
+  await Promise.all([running, closing])
+  expect(events).toEqual(['recovery', 'lock'])
 })

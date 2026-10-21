@@ -64,7 +64,6 @@ export async function initializeRuntime(
   } = state
   if (o.packageRuntime) {
     const packageRuntime = o.packageRuntime
-    if (packageRuntime.references) lifetime.own({ dispose: () => packageRuntime.references?.close() })
     const surfaces = await openRuntimeSurfaces({ ...state, packageRuntime }, lifetime)
     const activation = await openRuntimeActivation({ ...state, packageRuntime, ...surfaces }, lifetime)
     const { pluginTreePublisher } = createRuntimePublisher(
@@ -227,6 +226,7 @@ async function openRuntimeActivation(
     sessionOwnership,
     runtimeStore,
     runtimeFailure,
+    runtimeWork,
     runtimeTargetProbe,
     pool,
     registry,
@@ -275,17 +275,19 @@ async function openRuntimeActivation(
     : undefined
   const revertFailedDesired = targetReverter
     ? () =>
-        (pinCoordinator
-          ? pinCoordinator.revert(() => targetReverter.revertFailedDesired())
-          : targetReverter.revertFailedDesired()
-        ).catch((error) => {
-          o.audit?.({
-            kind: 'worker.log',
-            sessionKey: '@shared',
-            level: 'warn',
-            message: `reverting a failed target failed: ${error instanceof Error ? error.message : String(error)}`,
-          })
-        })
+        runtimeWork.run(() =>
+          (pinCoordinator
+            ? pinCoordinator.revert(() => targetReverter.revertFailedDesired())
+            : targetReverter.revertFailedDesired()
+          ).catch((error) => {
+            o.audit?.({
+              kind: 'worker.log',
+              sessionKey: '@shared',
+              level: 'warn',
+              message: `reverting a failed target failed: ${error instanceof Error ? error.message : String(error)}`,
+            })
+          }),
+        )
     : undefined
   if (revertFailedDesired) runtimeFailure.initialize(revertFailedDesired)
   const compositeActivation = runtimeStore

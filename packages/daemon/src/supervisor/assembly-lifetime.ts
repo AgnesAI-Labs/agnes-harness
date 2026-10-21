@@ -104,3 +104,25 @@ export function assemblyPort<T>() {
     },
   }
 }
+
+/** Non-blocking boot/recovery work still belongs to the worker owner's final release. */
+export function assemblyTasks() {
+  const pending = new Set<Promise<unknown>>()
+  let closed = false
+  return {
+    run<T>(work: () => Promise<T>): Promise<T> {
+      if (closed) throw new Error('E_PACKAGE_STATE: daemon work owner is closed')
+      const task = work()
+      pending.add(task)
+      void task.then(
+        () => pending.delete(task),
+        () => pending.delete(task),
+      )
+      return task
+    },
+    async close(): Promise<void> {
+      closed = true
+      await Promise.allSettled([...pending])
+    },
+  }
+}
