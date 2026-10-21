@@ -69,7 +69,7 @@ Print options `--park`, `--chunks`, and `--meta` control waiting and output. See
 
 ## Packages, resources, and Computer Use
 
-Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`; `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
+Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy` (the last prints the allowed package sources); `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
 
 Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh|trust`; `mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`. Writes commonly need expected revision and interactive confirmation. See [Skills](../guide/skills.md) and [MCP](../guide/mcp.md).
 

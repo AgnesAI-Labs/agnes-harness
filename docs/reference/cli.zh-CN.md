@@ -61,7 +61,7 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 
 ## 包、资源与 Computer Use
 
-包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
+包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy`（最后一个显示允许的包来源）；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
 
 资源：`resources list|get|operation|cancel|enable|disable`；`skills refresh|trust`；`mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`。变更操作通常要求 expected revision 与交互确认，详见[Skills](../guide/skills.zh-CN.md)、[MCP](../guide/mcp.zh-CN.md)。
 

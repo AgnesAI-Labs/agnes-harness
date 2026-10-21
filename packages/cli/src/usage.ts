@@ -31,7 +31,7 @@ export function usage(locale = 'en'): string {
     'agh doctor subagents [--json] [--repair]',
     'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
     'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> [<integrity> <capabilityHash>] [--yes]',
-    '              enable|disable|rollback|remove <id> | operation|cancel <operationId>',
+    '              enable|disable|rollback|remove <id> | operation|cancel <operationId> | source-policy',
     'agh plugin test [folder] [-- <test-runner args>]  Run author tests in an isolated home',
     'agh plugins add <url|path> [--yes] | pack <folder> [output.tgz] | trust|enable <id> [--yes]',
     'agh install <src> [--profile <p>] [--yes]',
