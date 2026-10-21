@@ -3,7 +3,13 @@ import { realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
-import { createPackageManager, readLock, withLock } from '@agnes/package-manager'
+import {
+  createPackageManager,
+  packageByteBinding,
+  readLock,
+  readPluginCapabilityPolicy,
+  withLock,
+} from '@agnes/package-manager'
 import { expect, it, vi } from 'vitest'
 import { DaemonPluginByteVerification } from '../src/supervisor/plugin-byte-verification.js'
 import { createWorkerByteFixture } from './plugin-byte-fixture.js'
@@ -316,3 +322,89 @@ it('recheck2: control refresh outage cannot erase a confirmed fault for an actua
     vi.restoreAllMocks()
   }
 })
+
+it.each(
+  (['digest', 'symlink'] as const).flatMap((evidence) =>
+    (['healthy', 'unavailable'] as const).map((refresh) => [evidence, refresh] as const),
+  ),
+)(
+  'recheck3: an old queued %s fault never revokes an observed new binding when notification refresh is %s',
+  async (evidence, refresh) => {
+    const fixture = await createWorkerByteFixture()
+    const owner = new DaemonPluginByteVerification(fixture.profileDir, fixture.home, 'local-dev')
+    const stopped = vi.fn(),
+      revoked = vi.fn()
+    owner.bind(stopped, revoked, () => {})
+    const manager = createPackageManager({
+      dataDir: fixture.home,
+      cwd: fixture.home,
+      agnesVersion: '0.0.0',
+      references: async () => [],
+      byteVerification: owner.verification,
+    })
+    let restore = () => {}
+    try {
+      const row = (await manager.inventory(fixture.profileDir)).packages[0]!
+      const expected = { ...row.entry, capabilityHash: row.capabilityHash, packageId: row.id }
+      const file = join(row.directory!, 'index.mjs'),
+        policy = join(fixture.profileDir, 'plugin-capabilities.json')
+      const originalBytes = syncFs.readFileSync(file)
+      const oldBinding = packageByteBinding(fixture.profileDir)
+      if (evidence === 'digest') {
+        writeFileSync(file, 'confirmed wrong digest')
+        expect(await owner.verification.read(row.directory!, expected)).not.toBe(expected.treeIntegrity)
+      } else {
+        rmSync(file)
+        symlinkSync(join(row.directory!, 'package.json'), file)
+        expect(() => owner.verification.readSync(row.directory!, expected)).toThrow()
+        rmSync(file)
+      }
+      // The negative is queued, but its handler has not run. B is a valid, genuinely changed
+      // control binding; the owner observes it and successfully verifies the repaired tree.
+      expect(stopped).not.toHaveBeenCalled()
+      writeFileSync(file, originalBytes)
+      writeFileSync(policy, JSON.stringify({ deny: [] }))
+      expect(readPluginCapabilityPolicy(fixture.profileDir)).toEqual({ deny: [] })
+      const newBinding = packageByteBinding(fixture.profileDir)
+      expect(newBinding).not.toBe(oldBinding)
+      expect(owner.verification.readSync(row.directory!, expected)).toBe(expected.treeIntegrity)
+      const originalRead = syncFs.readFileSync
+      let injected = false
+      const outage = vi.spyOn(syncFs, 'readFileSync').mockImplementation((...args) => {
+        if (refresh === 'unavailable' && String(args[0]) === policy && !injected) {
+          injected = true
+          throw Object.assign(new Error('one notification-time policy read outage'), { code: 'EIO' })
+        }
+        return originalRead(...args)
+      })
+      restore = () => outage.mockRestore()
+      await setImmediate()
+      const stoppedBeforeClose = stopped.mock.calls.length > 0
+      await owner.close()
+      restore()
+      const current = readLock(fixture.profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' }).packages[
+        row.id
+      ]!
+      expect({
+        injected,
+        stoppedBeforeClose,
+        stopped: stopped.mock.calls.length > 0,
+        revoked: revoked.mock.calls.length > 0,
+        trusted: current.state.trusted !== null,
+        enabled: current.state.enabled,
+      }).toEqual({
+        injected: refresh === 'unavailable',
+        stoppedBeforeClose: false,
+        stopped: false,
+        revoked: false,
+        trusted: true,
+        enabled: true,
+      })
+    } finally {
+      restore()
+      await owner.close()
+      await fixture.close()
+      vi.restoreAllMocks()
+    }
+  },
+)
