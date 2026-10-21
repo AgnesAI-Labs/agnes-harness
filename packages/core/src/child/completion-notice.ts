@@ -1,8 +1,10 @@
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { SystemInput } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
+import { recordedChildRole } from './roles.js'
 
 export const CHILD_COMPLETION_SOURCE = 'agnes/child'
 export const CHILD_COMPLETED = 'child-completed'
@@ -75,7 +77,13 @@ export async function childCompletionInput(
     outcome === 'failed' && (endReason === 'budget' || endReason === 'max_steps')
       ? ('budget_stopped' as const)
       : outcome
-  const label = clip(record.inputText.trim().split('\n', 1)[0] || record.childKey, MAX_LABEL_CHARS)
+  const role = await recordedChildRole(parent, record.childKey)
+  const label = clip(
+    role
+      ? (role.title['zh-CN'] ?? role.title.en)
+      : record.inputText.trim().split('\n', 1)[0] || record.childKey,
+    MAX_LABEL_CHARS,
+  )
   const result = text.trim()
   const truncated = result.length > MAX_RESULT_CHARS
   const shown = clip(result, MAX_SUMMARY_RESULT_CHARS)
@@ -91,18 +99,23 @@ export async function childCompletionInput(
     type: CHILD_COMPLETED,
     data: {
       childKey: record.childKey,
+      ...(role ? { role } : {}),
       status,
       ...(options.continuable ? { continuable: true } : {}),
       ...(result ? { result: clip(result, MAX_RESULT_CHARS), truncated } : {}),
       ...(options.credits === undefined ? {} : { credits: options.credits }),
     },
-    summary: result ? `${lead} Result:\n${shown}${tail}` : lead,
+    summary: `${role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''}${result ? `${lead} Result:\n${shown}${tail}` : lead}`,
     presentation: { kind: 'child-completed', status, label },
   }
   // A terminal notice is keyed by the durable outcome alone: the child's last turn/end may still land
   // after a cancel, so a ledger-derived sequence would differ between live delivery and recovery.
   const identity = options.continuable ? `${endSeq}:${status}` : `terminal:${outcome}`
-  return { system, commandId: `${CHILD_COMPLETED}:${record.childKey}:${identity}` }
+  const commandId = `${CHILD_COMPLETED}:${record.childKey}:${identity}`
+  return {
+    system,
+    commandId: commandId.length <= 128 ? commandId : `${CHILD_COMPLETED}:${sha256Hex(commandId)}`,
+  }
 }
 
 /**

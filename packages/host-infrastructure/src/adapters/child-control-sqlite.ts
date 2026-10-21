@@ -534,7 +534,12 @@ export function sqliteChildControl(
           throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })
         if (q.session.get(input.childKey))
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey: input.childKey })
-        q.insertChildSession.run(input.childKey, input.parentKey, input.boundarySeq, new Date().toISOString())
+        q.insertChildSession.run(
+          input.childKey,
+          input.fresh ? null : input.parentKey,
+          input.fresh ? null : input.boundarySeq,
+          new Date().toISOString(),
+        )
         let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId
         if (input.childCapMicro !== null) {
           budgetScopeId = `child:${input.childKey}`

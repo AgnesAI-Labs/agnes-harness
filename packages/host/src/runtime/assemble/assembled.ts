@@ -99,6 +99,7 @@ export type Assembled = {
     binding: WorkspaceBinding,
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime>
   /**
    * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without

@@ -382,10 +382,12 @@ export interface ToolContext {
     cancel(id: string): Promise<void>
   }
   readonly subagent: {
+    roles?(): Promise<readonly import('./child-agent.js').ChildRole[]>
     fork(question: string, opts?: { model?: string }): Promise<string>
     spawn(
       task: string,
       opts?: {
+        role?: import('@agnes/protocol').AgentRef
         model?: string
         isolation?: 'worktree' | 'shared'
         budget?: number
@@ -401,7 +403,7 @@ export interface ToolContext {
         resident?: boolean
         toolFilter?: ChildAgentToolFilter
       },
-    ): Promise<{ childKey: string; worktree?: string }>
+    ): Promise<{ childKey: string; worktree?: string; role?: import('./child-agent.js').ChildRole }>
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
     resume(childKey: string): Promise<{ childKey: string }>

@@ -90,6 +90,19 @@ retain their existing scopes and semantics.
 
 Build a replacement using public exports: [Build a presentation plugin](presentations.md).
 
+
+An application can expose up to eight `delegableAgents`. Every ref must also appear in `agents` and
+resolve to a launchable bundle. After adoption, the backend advertises those roles in the session's
+`subagent_spawn` description. For example, `{"role":"@acme/operations#reviewer","task":"Review the evidence"}`
+starts that role with its own recipe, persona, tools and skills in a fresh conversation. A missing
+adoption, unknown or unlisted role, or combining `role` with `fork` or `model`, is an error.
+
+Role children capture the intersection of their role and the parent's tool, file, network, sandbox
+and read-only authority at spawn time. Their own ledger records this snapshot; later parent changes
+do not propagate. Operations requiring approval or a business signature are refused and must return
+to the main assistant, including when the parent uses Full access. The delegation card and completion
+notice retain the backend-recorded role attribution across reload. Plain spawns keep their existing behavior.
+
 ## Choose one interface implementation
 
 In **Settings → Application → Advanced interface choices**, an administrator can replace each standard

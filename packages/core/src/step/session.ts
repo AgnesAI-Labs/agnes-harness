@@ -110,6 +110,12 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import {
+  type ChildRolePort,
+  intersectRoleToolPolicy,
+  type RoleDelegation,
+  roleToolSnapshot,
+} from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
@@ -178,6 +184,7 @@ import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } 
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
+import { sessionToolCatalog } from './tool-catalog.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { settleParkedCompletion } from './verifier-continuation.js'
@@ -401,6 +408,8 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  roleDelegation?: RoleDelegation
+  childRoles?: ChildRolePort
   commandPathScope?: import('../command-table/floor.js').CommandPathScope
   memory?: import('@agnes/extension-api').MemorySession
   systemPrompt?: PinnedSystemPrompt
@@ -479,6 +488,7 @@ export type SessionDeps = {
   policyDigest?: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
+  delegation?: SessionStart['delegation']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -686,7 +696,10 @@ export class SessionImpl {
 
   private readonly authorization: SessionPermissionAuthority
   get permissionContext(): import('@agnes/protocol').PermissionContext {
-    return this.authorization.context(this.key, this.preset.permission ?? '')
+    const context = this.authorization.context(this.key, this.preset.permission ?? '')
+    return this.d.roleDelegation && !this.closing
+      ? { ...context, policy: this.d.roleDelegation.permission }
+      : context
   }
   onPermissionChange(listener: () => void): () => void {
     return this.authorization.subscribe(listener)
@@ -742,6 +755,9 @@ export class SessionImpl {
       },
       get permissionContext() {
         return session.permissionContext
+      },
+      get refuseApprovals() {
+        return session.d.roleDelegation !== undefined
       },
       get ttlMs() {
         return session.preset.approval.pendingTtlMs
@@ -799,7 +815,7 @@ export class SessionImpl {
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
     const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
-    const allow = this.preset.tools.allow
+    const allow = this.d.roleDelegation?.tools ?? this.preset.tools.allow
     if (allow === undefined) return tools
     // One view per registry and list, so repeated lookups in a turn share it.
     if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
@@ -810,24 +826,7 @@ export class SessionImpl {
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
   toolCatalog(): import('@agnes/protocol').SessionToolsResult {
-    const context = this.operationContext()
-    return {
-      sessionId: this.key,
-      tools: context.snapshot.defs.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: structuredClone(tool.parameters),
-        source: context.snapshot.byName.get(tool.name)?.source.source ?? '',
-        deferred: tool.meta.deferLoading === true,
-        readOnly: tool.meta.isReadOnly,
-      })),
-      resources: (this.hooks.resources?.() ?? []).map(({ id, kind, name, description }) => ({
-        id,
-        kind,
-        name,
-        description,
-      })),
-    }
+    return sessionToolCatalog(this)
   }
 
   /** Current resource registry used by lifecycle discovery and Host adapters. */
@@ -915,10 +914,14 @@ export class SessionImpl {
   )
   /** The selected policy inside this session's command floor: its own preset's table, read per call. */
   toolPolicy(selection?: string) {
-    return this.commandFloor(
+    const own = this.commandFloor(
       this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
       this.preset.approval.commandTable,
     )
+    const captured = this.d.roleDelegation
+    if (!captured) return own
+    const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
+    return intersectRoleToolPolicy(own, parent, captured)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
@@ -1077,6 +1080,7 @@ export class SessionImpl {
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
+          ...(this.d.delegation ? { delegation: this.d.delegation } : {}),
         },
       },
     ])
@@ -1702,7 +1706,7 @@ export class SessionImpl {
    */
   freshTurn(ordinal = 0, asOf: Seq = this.lastSeq): TurnMemory {
     return {
-      snapshot: this.currentTools().snapshot(asOf),
+      snapshot: roleToolSnapshot(this.currentTools().snapshot(asOf), this.availableRoles),
       nonce: this.d.ids.nonce(),
       lastHeader: null,
       lastHeaderSeq: null,
@@ -2023,6 +2027,7 @@ export class SessionImpl {
         )
           return outcome
       }
+      this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
       return this.runTurns(opts)
     })
     this.running = work
@@ -2034,6 +2039,8 @@ export class SessionImpl {
   private turnOutcome(reason: TurnEndReason): TurnOutcome {
     return { reason, lastSeq: this.lastSeq, ...(this.turnEndError ? { error: this.turnEndError } : {}) }
   }
+
+  private availableRoles: readonly import('@agnes/extension-api').ChildRole[] = []
 
   private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
