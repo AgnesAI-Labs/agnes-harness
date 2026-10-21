@@ -841,9 +841,7 @@ it('fills the welcome after the first frame, omits what fails, and condenses on 
       profile: 'local-dev',
       preset: 'standard',
       model: 'm1',
-      version: '0.9.3',
-      boot: { ms: 1500, cold: true },
-      welcomeSeenPath: seen,
+      welcome: { version: '0.9.3', boot: { ms: 1500, cold: true }, seenPath: seen },
     })
     await app.start()
     return { app, client, term }
@@ -873,6 +871,32 @@ it('fills the welcome after the first frame, omits what fails, and condenses on 
   } finally {
     rmSync(state, { recursive: true, force: true })
   }
+})
+
+it('repaints the welcome while it animates and stops the timer with the app', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 132, rows: 40 }, { TERM: 'xterm-256color' })
+  const app = new TuiApp({
+    session,
+    term,
+    profile: 'local-dev',
+    preset: 'standard',
+    welcome: { motion: true },
+  })
+  try {
+    await app.start()
+    const before = term.writes.length
+    // The shine runs at ~60 ms a frame without any input or projection tick.
+    await vi.waitFor(() => expect(term.writes.length).toBeGreaterThan(before + 4))
+  } finally {
+    await app.stop()
+  }
+  const after = term.writes.length
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  expect(term.writes.length).toBe(after)
+  await client.close()
 })
 
 it('uses the projected model in both empty-state card and composer when argv did not pin one', async () => {

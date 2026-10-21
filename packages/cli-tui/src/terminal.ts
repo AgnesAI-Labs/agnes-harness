@@ -87,6 +87,7 @@ export type InputStream = {
 }
 
 export type OutputStream = {
+  isTTY?: boolean | undefined
   columns?: number | undefined
   rows?: number | undefined
   write(s: string): void

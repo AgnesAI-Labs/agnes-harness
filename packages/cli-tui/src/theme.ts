@@ -16,18 +16,16 @@ export const paintsColour = (ansi: ThemedAnsi): boolean => ansi.fg('accent', 'x'
 /** Linear RGB blend along evenly spaced stops; `t` is clamped to 0..1. Non-hex stops give no answer. */
 export function blendColours(stops: readonly (Colour | undefined)[], t: number): Colour | undefined {
   const hex = stops.map((c) => (typeof c === 'string' ? hexColour(c) : undefined))
-  const first = hex[0]
-  if (first === undefined || hex.some((c) => c === undefined)) return undefined
-  if (hex.length === 1) return first
-  const span = hex.length - 1
+  const rgb = hex.map((c) => (c ? [1, 3, 5].map((k) => Number.parseInt(c.slice(k, k + 2), 16)) : undefined))
+  const first = rgb[0]
+  if (first === undefined || rgb.some((c) => c === undefined)) return undefined
+  if (rgb.length === 1) return hex[0]
+  const span = rgb.length - 1
   const at = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0)) * span
   const i = Math.min(span - 1, Math.floor(at))
-  const channel = (c: `#${string}` | undefined, k: number): number =>
-    Number.parseInt((c ?? '#000000').slice(1 + 2 * k, 3 + 2 * k), 16)
-  const mixed = [0, 1, 2].map((k) => {
-    const a = channel(hex[i], k)
-    return Math.round(a + (channel(hex[i + 1], k) - a) * (at - i))
-  })
+  const a = rgb[i] ?? first
+  const b = rgb[i + 1] ?? first
+  const mixed = a.map((v, k) => Math.round(v + ((b[k] ?? v) - v) * (at - i)))
   return `#${mixed.map((v) => v.toString(16).padStart(2, '0')).join('')}`
 }
 

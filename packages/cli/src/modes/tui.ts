@@ -89,12 +89,15 @@ export async function runTui(
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
         : {}),
-      ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
-      // Only a launch that went through the local daemon has a boot time worth showing.
-      ...(booted.daemonCold !== undefined ? { boot: { ms: booted.bootMs, cold: booted.daemonCold } } : {}),
-      ...(io.composerSelectionPath
-        ? { welcomeSeenPath: join(dirname(io.composerSelectionPath), 'tui-welcome.json') }
-        : {}),
+      welcome: {
+        motion: io.stdout.isTTY === true,
+        ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
+        // Only a launch that went through the local daemon has a boot time worth showing.
+        ...(booted.daemonCold !== undefined ? { boot: { ms: booted.bootMs, cold: booted.daemonCold } } : {}),
+        ...(io.composerSelectionPath
+          ? { seenPath: join(dirname(io.composerSelectionPath), 'tui-welcome.json') }
+          : {}),
+      },
       controlClient: booted.client,
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,

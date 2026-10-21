@@ -1,15 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord, UsageView } from '@agnes/protocol'
+import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
-import {
-  completeToken,
-  listSessionChoices,
-  runSlash,
-  type SessionChoice,
-  slashCommandFor,
-} from './commands.js'
+import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
@@ -44,8 +38,7 @@ import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
-import { WelcomeBanner, welcomeTips } from './views/welcome-banner.js'
-import { readWelcomeSeen, saveWelcomeSeen } from './welcome-seen.js'
+import { WelcomeController, type WelcomeOptions } from './welcome-controller.js'
 import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
@@ -72,8 +65,7 @@ export class TuiApp {
   // replaces it with a fresh projection built for the newly current session.
   private projection: TuiProjection
   private readonly timeline: Timeline
-  private readonly welcomeBanner: WelcomeBanner
-  private readonly returningVisit: boolean
+  private readonly welcome: WelcomeController
   private readonly toolCards = new Map<string, ToolCard>()
   private latestTool: string | undefined
   private readonly approvalCards = new Map<string, ApprovalCard>()
@@ -152,12 +144,8 @@ export class TuiApp {
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
-      /** The CLI's version for the welcome; with `welcomeSeenPath` it decides whether this is a return visit. */
-      version?: string
-      /** How long the daemon took to be ready, and whether this launch started it. */
-      boot?: { ms: number; cold: boolean }
-      /** Remembers the version whose full welcome was shown; unreadable or unwritable reads as first run. */
-      welcomeSeenPath?: string
+      /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
+      welcome?: WelcomeOptions
       /** Shown once on the status bar after a fresh session inherits a model or full permission. */
       initialNotice?: string
       /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
@@ -200,26 +188,14 @@ export class TuiApp {
       () => ansi.fg('success', tt('app.copied', this.locale)),
       () => this.stopped || this.renderer.requestRender(),
     )
-    this.welcomeBanner = new WelcomeBanner({
-      profile: o.profile ?? o.header ?? '',
-      preset: o.preset ?? '',
-      ...(o.model ? { model: o.model } : {}),
+    this.welcome = new WelcomeController(o, {
       branding,
       ansi,
       theme: this.theme,
       locale,
-      rows: () => o.term.size().rows,
-      reserved: () => this.reservedRows,
-    })
-    const tips = welcomeTips(locale)
-    this.returningVisit = o.version !== undefined && readWelcomeSeen(o.welcomeSeenPath) === o.version
-    this.welcomeBanner.update({
-      session: { id: o.session.id, generation: 1 },
-      workspace: { root: tildePath(this.cwd) },
-      ...(o.version ? { version: o.version } : {}),
-      ...(o.boot ? { boot: o.boot } : {}),
-      ...(tips.length > 0 ? { tip: tips[Math.floor(Math.random() * tips.length)] } : {}),
-      returning: this.returningVisit,
+      viewport: () => ({ rows: o.term.size().rows, reserved: this.reservedRows }),
+      shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
+      repaint: () => this.stopped || this.renderer.requestRender(),
     })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
@@ -228,7 +204,7 @@ export class TuiApp {
       // The welcome banner rides at the top of the timeline: it is built once here, so a session
       // switch (`/new`, `/resume`, `/rewind`) reuses it. It scrolls inside the fullscreen
       // viewport, never into the shell's history.
-      top: this.welcomeBanner,
+      top: this.welcome.banner,
       nodeView: (node) => {
         if (node.kind === 'tool') {
           const card = new ToolCard(node, {
@@ -360,13 +336,7 @@ export class TuiApp {
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
     this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
       this.composer.setWorkspace(info)
-      this.welcomeBanner.update({
-        workspace: {
-          root: info.subpath ? `${info.root}/${info.subpath}` : info.root,
-          ...((info.branch ?? info.detached) ? { branch: (info.branch ?? info.detached) as string } : {}),
-          ...(info.ahead !== undefined ? { ahead: info.ahead } : {}),
-        },
-      })
+      this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
     })
     // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
@@ -620,7 +590,6 @@ export class TuiApp {
     ]
     if (this.o.initialNotice) this.statusBar.setNotice(this.o.initialNotice)
     this.refreshWorkspace()
-    if (this.o.version && !this.returningVisit) saveWelcomeSeen(this.o.welcomeSeenPath, this.o.version)
     try {
       this.renderer.start()
       await this.projection.start()
@@ -628,53 +597,7 @@ export class TuiApp {
       await this.stop()
       throw error
     }
-    this.loadWelcomeFacts()
-  }
-
-  /**
-   * Fills the welcome from read-only queries after the first frame: what the session loaded and the
-   * last sessions in this workspace. Each one is independent and a failure only leaves its field out.
-   */
-  private modelDetail(usage: UsageView): string | undefined {
-    const locale = this.o.locale ?? 'en'
-    const window = usage.context.window
-    const parts = [
-      usage.model.thinking !== 'off' &&
-        tt('welcome.detailReasoning', locale, { level: usage.model.thinking }),
-      window > 0 &&
-        tt('welcome.detailContext', locale, {
-          size: window >= 1_000_000 ? `${Math.round(window / 1_000_000)}M` : `${Math.round(window / 1024)}K`,
-        }),
-    ].filter((part): part is string => typeof part === 'string')
-    return parts.length > 0 ? parts.join(' · ') : undefined
-  }
-
-  private loadWelcomeFacts(): void {
-    const apply = (facts: Parameters<WelcomeBanner['update']>[0]): void => {
-      if (this.stopped) return
-      this.welcomeBanner.update(facts)
-      this.renderer.requestRender()
-    }
-    const session = this.o.session
-    void session.capabilities().then(
-      (caps) => {
-        if (!caps) return
-        const on = (items: readonly { enabled: boolean }[]): number => items.filter((i) => i.enabled).length
-        apply({ resources: { plugins: on(caps.plugins), skills: on(caps.skills), mcp: on(caps.mcp) } })
-      },
-      () => {},
-    )
-    void listSessionChoices(session, this.cwd).then(
-      (choices) => {
-        const recent = choices
-          .filter((c) => c.title)
-          .slice(0, 2)
-          .map((c) => ({ at: Date.parse(c.createdAt), title: c.title as string }))
-          .filter((c) => Number.isFinite(c.at))
-        if (recent.length > 0) apply({ recent })
-      },
-      () => {},
-    )
+    this.welcome.start()
   }
 
   // Forces a full re-fetch of the projected timeline through the same `apply()` path an
@@ -823,10 +746,6 @@ export class TuiApp {
     this.applyOpState(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
     this.statusBar.setUsage(value.usage)
-    if (value.usage) {
-      this.welcomeBanner.setModel(value.usage.model.id)
-      this.welcomeBanner.update({ modelDetail: this.modelDetail(value.usage) })
-    }
     this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
@@ -835,7 +754,7 @@ export class TuiApp {
     // value older or newer than what the rest of this repaint reflects), so this reads `value.
     // budget` directly rather than polling `session.budget()` on `turn/end`.
     if (value.budget) this.statusBar.setBudget(value.budget.creditsUsed, value.budget.creditsCap ?? undefined)
-    this.welcomeBanner.update({ session: { id: this.o.session.id, generation: value.generation } })
+    this.welcome.projected(value.usage, value.generation)
     this.header.set({
       profile: this.o.profile ?? this.o.header ?? '',
       preset: this.o.preset ?? '',
@@ -1014,7 +933,7 @@ export class TuiApp {
     // paint a stale, fabricated elapsed time for a turn that belongs to a session no longer even
     // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
     this.resetTurn()
-    this.welcomeBanner.setModel(undefined)
+    this.welcome.banner.setModel(undefined)
     this.surfacePrompt = undefined
     this.surfaceCommand = undefined
     this.surfaceVersions.clear()

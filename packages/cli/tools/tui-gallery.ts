@@ -127,7 +127,7 @@ async function settle(term: FakeTerminal, scene: Scene, cols: number, rows: numb
 }
 
 async function capture(scene: Scene, variant: Variant, prefs: string): Promise<Shot> {
-  const { cols = 100, rows = 30, ready = ['Agnes AI'] } = scene
+  const { cols = 100, rows = 30, ready = ['agnes ·ᴗ·'] } = scene
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
@@ -152,9 +152,18 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     mkdirSync(dirname(join(files as string, file)), { recursive: true })
     writeFileSync(join(files as string, file), '')
   }
+  const seen = join(prefs, `${variant.theme}-welcome.json`)
+  if (scene.welcome?.returning) writeFileSync(seen, '{"version":"0.9.3"}\n')
+  else rmSync(seen, { force: true })
   const app = new TuiApp({
     session,
     term,
+    // Fixed clock and dice: the greeting and the tip are part of the screen.
+    welcome: {
+      now: () => new Date(2026, 9, 21, 20, 30).getTime() + 3_600_000,
+      random: () => 0.1,
+      ...(scene.welcome ? { version: '0.9.3', boot: { ms: 420, cold: false }, seenPath: seen } : {}),
+    },
     profile: 'local-dev',
     preset: 'standard',
     model: 'deepseek-v4-pro',

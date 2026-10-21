@@ -43,7 +43,7 @@ function make(
     ansi: theme.ansi(createAnsi(o.tier ?? '256')),
     theme,
     ...(o.locale ? { locale: o.locale } : {}),
-    ...(o.rows ? { rows: () => o.rows as number } : {}),
+    ...(o.rows ? { viewport: () => ({ rows: o.rows as number }) } : {}),
     now: () => NOW,
   })
   banner.update(o.facts ?? FACTS)
@@ -109,7 +109,7 @@ describe('welcome layouts', () => {
     } else {
       expect(lines).toHaveLength(2)
       expect(lines[0]).toContain('agnes ·ᴗ· v0.9.3 · deepseek-flash')
-      expect(lines[1]).toContain('local-dev · default · ~/agnes-harness • feat/x')
+      expect(lines[1]).toContain('local-dev · ~/agnes-harness • feat/x')
     }
   })
 
@@ -157,7 +157,7 @@ describe('welcome degradation', () => {
       branding: BRANDING,
       ansi: new TuiTheme('dark').ansi(createAnsi('256')),
       theme: new TuiTheme('dark'),
-      rows: () => 40,
+      viewport: () => ({ rows: 40 }),
       now: () => NOW,
     })
     const out = text(unresolved.render(132))
@@ -194,6 +194,9 @@ describe('welcome degradation', () => {
     expect(joined).not.toMatch(/[⠁-⣿]/)
     // No shadow: the row below the last glyph row is empty of blocks.
     expect(strip(mono[7] as string).trim()).toBe('')
+    // The identity keeps its column whatever the glyph row's length.
+    expect(mono.map((l) => strip(l).indexOf('Agnes AI')).filter((i) => i >= 0)).toEqual([72])
+    expect(strip(mono[3] as string).indexOf('local agent')).toBe(72)
   })
 
   it('never lets a supplied brand wear the AGNES glyphs and escapes outside text', () => {
@@ -260,4 +263,90 @@ it('spells tip key names from the keymap and keeps each tip to one line', () => 
   expect(tips.join('\n')).toContain('Press alt+enter while a turn runs')
   expect(tips.every((tip) => !tip.includes('{') && !tip.includes('\n'))).toBe(true)
   expect(welcomeTips('zh-CN').map((tip) => tip.text)).not.toEqual(tips)
+})
+
+describe('welcome motion', () => {
+  const T0 = NOW
+  function animated(over: { theme?: TuiThemeName; tier?: 'none' | '256'; motion?: boolean } = {}) {
+    let t = T0
+    const theme = new TuiTheme(over.theme ?? 'dark')
+    const banner = new WelcomeBanner({
+      profile: 'local-dev',
+      preset: 'default',
+      model: 'deepseek-flash',
+      branding: BRANDING,
+      ansi: theme.ansi(createAnsi(over.tier ?? '256')),
+      theme,
+      viewport: () => ({ rows: 40 }),
+      now: () => t,
+      random: () => 0.5,
+      motion: over.motion ?? true,
+    })
+    banner.update(FACTS)
+    return {
+      banner,
+      at: (ms: number) => {
+        t = T0 + ms
+      },
+    }
+  }
+  const still = make({ rows: 40 }).render(132)
+
+  it('sweeps a shine across the wordmark for 1.2 s, then draws exactly the still layout', () => {
+    const { banner, at } = animated()
+    banner.start()
+    at(0)
+    expect(banner.tick()).toBe(60)
+    const first = banner.render(132)
+    at(600)
+    const middle = banner.render(132)
+    expect(middle).not.toEqual(first)
+    expect(middle.map(strip)).toEqual(still.map(strip))
+    at(1199)
+    expect(banner.tick()).toBe(60)
+    at(1200)
+    // The NEW tag is still cycling its hue here; everything else is back to the still picture.
+    expect(banner.render(132).slice(0, 8)).toEqual(still.slice(0, 8))
+    expect(banner.render(132).slice(11)).toEqual(still.slice(11))
+  })
+
+  it('cycles the NEW tag for 2.4 s and holds the plain accent afterwards', () => {
+    const { banner, at } = animated()
+    banner.start()
+    at(1000)
+    expect(banner.render(132)[9]).not.toEqual(still[9])
+    at(1500)
+    expect(banner.tick()).toBe(80)
+    at(2400)
+    expect(banner.render(132)).toEqual(still)
+  })
+
+  it('blinks every four to six seconds for 150 ms and reopens on settle', () => {
+    const { banner, at } = animated()
+    banner.start()
+    at(2400)
+    expect(banner.tick()).toBe(2600)
+    expect(strip(banner.render(132)[5] as string)).toContain('·ᴗ·')
+    at(5000)
+    expect(banner.tick()).toBe(150)
+    expect(strip(banner.render(132)[5] as string)).toContain('˘ᴗ˘')
+    at(5100)
+    banner.settle()
+    expect(strip(banner.render(132)[5] as string)).toContain('·ᴗ·')
+    at(5150)
+    expect(banner.tick()).toBe(5000)
+    expect(banner.render(132)).toEqual(still)
+  })
+
+  it('stays still without motion, in mono and on the none tier', () => {
+    for (const over of [{ motion: false }, { theme: 'mono' as const }, { tier: 'none' as const }]) {
+      const { banner, at } = animated(over)
+      banner.start()
+      at(5000)
+      expect(banner.animates).toBe(false)
+      expect(banner.tick()).toBeUndefined()
+      const stillBanner = make({ ...over, rows: 40 })
+      expect(banner.render(132)).toEqual(stillBanner.render(132))
+    }
+  })
 })

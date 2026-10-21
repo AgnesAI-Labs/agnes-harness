@@ -19,6 +19,8 @@ export type Scene = {
   files?: string[]
   /** What the composer rail's git probe answers; the bare gallery cwd otherwise. */
   workspace?: WorkspaceInfo
+  /** Gives the app a version and a daemon boot time; `returning` marks this version as already welcomed. */
+  welcome?: { returning?: boolean }
 }
 
 export const SID = 'agnes:local:default:cli:dm:4f9c2a7e'
@@ -128,8 +130,111 @@ const typed =
     for (const k of keys) ctx.term.feed(k)
   }
 
+/** Read-only answers for the welcome's resource counts and recent sessions: sample data, not a daemon's. */
+const WELCOME_HANDLERS: Record<string, () => unknown> = {
+  '_agnes/v1/session.list': () => ({
+    items: [
+      { sessionId: SID, createdAt: '2026-10-21T09:00:00Z', lastSeq: 0, generation: 1, preset: 'standard' },
+      {
+        sessionId: 'agnes:local:default:cli:dm:a1',
+        createdAt: '2026-10-21T10:30:00Z',
+        lastSeq: 14,
+        generation: 1,
+        preset: 'standard',
+        title: 'DevBoard v2 seed review',
+      },
+      {
+        sessionId: 'agnes:local:default:cli:dm:a2',
+        createdAt: '2026-10-20T10:30:00Z',
+        lastSeq: 9,
+        generation: 1,
+        preset: 'standard',
+        title: 'Cold-start profiling',
+      },
+    ],
+  }),
+  '_agnes/v1/session.tools': () => {
+    const on = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: `r${i}`, enabled: true, reasons: [] }))
+    const source = { layer: 'default', name: 'gallery' }
+    return {
+      sessionId: SID,
+      tools: [],
+      resources: [],
+      capabilities: {
+        preset: 'standard',
+        bundles: [],
+        codePin: { legacy: false, packages: [] },
+        loop: { value: { id: 'loop', version: '1' }, source },
+        modelRoutes: { value: null, source },
+        permissions: { preset: 'standard', policy: 'ask', toolRuntime: 'host', readOnly: false, source },
+        sandbox: { provider: 'none', onUnavailable: 'allow', source },
+        compaction: { engine: null, source },
+        persistence: { provider: 'sqlite', source },
+        tools: [],
+        mcp: on(2),
+        skills: on(8),
+        modelAdapters: [],
+        childEngines: [],
+        childModels: [],
+        uiModules: [],
+        surfaces: [],
+        packages: [],
+        plugins: on(12),
+        selectedModelAdapters: [],
+      },
+    }
+  },
+}
+const WELCOME_WORKSPACE: WorkspaceInfo = {
+  root: '~/agnes-harness',
+  subpath: '',
+  branch: 'feat/agh-plugin-core',
+  ahead: 2,
+}
+
+/** The welcome at each breakpoint, plus the condensed return visit. */
+function welcomeScenes(): Scene[] {
+  const base = {
+    timeline: timeline([], { usage }),
+    handlers: WELCOME_HANDLERS,
+    workspace: WELCOME_WORKSPACE,
+    welcome: {},
+    ready: ['local agent workbench', 'Cold-start profiling'],
+  }
+  return [
+    { id: 'welcome', title: 'Empty session welcome, 132x40', cols: 132, rows: 40, ...base },
+    { id: 'welcome-100x30', title: 'Welcome at 100x30', cols: 100, rows: 30, ...base },
+    {
+      id: 'welcome-70x24',
+      title: 'Welcome at 70x24',
+      cols: 70,
+      rows: 24,
+      ...base,
+      ready: ['Start here', 'daemon warm'],
+    },
+    {
+      id: 'welcome-50x20',
+      title: 'Welcome at 50x20',
+      cols: 50,
+      rows: 20,
+      ...base,
+      ready: ['agnes ·ᴗ· v0.9.3'],
+    },
+    {
+      id: 'welcome-returning',
+      title: 'Welcome on a return visit, 100x30',
+      cols: 100,
+      rows: 30,
+      ...base,
+      welcome: { returning: true },
+      ready: ['welcome back', 'last: DevBoard v2 seed review'],
+    },
+  ]
+}
+
 export const SCENES: Scene[] = [
-  { id: 'welcome', title: 'Empty session welcome', timeline: timeline([]) },
+  ...welcomeScenes(),
   {
     id: 'conversation',
     title: 'Full turn: user message and Markdown answer',

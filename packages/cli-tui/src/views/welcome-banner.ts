@@ -7,7 +7,7 @@ import type { KeyName } from '../keys.js'
 import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
-import { brandColour, paintsColour, type ThemedAnsi, type TuiTheme } from '../theme.js'
+import { blendColours, brandColour, paintsColour, type ThemedAnsi, type TuiTheme } from '../theme.js'
 import { TIMELINE_RESERVED_ROWS } from './timeline.js'
 
 // The AGNES wordmark: a 5x7 pixel font, letters two pixels apart.
@@ -96,6 +96,14 @@ export type WelcomeFacts = {
   returning?: boolean
 }
 
+// Motion, all measured from `start()`: a diagonal shine over the wordmark, a hue cycle on the NEW tag
+// and an idle blink. Every one of them ends on the frame the still layout draws.
+const SHINE_MS = 1200
+const SHINE_BAND = 0.18
+const NEW_MS = 2400
+const BLINK_MS = 150
+const NEW_TONES: readonly Tone[] = ['accentSoft', 'info', 'code', 'danger', 'warning', 'accentSoft']
+
 type Tier = 'full' | 'medium' | 'narrow'
 type Variant = { tip: boolean; recent: boolean; tight: boolean }
 const VARIANTS: readonly Variant[] = [
@@ -127,12 +135,14 @@ export class WelcomeBanner implements Component {
       ansi: ThemedAnsi
       theme: TuiTheme
       locale?: string
-      /** Terminal height; omitted means tall enough for any layout. */
-      rows?: () => number
-      /** Rows below the timeline that the welcome must leave free; the timeline's own default when omitted. */
-      reserved?: () => number
-      /** Wall clock (ms) for the greeting and relative times; injected by tests. */
+      /** Terminal height and the rows below the timeline the welcome must leave free; omitted means no limit. */
+      viewport?: () => { rows: number; reserved?: number }
+      /** Wall clock (ms) for the greeting, relative times and motion; injected by tests. */
       now?: () => number
+      /** Randomness for the blink interval; injected by tests. */
+      random?: () => number
+      /** Whether the output may animate (a TTY with colour); the theme can still rule it out. */
+      motion?: boolean
     },
   ) {
     this.model = o.model
@@ -150,6 +160,78 @@ export class WelcomeBanner implements Component {
 
   invalidate(): void {}
 
+  // ---- motion -------------------------------------------------------------------------------
+
+  private startedAt: number | undefined
+  private nextBlink = 0
+  private blinkEnd = 0
+
+  private get clock(): number {
+    return this.o.now?.() ?? Date.now()
+  }
+
+  /** Motion needs a TTY with colour and a theme that paints; mono and the none tier stay still. */
+  get animates(): boolean {
+    return this.o.motion === true && paintsColour(this.o.ansi)
+  }
+
+  /** Starts the clock for the shine, the NEW tag and the blink; a second call does nothing. */
+  start(): void {
+    if (this.startedAt !== undefined) return
+    this.startedAt = this.clock
+    this.nextBlink = this.clock + 4000 + (this.o.random?.() ?? Math.random()) * 2000
+  }
+
+  /**
+   * Moves the blink on to now and says how many ms until the picture next changes. Undefined when
+   * nothing here animates. Asking is cheap; the caller repaints and calls again after that long.
+   */
+  tick(): number | undefined {
+    if (!this.animates || this.startedAt === undefined) return undefined
+    const now = this.clock
+    if (now >= this.blinkEnd && now >= this.nextBlink) {
+      this.blinkEnd = now + BLINK_MS
+      this.nextBlink = this.blinkEnd + 4000 + (this.o.random?.() ?? Math.random()) * 2000
+    }
+    const elapsed = now - this.startedAt
+    if (elapsed < SHINE_MS) return 60
+    if (elapsed < NEW_MS && this.facts.tip?.fresh) return 80
+    return Math.max(1, Math.ceil(now < this.blinkEnd ? this.blinkEnd - now : this.nextBlink - now))
+  }
+
+  /** Back to the still picture, eyes open: for when the welcome leaves view or a turn begins. */
+  settle(): void {
+    this.blinkEnd = 0
+  }
+
+  private get elapsed(): number | undefined {
+    return this.animates && this.startedAt !== undefined ? this.clock - this.startedAt : undefined
+  }
+
+  /** A wordmark pixel's colour: the gradient, lightened where the shine front is passing. */
+  private pixel(d: number): Colour | 'accent' {
+    const base = this.o.theme.rampAt(d)
+    if (base === undefined) return 'accent'
+    const elapsed = this.elapsed
+    if (elapsed === undefined || elapsed >= SHINE_MS) return base
+    const front = (elapsed / SHINE_MS) * 1.5 - 0.25
+    const k = Math.max(0, 1 - Math.abs(d - front) / SHINE_BAND)
+    return k > 0 ? (blendColours([base, this.o.theme.ramp().at(-1)], k) ?? base) : base
+  }
+
+  /** NEW: a hue cycle over the first 2.4 s, then the plain accent. */
+  private newTag(): string {
+    const { ansi, theme } = this.o
+    const elapsed = this.elapsed
+    if (elapsed === undefined || elapsed >= NEW_MS) return ansi.bold(ansi.fg('accentSoft', 'NEW'))
+    return [...'NEW']
+      .map((ch, i) => {
+        const t = Math.min(1, Math.max(0, (elapsed / NEW_MS) * 1.2 - i * 0.1))
+        return ansi.bold(ansi.fg(theme.toneAt(NEW_TONES, t) ?? 'accentSoft', ch))
+      })
+      .join('')
+  }
+
   private get locale(): string {
     return this.o.locale ?? 'en'
   }
@@ -160,14 +242,13 @@ export class WelcomeBanner implements Component {
 
   render(width: number): string[] {
     width = Math.max(1, Math.trunc(width))
-    const rows = this.o.rows?.()
+    const { rows, reserved = TIMELINE_RESERVED_ROWS } = this.o.viewport?.() ?? {}
     if (width < 24) return [fitLine(` ${this.brand()} ${this.face()}`, width)]
     if (width < 60 || (rows !== undefined && rows < 24)) return this.compact(width)
     if (this.facts.returning) return this.returning(width)
     // The timeline keeps the bottom rows for the composer; a hero taller than what is left would lose
     // its top, so each tier sheds the tip, the recent list and then its spacing before giving way.
-    const room =
-      rows === undefined ? Number.POSITIVE_INFINITY : rows - (this.o.reserved?.() ?? TIMELINE_RESERVED_ROWS)
+    const room = rows === undefined ? Number.POSITIVE_INFINITY : rows - reserved
     const tiers: Tier[] =
       width >= 120 && (rows === undefined || rows >= 36)
         ? ['full', 'medium', 'narrow']
@@ -191,7 +272,8 @@ export class WelcomeBanner implements Component {
   }
 
   private face(): string {
-    return this.o.ansi.bold(this.o.ansi.fg('accentSoft', '·ᴗ·'))
+    const eyes = this.clock < this.blinkEnd ? '˘ᴗ˘' : '·ᴗ·'
+    return this.o.ansi.bold(this.o.ansi.fg('accentSoft', eyes))
   }
 
   private version(): string | undefined {
@@ -275,18 +357,18 @@ export class WelcomeBanner implements Component {
 
   /** Eight rows of two-column pixels with a one-cell drop shadow; bold-only without colour. */
   private fullMark(): string[] {
-    const { ansi, theme } = this.o
+    const { ansi } = this.o
     const colour = paintsColour(ansi)
     const w = MARK_W + 1
     const h = MARK_H + 1
     return Array.from({ length: h }, (_, y) => {
       if (!colour) {
         const row = Array.from({ length: w }, (_, x) => (lit(x, y) ? '██' : '  ')).join('')
-        return ansi.bold(row.trimEnd())
+        return ansi.bold(row)
       }
       let line = ''
       for (let x = 0; x < w; x++) {
-        if (lit(x, y)) line += ansi.fg(theme.rampAt(diagonal(x, y, w, h)) ?? 'accent', '██')
+        if (lit(x, y)) line += ansi.fg(this.pixel(diagonal(x, y, w, h)), '██')
         else if (x > 0 && y > 0 && lit(x - 1, y - 1)) line += ansi.fg('selection', '██')
         else line += '  '
       }
@@ -296,7 +378,7 @@ export class WelcomeBanner implements Component {
 
   /** Four rows of half blocks, one column per pixel, no shadow. */
   private halfMark(): string[] {
-    const { ansi, theme } = this.o
+    const { ansi } = this.o
     const colour = paintsColour(ansi)
     return Array.from({ length: 4 }, (_, r) => {
       let line = ''
@@ -304,10 +386,10 @@ export class WelcomeBanner implements Component {
         const top = lit(x, 2 * r)
         const bottom = lit(x, 2 * r + 1)
         const ch = top && bottom ? '█' : top ? '▀' : bottom ? '▄' : ' '
-        const paint = theme.rampAt(diagonal(x, 2 * r + 0.5, MARK_W, MARK_H)) ?? 'accent'
+        const paint = this.pixel(diagonal(x, 2 * r + 0.5, MARK_W, MARK_H))
         line += ch === ' ' || !colour ? ch : ansi.fg(paint, ch)
       }
-      return colour ? line : ansi.bold(line.trimEnd())
+      return colour ? line : ansi.bold(line)
     })
   }
 
@@ -326,7 +408,10 @@ export class WelcomeBanner implements Component {
     const v = this.version()
     const first = `${this.brand()} ${this.face()}${v ? ansi.fg('faint', ` ${v} · `) : '  '}${this.modelText()}`
     const ws = this.facts.workspace
-    const where = [this.contextText(), ws && `${clean(ws.root)}${ws.branch ? ` • ${clean(ws.branch)}` : ''}`]
+    const where = [
+      clean(this.o.profile),
+      ws && `${clean(ws.root)}${ws.branch ? ` • ${clean(ws.branch)}` : ''}`,
+    ]
       .filter(Boolean)
       .join(' · ')
     return [fitLine(` ${first}`, width), ...(where ? [fitLine(` ${ansi.fg('faint', where)}`, width)] : [])]
@@ -392,7 +477,7 @@ export class WelcomeBanner implements Component {
     lines.push(fitLine('', width))
     const tip = this.facts.tip
     if (tip && v.tip && tier !== 'narrow') {
-      const fresh = tip.fresh ? `  ${ansi.bold(ansi.fg('accentSoft', 'NEW'))}` : ''
+      const fresh = tip.fresh ? `  ${this.newTag()}` : ''
       const head = ansi.bold(ansi.fg('accent', `✦ ${tt('welcome.tip', this.locale)}`))
       lines.push(
         fitLine(` ${head}${ansi.fg('muted', `  ${clean(tip.text)}`)}${fresh}`, width),
