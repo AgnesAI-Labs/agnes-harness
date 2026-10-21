@@ -19,6 +19,7 @@ import type { SessionImpl } from '../step/session.js'
 import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
+import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
 import { childModels, resolveChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
@@ -640,6 +641,8 @@ export class KernelChildren implements ChildrenFactory {
       workspace,
     )
     this.childSessions.set(child.key, child)
+    bindChildLifecycle(child, parent)
+    const lifecycle = childLifecycle(parent)
     forkChecks.set(child.d.log, checkParent)
     checkParent()
     const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
@@ -711,6 +714,7 @@ export class KernelChildren implements ChildrenFactory {
       key: record.childKey,
       ...(child.d.roleDelegation ? { role: child.d.roleDelegation.role } : {}),
       run: async (input) => {
+        lifecycle.assertActive()
         const durable = await store.lookupByKey(record.childKey)
         if (durable && (isTerminalChildState(durable.state) || durable.state === 'cancelling'))
           throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} is ${durable.state}`)
@@ -732,6 +736,7 @@ export class KernelChildren implements ChildrenFactory {
         this.turnSignals.set(record.childKey, turnAbort)
         let residentHold = false
         try {
+          lifecycle.assertActive()
           const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
           if (!inbox?.items?.length && !child.op()) {
             await child.enqueue('next-turn', {
@@ -742,7 +747,7 @@ export class KernelChildren implements ChildrenFactory {
           if (opts.recovering && child.op()) await child.resume()
           let result = await child.run({
             until: 'turn-end',
-            signal: turnAbort.signal,
+            signal: AbortSignal.any([turnAbort.signal, lifecycle.signal]),
           })
           // A human stop retains the child, its constraints and the parent's waiting workflow.
           // Continue opens a new turn only after Core has drained cancellation and reset its driver.
@@ -770,7 +775,11 @@ export class KernelChildren implements ChildrenFactory {
               }))
             )
               throw new CoreError('E_RELATION', 'Stopped child cannot continue')
-            result = await child.run({ until: 'turn-end', signal: turnAbort.signal })
+            lifecycle.assertActive()
+            result = await child.run({
+              until: 'turn-end',
+              signal: AbortSignal.any([turnAbort.signal, lifecycle.signal]),
+            })
           }
           const text = await lastText()
           // A human stop preserves the resident while its cancelled driver is being rebuilt.
