@@ -197,7 +197,12 @@ export function templateFindings(source: string, path: string, catalogue: Busine
 export function hostInventory(root: string): { files: number; findings: HostFinding[]; manifests: number } {
   assertHostPackageCoverage(root)
   const catalogue = businessCatalogue(root)
-  const files = HOST_PACKAGES.flatMap((name) => productionFiles(join(root, 'packages', name, 'src')))
+  const files = [
+    ...HOST_PACKAGES.flatMap((name) => productionFiles(join(root, 'packages', name, 'src'))),
+    // Core consumes Host attestations at these gates; it must not rediscover official identities.
+    join(root, 'packages/core/src/registry/tools.ts'),
+    join(root, 'packages/core/src/hooks/dispatch.ts'),
+  ]
   const findings = withSourceTrees(files, (trees) =>
     trees.flatMap((tree, index) =>
       hostFindings(tree, relative(root, files[index] as string).replaceAll('\\', '/'), catalogue),

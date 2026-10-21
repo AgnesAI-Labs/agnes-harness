@@ -1,4 +1,4 @@
-import { isMcpServerRowId } from '@agnes/extension-api/mcp-naming'
+import { LIVE_RESOURCE_MOUNT_REVISION } from '@agnes/host-extensions/assemble/ext-rows'
 import type { OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -12,9 +12,8 @@ export const targetRows = (target: RuntimeTarget) => [
   ).values(),
 ]
 
-export const liveResource = isMcpServerRowId
 export const liveResourceRow = (row: ReturnType<typeof targetRows>[number]) =>
-  liveResource(row.id) && row.plugin.startsWith('builtin:@agnes/base/')
+  row.mountRevision === LIVE_RESOURCE_MOUNT_REVISION && row.plugin.startsWith('builtin:')
 export const codeRow = (row: ReturnType<typeof targetRows>[number]) => {
   if (!row.liveResources?.length) return row
   const { liveResourceRevision: _revision, mountIdentity: _mount, ...code } = row

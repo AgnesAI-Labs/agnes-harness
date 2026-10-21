@@ -8,6 +8,7 @@ type HookFailure = 'timeout' | 'cancelled' | 'execution' | 'result'
 export type DispatchFailure = { event: HookEvent; source: string; message: string; failure: HookFailure }
 export type DispatchEntry<T> = {
   source: string
+  contextBlocking?: boolean
   /** Invocation must not commit shared state; commit runs only after successful bounded completion. */
   invoke: (context: { signal: AbortSignal; replayed: boolean }) => T | Promise<T>
 }
@@ -107,7 +108,7 @@ export class HookDispatch {
       const failure = boundaryFailure ?? 'execution'
       // Only the bundled prompt adapter may turn a context-first denial into a normal blocked turn.
       // Timeouts, other extensions, and every other context exception retain the fail-closed path.
-      if (event === 'context' && entry.source === 'agnes/hooks-runner' && error instanceof HookBlockedError)
+      if (event === 'context' && entry.contextBlocking && error instanceof HookBlockedError)
         return { ok: false, failure, blocked: error }
       // Error text can contain extension credentials or input; record only trusted attribution.
       this.report('hook-failed', event, entry.source, failure)

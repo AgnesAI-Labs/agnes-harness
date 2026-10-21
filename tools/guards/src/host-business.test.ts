@@ -73,9 +73,11 @@ const paths = cases.map(([, source], index) => {
   writeFileSync(file, source)
   return file
 })
-const results = withSourceTrees(paths, (trees) =>
-  trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
-)
+const classified = withSourceTrees(paths, (trees) => ({
+  host: trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
+  core: trees.map((tree) => hostFindings(tree, 'packages/core/src/registry/tools.ts', catalogue)),
+}))
+const results = classified.host
 
 describe('Host excludes official business identities/implementations; reviewed legacy only shrinks', () => {
   it('checks production sources, templates and dependency manifests', () => {
@@ -105,6 +107,7 @@ describe('Host excludes official business identities/implementations; reviewed l
     '%s is classified correctly',
     (_name, index) => {
       expect((results[index]?.length ?? 0) > 0).toBe(index < 16)
+      expect((classified.core[index]?.length ?? 0) > 0).toBe(index < 16)
     },
   )
   it('rejects occurrence growth, a new comparison branch, moved symbols, stale/additional/enlarged allowances', () => {

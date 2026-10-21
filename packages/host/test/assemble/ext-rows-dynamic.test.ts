@@ -6,7 +6,9 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import { type McpCatalogHub, mcpCatalogHubFor } from '@agnes/base'
 import { API_VERSION, type ExtensionManifest } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { codeRevision, liveResourceRow } from '../../src/runtime/generation/target-code.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 import { pluginRow, pluginSourceWith, targetOf } from './plugin-extension-fixture.js'
@@ -155,6 +157,36 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
 
   it('applying a dynamic row keeps the static builtin rows', async () => {
     const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    const supplied = resourceExtension('renamed-resource', [])
+    const live = h.host.extensionRows.prepare({
+      extensionId: supplied.extensionId,
+      dynamic: { ...supplied, generation: { kind: 'mcp-server', data: {} } },
+    })
+    const lookalike = resourceExtension('lookalike', [])
+    const named = 'agnes/mcp-spoof-12345678'
+    const ordinary = h.host.extensionRows.prepare({
+      extensionId: named,
+      dynamic: {
+        ...lookalike,
+        spec: { ...lookalike.spec, id: named, package: '@agnes/base' },
+        manifest: { ...lookalike.manifest, id: named },
+      },
+    })
+    expect(liveResourceRow(live)).toBe(true)
+    expect(liveResourceRow(ordinary)).toBe(false)
+    expect(codeRevision(targetOf([live]))).toBe(codeRevision(targetOf([])))
+    expect(codeRevision(targetOf([ordinary]))).not.toBe(codeRevision(targetOf([])))
+    const copiedMarker = createPluginRow({
+      id: live.id,
+      plugin: `@acme/lookalike@sha256-${'1'.repeat(64)}/plugin`,
+      snapshotDigest: `sha256-${'1'.repeat(64)}`,
+      exportName: 'plugin',
+      entryRevision: live.entryRevision,
+      extrasRevision: 'none',
+      mountRevision: live.mountRevision,
+    })
+    expect(liveResourceRow(copiedMarker)).toBe(false)
+    expect(codeRevision(targetOf([copiedMarker]))).not.toBe(codeRevision(targetOf([])))
     const staticBefore = h.host.extensionRows.current().map((r) => r.id)
     const dynamic = resourceExtension('alpha', [])
     await h.host.extensionRows.apply([

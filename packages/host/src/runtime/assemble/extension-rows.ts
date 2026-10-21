@@ -33,6 +33,7 @@ export type ExtensionRowsInput = Readonly<{
   runtimeTarget: RuntimeTargetHost
   host: ExtensionHost
   bundled: BundledExtensions
+  pkgs: import('./packages.js').PackageSet
   skillState: SkillState
   buildEcosystemContext: ReturnType<
     typeof import('./ecosystem-context.js').createEcosystemContexts
@@ -86,6 +87,8 @@ function createExtensionLoaders(input: ExtensionRowsInput) {
     return builtinRows.load({
       rowId: `ext:${extensionId}`,
       spec: found.spec,
+      hostGrants: () =>
+        input.pkgs.grants.extension(found.packageId, extensionId, input.pkgs.modules.get(found.packageId)),
       executionBinding: {
         rowId: `ext:${extensionId}`,
         exportName: found.spec.id,
@@ -101,6 +104,7 @@ function createExtensionLoaders(input: ExtensionRowsInput) {
                 id,
                 skillResources ? { skillResources: skillState.liveInput } : {},
                 ['skills'],
+                input.pkgs.modules.get(owner),
               ),
             )
           : selectExtensionFactory)(
@@ -234,6 +238,7 @@ export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionR
       })
     const built = buildExtensionRow({
       extensionId: input.extensionId,
+      liveResource: input.dynamic?.generation?.kind === 'mcp-server',
       packageId: input.dynamic?.spec.package ?? found?.packageId ?? '@agnes/base',
       entryRevision:
         input.entryRevision ?? input.dynamic?.spec.revision ?? found?.spec.revision ?? EXT_ROW_MOUNT_REVISION,

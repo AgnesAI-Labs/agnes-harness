@@ -26,7 +26,7 @@ import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
-import { pluginWorkspaceLayers } from '../generation/target-code.js'
+import { liveResourceRow, pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -144,8 +144,6 @@ export async function createCompositionHost(
       !rows.some((row) => !row.disabled && pluginSnapshotIdentity(row.plugin)?.packageId === source)
     )
   }
-  const liveResource = (row: PluginRow) =>
-    row.plugin.startsWith('builtin:@agnes/base/') && /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id)
   const project = (target: RuntimeTarget, tree: ResolvedComposition, host?: Host): RuntimeTarget => {
     const previous = host?.runtimeTargetSnapshot?.()
     // A disabled bundle has no new-session container. Retained sessions still need its exact
@@ -153,12 +151,12 @@ export async function createCompositionHost(
     if (previous && draining(target.tree.rows, tree, host))
       return buildCompleteRuntimeTarget({
         rows: [
-          ...previous.tree.rows.filter((row) => !liveResource(row)),
+          ...previous.tree.rows.filter((row) => !liveResourceRow(row)),
           ...projectRows(
             [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)],
             tree,
             host,
-          ).filter(liveResource),
+          ).filter(liveResourceRow),
         ],
         resources: target.resource.resources,
       }).target
@@ -400,10 +398,12 @@ export async function createCompositionHost(
         ? report
         : {
             ...report,
-            rows: report.rows.filter(
-              (row) =>
-                !!host.extensionRows.current().find((entry) => entry.id === row.id)?.liveResources?.length ||
-                /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id),
+            rows: report.rows.filter((row) =>
+              host.extensionRows
+                .current()
+                .some(
+                  (entry) => entry.id === row.id && (!!entry.liveResources?.length || liveResourceRow(entry)),
+                ),
             ),
           }
     })
@@ -738,8 +738,8 @@ export async function createCompositionHost(
             const report = await container.host.extensionRows.apply(
               inactive
                 ? [
-                    ...container.host.extensionRows.current().filter((row) => !liveResource(row)),
-                    ...projected.filter(liveResource),
+                    ...container.host.extensionRows.current().filter((row) => !liveResourceRow(row)),
+                    ...projected.filter(liveResourceRow),
                   ]
                 : projected,
             )
