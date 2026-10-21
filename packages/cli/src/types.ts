@@ -23,6 +23,7 @@ export type Command =
   | 'home'
   | 'doctor'
   | 'diagnostics'
+  | 'approvals'
   | 'computer-use'
   | 'profile'
   | 'plugin'

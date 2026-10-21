@@ -4,6 +4,7 @@ import type { NodeClient } from '@agnes/sdk'
 import { ExitCode, UsageError } from '../errors.js'
 import { newPackageCommandId } from '../tui/package-admin.js'
 import type { ParsedArgs } from '../types.js'
+import { approvalsCommand } from './approvals.js'
 import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
 
 type SessionsIO = {
@@ -41,6 +42,7 @@ function details(item: PageSessionMeta['items'][number]): string {
  * surface even for `show`: the CLI does not read sessions.db or reconstruct a second history view.
  */
 export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: SessionsIO): Promise<number> {
+  if (p.command === 'approvals') return approvalsCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
   if (action === 'migrate') {
     const sessionId = p.positional[1]

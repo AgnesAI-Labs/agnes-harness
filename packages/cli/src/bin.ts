@@ -723,7 +723,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'sessions') {
+    // `approvals` shares sessions' boot and entry point: both are session-scoped daemon reads.
+    if (p.command === 'sessions' || p.command === 'approvals') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { sessionsCommand } = await import('./commands/sessions.js')

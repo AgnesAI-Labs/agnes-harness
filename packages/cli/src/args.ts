@@ -14,6 +14,7 @@ const COMMANDS = new Set<string>([
   'tools',
   'resume',
   'sessions',
+  'approvals',
   'export',
   'import',
   'doctor',

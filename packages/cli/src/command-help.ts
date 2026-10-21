@@ -38,6 +38,8 @@ export function commandHelp(command?: Command, locale = 'en'): string {
       return `Usage: agh resources list|get|operation|cancel|enable|disable\nList: agh resources list [--kind skill|mcp] [--workspace-id <id>]\nEnable/disable: agh resources <action> <resourceId> --expected-revision <revision> [--yes]\n${common}`
     case 'sessions':
       return 'Usage: agh sessions list [--cwd <dir>] [--archived] | show <key> | pin|unpin|archive|unarchive <key> | rename <key> <title...> | search <query...> | groups | migrate <key> [--profile <name>] [--json]\nSearch needs an admin connection; the daemon refusal is shown as is.\nMigrate a closed historical session to compatible current plugins, preserving its loop and composition.'
+    case 'approvals':
+      return 'Usage: agh approvals grants <sessionId> [--json] | revoke <sessionId> <grantId> [--json]\nList the approval grants in force for a session ("this session" and "always") and withdraw one. Needs an admin connection; the daemon refusal is shown as is.'
     case 'plugin':
       return 'Usage: agh plugin test [folder] [-- <test-runner args>]\nRun the package test script with installed author testkit dependencies, an isolated home and no inherited model keys. No backend or dependency installation is started.'
     case 'plugins':

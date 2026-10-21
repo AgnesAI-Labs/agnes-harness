@@ -10,6 +10,7 @@ import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { grantsSlash } from './grant-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
@@ -105,6 +106,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.modelSummary',
   },
   { name: '/yolo', args: '[on|off]', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
+  {
+    name: '/grants',
+    args: '[revoke <n|id>]',
+    descriptionKey: 'commands.grants',
+    summaryKey: 'commands.grantsSummary',
+  },
   {
     name: '/attach',
     args: '<path>',
@@ -408,6 +415,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // other request is refused there, and that refusal is shown as it comes.
       return { switchSession: await c.session.fork(s.id, at) }
     }
+    case '/grants':
+      return grantsSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':

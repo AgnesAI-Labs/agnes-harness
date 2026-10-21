@@ -134,3 +134,39 @@ describe('session slash commands', () => {
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/w/b' }))
   })
 })
+
+describe('/grants', () => {
+  const grant = (grantId: string, lifetime = 'session') => ({
+    grantId,
+    lifetime,
+    toolId: 'shell\u001b[31m',
+    scope: 'a\nb',
+    createdAt: '2026-10-22T00:00:00Z',
+  })
+
+  it('lists numbered inert lines, revokes by number or id and shows the daemon refusal', async () => {
+    const sessionGrants = vi.fn(async () => ({ grants: [grant('g1'), grant('g2', 'always')] }))
+    const revokeSessionGrant = vi.fn(async (_s: string, id: string) => ({
+      ...grant(id),
+      revokedAt: '2026-10-22T01:00:00Z',
+    }))
+    const app = appWith({ approval: { sessionGrants, revokeSessionGrant } })
+    expect((await runSlash(app, '/grants')).text).toBe(
+      '1\tg1\tshell[31m\tsession\t2026-10-22T00:00:00Z\ta b\n2\tg2\tshell[31m\talways\t2026-10-22T00:00:00Z\ta b',
+    )
+    expect(sessionGrants).toHaveBeenCalledWith('cur')
+    expect((await runSlash(app, '/grants revoke 2')).text).toContain('revoked g2\t')
+    await runSlash(app, '/grants revoke g1')
+    expect(revokeSessionGrant.mock.calls).toEqual([
+      ['cur', 'g2'],
+      ['cur', 'g1'],
+    ])
+    expect((await runSlash(app, '/grants revoke 9')).text).toBe(tt('grants.unknown', 'en', { key: '9' }))
+    expect((await runSlash(app, '/grants nope')).text).toBe(tt('grants.usage', 'en'))
+    expect(revokeSessionGrant).toHaveBeenCalledTimes(2)
+    sessionGrants.mockResolvedValueOnce({ grants: [] })
+    expect((await runSlash(app, '/grants')).text).toBe(tt('grants.none', 'en'))
+    sessionGrants.mockRejectedValueOnce(new Error('admin tier required'))
+    await expect(runSlash(app, '/grants')).rejects.toThrow('admin tier required')
+  })
+})

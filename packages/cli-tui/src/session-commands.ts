@@ -5,7 +5,7 @@ import { escapeControl } from './component.js'
 import { tt } from './locale-extended.js'
 
 /** Titles, snippets and prompts are external text: one inert line each. */
-const oneLine = (text: string): string => escapeControl(text).replace(/\s+/g, ' ').trim()
+export const oneLine = (text: string): string => escapeControl(text).replace(/\s+/g, ' ').trim()
 
 type HistoryHit = { sessionId: string; title: string; snippet: string; ts: string; seq?: number }
 
