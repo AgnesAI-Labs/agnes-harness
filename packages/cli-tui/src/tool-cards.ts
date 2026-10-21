@@ -4,6 +4,7 @@ import { formatTuiErrorNotice } from './error-notice.js'
 import { oneLine } from './session-commands.js'
 import type { ThemedAnsi } from './theme.js'
 import { type ToolDetailState, toolDetailText } from './tool-detail.js'
+import { type CardFacts, childFacts } from './views/special-card.js'
 import { ToolCard } from './views/tool-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -17,6 +18,8 @@ export class ToolCards {
   private readonly cards = new Map<string, ToolCard>()
   /** Full records fetched on expand; `key` names the call/result pair they were fetched for. */
   private readonly details = new Map<string, { key: string; view: ToolDetailState }>()
+  /** Subagent status and run time by child key; they change without their spawning node changing. */
+  private children = new Map<string, CardFacts>()
   private latest: string | undefined
 
   constructor(
@@ -41,6 +44,7 @@ export class ToolCards {
       onAction: this.o.onAction,
       detail: () => this.details.get(node.id)?.view,
       onExpand: () => this.load(node),
+      facts: () => this.children.get(node.delegatedTask?.childKey ?? ''),
     })
     this.cards.set(node.id, card)
     // A node that changed under an open card (its result arrived) needs its record fetched again.
@@ -79,6 +83,7 @@ export class ToolCards {
     for (const id of this.cards.keys()) if (!ids.has(id)) this.cards.delete(id)
     for (const id of this.details.keys()) if (!ids.has(id)) this.details.delete(id)
     this.latest = tools.at(-1)?.id
+    this.children = childFacts(value)
   }
 
   /** Numbered actions inside the most recent card; a collapsed card (or no match) declines. */

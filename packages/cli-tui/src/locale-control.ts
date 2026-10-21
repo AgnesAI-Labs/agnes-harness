@@ -24,6 +24,12 @@ export const CONTROL_KEYS = [
   'jobs.unknown',
   'jobs.stopped',
   'jobs.refused',
+  'card.plan',
+  'card.agent',
+  'card.job',
+  'card.workflow',
+  'card.planProgress',
+  'card.more',
 ] as const
 
 export type ControlKey = (typeof CONTROL_KEYS)[number]
@@ -50,6 +56,12 @@ export const CONTROL_DICT: Record<Locale, Record<ControlKey, string>> = {
     'jobs.unknown': 'no job {key}',
     'jobs.stopped': 'stop requested for job {id}',
     'jobs.refused': 'stop refused for job {id}',
+    'card.plan': 'Plan',
+    'card.agent': 'Subagent',
+    'card.job': 'Job',
+    'card.workflow': 'Workflow',
+    'card.planProgress': '{done}/{total} done',
+    'card.more': '… {count} more',
   },
   'zh-CN': {
     'tool.detail.loading': '正在读取完整记录…',
@@ -72,5 +84,11 @@ export const CONTROL_DICT: Record<Locale, Record<ControlKey, string>> = {
     'jobs.unknown': '没有任务 {key}',
     'jobs.stopped': '已请求终止任务 {id}',
     'jobs.refused': '任务 {id} 的终止被拒绝',
+    'card.plan': '计划',
+    'card.agent': '子智能体',
+    'card.job': '后台任务',
+    'card.workflow': '工作流',
+    'card.planProgress': '{done}/{total} 已完成',
+    'card.more': '… 还有 {count} 项',
   },
 }

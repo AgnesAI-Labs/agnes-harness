@@ -680,6 +680,108 @@ it.each([
   }
 })
 
+// The plan, subagent and job tools get cards of their own, built from the projected timeline alone:
+// a subagent's state and time come from the trace spans, which change while its node does not.
+it('draws plan, subagent and job cards from the projected timeline', async () => {
+  const SID = 'agnes:local:default:cli:dm:cards'
+  const span = (over: Record<string, unknown>) => ({
+    id: 'sp',
+    kind: 'other',
+    name: 'n',
+    status: 'completed',
+    startSeq: 1,
+    startedAt: '2026-10-22T00:00:00Z',
+    children: [],
+    nodeIds: [],
+    ...over,
+  })
+  const tool = (id: string, seq: number, over: Record<string, unknown>) => ({
+    kind: 'tool',
+    id,
+    seq,
+    toolUseId: id,
+    status: 'completed',
+    summary: '',
+    ...over,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 3,
+      generation: 1,
+      opState: null,
+      turns: [
+        {
+          id: 'turn-1',
+          turn: 1,
+          startSeq: 1,
+          startedAt: '2026-10-22T00:00:00Z',
+          status: 'completed',
+          nodeIds: [],
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            reasoningComplete: true,
+            billingComplete: true,
+            calls: [],
+          },
+          inherited: false,
+          forkable: false,
+          trace: span({
+            kind: 'turn',
+            children: [span({ kind: 'subagent', childSessionKey: 'kid', durationMs: 4_200 })],
+          }),
+        },
+      ],
+      nodes: [
+        tool('p', 1, {
+          name: 'update_plan',
+          argsPreview: JSON.stringify({
+            plan: [
+              { step: 'read the code', status: 'completed' },
+              { step: 'write the card', status: 'in_progress' },
+            ],
+          }),
+        }),
+        tool('a', 2, {
+          name: 'subagent_spawn',
+          summary: 'spawned',
+          delegatedTask: { childKey: 'kid', task: 'check the build', status: 'running' },
+        }),
+        tool('j', 3, { name: 'job_list', summary: '2 jobs' }),
+      ],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => {
+      const screen = (await screenOf(term, 80, 24)).join('\n')
+      expect(screen).toContain('Plan  1/2 done')
+      expect(screen).toContain('[x] read the code')
+      expect(screen).toContain('[>] write the card')
+      expect(screen).toContain('Subagent  check the build')
+      // Its node still says running; the child's finished turn span has the final state and time.
+      expect(screen).toMatch(/Subagent {2}check the build\s+done · 4\.2s/)
+      expect(screen).toMatch(/Job job_list {2}2 jobs\s+done/)
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('shows contextual F1 actions only when projected and dispatches the selected action', async () => {
   const SID = 'agnes:local:default:cli:dm:hints'
   const calls: Array<{ requestSeq: number; action: string; data?: unknown }> = []
