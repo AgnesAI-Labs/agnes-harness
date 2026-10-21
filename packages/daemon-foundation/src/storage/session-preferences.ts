@@ -13,14 +13,8 @@ export class SessionPreferencesStore {
     private readonly clock: () => number = Date.now,
   ) {
     table?.exec(`CREATE TABLE IF NOT EXISTS session_preferences (
-      session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0
+      session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0, pinned_at INTEGER
     )`)
-    try {
-      // Probe by adding: PRAGMA is outside Host's owner SQL allow-list.
-      table?.exec('ALTER TABLE session_preferences ADD COLUMN pinned_at INTEGER')
-    } catch (error) {
-      if (!/duplicate column name/i.test(String(error))) throw error
-    }
     // Its own table rather than a column, so a store created before bookmarks needs no migration.
     table?.exec(`CREATE TABLE IF NOT EXISTS session_bookmarks (
       session_key TEXT PRIMARY KEY, ids TEXT NOT NULL

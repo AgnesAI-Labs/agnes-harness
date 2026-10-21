@@ -9,7 +9,7 @@ import {
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { createSqliteStorage } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { recordingTable, sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   copyForkBookmarks,
   type ForkPromptScan,
@@ -54,15 +54,26 @@ describe('session preferences', () => {
     }
   })
 
+  it('opens session_preferences with pinned_at in its CREATE and no ALTER', async () => {
+    const tables = sqliteTables()
+    const { table, sql } = recordingTable(tables.table('session_preferences'))
+    new SessionPreferencesStore(table)
+    expect(sql.filter((s) => /ALTER TABLE/.test(s))).toEqual([])
+    expect(
+      tables
+        .table('x')
+        .all<{ name: string }>("SELECT name FROM pragma_table_info('session_preferences')")
+        .map((c) => c.name),
+    ).toEqual(['session_key', 'title', 'archived', 'pinned_at'])
+    await tables.close()
+  })
+
   it('persists through a real SQLite restart; independent field writes never erase each other', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agnes-session-preferences-'))
     let tables = sqliteTables(join(dir, 'preferences.db'))
     try {
-      // A database from before pinning gains the column on open and keeps its rows.
-      tables.table('session_preferences').exec(`CREATE TABLE session_preferences (
-        session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0)`)
-      tables.table('session_preferences').exec("INSERT INTO session_preferences VALUES ('old', '旧名称', 0)")
       const store = new SessionPreferencesStore(tables.table('session_preferences'), () => 1_000)
+      store.rename('old', '旧名称')
       expect(store.pin('old', true)).toEqual({
         title: '旧名称',
         archived: false,
