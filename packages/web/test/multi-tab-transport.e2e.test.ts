@@ -16,7 +16,7 @@ it('reproduces six persistent streams stalling HTTP/1.1 and keeps eight polling 
   )
   await writeFile(
     join(root, 'legacy.js'),
-    `const source = new EventSource('/plugins/events'); source.addEventListener('graph', () => document.body.dataset.ready = 'yes');`,
+    `const source = new EventSource('/legacy-events'); source.addEventListener('graph', () => document.body.dataset.ready = 'yes');`,
   )
   await writeFile(
     join(root, 'index.html'),
@@ -57,6 +57,12 @@ it('reproduces six persistent streams stalling HTTP/1.1 and keeps eight polling 
     token: 'synthetic',
     developmentReload: true,
     mountProxy: (request, response) => {
+      // Reproduce the previous permanent-stream transport without weakening the fixed endpoint.
+      if (request.url === '/legacy-events') {
+        response.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'keep-alive' })
+        response.write('event: graph\ndata: {}\n\n')
+        return true
+      }
       const body = assets.get(request.url ?? '')
       if (!body) return false
       response
@@ -94,6 +100,8 @@ it('reproduces six persistent streams stalling HTTP/1.1 and keeps eight polling 
     } finally {
       await legacy.close()
     }
+    const compatibility = await fetch(`${server.url}/plugins/events`, { signal: AbortSignal.timeout(2000) })
+    expect(await compatibility.text()).toContain('event: graph')
     const current = await browser.newContext()
     try {
       const pages = await Promise.all(Array.from({ length: 8 }, () => current.newPage()))

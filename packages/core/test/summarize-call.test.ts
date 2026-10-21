@@ -32,6 +32,9 @@ it('uses declared action, scope, summary and purpose without repeating the tool 
       { title: '提交发布评审', description: '请质量负责人核验' },
     ),
   ).toBe('提交发布评审 · GATE-005 · 请质量负责人核验')
+  expect(
+    summarizeCall('create_project', { title: '本机网页验证', body: 'private' }, undefined, '新建项目'),
+  ).toBe('新建项目 · 本机网页验证')
 })
 
 it('bounds long summaries without splitting a surrogate pair', () => {
