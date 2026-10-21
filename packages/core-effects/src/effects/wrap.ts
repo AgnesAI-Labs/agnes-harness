@@ -3,7 +3,7 @@ import type { Clock } from '@agnes/core-common/types'
 import type { Timers } from '@agnes/core-ledger/log/session-log'
 import type { ArtifactJob } from '@agnes/core-ledger/reduce/shapes'
 import type { Actor, ApprovalGrant } from '@agnes/protocol'
-import type { WorkspaceInvocationPort } from '../workspace/runtime.js'
+import { createSessionFileReader, type WorkspaceInvocationPort } from '../workspace/runtime.js'
 import { isPending, normalizeApproval, type RawApproval } from './approval-answer.js'
 import { platformView } from './platform-facts.js'
 import type {
@@ -176,6 +176,11 @@ export class SeamRuntime {
   invalidate(): void {
     this.decisions.clear()
     this.caps.clear()
+  }
+
+  /** Delayed browser resources use the session's existing revocable workspace owner. */
+  sessionFiles() {
+    return this.o.workspaceInvocation ? createSessionFileReader(this.o.workspaceInvocation) : undefined
   }
 
   private fail(seam: SeamName, op: string, err: unknown): void {

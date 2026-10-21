@@ -1,5 +1,5 @@
 import type { WorkspaceInvocationSource, WorkspaceInvocationView } from '@agnes/core'
-import { createWorkspaceInvocationPort, HookEngine } from '@agnes/core'
+import { createSessionFileReader, createWorkspaceInvocationPort, HookEngine } from '@agnes/core'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSeams } from './helpers/fake-seams.js'
 
@@ -30,6 +30,26 @@ const source = (over: Partial<WorkspaceInvocationSource> = {}): WorkspaceInvocat
 }
 
 describe('WorkspaceInvocationPort', () => {
+  it('reacquires delayed resource reads, enforces byte bounds and refuses a closed session', async () => {
+    let active = true
+    const release = vi.fn()
+    const read = vi.fn(async () => new Uint8Array([1, 2]))
+    const port = createWorkspaceInvocationPort(() => {
+      if (!active) throw new Error('session closed')
+      const state = source()
+      return { source: { ...state, fs: { ...state.fs, read } }, release }
+    })
+    const files = createSessionFileReader(port)
+    await port.run(async () => undefined)
+    await expect(files.read('image.png', { offset: 2, limit: 32 })).resolves.toEqual(new Uint8Array([1, 2]))
+    await expect(files.stat('image.png')).resolves.toMatchObject({ kind: 'file' })
+    expect(read).toHaveBeenCalledWith('image.png', { offset: 2, limit: 32 })
+    expect(release).toHaveBeenCalledTimes(3)
+    expect(() => files.read('image.png', { limit: 16 * 1024 * 1024 })).toThrow('bounded')
+    active = false
+    expect(() => files.read('image.png', { limit: 32 })).toThrow('session closed')
+    expect(read).toHaveBeenCalledTimes(1)
+  })
   it('acquires synchronously and invokes on the next microtask before releasing once', async () => {
     const order: string[] = []
     const port = createWorkspaceInvocationPort(() => {

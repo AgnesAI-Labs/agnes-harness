@@ -4,6 +4,7 @@ import { type ComponentProps, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { BrowserAudio } from '../../package-manager/bundled-plugins/browser/src/browser-audio.js'
 import { BrowserScreen } from '../../package-manager/bundled-plugins/browser/src/browser-screen.js'
 
 vi.mock('@agnes/web-ui', async () => {
@@ -28,9 +29,10 @@ it('switches tabs on one display connection and refuses late pixels from the pre
   }))
   const ctx = { sessionStreams: { open }, agnes: { services: { effect } } } as unknown as ClientContext
   const draw = vi.fn()
+  const sound = vi.spyOn(BrowserAudio.prototype, 'push').mockImplementation(() => {})
   let finish: ((value: unknown) => void) | undefined
-  const bitmap = { width: 1280, height: 800, close() {} }
-  const decode = vi.fn(async () => bitmap)
+  const bitmap = { width: 2560, height: 1600, close() {} }
+  const decode = vi.fn(async (_blob: Blob) => bitmap)
   vi.stubGlobal('createImageBitmap', decode)
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage: draw,
@@ -58,8 +60,10 @@ it('switches tabs on one display connection and refuses late pixels from the pre
         }),
       ),
     )
-  const pixels = (pageId: string, pageEpoch = 0) => {
-    const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageId, pageEpoch }))
+  const pixels = (pageId: string, pageEpoch = 0, media?: string) => {
+    const metadata = new TextEncoder().encode(
+      JSON.stringify({ ...page, pageId, pageEpoch, frameMime: 'image/png', media, sampleRate: 48000 }),
+    )
     const frame = new Uint8Array(metadata.length + 5)
     new DataView(frame.buffer).setUint32(0, metadata.length)
     frame.set(metadata, 4)
@@ -85,16 +89,24 @@ it('switches tabs on one display connection and refuses late pixels from the pre
     )
     finish?.(bitmap)
     await Promise.resolve()
+    pixels('two', 0, 'audio')
+    expect(sound).not.toHaveBeenCalled()
+    expect(decode.mock.calls[0]?.[0].type).toBe('image/png')
     expect(draw).not.toHaveBeenCalled()
     pixels('one')
     expect(draw).not.toHaveBeenCalled()
     pixels('two')
     await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
+    expect(host.querySelector('canvas')?.width).toBe(2560)
+    pixels('two', 0, 'audio')
+    expect(sound).toHaveBeenCalledTimes(1)
     // The same page can restore a different document without producing new CDP paints.
     const priorCall = effect.mock.lastCall
     if (!priorCall) throw new Error('Missing initial view selection')
     const priorSelection = (priorCall[1] as { sequence: number }).sequence
     render('two', 1)
+    pixels('two', 0, 'audio')
+    expect(sound).toHaveBeenCalledTimes(1)
     await vi.waitFor(() =>
       expect(effect.mock.lastCall?.[1]).toMatchObject({ pageId: 'two', sequence: priorSelection + 1 }),
     )

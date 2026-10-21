@@ -130,7 +130,7 @@ export type {
   WorkspaceInvocationView,
   WorkspacePublicationDispatch,
 } from '@agnes/core-effects/workspace/runtime'
-export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { createSessionFileReader, createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
 export { decisionSubjectDigest, leanEvents, reduceDecision } from '@agnes/core-ledger'
 export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'

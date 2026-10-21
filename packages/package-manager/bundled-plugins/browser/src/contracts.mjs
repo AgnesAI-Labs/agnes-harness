@@ -14,7 +14,10 @@ export const pageInput = object(
   ['pageId'],
 )
 export const controlInput = { ...pageInput, required: ['pageId', 'mode'] }
-const viewInput = object({ ...pageInput.properties, viewId: text(100) }, ['pageId'])
+const viewInput = object(
+  { ...pageInput.properties, viewId: text(100), displayVersion: { type: 'integer', enum: [2] } },
+  ['pageId'],
+)
 const outputSchema = { type: 'object', additionalProperties: true }
 const effectPolicy = {
   isDestructive: false,
@@ -66,9 +69,15 @@ export const services = [
       'sequence',
     ]),
   ),
-  service('browser.open', 'effect', 'session', object({ url: text(8192) }, ['url']), {
-    effectPolicy: { ...effectPolicy, isOpenWorld: true },
-  }),
+  service(
+    'browser.open',
+    'effect',
+    'session',
+    object({ url: text(8192), previewRoot: text(4096) }, ['url']),
+    {
+      effectPolicy: { ...effectPolicy, isOpenWorld: true },
+    },
+  ),
   service('browser.control', 'effect', 'session', controlInput, {
     controlLeaseMs: 30_000,
     controlSessionMs: 300_000,
@@ -192,6 +201,7 @@ export const parameters = toolSchema(
       pageEpoch: { type: 'integer', minimum: 0 },
       ref: text(100),
       url: text(8192),
+      previewRoot: text(4096),
       text: { type: 'string', maxLength: 10_000 },
       key: text(80),
       x: { type: 'number', minimum: -4000, maximum: 4000 },

@@ -13,6 +13,7 @@ import {
   type ResolvedProfile,
   resolveFileSecretsDirectory,
 } from '@agnes/host'
+import { withPackageVerification } from '@agnes/package-manager'
 import { type AutoReviewConfig, rpcError } from '@agnes/protocol'
 import type {
   AdminBundlesSave,
@@ -112,23 +113,24 @@ export function createAppServerAdmin(options: {
         }) === fileSecretsDir(options.home)
       )
     },
-    configurations: async () => {
-      if (!options.credentialConfigurations) throw new Error('credential reference inspection unavailable')
-      const profile = await options.resolveProfile()
-      const snapshot = await triggers.handle({ action: 'list' })
-      if (!snapshot.snapshot) throw new Error('trigger reference inspection unavailable')
-      return [
-        { kind: 'profile', profile: profile.name, configId: 'resolved', value: profile },
-        ...(await savedCredentialConfigurations(options.home, options.dataDir)),
-        ...snapshot.snapshot.rules.map((rule) => ({
-          kind: 'trigger' as const,
-          profile: profile.name,
-          configId: rule.id,
-          value: rule,
-        })),
-        ...(await options.credentialConfigurations()),
-      ]
-    },
+    configurations: () =>
+      withPackageVerification(async () => {
+        if (!options.credentialConfigurations) throw new Error('credential reference inspection unavailable')
+        const profile = await options.resolveProfile()
+        const snapshot = await triggers.handle({ action: 'list' })
+        if (!snapshot.snapshot) throw new Error('trigger reference inspection unavailable')
+        return [
+          { kind: 'profile', profile: profile.name, configId: 'resolved', value: profile },
+          ...(await savedCredentialConfigurations(options.home, options.dataDir)),
+          ...snapshot.snapshot.rules.map((rule) => ({
+            kind: 'trigger' as const,
+            profile: profile.name,
+            configId: rule.id,
+            value: rule,
+          })),
+          ...(await options.credentialConfigurations()),
+        ]
+      }),
   })
   return {
     observeTriggerSession: triggers.observeSession,

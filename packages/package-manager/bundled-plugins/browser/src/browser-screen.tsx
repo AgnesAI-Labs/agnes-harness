@@ -1,6 +1,7 @@
 import type { ClientContext } from '@agnes/web-client'
 import { SettingsTextArea } from '@agnes/web-ui'
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
+import { BrowserAudio } from './browser-audio.js'
 import type { BrowserPage } from './browser-client.js'
 import type { BrowserInteraction } from './browser-interaction.js'
 
@@ -35,6 +36,8 @@ export const BrowserScreen = forwardRef<
   ref,
 ) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const [audio] = useState(() => new BrowserAudio())
+  useEffect(() => () => audio.close(), [audio])
   const text = useRef<HTMLTextAreaElement>(null)
   const meta = useRef<BrowserPage>(page)
   const target = useRef(page.pageId)
@@ -65,6 +68,7 @@ export const BrowserScreen = forwardRef<
   useEffect(() => {
     setConnected(false)
     setConnecting(true)
+    audio.reset()
     pendingInput.current = undefined
     composing.current = false
     if (text.current) text.current.value = ''
@@ -72,15 +76,16 @@ export const BrowserScreen = forwardRef<
     if (canvas.current)
       canvas.current.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height)
     selectTarget.current?.()
-  }, [page.pageId])
+  }, [page.pageId, audio])
   useEffect(() => {
     if (meta.current.pageId !== page.pageId || meta.current.pageEpoch >= page.pageEpoch) return
+    audio.reset()
     // History restores can stop the existing CDP capture. Rebind through the same
     // admitted view stream, and keep old pixels non-interactive until the new image.
     setConnected(false)
     setConnecting(true)
     selectTarget.current?.(true)
-  }, [page.pageId, page.pageEpoch])
+  }, [page.pageId, page.pageEpoch, audio])
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnect explicitly requests a new display subscription.
   useEffect(() => {
     const abort = new AbortController()
@@ -139,7 +144,9 @@ export const BrowserScreen = forwardRef<
         const frame = pending
         pending = undefined
         try {
-          const bitmap = await createImageBitmap(new Blob([frame.bytes], { type: 'image/jpeg' }))
+          const bitmap = await createImageBitmap(
+            new Blob([frame.bytes], { type: frame.description.frameMime ?? 'image/jpeg' }),
+          )
           try {
             if (
               abort.signal.aborted ||
@@ -172,6 +179,7 @@ export const BrowserScreen = forwardRef<
     }
     const retry = () => {
       if (abort.signal.aborted) return
+      audio.reset()
       pending = undefined
       ready = false
       current = undefined
@@ -195,7 +203,7 @@ export const BrowserScreen = forwardRef<
       revision = 0
       ready = false
       return ctx.sessionStreams
-        .open('browser.frames', { pageId: selected, viewId }, { signal: abort.signal })
+        .open('browser.frames', { pageId: selected, viewId, displayVersion: 2 }, { signal: abort.signal })
         .then((opened) => {
           if (abort.signal.aborted) {
             opened.close('cancelled')
@@ -224,6 +232,16 @@ export const BrowserScreen = forwardRef<
             }
             // The first image confirms that the plugin registered this view.
             // A tab may have changed while the transport was opening.
+            if (description.media === 'audio') {
+              if (
+                description.pageId === target.current &&
+                meta.current.pageId === target.current &&
+                description.pageEpoch >= expectedEpoch.current &&
+                description.pageEpoch === meta.current.pageEpoch
+              )
+                audio.push(frame.subarray(4 + size), description.sampleRate ?? 0)
+              return
+            }
             ready = true
             select()
             if (description.pageId !== target.current) return
@@ -246,7 +264,7 @@ export const BrowserScreen = forwardRef<
       pending = undefined
       current?.close('view-closed')
     }
-  }, [ctx, interaction, reconnect, onError])
+  }, [ctx, interaction, reconnect, onError, audio])
 
   useEffect(() => {
     sequence.current = 0
@@ -511,6 +529,7 @@ export const BrowserScreen = forwardRef<
         }}
         onClick={(event) => {
           if (!connected) return
+          audio.resume()
           const box = event.currentTarget.getBoundingClientRect()
           const border = event.currentTarget.clientLeft
           const width = meta.current.viewportWidth ?? 1280
@@ -543,6 +562,7 @@ export const BrowserScreen = forwardRef<
         onInput={(event) => flushText(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || composing.current) return
+          audio.resume()
           // Keep native composition and layout-specific text on the input path.
           // macOS Option characters and Windows AltGr are not remote shortcuts.
           if (

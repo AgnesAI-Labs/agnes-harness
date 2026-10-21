@@ -224,7 +224,9 @@ export function buildToolContext(
         },
       )
     : workspaceFiles
+  const sessionFiles = d.runtime.sessionFiles()
   const context: ToolContext = {
+    ...(sessionFiles ? { sessionFiles } : {}),
     decisions: d.decisions ?? unavailableDecisions,
     ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
     session: {

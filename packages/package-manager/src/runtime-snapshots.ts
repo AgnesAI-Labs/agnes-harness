@@ -8,6 +8,7 @@ import { validAgentDeclarations, validApplicationDeclaration } from './agent-dec
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
+import { mapFileChecks } from './file-read-pool.js'
 import {
   canonical,
   capabilityHash,
@@ -609,24 +610,21 @@ function* knownRuntimeDirectoryReadSteps(
   state: RuntimeState,
 ): ReadSteps<Map<string, RuntimeSnapshot>> {
   const verified = new Map<string, RuntimeSnapshot>()
-  const root = runtimeRoot(s)
-  if (!present(root)) {
-    if (Object.keys(state.snapshots).length) integrityFailure('runtime-root-missing')
-    return verified
-  }
-  if (lstatSync(root).isSymbolicLink()) integrityFailure('runtime-root-symlink')
-  const allowed = new Set(Object.keys(state.snapshots))
-  for (const entry of readdirSync(root))
-    if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
-  for (const record of Object.values(state.snapshots)) {
-    yield
+  assertRuntimeDirectoryEntries(s, state)
+  for (const record of Object.values(state.snapshots))
     verified.set(record.snapshotId, yield* verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId)))
-  }
   return verified
 }
 
-function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeState): void {
-  collectRead(knownRuntimeDirectoryReadSteps(s, state))
+function assertRuntimeDirectoryEntries(s: RuntimeSnapshotStore, state: RuntimeState): void {
+  const root = runtimeRoot(s)
+  if (!present(root)) {
+    if (Object.keys(state.snapshots).length) integrityFailure('runtime-root-missing')
+    return
+  }
+  if (lstatSync(root).isSymbolicLink()) integrityFailure('runtime-root-symlink')
+  for (const entry of readdirSync(root))
+    if (!Object.hasOwn(state.snapshots, entry)) integrityFailure('unknown-runtime-directory')
 }
 
 export function pinRuntimeSnapshotStore(
@@ -638,7 +636,7 @@ export function pinRuntimeSnapshotStore(
 ): RuntimePin {
   const requestHash = validateRequest(s, request),
     state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
   if (!own(lock.packages, request.packageId)) stateFailure('package-not-installed')
   const prior = state.pins[request.pinId]
   if (prior) {
@@ -716,7 +714,7 @@ export function resolveRuntimePinStore(
   if (request.expectedSnapshotId !== undefined && !SHA256.test(request.expectedSnapshotId))
     integrityFailure('snapshot-id')
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
   const pin = state.pins[request.pinId]
   if (!pin) stateFailure('pin-not-found')
   if (request.expectedSnapshotId !== undefined && pin.snapshotId !== request.expectedSnapshotId)
@@ -737,7 +735,7 @@ export function releaseRuntimePinStore(
   validateToken(request.pinId, 'pin-id')
   if (!SHA256.test(request.expectedSnapshotId)) integrityFailure('snapshot-id')
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
   const pin = state.pins[request.pinId]
   if (!pin) return
   if (pin.snapshotId !== request.expectedSnapshotId) integrityFailure('pin-snapshot-stale')
@@ -747,7 +745,7 @@ export function releaseRuntimePinStore(
 
 export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): PackageBlocker[] {
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
   const all = Object.values(state.pins)
     .filter((pin) => pin.packageId === packageId)
     .map((pin) => `runtime-pin:${pin.purpose}:${pin.pinId}`)
@@ -756,21 +754,26 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-function* runtimePinReadSteps(s: RuntimeSnapshotStore, lock?: Lockfile): ReadSteps<RuntimePin[]> {
-  const state = readState(s)
-  const verified = yield* knownRuntimeDirectoryReadSteps(s, state)
-  const pins: RuntimePin[] = []
-  for (const pin of Object.values(state.pins)) {
-    yield
-    pins.push(pinView(s, state, pin, verified.get(pin.snapshotId), lock && own(lock.packages, pin.packageId)))
-  }
-  return pins
-}
 export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
-  return collectRead(runtimePinReadSteps(s))
+  const state = readState(s)
+  const verified = collectRead(knownRuntimeDirectoryReadSteps(s, state))
+  return Object.values(state.pins).map((pin) => pinView(s, state, pin, verified.get(pin.snapshotId)))
 }
-export function listRuntimePinsStoreAsync(s: RuntimeSnapshotStore, lock?: Lockfile): Promise<RuntimePin[]> {
-  return collectReadAsync(runtimePinReadSteps(s, lock))
+export async function listRuntimePinsStoreAsync(
+  s: RuntimeSnapshotStore,
+  lock?: Lockfile,
+): Promise<RuntimePin[]> {
+  const state = readState(s)
+  assertRuntimeDirectoryEntries(s, state)
+  // Independent immutable trees may overlap IO. The existing pool bounds work and settles every
+  // started validator on failure; all paths, bytes, identities and bindings are still verified.
+  const snapshots = await mapFileChecks(Object.values(state.snapshots), (record) =>
+    collectReadAsync(verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId))),
+  )
+  const verified = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]))
+  return Object.values(state.pins).map((pin) =>
+    pinView(s, state, pin, verified.get(pin.snapshotId), lock && own(lock.packages, pin.packageId)),
+  )
 }
 
 export function collectRuntimeSnapshotsStore(
@@ -778,7 +781,7 @@ export function collectRuntimeSnapshotsStore(
   packageId?: string,
 ): RuntimeSnapshotCollection {
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  collectRead(knownRuntimeDirectoryReadSteps(s, state))
   const pinned = new Set(Object.values(state.pins).map((pin) => pin.snapshotId)),
     removed: string[] = [],
     retained: string[] = []
