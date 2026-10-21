@@ -579,6 +579,7 @@ describe('Kernel (fix round 1)', () => {
       approval: {
         ask: async (req) => {
           asked.push({ tool: req.tool?.name, taint: req.taint })
+          expect(req.summary).toContain('This turn contains untrusted tool output; changes require approval')
           return { verdict: 'allowed-once' as const, answeredBy: actor }
         },
       },

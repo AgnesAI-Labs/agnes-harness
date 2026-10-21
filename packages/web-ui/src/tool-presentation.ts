@@ -10,7 +10,13 @@ export function baseToolTitle(name: string, t: Translate): string | undefined {
 
 /** Localize the title of a recorded summary without translating its user-authored purpose. */
 export function localizeToolSummary(summary: string, t: Translate, name?: string): string {
-  const [lead = '', ...rest] = summary.split(' · ')
+  const reasons = [
+    ['This turn contains untrusted tool output; changes require approval', 'approval.reason.taint'],
+    ['The tool declares an action requiring approval', 'approval.reason.declared'],
+  ] as const
+  for (const [text, key] of reasons) summary = summary.replace(text, () => t(key))
+  const [leadWithReason = '', ...rest] = summary.split(' · ')
+  const lead = leadWithReason.split(' — ')[0] ?? ''
   const known = name && baseToolTitle(name, t)
   if (name && !known) return summary
   const rawName = name ?? summary.split(' ')[0]
@@ -24,7 +30,7 @@ export function localizeToolSummary(summary: string, t: Translate, name?: string
     lead === 'Run tool' ||
     [...Object.values(baseToolCatalog.en), ...Object.values(baseToolCatalog['zh-CN'])].includes(lead) ||
     Object.hasOwn(legacy, lead)
-  return replace ? [title, ...rest].join(' · ') : summary
+  return replace ? [title + leadWithReason.slice(lead.length), ...rest].join(' · ') : summary
 }
 
 export function approvalSummary(node: Extract<UINode, { kind: 'approval' }>, t: Translate): string {

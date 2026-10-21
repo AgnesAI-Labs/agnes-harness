@@ -7,8 +7,8 @@ it.each([
   ['read', { path: 'a.md', offset: 10, limit: 5 }, 'Read file · a.md'],
   ['shell', { command: 'echo SECRET', cwd: '/private' }, 'Run command'],
   ['shell', { command: 'echo SECRET', description: 'Verify the report' }, 'Run command · Verify the report'],
-  ['custom', { sql: 'select private', limit: 3 }, 'Run tool'],
-  ['custom', [1, 2], 'Run tool'],
+  ['custom', { sql: 'select private', limit: 3 }, 'custom'],
+  ['custom', [1, 2], 'custom'],
 ])('names %s by human action and scope without exposing code or bodies', (name, args, expected) => {
   expect(summarizeCall(name, args)).toBe(expected)
 })
@@ -22,6 +22,16 @@ it('uses declared action, scope, summary and purpose without repeating the tool 
       summary: 'Prepare for review',
     }),
   ).toBe('Review record · record-1 · Prepare for review · Check before signing')
+  expect(
+    summarizeCall('business_register', { projectId: 'PRJ-009', body: 'private' }, undefined, '登记项目'),
+  ).toBe('登记项目 · PRJ-009')
+  expect(
+    summarizeCall(
+      'business_register',
+      { gateId: 'GATE-005' },
+      { title: '提交发布评审', description: '请质量负责人核验' },
+    ),
+  ).toBe('提交发布评审 · GATE-005 · 请质量负责人核验')
 })
 
 it('bounds long summaries without splitting a surrogate pair', () => {

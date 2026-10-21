@@ -712,4 +712,27 @@ it.each(['en', 'zh-CN'] as const)('uses one localized title for every declared b
       translateTool,
     ),
   ).toBe('Read file · custom purpose')
+  const reason =
+    locale === 'zh-CN'
+      ? '本轮包含不可信的工具输出；后续修改需要您确认'
+      : 'This turn contains untrusted tool output; changes require approval'
+  for (const [name, summary, expected] of [
+    ['shell', 'Run command', baseToolTitle('shell', translateTool)],
+    ['custom_review', '登记项目 · PRJ-009', '登记项目 · PRJ-009'],
+  ])
+    expect(
+      approvalSummary(
+        {
+          kind: 'approval',
+          id: 'taint',
+          seq: 1,
+          state: 'pending',
+          risk: 'always',
+          options: [],
+          toolName: name,
+          summary: `${summary} — This turn contains untrusted tool output; changes require approval`,
+        },
+        translateTool,
+      ),
+    ).toBe(`${expected} — ${reason}`)
 })
