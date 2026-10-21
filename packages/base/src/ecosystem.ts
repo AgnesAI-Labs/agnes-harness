@@ -227,8 +227,9 @@ const bundled = {
 } as const
 
 /**
- * Host grants the child-control port to the `@agnes/base` owner; within Base only agnes/subagent
- * (worktree binding) may hold it, so every other factory gets the context without it.
+ * Host grants the child-control port to every `@agnes/base`-owned context. For factories mounted
+ * through `mountEcosystem` (the `ecosystem` map), only agnes/subagent (worktree binding) keeps it;
+ * every other factory gets the context without it.
  */
 export function ecosystemInitFor(id: string, init: SeamInitContext): SeamInitContext {
   if (id === 'agnes/subagent' || !('childControl' in init)) return init
@@ -236,12 +237,18 @@ export function ecosystemInitFor(id: string, init: SeamInitContext): SeamInitCon
   return rest
 }
 
-/** Trusted factories keyed by the manifest id the host is about to admit. */
-export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
-  Object.fromEntries(
-    Object.entries(bundled).map(([id, make]) => [
+/** Mounts each bundled factory as an extension factory, narrowing its context by id first. */
+export function mountEcosystem<T extends Record<string, (init: SeamInitContext) => BundledPlugin>>(
+  table: T,
+): { [K in keyof T]: (init: SeamInitContext) => ExtensionFactory } {
+  return Object.fromEntries(
+    Object.entries(table).map(([id, make]) => [
       id,
-      (init: SeamInitContext) =>
-        extensionFactoryOf((make as (init: SeamInitContext) => BundledPlugin)(ecosystemInitFor(id, init))),
+      (init: SeamInitContext) => extensionFactoryOf(make(ecosystemInitFor(id, init))),
     ]),
   ) as never
+}
+
+/** Trusted factories keyed by the manifest id the host is about to admit. */
+export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
+  mountEcosystem(bundled)

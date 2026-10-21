@@ -28,8 +28,10 @@ export function createEcosystemContexts(
   const sessionTasks: { current?: SeamInitContext['sessionTasks'] } = {}
   const privacyTrajectory: { current?: SeamInitContext['privacyTrajectory'] } = {}
   const storage = adapters.storage
-  // Only the two primary-key calls subagent worktree binding needs, never the whole store. It goes
-  // to the @agnes/base owner like sessionTasks; Base forwards it only to agnes/subagent.
+  // Only the two primary-key calls subagent worktree binding needs, never the whole store. Like
+  // sessionTasks it goes to every @agnes/base-owned context; Base's ecosystem map strips it from
+  // every factory but agnes/subagent, while the MCP server rows and the isolated hooks-runner
+  // preparation receive it unnarrowed and do not read it.
   const childControl =
     hasChildControl(storage) && storage.updateWorkspace
       ? Object.freeze({

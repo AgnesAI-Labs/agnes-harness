@@ -1,6 +1,12 @@
 import type { ChildTaskRecord } from '@agnes/extension-api'
+import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { describe, expect, it } from 'vitest'
-import { childControlWorktreePersist, ecosystemInitFor, readSubagentLimits } from '../src/ecosystem.js'
+import {
+  childControlWorktreePersist,
+  ecosystemInitFor,
+  mountEcosystem,
+  readSubagentLimits,
+} from '../src/ecosystem.js'
 import type { SeamInitContext } from '../src/seam-init.js'
 
 describe('subagent ecosystem policy', () => {
@@ -76,5 +82,28 @@ describe('child-control port narrowing', () => {
   it('passes a context without the port through unchanged', () => {
     const bare = { secrets: () => '' } as unknown as SeamInitContext
     expect(ecosystemInitFor('agnes/refine', bare)).toBe(bare)
+  })
+})
+
+describe('mountEcosystem', () => {
+  it('narrows the context of every mounted factory, so only agnes/subagent receives the port', () => {
+    const port = { lookupByKey: async () => null, updateWorkspace: async () => undefined }
+    const init = { childControl: port, secrets: () => '' } as unknown as SeamInitContext
+    const seen = new Map<string, SeamInitContext>()
+    const plugin = defineAgnesPlugin({ apply: () => undefined })
+    const recording = (id: string) => (context: SeamInitContext) => {
+      seen.set(id, context)
+      return plugin
+    }
+    const mounted = mountEcosystem({
+      'agnes/subagent': recording('agnes/subagent'),
+      'agnes/refine': recording('agnes/refine'),
+    })
+    expect(typeof mounted['agnes/subagent'](init)).toBe('function')
+    expect(typeof mounted['agnes/refine'](init)).toBe('function')
+    expect(seen.get('agnes/subagent')?.childControl).toBe(port)
+    expect(seen.get('agnes/refine')).toBeDefined()
+    expect('childControl' in (seen.get('agnes/refine') as object)).toBe(false)
+    expect(seen.get('agnes/refine')?.secrets).toBe(init.secrets)
   })
 })

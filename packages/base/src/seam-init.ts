@@ -206,8 +206,10 @@ export type SeamInitContext = {
   /** Supplied only to the exact trusted computer-use extension after platform driver admission. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: ComputerUseToolOptions
-  /** Host-owned child-control port, supplied only to `@agnes/base`; Base forwards it only to
-   *  agnes/subagent (see `ecosystemInitFor`). */
+  /** Host-owned child-control port, supplied to every `@agnes/base`-owned context. Base strips it
+   *  from every factory mounted through its `ecosystem` map except agnes/subagent (see
+   *  `mountEcosystem`). The MCP server row context and the isolated hooks-runner preparation are
+   *  Base-owned contexts that receive it unnarrowed and do not read it. */
   childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam

@@ -147,7 +147,7 @@ export function mcpServerRowsFromDefinitions(
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
           extensionFactoryOf(
             mcpServerExtension(cfg, {
-              catalogHub: mcpCatalogHubFor(ctx),
+              catalogHub: mcpCatalogHubFor({ signal: ctx.signal, adapters: ctx.adapters }),
               connect: (_cfg: McpServerConfig, signal: AbortSignal) =>
                 leaseMcpConnection(opener, `${serverId}\0${revision}`, definition, signal),
               ...(options.onFirstAttempt
