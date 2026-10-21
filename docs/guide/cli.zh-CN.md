@@ -82,4 +82,4 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
 
-在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。
+在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。常见的图片、文档、压缩包和音视频扩展名按各自的 MIME 类型上传，其余扩展名按 `application/octet-stream` 上传；daemon 的白名单拒绝原样显示。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。

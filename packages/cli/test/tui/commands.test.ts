@@ -1070,6 +1070,7 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       mime: 'text/plain',
     }
     const calls: import('@agnes/protocol').FileUploadRequest[] = []
+    let started = { name: 'a file.txt', mime: 'text/plain' }
     const app = {
       cwd: dir,
       session: {
@@ -1077,10 +1078,13 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
         client: {
           call: async (_method: string, input: import('@agnes/protocol').FileUploadRequest) => {
             calls.push(input)
-            if (input.operation === 'start') return { offset: 0 }
+            if (input.operation === 'start') {
+              started = { name: input.name, mime: input.mimeType }
+              return { offset: 0 }
+            }
             if (input.operation === 'chunk') return { offset: bytes.length }
             return {
-              attachment: attachmentLink(artifact, 'a file.txt', {
+              attachment: attachmentLink({ ...artifact, mime: started.mime }, started.name, {
                 receiptId: '00000000-0000-4000-8000-000000000001',
               }),
             }
@@ -1096,6 +1100,28 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       ['chunk', 'original', 'main'],
       ['finish', 'original', 'main'],
     ])
+    // Newly supported types carry their own MIME; an unlisted extension travels as the generic type.
+    for (const [name, mime] of [
+      ['pic.webp', 'image/webp'],
+      ['sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['blob.xyz', 'application/octet-stream'],
+    ] as const) {
+      await writeFile(join(dir, name), bytes)
+      calls.length = 0
+      await runSlash(app, `/attach ${name}`)
+      expect((calls[0] as { mimeType?: string }).mimeType).toBe(mime)
+    }
+    // The daemon's own refusal (for example an allow-list miss) reaches the user verbatim, with no bytes sent.
+    calls.length = 0
+    const refuse = Object.assign(new Error('ATTACHMENT_MIME'), { data: { reason: 'ATTACHMENT_MIME' } })
+    const real = app.session.client.call
+    app.session.client.call = async (_m: string, input: import('@agnes/protocol').FileUploadRequest) => {
+      calls.push(input)
+      throw refuse
+    }
+    await expect(runSlash(app, '/attach blob.xyz')).rejects.toBe(refuse)
+    expect(calls.map((call) => call.operation)).toEqual(['start'])
+    app.session.client.call = real
     const error = Object.assign(new Error('refused'), { data: { reason: 'ATTACHMENT_QUOTA' } })
     app.session.client.call = async () => {
       throw error

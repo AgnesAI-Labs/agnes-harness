@@ -90,4 +90,4 @@ These commands mirror the Web admin pages and need an admin connection. `agh plu
 
 Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).
 
-Use `/attach <path>` in the TUI to upload an original in bounded chunks and submit its receipt as a prompt. Paths may contain spaces. Errors preserve the backend attachment reason. The current session owns the receipt; switching sessions before the upload completes refuses submission.
+Use `/attach <path>` in the TUI to upload an original in bounded chunks and submit its receipt as a prompt. Paths may contain spaces. Common image, document, archive and media extensions carry their own MIME type; any other extension uploads as `application/octet-stream`, and a daemon allow-list refusal is shown as returned. Errors preserve the backend attachment reason. The current session owns the receipt; switching sessions before the upload completes refuses submission.
