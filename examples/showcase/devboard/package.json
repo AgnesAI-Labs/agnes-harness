@@ -229,6 +229,7 @@
             "devboard-changes",
             "devboard-quality",
             "devboard-reviews",
+            "panorama",
             "trials",
             "service"
           ],
@@ -757,6 +758,7 @@
             "@agnes-showcase/devboard#devboard-changes",
             "@agnes-showcase/devboard#devboard-quality",
             "@agnes-showcase/devboard#devboard-reviews",
+            "@agnes-showcase/devboard#panorama",
             "@agnes-showcase/devboard#trials",
             "@agnes-showcase/devboard#service"
           ]

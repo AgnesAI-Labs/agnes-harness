@@ -3,6 +3,7 @@ import React from 'react'
 import { h, Shell, useBoard, useRole } from './board.js'
 import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
+import { Panorama } from './panorama.js'
 import { Changes, Quality, Reviews, Tasks, Trace } from './records.js'
 
 /** id → [zh title, en title, icon, view, description]; order is the navigation order. */
@@ -43,6 +44,13 @@ const PAGES = {
     'shield',
     Reviews,
     '待决议的评审门与人工介入请求；只有门要求的审批角色能签署，会签门每个角色各签一次。',
+  ],
+  panorama: [
+    '研发全景',
+    'R&D panorama',
+    'git-branch',
+    Panorama,
+    '所有研发项目的进度与卡点：泳道、阶段与评审门、变更与质量问题分支、时间轴；可按项目、卡点责任角色或专业查看。',
   ],
   trials: [
     '试验与首件',

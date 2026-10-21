@@ -7,17 +7,17 @@ const HOUR = 3_600_000
 const DAY = 24 * HOUR
 const ANALYZING_LIMIT_DAYS = 7
 
-/** Kinds in display order; the page reads the labels and the page each kind jumps to. */
+/** Kinds in display order; every blocker carries its kind's label. */
 export const BLOCKER_KINDS = Object.freeze({
-  GATE_PENDING: { label: '评审门待决议', page: 'devboard-reviews' },
-  GATE_FINDING: { label: '评审意见未关闭', page: 'devboard-reviews' },
-  STAGE_OVERDUE: { label: '阶段超期', page: 'devboard-projects' },
-  APPROVAL_ACTIVE: { label: '审批待处理', page: 'devboard-reviews' },
-  APPROVAL_OVERDUE: { label: '审批超时', page: 'devboard-reviews' },
-  TRIAL_FAILED: { label: '试验不合格未立变更', page: 'trials' },
-  CHANGE_CCB: { label: '变更待 CCB', page: 'devboard-changes' },
-  PROBLEM_STALLED: { label: '质量问题分析超期', page: 'service' },
-  BASELINE_GAP: { label: '整改未完成', page: 'service' },
+  GATE_PENDING: { label: '评审门待决议' },
+  GATE_FINDING: { label: '评审意见未关闭' },
+  STAGE_OVERDUE: { label: '阶段超期' },
+  APPROVAL_ACTIVE: { label: '审批待处理' },
+  APPROVAL_OVERDUE: { label: '审批超时' },
+  TRIAL_FAILED: { label: '试验不合格未立变更' },
+  CHANGE_CCB: { label: '变更待 CCB' },
+  PROBLEM_STALLED: { label: '质量问题分析超期' },
+  BASELINE_GAP: { label: '整改未完成' },
 })
 
 const roleOf = (by) => {
@@ -48,6 +48,7 @@ export function blockers(state, now = Date.now(), projectId) {
     out.push({
       id: `${kind}:${ref.id}:${role}`,
       kind,
+      label: BLOCKER_KINDS[kind].label,
       projectId,
       role,
       ref,

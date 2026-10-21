@@ -100,6 +100,18 @@
         }
       },
       {
+        "id": "panorama",
+        "placement": "primary",
+        "navigation": {
+          "title": "R&D panorama",
+          "titles": {
+            "zh-CN": "研发全景"
+          },
+          "icon": "git-branch",
+          "order": 17
+        }
+      },
+      {
         "id": "trials",
         "placement": "primary",
         "navigation": {
@@ -108,7 +120,7 @@
             "zh-CN": "试验与首件"
           },
           "icon": "shield-check",
-          "order": 17
+          "order": 18
         }
       },
       {
@@ -120,7 +132,7 @@
             "zh-CN": "运维与质量"
           },
           "icon": "triangle-alert",
-          "order": 18
+          "order": 19
         }
       }
     ]

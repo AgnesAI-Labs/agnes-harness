@@ -21,6 +21,7 @@ After installing and adopting DevBoard 3.0.0 on the Agents page, the workbench s
 | Tasks | Task board |
 | Changes | Source, root cause, affected parts and revisions, fleet impact, ECN, retrofit progress, verification |
 | Defects & tests | Software defects and test runs |
+| R&D panorama | One lane per project (grouped by technology centre) with stages, gates, change / quality-problem / trial-retest branches and a timeline; switch to lanes by blocking role or by discipline; summary of blockers by role, filters, detail drawer |
 | Trials & first article | Type, routine, FAT and FAI records with standard, sample, lab, report number, result, deviations and the change they raised |
 | Service & quality | PHM alarms by signal and time, quality problems with 8D progress, root cause and linked change |
 | Reviews | Pending and decided gates with signing progress; the approve button only for a role the gate names |
@@ -88,10 +89,12 @@ Everything below is an assumption in this demo and should be confirmed before re
 6. Which system maintains the three baselines (PLM, ERP, service-lifecycle system).
 7. Job titles and division of work for the role agents, and the dispatch order of the field loop.
 8. The `analysis/<object id>/` working directory and the rule that analysis files are not registered as deliverables.
+9. R&D panorama blockers (inferred): the role named for each kind (stage author for open findings and overdue stages, 质量工程师 for a failed trial without a change, 项目经理 for a change in CCB review, 配置管理员 for a lagging maintained baseline), the 7-day limit for a quality problem in ANALYZING, and the mapping of roles to the five disciplines (the rest read as "General").
 
 ## Layout
 
 - `profiles.mjs`: roles, organisations, gate profiles and the default live tailoring.
+- `blockers.mjs`: derives the blockers (never stored) that the snapshot and the R&D panorama page show.
 - `domain.mjs`: stages, gates, traceability, changes, defects, trials, faults, problems, baselines, tests, the v1 machines, metrics and storage (chunked under the 64 KiB value cap).
 - `seed-data.mjs`, `seed-docs/`: the fictional portfolio and its document bodies.
 - `index.mjs`: profile services `devboard.snapshot`, `devboard.artifact`, `devboard.transition` (also trial, fault, problem and retrofit), `devboard.create`, `devboard.gate`, `devboard.reset`, agent tools and the skill.

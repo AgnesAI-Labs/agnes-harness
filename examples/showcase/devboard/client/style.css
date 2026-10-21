@@ -364,4 +364,302 @@
   .devboard-spark-bar:not(.devboard-tone-bad) {
     background: var(--agnes-line-primary);
   }
+
+  /* 研发全景: SVG lanes, chips, drawer. Colors come from the shared theme tokens only. */
+  .pano {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .pano-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-chip,
+  .pano-segment button {
+    padding: 3px 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 999px;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pano-chip.is-on,
+  .pano-segment button.is-on {
+    color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-solid);
+    background: var(--agnes-status-danger-bg);
+  }
+  .pano-segment button.is-on {
+    color: var(--agnes-text-primary);
+    border-color: var(--agnes-brand-focus-ring);
+    background: var(--agnes-bg-page);
+    font-weight: 600;
+  }
+  .pano-segment {
+    display: flex;
+    gap: 4px;
+  }
+  .pano-chip:focus-visible,
+  .pano-segment button:focus-visible,
+  .pano-node:focus-visible,
+  .pano-toggle:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 2px;
+  }
+  .pano-check {
+    display: inline-flex;
+    white-space: nowrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .pano-check input {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .pano-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .pano-body.has-drawer {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .pano-plot {
+    min-width: 0;
+    overflow-x: auto;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-svg {
+    display: block;
+    font-size: 12px;
+    fill: var(--agnes-text-primary);
+  }
+  .pano-axis,
+  .pano-today,
+  .pano-trunk,
+  .pano-branch path,
+  .pano-wait line {
+    pointer-events: none;
+  }
+  .pano-axis line {
+    stroke: var(--agnes-line-primary);
+    stroke-dasharray: 2 4;
+  }
+  .pano-axis text,
+  .pano-tick-label,
+  .pano-sub,
+  .pano-id {
+    font-size: 10px;
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-group {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-name {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pano-bad-text {
+    font-size: 11px;
+    fill: var(--agnes-status-danger-text);
+  }
+  .pano-branch-label {
+    font-size: 10px;
+  }
+  .pano-dim {
+    opacity: 0.35;
+  }
+  .pano-today line {
+    stroke: var(--agnes-status-danger-solid);
+    stroke-width: 1.5;
+  }
+  .pano-today text {
+    font-size: 10px;
+    fill: var(--agnes-status-danger-text);
+  }
+  .pano-trunk {
+    stroke: var(--agnes-text-secondary);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+  .pano-trunk.is-planned {
+    stroke: var(--agnes-line-primary);
+    stroke-dasharray: 5 5;
+  }
+  .pano-node {
+    cursor: pointer;
+    stroke-width: 2;
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-bg-surface);
+  }
+  .pano-node.is-done {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-node.is-active,
+  .pano-node.is-tone-warn {
+    stroke: var(--agnes-status-warning-solid);
+    fill: var(--agnes-status-warning-bg);
+  }
+  .pano-node.is-bad,
+  .pano-node.is-tone-bad {
+    stroke: var(--agnes-status-danger-solid);
+    fill: var(--agnes-status-danger-solid);
+  }
+  .pano-node.is-tone-ok {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-node.is-tone-off,
+  .pano-node.is-todo {
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-bg-surface);
+  }
+  .pano-node.is-faded {
+    opacity: 0.45;
+  }
+  .pano-node.is-selected {
+    stroke-width: 4;
+    stroke: var(--agnes-brand-focus-ring);
+  }
+  .pano-node.is-pulse {
+    animation: pano-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pano-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pano-node.is-pulse {
+      animation: none;
+    }
+  }
+  .pano-branch path,
+  .pano-wait line {
+    fill: none;
+    stroke-width: 2;
+    stroke: var(--agnes-status-warning-solid);
+  }
+  .pano-branch path.is-open,
+  .pano-wait line {
+    stroke-dasharray: 4 3;
+  }
+  .pano-branch circle {
+    fill: var(--agnes-bg-surface);
+    stroke: var(--agnes-text-secondary);
+    stroke-width: 1.5;
+  }
+  .pano-tone-ok path,
+  .pano-mark.pano-tone-ok {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-tone-bad path,
+  .pano-wait.pano-tone-bad line,
+  .pano-mark.pano-tone-bad {
+    stroke: var(--agnes-status-danger-solid);
+    fill: var(--agnes-status-danger-solid);
+  }
+  .pano-tone-bad path {
+    fill: none;
+  }
+  .pano-tone-warn path,
+  .pano-mark.pano-tone-warn {
+    stroke: var(--agnes-status-warning-solid);
+    fill: var(--agnes-status-warning-solid);
+  }
+  .pano-tone-off path,
+  .pano-mark.pano-tone-off {
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-tone-warn path,
+  .pano-tone-off path,
+  .pano-tone-ok path {
+    fill: none;
+  }
+  .pano-toggle {
+    cursor: pointer;
+  }
+  .pano-toggle rect {
+    fill: var(--agnes-bg-page);
+    stroke: var(--agnes-line-primary);
+  }
+  .pano-toggle text {
+    font-size: 11px;
+  }
+  .pano-drawer {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-drawer-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    overflow-wrap: anywhere;
+  }
+  .pano-drawer-sub {
+    margin: 4px 0 0;
+    font-size: 13px;
+  }
+  .pano-facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0;
+    font-size: 12px;
+  }
+  .pano-facts dt {
+    color: var(--agnes-text-secondary);
+  }
+  .pano-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .pano-reasons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    font-size: 12px;
+    list-style: none;
+  }
+  .pano-legend {
+    margin: 0;
+  }
+  @media (max-width: 900px) {
+    .pano-body.has-drawer {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pano-drawer {
+      position: static;
+    }
+  }
 }
