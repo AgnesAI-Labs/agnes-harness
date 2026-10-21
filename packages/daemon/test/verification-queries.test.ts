@@ -321,8 +321,10 @@ it('opens a real Host session with bounded source verification and still refuses
     const counts = new Map<string, number>()
     for (const [directory] of [...hash.mock.calls, ...asyncHash.mock.calls])
       counts.set(directory, (counts.get(directory) ?? 0) + 1)
-    const installed = [...counts].filter(([dir]) =>
-      dir.startsWith(join(f.root, 'profiles', 'local-dev', 'packages')),
+    const installed = [...counts].filter(
+      ([dir]) =>
+        dir.startsWith(join(f.root, 'profiles', 'local-dev', 'packages')) &&
+        !dir.includes('.runtime-snapshots'),
     )
     const snapshots = [...counts].filter(([dir]) => dir.includes('.runtime-snapshots'))
     const generations = [...counts].filter(([dir]) => dir.includes('.runtime-generations'))
