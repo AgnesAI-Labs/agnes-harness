@@ -50,6 +50,8 @@ async function fixture() {
   async function worker() {
     const child = fork(join(root, 'worker.mjs'), [], {
       execArgv: [],
+      // pnpm's NODE_PATH must not supply dependencies absent from the relocated payload.
+      env: { ...process.env, NODE_PATH: undefined },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
     children.push(child)
@@ -196,38 +198,48 @@ it('keeps a replacement owner lock when an installer finishes', async () => {
   }
 })
 
-it.each(['checksum', 'undersize', 'oversize'])(
+it.each(['checksum', 'undersize', 'oversize', 'missing-installer'])(
   'rejects a payload with invalid %s, releases the lock and permits retry',
   async (damage) => {
     const f = await fixture()
     try {
       const file = join(f.root, 'payload')
       const original = await readFile(file)
+      const installer = join(f.root, 'plugin/dist/runtime/owner-lock.mjs')
+      const installerSource = await readFile(installer)
       const corrupt = Buffer.from(original)
       corrupt[0] = corrupt[0]! ^ 1
-      await writeFile(
-        file,
-        damage === 'checksum'
-          ? corrupt
-          : damage === 'undersize'
-            ? original.subarray(0, -1)
-            : Buffer.concat([original, Buffer.from('!')]),
-      )
+      if (damage === 'missing-installer') await rm(installer)
+      else
+        await writeFile(
+          file,
+          damage === 'checksum'
+            ? corrupt
+            : damage === 'undersize'
+              ? original.subarray(0, -1)
+              : Buffer.concat([original, Buffer.from('!')]),
+        )
       const first = await f.worker()
       first.child.send('prepare')
-      await first.wait('downloading')
-      first.child.send('continue')
+      if (damage !== 'missing-installer') {
+        await first.wait('downloading')
+        first.child.send('continue')
+      }
       const result = await first.wait('state', 'failed')
-      expect(result.error).toMatch(/reviewed (manifest|size)/)
+      if (damage === 'missing-installer') {
+        expect(result.error).toContain('@agnes/system-node/owner-lock')
+        expect(existsSync(join(f.root, 'downloads'))).toBe(false)
+      } else expect(result.error).toMatch(/reviewed (manifest|size)/)
       await expect.poll(() => existsSync(f.lock)).toBe(false)
       expect(await readdir(join(f.root, 'cache'))).toEqual([])
       await writeFile(file, original)
+      await writeFile(installer, installerSource)
       const next = await f.worker()
       next.child.send('prepare')
       await next.wait('downloading')
       next.child.send('continue')
       await next.wait('state', 'ready')
-      expect(await f.downloads()).toBe(2)
+      expect(await f.downloads()).toBe(damage === 'missing-installer' ? 1 : 2)
     } finally {
       await f.close()
     }

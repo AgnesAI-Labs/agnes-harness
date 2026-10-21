@@ -21,10 +21,6 @@ const VERSION = '1.63.0'
 const packaged = new URL('../dist/runtime/playwright/package.json', import.meta.url)
 const require = createRequire(existsSync(packaged) ? packaged : new URL('../package.json', import.meta.url))
 const packagedLock = new URL('../dist/runtime/owner-lock.mjs', import.meta.url)
-const { acquireOwnerFileLock, pidExists, readLockOwner, releaseOwnerFileLock, takeOverOwnerFileLock } =
-  await import(
-    existsSync(packagedLock) ? packagedLock.href : require.resolve('@agnes/system-node/owner-lock')
-  )
 let engine
 function load() {
   if (!engine) {
@@ -99,6 +95,16 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
       installing = (async () => {
         const info = await artifact(cacheRoot)
         if (!(await installed(info))) {
+          // Missing installer dependencies fail this managed service, not plugin/worker admission.
+          const {
+            acquireOwnerFileLock,
+            pidExists,
+            readLockOwner,
+            releaseOwnerFileLock,
+            takeOverOwnerFileLock,
+          } = await import(
+            existsSync(packagedLock) ? packagedLock.href : require.resolve('@agnes/system-node/owner-lock')
+          )
           await mkdir(info.base, { recursive: true })
           const lock = owned(info.base, info.cache + '.lock')
           const owner = { pid: process.pid, token: randomUUID() }
