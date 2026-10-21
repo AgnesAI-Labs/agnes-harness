@@ -239,8 +239,11 @@ export class PackageByteVerification {
     epoch = this.#epoch,
   ): void {
     if (this.#closed || epoch !== this.#epoch) return
-    if (treeVerificationFailure(error) === 'integrity') this.#fault(key, directory, identity)
-    else if (key) this.#drop(key)
+    if (treeVerificationFailure(error) === 'integrity') {
+      // Commit confirmed structure evidence before further scans can fail, under live controls.
+      this.#state()
+      if (epoch === this.#epoch) this.#fault(key, directory, identity)
+    } else if (key) this.#drop(key)
     else this.invalidate()
   }
   #fault(key: string | undefined, directory: string, identity: ByteIdentity): void {
@@ -350,7 +353,10 @@ export class PackageByteVerification {
         }
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
-        if (treeVerificationFailure(error) === 'integrity') violation = error
+        if (treeVerificationFailure(error) === 'integrity') {
+          this.#failed(error, directory, identity, key, epoch)
+          violation = error
+        }
       }
     }
     this.#drop(key)
@@ -360,7 +366,10 @@ export class PackageByteVerification {
         before = treeIdentitySync(directory)
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
-        if (treeVerificationFailure(error) === 'integrity') violation = error
+        if (treeVerificationFailure(error) === 'integrity') {
+          this.#failed(error, directory, identity, key, epoch)
+          violation = error
+        }
       }
       const actual = hashDirectory(directory, { exclude: [] })
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) fail()
@@ -448,7 +457,10 @@ export class PackageByteVerification {
         }
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
-        if (treeVerificationFailure(error) === 'integrity') violation = error
+        if (treeVerificationFailure(error) === 'integrity') {
+          this.#failed(error, directory, identity, key, epoch)
+          violation = error
+        }
       }
     }
     this.#drop(key)
@@ -458,7 +470,10 @@ export class PackageByteVerification {
         before = await treeIdentity(directory)
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
-        if (treeVerificationFailure(error) === 'integrity') violation = error
+        if (treeVerificationFailure(error) === 'integrity') {
+          this.#failed(error, directory, identity, key, epoch)
+          violation = error
+        }
       }
       const actual = await hashDirectoryAsync(directory, { exclude: [], signal: this.#abort.signal })
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) return fail()

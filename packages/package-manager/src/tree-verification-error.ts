@@ -3,7 +3,8 @@ import { PackageError, packageSourceError } from './errors.js'
 export type TreeVerificationFailure = 'integrity' | 'unstable' | 'unavailable'
 
 /** Only explicit byte/structure evidence can revoke trust. Errnos (including wrapped causes)
- * describe availability or a torn traversal, never proof of malicious package bytes. */
+ * describe availability or a torn traversal, never proof of malicious package bytes.
+ * Raw ESTALE refuses this call; internal tree-changed errors retain their bounded epoch retry. */
 export function treeVerificationFailure(error: unknown): TreeVerificationFailure {
   const seen = new Set<unknown>()
   let result: TreeVerificationFailure = 'unavailable'
@@ -11,7 +12,7 @@ export function treeVerificationFailure(error: unknown): TreeVerificationFailure
     seen.add(error)
     const code = 'code' in error ? error.code : undefined
     if (typeof code === 'string' && !code.startsWith('E_PACKAGE_'))
-      return ['ENOENT', 'ENOTDIR', 'ESTALE', 'ELOOP'].includes(code) ? 'unstable' : 'unavailable'
+      return ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(code) ? 'unstable' : 'unavailable'
     if (error instanceof PackageError) {
       if (['symlink', 'special-entry', 'not-directory', 'path-escape'].includes(String(error.detail.reason)))
         result = 'integrity'
