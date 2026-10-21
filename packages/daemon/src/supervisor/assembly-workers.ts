@@ -7,8 +7,8 @@ import {
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
 import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
-import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { APPROVAL_TICKET_EVENT_TYPES, indexApprovalTicket } from '@agnes/daemon-rpc/local/methods/agnes'
+import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { createFeedbackOwner, type FeedbackOwner } from '@agnes/host'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import type { EventEnvelope } from '@agnes/protocol'
@@ -24,11 +24,11 @@ import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
 } from './publication/composite-runtime-delivery.js'
-import { WorkerRegistry } from './registry.js'
+import { type RegistryOptions, WorkerRegistry } from './registry.js'
 import { SupervisorRegistry, supervisorLister } from './registry-facade.js'
 import { wireResourceSnapshotNotifications } from './resource-snapshot-notifications.js'
-import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
+import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
 
@@ -148,24 +148,13 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
   if (stopDesired) lifetime.own({ dispose: stopDesired })
   const registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
     workspaces,
-    history: [
-      {
-        types: SESSION_REQUEST_EVENT_TYPES,
-        observe: (key, e) => observeSessionRequests(pool, key, e),
-      },
-      { types: RUN_PROGRESS_EVENT_TYPES, observe: (key, e) => automationEvents.observe(key, e) },
-      ...(tickets
-        ? [
-            {
-              types: APPROVAL_TICKET_EVENT_TYPES,
-              observe: (key: string, e: EventEnvelope) => {
-                tickets.gc(clock())
-                indexApprovalTicket(tickets, key, e, registry.get(key)?.session.cwd)
-              },
-            },
-          ]
-        : []),
-    ],
+    history: createWorkerHistory({
+      pool,
+      automationEvents,
+      tickets,
+      clock,
+      cwd: (key) => registry.get(key)?.session.cwd,
+    }),
   })
   const prompter = new PrompterRouter({
     resolveActor: async (conn, key) =>
@@ -259,3 +248,36 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
 }
 
 export type WorkersState = Awaited<ReturnType<typeof openWorkers>>
+
+function createWorkerHistory({
+  pool,
+  automationEvents,
+  tickets,
+  clock,
+  cwd,
+}: {
+  pool: WorkerPool
+  automationEvents: ReturnType<typeof createAutomationEvents>
+  tickets: StoresState['tickets']
+  clock: AssemblyBase['clock']
+  cwd(key: string): string | undefined
+}): NonNullable<RegistryOptions['history']> {
+  return [
+    {
+      types: SESSION_REQUEST_EVENT_TYPES,
+      observe: (key, e) => observeSessionRequests(pool, key, e),
+    },
+    { types: RUN_PROGRESS_EVENT_TYPES, observe: (key, e) => automationEvents.observe(key, e) },
+    ...(tickets
+      ? [
+          {
+            types: APPROVAL_TICKET_EVENT_TYPES,
+            observe: (key: string, e: EventEnvelope) => {
+              tickets.gc(clock())
+              indexApprovalTicket(tickets, key, e, cwd(key))
+            },
+          },
+        ]
+      : []),
+  ]
+}
