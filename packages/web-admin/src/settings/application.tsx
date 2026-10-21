@@ -1,6 +1,7 @@
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
 import {
   Button,
+  Dialog,
   Icon,
   SettingsBlock,
   SettingsGroup,
@@ -165,36 +166,43 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           )}
         </SettingsSection>
         {preview && (
-          <section aria-label={tr('Application consent preview', '应用采纳预览')}>
-            <h3>{tr('Review application', '审阅应用')}</h3>
-            <ApplicationPreviewSummary preview={preview} application />
-            <p className="agnes-settings-note">
-              {tr(
-                'You can switch applications again from the sidebar.',
-                '可随时通过侧栏的“切换应用”回到此页。',
-              )}
-            </p>
-            <div className="home-push-actions">
-              <Button disabled={busy} onClick={() => setPreview(undefined)}>
-                {tr('Cancel', '取消')}
-              </Button>
-              <Button
-                appearance="primary"
-                disabled={busy || resource.loading || !canSave || !state}
-                onClick={() =>
-                  void run(async (current) => {
-                    if (!api || !state) return
-                    await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
-                    if (!current()) return
-                    setPreview(undefined)
-                    location.reload()
-                  })
-                }
-              >
-                {tr('Adopt', '采用')}
-              </Button>
-            </div>
-          </section>
+          <Dialog
+            open
+            title={tr('Review application', '审阅应用')}
+            onCancel={() => setPreview(undefined)}
+            footer={
+              <>
+                <Button disabled={busy} onClick={() => setPreview(undefined)}>
+                  {tr('Cancel', '取消')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={busy || resource.loading || !canSave || !state}
+                  onClick={() =>
+                    void run(async (current) => {
+                      if (!api || !state) return
+                      await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
+                      if (!current()) return
+                      setPreview(undefined)
+                      location.reload()
+                    })
+                  }
+                >
+                  {tr('Adopt', '采用')}
+                </Button>
+              </>
+            }
+          >
+            <section aria-label={tr('Application consent preview', '应用采纳预览')}>
+              <ApplicationPreviewSummary preview={preview} application />
+              <p className="agnes-settings-note">
+                {tr(
+                  'You can switch applications again from the sidebar.',
+                  '可随时通过侧栏的“切换应用”回到此页。',
+                )}
+              </p>
+            </section>
+          </Dialog>
         )}
         <SettingsTechnicalDetails title={tr('Recovery tools', '恢复工具')}>
           <p>

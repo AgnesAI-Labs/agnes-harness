@@ -1,6 +1,13 @@
 import type { ApplicationPreview, ApplicationState, PresentationRole } from '@agnes/protocol'
 import { presentationRoles, STANDARD_PRESENTATION_ROLES, selectPresentationRoles } from '@agnes/web-client'
-import { Button, reportSuccess, SettingsBlock, StatusMessage, useDocumentLanguage } from '@agnes/web-ui'
+import {
+  Button,
+  Dialog,
+  reportSuccess,
+  SettingsBlock,
+  StatusMessage,
+  useDocumentLanguage,
+} from '@agnes/web-ui'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationPreviewSummary, PRESENTATION_ROLE_LABELS as labels } from './application-preview.js'
@@ -206,43 +213,51 @@ export function InterfaceImplementations({
           )
         })}
         {review && (
-          <section aria-label={tr('Interface consent preview', '界面实现同意预览')}>
-            <h4>
-              {tr('Review replacement', '审阅替换')} · {tr(...labels[review.role])}
-            </h4>
-            <ApplicationPreviewSummary preview={review.preview} />
-            <p>
-              {tr(
-                'Presentation only. No execution change. Trusted JavaScript is not a sandbox.',
-                '仅影响展示，不改变执行。受信 JavaScript 并非沙箱。',
-              )}
-            </p>
-            <p>
-              {tr('Recovery', '恢复方法')}: <a href={recoveryPath}>{recoveryPath}</a> ·{' '}
-              <code>{clearCommand}</code>
-            </p>
-            <Button
-              disabled={!canSave || busy || !api}
-              onClick={() =>
-                void run(async (current) => {
-                  if (!api) return
-                  const next = await api.selectRole(
-                    review.role,
-                    review.preview.packageId,
-                    review.clientId,
-                    state.revision,
-                    review.preview.consentDigest,
-                  )
-                  if (current()) saved(next)
-                })
-              }
-            >
-              {tr('Use this implementation', '使用此实现')}
-            </Button>{' '}
-            <Button disabled={busy} onClick={() => setReview(undefined)}>
-              {tr('Cancel', '取消')}
-            </Button>
-          </section>
+          <Dialog
+            open
+            title={`${tr('Review replacement', '审阅替换')} · ${tr(...labels[review.role])}`}
+            onCancel={() => setReview(undefined)}
+            footer={
+              <>
+                <Button disabled={busy} onClick={() => setReview(undefined)}>
+                  {tr('Cancel', '取消')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={!canSave || busy || !api}
+                  onClick={() =>
+                    void run(async (current) => {
+                      if (!api) return
+                      const next = await api.selectRole(
+                        review.role,
+                        review.preview.packageId,
+                        review.clientId,
+                        state.revision,
+                        review.preview.consentDigest,
+                      )
+                      if (current()) saved(next)
+                    })
+                  }
+                >
+                  {tr('Use this implementation', '使用此实现')}
+                </Button>
+              </>
+            }
+          >
+            <section aria-label={tr('Interface consent preview', '界面实现同意预览')}>
+              <ApplicationPreviewSummary preview={review.preview} />
+              <p>
+                {tr(
+                  'Presentation only. No execution change. Trusted JavaScript is not a sandbox.',
+                  '仅影响展示，不改变执行。受信 JavaScript 并非沙箱。',
+                )}
+              </p>
+              <p>
+                {tr('Recovery', '恢复方法')}: <a href={recoveryPath}>{recoveryPath}</a> ·{' '}
+                <code>{clearCommand}</code>
+              </p>
+            </section>
+          </Dialog>
         )}
       </div>
     </SettingsBlock>
