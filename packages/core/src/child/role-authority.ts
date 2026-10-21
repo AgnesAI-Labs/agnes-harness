@@ -1,7 +1,7 @@
 import type { PresetView } from '@agnes/core-common/step/preset'
 import type { ToolPolicy } from '@agnes/extension-api'
 import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
-import { ROLE_APPROVAL_REFUSAL, type RoleDelegation } from './roles.js'
+import type { RoleDelegation } from './roles.js'
 
 /** Composition absence (including its wire-level []) retains defaults. */
 export type DefaultSelection = { readonly kind: 'selection'; readonly ids: readonly string[] | undefined }
@@ -34,6 +34,17 @@ export function roleAuthority(snapshot: RoleDelegation): RoleAuthority {
   return authority
 }
 
+/** Keep each ancestor's floor independent so a nearer allow cannot mask it. */
+export function rolePolicyCeiling(
+  authority: RoleAuthority,
+  resolve: (policy: string, rules: PresetView['approval']['commandTable']) => ToolPolicy,
+): ToolPolicy {
+  let parent = resolve(authority.parentPolicy, authority.commandTable)
+  for (const ceiling of authority.policyCeilings ?? [])
+    parent = authority.toolPolicy(parent, resolve(ceiling.policy, ceiling.commandTable))
+  return parent
+}
+
 function captureAuthority(snapshot: RoleDelegation) {
   snapshot = structuredClone(snapshot)
   const ownPolicies = new WeakMap<ToolPolicy, WeakMap<ToolPolicy, ToolPolicy>>()
@@ -41,6 +52,8 @@ function captureAuthority(snapshot: RoleDelegation) {
     ...snapshot,
     tools: literalCeiling(snapshot.tools),
     resources: resourceCeilings(snapshot.resources),
+    commandRules: (rules: PresetView['approval']['commandTable']) =>
+      snapshot.commandTable?.length ? [...(rules ?? []), ...snapshot.commandTable] : rules,
     preset: (view: PresetView): PresetView => ({
       ...view,
       permission: snapshot.permission,
@@ -65,17 +78,13 @@ function captureAuthority(snapshot: RoleDelegation) {
               effect: 'deny',
               reason: 'Captured parent authority is read-only; hand the action back to the main assistant',
             }
-          const input = args[0]
-          // A role never turns a declared approval into an automatic policy/reviewer allowance.
-          if (
-            input.policy.requiresApproval === 'always' ||
-            (input.policy.requiresApproval === 'destructive' && input.policy.isDestructive) ||
-            (input.tainted && !input.policy.isReadOnly && !input.policy.isPresentational)
-          )
-            return { effect: 'ask', reason: ROLE_APPROVAL_REFUSAL }
-          const a = await own.decide(...args)
+          // Policies decide whether an effect is already admitted. A role may execute an
+          // automatic allowance; any actual approval request still meets approvalPolicy never.
+          const [input, signal, ports] = args
+          const scoped = { ...input, tainted: input.tainted || snapshot.parentTainted !== false }
+          const a = await own.decide(scoped, signal, ports)
           if (a.effect === 'deny') return a
-          const b = await parent.decide(...args)
+          const b = await parent.decide(scoped, signal, ports)
           return b.effect === 'deny' || (b.effect === 'ask' && a.effect === 'allow') ? b : a
         },
       }

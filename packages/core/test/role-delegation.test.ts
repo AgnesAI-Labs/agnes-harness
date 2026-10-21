@@ -22,6 +22,7 @@ const captured = (): RoleDelegation => ({
   permission: 'read-only',
   approvalPolicy: 'never',
   parentPolicy: 'default',
+  parentTainted: false,
   sandboxRequired: true,
   filesystem: fakeSeams().sandbox.fsPolicy(),
 })
@@ -199,13 +200,16 @@ it.each([
   }
 })
 
-it.each(['always', 'destructive', 'tainted'] as const)(
-  'review-role: %s cannot be allowed by a permissive reviewer',
-  async (risk) => {
-    const decide = vi.fn(() => ({ effect: 'allow' as const, reason: 'permissive reviewer' }))
+it.each(
+  (['always', 'destructive', 'tainted'] as const).flatMap((risk) =>
+    (['allow', 'ask', 'deny'] as const).map((effect) => ({ risk, effect })),
+  ),
+)(
+  'review-role: $risk follows the captured policy $effect without answering an approval',
+  async ({ risk, effect }) => {
     const policy = intersectRoleToolPolicy(
-      { id: 'role', version: '1', decide },
-      { id: 'parent', version: '1', decide },
+      { id: 'role', version: '1', decide: () => ({ effect: 'allow', reason: 'Role policy' }) },
+      { id: 'parent', version: '1', decide: () => ({ effect, reason: 'Captured parent policy' }) },
       { ...captured(), permission: 'workspace-write' },
     )
     const answer = await policy.decide(
@@ -228,8 +232,89 @@ it.each(['always', 'destructive', 'tainted'] as const)(
       },
       new AbortController().signal,
     )
-    expect(answer.effect).toBe('ask')
-    expect(decide).not.toHaveBeenCalled()
+    expect(answer.effect).toBe(effect)
+  },
+)
+
+it.each([
+  ...([false, true, undefined] as const).flatMap((parentTainted) =>
+    [false, true].map((tainted) => ({
+      parentTainted,
+      tainted,
+      ceiling: undefined as 'require_approval' | 'deny' | 'deny-policy' | undefined,
+    })),
+  ),
+  ...(['require_approval', 'deny', 'deny-policy'] as const).map((ceiling) => ({
+    parentTainted: false,
+    tainted: false,
+    ceiling,
+  })),
+])(
+  'role command floor keeps captured/current/unknown taint across reopen: %j',
+  async ({ parentTainted, tainted, ceiling }) => {
+    const storage = new MemoryStorage()
+    const first = make(storage)
+    const { parentTainted: _ignored, ...legacy } = captured()
+    const snapshot: RoleDelegation = {
+      ...legacy,
+      permission: 'workspace-write',
+      commandTable: [{ tool: 'write', argv: '^/w/.*$', action: 'allow' }],
+      ...(parentTainted === undefined ? {} : { parentTainted }),
+      ...(ceiling
+        ? {
+            policyCeilings: [
+              {
+                policy: ceiling === 'deny-policy' ? 'ancestor-deny' : 'default',
+                ...(ceiling === 'deny-policy'
+                  ? {}
+                  : { commandTable: [{ tool: 'write', argv: '^/w/.*$', action: ceiling }] }),
+              },
+            ],
+          }
+        : {}),
+    }
+    const second = make(storage)
+    for (const kernel of [first, second])
+      kernel.toolPolicies.register('@fixture/ancestor', {
+        id: 'ancestor-deny',
+        version: '1',
+        decide: () => ({ effect: 'deny', reason: 'Ancestor policy' }),
+      })
+    try {
+      const live = await first.session('child', { ...options, roleDelegation: snapshot })
+      const input = {
+        sessionKey: 'child',
+        workspaceRoot: '/w',
+        cwd: '/w',
+        actor,
+        call: { id: 'write', name: 'write', args: { path: '/w/file.md' } },
+        fullAccess: false,
+        approvalMode: 'manual' as const,
+        tainted,
+        policy: {
+          isReadOnly: false,
+          isDestructive: true,
+          requiresApproval: 'destructive' as const,
+          replay: 'never' as const,
+          approvalScopes: [],
+        },
+      }
+      const expected =
+        ceiling === 'deny' || ceiling === 'deny-policy'
+          ? 'deny'
+          : ceiling === 'require_approval'
+            ? 'ask'
+            : parentTainted === false && !tainted
+              ? 'allow'
+              : 'ask'
+      expect((await live.toolPolicy().decide(input, new AbortController().signal)).effect).toBe(expected)
+      await first.close()
+      const restored = await second.session('child', options)
+      expect((await restored.toolPolicy().decide(input, new AbortController().signal)).effect).toBe(expected)
+    } finally {
+      await first.close()
+      await second.close()
+    }
   },
 )
 
@@ -262,6 +347,9 @@ it('role resource snapshot restores canonical IDs, command policy and actor with
 it.each([
   { resources: { mcp: [], skills: 'defaults' } },
   { approvalPolicy: 'full-access' },
+  { parentTainted: 'false' },
+  { policyCeilings: [{ policy: 42 }] },
+  { policyCeilings: [{ policy: 'default', commandTable: 'all' }] },
   { filesystem: {} },
 ])('malformed trusted role data is a refusal on reopen: %j', async (patch) => {
   const storage = new MemoryStorage()

@@ -20,7 +20,7 @@ const text = (value: string): InferenceEvent[] => [
 ]
 const call = (name: string, ordinal = 0): InferenceEvent => ({
   type: 'toolcall_end',
-  call: { toolUseId: '', name, args: {}, ordinal },
+  call: { toolUseId: '', name, args: name === 'writer_approval' ? { path: '/allowed-always' } : {}, ordinal },
   via: 'native',
 })
 
@@ -51,7 +51,7 @@ it('opens adopted roles fresh with their own requests, captured authority and au
         body: `
 ctx.tools.register(tool('reader_marker'))
 ctx.tools.register(tool('role_only'))
-ctx.tools.register({ ...tool('writer_approval'), meta: { ...tool('writer_approval').meta, isReadOnly: false, replay: 'never', requiresApproval: 'always' }, execute: async () => { throw new Error('APPROVAL MUST NOT EXECUTE') } })
+ctx.tools.register({ ...tool('writer_approval'), parameters: Type.Object({ path: Type.String() }), meta: { ...tool('writer_approval').meta, isReadOnly: false, commandArg: 'path', replay: 'never', requiresApproval: 'always' }, execute: async () => { throw new Error('APPROVAL MUST NOT EXECUTE') } })
 ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) => {
  const handle = await ctx.decisions.request({ key: 'sign', purpose: 'business.confirm', subject: { revision: 0 }, prompt: 'Sign?', options: ['allowed-once','rejected'], presentation: { en: {title:'Sign',fields:[],responseValue:'I sign.'} }, responseSchema: {type:'string',const:'I sign.'} })
  try { await ctx.decisions.wait(handle, {signal: ctx.signal}); throw new Error('SIGNATURE MUST NOT EXECUTE') }
@@ -70,6 +70,9 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       role: {
         name: 'role',
         extends: 'standard',
+        ...(role === 'assistant'
+          ? { approval: { command_policy: [{ tool: 'writer_approval', argv: '^/.*$', action: 'allow' }] } }
+          : {}),
         subagent: { max_depth: role === 'assistant' ? 1 : 4, max_fan_out: role === 'assistant' ? 4 : 8 },
         model: { system_prompt: { personaPrefix: `${role.toUpperCase()}_PERSISTENT_PERSONA` } },
       },

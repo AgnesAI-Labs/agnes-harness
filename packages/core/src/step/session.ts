@@ -109,7 +109,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
-import { roleAuthority } from '../child/role-authority.js'
+import { roleAuthority, rolePolicyCeiling } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
@@ -926,16 +926,22 @@ export class SessionImpl {
     (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
     (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
   )
-  /** The selected policy inside this session's command floor: its own preset's table, read per call. */
+  /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
+    const captured = this.roleAuthority
     const own = this.commandFloor(
       this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
-      this.preset.approval.commandTable,
+      // The role's floor must inherit the captured deployment table too. Otherwise its
+      // default risk policy asks about a write the parent table already admits.
+      captured?.commandRules(this.preset.approval.commandTable) ?? this.preset.approval.commandTable,
     )
-    const captured = this.roleAuthority
     if (!captured) return own
-    const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
-    return captured.toolPolicy(own, parent)
+    return captured.toolPolicy(
+      own,
+      rolePolicyCeiling(captured, (policy, rules) =>
+        this.commandFloor(this.toolPolicies.resolve(policy), rules),
+      ),
+    )
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {

@@ -47,6 +47,13 @@ export function createRoleChildren(deps: {
       // Copy synchronous parent state before the first await; resources enter its workspace below.
       // Never retain a live parent authorization link after admission.
       const parentPreset = structuredClone(parent.preset)
+      const parentAuthority = parent.roleAuthority
+      const parentTainted =
+        parent.laneTaint() || (parentAuthority !== undefined && parentAuthority.parentTainted !== false)
+      const commandTable = [
+        ...(parentPreset.approval.commandTable ?? []),
+        ...(parentAuthority?.commandTable ?? []),
+      ]
       const actor = structuredClone(parent.d.actor)
       const permission =
         parent.permissionContext.policy === 'read-only' ||
@@ -116,13 +123,25 @@ export function createRoleChildren(deps: {
         maxFanOut: Math.min(parentPreset.maxFanOut, rolePreset.maxFanOut),
         permission: roleReadOnly ? 'read-only' : permission,
         approvalPolicy: 'never',
+        parentTainted,
         filesystem,
         sandboxRequired: enforced,
         parentPolicy:
           parentPreset.approval.policy === 'full-access'
             ? 'default'
             : (parentPreset.approval.policy ?? 'default'),
-        ...(parentPreset.approval.commandTable ? { commandTable: parentPreset.approval.commandTable } : {}),
+        ...(commandTable.length ? { commandTable } : {}),
+        ...(parentAuthority
+          ? {
+              policyCeilings: [
+                {
+                  policy: parentAuthority.parentPolicy,
+                  ...(parentAuthority.commandTable ? { commandTable: parentAuthority.commandTable } : {}),
+                },
+                ...(parentAuthority.policyCeilings ?? []),
+              ],
+            }
+          : {}),
       }
       const { tree, profile } = reviewed
       return {

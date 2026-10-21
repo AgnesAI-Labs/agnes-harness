@@ -25,7 +25,11 @@ export type RoleDelegation = {
   permission: 'read-only' | 'workspace-write'
   approvalPolicy: 'never'
   parentPolicy: string
+  /** Captured before admission awaits; absent legacy evidence is conservatively tainted. */
+  parentTainted?: boolean
   commandTable?: PresetView['approval']['commandTable']
+  /** Retained ancestor floors for nested roles; each table keeps its own decision order. */
+  policyCeilings?: Array<{ policy: string; commandTable?: PresetView['approval']['commandTable'] }>
   sandboxRequired: boolean
   /** Opaque seam snapshot: Core persists it; the Host filesystem enforces it. */
   filesystem: ReturnType<SandboxSeam['fsPolicy']>
