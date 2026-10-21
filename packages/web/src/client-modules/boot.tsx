@@ -151,6 +151,7 @@ export async function startClientModules(options: {
   transcript?: {
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
+    turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
   }
   conversationContainer?: HTMLElement | undefined
   topbarContainer?: HTMLElement | undefined

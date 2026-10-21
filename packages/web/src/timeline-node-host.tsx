@@ -23,12 +23,13 @@ export interface TimelineNodeHostProps {
   locale?: LocaleService
   resources?: ClientResourceService
   onFork?: (turn: UITurn) => Promise<void>
+  turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }
 
 /** The transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources, onFork, markdownRenderer },
+  { registry, claim, newContentButton, session, locale, resources, onFork, turnErrorActions, markdownRenderer },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
@@ -203,6 +204,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {...(markdownRenderer ? { markdownRenderer } : {})}
           {...(projection.turns ? { turns: projection.turns } : {})}
           {...(onFork ? { onFork } : {})}
+          {...(turnErrorActions ? { turnErrorActions } : {})}
           {...(claim ? { claim } : {})}
           {...(session ? { session } : {})}
           {...(locale ? { locale } : {})}

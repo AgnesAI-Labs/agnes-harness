@@ -877,7 +877,10 @@ const clientModules = await startClientModules({
       },
     },
   },
-  transcript: { onFork: forkTurn },
+  transcript: {
+    onFork: forkTurn,
+    turnErrorActions: { onRetry: retryTurn, onOpenSettings: openErrorSettings },
+  },
   conversationContainer: conversation,
   topbarContainer: hosts.topbar,
   approvalContainer: hosts.approval,
@@ -1640,6 +1643,16 @@ function prepareAttachmentSession(): Promise<string> {
 
 function forkTurn(turn: UITurn): Promise<void> {
   return sessionController.forkTurn(turn)
+}
+/** A failed turn's retry enters the same submission path as the composer. */
+function retryTurn(turn: UITurn): Promise<void> | undefined {
+  return submissionController.retryTurn(turn)
+}
+/** A failure that needs configuration opens the settings page that fixes it. */
+function openErrorSettings(target: 'account' | 'model'): void {
+  settingsRegion.open('model')
+  if (target === 'model') run(() => settings.open())
+  else run(() => settings.openAccount())
 }
 function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   requestNewSession()

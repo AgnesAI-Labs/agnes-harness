@@ -298,3 +298,94 @@ it('records a definitive refusal when checking clears the SDK journal', async ()
   await submission.check(session)
   expect(submission.snapshot).toEqual({ phase: 'refused', error: refusal })
 })
+
+describe('retry of a failed turn', () => {
+  const userContent: ContentBlock[] = [{ type: 'text', text: 'hello again' }]
+  const failedTurn = {
+    id: 'turn:9',
+    turn: 9,
+    startSeq: 1,
+    endSeq: 2,
+    startedAt: '2026-10-21T00:00:00.000Z',
+    endedAt: '2026-10-21T00:00:01.000Z',
+    status: 'failed',
+    reason: 'error',
+    error: { code: 'TRANSPORT', message: 'status=500' },
+    nodeIds: ['user:1', 'assistant:1'],
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: false,
+      billingComplete: false,
+      calls: [],
+    },
+  } as import('@agnes/protocol').UITurn
+
+  function retryContext(options: { connected?: boolean } = {}) {
+    const prompt = vi.fn(async () => ({ reason: 'completed' }))
+    const shown: unknown[] = []
+    const binding = new SessionBindingOwner()
+    const session = { id: 'fixture-session', prompt, pendingCommands: async () => [] }
+    binding.attach(binding.capture(), {
+      session: session as unknown as import('@agnes/sdk/browser').Session,
+    })
+    const context = {
+      current: session,
+      sessionBinding: binding,
+      projection: {
+        nodes: [
+          { kind: 'user', id: 'user:1', seq: 1, content: userContent },
+          { kind: 'assistant', id: 'assistant:1', seq: 2, text: 'partial' },
+        ],
+        opState: null,
+      },
+      configured: true,
+      connected: options.connected ?? true,
+      stopping: false,
+      sessionPending: false,
+      sessionYoloEnabled: false,
+      permissionChangePending: false,
+      permissionRefreshPending: false,
+      permissionConnectionEpoch: 0,
+      sessionControls: undefined,
+      sessionTitles: new Map<string, string>(),
+      titleRefresh: { start: vi.fn() },
+      submissions: new SubmissionOwner(binding),
+      notice: { setText: vi.fn(), setKind: vi.fn() },
+      recoveredReturns: new Set<string>(),
+      renderer: { pinToBottom: vi.fn() },
+      renderControls: vi.fn(),
+      render: vi.fn(),
+      live: undefined,
+      intentionalClose: false,
+      composerRuntime: { getDraft: () => '', getAttachmentBlocks: () => [], hasPendingImages: () => false },
+      references: { getSnapshot: () => [], restore: vi.fn() },
+      clientModules: { locale: { getSnapshot: () => 'en' } },
+      selectedModelAvailable: () => true,
+      t: (key: string) => key,
+      showError: (error: unknown) => shown.push(error),
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    return { controller: createSubmissionController(context), prompt, shown }
+  }
+
+  it('sends the turn user content again through the shared submission path', async () => {
+    const { controller, prompt, shown } = retryContext()
+    await controller.retryTurn(failedTurn)
+    expect(shown).toEqual([])
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(prompt).toHaveBeenCalledWith(userContent, { references: [], titleLocale: 'en' })
+  })
+
+  it('refuses while the connection is down', async () => {
+    const { controller, prompt } = retryContext({ connected: false })
+    await controller.retryTurn(failedTurn)
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the failed turn has no principal user node in the window', async () => {
+    const { controller, prompt } = retryContext()
+    await controller.retryTurn({ ...failedTurn, nodeIds: ['assistant:1'], startSeq: 0, endSeq: 0 })
+    expect(prompt).not.toHaveBeenCalled()
+  })
+})

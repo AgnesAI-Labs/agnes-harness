@@ -1,6 +1,7 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ReactNode } from 'react'
 import type { Translate } from '../../locales/index.js'
+import type { TurnErrorActions } from '../turn-error-row.js'
 
 export type AssistantNode = Extract<UINode, { kind: 'assistant' }>
 
@@ -31,6 +32,11 @@ export interface ConversationMessagesProps {
   /** Host-provided role attribution beside the assistant name. */
   renderTurnAttribution?: (turn: UITurn) => ReactNode
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
+  /**
+   * Operations a failed turn's error row can offer. The host decides whether retry can run now;
+   * the presentation layer only decides which actions fit the failure class.
+   */
+  turnErrorActions?: TurnErrorActions | undefined
   /**
    * A loop step's result recorded as an assistant message. The turn shows it as a step row of its
    * activity, never as the answer's prose.

@@ -3,8 +3,11 @@ import {
   decodeSafeImages,
   MAX_FRAME_BYTES,
   modelImageInputError,
+  type ReferenceCandidate,
   type ReferenceSelection,
   toAcpPrompt,
+  type UINode,
+  type UITurn,
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol'
@@ -74,7 +77,7 @@ export function createSubmissionController(
 
   function imageSubmissionFrameBytes(
     sessionId: string,
-    content: ContentBlock[],
+    content: readonly ContentBlock[],
     steer: boolean,
     references: readonly ReferenceSelection[] = [],
   ): number {
@@ -253,7 +256,36 @@ export function createSubmissionController(
       ...(sentText ? [{ type: 'text' as const, text: sentText }] : []),
       ...attachments,
     ]
+    submitBlocks(content, referenceSelections, {
+      ...(options.steer ? { steer: true } : {}),
+      composer: { draft: originalDraft, attachments, references: selectedReferences },
+    })
+  }
+
+  /**
+   * The one send path. The composer and a retry of a failed turn enter here after their own
+   * admission checks; everything from the content onward is shared, so a retry cannot take a
+   * shortcut past the connection, permission or session guards.
+   */
+  function submitBlocks(
+    content: ContentBlock[],
+    referenceSelections: readonly ReferenceSelection[],
+    options: {
+      steer?: boolean
+      /** Composer sends own the draft and attachments; a retry leaves them alone. */
+      composer?: {
+        draft: string
+        attachments: ReturnType<typeof context.composerRuntime.getAttachmentBlocks>
+        references: readonly ReferenceCandidate[]
+      }
+    } = {},
+  ): Promise<void> | undefined {
+    const composer = options.composer
+    // Composer sends pass the attachment blocks they already validated; a retry derives them from
+    // the stored content so the same frame-size guard applies to both paths.
+    const attachments = composer?.attachments ?? content.filter((block) => block.type !== 'text')
     const busy = context.projection?.opState !== null && context.projection?.opState !== undefined
+    let session = context.current
     if (
       attachments.length > 0 &&
       imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy, referenceSelections) >
@@ -277,10 +309,12 @@ export function createSubmissionController(
     const submission = context.submissions.beginComposer(!busy)
     if (!submission) return
     const connectionEpoch = context.permissionConnectionEpoch
-    context.composerRuntime.setDraft('')
-    context.composerRuntime.clearImageBlocks()
-    context.references.clear()
-    sessionStorage.removeItem(context.composerDraftKey)
+    if (composer) {
+      context.composerRuntime.setDraft('')
+      context.composerRuntime.clearImageBlocks()
+      context.references.clear()
+      sessionStorage.removeItem(context.composerDraftKey)
+    }
     context.renderer.pinToBottom()
     context.renderControls()
     // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
@@ -357,7 +391,7 @@ export function createSubmissionController(
       context.pendingSessionKey = undefined
       if (busy && context.submissions.isCurrent(submission)) context.live?.refresh()
     })
-    void work
+    return work
       .catch(async (error: unknown) => {
         if (context.submissions.isCurrent(submission)) {
           if (connectionEpoch !== context.permissionConnectionEpoch) {
@@ -367,10 +401,10 @@ export function createSubmissionController(
           }
           // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
           // already accepted. That is not a failed send, so the sent text must not come back as a draft.
-          if (!context.intentionalClose && !unresolvedSubmission(error)) {
+          if (composer && !context.intentionalClose && !unresolvedSubmission(error)) {
             const laterDraft = context.composerRuntime.getDraft()
-            if (originalDraft) {
-              const restoredDraft = laterDraft ? `${originalDraft}\n${laterDraft}` : originalDraft
+            if (composer.draft) {
+              const restoredDraft = laterDraft ? `${composer.draft}\n${laterDraft}` : composer.draft
               context.composerRuntime.setDraft(restoredDraft)
               sessionStorage.setItem(context.composerDraftKey, restoredDraft)
             }
@@ -378,8 +412,8 @@ export function createSubmissionController(
               !context.composerRuntime.getAttachmentBlocks().length &&
               !context.composerRuntime.hasPendingImages()
             )
-              context.composerRuntime.restoreAttachmentBlocks(attachments)
-            context.references.restore([...selectedReferences, ...context.references.getSnapshot()])
+              context.composerRuntime.restoreAttachmentBlocks(composer.attachments)
+            context.references.restore([...composer.references, ...context.references.getSnapshot()])
           }
           if (!unresolvedSubmission(error)) context.showError(error)
           if (session) await showCommandFeedback(context, session).catch(context.showError)
@@ -391,6 +425,46 @@ export function createSubmissionController(
           context.live?.refresh()
         }
       })
+  }
+
+  /**
+   * Send a failed turn again with the input that started it. The content is that turn's last
+   * principal user node, so the retry carries the same text and attachments as the original send.
+   */
+  function retryTurn(turn: UITurn): Promise<void> | undefined {
+    if (!context.current || context.sessionPending || !context.connected) return
+    if (
+      !context.configured ||
+      !context.selectedModelAvailable() ||
+      context.permissionChangePending ||
+      context.permissionRefreshPending ||
+      context.sessionYoloEnabled === undefined ||
+      !canSubmitComposer({
+        connected: context.connected,
+        hasSession: true,
+        sending: context.submissions.sending,
+        stopping: context.stopping,
+        loading: context.sessionPending,
+      })
+    )
+      return
+    const content = retryContent(turn)
+    if (!content) return
+    return submitBlocks(content, [], {})
+  }
+
+  function retryContent(turn: UITurn): ContentBlock[] | undefined {
+    const nodes = context.projection?.nodes ?? []
+    const principal = (node: UINode): node is Extract<UINode, { kind: 'user' }> =>
+      node.kind === 'user' && node.origin !== 'system'
+    const own = nodes.filter((node) => turn.nodeIds.includes(node.id)).filter(principal)
+    const node =
+      own.at(-1) ??
+      nodes
+        .filter((candidate) => (candidate.seq ?? 0) <= (turn.endSeq ?? turn.startSeq))
+        .filter(principal)
+        .at(-1)
+    return node?.content.length ? node.content : undefined
   }
 
   async function prepareAttachmentSession(): Promise<string> {
@@ -444,6 +518,7 @@ export function createSubmissionController(
     imageSubmissionFrameBytes,
     isPlanCommand,
     prepareComposerSession,
+    retryTurn,
     submitComposer,
     prepareAttachmentSession,
   }

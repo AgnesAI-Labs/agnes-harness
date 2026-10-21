@@ -8,9 +8,9 @@ import {
   useRef,
   useState,
 } from 'react'
+import { legacyCopy } from '../clipboard.js'
 import { reportSuccess, StatusMessage } from '../feedback.js'
 import { fallbackT, type Translate } from '../locales/index.js'
-import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { Icon as SharedIcon } from '../ui/icon.js'
@@ -78,34 +78,6 @@ function positionUsage(meta: HTMLElement, usage: HTMLElement): void {
     usage.style.bottom = `${Math.max(gutter, height - box.top + gap)}px`
     usage.style.maxHeight = `${above}px`
   }
-}
-
-/** Temporary platform clipboard target; attached presentation remains React-owned. */
-function legacyCopy(text: string, doc: Document): boolean {
-  const active = doc.activeElement as HTMLElement | null
-  const selection = doc.getSelection()
-  const ranges = selection
-    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
-    : []
-  const textarea = createSettingsControl(doc, 'textarea')
-  textarea.value = text
-  textarea.readOnly = true
-  textarea.setAttribute('aria-hidden', 'true')
-  textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'
-  doc.body.append(textarea)
-  textarea.select()
-  let copied = false
-  try {
-    copied = doc.execCommand('copy')
-  } catch {
-    copied = false
-  } finally {
-    textarea.remove()
-    selection?.removeAllRanges()
-    for (const range of ranges) selection?.addRange(range)
-    active?.focus?.({ preventScroll: true })
-  }
-  return copied
 }
 
 function Icon({ paths }: { paths: readonly string[] }) {

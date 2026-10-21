@@ -49,17 +49,78 @@
     line-height: 1.5rem;
     overflow-wrap: anywhere;
   }
+  /* 失败行与过程行、工具行同一密度：图标、一句话、按类型出现的动作，不用整宽警示条。 */
   .turn-error {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--s8);
     margin: 0 0 var(--s12);
-    padding: var(--s8) var(--s12);
-    border: 1px solid var(--agnes-status-danger-border);
-    border-radius: var(--radius-md);
-    color: var(--agnes-status-danger-text);
-    background: var(--agnes-status-danger-bg);
+    padding: var(--s8) 0;
+  }
+  .turn-error-icon {
+    color: var(--agnes-status-danger-solid);
+    margin-top: 0.125rem;
+  }
+  .turn-error-copy {
+    display: grid;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .turn-error-sentence {
+    margin: 0;
+    color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
     line-height: var(--line-sm);
+    overflow-wrap: anywhere;
+  }
+  .turn-error-meta {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1rem;
+    overflow-wrap: anywhere;
+  }
+  .turn-error-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .turn-error-detail {
+    margin: 0 0 var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .turn-error-detail-body {
+    display: grid;
+    gap: var(--s8);
+    justify-items: start;
+    margin-top: var(--s8);
+  }
+  .turn-error-detail pre {
+    width: 100%;
+    max-height: 12rem;
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    overflow: auto;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  /* 窄屏把动作换到句子下方，图标与文案占满整行。 */
+  @media (max-width: 640px) {
+    .turn-error {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .turn-error-actions {
+      grid-column: 1 / -1;
+      flex-wrap: wrap;
+      padding-left: calc(1rem + var(--s8));
+    }
   }
   .conversation-turn[data-status="failed"] .turn-status {
     color: var(--agnes-status-danger-text);

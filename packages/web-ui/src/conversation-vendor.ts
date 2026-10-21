@@ -40,6 +40,20 @@ export {
   type ConversationTurnActionsProps,
   type ConversationTurnFeedback,
 } from './conversation/turn-actions.js'
+export {
+  TurnErrorRow,
+  type TurnErrorActions,
+  type TurnErrorRowProps,
+} from './conversation/turn-error-row.js'
+export {
+  turnErrorMessageFacts,
+  turnErrorView,
+  type TurnErrorAction,
+  type TurnErrorDetail,
+  type TurnErrorFacts,
+  type TurnErrorKind,
+  type TurnErrorView,
+} from './conversation/turn-error.js'
 export { scrollToTurn, TURN_NAV_FLASH_MS, TurnNav, type TurnNavProps } from './conversation/turn-nav.js'
 export {
   currentTurn,
