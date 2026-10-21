@@ -9,6 +9,7 @@ import type { Host, HostSession } from '../lifecycle/host.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import type { CompositionContainer } from './composition-selection.js'
 import { roleToolBindingIdentity } from './role-tool-bindings.js'
+import { intersectRoleTools, recordRoleToolIntersection } from './role-tool-intersection.js'
 
 export function createRoleChildren(deps: {
   host(): Host
@@ -46,6 +47,13 @@ export function createRoleChildren(deps: {
       // Copy synchronous parent state before the first await; resources enter its workspace below.
       // Never retain a live parent authorization link after admission.
       const parentPreset = structuredClone(parent.preset)
+      const parentAuthority = parent.roleAuthority
+      const parentTainted =
+        parent.laneTaint() || (parentAuthority !== undefined && parentAuthority.parentTainted !== false)
+      const commandTable = [
+        ...(parentPreset.approval.commandTable ?? []),
+        ...(parentAuthority?.commandTable ?? []),
+      ]
       const actor = structuredClone(parent.d.actor)
       const permission =
         parent.permissionContext.policy === 'read-only' ||
@@ -86,21 +94,19 @@ export function createRoleChildren(deps: {
         skills: intersectCapabilities(parentResources.skills, roleCapabilities.skills),
       }
       const rolePreset = candidate.host.kernel.o.preset
-      const tools = parentTools
-        .filter((parentTool) => {
-          const roleTool = candidate.host.kernel.tools.resolve(parentTool.name)
-          const bindingIdentity = parentBindingIdentities.get(parentTool.name)
-          const definitionIdentity = parentTool.definitionFingerprint
-          return (
-            roleTool &&
-            bindingIdentity !== undefined &&
-            bindingIdentity === roleToolBindingIdentity(candidate.host, roleTool) &&
-            roleTool.definitionFingerprint === definitionIdentity &&
-            enabled.includes(parentTool.name) &&
-            (rolePreset.tools.allow === undefined || rolePreset.tools.allow.includes(parentTool.name))
-          )
-        })
-        .map((tool) => tool.name)
+      const declared = reviewed.tree.selection.tools?.length
+        ? reviewed.tree.selection.tools
+        : (reviewed.tree.selection.toolPolicy?.allow ??
+          roleCapabilities.tools.filter((tool) => tool.enabled).map((tool) => tool.id))
+      const { tools, excluded } = intersectRoleTools({
+        declared,
+        parent: parentTools,
+        parentIdentities: parentBindingIdentities,
+        candidate: candidate.host,
+        enabled,
+        allow: rolePreset.tools.allow,
+      })
+      await recordRoleToolIntersection(parent, ref, declared, tools, excluded)
       const rolePermissions = roleCapabilities.permissions
       const roleReadOnly =
         rolePermissions?.readOnly === true ||
@@ -117,18 +123,42 @@ export function createRoleChildren(deps: {
         maxFanOut: Math.min(parentPreset.maxFanOut, rolePreset.maxFanOut),
         permission: roleReadOnly ? 'read-only' : permission,
         approvalPolicy: 'never',
+        parentTainted,
         filesystem,
         sandboxRequired: enforced,
         parentPolicy:
           parentPreset.approval.policy === 'full-access'
             ? 'default'
             : (parentPreset.approval.policy ?? 'default'),
-        ...(parentPreset.approval.commandTable ? { commandTable: parentPreset.approval.commandTable } : {}),
+        ...(commandTable.length ? { commandTable } : {}),
+        ...(parentAuthority
+          ? {
+              policyCeilings: [
+                {
+                  policy: parentAuthority.parentPolicy,
+                  ...(parentAuthority.commandTable ? { commandTable: parentAuthority.commandTable } : {}),
+                },
+                ...(parentAuthority.policyCeilings ?? []),
+              ],
+            }
+          : {}),
       }
       const { tree, profile } = reviewed
       return {
         role,
         async open(key, options) {
+          const filtered = captured.tools.filter(
+            (name) =>
+              !options.toolFilter?.deny?.includes(name) &&
+              (options.toolFilter?.allow === undefined || options.toolFilter.allow.includes(name)),
+          )
+          if (filtered.length !== captured.tools.length)
+            await recordRoleToolIntersection(parent, ref, declared, filtered, [
+              ...excluded,
+              ...captured.tools
+                .filter((name) => !filtered.includes(name))
+                .map((tool) => ({ tool, reason: 'child-tool-filter-denied' })),
+            ])
           const binding = deps.pin({ sessionKey: key, tree, profile })
           const container = await deps.open(binding)
           const child = await container.host.createSession({
@@ -138,11 +168,7 @@ export function createRoleChildren(deps: {
             strict: true,
             roleDelegation: {
               ...captured,
-              tools: captured.tools.filter(
-                (name) =>
-                  !options.toolFilter?.deny?.includes(name) &&
-                  (options.toolFilter?.allow === undefined || options.toolFilter.allow.includes(name)),
-              ),
+              tools: filtered,
             },
             ...(options.delegation ? { delegation: options.delegation } : {}),
             writerRunId: options.writerRunId,

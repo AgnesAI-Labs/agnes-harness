@@ -81,9 +81,24 @@ Skill resources are the intersection of both effective resource scopes captured 
 input uses the real workspace read/list view, filtered by its published root and exact plugin-row
 instance; a warmed composition or a stale discovery entry cannot add resources to another session. These
 snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
-Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
+Shared tools, nested invocations and PTC use the same resource gates. A role filesystem handle
+does not inherit the global Skill attachment read roots; use resource-gated Skill APIs for those files. Reopen restores the validated,
 trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a
 parent's fork prefix is not authority. Later parent changes do not alter this snapshot.
+The parent ledger records excluded declared tools and their refusal reasons in
+`x/host/role-tool-intersection`. If every declared tool is removed, including by an additional
+child tool filter, spawn fails with those reasons instead of starting a child with no tools.
+A role uses the captured parent command table as well as its own policy and command rules.
+It may execute an effect both policies admit without asking, including built-in `write` and `edit`
+on paths the captured table auto-allows. The same path normalization, filesystem ceiling and sandbox
+still apply, including after reopen. A deny remains a refusal. A human-only requirement or an operation
+the policies ask about must be handed back to the main assistant. `approvalPolicy: never`
+prevents answering approvals and signing business actions; it does not prevent already admitted work.
+The snapshot also retains the parent's taint. Policy sees that captured taint or the role's current
+turn taint, so a fresh or reopened role cannot erase it. An older snapshot without that evidence is
+conservatively treated as tainted; the existing taint rules still decide whether an effect asks.
+Nested roles retain the effective parent table and each ancestor policy floor separately. A nearer
+allow rule cannot discard an ancestor deny or human requirement, including after reopen.
 See [applications](applications.md) for adoption and attribution.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.

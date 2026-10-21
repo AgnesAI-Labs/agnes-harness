@@ -48,6 +48,7 @@ class RoutedProvider implements Provider {
 
   /** Holds every child model request until released. */
   childGate: Promise<void> = Promise.resolve()
+  beforeParent?: () => Promise<void>
 
   constructor(parent: Script[], child: Script[]) {
     const models = [fakeModel({ route: 'gw', id: 'm1' })]
@@ -70,7 +71,15 @@ class RoutedProvider implements Provider {
   }
 
   infer(req: RequestBody, opts: { signal: AbortSignal; toolNames: string[] }) {
-    if (req.sessionKey === PARENT) return this.parent.infer(req, opts)
+    if (req.sessionKey === PARENT) {
+      const before = this.beforeParent
+      if (!before) return this.parent.infer(req, opts)
+      const parent = this.parent
+      return (async function* () {
+        await before()
+        yield* parent.infer(req, opts)
+      })()
+    }
     this.childKeys.push(req.sessionKey)
     this.childRequests.push(req)
     const gate = this.childGate
@@ -149,9 +158,9 @@ async function childRecord(dataDir: string, childKey: string) {
   }
 }
 
-function collectStarted(req: RequestBody): InferenceEvent[] {
-  const childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1]
-  if (!childKey) throw new Error('missing started child key')
+function collectStarted(provider: RoutedProvider): InferenceEvent[] {
+  const childKey = provider.childKeys[0]
+  if (!childKey) throw new Error('missing child inference request')
   return toolCall('subagent_collect', { childKey, wait: true })
 }
 
@@ -160,7 +169,7 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_fork', { question: 'summarise the workspace', isolation: 'shared' }),
-        collectStarted,
+        () => collectStarted(provider),
         text('parent done'),
       ],
       [text('child answer')],
@@ -189,10 +198,9 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_spawn', { task: 'count the files', isolation: 'shared' }),
-        (req) => {
-          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
-          childKey = spawned?.[1] ?? ''
-          return toolCall('subagent_collect', { childKey, wait: true })
+        () => {
+          childKey = provider.childKeys[0] ?? ''
+          return collectStarted(provider)
         },
         text('parent collected'),
       ],
@@ -237,9 +245,8 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_spawn', { task: 'work in a worktree', isolation: 'worktree' }),
-        (req) => {
-          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
-          childKey = spawned?.[1] ?? ''
+        () => {
+          if (!childKey) throw new Error('missing owned child handle')
           return toolCall('subagent_collect', { childKey, wait: true })
         },
         text('parent collected'),
@@ -247,6 +254,10 @@ describe('subagents in a workspace-bound Host session', () => {
       [text('child answered')],
     )
     const { host, session, dataDir, root } = await workspaceHost(provider)
+    provider.beforeParent = async () => {
+      const children = await session.d.children.list?.()
+      childKey = children?.[0]?.id ?? ''
+    }
     const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' })
     git('init', '-b', 'main')
     git('config', 'user.email', 'subagent@example.test')
@@ -312,10 +323,7 @@ describe('subagents in a workspace-bound Host session', () => {
           })
           return toolCall('subagent_spawn', { task: 'queued work', isolation: 'shared' })
         },
-        (req) => {
-          childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1] ?? ''
-          return text('parent done')
-        },
+        text('parent done'),
       ],
       [text('queued answer')],
     )
@@ -325,6 +333,8 @@ describe('subagents in a workspace-bound Host session', () => {
       expect((await prompt(opened.session, 'spawn during a switch')).reason).toBe('completed')
       await activation
       expect(childAtSwitch).toEqual({ requests: 0 })
+      await expect.poll(() => provider.childKeys.length).toBe(1)
+      childKey = provider.childKeys[0]!
       await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('ready')
     } finally {
       await host.close()
@@ -342,7 +352,7 @@ describe('subagents in a workspace-bound Host session', () => {
         [
           toolCall('write', { path: escapePath, content: 'parent' }),
           toolCall('subagent_fork', { question: 'write two files', isolation: 'shared' }),
-          collectStarted,
+          () => collectStarted(provider),
           text('parent done'),
         ],
         [
