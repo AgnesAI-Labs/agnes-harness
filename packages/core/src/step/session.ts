@@ -777,7 +777,7 @@ export class SessionImpl {
     this.fallbackHooks = deps.hooks ?? noopHooks
     this.fallbackResources = deps.resources ?? new ResourceRegistry()
     this.compaction = deps.compaction ?? noCompaction
-    this.preset = structuredClone(this.roleAuthority?.preset(deps.preset) ?? deps.preset)
+    this.preset = structuredClone(deps.preset)
     this.effects = new EffectRuntime({
       ev: (type, data) => this.ev(type, data),
       clock: deps.clock,
