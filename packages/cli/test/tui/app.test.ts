@@ -742,7 +742,7 @@ it.each(['SESSION_BUSY', 'OVERLOADED'] as const)(
   },
 )
 
-it('paints the startup session card, compact header and editor surface once across /new', async () => {
+it('paints the startup welcome and editor surface once across /new', async () => {
   const { endpoint, sessions } = fakeSessionEndpoint()
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   let app: TuiApp | undefined
@@ -756,17 +756,15 @@ it('paints the startup session card, compact header and editor surface once acro
       const text = screen.join('\n')
       // 60 columns by 20 rows is too short for art: the welcome is two plain lines.
       expect(text).toContain('agnes ·ᴗ·  deepseek-v4-pro')
-      expect(text).toContain('local-dev · standard')
+      expect(text).toContain('local-dev')
       expect(text).not.toContain('Ctrl+C×2 退出')
-      // The header's first segment is the brand, separated from the profile.
-      expect(text).toContain('agnes ·ᴗ·  local-dev · standard')
       expect(text).toContain('What do you want to do? Start with a sentence.')
     })
     term.feed('/new')
     term.feed('\r')
     await vi.waitFor(() => expect(sessions()).toBe(2))
     // The banner belongs to the app, not the session: the switch must not repaint it.
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('li:dm:s2'))
+    await vi.waitFor(() => expect(app?.session.id).toContain('s2'))
     const text = (await screenOf(term, 60, 20)).join('\n')
     expect(text.split('agnes ·ᴗ·  resolving model').length - 1).toBe(1)
   } finally {
@@ -1415,7 +1413,8 @@ it('resets the turn clock and stops the ticker across a mid-turn session switch'
     // the turn that was in flight, so this waits for the new session's own first (idle) apply()
     // tick to have actually landed -- the same point at which a stale ticker/loader would leak the
     // old session's turn number and elapsed time onto the new session's screen.
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('li:dm:s2'))
+    await vi.waitFor(() => expect(app?.session.id).toContain('s2'))
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
     expect(internals.ticker).toBeUndefined()
     expect(internals.turnActive).toBe(false)

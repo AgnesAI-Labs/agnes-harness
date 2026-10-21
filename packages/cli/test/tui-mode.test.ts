@@ -65,7 +65,6 @@ describe('runTui model selection', () => {
     // The version rides along from the launcher into the welcome.
     expect(rendered).toContain('v1.2.3')
     expect(rendered).toContain('local-dev · (default)')
-    expect(rendered).toContain('acme ·ᴗ·  local-dev · (default)')
     expect(rendered).not.toContain('Agnes AI')
   })
 

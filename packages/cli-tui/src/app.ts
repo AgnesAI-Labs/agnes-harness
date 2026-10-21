@@ -33,7 +33,7 @@ import { Hints } from './views/hints.js'
 import { UserMessage } from './views/message.js'
 import { ModelPicker, type ModelSelection } from './views/model-picker.js'
 import { SessionPicker } from './views/session-picker.js'
-import { Header, StatusBar } from './views/status-bar.js'
+import { StatusBar } from './views/status-bar.js'
 import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { ToolCard } from './views/tool-card.js'
@@ -84,7 +84,6 @@ export class TuiApp {
   private flushingQueued = false
   private queuedWake: ReturnType<typeof setTimeout> | undefined
   private readonly mouse: TuiMouse
-  private readonly header: Header
   private readonly statusBar: StatusBar
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
@@ -172,15 +171,6 @@ export class TuiApp {
       const plain = new VStack([echo, new Text(text)])
       return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
     }
-    this.header = new Header(ansi, branding)
-    // Placeholder until the first `apply()` tick lands (moments later, inside `start()`, before
-    // any render happens): real profile/preset/sessionId are already known now, generation is not.
-    this.header.set({
-      profile: o.profile ?? o.header ?? '',
-      preset: o.preset ?? '',
-      sessionId: o.session.id,
-      generation: 1,
-    })
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
@@ -344,7 +334,6 @@ export class TuiApp {
     // component -- is what decides a fresh session shows nothing yet.
     this.loader.hide()
     const root = new VStack([
-      this.header,
       this.timeline,
       this.live,
       this.loader,
@@ -755,15 +744,6 @@ export class TuiApp {
     // budget` directly rather than polling `session.budget()` on `turn/end`.
     if (value.budget) this.statusBar.setBudget(value.budget.creditsUsed, value.budget.creditsCap ?? undefined)
     this.welcome.projected(value.usage, value.generation)
-    this.header.set({
-      profile: this.o.profile ?? this.o.header ?? '',
-      preset: this.o.preset ?? '',
-      sessionId: this.o.session.id,
-      generation: value.generation,
-      ...(value.opState
-        ? { opState: { turn: value.opState.turn, step: value.opState.step, phase: value.opState.phase } }
-        : {}),
-    })
     // Projection callbacks arrive after the renderer's input frame.  Updating the component tree
     // alone leaves that old frame on screen (for example a completed tool still reads "running"),
     // which in turn makes a healthy idle session look as if subsequent input is queued forever.

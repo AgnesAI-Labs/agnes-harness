@@ -1,5 +1,4 @@
 import type { UsageView } from '@agnes/protocol'
-import type { Branding } from '@agnes/sdk'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import {
@@ -12,7 +11,7 @@ import { type Locale, t } from '../locale.js'
 import type { Tone } from '../palette.js'
 import type { StatusItem } from '../slots.js'
 import { displayWidth } from '../terminal.js'
-import { brandColour, type ThemedAnsi } from '../theme.js'
+import type { ThemedAnsi } from '../theme.js'
 import { RAIL_MIN_WIDTH } from './composer-rail.js'
 
 export type LinkState = 'ok' | 'reconnecting' | 'catching-up'
@@ -128,50 +127,5 @@ export class StatusBar implements Component {
       this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH, this.locale)
     if (usage?.trim()) lines.push(usage)
     return lines
-  }
-}
-
-export type HeaderState = {
-  profile: string
-  preset: string
-  model?: string
-  sessionId: string
-  generation: number
-  opState?: { turn: number; step: number; phase: string }
-}
-
-/** One header line: the brand and mascot, then profile, preset, model, session id's last 8
- * characters, generation, and op state, with faint separators between the segments. */
-export class Header implements Component {
-  private state: HeaderState | undefined
-
-  constructor(
-    private readonly ansi: ThemedAnsi,
-    private readonly branding: Branding,
-  ) {}
-
-  set(h: HeaderState): void {
-    this.state = { ...h, ...(h.opState ? { opState: { ...h.opState } } : {}) }
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const h = this.state
-    if (!h) return ['']
-    const op = h.opState ? `turn ${h.opState.turn} step ${h.opState.step} ${h.opState.phase}` : ''
-    const fields = [
-      h.profile && this.ansi.fg('muted', h.profile),
-      h.preset && this.ansi.fg('muted', h.preset),
-      h.model && this.ansi.bold(this.ansi.fg('fg', h.model)),
-      this.ansi.fg('faint', `#${h.sessionId.slice(-8)}`),
-      this.ansi.fg('faint', `g${h.generation}`),
-      op && this.ansi.fg('warning', op),
-    ].filter(Boolean)
-    const label = this.branding.mark || this.branding.selfLabel
-    const brand = `${this.ansi.bold(
-      this.ansi.fg(brandColour(this.branding.accent), escapeControl(label)),
-    )}${this.ansi.fg('faint', ' ·ᴗ·')}`
-    return [fitLine([brand, fields.join(this.ansi.fg('faint', ' · '))].filter(Boolean).join('  '), width)]
   }
 }
