@@ -42,11 +42,15 @@
 
 ## 智能体与现场项目
 
-`coordinator`（研发协调员）带全部 18 个 `devboard_*` 工具、读写与 shell、`tool_search`、`subagent_spawn` / `subagent_collect`，以及技能 `devboard-playbook`（全流程、现场闭环、门代码与会签规则）。预设 `devboard` 允许在工作区内编辑与写入；所有 shell 命令（含 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；子智能体与父会话共用工作目录。
+`coordinator`（研发协调员）带全部 18 个 `devboard_*` 工具、读写与 shell、`tool_search` / `tool_describe`、`subagent_spawn` / `subagent_collect`，以及技能 `devboard-playbook`（全流程、现场闭环、门代码与会签规则）。预设 `devboard` 允许在工作区内编辑与写入；所有 shell 命令（含 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；五个声明式可委派角色（`requirements`、`architect`、`developer`、`reviewer`、`tester`）在新鲜子会话中共用父工作目录，权限取角色与父快照交集。代码评审员只读，其余角色可编辑项目文件；均没有 shell、看板或审批/签署能力，命令交回协调员执行。所有角色全过程中文叙述（用户明确选其他语言时遵从用户），业务状态用中文。
 
 看板上新建的软件项目（默认类型）按 SOFTWARE 档案和默认裁剪推进，文件写在工作区的 `devboard-projects/<项目编号>/`，由研发协调员带领完成；订单类只建记录。角色子智能体只写文件，看板只由研发协调员登记。每过一道门，研发协调员提交评审后结束本轮；人在看板审批，再点「继续推进」，草稿里带上门编号，由人点发送。
 
 现场闭环里协调员只起草：读取预警聚合（`devboard_fault_list`）和试验，起草 D2–D4 与变更影响分析并引用预警和试验编号，不关闭质量问题、不批准试验、不决议变更。
+
+已授权的具名声明工具直接提供 schema，包括子智能体和后台任务工具，无需先 search/describe。保留 `tool_describe` 供获授权的 deferred schema 查询使用，不扩大协调员的工具白名单。
+
+预设显式申请经审阅的 `sandbox.loopback_serve`：强制 L1、`on_unavailable: deny`、外网白名单为空，命令仍需审批。受支持的 macOS Host 先绑定 loopback socket，再传入 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`；生成的 Node 服务必须用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 接管，并在就绪后输出该 URL。无 activation 的普通部署才使用 `127.0.0.1` / `--port` 分支。命令自行 bind 或主动连接仍被拒绝；不支持的沙箱后端拒绝该能力，不降级。现场演示须使用支持此能力的平台构建。
 
 ### 演示脚本与检查点
 
@@ -57,8 +61,20 @@
 4. 运维与质量：PRJ-2023-011 按信号与周的预警；已关闭的缓冲头磨损链（8D → CR → ECN → 1920/1920 个门 → 基线追平）和进行中的阻力异常问题。工作台快捷操作「分析 PHM 预警并起草 8D」：协调员引用预警编号起草 D2–D4 和变更，然后停下等你。
 5. 快捷操作「型式试验不合格 → 起草变更」：以试验为来源，写根因和受影响物料。
 6. 现场软件项目：工作台快捷操作「新建并启动一个研发项目」。默认裁剪后的门为 CDCP（IPMT）、TR1（技术负责人）、TR3（技术负责人）、TR4（自动）、TR5（质量工程师）、ADCP（IPMT）；每次提交后，看板显示该阶段「评审中」，工作区有对应文件；审批后点「继续推进」。
+   - 各阶段由声明式角色子智能体完成（`requirements`、`architect`、`developer`、`reviewer`、`tester`）；TR5、ADCP 前必须有真实 HTTP 与浏览器验收证据，见下方「演示者检查表」。
 
 真实模型跑完全流程可能需要几十分钟。
+
+命令需要正确的工作目录：shell 默认 cwd 是工作区根目录，传真实存在的测试文件，如 `node --test devboard-projects/<项目编号>/test/unit.test.js`；或把 shell `cwd` 设为 `devboard-projects/<项目编号>/` 后用 `node --test` 自动发现。不要把 `test/` 目录作为位置参数。启动 `node server.js --port <空闲端口>` 同样设项目 cwd；AGH 中接管 Host listener 并读取实际 URL，普通部署才绑定 `127.0.0.1`。`--port` 不能指定 Host 分配的端口。禁止使用 4177/4178，无需外网或安装依赖。命令内 `curl` / `fetch` 不能主动连接此 listener，公开 HTTP 验收由真实浏览器执行，结果与 `node --test` 单元测试分别计数。
+
+委派失败时标注「角色独立性未满足」，保留质量意见；协调员自审不能替代独立角色。监听或浏览器失败仍是验收阻断项。不得仅因移交后续阶段关闭意见，也不得登记未经验证的 URL。
+
+### 演示者检查表
+
+- 使用隔离 home、工作区、已配置的真实模型、Host 实际 loopback 地址（普通部署另选空闲 fallback 端口）；浏览器保留一两个标签。采用应用前核对安装版本和权限。
+- 预演全部门，检查 typed 角色任务卡与父子文件可见性，检查全过程中文叙述及业务状态中文标签。
+- 批准前核对命令和 cwd，避免 `node --version` 等无必要探测。命令运行生成代码；污染输入也可能让后续文件/看板操作需要审批，逐项阅读动作标题和证据。
+- 门 4–5 前检查真实 HTTP 日志、浏览器证据、未关闭意见和已登记 URL；记录各门耗时，确认后台服务的停止方式。
 
 ## 待客户确认
 

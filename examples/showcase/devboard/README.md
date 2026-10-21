@@ -42,11 +42,15 @@ Every write goes through one set of functions in `domain.mjs`, shared by pages a
 
 ## Agent and live project
 
-`coordinator` carries all 18 `devboard_*` tools, file and shell tools, `tool_search`, `subagent_spawn` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, field loop, gate codes and co-signing rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Child agents share the parent's working directory.
+`coordinator` carries all 18 `devboard_*` tools, file and shell tools, `tool_search` / `tool_describe`, `subagent_spawn` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, field loop, gate codes and co-signing rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Five declared delegable agents (`requirements`, `architect`, `developer`, `reviewer`, `tester`) run as fresh role children with the parent’s shared working directory and a role ∩ parent capability snapshot. The reviewer is read-only; the other specialists can edit project files. Specialists have no shell or board tools and cannot approve or sign. They return commands to the coordinator for human approval and execution. All roles narrate in Chinese unless the user chooses another language, and use business labels instead of raw status enums.
 
 A software project created on the board (the default kind) follows the SOFTWARE profile with the default tailoring, is written under `devboard-projects/<project id>/` and is run by the coordinator; order kinds only create records. Role child agents only write files; only the coordinator writes to the board. After submitting each gate the coordinator ends its turn; a person decides on the board, then presses "Continue", which opens a coordinator draft carrying the gate id for the person to send.
 
 In the field loop the coordinator only drafts: it reads alarm aggregates (`devboard_fault_list`) and trials, drafts D2–D4 and the change impact analysis citing alarm and trial ids, and never closes a problem, approves a trial or decides a change.
+
+Explicitly named, authorized tools are offered directly, including the declared subagent and job tools; no search/describe round trip is required. `tool_describe` remains available for authorized deferred schemas, without granting access to tools outside the coordinator's allowlist.
+
+The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforcement with `on_unavailable: deny` and no external network allowlist. Command approval remains mandatory. The supported macOS Host binds the loopback socket and passes `AGH_LOOPBACK_FD` and `AGH_LOOPBACK_URL`; the generated Node server must use `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` and print the supplied URL once ready. Keep the normal `127.0.0.1` / `--port` branch only for deployments without activation. Fresh binds and initiated connections remain denied; unsupported sandbox backends refuse this capability rather than falling back. Use a platform build supporting this capability before the live demo.
 
 ### Demo script and checkpoints
 
@@ -57,8 +61,20 @@ In the field loop the coordinator only drafts: it reads alarm aggregates (`devbo
 4. Service & quality: PRJ-2023-011 alarms by signal and week; the closed buffer-wear chain (8D → CR → ECN → 1920/1920 doors → baselines level) and the open resistance problem. Workbench action "Analyze PHM alarms and draft an 8D": the coordinator drafts D2–D4 and a change, citing alarm ids, then stops for you.
 5. Workbench action "Failed type test → draft a change": a change sourced from the trial with a root cause and impact items.
 6. Live software project: workbench action "Create and start an R&D project". With default tailoring the gates are CDCP (IPMT), TR1 (技术负责人), TR3 (技术负责人), TR4 (automatic), TR5 (质量工程师) and ADCP (IPMT); after each submit the board shows the stage in review and the workspace holds the file; decide, then press "Continue".
+   - Each stage is done by the declared role children (`requirements`, `architect`, `developer`, `reviewer`, `tester`); TR5 and ADCP need real HTTP and browser acceptance evidence, see the presenter checklist below.
 
 A real model may need tens of minutes for the whole flow.
+
+Run commands from the correct directory: shell defaults to the workspace root. Pass actual test files, for example `node --test devboard-projects/<project id>/test/unit.test.js`, or set shell `cwd` to `devboard-projects/<project id>/` and run `node --test` for discovery. Do not pass the `test/` directory as a positional argument. Set project `cwd` for `node server.js --port <free port>` too; use the Host-provided listener and actual URL in AGH, or bind only `127.0.0.1` without activation. `--port` does not select the Host-allocated port. Never use ports 4177/4178. No external network or package installation is needed. Command-side `curl`/`fetch` cannot connect even to this listener; use the real browser for public HTTP acceptance and keep its results separate from `node --test` unit results.
+
+If role delegation fails, mark role independence as unmet and keep the quality finding open; coordinator self-review cannot replace an independent role. Listener or browser failures remain acceptance blockers. Do not close a finding merely by moving it to a later stage, or register an unverified URL.
+
+### Presenter checklist
+
+- Use an isolated home and workspace, a configured real model, the Host-allocated loopback URL (or a free fallback port for ordinary deployment) and one or two browser tabs. Review the installed package version and permissions before adopting it.
+- Rehearse all gates with typed role task cards and verify parent/child file visibility. Check Chinese progress narration and business state labels.
+- Review each command and cwd before approval. Avoid unnecessary shell probes such as `node --version`; commands execute generated code. Tainted results can also require approval for later writes or board operations; read the action title and evidence.
+- Before gates 4–5, require real HTTP test logs and browser evidence, resolve findings, verify the registered URL, and retain timing per gate. Confirm how to stop the background job.
 
 ## To confirm with the customer
 

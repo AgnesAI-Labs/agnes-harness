@@ -52,8 +52,8 @@ export type AppendOptions = {
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
   opState?: OpWrite
   /**
-   * `'allow'` lets the batch through while this log's history is being verified on open or recheck
-   * in the background. Only appending user input may ask for it; every other write waits.
+   * `'allow'` lets the batch through while this log's history is being fully re-verified in the
+   * background (`verifyHistory`). Only appending user input may ask for it; every other write waits.
    */
   beforeFullVerify?: 'allow'
 }
@@ -88,7 +88,7 @@ export type OpenLogOptions = {
   replay?: {
     page(events: Event[]): void
   }
-  /** Called once per background checkpoint verification, including live rechecks. */
+  /** Called once per background prefix rehash, which only an explicit `verifyHistory({ rehashPrefix })` starts. */
   onFullVerify?: (r: FullVerifyReport) => void
 }
 
@@ -161,18 +161,15 @@ export class SessionLogImpl {
   private readonly registersCache = new RegisterMap()
   private closed = false
   private faultedValue = false
-  // Whether every row this log opened with has been hashed. An open from a verified-head checkpoint
-  // starts 'pending' and verifies the prefix in the background; until it is 'done' only appends of
-  // user input are let through. 'failed' seals the log; 'stopped' means it closed first.
+  // The gate of an explicit full verification (`verifyHistory`). An open never sets it: a cold open
+  // does not hash the prefix, so the log starts 'done'. While a verification is 'pending' only appends
+  // of user input are let through. 'failed' seals the log; 'stopped' means it closed first.
   private fullVerifyState: 'pending' | 'done' | 'failed' | 'stopped' = 'done'
   private fullVerifyPromise: Promise<void> = Promise.resolve()
   private checkpointOperations: Promise<void> | undefined
   private readonly verifyAbort = new AbortController()
-  /** When this process last finished verifying the full chain it extends. */
-  private verifiedFullAtMs: number
-  // Whether this process has hashed the whole chain this log extends. Reopening such a log rechecks
-  // only the tail after its checkpoint, not the prefix again.
-  private chainHashed = false
+  /** When the chain this log extends was last hashed in full; 0 when it never was. */
+  private verifiedFullAtMs = 0
   /** Set once by `open`; a child opened from a live parent reports the zero value. */
   openStats: SessionOpenStats
   // Appends are serialized through a promise chain rather than run concurrently: seq assignment and
@@ -200,7 +197,6 @@ export class SessionLogImpl {
     this.createdOnOpen = createdOnOpen
     this.parent = parent
     this.leaseRenewedAt = o.clock()
-    this.verifiedFullAtMs = this.leaseRenewedAt
     this.openStats = { lastSeq, checkpoint: { used: false } }
     this.syncRenewal()
   }
@@ -209,12 +205,10 @@ export class SessionLogImpl {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
       if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
-      // The complete integrity chain is verified before any replayed state is exposed; a replay
-      // consumer only ever sees rows that have already passed.
-      //
-      // The one exception is a verified-head checkpoint: the rows it vouches for are folded without
-      // being hashed, so history can be shown at once, and the full chain is verified in the
-      // background before anything but user input is written (see `append`).
+      // A cold open does not hash the prefix. Every row is checked for sequence and structure while it
+      // is folded, the rows after the checkpoint (the last few without one) are hashed, and a replay
+      // consumer only sees rows that passed those checks. Hashing the whole chain is the explicit
+      // `verifyHistory({ rehashPrefix: true })`.
       const replay = o.replay
       const { decision, state: integrityState } = await verifyCheckpointHistory(
         o.storage,
@@ -242,13 +236,13 @@ export class SessionLogImpl {
           ? { used: true, throughSeq: decision.head.throughSeq }
           : { used: false, reason: decision.reason },
       }
-      if (decision.use) log.fullVerifyPromise = log.startBackgroundVerify(decision.head)
-      else {
-        // Everything was verified just now, under this writer's lease, so the head is a verified head.
-        // It replaces a checkpoint the open could not use: one past the head would otherwise stay.
-        log.chainHashed = true
-        void log.writeHead(true).catch(() => undefined)
-      }
+      // The head just folded, under this writer's lease, becomes the checkpoint: it names this ledger's
+      // chain head, not a prefix that was hashed. It replaces one the open could not use, which would
+      // otherwise stay.
+      if (decision.use) {
+        log.verifiedFullAtMs = decision.head.verifiedFullAtMs
+        if (decision.head.throughSeq < opened.lastSeq) void log.writeHead().catch(() => undefined)
+      } else void log.writeHead(true).catch(() => undefined)
       return log
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
@@ -326,10 +320,10 @@ export class SessionLogImpl {
   }
 
   /**
-   * Recheck the tail after the checkpoint now. A prefix this process has not hashed yet is hashed behind
-   * the execution gate, as on cold open; one it already hashed is hashed again only when `rehashPrefix`
-   * asks for a full recheck. A row changed before the checkpoint of a live log is otherwise found by
-   * the next cold open, not by reopening it.
+   * Recheck the tail after the checkpoint now. The prefix before it is hashed again, behind the
+   * execution gate, only when `rehashPrefix` asks for a full verification; without a usable checkpoint
+   * that hashes every row. Neither a cold open nor a reopen of a live log does: a row changed before
+   * the checkpoint is found only by this explicit full verification.
    */
   async verifyHistory(
     options: import('./integrity.js').VerificationOptions & { rehashPrefix?: boolean } = {},
@@ -347,13 +341,20 @@ export class SessionLogImpl {
       await drain
       this.guard()
       const expected = { ...this.integrityState }
-      const result = await verifyCheckpointHistory(this.storage, this.key, expected.lastSeq, {
-        ...verification,
-        signal: this.verifyAbort.signal,
-        onProgress: (progress) => {
-          if (!options.signal?.aborted) options.onProgress?.(progress)
+      const result = await verifyCheckpointHistory(
+        this.storage,
+        this.key,
+        expected.lastSeq,
+        {
+          ...verification,
+          signal: this.verifyAbort.signal,
+          onProgress: (progress) => {
+            if (!options.signal?.aborted) options.onProgress?.(progress)
+          },
         },
-      })
+        undefined,
+        rehashPrefix,
+      )
       if (
         result.state.headDigest !== expected.headDigest ||
         result.state.legacyThroughSeq !== expected.legacyThroughSeq
@@ -365,12 +366,11 @@ export class SessionLogImpl {
     this.fullVerifyPromise = foreground.then(
       async ({ decision }) => {
         if (this.closed) return this.failVerification(new CoreError('E_CLOSED', 'session closed'))
-        if (decision.use && (rehashPrefix || !this.chainHashed))
-          await this.startBackgroundVerify(decision.head)
+        if (decision.use && rehashPrefix) await this.startBackgroundVerify(decision.head)
         else {
           this.fullVerifyState = 'done'
-          // Without a usable checkpoint the foreground just hashed everything.
-          if (!decision.use) this.verifiedFullAtMs = this.o.clock()
+          // Without a usable checkpoint a full verification just hashed everything.
+          if (!decision.use && rehashPrefix) this.verifiedFullAtMs = this.o.clock()
           await this.writeHead(!decision.use).catch(() => undefined)
         }
       },
@@ -415,8 +415,8 @@ export class SessionLogImpl {
   }
 
   /**
-   * Hashes the whole chain up to the checkpoint the open folded from, a page at a time and behind
-   * other work, and checks it ends at the digest the checkpoint named. Failing seals the log; an
+   * Hashes the whole chain up to the checkpoint, a page at a time and behind other work, and checks it
+   * ends at the digest the checkpoint named. Only an explicit full verification starts it. Failing seals the log; an
    * integrity failure also drops the checkpoint, so the next open verifies from the first row.
    */
   private startBackgroundVerify(head: VerifiedHead): Promise<void> {
@@ -435,7 +435,6 @@ export class SessionLogImpl {
     const completion = verified.then(
       async () => {
         this.fullVerifyState = 'done'
-        this.chainHashed = true
         this.verifiedFullAtMs = this.o.clock()
         report()
         // A log that closed meanwhile has handed its lease back; it writes nothing more.
@@ -477,9 +476,10 @@ export class SessionLogImpl {
   }
 
   /**
-   * Records the in-memory head as the verified head. It is written only once everything up to it has
-   * been verified: the rows this log opened with were hashed, and every later row is one this log
-   * wrote and chained itself. Storage keeps the furthest one unless `replace` says this one stands.
+   * Records the in-memory head as the checkpoint. It names the head of this ledger's chain, not a
+   * prefix that was hashed (`verifiedFullAtMs` says when one last was): the rows after the previous
+   * checkpoint were hashed on open and every later row is one this log wrote and chained itself.
+   * Storage keeps the furthest one unless `replace` says this one stands.
    */
   private async writeHead(replace = false): Promise<void> {
     const write = this.o.storage.writeVerifiedHead
