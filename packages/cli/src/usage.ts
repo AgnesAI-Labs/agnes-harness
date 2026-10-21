@@ -15,6 +15,8 @@ export function usage(locale = 'en'): string {
     'agh diagnostics export [--session <id>] --out <file>',
     'agh sessions [list [--cwd <dir>] [--archived] | show <id> | pin|unpin|archive|unarchive <id> | rename <id> <title...> | search <query...> | groups | deliverables <id> [--save <n|id> [--out <path>] [--force]] | migrate <key> [--profile <p>]] [--json]',
     'agh approvals grants <sessionId> | revoke <sessionId> <grantId> [--json]',
+    'agh schedules [list [--session <key>] [--archived] | show <id> | pause|resume|run|archive <id>] [--json]',
+    'agh schedules add|edit [<id>] --prompt <text> (--every <30m> | --cron <expr> | --at <iso> | --daily <HH:MM> | --weekly <days@HH:MM>) [--tz <zone>] [--title <t>] [--session <key> | --new-session [--cwd <dir>]] [--unattended notify|refuse] [--json]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
     'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',
     'agh doctor [platform|network|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime] [--json]',

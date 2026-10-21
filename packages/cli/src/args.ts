@@ -15,6 +15,7 @@ const COMMANDS = new Set<string>([
   'resume',
   'sessions',
   'approvals',
+  'schedules',
   'export',
   'import',
   'doctor',
@@ -85,6 +86,15 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--from': 'from',
   '--key': 'key',
   '--session': 'key',
+  '--prompt': 'prompt',
+  '--title': 'title',
+  '--every': 'every',
+  '--cron': 'cron',
+  '--at': 'at',
+  '--daily': 'daily',
+  '--weekly': 'weekly',
+  '--tz': 'tz',
+  '--unattended': 'unattended',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
@@ -96,6 +106,8 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--ephemeral': 'ephemeral',
   '--standalone': 'standalone',
   '--new': 'newSession',
+  '--new-session': 'newSession',
+  '--all': 'all',
   '--json': 'json',
   '--repair': 'repair',
   '--upgrade': 'upgrade',
@@ -117,6 +129,7 @@ const ENUMS: Record<string, string[]> = Object.assign(Object.create(null), {
   format: ['agnes', 'sharegpt', 'claude-code'],
   from: ['claude-code', 'codex', 'pi', 'auto'],
   permission: ['read-only', 'workspace-write', 'full-access', 'default'],
+  unattended: ['notify', 'refuse'],
 })
 
 function defaults(): ParsedArgs {
@@ -246,9 +259,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     p.key !== undefined &&
     p.command !== 'tools' &&
     p.command !== 'diagnostics' &&
+    p.command !== 'schedules' &&
     argv.includes('--session')
   )
-    throw new UsageError('--session is supported only by tools and diagnostics')
+    throw new UsageError('--session is supported only by tools, diagnostics and schedules')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))

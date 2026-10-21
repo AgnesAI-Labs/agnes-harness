@@ -24,6 +24,7 @@ export type Command =
   | 'doctor'
   | 'diagnostics'
   | 'approvals'
+  | 'schedules'
   | 'computer-use'
   | 'profile'
   | 'plugin'
@@ -94,6 +95,18 @@ export type ParsedArgs = {
   save?: string
   /** `sessions deliverables --save`: replace an existing target file. */
   force: boolean
+  /** `schedules`: list every schedule rather than one session's. */
+  all?: boolean
+  /** `schedules add|edit` task text, title and exactly one of the selector flags. */
+  prompt?: string
+  title?: string
+  every?: string
+  cron?: string
+  at?: string
+  daily?: string
+  weekly?: string
+  tz?: string
+  unattended?: 'notify' | 'refuse'
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */
