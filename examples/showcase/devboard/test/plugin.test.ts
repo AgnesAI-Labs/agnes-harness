@@ -443,25 +443,47 @@ describe('DevBoard plugin contract', () => {
         'job_kill',
       ]),
     )
-    expect(application.delegableAgents).toEqual(
-      ['requirements', 'architect', 'developer', 'reviewer', 'tester'].map((role) => `${pkg.name}#${role}`),
+    const READ_ONLY = ['reviewer', 'quality', 'config']
+    const titles: Record<string, string> = {
+      requirements: '系统设计师（需求）',
+      architect: '软件设计师（架构）',
+      developer: '软件设计师（开发）',
+      reviewer: '代码评审员',
+      tester: '验证工程师',
+      mechanical: '机械设计师',
+      electrical: '电气设计师',
+      diagnostics: '诊断工程师',
+      rams: 'RAMS 工程师',
+      quality: '质量工程师',
+      config: '配置管理员',
+    }
+    // The protocol caps delegableAgents at 8: all 11 roles are declared, these 8 are launchable today.
+    const LAUNCHABLE = Object.keys(titles).filter(
+      (id) => !['mechanical', 'electrical', 'config'].includes(id),
     )
+    expect(Object.keys(bundles).filter((id) => id !== 'coordinator')).toEqual(Object.keys(titles))
+    expect(application.agents).toEqual(
+      ['coordinator', ...Object.keys(titles)].map((role) => `${pkg.name}#${role}`),
+    )
+    expect(application.delegableAgents).toEqual(LAUNCHABLE.map((role) => `${pkg.name}#${role}`))
     for (const ref of application.agents) {
       expect(contracts[ref]?.document.launch?.preset).toBe('devboard')
       const role = bundles[ref.split('#')[1]]
       expect(role.presets.devboard.model.system_prompt.personaPrefix).toContain('全过程')
     }
-    for (const ref of application.delegableAgents) {
+    for (const ref of application.agents.filter((r: string) => !r.endsWith('#coordinator'))) {
       expect(application.agents).toContain(ref)
       const role = bundles[ref.split('#')[1]]
       expect(role.profile.tools).toEqual(role.profile.toolPolicy.allow)
       expect(role.profile.skills).toEqual([])
-      expect(role.profile.toolPolicy.readOnly).toBe(ref.endsWith('#reviewer') ? true : undefined)
+      const id = ref.split('#')[1]
+      const readOnly = READ_ONLY.includes(id)
+      expect(role.launch.title['zh-CN']).toBe(titles[id])
+      expect(role.presets.devboard.model.system_prompt.personaPrefix).toContain(`宁川装备的${titles[id]}`)
+      expect(role.profile.toolPolicy.readOnly).toBe(readOnly ? true : undefined)
       expect(role.profile.tools.every((name: string) => coordinator.profile.tools.includes(name))).toBe(true)
       expect(role.profile.tools).toEqual(
-        ref.endsWith('#reviewer')
-          ? ['read', 'ls', 'find', 'grep']
-          : ['read', 'ls', 'find', 'grep', 'write', 'edit'],
+        readOnly ? ['read', 'ls', 'find', 'grep'] : ['read', 'ls', 'find', 'grep', 'write', 'edit'],
       )
     }
   })
