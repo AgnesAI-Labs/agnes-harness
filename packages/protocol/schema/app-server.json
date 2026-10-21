@@ -1897,6 +1897,30 @@
                 "messageKey": "appServer.errors.unavailable",
                 "copy": "sandboxUnavailable"
               }
+            },
+            {
+              "const": "E_RESOURCE_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "REVISION_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "WORKSPACE_PATH_DENIED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
             }
           ]
         }

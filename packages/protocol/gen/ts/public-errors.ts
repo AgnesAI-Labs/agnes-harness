@@ -663,6 +663,9 @@ export const PUBLIC_ERROR_CONTRACT = {
   "PROVIDER_UNCONFIGURED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["providerUnconfigured"], reasons: {  } },
   "LOOP_MISSING": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["loopMissing"], reasons: {  } },
   "SANDBOX_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["sandboxUnavailable"], reasons: {  } },
+  "E_RESOURCE_UNSUPPORTED": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
+  "REVISION_CONFLICT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.conflict", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["conflict"], reasons: {  } },
+  "WORKSPACE_PATH_DENIED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["forbidden"], reasons: {  } },
 } as const
 export const PUBLIC_ERROR_MESSAGES = {
   "appServer.errors.internal": PUBLIC_ERROR_COPY["internal"],
