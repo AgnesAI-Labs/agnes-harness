@@ -191,7 +191,7 @@ it('discovers, saves and reloads the current DeepSeek Flash id', async () => {
   ])
 })
 
-it('tests Kimi Coding Plan through its Anthropic-compatible catalogue and fails closed on unknown models', async () => {
+it('tests Kimi Coding Plan through its OpenAI-compatible catalogue and fails closed on unknown models', async () => {
   const entry = getApiKeyProvider('kimi-coding')
   if (!entry) throw new Error('kimi-coding registry entry missing')
   const model = (await entry.createAdapter()).models(entry.route).find(({ id }) => id === 'kimi-for-coding')
@@ -213,8 +213,8 @@ it('tests Kimi Coding Plan through its Anthropic-compatible catalogue and fails 
         expect.objectContaining({
           id: 'kimi-coding',
           label: 'Kimi Coding Plan',
-          api: 'anthropic-messages',
-          baseUrl: 'https://api.kimi.com/coding',
+          api: 'openai-completions',
+          baseUrl: 'https://api.kimi.com/coding/v1',
           authMethods: ['api-key', 'oauth'],
           loginMethods: ['device_code'],
         }),
@@ -229,14 +229,47 @@ it('tests Kimi Coding Plan through its Anthropic-compatible catalogue and fails 
     },
   )
   expect(requests[0]?.url).toBe('https://api.kimi.com/coding/v1/models')
-  expect(requests[0]?.headers.get('x-api-key')).toBe('kimi-test-value')
-  expect(requests[0]?.headers.get('anthropic-version')).toBe('2023-06-01')
-  expect(requests[0]?.headers.get('authorization')).toBeNull()
+  expect(requests[0]?.headers.get('authorization')).toBe('Bearer kimi-test-value')
+  expect(requests[0]?.headers.get('x-api-key')).toBeNull()
+  expect(requests[0]?.headers.get('anthropic-version')).toBeNull()
 
   offeredModel = 'unreviewed-kimi-model'
   await expect(service.test({ providerId: 'kimi-coding', apiKey: 'kimi-test-value' })).resolves.toMatchObject(
     { models: expect.any(Array), verified: false },
   )
+})
+
+it('reads a saved Kimi Coding row at the pre-1.3 default address as the current default, leaving custom addresses alone', async () => {
+  const entry = getApiKeyProvider('kimi-coding')
+  if (!entry) throw new Error('kimi-coding registry entry missing')
+  const model = 'kimi-for-coding'
+  const request: typeof fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: model }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  await service.save({ providerId: 'kimi-coding', apiKey: 'kimi-test-value', model })
+  const configPath = await savedModelPath(root)
+  const rewrite = async (baseUrl: string) => {
+    const stored = JSON.parse(await readFile(configPath, 'utf8')) as { accounts: Array<{ baseUrl: string }> }
+    for (const row of stored.accounts) row.baseUrl = baseUrl
+    await writeFile(configPath, JSON.stringify(stored))
+    return createConfigurationService({ home: root, profile: 'local-dev', request })
+  }
+
+  for (const legacy of ['https://api.kimi.com/coding', 'https://api.kimi.com/coding/']) {
+    const reloaded = await rewrite(legacy)
+    expect((await reloaded.get()).provider?.baseUrl).toBe('https://api.kimi.com/coding/v1')
+    expect((await reloaded.profileInput()).provider?.routes?.[0]).toMatchObject({
+      api: 'openai-completions',
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    })
+  }
+
+  const custom = 'https://kimi-gateway.example.test/coding/v1'
+  expect((await (await rewrite(custom)).get()).provider?.baseUrl).toBe(custom)
 })
 
 it('keeps the payload-only provider out of the chat account form projection', async () => {

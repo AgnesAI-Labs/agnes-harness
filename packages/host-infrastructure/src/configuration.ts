@@ -423,7 +423,8 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
     revision: value.revision as number,
     provider: {
       id: entry.id,
-      baseUrl: provider.baseUrl,
+      // A row at the provider's former default reads at the current one; the next save writes it.
+      baseUrl: entry.retiredBaseUrls?.includes(provider.baseUrl) ? entry.baseUrl : provider.baseUrl,
       model: provider.model,
       credentialRef: ref,
       models: normalized,

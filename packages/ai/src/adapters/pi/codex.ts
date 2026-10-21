@@ -31,6 +31,7 @@ type SubscriptionSpec = Readonly<{
   displayName: string
   primaryApi: string
   baseUrl: string
+  retiredBaseUrls?: readonly string[]
   loginMethods: readonly SubscriptionLoginMethod[]
   authOrigins: readonly string[]
   factory(): Provider
@@ -67,8 +68,9 @@ const SPECS: readonly SubscriptionSpec[] = [
   {
     id: 'kimi-coding',
     displayName: 'Kimi Code subscription',
-    primaryApi: 'anthropic-messages',
-    baseUrl: 'https://api.kimi.com/coding',
+    primaryApi: 'openai-completions',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    retiredBaseUrls: ['https://api.kimi.com/coding', 'https://api.kimi.com/coding/'],
     loginMethods: ['device_code'],
     authOrigins: ['https://auth.kimi.com', 'https://www.kimi.com'],
     factory: kimiCodingProvider,
@@ -108,6 +110,8 @@ export type SubscriptionProviderEntry = Readonly<{
   displayName: string
   api: string
   baseUrl: string
+  /** Former default addresses, exactly as saved: a saved account at one reads at `baseUrl`. */
+  retiredBaseUrls?: readonly string[]
   credentialRef: `secret://${SubscriptionProviderId}/default`
   loginMethods: readonly SubscriptionLoginMethod[]
   authOrigins: readonly string[]
@@ -121,6 +125,7 @@ export const SUBSCRIPTION_PROVIDER_REGISTRY: readonly SubscriptionProviderEntry[
   displayName: spec.displayName,
   api: spec.primaryApi,
   baseUrl: spec.baseUrl,
+  ...(spec.retiredBaseUrls ? { retiredBaseUrls: spec.retiredBaseUrls } : {}),
   credentialRef: `secret://${spec.id}/default`,
   loginMethods: spec.loginMethods,
   authOrigins: spec.authOrigins,

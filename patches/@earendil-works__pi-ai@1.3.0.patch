@@ -14,10 +14,10 @@ index 5d44bf071e84329250385366c0e6f623c7d910dd..11327964c5304fec728a16b592be115c
      profile?: string;
      toolChoice?: "auto" | "any" | "none" | {
 diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
-index 44e3f13e808f0665a44e34437e173743f81bd51f..7db95594f8319d673697e1913a184f28c88c0dc7 100644
+index 6ec62d045eab17f1298c39962cbada2073cb1bd3..a59ed372583d6a2469423a8e2cfbbfae415d0e21 100644
 --- a/dist/api/bedrock-converse-stream.js
 +++ b/dist/api/bedrock-converse-stream.js
-@@ -103,13 +103,16 @@ export const stream = (model, context, options = {}) => {
+@@ -104,13 +104,16 @@ export const stream = (model, context, options = {}) => {
                  // on `http2` module and has no support for http agent.
                  // Use NodeHttpHandler to support HTTP(S) proxy agents.
                  config.requestHandler = new NodeHttpHandler({

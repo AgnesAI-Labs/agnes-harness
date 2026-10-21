@@ -92,6 +92,8 @@ export type ApiKeyProviderRegistryEntry = Readonly<{
   route: ApiKeyProviderId
   api: string
   baseUrl: string
+  /** Former default addresses, exactly as saved: a saved account at one reads at `baseUrl`. */
+  retiredBaseUrls?: readonly string[]
   credentialRef: `secret://${ApiKeyProviderId}/default`
   sourceProviderId: string
   /**
@@ -112,6 +114,7 @@ type ProviderSpec = Readonly<{
   displayName: string
   api: string
   baseUrl: string
+  retiredBaseUrls?: readonly string[]
   sourceProviderId: string
   modelsUrl?: string
   load: () => Promise<PiProvider>
@@ -181,8 +184,9 @@ const specs: readonly ProviderSpec[] = [
   {
     id: 'kimi-coding',
     displayName: 'Kimi Coding Plan',
-    api: 'anthropic-messages',
-    baseUrl: 'https://api.kimi.com/coding',
+    api: 'openai-completions',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    retiredBaseUrls: ['https://api.kimi.com/coding', 'https://api.kimi.com/coding/'],
     sourceProviderId: 'kimi-coding',
     load: () => load(import('@earendil-works/pi-ai/providers/kimi-coding'), 'kimiCodingProvider'),
   },
@@ -445,6 +449,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
       route: spec.id,
       api: spec.api,
       baseUrl: spec.baseUrl,
+      ...(spec.retiredBaseUrls ? { retiredBaseUrls: spec.retiredBaseUrls } : {}),
       credentialRef: `secret://${spec.id}/default` as const,
       sourceProviderId: spec.sourceProviderId,
       ...(spec.modelsUrl ? { modelsUrl: spec.modelsUrl } : {}),

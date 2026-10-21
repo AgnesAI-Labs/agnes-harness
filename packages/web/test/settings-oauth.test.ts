@@ -316,8 +316,8 @@ it('keeps dual-auth controls in the modal and exposes only the provider-supporte
       label: 'Kimi Code',
       authMethods: ['api-key', 'oauth'],
       loginMethods: ['device_code'],
-      api: 'anthropic-messages',
-      baseUrl: 'https://api.kimi.com/coding',
+      api: 'openai-completions',
+      baseUrl: 'https://api.kimi.com/coding/v1',
     },
   })
   expect((h.panel as unknown as HTMLElement).hidden).toBe(true)

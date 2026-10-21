@@ -117,27 +117,16 @@ it('sends Kimi header-only OAuth through the real pi-ai HTTP client during the s
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
     requests.push(request)
-    const events = [
-      {
-        type: 'message_start',
-        message: {
-          id: 'fixture',
-          type: 'message',
-          role: 'assistant',
-          model: 'kimi-for-coding',
-          content: [],
-          stop_reason: null,
-          usage: { input_tokens: 5, output_tokens: 0 },
-        },
-      },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'OK' } },
-      { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
-      { type: 'message_stop' },
-    ]
+    const chunk = (delta: object, finish: string | null) => ({
+      id: 'fixture',
+      object: 'chat.completion.chunk',
+      created: 0,
+      model: 'kimi-for-coding',
+      choices: [{ index: 0, delta, finish_reason: finish }],
+    })
+    const events = [chunk({ role: 'assistant', content: 'OK' }, null), chunk({}, 'stop')]
     return new Response(
-      events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''),
+      `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`,
       { headers: { 'content-type': 'text/event-stream' } },
     )
   })
@@ -154,7 +143,11 @@ it('sends Kimi header-only OAuth through the real pi-ai HTTP client during the s
     new AbortController().signal,
   )
   expect(requests).toHaveLength(1)
-  expect(requests[0]?.url).toContain('https://api.kimi.com/coding/v1/messages')
+  expect(getSubscriptionProvider('kimi-coding')).toMatchObject({
+    api: 'openai-completions',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+  })
+  expect(requests[0]?.url).toBe('https://api.kimi.com/coding/v1/chat/completions')
   expect(requests[0]?.headers.get('authorization')).toBe('Bearer fixture-kimi-access')
   expect(requests[0]?.headers.get('x-api-key')).toBeNull()
   expect(await requests[0]?.json()).toMatchObject({ model: 'kimi-for-coding', stream: true })
@@ -166,7 +159,7 @@ const codexToken = `header.${Buffer.from(
 ).toString('base64url')}.signature`
 
 describe('subscription provider registry', () => {
-  it('freezes exactly the five pi-ai 0.85.1 subscription providers and their login methods', () => {
+  it('freezes exactly the five pi-ai subscription providers and their login methods', () => {
     expect(SUBSCRIPTION_PROVIDER_REGISTRY.map(({ id, loginMethods }) => [id, [...loginMethods]])).toEqual([
       ['openai-codex', ['browser', 'device_code']],
       ['anthropic', ['browser']],
