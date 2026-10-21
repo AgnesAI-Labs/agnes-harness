@@ -77,7 +77,9 @@ requests in that child are refused with instructions to hand the action back to 
 A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
 configuration digest match the parent's binding, in addition to its safety definition. Unprovable
 bindings are excluded; a matching name or schema fingerprint alone does not grant access. MCP and
-Skill resources are the intersection of both effective resource scopes captured at spawn. These
+Skill resources are the intersection of both effective resource scopes captured at spawn. Each
+input uses the real workspace read/list view, filtered by its published root and exact plugin-row
+instance; a warmed composition or a stale discovery entry cannot add resources to another session. These
 snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
 Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
 trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a

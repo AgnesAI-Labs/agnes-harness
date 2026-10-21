@@ -13,14 +13,12 @@ import type { AssemblyContext } from './context.js'
 import type { ProcessServices } from './process-services.js'
 
 /**
- * The Skill generation this assembly serves, which a Skills row refresh replaces. The three
+ * The Skill generation this assembly serves, which a Skills row refresh replaces. The two
  * mutable fields move together: `refreshSkillRow` swaps them and restores them on failure.
  */
 export type SkillState = {
   readonly bind: (input: SkillRuntimeInput | undefined) => SkillRuntimeInput | undefined
   readonly owners: ReturnType<typeof compositionSkillOwners>
-  /** What the daemon supplied, before composition filtering. */
-  available: SkillRuntimeInput | undefined
   /** What prompts preload and the fence's read roots come from. */
   preload: SkillRuntimeInput | undefined
   /** What the live resource input reads; equal to `preload` outside a refresh. */
@@ -56,7 +54,6 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
   const state: SkillState = {
     bind,
     owners,
-    available: deps.skillResources,
     preload,
     active: preload,
     liveInput: Object.freeze({

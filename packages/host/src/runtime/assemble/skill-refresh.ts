@@ -29,7 +29,6 @@ export function createSkillRefresh(
   let skillRefreshTail: Promise<void> = Promise.resolve()
   let skillRetry = 0
   const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
-    const supplied = fresh
     fresh = skillState.bind(fresh)
     const task = skillRefreshTail.then(async () => {
       const previousRows = extensionRows.current()
@@ -45,7 +44,6 @@ export function createSkillRefresh(
               !row.liveResourceRevision?.startsWith(`${revision}:retry`))),
       )
       const oldInput = skillState.active
-      const oldAvailable = skillState.available
       const oldPrepared = new Map(preparedExtensionInputs)
       const oldClaims = builtin.claims
       try {
@@ -77,7 +75,6 @@ export function createSkillRefresh(
         }
         skillState.active = fresh
         skillState.preload = fresh
-        skillState.available = supplied
       } catch (error) {
         try {
           builtin.claims = oldClaims
@@ -86,7 +83,6 @@ export function createSkillRefresh(
           await extensionRows.apply(previousRows)
           skillState.active = oldInput
           skillState.preload = oldInput
-          skillState.available = oldAvailable
         } catch (restoreError) {
           throw new AggregateError([error, restoreError], 'Live resource refresh recovery required')
         }

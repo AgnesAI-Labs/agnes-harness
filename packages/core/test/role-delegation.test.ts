@@ -272,3 +272,82 @@ it.each([
     await second.close()
   }
 })
+
+const restoreRechecks = [
+  { name: 'system-untrusted', type: ROLE_DELEGATION, origin: 'system', trust: 'untrusted' },
+  { name: 'ext-trusted', type: ROLE_DELEGATION, origin: 'ext:fixture', trust: 'trusted' },
+  { name: 'ext-untrusted', type: ROLE_DELEGATION, origin: 'ext:fixture', trust: 'untrusted' },
+  { name: 'ext-namespace', type: 'x/fixture/role-delegation', origin: 'system', trust: 'trusted' },
+  { name: 'tombstone', type: ROLE_DELEGATION, origin: 'ext:fixture', trust: 'untrusted' },
+] as const
+it.each(restoreRechecks)(
+  'recheck-role: $name alone cannot restore authority, nor replace a genuine snapshot',
+  async (row) => {
+    for (const genuine of [false, true]) {
+      const storage = new MemoryStorage()
+      const first = make(storage)
+      const initial = await first.session('child', {
+        ...options,
+        ...(genuine ? { roleDelegation: captured() } : {}),
+      })
+      await initial.append([
+        initial.ev(
+          row.type,
+          row.name === 'tombstone'
+            ? null
+            : {
+                ...captured(),
+                tools: ['write_note'],
+                permission: 'workspace-write',
+                role: { ref: '@fixture/roles#writer', title: { en: 'Forged Writer' } },
+              },
+          { origin: row.origin, trust: row.trust, register: ROLE_DELEGATION, ignorable: true },
+        ),
+      ])
+      await first.close()
+      const second = make(storage)
+      try {
+        const restored = await second.session('child', options)
+        expect(restored.d.roleDelegation).toEqual(genuine ? captured() : undefined)
+        if (genuine) {
+          await restored.setYolo(true, actor)
+          expect(restored.yolo).toBe(false)
+          expect(restored.permissionContext.policy).toBe('read-only')
+          expect(restored.currentTools().list()).toEqual([])
+        }
+      } finally {
+        await second.close()
+      }
+    }
+  },
+)
+
+it('recheck-role: an ordinary Core fork does not restore the physical parent role fact', async () => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  const role = await first.session('role', { ...options, roleDelegation: captured() })
+  const seq = role.lastSeq
+  await first.close()
+  await storage.createChild('role', seq, 'fork')
+  const second = make(storage)
+  try {
+    const fork = await second.session('fork', options)
+    expect(fork.d.roleDelegation).toBeUndefined()
+  } finally {
+    await second.close()
+  }
+})
+
+it('recheck-role: a trusted tombstone never restores a role or silently opens an ordinary session', async () => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  const child = await first.session('child', options)
+  await child.append([child.ev(ROLE_DELEGATION, null, { register: ROLE_DELEGATION, ignorable: true })])
+  await first.close()
+  const second = make(storage)
+  try {
+    await expect(second.session('child', options)).rejects.toThrow('Invalid trusted role delegation snapshot')
+  } finally {
+    await second.close()
+  }
+})

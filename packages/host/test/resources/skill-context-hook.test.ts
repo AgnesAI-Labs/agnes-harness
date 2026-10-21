@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -52,6 +53,75 @@ function readyRuntime(
     readFile: () => ({ ok: false, code: 'NOT_FOUND' as const }),
   }
 }
+
+it('captures readable Skill IDs only inside the owning session workspace', async () => {
+  const dataDir = scratch()
+  const roots = [realpathSync(scratch()), realpathSync(scratch())]
+  const calls = new AsyncLocalStorage<{ root: string; key: string }>()
+  const views = new Map(
+    roots.map((root, i) => [
+      root,
+      readyRuntime({
+        resourceId: `skill/workspace/workspace-agnes/${String(i).repeat(64)}`,
+        sourceIdentity: { scope: 'workspace', rootKey: 'workspace-agnes', sourceId: String(i).repeat(64) },
+      }),
+    ]),
+  )
+  const current = () => views.get(calls.getStore()?.root ?? '')
+  const skills: SkillRuntimeInput = {
+    list: () => current()?.list() ?? [],
+    read: (id, session) =>
+      calls.getStore()?.key === session.sessionKey
+        ? (current()?.read(id, session) ?? { ok: false, code: 'NOT_FOUND' })
+        : { ok: false, code: 'UNAUTHORIZED' },
+    readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+    scopeWorkspace: (root, key, invoke) => calls.run({ root, key }, invoke),
+  }
+  const { host } = await createTestHost({ dataDir, skillResources: skills })
+  try {
+    const sessions = await Promise.all(
+      roots.map((cwd, i) => {
+        const key = `scope-${i}`
+        return host.createSession({
+          key,
+          cwd,
+          binding: host.acceptWorkspaceBinding(
+            {
+              version: 1,
+              sessionKey: key,
+              workspaceId: String(i).repeat(64),
+              revision: 1,
+              canonicalRoot: cwd,
+            },
+            key,
+          ),
+        })
+      }),
+    )
+    const captured = await Promise.all(
+      sessions.map((session) => {
+        if (!session.d.workspaceInvocation) throw new Error('missing workspace')
+        return host.captureSessionCapabilities!(session.key, session.d.workspaceInvocation)
+      }),
+    )
+    captured.forEach((caps, i) => {
+      expect(caps.skills.filter((skill) => skill.enabled).map((skill) => skill.id)).toEqual([
+        views.get(roots[i]!)!.list()[0]!.resourceId,
+      ])
+    })
+    expect(skills.list()).toEqual([])
+    expect(skills.read(resourceId, { sessionKey: sessions[0]!.key })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED',
+    })
+    await sessions[0]!.close()
+    await expect(
+      host.captureSessionCapabilities!(sessions[0]!.key, sessions[0]!.d.workspaceInvocation!),
+    ).rejects.toThrow()
+  } finally {
+    await host.close()
+  }
+})
 
 function manyReadyRuntime(): SkillRuntimeInput {
   return {

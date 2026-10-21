@@ -56,7 +56,8 @@ export function createRoleChildren(deps: {
     list: () => catalogue(),
     async resolve(parent, input) {
       const ref = parseAgentRef(input)
-      // Snapshot before the first await. Never retain a live parent authorization link.
+      // Copy synchronous parent state before the first await; resources enter its workspace below.
+      // Never retain a live parent authorization link after admission.
       const parentPreset = structuredClone(parent.preset)
       const actor = structuredClone(parent.d.actor)
       const permission =
@@ -67,7 +68,9 @@ export function createRoleChildren(deps: {
           ? 'read-only'
           : 'workspace-write'
       const parentHost = deps.sessionOwners.get(parent.key)?.host ?? deps.host()
-      const parentResources = structuredClone(parentHost.sessionCapabilities?.(parent.key))
+      const workspace = parent.d.workspaceInvocation
+      if (!workspace || !parentHost.captureSessionCapabilities)
+        throw new HostError('E_PRESET_UNSUPPORTED', 'Parent resource workspace is unavailable')
       const parentTools = [...parent.currentTools().snapshot(parent.lastSeq).byName.values()]
       const parentBindings = new Map(
         parentTools.map((tool) => [tool.name, roleToolBinding(parentHost, tool)]),
@@ -78,6 +81,7 @@ export function createRoleChildren(deps: {
       const filesystem = structuredClone(sandbox.policy)
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
       const enforced = parent.d.runtime.enforcement().level !== 'none'
+      const parentResources = await parentHost.captureSessionCapabilities(parent.key, workspace)
       const role = (await catalogue()).find((entry) => entry.ref === ref)
       if (!role)
         throw new HostError(
@@ -86,12 +90,10 @@ export function createRoleChildren(deps: {
         )
       const reviewed = await deps.resolve(ref)
       const candidate = await deps.open({ sessionKey: '', tree: reviewed.tree, profile: reviewed.profile })
-      const enabled =
-        candidate.host
-          .sessionCapabilities?.('')
-          ?.tools.filter((tool) => tool.enabled)
-          .map((tool) => tool.id) ?? []
-      const roleCapabilities = candidate.host.sessionCapabilities?.('')
+      if (!candidate.host.captureSessionCapabilities)
+        throw new HostError('E_PRESET_UNSUPPORTED', 'Role resource workspace is unavailable')
+      const roleCapabilities = await candidate.host.captureSessionCapabilities('', workspace)
+      const enabled = roleCapabilities.tools.filter((tool) => tool.enabled).map((tool) => tool.id)
       const resources = {
         mcp: (parentResources?.mcp ?? [])
           .filter(
@@ -121,7 +123,7 @@ export function createRoleChildren(deps: {
               tool.definitionFingerprint,
         )
         .map((tool) => tool.name)
-      const rolePermissions = candidate.host.sessionCapabilities?.('')?.permissions
+      const rolePermissions = roleCapabilities.permissions
       const roleReadOnly =
         rolePermissions?.readOnly === true ||
         rolePermissions?.policy === 'read-only' ||

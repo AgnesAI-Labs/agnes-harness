@@ -111,6 +111,8 @@ export interface Host {
   executionIdentity?(sessionKey?: string): string
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
+  /** Backend snapshot through the real workspace Skill view, including for a not-yet-open role. */
+  captureSessionCapabilities?: Assembled['captureSessionCapabilities']
   pluginGenerationStatus?(): PluginGenerationStatus
   /** Read-only status with cooperative integrity verification of historical snapshots. */
   pluginGenerationStatusAsync?(): Promise<PluginGenerationStatus>
@@ -492,6 +494,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     presets: a.presets,
     sessionCapabilities: (key) => a.sessionCapabilities(key),
+    captureSessionCapabilities: a.captureSessionCapabilities,
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),

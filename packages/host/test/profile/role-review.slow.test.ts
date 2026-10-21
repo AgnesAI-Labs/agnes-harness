@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection } from '@agnes/base'
 import { hasChildControl } from '@agnes/core'
@@ -10,7 +11,14 @@ import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { type ApplicationPreview, type InferenceEvent, jcs, type RequestBody } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { expect, it } from 'vitest'
-import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
+import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
+import {
+  packageDirs,
+  pluginHost,
+  pluginRow,
+  pluginSourceWith,
+  targetOf,
+} from '../assemble/plugin-extension-fixture.js'
 
 const vendor = '@fixture/review-role'
 const ref = (name: string) => `${vendor}#${name}`
@@ -22,6 +30,15 @@ async function setup(
   requestCall?: { name: string; args: Record<string, unknown> },
   configured = false,
   resource?: 'mcp' | 'skill',
+  recheck: {
+    commonResources?: boolean
+    deferred?: boolean
+    disclose?: boolean
+    liveMcp?: boolean
+    stableSkills?: boolean
+    scopedRuntimeSkill?: boolean
+    config?: 'same' | 'canonical' | 'absent-empty'
+  } = {},
 ) {
   const raw = pluginSourceWith(
     [
@@ -37,6 +54,8 @@ ctx.tools.register({ ...tool('ptc_bridge'), execute: async (_args, ctx) => {
  return { content: [{ type: 'text', text: JSON.stringify(reply) }], isError: 'error' in reply }
 } })
 ctx.tools.register({ ...tool('configured_read'), execute: async () => ({ content: [{ type: 'text', text: config.scope === 'role' ? 'ROLE_PRIVATE_DATA' : 'PARENT_PUBLIC_DATA' }] }) })
+${recheck.liveMcp ? `for (const scope of ['parent','role']) ctx.resources.register({id: 'mcp/review-' + scope + '-server', kind: 'mcp', name: 'review-' + scope + '-server', description: 'fixture'})` : ''}
+${resource && recheck.deferred ? `ctx.tools.register({ ...tool('deferred_resource_bridge'), meta: {...tool('deferred_resource_bridge').meta, deferLoading: true}, execute: async (_args, ctx) => ctx.tools.invoke(${JSON.stringify(resource === 'mcp' ? 'list_mcp_resources' : 'skill_read')}, ${JSON.stringify(resource === 'mcp' ? { server: 'review-role-server' } : { name: 'review-role-skill' })}) })` : ''}
 ${
   resource
     ? `ctx.tools.register({ ...tool('ptc_resource_bridge'), execute: async (_args, ctx) => {
@@ -47,10 +66,12 @@ ${
 }
 ${resource ? `ctx.tools.register({ ...tool('resource_bridge'), execute: async (_args, ctx) => ctx.tools.invoke(${JSON.stringify(resource === 'mcp' ? 'list_mcp_resources' : 'skill_read')}, ${JSON.stringify(resource === 'mcp' ? { server: 'review-role-server' } : { name: 'review-role-skill' })}) })` : ''}
 ${
-  resource === 'skill'
-    ? `ctx.skills.register({ name: 'review-parent-skill', description: 'parent skill', body: 'PARENT_PUBLIC_SKILL' })
+  recheck.scopedRuntimeSkill
+    ? `ctx.skills.register({ name: 'review-role-skill', description: 'configured runtime skill', body: config?.scope === 'role' ? 'ROLE_PRIVATE_SKILL' : 'PARENT_PUBLIC_SKILL' })`
+    : resource === 'skill' && !recheck.stableSkills
+      ? `ctx.skills.register({ name: 'review-parent-skill', description: 'parent skill', body: 'PARENT_PUBLIC_SKILL' })
 ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body: 'ROLE_PRIVATE_SKILL' })`
-    : ''
+      : ''
 }
 `,
       },
@@ -92,12 +113,32 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
       const profile = manifest.agnes.bundles[name].profile
       profile.tools.push('resource_bridge', resource === 'mcp' ? 'list_mcp_resources' : 'skill_read')
       if (requestCall?.name === 'ptc_resource_bridge') profile.tools.push('ptc_resource_bridge')
+      if (recheck.deferred) profile.tools.push('deferred_resource_bridge')
+      if (recheck.disclose) profile.tools.push('tool_describe', 'tool_search')
       profile[resource === 'mcp' ? 'mcp' : 'skills'] = [
-        `review-${scope}-${resource === 'mcp' ? 'server' : 'skill'}`,
+        `review-${recheck.commonResources ? 'role' : scope}-${resource === 'mcp' ? 'server' : 'skill'}`,
       ]
     }
   }
+  if (recheck.config) {
+    for (const name of ['assistant', 'reader']) {
+      const profile = manifest.agnes.bundles[name].profile
+      profile.tools.push('configured_read')
+      const config =
+        recheck.config === 'canonical'
+          ? name === 'assistant'
+            ? { scope: 'parent', nested: { a: 1, b: [2, 3] } }
+            : { nested: { b: [2, 3], a: 1 }, scope: 'parent' }
+          : recheck.config === 'same'
+            ? { scope: 'parent' }
+            : name === 'assistant'
+              ? undefined
+              : {}
+      profile.plugins = { 'ext:fixture/review-role': config === undefined ? {} : { config } }
+    }
+  }
   if (resource === 'skill') manifest.agnes.plugins[0].inject.push('skills')
+  if (recheck.liveMcp) manifest.agnes.plugins[0].inject.push('resources')
   const declaration = {
     id: 'review',
     agents: ['assistant', 'reader'].map(ref),
@@ -118,7 +159,9 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
           "inject: ['hooks', 'eventLog', 'self', 'tools']",
           resource === 'skill'
             ? "inject: ['hooks', 'eventLog', 'self', 'tools', 'skills']"
-            : "inject: ['hooks', 'eventLog', 'self', 'tools']",
+            : recheck.liveMcp
+              ? "inject: ['hooks', 'eventLog', 'self', 'tools', 'resources']"
+              : "inject: ['hooks', 'eventLog', 'self', 'tools']",
         ),
   )
   const source = {
@@ -127,7 +170,34 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
   }
   const requests: RequestBody[] = []
   const skills = createSkillCandidateRegistry({ barrier: { quiesce: async (_id, publish) => publish({}) } })
-  const fixture = await pluginHost(source, {
+  if (recheck.stableSkills) {
+    const candidates = ['parent', 'role'].map((scope) => {
+      const name = `review-${scope}-skill`
+      const sourceId = digest(name)
+      return {
+        resourceId: `skill/user/user-agnes/${sourceId}`,
+        name,
+        description: name,
+        revision: digest({ name, body: scope }),
+        capabilityHash: digest({ name }),
+        sourceIdentity: { scope: 'user' as const, rootKey: 'user-agnes' as const, sourceId },
+        priority: 400,
+        body: scope === 'role' ? 'ROLE_PRIVATE_SKILL' : 'PARENT_PUBLIC_SKILL',
+      }
+    })
+    skills.replaceRoot('user-agnes', candidates)
+    skills.setControl({
+      desired: candidates.map((candidate) => ({ resourceId: candidate.resourceId, state: 'enabled' })),
+      trust: candidates.map((candidate) => ({
+        resourceId: candidate.resourceId,
+        revision: candidate.revision,
+        capabilityHash: candidate.capabilityHash,
+        state: 'trusted',
+      })),
+    })
+    await skills.activate('recheck-fixture', async () => {})
+  }
+  const hostOptions: Partial<TestHostOptions> = {
     disableSessionTitle: true,
     treeBudgetCredits: 100,
     ...(resource === 'skill'
@@ -139,8 +209,12 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
         scripts: [
           (request) => {
             requests.push(request)
-            const call = requestCall ?? { name: 'bridge', args: {} }
-            return request.messages.some((m) => m.role === 'tool_result')
+            const results = request.messages.filter((m) => m.role === 'tool_result').length
+            const call =
+              recheck.disclose && results === 0
+                ? { name: 'tool_describe', args: { name: requestCall!.name } }
+                : (requestCall ?? { name: 'bridge', args: {} })
+            return results > (recheck.disclose ? 1 : 0)
               ? [
                   { type: 'text_delta', delta: 'done' },
                   { type: 'done', reason: 'stop' },
@@ -152,18 +226,19 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
           },
         ],
       }),
-  })
+  }
+  const fixture = await pluginHost(source, hostOptions)
   const row = pluginRow('ext:fixture/review-role', 'plugin', false, { vendor })
   await fixture.host.applyRuntimeTarget(
     targetOf([
       ...fixture.host.extensionRows.current(),
-      ...(resource === 'skill'
+      ...(resource === 'skill' || recheck.liveMcp
         ? [
             createPluginRow({
               ...row,
               snapshotDigest: source.snapshot.integrity,
               exportName: 'plugin',
-              inject: [...row.inject, 'skills'],
+              inject: [...row.inject, resource === 'skill' ? 'skills' : 'resources'],
             }),
           ]
         : [row]),
@@ -218,7 +293,20 @@ ctx.skills.register({ name: 'review-role-skill', description: 'role skill', body
       role,
       ...extra,
     })
-  return { fixture, config, selection, save, parent, create, requests, entry }
+  const restart = async () => {
+    const target = fixture.host.runtimeTargetSnapshot!()
+    await fixture.host.close()
+    const next = await createTestHost({
+      dataDir: fixture.dataDir,
+      packageDirs,
+      runtimePluginCatalogue: [source],
+      extensionLoader: { import: async (file) => await import(pathToFileURL(file).href) },
+      ...hostOptions,
+    })
+    fixture.host = next.host
+    await fixture.host.applyRuntimeTarget(target)
+  }
+  return { fixture, config, selection, save, parent, create, requests, entry, restart }
 }
 
 it('review-role: cleared, cross-profile and tampered application inputs cannot mint a role child', async () => {
@@ -490,6 +578,179 @@ it.each(['mcp', 'skill'] as const)(
       expect(reopened.d.roleDelegation?.resources).toEqual({ mcp: [], skills: [] })
       const caps = f.fixture.host.sessionCapabilities!(handle.key)
       expect(caps[resource === 'mcp' ? 'mcp' : 'skills'].some((item) => item.enabled)).toBe(false)
+      await reopened.close()
+    } finally {
+      await f.fixture.host.close()
+      unbind()
+    }
+  },
+  90_000,
+)
+
+it.each(['same', 'canonical', 'absent-empty'] as const)(
+  'recheck-role: concrete binding handles %s configuration without widening or losing identical tools',
+  async (config) => {
+    const f = await setup({ name: 'configured_read', args: {} }, false, undefined, { config })
+    try {
+      await f.save()
+      const handle = await f.create()
+      const child = f.fixture.host.kernel.get(handle.key)!
+      const allowed = config !== 'absent-empty'
+      expect(child.d.roleDelegation?.tools.includes('configured_read')).toBe(allowed)
+      expect(!!child.currentTools().resolve('configured_read')).toBe(allowed)
+      await handle.run('Inspect')
+      const rows = await f.parent.d.log.storage.scan(handle.key, { type: 'tool/result', limit: 100 })
+      expect(JSON.stringify(rows).includes('PARENT_PUBLIC_DATA')).toBe(allowed)
+      expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_DATA')
+      if (!allowed) expect(rows.some(refused)).toBe(true)
+      await handle.cancel?.()
+    } finally {
+      await f.fixture.host.close()
+    }
+  },
+  90_000,
+)
+
+const resourceRechecks = (['mcp', 'skill'] as const).flatMap((resource) =>
+  (['direct', 'nested', 'ptc', 'deferred'] as const).flatMap((path) =>
+    [false, true].map((common) => ({ resource, path, common })),
+  ),
+)
+
+it('recheck-role: a warmed role composition cannot put its runtime Skill into the parent resource ceiling', async () => {
+  const f = await setup({ name: 'skill_read', args: { name: 'review-role-skill' } }, true, 'skill', {
+    commonResources: true,
+    disclose: true,
+    scopedRuntimeSkill: true,
+  })
+  try {
+    await f.save()
+    await f.parent.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'Read skill' }],
+      actor: f.parent.d.actor,
+    })
+    await f.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+    const parentRows = JSON.stringify(await f.parent.scan({ type: 'tool/result', limit: 100 }))
+    expect(parentRows).toContain('PARENT_PUBLIC_SKILL')
+    expect(parentRows).not.toContain('ROLE_PRIVATE_SKILL')
+    // A normal first delegation mounts both the role and the narrowed child composition.
+    const first = await f.create()
+    await first.run('Inspect')
+    const firstRows = await f.parent.d.log.storage.scan(first.key, { type: 'tool/result', limit: 100 })
+    expect(JSON.stringify(firstRows)).not.toContain('ROLE_PRIVATE_SKILL')
+    expect(firstRows.some(refused)).toBe(true)
+    await first.cancel?.()
+    const control = await f.fixture.host.createSession({
+      key: 'parent-control',
+      cwd: f.fixture.dataDir,
+      agent: ref('assistant'),
+    })
+    await control.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'Read skill after warming' }],
+      actor: control.d.actor,
+    })
+    await control.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+    const controlRows = JSON.stringify(await control.scan({ type: 'tool/result', limit: 100 }))
+    expect(controlRows).toContain('PARENT_PUBLIC_SKILL')
+    expect(controlRows).not.toContain('ROLE_PRIVATE_SKILL')
+    await control.close()
+    const second = await f.create(ref('reader'), { input: 'Read skill after warming' })
+    const child = f.fixture.host.kernel.get(second.key)!
+    expect(child.d.roleDelegation?.tools).toContain('skill_read')
+    expect(child.d.roleDelegation?.tools).not.toContain('configured_read')
+    await second.run('Read skill after warming')
+    const rows = await f.parent.d.log.storage.scan(second.key, { type: 'tool/result', limit: 100 })
+    expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_SKILL')
+    expect(rows.some(refused)).toBe(true)
+    await second.cancel?.()
+  } finally {
+    await f.fixture.host.close()
+  }
+}, 90_000)
+
+it.each(resourceRechecks)(
+  'recheck-role: $resource $path common=$common keeps the resource ceiling after actual reopen',
+  async ({ resource, path, common }) => {
+    const requested: string[] = []
+    const unbind =
+      resource === 'mcp'
+        ? bindMcpResourceServer(
+            'review-role-server',
+            {
+              id: 'review-role-server',
+              supportsResources: true,
+              listResources: async () => {
+                requested.push('review-role-server')
+                return { resources: [{ name: 'private', uri: 'fixture://private' }] }
+              },
+            } as McpConnection,
+            { id: 'review-role-server', transport: 'stdio', cmd: ['fixture'], defer: true },
+          )
+        : () => {}
+    const name =
+      path === 'direct'
+        ? resource === 'mcp'
+          ? 'list_mcp_resources'
+          : 'skill_read'
+        : path === 'nested'
+          ? 'resource_bridge'
+          : path === 'ptc'
+            ? 'ptc_resource_bridge'
+            : 'deferred_resource_bridge'
+    const args =
+      path !== 'direct'
+        ? {}
+        : resource === 'mcp'
+          ? { server: 'review-role-server' }
+          : { name: 'review-role-skill' }
+    const f = await setup({ name, args }, false, resource, {
+      commonResources: common,
+      deferred: path === 'deferred',
+      disclose: true,
+      liveMcp: resource === 'mcp',
+      stableSkills: resource === 'skill',
+    })
+    try {
+      await f.save()
+      const kind = resource === 'mcp' ? 'mcp' : 'skills'
+      const parentIds = f.fixture.host.sessionCapabilities!(f.parent.key)
+        [kind].filter((item) => item.enabled)
+        .map((item) => item.id)
+      const handle = await f.create()
+      const child = f.fixture.host.kernel.get(handle.key)!
+      const before = structuredClone(child.d.roleDelegation)
+      expect(parentIds.length).toBeGreaterThan(0)
+      expect(before?.resources?.[kind]).toEqual(common ? parentIds : [])
+      expect(child.currentTools().resolve(name)).toBeDefined()
+      if (path === 'deferred') expect(child.currentTools().resolve(name)?.meta.deferLoading).toBe(true)
+      // Close before any turn and resume without the parent or a caller-supplied snapshot.
+      await handle.cancel?.()
+      await f.parent.close()
+      if (path === 'ptc' || path === 'deferred') await f.restart()
+      const reopened = await f.fixture.host.createSession({ key: handle.key, cwd: f.fixture.dataDir })
+      expect(reopened.d.roleDelegation).toEqual(before)
+      expect(
+        f.fixture.host.sessionCapabilities!(handle.key)
+          [kind].filter((item) => item.enabled)
+          .map((item) => item.id),
+      ).toEqual(common ? parentIds : [])
+      await reopened.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Inspect resource' }],
+        actor: reopened.d.actor,
+      })
+      await reopened.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      const rows = await reopened.scan({ type: 'tool/result', limit: 100 })
+      const serialized = JSON.stringify(rows)
+      if (common) {
+        expect(rows.some(refused), JSON.stringify({ before, parentIds, rows })).toBe(false)
+        expect(serialized).toContain(resource === 'mcp' ? 'fixture://private' : 'ROLE_PRIVATE_SKILL')
+        if (resource === 'mcp') expect(requested).toEqual(['review-role-server'])
+      } else {
+        expect(rows.some(refused)).toBe(true)
+        expect(serialized).not.toContain('ROLE_PRIVATE_SKILL')
+        expect(serialized).not.toContain('fixture://private')
+        expect(requested).toEqual([])
+      }
       await reopened.close()
     } finally {
       await f.fixture.host.close()
