@@ -20,6 +20,7 @@ export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 
 import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { syncTreeBatched } from './tree-sync.js'
 import type { PipeReservation } from './windows-pipe-listener.js'
 import type { OwnedPipe } from './windows-pipe-stream.js'
 
@@ -42,6 +43,7 @@ type Native = {
     directory: boolean,
   ): void
   renameDirectoryNoReplace?(from: string, to: string): void
+  syncDescriptor?(fd: number, full: boolean): void
   abiVersion: number
   spawnDetached?(executable: string, command: string, cwd: string, env: string): OwnedDetachedProcess
   reservePipeName(path: string, maximum: number): PipeReservation
@@ -578,12 +580,15 @@ export function hasPrivateDaclSync(path: string): boolean {
   return (stat.isFile() || stat.isDirectory()) && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0
 }
 export function syncFileSync(path: string): void {
+  syncFileWith(path, fsyncSync)
+}
+function syncFileWith(path: string, flush: (fd: number) => void): void {
   const target = filePath(path)
   const fd = openSync(target, windows ? 'r+' : 'r')
   try {
     if (!fstatSync(fd).isFile())
       throw Object.assign(new Error('File synchronization requires a regular file'), { code: 'EISDIR' })
-    fsyncSync(fd)
+    flush(fd)
   } finally {
     closeSync(fd)
   }
@@ -687,6 +692,33 @@ export function syncTreeSync(root: string): void {
   syncDirectorySync(root)
 }
 
+let plainFlush: Native['syncDescriptor'] | null | undefined
+/** The macOS native fsync that does not also drain the drive cache; null elsewhere or in an older artifact. */
+function plainDescriptorFlush(): NonNullable<Native['syncDescriptor']> | null {
+  if (plainFlush === undefined)
+    try {
+      plainFlush = darwin ? (native().syncDescriptor ?? null) : null
+    } catch {
+      plainFlush = null
+    }
+  return plainFlush
+}
+
+/**
+ * `syncTreeSync` for each tree of one publication: the trees are durable when this returns. Node's fsync
+ * on macOS drains the whole drive cache on every call, so there each entry gets a plain fsync and the
+ * last root one full flush (see `syncTreeBatched`). Elsewhere, or with a native artifact lacking that
+ * flush, this is `syncTreeSync` on each root, in order.
+ */
+export function syncTreeBatchedSync(...roots: string[]): void {
+  const sync = plainDescriptorFlush()
+  if (!sync) for (const root of roots) syncTreeSync(root)
+  else
+    syncTreeBatched(roots.map(filePath), (path, directory, full) =>
+      (directory ? syncDirectoryWith : syncFileWith)(path, (fd) => sync(fd, full)),
+    )
+}
+
 /** Removes one file and flushes the parent directory so the removal survives power loss. A missing file or directory is success. */
 export function removeFileDurablySync(path: string): void {
   rmSync(path, { force: true })
@@ -744,9 +776,12 @@ export function syncDirectorySync(path: string): void {
     native().syncDirectory(target)
     return
   }
-  const fd = openSync(target, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  syncDirectoryWith(path, fsyncSync)
+}
+function syncDirectoryWith(path: string, flush: (fd: number) => void): void {
+  const fd = openSync(filePath(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try {
-    fsyncSync(fd)
+    flush(fd)
   } finally {
     closeSync(fd)
   }
