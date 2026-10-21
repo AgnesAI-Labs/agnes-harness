@@ -138,7 +138,7 @@ export interface ClientReconciler {
   /** 名册失效提示（WC10 packages_changed 的语义：推送是失效提示，必须重读名册）。 */
   invalidate(): Promise<void>
   /**
-   * Reload one snapshot named by the SSE channel.  The hint is never trusted as an asset URL: we
+   * Reload one snapshot named by the public reload hints.  The hint is never trusted as an asset URL: we
    * first reread the daemon roster, then only apply its matching immutable module row.  A failed
    * reload remains retryable on the next event/invalidation; there is intentionally no blacklist.
    */

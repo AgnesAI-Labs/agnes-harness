@@ -77,6 +77,10 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
 
   let pickerPending = false
   let activePicker: AbortController | undefined
+  const changeEpoch = randomBytes(16).toString('hex')
+  let changeCursor = 0
+  let developmentRevision = 0
+  const changes: { cursor: number; id: string; rev: string }[] = []
   const pluginEventClients = new Set<ServerResponse>()
   const developmentReloadClients = new Set<ServerResponse>()
   const watchedPluginBuilds = new Map<string, WatchedPluginBuild>()
@@ -86,6 +90,8 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
   const emitPluginRebuilt = (event: PluginRebuiltEvent): void => {
+    changes.push({ cursor: ++changeCursor, id: event.packageId, rev: event.revision })
+    if (changes.length > 256) changes.shift()
     for (const response of pluginEventClients)
       writeSseEvent(response, 'rebuilt', { type: 'rebuilt', id: event.packageId, rev: event.revision })
   }
@@ -374,8 +380,63 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         response.end(
           request.method === 'HEAD'
             ? undefined
-            : `const events = new EventSource('/__agnes/dev/events');\nevents.addEventListener('reload', () => location.reload());\n`,
+            : `let revision; let stopped = false; let controller; let timer;
+async function poll() {
+  controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('/__agnes/dev/revision', { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) throw new Error('reload poll failed');
+    const next = await response.text();
+    if (revision !== undefined && revision !== next) location.reload();
+    revision = next;
+  } catch {} finally {
+    clearTimeout(timeout);
+    if (!stopped) timer = setTimeout(poll, 1000);
+  }
+}
+addEventListener('pagehide', () => { stopped = true; clearTimeout(timer); controller?.abort(); });
+addEventListener('pageshow', () => { if (stopped) { stopped = false; void poll(); } });
+void poll();\n`,
         )
+        return
+      }
+      if (request.url === '/__agnes/dev/revision') {
+        if (!options.developmentReload) {
+          response.writeHead(404).end()
+          return
+        }
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' })
+        response.end(`${changeEpoch}:${developmentRevision}`)
+        return
+      }
+      if (request.url?.split('?')[0] === '/plugins/changes') {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        const query = new URL(request.url, expectedOrigin).searchParams
+        const rawCursor = query.get('cursor')
+        const cursor = rawCursor === null ? 0 : Number(rawCursor)
+        if (!Number.isSafeInteger(cursor) || cursor < 0) {
+          response.writeHead(400).end()
+          return
+        }
+        const epoch = query.get('epoch')
+        const reset =
+          (epoch !== null && epoch !== changeEpoch) ||
+          cursor > changeCursor ||
+          (rawCursor !== null && cursor < (changes[0]?.cursor ?? 1) - 1)
+        json(response, 200, {
+          epoch: changeEpoch,
+          cursor: changeCursor,
+          reset,
+          events: changes.filter((event) => event.cursor > cursor),
+        })
         return
       }
       if (request.url === '/__agnes/dev/events') {
@@ -635,6 +696,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   return {
     url: actualOrigin,
     reloadDevelopmentClients: () => {
+      developmentRevision++
       for (const response of developmentReloadClients) writeSseEvent(response, 'reload', {})
     },
     close: () =>
