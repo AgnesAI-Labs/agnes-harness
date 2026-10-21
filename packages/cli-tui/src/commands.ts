@@ -10,6 +10,7 @@ import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
@@ -111,6 +112,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[revoke <n|id>]',
     descriptionKey: 'commands.grants',
     summaryKey: 'commands.grantsSummary',
+  },
+  {
+    name: '/deliverables',
+    args: '[save <n|id> [path]]',
+    descriptionKey: 'commands.deliverables',
+    summaryKey: 'commands.deliverablesSummary',
   },
   {
     name: '/attach',
@@ -417,6 +424,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     }
     case '/grants':
       return grantsSlash(app, line)
+    case '/deliverables':
+      return deliverablesSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':

@@ -81,6 +81,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--format': 'format',
   '-o': 'out',
   '--out': 'out',
+  '--save': 'save',
   '--from': 'from',
   '--key': 'key',
   '--session': 'key',
@@ -102,6 +103,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--raw': 'raw',
   '--resolved': 'resolved',
   '--archived': 'archived',
+  '--force': 'force',
   '--probe': 'probe',
   '--yes': 'yes',
   '--help': 'help',
@@ -135,6 +137,7 @@ function defaults(): ParsedArgs {
     raw: false,
     resolved: false,
     archived: false,
+    force: false,
     probe: false,
   }
 }

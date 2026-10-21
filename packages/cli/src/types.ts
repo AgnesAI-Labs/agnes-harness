@@ -90,6 +90,10 @@ export type ParsedArgs = {
   resolved: boolean
   /** `sessions list --archived`: only archived sessions. */
   archived: boolean
+  /** `sessions deliverables --save`: the deliverable to download, by number or id. */
+  save?: string
+  /** `sessions deliverables --save`: replace an existing target file. */
+  force: boolean
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */

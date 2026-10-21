@@ -5,6 +5,7 @@ import { ExitCode, UsageError } from '../errors.js'
 import { newPackageCommandId } from '../tui/package-admin.js'
 import type { ParsedArgs } from '../types.js'
 import { approvalsCommand } from './approvals.js'
+import { deliverablesCommand } from './deliverables.js'
 import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
 
 type SessionsIO = {
@@ -63,11 +64,12 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
     )
     return ExitCode.OK
   }
+  if (action === 'deliverables') return deliverablesCommand(p, client, io)
   const managed = MANAGE_ACTIONS.find((a) => a === action)
   if (managed) return manageSessions(managed, p, client, io)
   if (action !== 'list' && action !== 'show')
     throw new UsageError(
-      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups or migrate',
+      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables or migrate',
     )
 
   const id = action === 'show' ? p.positional[1] : undefined

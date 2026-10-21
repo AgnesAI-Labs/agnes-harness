@@ -1,6 +1,11 @@
+import { createHash } from 'node:crypto'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
+import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
 
 const meta = (sessionId: string, cwd: string) => ({
@@ -168,5 +173,87 @@ describe('/grants', () => {
     expect((await runSlash(app, '/grants')).text).toBe(tt('grants.none', 'en'))
     sessionGrants.mockRejectedValueOnce(new Error('admin tier required'))
     await expect(runSlash(app, '/grants')).rejects.toThrow('admin tier required')
+  })
+})
+
+describe('/deliverables', () => {
+  const body = Buffer.from('report body')
+  const artifact = {
+    sha256: createHash('sha256').update(body).digest('hex'),
+    size: body.length,
+    mime: 'text/plain',
+  }
+  const present = (name: string) => ({
+    items: [
+      {
+        callSeq: 1,
+        resultSeq: 2,
+        toolUseId: 'tu',
+        structured: { deliverables: [{ name, description: '', ref: artifact }] },
+      },
+    ],
+  })
+  const read = (bytes: Buffer) =>
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      artifact,
+      acceptRanges: 'bytes',
+      etag: `"${artifact.sha256}"`,
+      contentLength: bytes.length,
+      base64: bytes.toString('base64'),
+    }))
+
+  it('lists files and saves one into the app directory, refusing an existing target', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-tui-deliv-'))
+    try {
+      const deliverables = vi.fn(async () => ({ sessionId: 'cur', upto: 5, ...present('docs/r[31m.txt') }))
+      const call = read(body)
+      const app = { ...appWith({ call }, { deliverables }), cwd: dir } as unknown as TuiApp
+      expect((await runSlash(app, '/deliverables')).text).toBe(
+        `1\tdocs/r[31m.txt\t${body.length}\ttext/plain`,
+      )
+      const saved = await runSlash(app, '/deliverables save 1')
+      expect(saved.text).toContain(
+        `${join(dir, 'r[31m.txt')} (${body.length} bytes, sha256 ${artifact.sha256})`,
+      )
+      expect(readFileSync(join(dir, 'r[31m.txt'))).toEqual(body)
+      expect(call).toHaveBeenCalledWith(
+        '_agnes/v1/artifact.read',
+        expect.objectContaining({ sessionId: 'cur', laneId: 'main', artifact }),
+      )
+      await expect(runSlash(app, '/deliverables save 1')).rejects.toThrow('use --force')
+      writeFileSync(join(dir, 'keep.txt'), 'mine')
+      await expect(runSlash(app, '/deliverables save 1 keep.txt')).rejects.toThrow('already exists')
+      expect(readFileSync(join(dir, 'keep.txt'), 'utf8')).toBe('mine')
+      expect((await runSlash(app, '/deliverables save 7')).text).toBe(
+        tt('deliverables.unknown', 'en', { key: '7' }),
+      )
+      expect((await runSlash(app, '/deliverables save')).text).toBe(tt('deliverables.usage', 'en'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('removes the temp file when the downloaded bytes fail the sha256 check', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-tui-deliv-'))
+    try {
+      const deliverables = vi.fn(async () => ({ sessionId: 'cur', upto: 5, ...present('r.txt') }))
+      const app = {
+        ...appWith({ call: read(Buffer.from('other bytes')) }, { deliverables }),
+        cwd: dir,
+      } as unknown as TuiApp
+      await expect(runSlash(app, '/deliverables save 1')).rejects.toThrow(/mismatch/)
+      expect(readdirSync(dir)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('only ever uses the last path segment of a name, and refuses unusable ones', () => {
+    expect(deliverableBasename('a/b/../c.txt')).toBe('c.txt')
+    expect(deliverableBasename('C:\\x\\y.txt')).toBe('y.txt')
+    for (const bad of ['', '.', '..', 'a/..', 'a\u0000b', 'x\u001b[0m'])
+      expect(() => deliverableBasename(bad), JSON.stringify(bad)).toThrow('not a usable file name')
   })
 })
