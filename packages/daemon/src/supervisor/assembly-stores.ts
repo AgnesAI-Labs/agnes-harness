@@ -21,7 +21,6 @@ import {
 import { SourceAuthRotation } from '@agnes/daemon-foundation/storage/source-auth-rotation'
 import { workspaceIdFor } from '@agnes/daemon-foundation/storage/workspaces'
 import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
-import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
 import { createExtensionActivationBarrier, createPlatform } from '@agnes/host'
 import { writePackageSkillInventory } from '@agnes/resource-control-daemon'
 import { windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
@@ -115,15 +114,6 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     collectPackageSkillFiles,
   )
   const activationBarrier = o.activationBarrier ?? createExtensionActivationBarrier()
-  const commandQueue = new CommandQueue(undefined, (depth) => o.observability?.queueDepth(depth))
-  const queueDrain = { promise: Promise.resolve() }
-  lifetime.own({
-    stop: () => {
-      queueDrain.promise = commandQueue.close()
-    },
-    drain: () => queueDrain.promise,
-    dispose: () => undefined,
-  })
   const notices = new NoticeSink({
     endpoints: () => [...conns],
     ...(o.audit ? { audit: o.audit } : {}),
@@ -242,7 +232,6 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     packageSkillSnapshotPath,
     resourceSkillLkgDirectory,
     activationBarrier,
-    commandQueue,
     notices,
     inflightConn,
     journal,

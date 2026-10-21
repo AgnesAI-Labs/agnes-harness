@@ -1,4 +1,5 @@
 import type { PackageAdminAuthority } from '@agnes/daemon-admin/packages/index'
+import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
 import { executeJournaledEffect } from '@agnes/daemon-rpc/local/methods/extensions'
 import { ActivationInProgressError, type ExtensionActivationBarrier } from '@agnes/host'
 import {
@@ -16,9 +17,19 @@ import { workerClientServices } from './service-worker.js'
 
 export function createClientDispatch(
   state: AssemblyBase & StoresState & WorkersState,
-  _lifetime: AssemblyLifetime,
+  lifetime: AssemblyLifetime,
 ) {
-  const { o, activationBarrier, commandQueue, journal, pool } = state
+  const { o, activationBarrier, journal, pool } = state
+  const commandQueue = new CommandQueue(undefined, (depth) => o.observability?.queueDepth(depth))
+  const queueDrain = { promise: Promise.resolve() }
+  lifetime.own({
+    stop: () => {
+      queueDrain.promise = commandQueue.close()
+    },
+    drain: () => queueDrain.promise,
+    dispose: () => undefined,
+  })
+
   const hostFacade = supervisorHostFacade(o.profile, activationBarrier, pool)
   const host = hostFacade.host
   const services = workerClientServices(pool, () => host.profile)
@@ -70,7 +81,7 @@ export function createClientDispatch(
     })
   }
 
-  return { hostFacade, host, services, dispatchClientEffect }
+  return { commandQueue, hostFacade, host, services, dispatchClientEffect }
 }
 
 export type DispatchState = ReturnType<typeof createClientDispatch>

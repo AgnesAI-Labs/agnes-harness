@@ -46,6 +46,7 @@ import type { WorkersState } from './assembly-workers.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
+import { activateForkOwnership } from './registry-facade.js'
 import { registerSessionMethods } from './session-methods.js'
 import { workspaceDeployments } from './workspace-deployments.js'
 
@@ -139,7 +140,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     agnesVersion: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0',
     quiescenceWaitMs: 2_000,
     configuration: o.configuration !== undefined,
-    modelAdapters: modelCatalog,
+    modelAdapters: state.modelCatalog,
     // The WSS lifecycle bearer is only an upgrade gate. initialize still requires one of the
     // configured remote credentials; missing/local auth on WSS is always refused.
     auth: {
@@ -371,7 +372,9 @@ function registerEvidenceEndpoints(
                   throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
                 rows.push(...page)
                 if (rows.length <= 4096 && page.length < 100) return rows
-                fromSeq = page.at(-1)?.seq + 1
+                const tail = page.at(-1)
+                if (!tail) return rows
+                fromSeq = tail.seq + 1
               }
               throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
             },

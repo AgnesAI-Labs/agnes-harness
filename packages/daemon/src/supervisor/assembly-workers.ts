@@ -7,7 +7,7 @@ import {
 import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
 import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
-import { createFeedbackOwner } from '@agnes/host'
+import { createFeedbackOwner, type FeedbackOwner } from '@agnes/host'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
   deploymentMcpPolicy,
@@ -185,7 +185,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     : undefined
   if (localResourceStore)
     wireResourceSnapshotNotifications({ localResourceStore, registry, pool, log: console })
-  const feedbackOwner = createFeedbackOwner(o.profile.name)
+  const feedbackOwner: FeedbackOwner = createFeedbackOwner(o.profile.name)
   lifetime.own({ dispose: () => feedbackOwner.close() })
   lifetime.own({
     drain: async (graceMs, signal) => {
