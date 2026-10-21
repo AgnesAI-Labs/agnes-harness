@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -10,6 +10,7 @@
   "files": [
     "index.mjs",
     "domain.mjs",
+    "profiles.mjs",
     "seed-data.mjs",
     "seed-docs",
     "skills",
@@ -20,7 +21,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check domain.mjs && node --check seed-data.mjs"
+    "build": "node --check index.mjs && node --check domain.mjs && node --check profiles.mjs && node --check seed-data.mjs"
   },
   "agnes": {
     "provides": [
@@ -58,6 +59,9 @@
               "devboard_test_record",
               "devboard_defect_upsert",
               "devboard_change_upsert",
+              "devboard_trial_upsert",
+              "devboard_problem_upsert",
+              "devboard_fault_list",
               "devboard_app_register"
             ],
             "prefix": "devboard_"
@@ -135,6 +139,9 @@
             "devboard_test_record",
             "devboard_defect_upsert",
             "devboard_change_upsert",
+            "devboard_trial_upsert",
+            "devboard_problem_upsert",
+            "devboard_fault_list",
             "devboard_app_register",
             "skill_read",
             "read",
@@ -160,8 +167,8 @@
             "zh-CN": "研发协调员"
           },
           "description": {
-            "en": "Run the R&D lifecycle of Ningchuan Equipment (fictional): portfolio, stages and review gates, traceability, changes, defects and tests; drive a live software project from requirements to acceptance.",
-            "zh-CN": "宁川装备（虚构企业）研发全流程：项目组合、阶段与评审门、需求追溯、变更、缺陷与测试；带领各角色把一个现场软件项目从需求做到验收。"
+            "en": "Run the R&D and quality loop of Ningchuan Equipment (fictional): portfolio, review-gate profiles and co-signing, traceability, trials and first-article inspection, changes, defects and tests, and the field-to-design loop from PHM alarms to configuration baselines; drive a live software project from requirements to acceptance.",
+            "zh-CN": "宁川装备（虚构企业）研发与质量闭环：项目组合、评审点档案与会签、需求追溯、型式试验与首件、变更、缺陷与测试，以及从 PHM 预警到配置基线的现场到设计闭环；带领各角色把一个现场软件项目从需求做到验收。"
           },
           "preset": "devboard",
           "pages": [
@@ -171,7 +178,9 @@
             "devboard-tasks",
             "devboard-changes",
             "devboard-quality",
-            "devboard-reviews"
+            "devboard-reviews",
+            "trials",
+            "service"
           ],
           "prompt": {
             "text": {
@@ -211,7 +220,9 @@
             "@agnes-showcase/devboard#devboard-tasks",
             "@agnes-showcase/devboard#devboard-changes",
             "@agnes-showcase/devboard#devboard-quality",
-            "@agnes-showcase/devboard#devboard-reviews"
+            "@agnes-showcase/devboard#devboard-reviews",
+            "@agnes-showcase/devboard#trials",
+            "@agnes-showcase/devboard#service"
           ]
         }
       },
@@ -280,20 +291,44 @@
               "en": "First call skill_read(name=devboard-playbook). Read the board, list overdue and open human-intervention requests, and continue the work whose requests have been resolved.",
               "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板，列出超时和待处理的人工介入请求；对已处理完成的请求，按处理结论继续推进相关工作。"
             }
+          },
+          {
+            "id": "phm-8d",
+            "title": {
+              "en": "Analyze PHM alarms and draft an 8D",
+              "zh-CN": "分析 PHM 预警并起草 8D"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook) and read its field-loop section. Call devboard_fault_list for the in-service project to find alarm clusters, read related trials with devboard_board, then draft D2–D4 and the change impact analysis into the quality problem with devboard_problem_upsert (and devboard_change_upsert if a design change is needed). Cite alarm and trial ids in every text. Draft only: do not close the problem or approve the change; tell me what to confirm on the board.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)，阅读现场闭环一节。对在役项目用 devboard_fault_list 找出预警集中点，用 devboard_board 读取相关试验，然后用 devboard_problem_upsert 起草 D2–D4 并写入质量问题（需要设计变更时用 devboard_change_upsert 起草变更与影响分析）。每段文字都引用预警和试验编号。只起草：不得关闭问题或批准变更，最后告诉我到看板确认什么。"
+            }
+          },
+          {
+            "id": "trial-change",
+            "title": {
+              "en": "Failed type test → draft a change",
+              "zh-CN": "型式试验不合格 → 起草变更"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). Read the board, find type tests whose result is FAIL and that have no change yet, and for each draft a change request with devboard_change_upsert (source TYPE_TEST with the trial id, rootCause, impact analysis with affected requirements, items and tests), then link it with devboard_trial_upsert(changeId). Cite the trial id and report number. Draft only: leave the CCB decision and trial approval to people.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板，找出结论为不合格且尚无变更的型式试验，逐个用 devboard_change_upsert 起草变更（来源 TYPE_TEST 并带试验编号，写明 rootCause 与影响分析：受影响的需求、物料和用例），再用 devboard_trial_upsert(changeId) 关联。引用试验编号和报告号。只起草：CCB 决议与试验批准留给人。"
+            }
           }
         ],
         "scenarios": [
           {
-            "en": "Requirements → architecture → development → test acceptance, one review gate per stage",
-            "zh-CN": "需求分析 → 架构设计 → 开发实现 → 测试验收，每个阶段过评审门"
+            "en": "Gate profiles by project kind: co-signed design liaison, design freeze, type test and first-article inspection",
+            "zh-CN": "按项目类型走评审点：设计联络会签、设计冻结、型式试验与首件"
           },
           {
-            "en": "Gate decided on the board → continue the project",
-            "zh-CN": "看板审批评审门 → 继续推进项目"
+            "en": "Failed type test → change request → CCB → rework",
+            "zh-CN": "型式试验不合格 → 变更申请 → CCB 决议 → 返工"
           },
           {
-            "en": "Change request → impact analysis → CCB → rework",
-            "zh-CN": "变更申请 → 影响分析 → CCB 决议 → 返工"
+            "en": "PHM alarms → 8D → ECN → retrofit → as-maintained baseline catches up",
+            "zh-CN": "PHM 预警 → 8D → ECN → 整改 → 维护态基线追平"
           }
         ],
         "includes": [
@@ -304,13 +339,13 @@
     },
     "metadata": {
       "displayName": "DevBoard R&D lifecycle workbench",
-      "summary": "A full-lifecycle R&D workbench for a fictional rail-equipment company: portfolio, stage gates, traceability, changes, defects and tests on simulated data.",
-      "description": "Requirements to acceptance with review gates, CUS→SYS→SWR→DES→TC traceability, change control and a coordinator agent that drives a live software project.",
+      "summary": "A full-lifecycle R&D and quality workbench for a fictional rail-equipment company: gate profiles with co-signing, multi-discipline traceability, trials and first-article inspection, and the field-to-design loop on simulated data.",
+      "description": "Order and IPD review-gate profiles, CUS→SYS→SWR→DES→TC traceability across mechanical, electrical and software, trials, change control, PHM alarms to 8D to ECN to configuration baselines, and a coordinator agent that drives a live software project.",
       "locales": {
         "zh-CN": {
           "displayName": "DevBoard 研发全流程工作台",
-          "summary": "虚构轨交装备企业的研发全流程工作台：项目组合、阶段评审门、需求追溯、变更、缺陷与测试，数据均为模拟。",
-          "description": "从需求到验收的评审门、CUS→SYS→SWR→DES→TC 双向追溯、变更控制，以及带领现场软件项目的研发协调员智能体。"
+          "summary": "虚构轨交装备企业的研发与质量工作台：评审点档案与会签、机电软多专业追溯、型式试验与首件、现场到设计的闭环，数据均为模拟。",
+          "description": "订单项目与 IPD 评审点档案、机电软 CUS→SYS→SWR→DES→TC 追溯、试验、变更控制、PHM 预警到 8D 到 ECN 到配置基线，以及带领现场软件项目的研发协调员智能体。"
         }
       }
     }

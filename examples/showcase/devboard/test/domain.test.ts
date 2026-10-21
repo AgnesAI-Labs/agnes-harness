@@ -5,26 +5,61 @@ import {
   create,
   DOC_LIMIT_BYTES,
   decideGate,
+  faultSummary,
   MACHINES,
+  metrics,
   projectPath,
   read,
   recordArtifact,
   recordTestRun,
   registerApp,
   reset,
+  roleOf,
   seed,
   snapshot,
   submitGate,
   transition,
   update,
-  updateImpact,
+  updateChange,
+  upsertProblem,
   upsertReqs,
+  upsertTrial,
 } from '../domain.mjs'
+import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from '../profiles.mjs'
+import { buildSeed } from '../seed-data.mjs'
 
 const NOW = Date.parse('2026-10-21T08:00:00Z')
 const HOUR = 3_600_000
+const DAY = 24 * HOUR
 // biome-ignore lint/suspicious/noExplicitAny: domain.mjs is untyped JavaScript
 type Item = { id: string; [key: string]: any }
+// biome-ignore lint/suspicious/noExplicitAny: the in-test state is a plain object of collections
+type State = any
+
+const COLLECTIONS = [
+  'projects',
+  'stages',
+  'gates',
+  'artifacts',
+  'reqs',
+  'changes',
+  'defects',
+  'testRuns',
+  'trials',
+  'faults',
+  'problems',
+  'items',
+  'configBaselines',
+  'requirements',
+  'tasks',
+  'interventions',
+]
+/** A small in-test state shaped per the schema 3 data contract; no dependence on the seed. */
+const blank = (): State => ({
+  schema: 3,
+  revision: 1,
+  ...Object.fromEntries(COLLECTIONS.map((c) => [c, []])),
+})
 
 function memoryStore() {
   const rows = new Map<string, unknown>()
@@ -52,294 +87,248 @@ const readOnly = () => ({
 const byId = (list: Item[], id: string, projectId?: string) =>
   list.find((x) => x.id === id && (!projectId || x.projectId === projectId)) as Item
 
+const newProject = (state: State, projectKind: string, extra = {}) =>
+  create(state, { kind: 'project', name: `测试项目 ${projectKind}`, projectKind, ...extra }, NOW)
+const sign = (state: State, gateId: string, role: string, extra = {}) =>
+  decideGate(state, { gateId, decision: 'APPROVED', by: `${role} 测试员`, ...extra }, NOW)
+const start = (state: State, id: string) =>
+  transition(state, { kind: 'stage', id, to: 'IN_PROGRESS', by: '研发协调员' }, NOW)
+
+/** Start a stage if needed and take it through every gate of its profile, every role signing, findings closed. */
+function pass(state: State, projectId: string, stage: string) {
+  const id = `${projectId}/${stage}`
+  const current = byId(state.stages, id)
+  if (current.state !== 'IN_PROGRESS') start(state, id)
+  for (let guard = 0; guard < 6 && current.state !== 'PASSED'; guard++) {
+    const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
+    // An auto gate (TR4) with no open findings has already passed.
+    for (const role of gate.decision === 'PENDING' ? gate.approverRoles : []) {
+      const closeFindings = gate.findings
+        .filter((f: Item) => !f.closed)
+        .map((f: Item) => ({ id: f.id, note: '已处理' }))
+      sign(state, gate.id, role, { closeFindings })
+    }
+  }
+  return current
+}
+
+/** A change approved through the CCB; field and type-test sources get a root cause first. */
+function approvedChange(state: State, projectId: string, extra: Item = {}) {
+  const cr = create(
+    state,
+    { kind: 'change', projectId, title: '变更', reason: '原因', impact: { reqs: ['CUS-001'] }, ...extra },
+    NOW,
+  )
+  if (['FIELD', 'TYPE_TEST'].includes(extra.source?.type) && !extra.rootCause)
+    updateChange(state, { id: cr.id, rootCause: '根因' })
+  for (const to of ['ANALYZED', 'CCB_REVIEW', 'APPROVED'])
+    transition(state, { kind: 'change', id: cr.id, to, by: 'CCB' }, NOW)
+  return cr
+}
+
 describe('DevBoard v1 state machines', () => {
-  it.each([
-    ['requirement', 'REQ-006', 'REFINED'],
-    ['requirement', 'REQ-005', 'RAW'],
-    ['requirement', 'REQ-005', 'ASSIGNED'],
-    ['task', 'TASK-008', 'PENDING'],
-    ['task', 'TASK-010', 'IN_PROGRESS'],
-    ['intervention', 'HI-003', 'OPEN'],
-    ['defect', 'DEF-0132', 'CONFIRMED'],
-    ['change', 'CR-2026-031', 'REJECTED'],
-  ])('allows %s %s → %s', (kind, id, to) => {
-    const state = seed(NOW)
-    expect(transition(state, { kind, id, to, by: '项目经理' }, NOW).state).toBe(to)
-  })
+  const v1 = () => {
+    const state = blank()
+    create(state, { kind: 'requirement', title: '需求一', by: 'x' }, NOW)
+    create(state, { kind: 'task', requirementId: 'REQ-001', title: '任务一', type: 'DEVELOPMENT' }, NOW)
+    return state
+  }
 
-  it.each([
-    ['requirement', 'REQ-006', 'COMPLETED', 'RAW'],
-    ['task', 'TASK-001', 'IN_PROGRESS', 'COMPLETED'],
-    ['task', 'TASK-007', 'COMPLETED', 'PENDING'],
-    ['intervention', 'HI-004', 'OPEN', 'RESOLVED'],
-    ['intervention', 'HI-001', 'RESOLVED', 'OPEN'],
-    ['defect', 'DEF-0121', 'FIXING', 'CLOSED'],
-  ])('refuses %s %s → %s', (kind, id, to, from) => {
-    const state = seed(NOW)
-    expect(() => transition(state, { kind, id, to, by: '协调员' }, NOW)).toThrow(
-      `非法状态流转：${from} 不可流转至 ${to}`,
+  it('refuses a move absent from the table and allows one present', () => {
+    const state = v1()
+    expect(() =>
+      transition(state, { kind: 'requirement', id: 'REQ-001', to: 'COMPLETED', by: 'x' }, NOW),
+    ).toThrow('非法状态流转：RAW 不可流转至 COMPLETED')
+    expect(transition(state, { kind: 'requirement', id: 'REQ-001', to: 'REFINED', by: 'x' }, NOW).state).toBe(
+      'REFINED',
     )
-  })
-
-  it('never offers EXPIRED as a stored target and records history', () => {
-    for (const targets of Object.values(MACHINES.intervention)) expect(targets).not.toContain('EXPIRED')
-    const state = seed(NOW)
-    const item = transition(state, { kind: 'intervention', id: 'HI-002', to: 'CLAIMED', by: '管理者' }, NOW)
-    expect(item).toMatchObject({ state: 'CLAIMED', handler: '管理者' })
-    expect(item.history.at(-1)).toMatchObject({ from: 'EXPIRED', to: 'CLAIMED', by: '管理者' })
-    transition(
-      state,
-      { kind: 'intervention', id: 'HI-002', to: 'RESOLVED', by: '管理者', note: '同步验签' },
-      NOW,
+    expect(() => transition(state, { kind: 'task', id: 'TASK-001', to: 'COMPLETED', by: 'x' }, NOW)).toThrow(
+      '非法状态流转：PENDING 不可流转至 COMPLETED',
     )
-    expect(item.resolution).toBe('同步验签')
   })
 
   it('moves ASSIGNED → IN_PROGRESS on the first started task and completes when all tasks finish', () => {
-    const state = seed(NOW)
-    const req = () => byId(state.requirements, 'REQ-004')
-    expect(req().state).toBe('ASSIGNED')
-    transition(state, { kind: 'task', id: 'TASK-013', to: 'IN_PROGRESS', by: 'x' }, NOW)
-    expect(req().state).toBe('IN_PROGRESS')
-    transition(state, { kind: 'task', id: 'TASK-013', to: 'COMPLETED', by: 'x' }, NOW)
-    transition(state, { kind: 'task', id: 'TASK-014', to: 'CANCELLED', by: 'x' }, NOW)
-    expect(req().state).toBe('IN_PROGRESS')
-    transition(state, { kind: 'task', id: 'TASK-015', to: 'CANCELLED', by: 'x' }, NOW)
-    expect(req().state).toBe('COMPLETED')
-    expect(req().history.at(-1)).toMatchObject({ by: '系统联动', to: 'COMPLETED' })
+    const state = v1()
+    for (const to of ['REFINED', 'ASSIGNED'])
+      transition(state, { kind: 'requirement', id: 'REQ-001', to, by: 'x' }, NOW)
+    transition(state, { kind: 'task', id: 'TASK-001', to: 'IN_PROGRESS', by: 'x' }, NOW)
+    expect(byId(state.requirements, 'REQ-001').state).toBe('IN_PROGRESS')
+    transition(state, { kind: 'task', id: 'TASK-001', to: 'COMPLETED', by: 'x' }, NOW)
+    expect(byId(state.requirements, 'REQ-001')).toMatchObject({ state: 'COMPLETED' })
+    expect(byId(state.requirements, 'REQ-001').history.at(-1)).toMatchObject({
+      by: '系统联动',
+      to: 'COMPLETED',
+    })
   })
 
-  it('derives EXPIRED from dueAt and lists overdue first, then newest first', () => {
-    const view = snapshot(seed(NOW), NOW)
-    expect(view.interventions[0]).toMatchObject({ id: 'HI-002', state: 'EXPIRED' })
-    const rest = view.interventions.slice(1).map((i: Item) => Date.parse(i.createdAt))
-    expect(rest).toEqual([...rest].sort((a, b) => b - a))
-    expect(view.counts.intervention).toMatchObject({ EXPIRED: 1, OPEN: 2, CLAIMED: 1, RESOLVED: 2 })
-    const state = seed(NOW)
-    create(
+  it('never offers EXPIRED as a stored target; derives it from dueAt', () => {
+    for (const targets of Object.values(MACHINES.intervention)) expect(targets).not.toContain('EXPIRED')
+    const state = v1()
+    const hi = create(
       state,
       {
         kind: 'intervention',
         type: 'RELEASE_APPROVAL',
-        entity: { kind: 'task', id: 'TASK-015' },
-        ask: '可以发布吗？',
+        entity: { kind: 'task', id: 'TASK-001' },
+        ask: '可以吗？',
         dueInHours: 1,
       },
       NOW,
     )
-    expect(byId(snapshot(state, NOW).interventions, 'HI-007').state).toBe('OPEN')
+    expect(byId(snapshot(state, NOW).interventions, hi.id).state).toBe('OPEN')
     expect(snapshot(state, NOW + 2 * HOUR).interventions[0].state).toBe('EXPIRED')
-  })
-})
-
-describe('stages and review gates', () => {
-  it('starts a stage only after the previous one has passed', () => {
-    const state = seed(NOW)
-    expect(() =>
-      transition(
-        state,
-        { kind: 'stage', id: 'PRJ-2026-008/IMPLEMENTATION', to: 'IN_PROGRESS', by: 'x' },
-        NOW,
-      ),
-    ).toThrow('阶段顺序不满足：前一阶段「架构设计」尚未通过评审')
-    expect(() =>
-      transition(state, { kind: 'stage', id: 'PRJ-2026-008/DESIGN', to: 'PASSED', by: '技术负责人' }, NOW),
-    ).toThrow('只能通过评审门决议')
-  })
-
-  it.each([
-    [
-      'open findings',
-      { gateId: 'GATE-PRJ-2026-008-DESIGN-1', by: '技术负责人 郑凯' },
-      '评审门不满足：还有 2 条评审意见未关闭（F-02、F-03）',
-    ],
-    [
-      'approver equals author',
-      { gateId: 'GATE-PRJ-2026-008-DESIGN-1', by: '软件架构师' },
-      '评审门不满足：审批人角色「软件架构师」是该阶段的编写角色',
-    ],
-    [
-      'stage not in review',
-      { gateId: 'GATE-PRJ-2025-042-DESIGN-2', by: '技术负责人' },
-      '评审门不满足：阶段「架构设计」不在评审中',
-    ],
-  ])('refuses approval with %s', (_name, input, message) => {
-    const state = seed(NOW)
-    expect(() => decideGate(state, { ...input, decision: 'APPROVED' }, NOW)).toThrow(message)
-  })
-
-  it('approves once findings close: stage PASSED, artifacts BASELINED, a baseline and the next stage', () => {
-    const state = seed(NOW)
-    const { stage } = decideGate(
+    const claimed = transition(
       state,
-      {
-        gateId: 'GATE-PRJ-2026-008-DESIGN-1',
-        decision: 'APPROVED',
-        by: '技术负责人 郑凯',
-        comment: '同意',
-        closeFindings: [
-          { id: 'F-02', note: '补充 FMEA 摘要' },
-          { id: 'F-03', note: '补充地址规划表' },
-        ],
-      },
-      NOW,
+      { kind: 'intervention', id: hi.id, to: 'CLAIMED', by: '管理者' },
+      NOW + 2 * HOUR,
     )
-    expect(stage).toMatchObject({
-      state: 'PASSED',
-      baseline: { id: 'BL-008-SAD-V1.0', items: ['DOC-008-SAD'] },
-    })
-    expect(byId(state.artifacts, 'DOC-008-SAD').status).toBe('BASELINED')
-    expect(byId(state.projects, 'PRJ-2026-008').stage).toBe('IMPLEMENTATION')
-    expect(
-      transition(state, { kind: 'stage', id: 'PRJ-2026-008/IMPLEMENTATION', to: 'IN_PROGRESS', by: 'x' }, NOW)
-        .state,
-    ).toBe('IN_PROGRESS')
-  })
-
-  it('rejects with a comment into REWORK and back to IN_PROGRESS', () => {
-    const state = seed(NOW)
-    const input = { gateId: 'GATE-PRJ-2026-008-DESIGN-1', decision: 'REJECTED', by: '技术负责人' }
-    expect(() => decideGate(state, input, NOW)).toThrow('驳回需填写评审意见')
-    const { stage, gate } = decideGate(state, { ...input, comment: '失效模式分析不足' }, NOW)
-    expect(stage.state).toBe('REWORK')
-    expect(gate).toMatchObject({ decision: 'REJECTED', approver: '技术负责人' })
-    expect(byId(state.artifacts, 'DOC-008-SAD').status).toBe('DRAFT')
-    transition(state, { kind: 'stage', id: stage.id, to: 'IN_PROGRESS', by: '软件架构师' }, NOW)
-    expect(submitGate(state, { stageId: stage.id, by: '研发协调员' }, NOW).gate.id).toBe(
-      'GATE-PRJ-2026-008-DESIGN-2',
-    )
+    expect(claimed.history.at(-1)).toMatchObject({ from: 'EXPIRED', to: 'CLAIMED' })
   })
 })
 
-describe('change requests', () => {
-  it('needs an impact analysis before CCB and sends impacted passed stages to rework', () => {
-    const state = seed(NOW)
-    const cr = create(
-      state,
-      {
-        kind: 'change',
-        projectId: 'PRJ-2025-042',
-        title: '增加门状态上报',
-        reason: '客户要求',
-        by: '客户代表',
-      },
-      NOW,
-    )
-    expect(cr).toMatchObject({ id: 'CR-2026-032', state: 'SUBMITTED' })
-    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)).toThrow(
-      '缺少影响分析',
-    )
-    updateImpact(state, {
-      id: cr.id,
-      impact: { reqs: ['SWR-017'], artifacts: ['DOC-042-SAD'], effortDays: 5 },
-    })
-    transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: '需求工程师' }, NOW)
-    transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: '配置管理员' }, NOW)
-    transition(
-      state,
-      {
-        kind: 'change',
-        id: cr.id,
-        to: 'APPROVED',
-        by: 'CCB',
-        note: '批准',
-        members: ['项目经理', '技术负责人'],
-      },
-      NOW,
-    )
-    expect(cr.ccb).toMatchObject({ decision: 'APPROVED', members: ['项目经理', '技术负责人'] })
-    expect(byId(state.reqs, 'SWR-017', 'PRJ-2025-042').status).toBe('CHANGED')
-    expect(byId(state.stages, 'PRJ-2025-042/REQUIREMENTS').state).toBe('REWORK')
-    expect(byId(state.stages, 'PRJ-2025-042/DESIGN').state).toBe('REWORK')
-    expect(byId(state.stages, 'PRJ-2025-042/VERIFICATION').state).toBe('IN_PROGRESS')
-  })
-})
-
-describe('traceability', () => {
-  it('computes the three link coverages and lists intentional orphans', () => {
-    const state = seed(NOW)
-    const c = coverage(state, 'PRJ-2025-042')
-    expect(c.cusSys.pct).toBe(100)
-    expect(c.swrTc.missing).toEqual(['SWR-025'])
-    expect(c.swrTc).toMatchObject({ covered: 24, total: 25, pct: 96 })
-    expect(c.noSource).toEqual(['TC-038'])
-    expect(coverage(state, 'PRJ-2026-008').swrTc.pct).toBe(0)
-    const live = create(state, { kind: 'project', name: '车门健康监测看板', by: '研发协调员' }, NOW)
-    expect(coverage(state, live.id).cusSys.pct).toBeNull()
+describe('gate profiles by project kind', () => {
+  it('takes stage authors, labels and gates from the profile of the project kind', () => {
+    const state = blank()
+    const order = newProject(state, 'NEW_BUILD')
+    const retrofit = newProject(state, 'RETROFIT')
+    expect(order).toMatchObject({ kind: 'NEW_BUILD', org: '轨道车辆门分技术中心' })
+    expect(order.live).toBeUndefined()
+    expect(order.workspaceDir).toBeUndefined()
+    expect(byId(state.stages, `${order.id}/REQUIREMENTS`).author).toBe('系统设计师')
+    expect(byId(state.stages, `${order.id}/IMPLEMENTATION`).author).toBe('机械设计师')
+    expect(byId(state.stages, `${order.id}/INITIATION`).state).toBe('IN_PROGRESS')
+    expect(retrofit.kind).toBe('RETROFIT')
+    const view = snapshot(state, NOW)
+    expect(view.profiles.RETROFIT.DESIGN.label).toBe('改造方案设计')
+    expect(view.profiles.NEW_BUILD.DESIGN.gates.map((g: Item) => g.code)).toEqual(['DL2', 'FREEZE'])
+    expect(view.profiles).toEqual(JSON.parse(JSON.stringify(GATE_PROFILES)))
+    expect(view.roles).toEqual(ROLES)
+    expect(view.orgs).toEqual(ORGS)
+    expect(view.liveTailoring).toEqual(JSON.parse(JSON.stringify(LIVE_TAILORING)))
   })
 
-  it('registers items per project, links test cases back to SWR and refuses wrong parents', () => {
-    const state = seed(NOW)
-    const live = create(state, { kind: 'project', name: '车门健康监测看板' }, NOW)
-    const items = [
-      { id: 'CUS-001', title: '健康评分', text: '按车门给出健康评分' },
-      { id: 'SYS-001', title: '评分计算', text: '按故障码计算评分', parent: ['CUS-001'] },
-      { id: 'SWR-001', title: '评分接口', text: 'GET /api/health', parent: ['SYS-001'] },
-      { id: 'TC-001', title: '评分接口用例', text: '返回 0–100', parent: ['SWR-001'] },
-    ]
-    expect(upsertReqs(state, { projectId: live.id, items, by: '研发协调员' }, NOW).created).toHaveLength(4)
-    expect(byId(state.reqs, 'SWR-001', live.id).verifiedBy).toEqual(['TC-001'])
-    expect(byId(state.reqs, 'CUS-001', 'PRJ-2025-042').title).not.toBe('健康评分')
-    expect(coverage(state, live.id).swrTc.pct).toBe(100)
-    expect(() =>
-      upsertReqs(state, {
-        projectId: live.id,
-        items: [{ id: 'TC-002', title: 't', text: 't', parent: ['CUS-001'] }],
-      }),
-    ).toThrow('TC-002 的上游必须是 SWR')
-    expect(() =>
-      upsertReqs(state, { projectId: live.id, items: [{ id: 'REQ-1', title: 't', text: 't' }] }),
-    ).toThrow('编号格式无效')
-  })
-})
-
-describe('live project tool chain', () => {
-  it('runs a project from initiation through an auto-passed implementation review', () => {
-    const state = seed(NOW)
-    const project = create(state, { kind: 'project', name: '车门健康监测看板', by: '研发协调员' }, NOW)
-    expect(project).toMatchObject({
-      id: 'PRJ-2026-009',
+  it('creates a workspace and the default tailoring only for a software project', () => {
+    const state = blank()
+    const sw = create(state, { kind: 'project', name: '车门健康监测看板' }, NOW)
+    expect(sw).toMatchObject({
+      kind: 'SOFTWARE',
+      org: '智能运维分技术中心',
       live: true,
-      workspaceDir: 'devboard-projects/PRJ-2026-009',
+      workspaceDir: `devboard-projects/${sw.id}`,
+      tailoring: { skipped: ['TR2', 'TR6', 'PDCP'], reason: LIVE_TAILORING.reason },
     })
-    expect(byId(state.stages, `${project.id}/INITIATION`).state).toBe('IN_PROGRESS')
-    const plan = recordArtifact(
+    expect(byId(state.stages, `${sw.id}/INITIATION`).author).toBe('产品经理')
+    expect(() => newProject(state, 'SPACESHIP')).toThrow('projectKind 取值无效')
+    expect(() => newProject(state, 'NEW_BUILD', { org: '随便' })).toThrow('org 取值无效')
+    expect(newProject(state, 'NEW_BUILD', { org: '站台门分技术中心' }).org).toBe('站台门分技术中心')
+  })
+
+  it('names each gate GATE-<project>-<code>-<n> with its profile roles and type', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    const { gate } = submitGate(state, { stageId: `${p.id}/INITIATION`, by: '研发协调员' }, NOW)
+    expect(gate).toMatchObject({
+      id: `GATE-${p.id}-CONTRACT-1`,
+      code: 'CONTRACT',
+      name: '合同评审',
+      type: 'MILESTONE',
+      approverRoles: ['分技术中心主任'],
+      signatures: [],
+      decision: 'PENDING',
+    })
+    expect(gate).not.toHaveProperty('approverRole')
+  })
+})
+
+describe('multi-gate stages and tailoring', () => {
+  const toDesign = () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    pass(state, p.id, 'INITIATION')
+    pass(state, p.id, 'REQUIREMENTS')
+    const design = byId(state.stages, `${p.id}/DESIGN`)
+    start(state, design.id)
+    return { state, p, design }
+  }
+
+  it('runs DL2 then FREEZE in order: approving a non-last gate returns the stage to IN_PROGRESS', () => {
+    const { state, p, design } = toDesign()
+    const dl2 = submitGate(state, { stageId: design.id, by: '研发协调员' }, NOW).gate
+    expect(dl2.code).toBe('DL2')
+    sign(state, dl2.id, '项目经理')
+    sign(state, dl2.id, '客户代表')
+    expect(design.state).toBe('IN_PROGRESS')
+    expect(design.history.at(-1)).toMatchObject({
+      from: 'IN_REVIEW',
+      to: 'IN_PROGRESS',
+      note: 'DL2 已通过，进入 FREEZE',
+    })
+    expect(design.baseline).toBeUndefined()
+    const freeze = submitGate(state, { stageId: design.id, by: '研发协调员' }, NOW).gate
+    expect(freeze).toMatchObject({ id: `GATE-${p.id}-FREEZE-1`, approverRoles: ['技术负责人'] })
+    sign(state, freeze.id, '技术负责人')
+    expect(design.state).toBe('PASSED')
+    expect(design.baseline.at).toBeTruthy()
+    expect(byId(state.projects, p.id).stage).toBe('IMPLEMENTATION')
+  })
+
+  it('resubmits the rejected gate, not the ones already approved', () => {
+    const { state, p, design } = toDesign()
+    const dl2 = submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate
+    sign(state, dl2.id, '项目经理')
+    sign(state, dl2.id, '客户代表')
+    const freeze = submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate
+    decideGate(
       state,
-      {
-        projectId: project.id,
-        stage: 'INITIATION',
-        kind: 'PLAN',
-        path: 'docs/PROJECT-PLAN.md',
-        markdown: '# 计划',
-      },
+      { gateId: freeze.id, decision: 'REJECTED', by: '技术负责人', comment: '冻结条件不足' },
       NOW,
     )
-    expect(plan).toMatchObject({
-      id: 'DOC-009-PLAN',
-      source: { type: 'workspace', path: `${project.workspaceDir}/docs/PROJECT-PLAN.md` },
-    })
-    const { gate } = submitGate(state, { stageId: `${project.id}/INITIATION`, by: '研发协调员' }, NOW)
-    expect(gate).toMatchObject({ approverRole: '研发总监', decision: 'PENDING' })
-    expect(() => decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: '项目经理' }, NOW)).toThrow(
-      '编写角色',
-    )
-    decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: '研发总监' }, NOW)
-    expect(byId(state.artifacts, 'DOC-009-PLAN').status).toBe('BASELINED')
+    expect(design.state).toBe('REWORK')
+    start(state, design.id)
+    expect(submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate.id).toBe(`GATE-${p.id}-FREEZE-2`)
+  })
 
-    transition(state, { kind: 'stage', id: `${project.id}/REQUIREMENTS`, to: 'IN_PROGRESS', by: 'x' }, NOW)
-    upsertReqs(state, { projectId: project.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
-    const req = submitGate(state, { stageId: `${project.id}/REQUIREMENTS`, by: '研发协调员' }, NOW).gate
-    expect(req.findings[0]).toMatchObject({ by: '系统检查', closed: false })
-    expect(req.findings[0].text).toContain('CUS→SWR 覆盖率 0%')
+  it('skips the gates a project tailors out and runs the full IPD when untailored', () => {
+    const state = blank()
+    const live = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    pass(state, live.id, 'INITIATION')
+    pass(state, live.id, 'REQUIREMENTS')
+    const design = byId(state.stages, `${live.id}/DESIGN`)
+    start(state, design.id)
+    const tr3 = submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate
+    expect(tr3.code).toBe('TR3')
+    sign(state, tr3.id, '技术负责人')
+    expect(design.state).toBe('PASSED')
+    expect(state.gates.some((g: Item) => g.code === 'TR2' || g.code === 'PDCP')).toBe(false)
+    pass(state, live.id, 'IMPLEMENTATION')
+    pass(state, live.id, 'VERIFICATION')
+    const release = pass(state, live.id, 'RELEASE')
+    expect(release.state).toBe('PASSED')
+    expect(state.gates.filter((g: Item) => g.stageId === release.id).map((g: Item) => g.code)).toEqual([
+      'ADCP',
+    ])
 
-    const impl = byId(state.stages, `${project.id}/IMPLEMENTATION`)
-    Object.assign(impl, { state: 'IN_PROGRESS' })
+    const full = create(state, { kind: 'project', name: '完整 IPD' }, NOW)
+    full.tailoring = undefined
+    pass(state, full.id, 'INITIATION')
+    pass(state, full.id, 'REQUIREMENTS')
+    pass(state, full.id, 'DESIGN')
+    const codes = state.gates.filter((g: Item) => g.stageId === `${full.id}/DESIGN`).map((g: Item) => g.code)
+    expect(codes).toEqual(['TR2', 'TR3', 'PDCP'])
+  })
+
+  it('passes the auto gate TR4 once every finding is closed, replacing the v2 special case', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '自动门' }, NOW)
+    const impl = byId(state.stages, `${p.id}/IMPLEMENTATION`)
+    impl.state = 'IN_PROGRESS'
     const review = submitGate(
       state,
       { stageId: impl.id, by: '研发协调员', findings: ['缺少端口参数校验'] },
       NOW,
     )
-    expect(review.stage.state).toBe('IN_REVIEW')
+    expect(review.gate).toMatchObject({ code: 'TR4', auto: true, approverRoles: ['技术负责人'] })
+    expect(impl.state).toBe('IN_REVIEW')
     submitGate(
       state,
       { stageId: impl.id, by: '研发协调员', closeFindings: [{ id: 'F-01', note: '已补充' }] },
@@ -347,26 +336,598 @@ describe('live project tool chain', () => {
     )
     expect(impl.state).toBe('PASSED')
     expect(review.gate).toMatchObject({ decision: 'APPROVED', approver: '系统（代码评审意见已全部关闭）' })
+    // Other gates are never automatic.
+    const order = newProject(state, 'NEW_BUILD')
+    const proto = byId(state.stages, `${order.id}/IMPLEMENTATION`)
+    proto.state = 'IN_PROGRESS'
+    const gate = submitGate(state, { stageId: proto.id, by: 'x' }, NOW).gate
+    expect(gate).toMatchObject({ code: 'PROTO', decision: 'PENDING' })
+    expect(gate.auto).toBeUndefined()
+  })
+})
 
+describe('approver roles and co-signing', () => {
+  const dl1 = () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    pass(state, p.id, 'INITIATION')
+    const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
+    start(state, stage.id)
+    const gate = submitGate(
+      state,
+      { stageId: stage.id, by: '研发协调员', findings: ['补充偏离说明'] },
+      NOW,
+    ).gate
+    return { state, p, stage, gate }
+  }
+
+  it('refuses an approver whose role the gate does not name', () => {
+    const { state, gate } = dl1()
+    expect(() => sign(state, gate.id, '质量工程师')).toThrow('评审门不满足：本门需由 项目经理、客户代表 审批')
+    expect(() =>
+      decideGate(state, { gateId: gate.id, decision: 'REJECTED', by: '技术负责人', comment: 'x' }, NOW),
+    ).toThrow('本门需由')
+    expect(() => sign(state, gate.id, '系统设计师')).toThrow('是该阶段的编写角色')
+    expect(roleOf('RAMS 工程师 唐力')).toBe('RAMS 工程师')
+    expect(roleOf('客户代表 方卫东')).toBe('客户代表')
+  })
+
+  it('needs every role to sign once and every finding closed before the last signature approves', () => {
+    const { state, stage, gate } = dl1()
+    const afterFirst = sign(state, gate.id, '客户代表').gate
+    expect(afterFirst.decision).toBe('PENDING')
+    expect(afterFirst.signatures).toEqual([
+      expect.objectContaining({ role: '客户代表', by: '客户代表 测试员' }),
+    ])
+    expect(stage.state).toBe('IN_REVIEW')
+    expect(() => sign(state, gate.id, '客户代表')).toThrow('已签署')
+    const open = gate.findings.filter((f: Item) => !f.closed)
+    expect(() => sign(state, gate.id, '项目经理')).toThrow(`还有 ${open.length} 条评审意见未关闭`)
+    const done = sign(state, gate.id, '项目经理', {
+      closeFindings: open.map((f: Item) => ({ id: f.id, note: '已补' })),
+    })
+    expect(done.gate).toMatchObject({ decision: 'APPROVED', approver: '项目经理 测试员' })
+    expect(done.gate.signatures.map((s: Item) => s.role)).toEqual(['客户代表', '项目经理'])
+    expect(stage.state).toBe('PASSED')
+  })
+
+  it('rejects when any approver role rejects, with a comment, into REWORK', () => {
+    const { state, stage, gate } = dl1()
+    sign(state, gate.id, '客户代表')
+    const input = { gateId: gate.id, decision: 'REJECTED', by: '项目经理 测试员' }
+    expect(() => decideGate(state, input, NOW)).toThrow('驳回需填写评审意见')
+    const done = decideGate(state, { ...input, comment: '偏离项未澄清' }, NOW)
+    expect(done.gate).toMatchObject({ decision: 'REJECTED', approver: '项目经理 测试员' })
+    expect(stage.state).toBe('REWORK')
+    expect(() => sign(state, gate.id, '项目经理')).toThrow('评审门不满足：阶段')
+  })
+
+  it('adds the CUS→SWR coverage finding to the requirements gate and refuses a stage not in review', () => {
+    const { state, p, gate } = dl1()
+    expect(gate.findings[0]).toMatchObject({ by: '系统检查', closed: false })
+    expect(gate.findings[0].text).toContain('CUS→SWR 覆盖率')
+    expect(gate.findings[1]).toMatchObject({ text: '补充偏离说明', closed: false })
+    expect(() => sign(state, `GATE-${p.id}-CONTRACT-1`, '分技术中心主任')).toThrow('不在评审中')
+  })
+
+  it('refuses to start a stage before the previous one passed and PASSED by transition', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    expect(() => start(state, `${p.id}/DESIGN`)).toThrow(
+      '阶段顺序不满足：前一阶段「技术协议与需求」尚未通过评审',
+    )
+    expect(() =>
+      transition(state, { kind: 'stage', id: `${p.id}/INITIATION`, to: 'PASSED', by: 'x' }, NOW),
+    ).toThrow('只能通过评审门决议')
+  })
+})
+
+describe('trials and first-article inspection', () => {
+  const order = () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
+    return { state, p }
+  }
+  const plan = (p: Item, extra = {}) => ({
+    projectId: p.id,
+    type: 'TYPE_TEST',
+    title: '低温 -25 ℃ 夹紧力',
+    standard: '项目技术规格书假设：夹紧力限值',
+    sample: 'SN-0007',
+    lab: 'CNAS 车门试验检测中心',
+    plannedAt: '2026-11-02',
+    ...extra,
+  })
+
+  it('assigns prefixed ids and walks PLANNED → IN_PROGRESS → REPORTED → APPROVED', () => {
+    const { state, p } = order()
+    const tt = upsertTrial(state, plan(p, { verifies: ['CUS-001'] }), NOW)
+    const fai = upsertTrial(state, plan(p, { type: 'FAI', title: '首件' }), NOW)
+    expect([tt.id, fai.id]).toEqual(['TT-2026-001', 'FAI-2026-001'])
+    expect(tt).toMatchObject({ state: 'PLANNED', result: 'PENDING', verifies: ['CUS-001'] })
+    expect(() => upsertTrial(state, { id: tt.id, to: 'REPORTED' }, NOW)).toThrow('非法状态流转：PLANNED')
+    upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)
+    expect(() => upsertTrial(state, { id: tt.id, to: 'REPORTED' }, NOW)).toThrow('缺少报告号')
+    expect(() => upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1' }, NOW)).toThrow(
+      '缺少试验结论',
+    )
+    upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1', result: 'PASS' }, NOW)
+    expect(tt).toMatchObject({ state: 'REPORTED', reportNo: 'R-1', result: 'PASS' })
+    expect(tt.at).toBeTruthy()
+    upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW)
+    expect(tt.state).toBe('APPROVED')
+    expect(() => upsertTrial(state, plan(p, { verifies: ['CUS-404'] }), NOW)).toThrow('未找到')
+    expect(() => upsertTrial(state, plan(p, { type: 'X' }), NOW)).toThrow('type 取值无效')
+  })
+
+  it('refuses to approve a FAIL trial unless its change is approved, and a retest clears the report', () => {
+    const { state, p } = order()
+    const tt = upsertTrial(state, plan(p), NOW)
+    upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)
+    upsertTrial(
+      state,
+      { id: tt.id, to: 'REPORTED', reportNo: 'R-2', result: 'FAIL', deviations: ['夹紧力 182 N，超限'] },
+      NOW,
+    )
+    expect(() => upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW)).toThrow('需关联已批准的变更')
+    const cr = create(
+      state,
+      { kind: 'change', projectId: p.id, title: '改弹簧', reason: tt.id, impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    upsertTrial(state, { id: tt.id, changeId: cr.id }, NOW)
+    expect(() => upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW)).toThrow('需关联已批准的变更')
+    for (const to of ['ANALYZED', 'CCB_REVIEW', 'APPROVED'])
+      transition(state, { kind: 'change', id: cr.id, to, by: 'CCB' }, NOW)
+    expect(upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW).state).toBe('APPROVED')
+
+    const retest = upsertTrial(state, plan(p), NOW)
+    upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
+    upsertTrial(state, { id: retest.id, to: 'REPORTED', reportNo: 'R-3', result: 'FAIL' }, NOW)
+    upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
+    expect(retest).toMatchObject({ state: 'IN_PROGRESS', result: 'PENDING' })
+    expect(retest.reportNo).toBeUndefined()
+    expect(JSON.stringify(retest.history)).toContain('R-3')
+  })
+
+  it('adds a system finding to the TYPE and FAI gates for each unapproved trial of that type', () => {
+    const { state, p } = order()
+    const tt = upsertTrial(state, plan(p), NOW)
+    const other = upsertTrial(state, plan(p, { title: '寿命' }), NOW)
+    const fai = upsertTrial(state, plan(p, { type: 'FAI', title: '首件检验' }), NOW)
+    for (const s of ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION']) pass(state, p.id, s)
+    const verification = `${p.id}/VERIFICATION`
+    start(state, verification)
+    const type = submitGate(state, { stageId: verification, by: 'x' }, NOW).gate
+    expect(type.code).toBe('TYPE')
+    expect(type.findings.map((f: Item) => [f.text, f.by, f.closed])).toEqual([
+      [`型式试验 ${tt.id} 未关闭`, '系统检查', false],
+      [`型式试验 ${other.id} 未关闭`, '系统检查', false],
+    ])
+    expect(() => sign(state, type.id, '质量工程师')).toThrow('评审意见未关闭')
+    sign(state, type.id, '质量工程师', {
+      closeFindings: type.findings.map((f: Item) => ({ id: f.id, note: '放行' })),
+    })
+    const gate = submitGate(state, { stageId: verification, by: 'x' }, NOW).gate
+    expect(gate.code).toBe('FAI')
+    expect(gate.findings.map((f: Item) => f.text)).toEqual([`首件 ${fai.id} 未关闭`])
+  })
+})
+
+describe('faults and quality problems', () => {
+  const service = () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    const fault = (id: string, signal: string, train: string, daysAgo: number) =>
+      state.faults.push({
+        id,
+        projectId: p.id,
+        source: 'PHM',
+        signal,
+        train,
+        car: 'Mc1',
+        door: 'L3',
+        detail: '示例',
+        detectedAt: new Date(NOW - daysAgo * DAY).toISOString(),
+        state: 'NEW',
+        history: [],
+      })
+    fault('FA-1', 'BUFFER_WEAR', '05017', 2)
+    fault('FA-2', 'BUFFER_WEAR', '05017', 9)
+    fault('FA-3', 'RESISTANCE', '05021', 20)
+    fault('FA-4', 'COMM', '05021', 80)
+    return { state, p }
+  }
+
+  it('moves a fault one step at a time and refuses a skip', () => {
+    const { state } = service()
+    expect(() => transition(state, { kind: 'fault', id: 'FA-1', to: 'HANDLED', by: 'x' }, NOW)).toThrow(
+      '非法状态流转：NEW 不可流转至 HANDLED',
+    )
+    for (const to of ['DISPATCHED', 'HANDLED', 'CLOSED'])
+      transition(state, { kind: 'fault', id: 'FA-1', to, by: '客服工程师' }, NOW)
+    expect(byId(state.faults, 'FA-1').state).toBe('CLOSED')
+  })
+
+  it('aggregates faults by signal, state, train and week inside the window', () => {
+    const { state, p } = service()
+    const summary = faultSummary(state, { projectId: p.id, days: 30 }, NOW)
+    expect(summary.total).toBe(3)
+    expect(summary.bySignal).toEqual({ BUFFER_WEAR: 2, RESISTANCE: 1 })
+    expect(summary.byTrain).toEqual({ '05017': 2, '05021': 1 })
+    expect(summary.byState).toEqual({ NEW: 3 })
+    expect(summary.byWeek.reduce((n: number, w: Item) => n + w.count, 0)).toBe(3)
+    expect(summary.items[0].id).toBe('FA-1')
+    expect(faultSummary(state, { projectId: p.id, days: 365 }, NOW).total).toBe(4)
+    expect(faultSummary(state, { signal: 'SLIDE' }, NOW).total).toBe(0)
+    expect(() => faultSummary(state, { signal: 'BOGUS' }, NOW)).toThrow('signal 取值无效')
+    expect(metrics(state, p, NOW)).toMatchObject({
+      faults30dTotal: 3,
+      faults30d: { BUFFER_WEAR: 2, RESISTANCE: 1, SLIDE: 0 },
+    })
+  })
+
+  it('creates a problem with D1–D8, links faults and enforces the ACTION and CLOSED rules', () => {
+    const { state, p } = service()
+    const qp = upsertProblem(
+      state,
+      { projectId: p.id, title: '缓冲头磨损集中', severity: 'B', faultIds: ['FA-1', 'FA-2'] },
+      NOW,
+    )
+    expect(qp).toMatchObject({ id: 'QP-2026-001', state: 'OPEN', faultIds: ['FA-1', 'FA-2'] })
+    expect(Object.keys(qp.steps)).toEqual(['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'])
+    expect(byId(state.faults, 'FA-1').problemId).toBe(qp.id)
+    expect(() => upsertProblem(state, { projectId: p.id, title: 'x', faultIds: ['FA-1'] }, NOW)).toThrow(
+      '已挂在质量问题',
+    )
+    upsertProblem(
+      state,
+      {
+        id: qp.id,
+        to: 'ANALYZING',
+        steps: { D1: { done: true }, D2: { done: true, text: '5 列车 FA-1 FA-2' } },
+      },
+      NOW,
+    )
+    expect(() => upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)).toThrow('缺少根本原因')
+    expect(() =>
+      upsertProblem(state, { id: qp.id, rootCause: '缓冲头材料 B 版耐磨不足', to: 'ACTION' }, NOW),
+    ).toThrow('D4')
+    upsertProblem(state, { id: qp.id, steps: { D4: { done: true } } }, NOW)
+    upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
+    upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
+    expect(() => upsertProblem(state, { id: qp.id, to: 'CLOSED' }, NOW)).toThrow('D8')
+    upsertProblem(state, { id: qp.id, steps: { D8: { done: true } } }, NOW)
+    expect(() => upsertProblem(state, { id: qp.id, to: 'CLOSED' }, NOW)).toThrow('没有关联变更')
     expect(
-      recordTestRun(
+      upsertProblem(state, { id: qp.id, noChangeReason: '仅更换耗材，无设计变更', to: 'CLOSED' }, NOW).state,
+    ).toBe('CLOSED')
+    expect(() => upsertProblem(state, { id: qp.id, steps: { D9: { done: true } } }, NOW)).toThrow(
+      '未知 8D 步骤',
+    )
+  })
+
+  it('closes a problem only after its linked change is CLOSED', () => {
+    const { state, p } = service()
+    const qp = upsertProblem(
+      state,
+      { projectId: p.id, title: 'x', rootCause: 'r', steps: { D4: { done: true }, D8: { done: true } } },
+      NOW,
+    )
+    for (const to of ['ANALYZING', 'ACTION', 'VERIFYING']) upsertProblem(state, { id: qp.id, to }, NOW)
+    const cr = create(
+      state,
+      { kind: 'change', projectId: p.id, title: 'c', reason: 'r', impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    upsertProblem(state, { id: qp.id, changeId: cr.id }, NOW)
+    expect(() => upsertProblem(state, { id: qp.id, to: 'CLOSED' }, NOW)).toThrow(`${cr.id} 尚未关闭`)
+    expect(() => upsertProblem(state, { id: qp.id, changeId: 'CR-404' }, NOW)).toThrow('未找到')
+  })
+})
+
+describe('change requests and the field-to-design loop', () => {
+  const inService = () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    p.service = { phase: '质保期', trains: 40, doorsPerTrain: 48 }
+    for (const s of state.stages) s.state = 'PASSED'
+    state.items.push(
+      { id: 'NC-BUF-01', projectId: p.id, name: '缓冲头', discipline: 'MECH', lru: true },
+      { id: 'NC-MOT-02', projectId: p.id, name: '电机', discipline: 'ELEC', lru: true },
+    )
+    for (const type of ['AS_DESIGNED', 'AS_BUILT', 'AS_MAINTAINED'])
+      state.configBaselines.push({
+        id: `CB-${p.id}-${type}-01`,
+        projectId: p.id,
+        type,
+        revs: { 'NC-BUF-01': 'B', 'NC-MOT-02': 'A' },
+        at: new Date(NOW - 90 * DAY).toISOString(),
+      })
+    return { state, p }
+  }
+  const bufferChange = {
+    source: { type: 'FIELD', ref: 'QP-2026-001' },
+    impact: {
+      items: [{ itemId: 'NC-BUF-01', fromRev: 'B', toRev: 'C' }],
+      fleet: { doors: 1920, plan: '架修窗口分批更换' },
+    },
+  }
+
+  it('requires a root cause for field and type-test sources before ANALYZED, not for internal ones', () => {
+    const { state, p } = inService()
+    const cr = create(
+      state,
+      { kind: 'change', projectId: p.id, title: '缓冲头 B → C', reason: 'r', ...bufferChange },
+      NOW,
+    )
+    expect(cr.source).toEqual({ type: 'FIELD', ref: 'QP-2026-001' })
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)).toThrow(
+      '缺少失效原因分析',
+    )
+    updateChange(state, { id: cr.id, rootCause: '材料耐磨不足' })
+    expect(transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
+      'ANALYZED',
+    )
+    const internal = create(
+      state,
+      { kind: 'change', projectId: p.id, title: 'i', reason: 'r', impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    expect(internal.source).toEqual({ type: 'INTERNAL' })
+    expect(transition(state, { kind: 'change', id: internal.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
+      'ANALYZED',
+    )
+    const typeTest = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: 't',
+        reason: 'r',
+        source: { type: 'TYPE_TEST', ref: 'TT-2026-001' },
+        impact: { reqs: ['CUS-001'] },
+      },
+      NOW,
+    )
+    expect(() =>
+      transition(state, { kind: 'change', id: typeTest.id, to: 'ANALYZED', by: 'x' }, NOW),
+    ).toThrow('rootCause')
+    expect(() =>
+      create(state, { kind: 'change', projectId: p.id, title: 'b', reason: 'r', source: { type: 'X' } }, NOW),
+    ).toThrow('source.type')
+    expect(() =>
+      create(
         state,
-        { projectId: project.id, level: 'UNIT', total: 3, passed: 2, failed: 1, skipped: 0 },
+        {
+          kind: 'change',
+          projectId: p.id,
+          title: 'b',
+          reason: 'r',
+          impact: { items: [{ itemId: 'NC-404', fromRev: 'A', toRev: 'B' }] },
+        },
         NOW,
       ),
-    ).toMatchObject({ id: 'TR-009-01', source: 'live' })
-    expect(() =>
-      recordTestRun(state, { projectId: project.id, total: 3, passed: 3, failed: 1 }, NOW),
-    ).toThrow('用例数不一致')
-    expect(() => registerApp(state, { projectId: project.id, url: 'http://example.com/' }, NOW)).toThrow(
-      '本机地址',
+    ).toThrow('未找到')
+  })
+
+  it('on approval generates the ECN and a new as-designed baseline, and does not rework an in-service project', () => {
+    const { state, p } = inService()
+    const cr = approvedChange(state, p.id, {
+      ...bufferChange,
+      impact: { ...bufferChange.impact, reqs: ['CUS-001'] },
+    })
+    expect(cr).toMatchObject({
+      ecn: `ECN-2026-${cr.id.slice(-3)}`,
+      state: 'APPROVED',
+      reworked: [],
+      retrofit: { done: 0, total: 1920 },
+    })
+    const designed = state.configBaselines.filter((b: Item) => b.type === 'AS_DESIGNED')
+    expect(designed.map((b: Item) => b.id)).toEqual([
+      `CB-${p.id}-AS_DESIGNED-01`,
+      `CB-${p.id}-AS_DESIGNED-02`,
+    ])
+    expect(designed[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
+    expect(state.stages.every((s: Item) => s.state === 'PASSED')).toBe(true)
+    expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 1, retrofit: { done: 0, total: 1920 } })
+  })
+
+  it('still sends passed stages of a project in development to rework, and they pass their gates again', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
+    pass(state, p.id, 'INITIATION')
+    pass(state, p.id, 'REQUIREMENTS')
+    const cr = approvedChange(state, p.id)
+    expect(cr.reworked).toEqual([`${p.id}/REQUIREMENTS`])
+    expect(byId(state.reqs, 'CUS-001', p.id).status).toBe('CHANGED')
+    const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
+    expect(stage.state).toBe('REWORK')
+    start(state, stage.id)
+    expect(submitGate(state, { stageId: stage.id, by: 'x' }, NOW).gate.id).toBe(`GATE-${p.id}-DL1-2`)
+  })
+
+  it('needs a verification before CLOSED; a rejected change may close without one', () => {
+    const { state, p } = inService()
+    const cr = approvedChange(state, p.id, { ...bufferChange, rootCause: '根因' })
+    transition(state, { kind: 'change', id: cr.id, to: 'IMPLEMENTED', by: 'x' }, NOW)
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW)).toThrow(
+      '缺少验证记录',
     )
-    expect(registerApp(state, { projectId: project.id, url: 'http://127.0.0.1:5180/' }, NOW).appUrl).toBe(
-      'http://127.0.0.1:5180/',
-    )
     expect(() =>
-      registerApp(state, { projectId: 'PRJ-2025-042', url: 'http://127.0.0.1:5180/' }, NOW),
-    ).toThrow('不是现场项目')
+      updateChange(state, { id: cr.id, verification: { result: 'PASS', trialId: 'RT-404' } }),
+    ).toThrow('未找到')
+    const rt = upsertTrial(
+      state,
+      {
+        projectId: p.id,
+        type: 'ROUTINE',
+        title: '例行',
+        standard: 's',
+        sample: 'x',
+        lab: '主机厂现场',
+        plannedAt: '2026-11-01',
+      },
+      NOW,
+    )
+    updateChange(
+      state,
+      { id: cr.id, verification: { result: 'PASS', trialId: rt.id }, by: '验证工程师' },
+      NOW,
+    )
+    expect(cr.verification).toMatchObject({ result: 'PASS', by: '验证工程师', trialId: rt.id })
+    expect(transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW).state).toBe('CLOSED')
+    const rejected = create(
+      state,
+      { kind: 'change', projectId: p.id, title: 'r', reason: 'r', impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    for (const to of ['ANALYZED', 'CCB_REVIEW', 'REJECTED', 'CLOSED'])
+      transition(state, { kind: 'change', id: rejected.id, to, by: 'CCB' }, NOW)
+    expect(rejected.state).toBe('CLOSED')
+  })
+
+  it('updates retrofit progress only upwards and creates the as-maintained baseline on completion', () => {
+    const { state, p } = inService()
+    const cr = approvedChange(state, p.id, { ...bufferChange, rootCause: '根因' })
+    const progress = (done: number, id = cr.id) =>
+      transition(state, { kind: 'retrofit', id, done, by: '客服工程师' }, NOW)
+    progress(480)
+    expect(cr.retrofit).toEqual({ done: 480, total: 1920 })
+    expect(() => progress(480)).toThrow('整改进度只能递增')
+    expect(() => progress(100)).toThrow('整改进度只能递增')
+    expect(() => progress(1921)).toThrow('done 需为 0–1920')
+    expect(state.configBaselines.filter((b: Item) => b.type === 'AS_MAINTAINED')).toHaveLength(1)
+    expect(metrics(state, p, NOW).baselineGap).toBe(1)
+    progress(1920)
+    const maintained = state.configBaselines.filter((b: Item) => b.type === 'AS_MAINTAINED')
+    expect(maintained.map((b: Item) => b.id)).toEqual([
+      `CB-${p.id}-AS_MAINTAINED-01`,
+      `CB-${p.id}-AS_MAINTAINED-02`,
+    ])
+    expect(maintained[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
+    expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 0, retrofit: { done: 1920, total: 1920 } })
+    const early = create(
+      state,
+      { kind: 'change', projectId: p.id, title: 'e', reason: 'r', ...bufferChange },
+      NOW,
+    )
+    expect(() => progress(1, early.id)).toThrow('未设置整改总数')
+    updateChange(state, { id: early.id, retrofit: { total: 10 } })
+    expect(() => progress(1, early.id)).toThrow('批准后才能更新整改进度')
+  })
+
+  it('needs an impact analysis before CCB, counting affected items, and locks the analysis at CCB review', () => {
+    const { state, p } = inService()
+    const cr = create(state, { kind: 'change', projectId: p.id, title: '空', reason: 'r' }, NOW)
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)).toThrow(
+      '缺少影响分析',
+    )
+    updateChange(state, { id: cr.id, impact: { items: [{ itemId: 'NC-MOT-02', fromRev: 'A', toRev: 'B' }] } })
+    expect(transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
+      'ANALYZED',
+    )
+    transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)
+    expect(() => updateChange(state, { id: cr.id, rootCause: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+  })
+})
+
+describe('traceability and deliverables', () => {
+  it('registers MER/EER as sub-system requirements with a discipline and discipline-specific fields', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    const items = [
+      {
+        id: 'CUS-001',
+        title: '净开度',
+        text: '净开度 ≥ 1300 mm',
+        clause: 'TA-001 §3.2',
+        compliance: 'DEVIATE',
+        responseNote: '偏离说明',
+      },
+      { id: 'SYS-001', title: '门系统', text: '整门开度', parent: ['CUS-001'] },
+      { id: 'MER-001', title: '承载', text: '机构承载', parent: ['SYS-001'] },
+      { id: 'EER-001', title: '供电', text: 'DC 110 V', parent: ['SYS-001'] },
+      { id: 'SWR-001', title: '门控逻辑', text: '开关门逻辑', parent: ['SYS-001'] },
+      {
+        id: 'DES-001',
+        title: '锁闭装置',
+        text: '锁闭',
+        parent: ['MER-001'],
+        discipline: 'MECH',
+        partNo: 'NC-DR-1203',
+        drawingNo: 'DWG-1203',
+      },
+      {
+        id: 'DES-002',
+        title: '门控模块',
+        text: '模块',
+        parent: ['SWR-001'],
+        discipline: 'SW',
+        module: 'door-ctrl',
+      },
+      { id: 'TC-001', title: '承载试验', text: '加载', parent: ['MER-001'] },
+    ]
+    upsertReqs(state, { projectId: p.id, items, by: 'x' }, NOW)
+    const get = (id: string) => byId(state.reqs, id, p.id)
+    expect(get('MER-001')).toMatchObject({ level: 'SWR', discipline: 'MECH' })
+    expect(get('EER-001')).toMatchObject({ level: 'SWR', discipline: 'ELEC' })
+    expect(get('SWR-001')).toMatchObject({ level: 'SWR', discipline: 'SW' })
+    expect(get('DES-001')).toMatchObject({ partNo: 'NC-DR-1203', drawingNo: 'DWG-1203' })
+    expect(get('DES-002').module).toBe('door-ctrl')
+    expect(get('CUS-001')).toMatchObject({
+      clause: 'TA-001 §3.2',
+      compliance: 'DEVIATE',
+      responseNote: '偏离说明',
+    })
+    const c = coverage(state, p.id)
+    expect(c.cusSwr).toMatchObject({ covered: 1, total: 1 })
+    expect(c.swrTc).toMatchObject({ total: 3, covered: 1 })
+    for (const bad of [
+      { id: 'CUS-002', title: 't', text: 't', partNo: 'x' },
+      { id: 'SYS-002', title: 't', text: 't', discipline: 'MECH' },
+      { id: 'CUS-003', title: 't', text: 't', compliance: 'MAYBE' },
+    ])
+      expect(() => upsertReqs(state, { projectId: p.id, items: [bad] }, NOW), bad.id).toThrow()
+    expect(() =>
+      upsertReqs(state, { projectId: p.id, items: [{ id: 'XYZ-001', title: 't', text: 't' }] }, NOW),
+    ).toThrow('编号格式无效')
+    expect(() =>
+      upsertReqs(state, {
+        projectId: p.id,
+        items: [{ id: 'TC-002', title: 't', text: 't', parent: ['CUS-001'] }],
+      }),
+    ).toThrow('TC-002 的上游必须是 SWR')
+  })
+
+  it('allows several deliverables of one kind through a suffix, with the new kinds', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const base = { projectId: p.id, stage: 'VERIFICATION', path: 'docs/a.md' }
+    const a = recordArtifact(state, { ...base, kind: 'TYPE_TEST_REPORT', suffix: '07' }, NOW)
+    const b = recordArtifact(
+      state,
+      { ...base, kind: 'TYPE_TEST_REPORT', suffix: '08', path: 'docs/b.md' },
+      NOW,
+    )
+    const plain = recordArtifact(state, { ...base, kind: 'TYPE_TEST_PLAN' }, NOW)
+    expect([a.id, b.id, plain.id]).toEqual([
+      'DOC-001-TYPE-TEST-REPORT-07',
+      'DOC-001-TYPE-TEST-REPORT-08',
+      'DOC-001-TYPE-TEST-PLAN',
+    ])
+    expect(
+      recordArtifact(state, { ...base, kind: 'TYPE_TEST_REPORT', suffix: '07', title: '改' }, NOW).title,
+    ).toBe('改')
+    expect(state.artifacts).toHaveLength(3)
+    expect(a.authorRole).toBe('验证工程师')
+    for (const kind of ['TA_RESPONSE', 'DL_MINUTES', 'FAI_REPORT', 'REPORT_8D', 'ECN', 'ACCEPTANCE'])
+      expect(recordArtifact(state, { ...base, kind }, NOW).id).toBe(`DOC-001-${kind.replaceAll('_', '-')}`)
+    expect(() => recordArtifact(state, { ...base, kind: 'ECN', suffix: 'a b' }, NOW)).toThrow(
+      'suffix 格式无效',
+    )
   })
 
   it.each([
@@ -382,62 +943,182 @@ describe('live project tool chain', () => {
     expect(() => projectPath(project, path)).toThrow('交付物路径越界')
   })
 
-  it('accepts project-relative and workspace-relative paths and refuses seed projects', () => {
+  it('accepts project-relative paths and refuses order projects', () => {
     const project = { id: 'PRJ-2026-009', live: true, workspaceDir: 'devboard-projects/PRJ-2026-009' }
     expect(projectPath(project, 'src/a.js')).toBe('devboard-projects/PRJ-2026-009/src/a.js')
-    expect(projectPath(project, 'devboard-projects/PRJ-2026-009/README.md')).toBe(
-      'devboard-projects/PRJ-2026-009/README.md',
-    )
     expect(() => projectPath({ id: 'PRJ-2025-042', live: false }, 'docs/SRS.md')).toThrow('不是现场项目')
   })
 })
 
+describe('live software project tool chain', () => {
+  it('runs from the concept gate with the software profile, test runs and the app address', () => {
+    const state = blank()
+    const project = create(state, { kind: 'project', name: '车门健康监测看板', by: '研发协调员' }, NOW)
+    recordArtifact(
+      state,
+      {
+        projectId: project.id,
+        stage: 'INITIATION',
+        kind: 'PLAN',
+        path: 'docs/PROJECT-PLAN.md',
+        markdown: '# 计划',
+      },
+      NOW,
+    )
+    const { gate } = submitGate(state, { stageId: `${project.id}/INITIATION`, by: '研发协调员' }, NOW)
+    expect(gate).toMatchObject({ code: 'CDCP', approverRoles: ['IPMT'] })
+    expect(() => decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: '产品经理' }, NOW)).toThrow(
+      '编写角色',
+    )
+    expect(() => decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: '技术负责人' }, NOW)).toThrow(
+      '本门需由 IPMT 审批',
+    )
+    decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: 'IPMT' }, NOW)
+    expect(byId(state.artifacts, 'DOC-001-PLAN').status).toBe('BASELINED')
+    expect(
+      recordTestRun(
+        state,
+        { projectId: project.id, level: 'UNIT', total: 3, passed: 2, failed: 1, skipped: 0 },
+        NOW,
+      ),
+    ).toMatchObject({ id: 'TR-001-01', source: 'live' })
+    expect(() =>
+      recordTestRun(state, { projectId: project.id, total: 3, passed: 3, failed: 1 }, NOW),
+    ).toThrow('用例数不一致')
+    expect(() => registerApp(state, { projectId: project.id, url: 'http://example.com/' }, NOW)).toThrow(
+      '本机地址',
+    )
+    expect(registerApp(state, { projectId: project.id, url: 'http://127.0.0.1:5180/' }, NOW).appUrl).toBe(
+      'http://127.0.0.1:5180/',
+    )
+    const order = newProject(state, 'NEW_BUILD')
+    expect(() => registerApp(state, { projectId: order.id, url: 'http://127.0.0.1:5180/' }, NOW)).toThrow(
+      '不是现场项目',
+    )
+  })
+})
+
+describe('snapshot', () => {
+  it('lists every collection, the profile tables and the field metrics', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    const view = snapshot(state, NOW)
+    expect(Object.keys(view).sort()).toEqual(
+      [
+        'artifacts',
+        'changes',
+        'configBaselines',
+        'counts',
+        'defects',
+        'faults',
+        'gates',
+        'interventions',
+        'items',
+        'labels',
+        'liveTailoring',
+        'machines',
+        'now',
+        'orgs',
+        'problems',
+        'profiles',
+        'projects',
+        'reqs',
+        'requirements',
+        'revision',
+        'roles',
+        'stages',
+        'synthetic',
+        'tasks',
+        'testRuns',
+        'trials',
+      ].sort(),
+    )
+    expect(view.projects[0].metrics).toMatchObject({
+      faults30dTotal: 0,
+      openProblems: 0,
+      retrofit: { done: 0, total: 0 },
+      baselineGap: 0,
+      trials: { total: 0, approved: 0, failed: 0 },
+    })
+    expect(view.counts).toMatchObject({ trial: { PLANNED: 0 }, fault: { NEW: 0 }, problem: { OPEN: 0 } })
+    expect(view.labels.level.SWR).toBe('子系统需求')
+    expect(snapshot(state, NOW, p.id).stages).toHaveLength(6)
+  })
+})
+
 describe('store persistence', () => {
-  it('reads an empty read-only store as the seed without writing (query and effect preparation)', () => {
+  it('reads an empty read-only store as the seed without writing', () => {
     const store = readOnly()
     const view = snapshot(read(store, NOW), NOW)
-    expect(view.projects.map((p: Item) => p.id)).toEqual(['PRJ-2025-042', 'PRJ-2026-008', 'PRJ-2025-019'])
-    expect(view.interventions[0]).toMatchObject({ id: 'HI-002', state: 'EXPIRED' })
+    expect(view.projects.map((p: Item) => p.id)).toEqual(buildSeed(NOW).projects.map((p: Item) => p.id))
     expect(read(store, NOW).revision).toBe(1)
-    expect(artifactBody(store, 'DOC-042-SRS', NOW)).toMatchObject({ source: 'seed', truncated: false })
     expect(store.rows.size).toBe(0)
   })
 
-  it('reads a schema 1 store as the seed and replaces it on the first write', () => {
-    const store = memoryStore()
-    store.set('devboard/meta', { schema: 1, revision: 9 })
-    store.set('devboard/requirements', [{ id: 'REQ-001' }])
-    expect(read(store, NOW)).toMatchObject({ schema: 2, revision: 1 })
-    update(store, (s) => create(s, { kind: 'requirement', title: '新需求' }, NOW), NOW)
-    expect(store.rows.has('devboard/requirements')).toBe(false)
-    expect(read(store, NOW).requirements).toHaveLength(7)
+  it('reads a store of another schema (1 or 2) as the seed and replaces it on the first write', () => {
+    for (const schema of [1, 2]) {
+      const store = memoryStore()
+      store.set('devboard/meta', { schema, revision: 9, chunks: { projects: 1 } })
+      store.set('devboard/projects/0', [{ id: 'PRJ-OLD' }])
+      store.set('devboard/requirements', [{ id: 'REQ-001' }])
+      const before = read(store, NOW)
+      expect(before.revision).toBe(1)
+      expect(before.projects.map((p: Item) => p.id)).not.toContain('PRJ-OLD')
+      expect(store.get('devboard/meta')).toMatchObject({ schema, revision: 9 })
+      update(store, (s: State) => create(s, { kind: 'requirement', title: '新需求' }, NOW), NOW)
+      expect(store.get('devboard/meta')).toMatchObject({ schema: 3, revision: 2 })
+      expect(read(store, NOW).projects.map((p: Item) => p.id)).not.toContain('PRJ-OLD')
+    }
   })
 
-  it('persists the seed in chunks under the value cap, writes through one path and resets', () => {
+  it('persists every collection in chunks under the value cap, writes through one path and resets', () => {
     const store = memoryStore()
-    expect(read(store, NOW).revision).toBe(1)
+    const seeded = seed(NOW)
     const { revision, result } = update(
       store,
-      (s) => create(s, { kind: 'requirement', title: '新需求', by: '研发协调员' }, NOW),
+      (s: State) => create(s, { kind: 'requirement', title: '新需求', by: '研发协调员' }, NOW),
       NOW,
     )
     expect(revision).toBe(2)
-    expect(result).toMatchObject({ id: 'REQ-007', state: 'RAW' })
-    expect(read(store, NOW).reqs).toHaveLength(seed(NOW).reqs.length)
-    expect(read(store, NOW).requirements).toHaveLength(7)
+    expect(result).toMatchObject({ state: 'RAW' })
+    const back = read(store, NOW)
+    for (const c of COLLECTIONS) if (c !== 'requirements') expect(back[c], c).toHaveLength(seeded[c].length)
+    expect(back.requirements).toHaveLength(seeded.requirements.length + 1)
     expect(() =>
       create(read(store, NOW), { kind: 'task', requirementId: 'REQ-404', title: 'x', type: 'TESTING' }),
     ).toThrow('未找到 REQ-404')
     expect(reset(store, NOW).revision).toBe(3)
-    const fresh = read(store, NOW)
-    expect(fresh.requirements).toHaveLength(6)
-    expect(fresh.revision).toBe(3)
+    expect(read(store, NOW).requirements).toHaveLength(seeded.requirements.length)
+  })
+
+  it('persists new-collection writes (a trial) and serves them from the snapshot', () => {
+    const store = memoryStore()
+    const pid = read(store, NOW).projects[0].id
+    const { result } = update(
+      store,
+      (s: State) =>
+        upsertTrial(
+          s,
+          {
+            projectId: pid,
+            type: 'ROUTINE',
+            title: '例行试验',
+            standard: 's',
+            sample: 'x',
+            lab: '主机厂现场',
+            plannedAt: '2026-11-01',
+          },
+          NOW,
+        ),
+      NOW,
+    )
+    expect(snapshot(read(store, NOW), NOW).trials.map((t: Item) => t.id)).toContain(result.id)
   })
 
   it('caches a live document body, truncates it by bytes and serves it as the artifact body', () => {
     const store = memoryStore()
     const big = `# 需求规格\n${'需'.repeat(DOC_LIMIT_BYTES)}`
-    const { result } = update(store, (s) => {
+    const { result } = update(store, (s: State) => {
       const p = create(s, { kind: 'project', name: '车门健康监测看板' }, NOW)
       return recordArtifact(
         s,
@@ -446,11 +1127,7 @@ describe('store persistence', () => {
       )
     })
     const body = artifactBody(store, result.id, NOW)
-    expect(body).toMatchObject({
-      source: 'workspace',
-      truncated: true,
-      path: 'devboard-projects/PRJ-2026-009/docs/SRS.md',
-    })
+    expect(body).toMatchObject({ source: 'workspace', truncated: true })
     expect(new TextEncoder().encode(body.markdown).length).toBeLessThanOrEqual(DOC_LIMIT_BYTES)
     expect(body.markdown.startsWith('# 需求规格')).toBe(true)
     expect(() => artifactBody(store, 'DOC-404', NOW)).toThrow('未找到 DOC-404')

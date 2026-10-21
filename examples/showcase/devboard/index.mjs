@@ -6,7 +6,9 @@ import {
   create,
   DomainError,
   decideGate,
+  faultSummary,
   LABELS,
+  MACHINES,
   projectPath,
   read,
   recordArtifact,
@@ -18,9 +20,12 @@ import {
   submitGate,
   transition,
   update,
-  updateImpact,
+  updateChange,
+  upsertProblem,
   upsertReqs,
+  upsertTrial,
 } from './domain.mjs'
+import { ORGS } from './profiles.mjs'
 
 const strict = { additionalProperties: false }
 const id = Type.String({ minLength: 1, maxLength: 64 })
@@ -30,6 +35,7 @@ const literals = (values) => Type.Union(values.map((v) => Type.Literal(v)))
 const keys = (map) => literals(Object.keys(map))
 const ids = Type.Array(id, { maxItems: 100 })
 const json = (value) => JSON.parse(JSON.stringify(value))
+const MACHINES_FAULT = Object.fromEntries(Object.keys(MACHINES.fault).map((k) => [k, 1]))
 const AGENT = '研发协调员'
 const READ_LIMIT = 256 * 1024
 const skill = readFileSync(new URL('./skills/devboard-playbook.md', import.meta.url), 'utf8')
@@ -86,6 +92,11 @@ function board(input, store) {
       'changes',
       'defects',
       'testRuns',
+      'trials',
+      'faults',
+      'problems',
+      'items',
+      'configBaselines',
       'requirements',
       'tasks',
       'interventions',
@@ -108,7 +119,7 @@ function board(input, store) {
       tasks: view.tasks.map(({ history, ...t }) => t),
       interventions: view.interventions.map(({ history, ...i }) => i),
       counts: view.counts,
-      hint: '传 projectId 查看单个项目的阶段、门、交付物、需求追溯、变更、缺陷与测试；传 id 查看单个实体。',
+      hint: '传 projectId 查看单个项目的阶段、门、交付物、需求追溯、变更、缺陷、测试、试验、预警、质量问题与配置基线；传 id 查看单个实体。预警聚合用 devboard_fault_list。',
     },
   }
 }
@@ -119,9 +130,46 @@ const impact = Type.Optional(
       reqs: Type.Optional(ids),
       artifacts: Type.Optional(ids),
       tests: Type.Optional(ids),
+      items: Type.Optional(
+        Type.Array(Type.Object({ itemId: id, fromRev: short(8), toRev: short(8) }, strict), {
+          maxItems: 100,
+        }),
+      ),
+      fleet: Type.Optional(
+        Type.Object(
+          {
+            doors: Type.Integer({ minimum: 0, maximum: 1_000_000 }),
+            plan: Type.Optional(Type.String({ maxLength: 500 })),
+          },
+          strict,
+        ),
+      ),
       safety: Type.Optional(Type.Boolean()),
       effortDays: Type.Optional(Type.Number({ minimum: 0, maximum: 1000 })),
     },
+    strict,
+  ),
+)
+const changeSource = Type.Optional(
+  Type.Object({ type: literals(Object.keys(LABELS.changeSource)), ref: Type.Optional(short(64)) }, strict),
+)
+const rootCause = Type.Optional(short(2000))
+const retrofit = Type.Optional(
+  Type.Object({ total: Type.Integer({ minimum: 0, maximum: 1_000_000 }) }, strict),
+)
+const steps = Type.Optional(
+  Type.Object(
+    Object.fromEntries(
+      ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'].map((d) => [
+        d,
+        Type.Optional(
+          Type.Object(
+            { done: Type.Optional(Type.Boolean()), text: Type.Optional(Type.String({ maxLength: 1000 })) },
+            strict,
+          ),
+        ),
+      ]),
+    ),
     strict,
   ),
 )
@@ -206,7 +254,7 @@ export const tools = [
   ),
   tool(
     'devboard_project_create',
-    'Create a live R&D project; returns its id and workspaceDir (devboard-projects/<id>), where every project file must be written. The initiation stage starts IN_PROGRESS. 新建现场项目。',
+    'Create a live R&D project (projectKind SOFTWARE, the default; it follows the SOFTWARE gate profile with the default tailoring); returns its id and workspaceDir (devboard-projects/<id>), where every project file must be written. The initiation stage starts IN_PROGRESS. Order kinds (NEW_BUILD, RETROFIT, MAINTENANCE) only create a record without a workspace. 新建现场项目。',
     Type.Object(
       {
         name: short(120),
@@ -214,6 +262,7 @@ export const tools = [
         customer: Type.Optional(Type.String({ maxLength: 120 })),
         manager: Type.Optional(Type.String({ maxLength: 64 })),
         projectKind: Type.Optional(keys(LABELS.projectKind)),
+        org: Type.Optional(literals(ORGS)),
         productLine: Type.Optional(keys(LABELS.productLine)),
       },
       strict,
@@ -238,12 +287,13 @@ export const tools = [
   ),
   tool(
     'devboard_artifact_record',
-    'Register or update a deliverable of a live project after writing its file. path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. 登记交付物。',
+    'Register or update a deliverable of a live project after writing its file (id DOC-<n>-<KIND>[-<suffix>]; a suffix allows several of one kind). path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. 登记交付物。',
     Type.Object(
       {
         projectId: id,
         stage: literals(STAGES),
         kind: keys(LABELS.artifactKind),
+        suffix: Type.Optional(short(24)),
         path: short(300),
         title: Type.Optional(short()),
         version: Type.Optional(short(16)),
@@ -267,7 +317,7 @@ export const tools = [
   ),
   tool(
     'devboard_req_upsert',
-    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. 登记需求、设计与用例并挂接追溯。',
+    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. 登记需求、设计与用例并挂接追溯。',
     Type.Object(
       {
         projectId: id,
@@ -280,6 +330,13 @@ export const tools = [
               parent: Type.Optional(Type.Array(short(16), { maxItems: 50 })),
               safety: Type.Optional(Type.Boolean()),
               status: Type.Optional(literals(['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'])),
+              discipline: Type.Optional(keys(LABELS.discipline)),
+              partNo: Type.Optional(short(32)),
+              drawingNo: Type.Optional(short(32)),
+              module: Type.Optional(short(64)),
+              clause: Type.Optional(short(64)),
+              compliance: Type.Optional(keys(LABELS.compliance)),
+              responseNote: Type.Optional(short(500)),
             },
             strict,
           ),
@@ -292,7 +349,7 @@ export const tools = [
   ),
   tool(
     'devboard_gate_submit',
-    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board. The implementation stage passes automatically once all findings are closed. 提交评审。',
+    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
     Type.Object(
       {
         projectId: id,
@@ -312,7 +369,7 @@ export const tools = [
   ),
   tool(
     'devboard_gate_status',
-    'Read review gate decisions, approvers, comments and findings: one gate by gateId, or every gate of a project. 查询评审门。',
+    'Read review gates (code, name, approverRoles, signatures, decision, findings): one gate by gateId, or every gate of a project. 查询评审门。',
     Type.Object({ gateId: Type.Optional(id), projectId: Type.Optional(id) }, strict),
     (input, ctx) => {
       const state = read(ctx.store)
@@ -373,14 +430,20 @@ export const tools = [
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), update its impact analysis, and/or move it: SUBMITTED → ANALYZED (needs impact) → CCB_REVIEW → APPROVED/REJECTED → IMPLEMENTED → CLOSED. Leave CCB decisions to people unless told otherwise. 登记或推进变更。',
+    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED (generates the ECN and a new as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Leave CCB decisions to people unless told otherwise. 登记或推进变更。',
     Type.Object(
       {
         id: Type.Optional(id),
         projectId: Type.Optional(id),
         title: Type.Optional(short()),
         reason: Type.Optional(short(2000)),
+        source: changeSource,
+        rootCause,
         impact,
+        retrofit,
+        verification: Type.Optional(
+          Type.Object({ result: literals(['PASS', 'FAIL']), trialId: Type.Optional(short(32)) }, strict),
+        ),
         to: Type.Optional(id),
         note,
       },
@@ -389,15 +452,89 @@ export const tools = [
     (input, ctx) =>
       mutate(ctx.store, (s) => {
         const cr = input.id
-          ? input.impact
-            ? updateImpact(s, input)
-            : s.changes.find((c) => c.id === input.id)
+          ? updateChange(s, { ...input, by: AGENT })
           : create(s, { ...input, kind: 'change', by: AGENT })
-        if (!cr) throw new DomainError(`未找到 ${input.id}`)
         return input.to
           ? transition(s, { kind: 'change', id: cr.id, to: input.to, note: input.note, by: AGENT })
           : cr
       }),
+  ),
+  tool(
+    'devboard_trial_upsert',
+    'Register a trial (omit id; type TYPE_TEST/ROUTINE/FAT/FAI with title, standard, sample, lab, plannedAt) or update one (id): report fields, result, deviations, verified requirements and the change it triggered (changeId); and/or move it: PLANNED → IN_PROGRESS → REPORTED (needs reportNo and a result) → APPROVED. A FAIL trial can be approved only with an approved change. Approving a trial is a human decision on the board. 登记或更新试验与首件。',
+    Type.Object(
+      {
+        id: Type.Optional(id),
+        projectId: Type.Optional(id),
+        type: Type.Optional(keys(LABELS.trialType)),
+        title: Type.Optional(short()),
+        standard: Type.Optional(short()),
+        sample: Type.Optional(short(100)),
+        lab: Type.Optional(short(100)),
+        witness: Type.Optional(short(100)),
+        plannedAt: Type.Optional(short(40)),
+        at: Type.Optional(short(40)),
+        reportNo: Type.Optional(short(48)),
+        result: Type.Optional(keys(LABELS.trialResult)),
+        deviations: Type.Optional(Type.Array(short(300), { maxItems: 50 })),
+        verifies: Type.Optional(Type.Array(short(16), { maxItems: 50 })),
+        changeId: Type.Optional(id),
+        to: Type.Optional(id),
+        note,
+      },
+      strict,
+    ),
+    (input, ctx) => {
+      if (input.to === 'APPROVED')
+        throw new DomainError('批准试验是人的决定，请让用户在看板的「试验与首件」页操作')
+      return mutate(ctx.store, (s) => upsertTrial(s, { ...input, by: AGENT }))
+    },
+  ),
+  tool(
+    'devboard_problem_upsert',
+    'Create a quality problem (omit id; title, projectId, severity A/B/C) or update one (id): 8D steps (D1…D8 with done/text), rootCause, containment, linked faultIds, the change it needs (changeId) or why none (noChangeReason); and/or move it: OPEN → ANALYZING → ACTION (needs rootCause and D4) → VERIFYING → CLOSED. Draft only: cite alarm and trial ids in the text, and never close a problem — people close it on the board. 登记或推进质量问题（8D）。',
+    Type.Object(
+      {
+        id: Type.Optional(id),
+        projectId: Type.Optional(id),
+        title: Type.Optional(short()),
+        severity: Type.Optional(keys({ A: 1, B: 1, C: 1 })),
+        owner: Type.Optional(short(64)),
+        faultIds: Type.Optional(Type.Array(id, { maxItems: 100 })),
+        steps,
+        rootCause,
+        containment: Type.Optional(short(2000)),
+        changeId: Type.Optional(id),
+        noChangeReason: Type.Optional(short(500)),
+        to: Type.Optional(id),
+        note,
+      },
+      strict,
+    ),
+    (input, ctx) => {
+      if (input.to === 'CLOSED')
+        throw new DomainError('关闭质量问题是人的决定，请让用户在看板的「运维与质量」页操作')
+      return mutate(ctx.store, (s) => upsertProblem(s, { ...input, by: AGENT }))
+    },
+  ),
+  tool(
+    'devboard_fault_list',
+    'Aggregate field faults (PHM alarms and service reports) of a project in a time window: totals by signal, state, train and week, plus the latest items. Use it to find clusters before drafting an 8D. 按信号与时间窗聚合预警。',
+    Type.Object(
+      {
+        projectId: Type.Optional(id),
+        signal: Type.Optional(keys(LABELS.faultSignal)),
+        state: Type.Optional(keys(MACHINES_FAULT)),
+        days: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      },
+      strict,
+    ),
+    (input, ctx) => {
+      const state = read(ctx.store)
+      return { revision: state.revision, data: faultSummary(state, input) }
+    },
+    readOnlyTool,
   ),
   tool(
     'devboard_app_register',
@@ -422,16 +559,35 @@ const effectPolicy = {
 }
 const by = Type.String({ minLength: 1, maxLength: 64 })
 const optionalText = (max) => Type.Optional(Type.String({ maxLength: max }))
-const kinds = ['requirement', 'task', 'intervention', 'stage', 'change', 'defect']
+const kinds = [
+  'requirement',
+  'task',
+  'intervention',
+  'stage',
+  'change',
+  'defect',
+  'trial',
+  'fault',
+  'problem',
+  'retrofit',
+]
 const schemas = {
   'devboard.transition': Type.Object(
     {
       kind: literals(kinds),
       id,
-      to: id,
+      // retrofit moves a change's progress (done) instead of its state.
+      to: Type.Optional(id),
       by,
       note,
       members: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 12 })),
+      reportNo: optionalText(48),
+      result: optionalText(16),
+      deviations: Type.Optional(Type.Array(short(300), { maxItems: 50 })),
+      changeId: Type.Optional(id),
+      rootCause: optionalText(2000),
+      noChangeReason: optionalText(500),
+      done: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000 })),
     },
     strict,
   ),
@@ -446,6 +602,12 @@ const schemas = {
       reason: optionalText(2000),
       customer: optionalText(120),
       manager: optionalText(64),
+      projectKind: optionalText(16),
+      org: optionalText(40),
+      productLine: optionalText(16),
+      source: changeSource,
+      rootCause: optionalText(2000),
+      retrofit,
       priority: optionalText(8),
       owner: optionalText(64),
       requirementId: Type.Optional(id),

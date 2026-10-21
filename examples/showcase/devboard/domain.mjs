@@ -1,29 +1,25 @@
 // DevBoard domain: the R&D lifecycle (projects, stages, review gates, traceability, changes, defects,
-// test runs) plus the v1 requirement / task / human-intervention machines, derived metrics and store
-// persistence. No host imports, so tests run against a plain in-memory store.
+// test runs), trials, the field-to-design loop (faults, quality problems, configuration baselines) plus
+// the v1 requirement / task / human-intervention machines, derived metrics and store persistence.
+// No host imports, so tests run against a plain in-memory store.
 import { readFileSync } from 'node:fs'
+import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from './profiles.mjs'
 import { buildSeed } from './seed-data.mjs'
 
 export const STAGES = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
-/** Default writing and approving roles per stage; the approver is never the stage's author. */
-export const STAGE_AUTHOR = {
-  INITIATION: '项目经理',
-  REQUIREMENTS: '需求工程师',
-  DESIGN: '软件架构师',
-  IMPLEMENTATION: '软件开发工程师',
-  VERIFICATION: '测试工程师',
-  RELEASE: '项目经理',
-}
-export const STAGE_APPROVER = {
-  INITIATION: '研发总监',
-  REQUIREMENTS: '项目经理',
-  DESIGN: '技术负责人',
-  IMPLEMENTATION: '技术负责人',
-  VERIFICATION: '质量负责人',
-  RELEASE: '质量负责人',
-}
 export const LEVELS = ['CUS', 'SYS', 'SWR', 'DES', 'TC']
 const PARENT_LEVEL = { SYS: 'CUS', SWR: 'SYS', DES: 'SWR', TC: 'SWR' }
+/** SWR-level items carry a discipline prefix: software, mechanical or electrical. */
+const SWR_PREFIX_DISCIPLINE = { SWR: 'SW', MER: 'MECH', EER: 'ELEC' }
+const DISCIPLINES = ['MECH', 'ELEC', 'SW']
+const COMPLIANCE = ['COMPLY', 'DEVIATE', 'CLARIFY']
+const TRIAL_TYPES = ['TYPE_TEST', 'ROUTINE', 'FAT', 'FAI']
+const TRIAL_PREFIX = { TYPE_TEST: 'TT', ROUTINE: 'RT', FAT: 'FAT', FAI: 'FAI' }
+const TRIAL_RESULTS = ['PENDING', 'PASS', 'FAIL', 'CONDITIONAL']
+const FAULT_SIGNALS = ['SLIDE', 'RESISTANCE', 'BUFFER_WEAR', 'OBSTACLE', 'LOCK_SWITCH', 'COMM']
+const PROBLEM_STEPS = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8']
+const SEVERITIES = ['A', 'B', 'C']
+const CHANGE_SOURCES = ['FIELD', 'TYPE_TEST', 'CUSTOMER', 'INTERNAL']
 
 export const MACHINES = Object.freeze({
   requirement: {
@@ -49,8 +45,9 @@ export const MACHINES = Object.freeze({
     CLAIMED: ['OPEN', 'RESOLVED'],
     RESOLVED: [],
   },
-  // IN_REVIEW is entered by submitting a gate; PASSED and REWORK only by a gate decision, and a PASSED
-  // stage returns to REWORK only through an approved change request.
+  // IN_REVIEW is entered by submitting a gate; PASSED and REWORK only by a gate decision (the last gate
+  // of the stage passes it; approving an earlier gate of a multi-gate stage returns it to IN_PROGRESS
+  // internally), and a PASSED stage returns to REWORK only through an approved change request.
   stage: {
     NOT_STARTED: ['IN_PROGRESS'],
     IN_PROGRESS: ['IN_REVIEW'],
@@ -73,6 +70,25 @@ export const MACHINES = Object.freeze({
     FIXING: ['RETEST'],
     RETEST: ['CLOSED', 'FIXING'],
     DEFERRED: ['CONFIRMED', 'CLOSED'],
+    CLOSED: [],
+  },
+  trial: {
+    PLANNED: ['IN_PROGRESS'],
+    IN_PROGRESS: ['REPORTED'],
+    REPORTED: ['IN_PROGRESS', 'APPROVED'],
+    APPROVED: [],
+  },
+  fault: {
+    NEW: ['DISPATCHED'],
+    DISPATCHED: ['HANDLED'],
+    HANDLED: ['CLOSED'],
+    CLOSED: [],
+  },
+  problem: {
+    OPEN: ['ANALYZING'],
+    ANALYZING: ['ACTION'],
+    ACTION: ['VERIFYING'],
+    VERIFYING: ['CLOSED', 'ACTION'],
     CLOSED: [],
   },
 })
@@ -112,14 +128,22 @@ export const LABELS = Object.freeze({
     BASELINED: '已基线',
     CHANGED: '已变更',
     VERIFIED: '已验证',
+    PLANNED: '已计划',
+    REPORTED: '已出报告',
+    DISPATCHED: '已派工',
+    HANDLED: '已处理',
+    ANALYZING: '分析中',
+    ACTION: '措施中',
+    VERIFYING: '验证中',
   },
+  // Generic stage names; each project shows its own profile label (GATE_PROFILES[kind][stage].label).
   stage: {
     INITIATION: '立项',
     REQUIREMENTS: '需求分析',
-    DESIGN: '架构设计',
-    IMPLEMENTATION: '开发实现',
-    VERIFICATION: '测试验证',
-    RELEASE: '发布验收',
+    DESIGN: '设计',
+    IMPLEMENTATION: '实现',
+    VERIFICATION: '验证',
+    RELEASE: '发布交付',
   },
   projectKind: { NEW_BUILD: '新造', RETROFIT: '更新改造', MAINTENANCE: '维保', SOFTWARE: '软件' },
   productLine: {
@@ -137,8 +161,32 @@ export const LABELS = Object.freeze({
     TEST_REPORT: '测试报告',
     RELEASE_NOTE: '发布说明',
     CCB_MINUTES: 'CCB 纪要',
+    TA_RESPONSE: '技术协议应答',
+    DL_MINUTES: '设计联络纪要',
+    TYPE_TEST_PLAN: '型式试验大纲',
+    TYPE_TEST_REPORT: '型式试验报告',
+    FAI_REPORT: '首件检验报告',
+    REPORT_8D: '8D 报告',
+    ECN: '工程变更通知',
+    ACCEPTANCE: '交付验收记录',
   },
-  level: { CUS: '客户条款', SYS: '系统需求', SWR: '软件需求', DES: '设计', TC: '测试用例' },
+  level: { CUS: '客户条款', SYS: '系统需求', SWR: '子系统需求', DES: '设计', TC: '测试用例' },
+  gateType: { TR: '技术评审', DCP: '决策评审', MILESTONE: '订单里程碑' },
+  discipline: { MECH: '机械', ELEC: '电气', SW: '软件' },
+  compliance: { COMPLY: '满足', DEVIATE: '偏离', CLARIFY: '澄清' },
+  trialType: { TYPE_TEST: '型式试验', ROUTINE: '例行试验', FAT: '工厂验收试验', FAI: '首件检验' },
+  trialResult: { PENDING: '待定', PASS: '合格', FAIL: '不合格', CONDITIONAL: '有条件合格' },
+  faultSignal: {
+    SLIDE: '滑道异常',
+    RESISTANCE: '阻力异常',
+    BUFFER_WEAR: '缓冲头磨损',
+    OBSTACLE: '障碍物检测',
+    LOCK_SWITCH: '锁闭开关',
+    COMM: '通信',
+  },
+  faultSource: { PHM: 'PHM 预警', 客服: '客服', 主机厂: '主机厂' },
+  changeSource: { FIELD: '现场', TYPE_TEST: '型式试验', CUSTOMER: '客户', INTERNAL: '内部' },
+  baselineType: { AS_DESIGNED: '设计态', AS_BUILT: '制造态', AS_MAINTAINED: '维护态' },
   severity: { A: 'A 致命', B: 'B 严重', C: 'C 一般', D: 'D 轻微' },
   testLevel: { UNIT: '单元', INTEGRATION: '集成', SYSTEM: '系统' },
   taskType: {
@@ -167,6 +215,11 @@ const COLLECTIONS = {
   change: 'changes',
   defect: 'defects',
   testRun: 'testRuns',
+  trial: 'trials',
+  fault: 'faults',
+  problem: 'problems',
+  item: 'items',
+  configBaseline: 'configBaselines',
   requirement: 'requirements',
   task: 'tasks',
   intervention: 'interventions',
@@ -184,7 +237,12 @@ const fail = (message) => {
   throw new DomainError(message)
 }
 
-export const seed = (now = Date.now()) => buildSeed(now)
+/** Collections a store written by an older seed lacks read as empty. */
+const ensure = (state) => {
+  for (const name of Object.values(COLLECTIONS)) state[name] ??= []
+  return state
+}
+export const seed = (now = Date.now()) => ensure(buildSeed(now))
 
 export function effectiveState(item, kind, now) {
   return kind === 'intervention' && item.state === 'OPEN' && Date.parse(item.dueAt) < now
@@ -203,12 +261,19 @@ function find(state, kind, id, projectId) {
 }
 const projectOf = (state, id) => find(state, 'project', id)
 const stageOf = (state, projectId, stage) => find(state, 'stage', `${projectId}/${stage}`)
-const stageLabel = (stage) => LABELS.stage[stage] ?? stage
-/** "质量负责人 韩雪" and "质量负责人" both sign as the role 质量负责人. */
-export const roleOf = (by) =>
-  String(by ?? '')
-    .trim()
-    .split(/\s+/)[0]
+const profileOf = (project) => GATE_PROFILES[project.kind] ?? GATE_PROFILES.NEW_BUILD
+/** The gates of a stage in order, minus those the project's tailoring skips. */
+const gatesOf = (project, stage) =>
+  (profileOf(project)[stage]?.gates ?? []).filter((g) => !project.tailoring?.skipped?.includes(g.code))
+const stageLabel = (state, stage) => {
+  const project = state.projects.find((p) => p.id === stage.projectId)
+  return (project && profileOf(project)[stage.stage]?.label) || LABELS.stage[stage.stage] || stage.stage
+}
+/** "质量工程师 韩雪" and "质量工程师" both sign as 质量工程师; "RAMS 工程师 唐力" keeps its inner space. */
+export const roleOf = (by) => {
+  const text = String(by ?? '').trim()
+  return ROLES.find((r) => text === r || text.startsWith(`${r} `)) ?? text.split(/\s+/)[0]
+}
 
 function record(item, at, by, from, to, note) {
   item.history = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }].slice(
@@ -233,8 +298,9 @@ const ids = (value, name) => {
 /** The only write path for states. Refuses any move absent from the kind's table. */
 export function transition(state, input, now = Date.now()) {
   const { kind, id, to, by, note } = input
-  if (!MACHINES[kind]) fail(`未知实体类型：${kind}`)
+  if (!MACHINES[kind] && kind !== 'retrofit') fail(`未知实体类型：${kind}`)
   if (kind === 'stage') return moveStage(state, find(state, 'stage', id), input, now)
+  if (kind === 'retrofit') return setRetrofit(state, input, now)
   const item = find(state, kind, id)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)
@@ -246,6 +312,8 @@ export function transition(state, input, now = Date.now()) {
     if (to === 'RESOLVED') item.resolution = note || '已处理'
   }
   if (kind === 'change') moveChange(item, to, actor, at, note, input.members)
+  if (kind === 'trial') moveTrial(state, item, to, input, at)
+  if (kind === 'problem') moveProblem(state, item, to, input)
   if (kind === 'defect') {
     if (to === 'CLOSED') item.closedAt = at
     else delete item.closedAt
@@ -275,7 +343,7 @@ function link(state, task, at) {
 function moveStage(state, stage, { to, by, note, author }, now) {
   if (to === 'IN_REVIEW') return submitGate(state, { stageId: stage.id, by, note }, now).stage
   if (to === 'PASSED' || to === 'REWORK')
-    fail(`阶段「${stageLabel(stage.stage)}」只能通过评审门决议进入${LABELS.state[to]}`)
+    fail(`阶段「${stageLabel(state, stage)}」只能通过评审门决议进入${LABELS.state[to]}`)
   if (to !== 'IN_PROGRESS' || !MACHINES.stage[stage.state]?.includes(to))
     fail(`非法状态流转：${stage.state} 不可流转至 ${to}`)
   const index = STAGES.indexOf(stage.stage)
@@ -283,7 +351,7 @@ function moveStage(state, stage, { to, by, note, author }, now) {
     const previous = stageOf(state, stage.projectId, STAGES[index - 1])
     if (previous.state !== 'PASSED')
       fail(
-        `阶段顺序不满足：前一阶段「${stageLabel(previous.stage)}」尚未通过评审，不能开始「${stageLabel(stage.stage)}」`,
+        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
       )
   }
   if (author) stage.author = text(author, 'author', 32)
@@ -294,6 +362,16 @@ function moveStage(state, stage, { to, by, note, author }, now) {
 
 const pendingGate = (state, stageId) =>
   state.gates.find((g) => g.stageId === stageId && g.decision === 'PENDING')
+
+/** The next gate of a stage still to be passed: gates approved before an approved change reopened the stage are superseded. */
+function nextGate(state, project, stage) {
+  const passed = new Set(
+    state.gates
+      .filter((g) => g.stageId === stage.id && g.decision === 'APPROVED' && !g.superseded)
+      .map((g) => g.code),
+  )
+  return gatesOf(project, stage.stage).find((g) => !passed.has(g.code))
+}
 
 function addFindings(gate, texts, by) {
   for (const raw of texts ?? []) {
@@ -315,29 +393,41 @@ function closeFindings(gate, closes, by) {
   }
 }
 
+/** Gates that check a kind of trial: any trial of that type not yet APPROVED is a system finding. */
+const TRIAL_GATES = { TYPE: ['TYPE_TEST', '型式试验'], FAI: ['FAI', '首件'] }
+
 /**
- * Submit a stage for review (IN_PROGRESS → IN_REVIEW with a new PENDING gate), or add and close
- * findings on the gate already pending. Requirements gates get a system finding while CUS→SWR is
- * incomplete; the implementation stage has no human gate and passes once every finding is closed.
+ * Submit a stage for review (IN_PROGRESS → IN_REVIEW with a new PENDING gate for the stage's next gate),
+ * or add and close findings on the gate already pending. The requirements gate gets a system finding
+ * while CUS→SWR is incomplete; the type-test and FAI gates get one per unapproved trial; a gate marked
+ * `auto` (TR4) passes once every finding is closed.
  */
 export function submitGate(state, { stageId, by, note, findings, closeFindings: closes }, now = Date.now()) {
   const stage = find(state, 'stage', stageId)
+  const project = projectOf(state, stage.projectId)
   const at = new Date(now).toISOString()
   const actor = by || '未署名'
   let gate = pendingGate(state, stage.id)
   if (stage.state === 'IN_PROGRESS') {
-    const n = state.gates.filter((g) => g.stageId === stage.id).length + 1
+    const def =
+      nextGate(state, project, stage) ?? fail(`阶段「${stageLabel(state, stage)}」没有待提交的评审门`)
+    const n = state.gates.filter((g) => g.stageId === stage.id && g.code === def.code).length + 1
     gate = {
-      id: `GATE-${stage.projectId}-${stage.stage}-${n}`,
+      id: `GATE-${stage.projectId}-${def.code}-${n}`,
       stageId: stage.id,
-      approverRole: STAGE_APPROVER[stage.stage],
+      code: def.code,
+      name: def.name,
+      type: def.type,
+      approverRoles: [...def.approverRoles],
+      signatures: [],
+      ...(def.auto ? { auto: true } : {}),
       decision: 'PENDING',
       findings: [],
       submittedAt: at,
       submittedBy: actor,
     }
     state.gates.push(gate)
-    record(stage, at, actor, 'IN_PROGRESS', 'IN_REVIEW', note || '提交评审')
+    record(stage, at, actor, 'IN_PROGRESS', 'IN_REVIEW', note || `提交评审 ${def.code}`)
     for (const a of stageArtifacts(state, stage)) if (a.status === 'DRAFT') a.status = 'IN_REVIEW'
     if (stage.stage === 'REQUIREMENTS') {
       const cov = coverage(state, stage.projectId).cusSwr
@@ -348,12 +438,23 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           '系统检查',
         )
     }
+    const [type, label] = TRIAL_GATES[def.code] ?? []
+    if (type) {
+      const open = state.trials.filter(
+        (t) => t.projectId === project.id && t.type === type && t.state !== 'APPROVED',
+      )
+      addFindings(
+        gate,
+        open.slice(0, 30).map((t) => `${label} ${t.id} 未关闭`),
+        '系统检查',
+      )
+    }
   } else if (stage.state !== 'IN_REVIEW' || !gate) {
-    fail(`阶段「${stageLabel(stage.stage)}」当前为${LABELS.state[stage.state]}，需先开始该阶段再提交评审`)
+    fail(`阶段「${stageLabel(state, stage)}」当前为${LABELS.state[stage.state]}，需先开始该阶段再提交评审`)
   }
   addFindings(gate, findings, actor)
   closeFindings(gate, closes, actor)
-  if (stage.stage === 'IMPLEMENTATION' && gate.findings.every((f) => f.closed))
+  if (gate.auto && gate.findings.every((f) => f.closed))
     approve(state, stage, gate, '系统（代码评审意见已全部关闭）', '代码评审意见全部关闭，自动通过', at)
   return { stage, gate }
 }
@@ -361,8 +462,16 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
 const stageArtifacts = (state, stage) =>
   state.artifacts.filter((a) => a.projectId === stage.projectId && a.stage === stage.stage)
 
+/** Approving a gate that is not the stage's last returns the stage to IN_PROGRESS for the next one. */
 function approve(state, stage, gate, by, comment, at) {
+  const project = projectOf(state, stage.projectId)
   Object.assign(gate, { decision: 'APPROVED', approver: by, decidedAt: at, comment })
+  const gates = gatesOf(project, stage.stage)
+  const next = gates[gates.findIndex((g) => g.code === gate.code) + 1]
+  if (gate.code && next && gates.some((g) => g.code === gate.code)) {
+    record(stage, at, by, 'IN_REVIEW', 'IN_PROGRESS', `${gate.code} 已通过，进入 ${next.code}`)
+    return
+  }
   record(stage, at, by, 'IN_REVIEW', 'PASSED', comment)
   stage.actualEnd = at
   const items = stageArtifacts(state, stage)
@@ -376,18 +485,20 @@ function approve(state, stage, gate, by, comment, at) {
   const n = state.gates.filter((g) => g.stageId === stage.id && g.decision === 'APPROVED').length
   stage.baseline = {
     id: main
-      ? `BL-${short}-${main.kind.replace('_', '-')}-${main.version}`
+      ? `BL-${short}-${main.kind.replaceAll('_', '-')}-${main.version}`
       : `BL-${short}-${stage.stage}-${n}`,
     at,
     items: items.map((a) => a.id),
   }
-  const project = projectOf(state, stage.projectId)
-  const next = STAGES[STAGES.indexOf(stage.stage) + 1]
-  if (next && project.stage === stage.stage) project.stage = next
-  if (!next) project.actualEnd = at
+  const nextStage = STAGES[STAGES.indexOf(stage.stage) + 1]
+  if (nextStage && project.stage === stage.stage) project.stage = nextStage
+  if (!nextStage) project.actualEnd = at
 }
 
-/** The three gate rules: in review, approver ≠ author, every finding closed before approval. */
+/**
+ * The gate rules: in review, approver ≠ author, the approver's role is one the gate names, every role of
+ * a co-signed gate signs once, and every finding is closed before the last signature approves.
+ */
 export function decideGate(state, input, now = Date.now()) {
   const gate = find(state, 'gate', input.gateId)
   const stage = find(state, 'stage', gate.stageId)
@@ -395,19 +506,25 @@ export function decideGate(state, input, now = Date.now()) {
   const by = text(input.by, 'by', 64)
   if (gate.decision !== 'PENDING' || stage.state !== 'IN_REVIEW')
     fail(
-      `评审门不满足：阶段「${stageLabel(stage.stage)}」不在评审中（当前${LABELS.state[stage.state]}，该门${LABELS.state[gate.decision] ?? gate.decision}）`,
+      `评审门不满足：阶段「${stageLabel(state, stage)}」不在评审中（当前${LABELS.state[stage.state]}，该门${LABELS.state[gate.decision] ?? gate.decision}）`,
     )
   const role = roleOf(by)
   if (role === stage.author)
     fail(`评审门不满足：审批人角色「${role}」是该阶段的编写角色，编写人不能审批自己的交付物`)
+  const roles = gate.approverRoles ?? []
+  if (!roles.includes(role)) fail(`评审门不满足：本门需由 ${roles.join('、')} 审批（当前角色「${role}」）`)
+  gate.signatures ??= []
   closeFindings(gate, input.closeFindings, by)
   const at = new Date(now).toISOString()
   const comment = optional(input.comment)
   if (decision === 'APPROVED') {
+    if (gate.signatures.some((s) => s.role === role)) fail(`评审门不满足：角色「${role}」已签署本门`)
+    const waiting = roles.filter((r) => r !== role && !gate.signatures.some((s) => s.role === r))
     const open = gate.findings.filter((f) => !f.closed)
-    if (open.length)
+    if (!waiting.length && open.length)
       fail(`评审门不满足：还有 ${open.length} 条评审意见未关闭（${open.map((f) => f.id).join('、')}）`)
-    approve(state, stage, gate, by, comment || '批准', at)
+    gate.signatures.push({ role, by, at, comment: comment || '批准' })
+    if (!waiting.length) approve(state, stage, gate, by, comment || '批准', at)
   } else {
     if (!comment) fail('驳回需填写评审意见')
     Object.assign(gate, { decision, approver: by, decidedAt: at, comment })
@@ -419,12 +536,21 @@ export function decideGate(state, input, now = Date.now()) {
 
 // ── Change requests ────────────────────────────────────────────────────────────────────────────
 
+const intIn = (value, name, max) => {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 0 && n <= max ? n : fail(`${name} 需为 0–${max} 的整数`)
+}
+
 function moveChange(cr, to, by, at, note, members) {
   if (to === 'ANALYZED') {
     const impact = cr.impact
-    const any = impact && [impact.reqs, impact.artifacts, impact.tests].some((list) => list?.length)
-    if (!any) fail(`${cr.id} 缺少影响分析：先登记受影响的需求、交付物或用例`)
+    const any = impact && [impact.reqs, impact.artifacts, impact.tests, impact.items].some((l) => l?.length)
+    if (!any) fail(`${cr.id} 缺少影响分析：先登记受影响的需求、交付物、用例或物料`)
+    if (['FIELD', 'TYPE_TEST'].includes(cr.source?.type) && !cr.rootCause)
+      fail(`${cr.id} 缺少失效原因分析（rootCause）：来源为现场或型式试验的变更需先写明原因`)
   }
+  if (to === 'CLOSED' && cr.state === 'IMPLEMENTED' && !cr.verification)
+    fail(`${cr.id} 缺少验证记录（verification）：验证后才能关闭`)
   if (to === 'APPROVED' || to === 'REJECTED')
     cr.ccb = {
       members: Array.isArray(members) && members.length ? members.slice(0, 12) : [by],
@@ -436,8 +562,52 @@ function moveChange(cr, to, by, at, note, members) {
 
 const LEVEL_STAGE = { CUS: 'REQUIREMENTS', SYS: 'REQUIREMENTS', SWR: 'REQUIREMENTS', DES: 'DESIGN' }
 
-/** An approved change marks impacted requirements CHANGED and sends impacted PASSED stages to rework. */
+/** The next number in a baseline series of one project and type, and the latest revs to build on. */
+function addBaseline(state, projectId, type, fallbacks, bumps, at, note) {
+  const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
+  const mine = (t) => state.configBaselines.filter((b) => b.projectId === projectId && b.type === t)
+  const latest = (t) => mine(t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
+  const base = [type, ...fallbacks].map(latest).find(Boolean)
+  const revs = { ...(base?.revs ?? {}) }
+  for (const { itemId, toRev } of bumps) revs[itemId] = toRev
+  const seq = Math.max(0, ...mine(type).map(seqOf)) + 1
+  const baseline = {
+    id: `CB-${projectId}-${type}-${pad(seq, 2)}`,
+    projectId,
+    type,
+    revs,
+    at,
+    ...(note ? { note } : {}),
+  }
+  state.configBaselines.push(baseline)
+  return baseline
+}
+
+/** ECN numbers follow the change request's own number so the pair reads together. */
+function ecnId(state, cr) {
+  const m = /^CR-(\d{4})-(\d+)$/.exec(cr.id)
+  if (m) return `ECN-${m[1]}-${m[2]}`
+  const year = new Date().getUTCFullYear()
+  return `ECN-${year}-${pad(
+    yearSeq(
+      state.changes.map((c) => ({ id: c.ecn ?? '' })),
+      'ECN',
+      year,
+    ),
+    3,
+  )}`
+}
+
+/**
+ * An approved change gets its ECN and, when it names items, a new as-designed baseline. It marks impacted
+ * requirements CHANGED and sends impacted PASSED stages to rework, except in a project already in service.
+ */
 function applyChange(state, cr, at) {
+  const project = projectOf(state, cr.projectId)
+  cr.ecn = ecnId(state, cr)
+  if (cr.impact?.items?.length)
+    addBaseline(state, project.id, 'AS_DESIGNED', [], cr.impact.items, at, `${cr.ecn}：${cr.title}`)
+  if (cr.impact?.fleet && !cr.retrofit) cr.retrofit = { done: 0, total: cr.impact.fleet.doors }
   const stages = new Set()
   for (const id of cr.impact?.reqs ?? []) {
     const req = state.reqs.find((r) => r.id === id && r.projectId === cr.projectId)
@@ -450,13 +620,39 @@ function applyChange(state, cr, at) {
     if (artifact) stages.add(artifact.stage)
   }
   const reworked = []
-  for (const name of stages) {
+  for (const name of project.service ? [] : stages) {
     const stage = state.stages.find((s) => s.id === `${cr.projectId}/${name}`)
     if (stage?.state !== 'PASSED') continue
     record(stage, at, 'CCB', 'PASSED', 'REWORK', `${cr.id} 已批准，受影响阶段返工`)
+    // The gates it passed through no longer count: the stage goes through its gates again.
+    for (const g of state.gates) if (g.stageId === stage.id && g.decision === 'APPROVED') g.superseded = true
     reworked.push(stage.id)
   }
   cr.reworked = reworked
+}
+
+/** Retrofit progress only increases; the last door brings the as-maintained baseline up to the ECN. */
+function setRetrofit(state, { id, done, by, note }, now) {
+  const cr = find(state, 'change', id)
+  if (!cr.retrofit) fail(`${cr.id} 未设置整改总数`)
+  if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state))
+    fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
+  const next = intIn(done, 'done', cr.retrofit.total)
+  if (next <= cr.retrofit.done) fail(`整改进度只能递增：当前 ${cr.retrofit.done}，收到 ${next}`)
+  const at = new Date(now).toISOString()
+  cr.retrofit.done = next
+  record(cr, at, by || '未署名', cr.state, cr.state, note || `整改进度 ${next}/${cr.retrofit.total}`)
+  if (next === cr.retrofit.total)
+    addBaseline(
+      state,
+      cr.projectId,
+      'AS_MAINTAINED',
+      ['AS_BUILT'],
+      cr.impact?.items ?? [],
+      at,
+      `${cr.ecn ?? cr.id} 整改完成`,
+    )
+  return cr
 }
 
 // ── Traceability ───────────────────────────────────────────────────────────────────────────────
@@ -489,7 +685,28 @@ export function coverage(state, projectId) {
   }
 }
 
-/** Register or update CUS/SYS/SWR/DES/TC items; parents must exist one level up in the same project. */
+const onlyOn = (item, levels, name) =>
+  levels.includes(item.level) ? true : fail(`${item.id} 不能设置 ${name}：仅 ${levels.join('/')} 条目可用`)
+
+/** Discipline, part and drawing numbers, and the customer-clause response (design §4.3). */
+function reqFields(item, input) {
+  if (input.discipline !== undefined && onlyOn(item, ['SWR', 'DES'], 'discipline'))
+    item.discipline = oneOf(input.discipline, DISCIPLINES, 'discipline')
+  for (const [key, max] of [
+    ['partNo', 32],
+    ['drawingNo', 32],
+    ['module', 64],
+  ])
+    if (input[key] !== undefined && onlyOn(item, ['DES'], key)) item[key] = text(input[key], key, max)
+  if (input.clause !== undefined && onlyOn(item, ['CUS'], 'clause'))
+    item.clause = text(input.clause, 'clause', 64)
+  if (input.compliance !== undefined && onlyOn(item, ['CUS'], 'compliance'))
+    item.compliance = oneOf(input.compliance, COMPLIANCE, 'compliance')
+  if (input.responseNote !== undefined && onlyOn(item, ['CUS'], 'responseNote'))
+    item.responseNote = text(input.responseNote, 'responseNote', 500)
+}
+
+/** Register or update CUS/SYS/SWR(MER/EER)/DES/TC items; parents must exist one level up in the same project. */
 export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
   projectOf(state, projectId)
   if (!Array.isArray(items) || !items.length || items.length > 100) fail('items 需为 1–100 条')
@@ -498,14 +715,18 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
   for (const input of items) {
     const id = text(input?.id, 'id', 16)
     const match =
-      /^(CUS|SYS|SWR|DES|TC)-\d{3,4}$/.exec(id) ?? fail(`编号格式无效：${id}（如 CUS-001、SWR-012、TC-020）`)
-    const level = match[1]
+      /^(CUS|SYS|SWR|MER|EER|DES|TC)-\d{3,4}$/.exec(id) ??
+      fail(`编号格式无效：${id}（如 CUS-001、SWR-012、MER-004、EER-007、TC-020）`)
+    // SWR, MER and EER are the sub-system requirement level, one prefix per discipline.
+    const level = match[1] in SWR_PREFIX_DISCIPLINE ? 'SWR' : match[1]
     const existing = state.reqs.find((r) => r.id === id && r.projectId === projectId)
     const item = existing ?? { id, projectId, level, parent: [], verifiedBy: [], status: 'DRAFT' }
     item.title = input.title === undefined && existing ? existing.title : text(input.title, 'title', 200)
     item.text = input.text === undefined && existing ? existing.text : text(input.text, 'text', 2000)
     if (input.parent !== undefined) item.parent = ids(input.parent, 'parent')
     if (input.safety !== undefined) item.safety = Boolean(input.safety)
+    if (!existing && level === 'SWR') item.discipline = SWR_PREFIX_DISCIPLINE[match[1]]
+    reqFields(item, input)
     if (input.status !== undefined)
       item.status = oneOf(input.status, ['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'], 'status')
     item.updatedAt = at
@@ -553,20 +774,23 @@ export function clip(markdown) {
   }
 }
 
-/** One artifact per project and kind; a live body read by the tool is cached alongside the state. */
+/** One artifact per project, kind and optional suffix (DOC-<n>-<KIND>[-<SUFFIX>]); a live body read by the tool is cached alongside the state. */
 export function recordArtifact(state, input, now = Date.now()) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
   const path = projectPath(project, input.path)
   const kind = oneOf(input.kind, Object.keys(LABELS.artifactKind), 'kind')
   const stage = oneOf(input.stage, STAGES, 'stage')
-  const id = `DOC-${project.id.split('-').at(-1)}-${kind.replace('_', '-')}`
+  const suffix = optional(input.suffix, 24).toUpperCase()
+  if (suffix && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(suffix))
+    fail(`suffix 格式无效：${suffix}（大写字母、数字与连字符）`)
+  const id = `DOC-${project.id.split('-').at(-1)}-${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
   const existing = state.artifacts.find((a) => a.id === id && a.projectId === project.id)
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
     title: text(input.title ?? existing?.title ?? LABELS.artifactKind[kind], 'title', 200),
     version: text(input.version ?? existing?.version ?? 'V0.1', 'version', 16),
-    authorRole: optional(input.authorRole ?? existing?.authorRole ?? STAGE_AUTHOR[stage], 32),
+    authorRole: optional(input.authorRole ?? existing?.authorRole ?? profileOf(project)[stage]?.author, 32),
     source: { type: 'workspace', path },
     updatedAt: new Date(now).toISOString(),
   })
@@ -590,20 +814,34 @@ function createProject(state, input, at, now) {
   const year = new Date(now).getUTCFullYear()
   const id = `PRJ-${year}-${pad(yearSeq(state.projects, 'PRJ', year), 3)}`
   const by = input.by || '研发协调员'
+  const kind = oneOf(input.projectKind ?? 'SOFTWARE', Object.keys(GATE_PROFILES), 'projectKind')
+  // Only a software project is run live (workspace, files, app); order projects are records only.
+  const live = kind === 'SOFTWARE'
   const project = {
     id,
     name: text(input.name ?? input.title, 'name', 120),
-    kind: oneOf(input.projectKind ?? 'SOFTWARE', Object.keys(LABELS.projectKind), 'projectKind'),
-    customer: optional(input.customer, 120) || '宁川交通装备股份有限公司 运维事业部（内部）',
-    productLine: oneOf(input.productLine ?? 'O&M_PLATFORM', Object.keys(LABELS.productLine), 'productLine'),
+    kind,
+    org: oneOf(input.org ?? (live ? '智能运维分技术中心' : '轨道车辆门分技术中心'), ORGS, 'org'),
+    customer:
+      optional(input.customer, 120) || (live ? '宁川交通装备股份有限公司 运维事业部（内部）' : '待确认客户'),
+    productLine: oneOf(
+      input.productLine ?? (live ? 'O&M_PLATFORM' : 'VEHICLE_DOOR'),
+      Object.keys(LABELS.productLine),
+      'productLine',
+    ),
     manager: optional(input.manager, 64) || '项目经理（演示）',
     description: optional(input.description, 2000),
     stage: 'INITIATION',
     plannedStart: at,
     plannedEnd: new Date(now + 18 * DAY).toISOString(),
     risks: [],
-    workspaceDir: `devboard-projects/${id}`,
-    live: true,
+    ...(live
+      ? {
+          workspaceDir: `devboard-projects/${id}`,
+          live: true,
+          tailoring: { skipped: [...LIVE_TAILORING.skipped], reason: LIVE_TAILORING.reason },
+        }
+      : {}),
     createdAt: at,
   }
   state.projects.push(project)
@@ -613,7 +851,7 @@ function createProject(state, input, at, now) {
       projectId: id,
       stage,
       state: 'NOT_STARTED',
-      author: STAGE_AUTHOR[stage],
+      author: profileOf(project)[stage].author,
       plannedEnd: new Date(now + (i + 1) * 3 * DAY).toISOString(),
       history: [],
     }
@@ -623,17 +861,47 @@ function createProject(state, input, at, now) {
   return project
 }
 
-export function impactOf(raw) {
+const revOf = (value, name) => text(value, name, 8)
+
+/** The impact analysis; items and the fleet figure are the field-loop additions (design §4.5). */
+export function impactOf(raw, state, projectId) {
   const impact = raw ?? {}
   const days = Number(impact.effortDays ?? 0)
   if (!Number.isFinite(days) || days < 0 || days > 1000) fail('effortDays 需在 0–1000 之间')
+  if (impact.items !== undefined && (!Array.isArray(impact.items) || impact.items.length > 100))
+    fail('impact.items 需为不超过 100 条的数组')
+  const items = (impact.items ?? []).map((it) => {
+    const itemId = text(it?.itemId, 'impact.items.itemId', 64)
+    if (state && !state.items.some((x) => x.id === itemId && x.projectId === projectId))
+      fail(`未找到 ${projectId} 的物料 ${itemId}`)
+    return {
+      itemId,
+      fromRev: revOf(it.fromRev, 'impact.items.fromRev'),
+      toRev: revOf(it.toRev, 'impact.items.toRev'),
+    }
+  })
   return {
     reqs: ids(impact.reqs, 'impact.reqs'),
     artifacts: ids(impact.artifacts, 'impact.artifacts'),
     tests: ids(impact.tests, 'impact.tests'),
+    items,
+    ...(impact.fleet
+      ? {
+          fleet: {
+            doors: intIn(impact.fleet.doors, 'impact.fleet.doors', 1_000_000),
+            plan: optional(impact.fleet.plan, 500),
+          },
+        }
+      : {}),
     safety: Boolean(impact.safety),
     effortDays: days,
   }
+}
+
+function sourceOf(raw) {
+  if (raw === undefined) return { type: 'INTERNAL' }
+  const ref = optional(raw?.ref, 64)
+  return { type: oneOf(raw?.type, CHANGE_SOURCES, 'source.type'), ...(ref ? { ref } : {}) }
 }
 
 function createChange(state, input, at, now) {
@@ -646,7 +914,12 @@ function createChange(state, input, at, now) {
     title: text(input.title, 'title', 200),
     reason: text(input.reason ?? input.description, 'reason', 2000),
     raisedBy: by,
-    impact: impactOf(input.impact),
+    source: sourceOf(input.source),
+    ...(input.rootCause ? { rootCause: text(input.rootCause, 'rootCause', 2000) } : {}),
+    impact: impactOf(input.impact, state, project.id),
+    ...(input.retrofit
+      ? { retrofit: { done: 0, total: intIn(input.retrofit.total, 'retrofit.total', 1_000_000) } }
+      : {}),
     state: 'SUBMITTED',
     history: [],
   }
@@ -655,12 +928,274 @@ function createChange(state, input, at, now) {
   return item
 }
 
+const EDITABLE_CHANGE = ['SUBMITTED', 'ANALYZED']
+
 /** Edit a change's impact analysis while it is still before CCB review. */
 export function updateImpact(state, { id, impact }) {
   const cr = find(state, 'change', id)
-  if (!['SUBMITTED', 'ANALYZED'].includes(cr.state)) fail(`${cr.id} 已进入 ${cr.state}，影响分析不可再改`)
-  cr.impact = impactOf(impact)
+  if (!EDITABLE_CHANGE.includes(cr.state)) fail(`${cr.id} 已进入 ${cr.state}，影响分析不可再改`)
+  cr.impact = impactOf(impact, state, cr.projectId)
   return cr
+}
+
+/**
+ * Edit the field-loop parts of a change: impact, source and root cause before CCB review, the retrofit
+ * total any time before closing, and the verification record once approved.
+ */
+export function updateChange(state, input, now = Date.now()) {
+  const cr = find(state, 'change', input.id)
+  if (input.impact) updateImpact(state, input)
+  const early = (name) =>
+    EDITABLE_CHANGE.includes(cr.state) ? true : fail(`${cr.id} 已进入 ${cr.state}，${name}不可再改`)
+  if (input.source !== undefined && early('来源')) cr.source = sourceOf(input.source)
+  if (input.rootCause !== undefined && early('失效原因'))
+    cr.rootCause = text(input.rootCause, 'rootCause', 2000)
+  if (input.retrofit?.total !== undefined) {
+    if (cr.state === 'CLOSED') fail(`${cr.id} 已关闭`)
+    cr.retrofit = {
+      done: cr.retrofit?.done ?? 0,
+      total: intIn(input.retrofit.total, 'retrofit.total', 1_000_000),
+    }
+    if (cr.retrofit.total < cr.retrofit.done) fail('整改总数不能小于已完成数')
+  }
+  if (input.verification !== undefined) {
+    if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state)) fail(`${cr.id} 批准后才能登记验证`)
+    const trialId = optional(input.verification.trialId, 32)
+    if (trialId && !state.trials.some((t) => t.id === trialId && t.projectId === cr.projectId))
+      fail(`未找到 ${cr.projectId} 的试验 ${trialId}`)
+    cr.verification = {
+      result: oneOf(input.verification.result, ['PASS', 'FAIL'], 'verification.result'),
+      by: input.by || '未署名',
+      at: new Date(now).toISOString(),
+      ...(trialId ? { trialId } : {}),
+    }
+  }
+  return cr
+}
+
+// ── Trials, faults and quality problems ────────────────────────────────────────────────────────
+
+/** Trial moves: REPORTED needs a report number and a result; a failed trial is approved only with an approved change. */
+function moveTrial(state, trial, to, input, at) {
+  trialFields(state, trial, input)
+  if (to === 'REPORTED') {
+    if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）：出具报告前需填写`)
+    if (!trial.result || trial.result === 'PENDING')
+      fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
+    trial.at ??= at
+  }
+  if (to === 'APPROVED' && trial.result === 'FAIL') {
+    const change = state.changes.find((c) => c.id === trial.changeId)
+    if (!change || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state))
+      fail(`${trial.id} 结论为不合格，需关联已批准的变更后才能批准（条件放行）`)
+  }
+  if (trial.state === 'REPORTED' && to === 'IN_PROGRESS') {
+    // A retest: the previous report and result stay in the history, the new report starts empty.
+    trial.history.push({
+      at,
+      by: input.by || '未署名',
+      from: 'REPORTED',
+      to: 'REPORTED',
+      note: `上次报告 ${trial.reportNo}（${trial.result}）`,
+    })
+    delete trial.reportNo
+    trial.result = 'PENDING'
+  }
+}
+
+/** The report fields a trial move or edit may carry. */
+function trialFields(state, trial, input) {
+  if (input.reportNo !== undefined) trial.reportNo = text(input.reportNo, 'reportNo', 48)
+  if (input.result !== undefined) trial.result = oneOf(input.result, TRIAL_RESULTS, 'result')
+  if (input.deviations !== undefined) trial.deviations = trialList(input.deviations, 'deviations')
+  if (input.changeId !== undefined) trial.changeId = trialChange(state, trial, input.changeId)
+}
+const trialList = (value, name) =>
+  Array.isArray(value) && value.length <= 50
+    ? value.map((v) => text(v, name, 300))
+    : fail(`${name} 需为字符串数组`)
+function trialChange(state, trial, changeId) {
+  if (!state.changes.some((c) => c.id === changeId && c.projectId === trial.projectId))
+    fail(`未找到 ${trial.projectId} 的变更 ${changeId}`)
+  return changeId
+}
+
+/**
+ * Register a trial (omit id) or edit its fields, and optionally move it (to). The kind of trial picks the
+ * id prefix: TT type test, RT routine, FAT, FAI.
+ */
+export function upsertTrial(state, input, now = Date.now()) {
+  const at = new Date(now).toISOString()
+  const by = input.by || '未署名'
+  let trial = input.id ? find(state, 'trial', input.id) : undefined
+  if (!trial) {
+    const project = projectOf(state, text(input.projectId, 'projectId', 64))
+    const type = oneOf(input.type, TRIAL_TYPES, 'type')
+    const year = new Date(now).getUTCFullYear()
+    const prefix = TRIAL_PREFIX[type]
+    trial = {
+      id: `${prefix}-${year}-${pad(yearSeq(state.trials, prefix, year), 3)}`,
+      projectId: project.id,
+      type,
+      title: text(input.title, 'title', 200),
+      standard: text(input.standard, 'standard', 200),
+      sample: text(input.sample, 'sample', 100),
+      lab: text(input.lab, 'lab', 100),
+      plannedAt: text(input.plannedAt, 'plannedAt', 40),
+      result: 'PENDING',
+      deviations: [],
+      verifies: [],
+      state: 'PLANNED',
+      history: [],
+    }
+    record(trial, at, by, null, 'PLANNED', '登记')
+    state.trials.push(trial)
+  }
+  for (const [key, max] of [
+    ['title', 200],
+    ['standard', 200],
+    ['sample', 100],
+    ['lab', 100],
+    ['witness', 100],
+    ['plannedAt', 40],
+  ])
+    if (input[key] !== undefined) trial[key] = text(input[key], key, max)
+  if (input.at !== undefined) trial.at = text(input.at, 'at', 40)
+  if (input.verifies !== undefined) {
+    const list = ids(input.verifies, 'verifies')
+    for (const r of list)
+      if (!state.reqs.some((x) => x.id === r && x.projectId === trial.projectId))
+        fail(`未找到 ${trial.projectId} 的需求 ${r}`)
+    trial.verifies = list
+  }
+  trialFields(state, trial, input)
+  if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
+  return trial
+}
+
+/** Register a quality problem (omit id) or edit its 8D steps, root cause and links, and optionally move it (to). */
+export function upsertProblem(state, input, now = Date.now()) {
+  const at = new Date(now).toISOString()
+  const by = input.by || '未署名'
+  let problem = input.id ? find(state, 'problem', input.id) : undefined
+  if (!problem) {
+    const project = projectOf(state, text(input.projectId, 'projectId', 64))
+    const year = new Date(now).getUTCFullYear()
+    problem = {
+      id: `QP-${year}-${pad(yearSeq(state.problems, 'QP', year), 3)}`,
+      projectId: project.id,
+      title: text(input.title, 'title', 200),
+      faultIds: [],
+      severity: oneOf(input.severity ?? 'C', SEVERITIES, 'severity'),
+      steps: Object.fromEntries(PROBLEM_STEPS.map((d) => [d, { done: false }])),
+      state: 'OPEN',
+      owner: optional(input.owner, 64) || '质量工程师',
+      history: [],
+    }
+    record(problem, at, by, null, 'OPEN', '登记')
+    state.problems.push(problem)
+  }
+  if (input.title !== undefined) problem.title = text(input.title, 'title', 200)
+  if (input.severity !== undefined) problem.severity = oneOf(input.severity, SEVERITIES, 'severity')
+  if (input.owner !== undefined) problem.owner = text(input.owner, 'owner', 64)
+  if (input.rootCause !== undefined) problem.rootCause = text(input.rootCause, 'rootCause', 2000)
+  if (input.containment !== undefined) problem.containment = text(input.containment, 'containment', 2000)
+  if (input.noChangeReason !== undefined)
+    problem.noChangeReason = text(input.noChangeReason, 'noChangeReason', 500)
+  if (input.changeId !== undefined) {
+    if (!state.changes.some((c) => c.id === input.changeId && c.projectId === problem.projectId))
+      fail(`未找到 ${problem.projectId} 的变更 ${input.changeId}`)
+    problem.changeId = input.changeId
+  }
+  for (const [step, value] of Object.entries(input.steps ?? {})) {
+    if (!PROBLEM_STEPS.includes(step)) fail(`未知 8D 步骤：${step}（可选 ${PROBLEM_STEPS.join('/')}）`)
+    const cur = problem.steps[step] ?? { done: false }
+    problem.steps[step] = {
+      done: value?.done === undefined ? cur.done : Boolean(value.done),
+      ...(value?.text !== undefined || cur.text
+        ? { text: value?.text === undefined ? cur.text : text(value.text, `steps.${step}.text`, 1000) }
+        : {}),
+    }
+  }
+  if (input.faultIds !== undefined) {
+    const list = ids(input.faultIds, 'faultIds')
+    for (const fid of list) {
+      const fault =
+        state.faults.find((f) => f.id === fid && f.projectId === problem.projectId) ??
+        fail(`未找到 ${problem.projectId} 的预警 ${fid}`)
+      if (fault.problemId && fault.problemId !== problem.id) fail(`${fid} 已挂在质量问题 ${fault.problemId}`)
+    }
+    for (const fid of list) state.faults.find((f) => f.id === fid).problemId = problem.id
+    problem.faultIds = [...new Set([...problem.faultIds, ...list])]
+  }
+  if (input.to) transition(state, { ...input, kind: 'problem', id: problem.id, to: input.to, by }, now)
+  return problem
+}
+
+/** ACTION needs a root cause and D4; CLOSED needs D8 and either a closed change or a stated reason. */
+function moveProblem(state, problem, to, input) {
+  if (input.rootCause !== undefined) problem.rootCause = text(input.rootCause, 'rootCause', 2000)
+  if (input.noChangeReason !== undefined)
+    problem.noChangeReason = text(input.noChangeReason, 'noChangeReason', 500)
+  if (to === 'ACTION' && problem.state === 'ANALYZING') {
+    if (!problem.rootCause) fail(`${problem.id} 缺少根本原因（rootCause）：进入措施阶段前需完成原因分析`)
+    if (!problem.steps?.D4?.done) fail(`${problem.id} 的 D4（根本原因）尚未完成`)
+  }
+  if (to === 'CLOSED') {
+    if (!problem.steps?.D8?.done) fail(`${problem.id} 的 D8（总结与关闭）尚未完成`)
+    if (problem.changeId) {
+      const change = state.changes.find((c) => c.id === problem.changeId)
+      if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
+    } else if (!problem.noChangeReason)
+      fail(`${problem.id} 没有关联变更：请写明不需要设计变更的理由（noChangeReason）`)
+  }
+}
+
+/** Faults in a time window, aggregated by signal, week and train, for the analysis step of an 8D. */
+export function faultSummary(
+  state,
+  { projectId, signal, state: faultState, days = 30, limit = 30 } = {},
+  now = Date.now(),
+) {
+  if (signal) oneOf(signal, FAULT_SIGNALS, 'signal')
+  const span = Number.isFinite(Number(days)) && Number(days) > 0 ? Math.min(Number(days), 365) : 30
+  const from = now - span * DAY
+  const list = state.faults
+    .filter(
+      (f) =>
+        (!projectId || f.projectId === projectId) &&
+        (!signal || f.signal === signal) &&
+        (!faultState || f.state === faultState) &&
+        Date.parse(f.detectedAt) > from &&
+        Date.parse(f.detectedAt) <= now,
+    )
+    .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
+  const tally = (key) => {
+    const out = {}
+    for (const f of list) out[key(f)] = (out[key(f)] ?? 0) + 1
+    return out
+  }
+  const weeks = Math.ceil(span / 7)
+  return {
+    window: { from: new Date(from).toISOString(), to: new Date(now).toISOString(), days: span },
+    total: list.length,
+    bySignal: tally((f) => f.signal),
+    byState: tally((f) => f.state),
+    byTrain: Object.fromEntries(
+      Object.entries(tally((f) => f.train))
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10),
+    ),
+    byWeek: Array.from({ length: weeks }, (_, k) => {
+      const end = now - (weeks - 1 - k) * 7 * DAY
+      return {
+        weekEnding: new Date(end).toISOString(),
+        count: list.filter((f) => Date.parse(f.detectedAt) > end - 7 * DAY && Date.parse(f.detectedAt) <= end)
+          .length,
+      }
+    }),
+    items: list.slice(0, Math.min(Math.max(Number(limit) || 30, 1), 100)),
+  }
 }
 
 function createDefect(state, input, at) {
@@ -676,7 +1211,7 @@ function createDefect(state, input, at) {
     ...(input.testCase ? { testCase: text(input.testCase, 'testCase', 16) } : {}),
     ...(input.req ? { req: text(input.req, 'req', 16) } : {}),
     state: 'NEW',
-    owner: optional(input.owner, 64) || '软件开发工程师',
+    owner: optional(input.owner, 64) || '软件设计师',
     createdAt: at,
     history: [],
   }
@@ -844,6 +1379,44 @@ export function metrics(state, project, now = Date.now()) {
     pendingGates: state.gates.filter(
       (g) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),
     ).length,
+    ...fieldMetrics(state, project, now),
+  }
+}
+
+const latestBaseline = (state, projectId, type) =>
+  state.configBaselines
+    .filter((b) => b.projectId === projectId && b.type === type)
+    .reduce((top, b) => (!top || Date.parse(b.at) >= Date.parse(top.at) ? b : top), undefined)
+
+/** Field, trial and baseline figures; zero for a project with none of them. */
+function fieldMetrics(state, project, now) {
+  const own = (list) => list.filter((x) => x.projectId === project.id)
+  const recent = state.faults.filter(
+    (f) =>
+      f.projectId === project.id &&
+      Date.parse(f.detectedAt) > now - 30 * DAY &&
+      Date.parse(f.detectedAt) <= now,
+  )
+  const retrofits = own(state.changes).filter((c) => c.retrofit)
+  const designed = latestBaseline(state, project.id, 'AS_DESIGNED')?.revs ?? {}
+  const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs ?? {}
+  const trials = own(state.trials)
+  return {
+    faults30d: Object.fromEntries(
+      FAULT_SIGNALS.map((signal) => [signal, recent.filter((f) => f.signal === signal).length]),
+    ),
+    faults30dTotal: recent.length,
+    openProblems: own(state.problems).filter((p) => p.state !== 'CLOSED').length,
+    retrofit: {
+      done: retrofits.reduce((n, c) => n + c.retrofit.done, 0),
+      total: retrofits.reduce((n, c) => n + c.retrofit.total, 0),
+    },
+    baselineGap: Object.keys(designed).filter((itemId) => maintained[itemId] !== designed[itemId]).length,
+    trials: {
+      total: trials.length,
+      approved: trials.filter((t) => t.state === 'APPROVED').length,
+      failed: trials.filter((t) => t.result === 'FAIL' && t.state !== 'APPROVED').length,
+    },
   }
 }
 
@@ -873,6 +1446,11 @@ export function snapshot(state, now = Date.now(), projectId) {
     changes: pick(state.changes),
     defects: pick(state.defects),
     testRuns: pick(state.testRuns),
+    trials: pick(state.trials),
+    faults: pick(state.faults),
+    problems: pick(state.problems),
+    items: pick(state.items),
+    configBaselines: pick(state.configBaselines),
     requirements: pick(state.requirements),
     tasks: pick(state.tasks),
     interventions,
@@ -880,11 +1458,17 @@ export function snapshot(state, now = Date.now(), projectId) {
       requirement: count(pick(state.requirements), 'requirement'),
       task: count(pick(state.tasks), 'task'),
       intervention: count(interventions, 'intervention'),
+      trial: count(pick(state.trials), 'trial'),
+      fault: count(pick(state.faults), 'fault'),
+      problem: count(pick(state.problems), 'problem'),
       pendingGates: gates.filter((g) => g.decision === 'PENDING').length,
     },
     machines: MACHINES,
     labels: LABELS,
-    roles: { author: STAGE_AUTHOR, approver: STAGE_APPROVER },
+    roles: ROLES,
+    orgs: ORGS,
+    profiles: GATE_PROFILES,
+    liveTailoring: LIVE_TAILORING,
   }
 }
 
@@ -893,7 +1477,7 @@ export function snapshot(state, now = Date.now(), projectId) {
 // cached live document body.
 
 const META = 'devboard/meta'
-const SCHEMA = 2
+const SCHEMA = 3
 const CHUNK_BYTES = 56 * 1024
 const V1_KEYS = ['devboard/requirements', 'devboard/tasks', 'devboard/interventions']
 const NAMES = Object.values(COLLECTIONS)
@@ -915,7 +1499,7 @@ function chunks(list) {
   return out
 }
 
-/** A store written by another schema (v1) reads as empty, so the caller falls back to the seed. */
+/** A store written by another schema (v1, v2) reads as empty, so the caller falls back to the seed. */
 function load(store) {
   const meta = store.get(META)
   if (!meta || meta.schema !== SCHEMA) return undefined
