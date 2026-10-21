@@ -18,6 +18,8 @@ const SCOPES = [
   'id',
   'batch',
   'scope',
+  'name',
+  'title',
 ]
 
 /** Display only: exact arguments stay in the decision subject and its authorization binding. */

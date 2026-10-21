@@ -86,8 +86,16 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   const watchedPluginBuilds = new Map<string, WatchedPluginBuild>()
   let pluginBuildPoller: ReturnType<typeof setInterval> | undefined
   let pluginBuildPollInFlight = false
+  // Older pages must release their HTTP/1.1 connection too; current clients use finite polls.
+  const boundReloadStream = (response: ServerResponse): void => {
+    const timer = setTimeout(() => response.end(), 500)
+    response.once('close', () => clearTimeout(timer))
+  }
   const writeSseEvent = (response: ServerResponse, event: string, data: unknown): void => {
-    if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    if (!response.writableEnded)
+      response.write(
+        `${event === 'graph' ? 'retry: 1000\n\n' : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+      )
   }
   const emitPluginRebuilt = (event: PluginRebuiltEvent): void => {
     changes.push({ cursor: ++changeCursor, id: event.packageId, rev: event.revision })
@@ -457,6 +465,7 @@ void poll();\n`,
           'X-Content-Type-Options': 'nosniff',
         })
         response.flushHeaders()
+        boundReloadStream(response)
         developmentReloadClients.add(response)
         const close = (): void => {
           developmentReloadClients.delete(response)
@@ -480,6 +489,7 @@ void poll();\n`,
           'X-Content-Type-Options': 'nosniff',
         })
         response.flushHeaders()
+        boundReloadStream(response)
         pluginEventClients.add(response)
         // A graph marker establishes the stream boundary without exposing an installed-package list.
         writeSseEvent(response, 'graph', { type: 'graph' })
