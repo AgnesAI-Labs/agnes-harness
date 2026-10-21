@@ -75,7 +75,7 @@ them. Backend receipt details and application task cards are presentation data; 
 parse those UI details to control an ordinary child. Keep handles out of user-facing replies.
 
 
-An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
+An adopted application may additionally declare `delegableAgents` (up to twelve launchable refs,
 also in `agents`). `subagent_spawn` accepts an optional `role` ref from this backend allowlist.
 The role starts fresh with its own composition; its tools and workspace authority are capped by a
 spawn-time parent snapshot recorded on the child ledger. All approval and business signature

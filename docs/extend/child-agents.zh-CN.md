@@ -74,7 +74,7 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 应读取 list 的工具内容。不要在面向用户的回复中重复内部句柄。
 
 
-已采纳应用可声明 `delegableAgents`（最多八个可启动引用，也必须在 `agents` 中）。
+已采纳应用可声明 `delegableAgents`（最多十二个可启动引用，也必须在 `agents` 中）。
 `subagent_spawn` 的可选 `role` 从后端名单选择角色。角色使用自己的组合启动全新会话；工具和
 工作区权限受启动时捕获的父会话权限快照限制，快照记录在子账本中。子会话的所有审批及业务
 签署请求都会拒绝，并提示交回主助手。`role` 不能与 `fork` 或 `model` 同时使用；无效角色
