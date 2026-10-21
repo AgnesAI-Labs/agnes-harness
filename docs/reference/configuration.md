@@ -17,7 +17,7 @@ Configuration files and model credentials are separate. Prefer CLI `config` or W
 | Location / variable | Meaning |
 | --- | --- |
 | `AGH_HOME` | Absolute home root, default `~/.agh`; relative paths are rejected |
-| `AGNES_HOME` | Legacy compatibility variable with a deprecation warning; AGH_HOME takes precedence, with no automatic migration |
+| `AGNES_HOME` | Retired and refused; unset it and use `AGH_HOME` with a new, empty private directory |
 | `AGNES_PROFILE` / `--profile` | Profile selection, usually `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | User profile layer |
 | `AGH_HOME/profiles/NAME/configuration.json` | Accounts, default model, auxiliary slot defaults, and references managed by the Host configuration service; not a manual configuration template |

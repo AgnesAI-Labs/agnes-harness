@@ -27,6 +27,7 @@ it.each([
   {},
   { HOME: '/users/a' },
   { HOME: '/users/a', AGH_HOME: '/srv/agh' },
+  { HOME: '/users/a', AGH_HOME: '/srv/agh', AGNES_HOME: '/srv/legacy' },
   { HOME: '/users/a', AGH_HOME: ' ', AGNES_HOME: '/srv/legacy' },
   { HOME: '/users/a', AGH_HOME: '', AGNES_HOME: '' },
   { HOME: '/users/a', AGH_HOME: 'relative' },

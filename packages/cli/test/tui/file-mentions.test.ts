@@ -127,6 +127,15 @@ describe('listWorkspaceFiles', () => {
     }
   })
 
+  it('refuses a retired home variable before listing files', async () => {
+    vi.stubEnv('AGNES_HOME', '/synthetic/old')
+    try {
+      await expect(listWorkspaceFiles('/synthetic/workspace')).rejects.toThrow(/AGNES_HOME.*clean home/)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('rejects for a folder it cannot read', async () => {
     await expect(listWorkspaceFiles('/nonexistent-agnes-list')).rejects.toThrow()
   })

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { administerObservability } from '../src/admin.js'
+import { observabilityHome } from '../src/config.js'
 import { acquireObservability } from '../src/runtime.js'
 import { memoryCollector } from '../testkit/index.js'
 
@@ -46,3 +47,12 @@ it('saves private settings, applies them live, and probes all collector signals 
     await rm(home, { recursive: true, force: true })
   }
 })
+
+it.each([undefined, '/synthetic/current'])(
+  'refuses retired observability home with AGH_HOME=%s',
+  (AGH_HOME) => {
+    expect(() => observabilityHome({ AGH_HOME, AGNES_HOME: '/synthetic/old' })).toThrow(
+      /AGNES_HOME.*clean home/,
+    )
+  },
+)

@@ -5,14 +5,14 @@
 $ErrorActionPreference = 'Stop'
 $repoDir = $PSScriptRoot
 
-# Same order as @agnes/host agnesHome(): AGH_HOME, then the deprecated AGNES_HOME, then HOME\.agh,
+# Same order as @agnes/host agnesHome(): AGH_HOME, then HOME\.agh,
 # then %USERPROFILE%\.agh (os.homedir() on Windows). The data directory is passed explicitly below,
 # so it must not name a different root than the CLI resolves for the same environment.
 function Resolve-LocalDataDir([string]$AghHome, [string]$AgnesHome, [string]$OsHome, [string]$UserProfile) {
     $name = 'AGH_HOME'
     $root = $AghHome
     $data = 'data'
-    if (-not $root -or -not $root.Trim()) { $name = 'AGNES_HOME'; $root = $AgnesHome }
+    if ($AgnesHome -and $AgnesHome.Trim()) { throw 'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).' }
     if (-not $root -or -not $root.Trim()) { $name = 'HOME'; $root = $OsHome; $data = '.agh\data' }
     if (-not $root -or -not $root.Trim()) { return [IO.Path]::Combine($UserProfile, '.agh\data') }
     if ($root -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)') {

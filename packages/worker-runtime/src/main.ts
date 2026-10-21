@@ -288,7 +288,7 @@ export async function runWorker(
     createSecrets: (resourceProfile) => {
       const environment = createSecretsEnv()
       if (resourceProfile.adapters.secrets.kind === 'env') return environment
-      const explicitHome = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || undefined
+      const explicitHome = env.AGH_HOME?.trim() || undefined
       return composeSecrets(
         createSecretsFile({
           dir: resolveFileSecretsDirectory({
@@ -407,7 +407,7 @@ export async function runWorker(
     ? {}
     : await assemble(workerBootPackageSnapshots(profile, runtimePluginSources))
   if (profile.adapters?.secrets?.kind === 'file') {
-    const explicitHome = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || undefined
+    const explicitHome = env.AGH_HOME?.trim() || undefined
     resolveFileSecretsDirectory({
       path: profile.adapters.secrets.path,
       dataDir: profile.dataDir,

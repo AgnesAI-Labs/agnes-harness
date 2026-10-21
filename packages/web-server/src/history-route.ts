@@ -24,8 +24,11 @@ function nonEmpty(value: string | undefined): string | undefined {
  * This is the same home/data join as the host path helper. web-server cannot import that helper.
  */
 export function defaultHistoryDataDir(env: NodeJS.ProcessEnv = process.env): string {
-  const current = nonEmpty(env.AGH_HOME)
-  const explicit = current ?? nonEmpty(env.AGNES_HOME)
+  if (env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
+  const explicit = nonEmpty(env.AGH_HOME)
   const selected = explicit ?? nonEmpty(env.HOME) ?? homedir()
   if (explicit !== undefined && !isAbsolute(explicit))
     throw new Error('history data directory is not absolute')

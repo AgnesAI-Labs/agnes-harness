@@ -19,7 +19,11 @@ export interface ObservabilityConfig {
   shutdownPolicy?: 'flush' | 'discard'
 }
 export function observabilityHome(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || join(homedir(), AGH_DIR)
+  if (env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
+  const home = env.AGH_HOME?.trim() || join(homedir(), AGH_DIR)
   if (!isAbsolute(home)) throw new Error('Observability home must be absolute')
   return home
 }

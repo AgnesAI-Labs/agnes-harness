@@ -19,7 +19,7 @@
 | 位置/变量 | 含义 |
 | --- | --- |
 | `AGH_HOME` | 绝对 home 根，缺省 `~/.agh`；相对路径拒绝 |
-| `AGNES_HOME` | 旧兼容变量，有弃用警告；AGH_HOME 优先，无自动迁移 |
+| `AGNES_HOME` | 已移除，设置后会拒绝启动；取消该变量并用 `AGH_HOME` 指向新的空私有目录 |
 | `AGNES_PROFILE` / `--profile` | Profile 选择，通常为 `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | 用户 profile 层 |
 | `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型、辅助模型档位默认值与引用，不能当成手工配置模板 |

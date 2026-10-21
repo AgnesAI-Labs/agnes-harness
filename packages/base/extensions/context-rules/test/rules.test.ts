@@ -1,13 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { parseContextConfig, readContextConfig, writeContextConfig } from '../src/config.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { contextHome, parseContextConfig, readContextConfig, writeContextConfig } from '../src/config.js'
 import { loadContextRules } from '../src/files.js'
 import { rulesProjection } from '../src/index.js'
 
 const homes: string[] = []
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 function fixture() {
@@ -84,4 +85,13 @@ describe('live repository context', () => {
     ])
       expect(() => parseContextConfig(value)).toThrow()
   })
+})
+
+it('refuses retired context-rule home before reading or creating settings', () => {
+  vi.stubEnv('AGNES_HOME', '/synthetic/old')
+  expect(() => contextHome()).toThrow(/AGNES_HOME.*clean home/)
+  vi.stubEnv('AGNES_HOME', undefined)
+  vi.stubEnv('AGH_HOME', ' ')
+  vi.stubEnv('HOME', '/synthetic/user')
+  expect(contextHome()).toBe(join('/synthetic/user', '.agh'))
 })
