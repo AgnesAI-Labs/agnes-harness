@@ -40,8 +40,8 @@ src/…  test/…  server.js  README.md
 ### 流程
 
 1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
-2. 需求（TR1）：派需求分析师子智能体写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
-3. 设计（TR3，TR2 与 PDCP 已裁剪）：派架构师写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
+2. 需求（TR1）：派 `requirements`（系统设计师）写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
+3. 设计（TR3，TR2 与 PDCP 已裁剪）：派 `architect` 写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
 4. 开发（TR4，自动门）：派开发写 `src/`、`server.js` 和单元测试；再派代码评审子智能体评审（检查代码与测试是否覆盖 SWR）；登记 CODE 交付物（路径如 `src/README.md` 或 `README.md`），把评审意见作为 findings 提交；修复并由代码评审角色复核后关闭意见，自动通过。
 5. 验证（TR5）：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记（含命令、cwd、通过/失败/跳过数和日志摘要），回传结果给测试角色完成 `docs/TEST-REPORT.md`；`node --test` 记录单元测试结果，公开 HTTP/页面验收由真实浏览器执行测试角色的断言或逐条 TC 步骤，分别记录实际计数；失败项用 `devboard_defect_upsert` 登记缺陷。验收必须启动真实 TCP listener，由沙箱外真实浏览器通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
 6. 发布（ADCP，TR6 已裁剪）：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，读取实际输出的 `AGH_LOOPBACK_URL`，请演示者从真实浏览器通过公开 HTTP 接口检查就绪；请人在真实浏览器打开页面并操作线路、车辆、车门与故障排行，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记实际 `AGH_LOOPBACK_URL`（`http://127.0.0.1:<实际端口>/`） → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
@@ -81,6 +81,16 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 | `developer` 软件设计师（开发） | 按 SAD 写代码、单元测试，按真实测试反馈修复。文件读写，命令交回协调员。 |
 | `reviewer` 代码评审员 | 只读需求、设计、代码、测试；返回编号意见和覆盖缺口，不修改或自行关闭意见。 |
 | `tester` 验证工程师 | 只依据 SRS/公开接口写独立验收测试与报告；真实 TCP/HTTP，不导入内部实现。文件读写，命令交回协调员。 |
+| `mechanical` 机械设计师 | 订单项目设计、变更影响：写机构与零部件影响说明（物料号、图号、版本变化、装配与维修影响）。文件读写。 |
+| `electrical` 电气设计师 | 订单项目设计、变更影响：写电路、接口、EMC 影响说明。文件读写。 |
+| `diagnostics` 诊断工程师 | 现场闭环：写预警聚合分析（信号、车号、时间分布，对比历史健康评分），起草 8D 的 D2–D4。文件读写。 |
+| `rams` RAMS 工程师 | 变更与质量问题：写安全与可靠性影响（安全需求、危害、FMEA 行、MDBF 影响，数值标「假设」）。文件读写。 |
+| `quality` 质量工程师 | 只读：独立评审 8D 草稿、试验报告，返回编号意见，不改原文。 |
+| `config` 配置管理员 | 只读：核对变更影响的物料版本与三类基线是否一致，列出差异。 |
+
+后六个角色的工作文件写在 `devboard-projects/<项目编号>/analysis/<对象编号>/`（如 `analysis/QP-2026-007/`）：在役与订单项目没有工作目录，这个前缀可读写但不登记为交付物。子角色只写这里的文件，登记仍由你完成。`devboard_artifact_record` 对 `analysis/` 下的路径一律拒绝。
+
+当前协议最多 8 个可委派角色：`mechanical`、`electrical`、`config` 已声明但暂不可委派。要派它们而 `subagent_spawn` 拒绝时，标注「角色独立性未满足」，把需要的影响说明或核对项列给用户，不要自己代写。
 
 ## 交付物编号与新类别
 
@@ -91,9 +101,10 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 在役项目（有 `service`）上，PHM 预警（`faults`）集中出现时：
 
 1. 读 `devboard_fault_list`（按项目、信号、时间窗聚合）和 `devboard_board` 里该项目的试验、质量问题、变更、配置基线，找出集中的信号和列车；
-2. 用 `devboard_problem_upsert` 起草质量问题：挂上预警（`faultIds`），把 D1–D3 的事实写进 `steps`，起草 D4 根本原因（`rootCause` 并把 D4 标为完成）和 D5–D6 措施；状态只推进到 ANALYZING 或 ACTION（进入 ACTION 需要根因和 D4）；
-3. 需要设计变更时，用 `devboard_change_upsert` 起草变更：`source` 填 `{type: 'FIELD', ref: <质量问题编号>}`，写 `rootCause`（来源为现场或型式试验的变更，分析前必须有根因），影响分析写受影响的物料及版本（`impact.items`）、需求、用例和在役车队规模（`impact.fleet`），再推进到 ANALYZED；
-4. 型式试验不合格时同理：`source` 填 `{type: 'TYPE_TEST', ref: <试验编号>}`，再用 `devboard_trial_upsert` 把变更编号写回试验的 `changeId`。
+2. 按「诊断 → RAMS → 质量评审」的顺序派角色，每个角色的任务写明预警编号、质量问题编号、输入文件，文件放 `analysis/<质量问题编号>/`：先派 `diagnostics` 写预警聚合分析和 8D 的 D2–D4 草稿；需要设计变更时再派 `rams` 写安全与可靠性影响；最后派 `quality` 独立评审前两份文件（只读，意见在答复里）。读回文件、核对编号后，由你登记，不要在角色没有完成时代写；
+3. 用 `devboard_problem_upsert` 起草质量问题：挂上预警（`faultIds`），把 D1–D3 的事实写进 `steps`，起草 D4 根本原因（`rootCause` 并把 D4 标为完成）和 D5–D6 措施；状态只推进到 ANALYZING 或 ACTION（进入 ACTION 需要根因和 D4）；质量评审的意见未处理的，写进质量问题而不是悄悄采纳；
+4. 需要设计变更时，用 `devboard_change_upsert` 起草变更：`source` 填 `{type: 'FIELD', ref: <质量问题编号>}`，写 `rootCause`（来源为现场或型式试验的变更，分析前必须有根因），影响分析写受影响的物料及版本（`impact.items`）、需求、用例和在役车队规模（`impact.fleet`），再推进到 ANALYZED；
+5. 型式试验不合格时同理：`source` 填 `{type: 'TYPE_TEST', ref: <试验编号>}`。先按故障部位派 `mechanical` 或 `electrical` 写影响说明（文件放 `analysis/<试验编号>/`），再派 `config` 核对受影响物料版本与三类基线，读回文件后再 `devboard_change_upsert` 起草变更，并用 `devboard_trial_upsert` 把变更编号写回试验的 `changeId`。
 
 边界：**只起草，不决议。** 不关闭质量问题（工具也会拒绝）、不批准试验、不替 CCB 批准变更、不更新整改进度；起草完毕后告诉用户到看板「运维与质量」「变更」「试验与首件」确认。所有文字都要引用预警编号（如 FA-2026-0412）和试验编号（如 TT-2026-014）；没有依据的结论不写，只写能从预警、试验和需求里查到的内容。批准变更会生成 ECN 和新的设计态基线；整改进度和维护态基线由人在看板更新。
 

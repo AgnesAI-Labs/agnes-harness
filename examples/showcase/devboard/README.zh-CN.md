@@ -42,7 +42,7 @@
 
 ## 智能体与现场项目
 
-`coordinator`（研发协调员）带全部 18 个 `devboard_*` 工具、读写与 shell、`tool_search` / `tool_describe`、`subagent_spawn` / `subagent_collect`，以及技能 `devboard-playbook`（全流程、现场闭环、门代码与会签规则）。预设 `devboard` 允许在工作区内编辑与写入；所有 shell 命令（含 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；五个声明式可委派角色（`requirements`、`architect`、`developer`、`reviewer`、`tester`）在新鲜子会话中共用父工作目录，权限取角色与父快照交集。代码评审员只读，其余角色可编辑项目文件；均没有 shell、看板或审批/签署能力，命令交回协调员执行。所有角色全过程中文叙述（用户明确选其他语言时遵从用户），业务状态用中文。
+`coordinator`（研发协调员）带全部 18 个 `devboard_*` 工具、读写与 shell、`tool_search` / `tool_describe`、`subagent_spawn` / `subagent_collect`，以及技能 `devboard-playbook`（全流程、现场闭环、门代码与会签规则）。预设 `devboard` 允许在工作区内编辑与写入；所有 shell 命令（含 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；十一个声明式角色在新鲜子会话中共用父工作目录，权限取角色与父快照交集：系统设计师（需求）`requirements`、软件设计师（架构）`architect`、软件设计师（开发）`developer`、代码评审员 `reviewer`、验证工程师 `tester`，以及机械设计师 `mechanical`、电气设计师 `electrical`、诊断工程师 `diagnostics`、RAMS 工程师 `rams`、质量工程师 `quality`、配置管理员 `config`。代码评审员、质量工程师和配置管理员只读，其余角色可编辑文件；均没有 shell、看板或审批/签署能力，命令交回协调员执行。后六个角色的工作文件放在 `devboard-projects/<项目编号>/analysis/<对象编号>/`，可读写但不登记为交付物。现场闭环按「诊断 → RAMS → 质量评审」派工；型式试验不合格时派机械或电气设计师写影响说明，再派配置管理员核对。协议目前最多允许 8 个可委派角色，所以 `mechanical`、`electrical`、`config` 已声明、暂未列入可委派列表。所有角色全过程中文叙述（用户明确选其他语言时遵从用户），业务状态用中文。
 
 看板上新建的软件项目（默认类型）按 SOFTWARE 档案和默认裁剪推进，文件写在工作区的 `devboard-projects/<项目编号>/`，由研发协调员带领完成；订单类只建记录。角色子智能体只写文件，看板只由研发协调员登记。每过一道门，研发协调员提交评审后结束本轮；人在看板审批，再点「继续推进」，草稿里带上门编号，由人点发送。
 
@@ -86,6 +86,8 @@
 4. 关键指标限值（夹紧力、开关门时间、障碍物检测尺寸、MDBF）；
 5. 质量问题闭环用 8D 还是自有格式，质量与服务系统的字段；
 6. 三类基线由哪个系统维护（PLM、ERP、服务生命周期系统）。
+7. 岗位名称与分工（系统设计师、软件设计师、机械/电气设计师、诊断/RAMS/质量工程师、配置管理员）及现场闭环的派工顺序；
+8. `analysis/<对象编号>/` 工作目录与「分析文件不登记为交付物」的约定。
 
 ## 目录
 
