@@ -16,6 +16,7 @@ import {
   jcs,
   type McpServerDefinitionInput,
   type McpServerDescriptor,
+  permissionEffectAdmission,
   type ResourceControlMethodName,
   type ResourceOperationReceipt,
   rpcError,
@@ -163,22 +164,22 @@ export function createMcpManageRequests(options: {
       return value
     }
     let lease: Awaited<ReturnType<typeof acquirePermissionLease>>
-    const verifyPermission = async () => {
-      if (lease) await lease.verify()
-      else await assertCurrentPermission()
-      lease?.assertActive()
-      authority()
-    }
-    const admission = {
-      verify: verifyPermission,
-      assertActive: () => {
+    const admission = permissionEffectAdmission({
+      verify: async () => {
+        if (lease) await lease.verify()
+        else await assertCurrentPermission()
+      },
+      signals: [signal],
+      assertBound: () => {
         lease?.assertActive()
         authority()
       },
-    }
+      unavailable: () =>
+        signal.reason instanceof Error ? signal.reason : new Error('MCP_PERMISSION_REVOKED'),
+    })
+    const verifyPermission = admission.verify
     const call = async (name: ResourceControlMethodName, params: Record<string, unknown>) => {
       await verifyPermission()
-      lease?.assertActive()
       return options.service.call(
         name,
         { ...params, profile: options.profile },
@@ -425,7 +426,6 @@ export function createMcpManageRequests(options: {
         )
         if (policy.localStartApprovals && proposal.definition.transport.kind === 'stdio') {
           await verifyPermission()
-          lease?.assertActive()
           await options.store.mcp.approveLocalStart(
             options.profile,
             receipt.serverId,

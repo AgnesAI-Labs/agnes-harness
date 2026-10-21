@@ -699,6 +699,7 @@ export {
   type PermissionEffectAdmission,
   samePermissionContext,
 } from './permission-decision.js'
+export { permissionEffectAdmission } from './permission-effect-admission.js'
 export {
   compilePluginConfig,
   PLUGIN_SECRET_REF_PATTERN,

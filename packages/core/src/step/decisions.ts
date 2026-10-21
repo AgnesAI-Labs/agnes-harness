@@ -18,7 +18,7 @@ import {
   type DecisionResponse,
   inspectJsonData,
   isPermissionPurpose,
-  samePermissionContext,
+  permissionEffectAdmission,
   validateActor,
   validateAgainst,
 } from '@agnes/protocol'
@@ -510,47 +510,36 @@ export class DecisionCommands {
       )
       return value
     })
-    let revoked = false
-    const assertActive = () => {
-      try {
+    const admission = permissionEffectAdmission({
+      unavailable: () =>
+        new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED', { reason: 'authority-revoked' }),
+      verify: () => this.s.log.claimLease(),
+      clock: () => this.s.clock(),
+      ...(value.request.expiresAt !== null ? { expiresAt: Date.parse(value.request.expiresAt) } : {}),
+      ...(value.result?.reason === 'answered' && value.result.code === 'full-access' && context
+        ? { context: { expected: context, current: () => this.s.permissionContext } }
+        : {}),
+      assertBound: () => {
         this.live(source)
         this.execution(handle.id)
         const current = this.read(handle, source)
         this.checkAuthorization(current)
         if (
-          revoked ||
           this.s.log.faulted ||
           this.s.log.leaseRemainingMs() <= 0 ||
           this.s.cancelled ||
           this.due(current) ||
           current.invalidation ||
           !current.consumption ||
-          canonicalJson(current.result) !== canonicalJson(value.result) ||
-          (value.result?.reason === 'answered' &&
-            value.result.code === 'full-access' &&
-            (!context || !samePermissionContext(context, this.s.permissionContext)))
+          canonicalJson(current.result) !== canonicalJson(value.result)
         )
           fail('AUTHORITY_REVOKED')
-      } catch (error) {
-        revoked = true
-        throw error
-      }
-    }
-    assertActive()
-    return Object.freeze({
-      assertActive,
-      verify: async () => {
-        try {
-          assertActive()
-          await this.s.log.claimLease()
-          assertActive()
-        } catch (error) {
-          revoked = true
-          throw error
-        }
       },
     })
+    admission.assertActive()
+    return admission
   }
+
   /** Backend withdrawal never manufactures a human refusal or effect receipt. */
   withdraw(handle: DecisionHandle, source: DecisionSource, code: string): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {

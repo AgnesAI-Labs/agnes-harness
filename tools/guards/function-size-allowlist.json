@@ -15,7 +15,6 @@
   "packages/daemon/src/supervisor/runtime.ts#<module>/FunctionDeclaration:startSupervisor": 1778,
   "packages/daemon/src/supervisor/runtime.ts#<module>/FunctionDeclaration:startSupervisor/Block:0/TryStatement:0/Block:0/VariableDeclaration:endpoint/ArrowFunction:0": 436,
   "packages/daemon/src/supervisor/runtime.ts#<module>/FunctionDeclaration:runAgnesd": 310,
-  "packages/daemon/src/supervisor/skill-install-requests.ts#<module>/FunctionDeclaration:createSkillInstallRequests": 218,
   "packages/daemon/src/supervisor/worker-pool.ts#<module>/ClassDeclaration:WorkerPool/MethodDeclaration:startWorker": 293,
   "packages/daemon/src/supervisor/worker-pool.ts#<module>/ClassDeclaration:WorkerPool/MethodDeclaration:startWorker/Block:0/ExpressionStatement:4/BinaryExpression:0/CallExpression:0/PropertyAccessExpression:finally/NewExpression:0/ArrowFunction:0": 226
 }
