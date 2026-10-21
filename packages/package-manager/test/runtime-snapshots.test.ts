@@ -666,6 +666,7 @@ it('refuses the API 4 runtime-snapshot fixture rows with plugin-api-range-incomp
       )
     await expect(m.resolveRuntimePin(fixtureProfile, { pinId: 'session-original' })).rejects.toMatchObject({
       code: 'E_PACKAGE_STATE',
+      detail: { reason: 'package-not-eligible' },
     })
   } finally {
     rmSync(home, { recursive: true, force: true })

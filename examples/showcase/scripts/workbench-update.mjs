@@ -24,7 +24,11 @@ try {
     backup = join(rt.root, 'current-payload')
     await cp(payload, backup, { recursive: true })
     const current = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
-    assert.equal(current.version, '1.1.0')
+    // The built payload must be the version the source tree ships; the update is reviewed towards it.
+    const shipped = JSON.parse(
+      await readFile(resolve('examples/showcase', app, 'package.json'), 'utf8'),
+    ).version
+    assert.equal(current.version, shipped)
     const old = JSON.parse(
       execFileSync('git', ['show', `${baseline}:examples/showcase/${app}/package.json`], {
         encoding: 'utf8',
@@ -82,7 +86,7 @@ try {
       app,
       node: process.version,
       from: '1.0.0',
-      to: '1.1.0',
+      to: shipped,
       source,
       root: rt.root.replace(homedir(), '~'),
       screenshots: [],
@@ -110,7 +114,7 @@ try {
       await row.waitFor({ timeout: 60000 })
       await row.locator('.agh-list-row-title, .plugin-details-button').first().click()
       await page.getByTestId('plugin-versions-tab').waitFor({ timeout: 30000 })
-      assert.ok((await page.locator('#plugin-detail').innerText()).includes('1.0.0 → 1.1.0'))
+      assert.ok((await page.locator('#plugin-detail').innerText()).includes(`1.0.0 → ${shipped}`))
       await page.getByTestId('plugin-versions-tab').click()
       const update = page.getByRole('button', { name: locale === 'en' ? /Review update/ : /审核更新/ })
       await update.waitFor()
@@ -122,7 +126,7 @@ try {
       await update.click()
       const review = page.locator('.install-review:visible')
       await review.waitFor({ timeout: 30000 })
-      assert.ok((await review.innerText()).includes('1.1.0'))
+      assert.ok((await review.innerText()).includes(shipped))
       const reviewFile = `12-update-review-${locale}-${theme}.png`
       await page.screenshot({ path: join(output, reviewFile), fullPage: true, animations: 'disabled' })
       evidence.screenshots.push(reviewFile)
