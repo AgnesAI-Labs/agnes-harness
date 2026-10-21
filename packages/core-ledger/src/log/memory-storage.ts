@@ -12,7 +12,6 @@ import {
   type CostOriginBinding,
   type CreateDelegatedChildInput,
   type CreateDelegatedChildResult,
-  canTransitionChildState,
   type DeferCreatingChildInput,
   type DeferredChildFact,
   isActiveChildState,
@@ -24,6 +23,7 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
+import { transitionMemoryChild } from './memory-child-state.js'
 import { MemoryStorageBase } from './memory-storage-base.js'
 import {
   type CommitReceipt,
@@ -513,22 +513,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     next: ChildTaskRecord['state'],
     admission?: { maxFanOut: number },
   ): Promise<boolean> {
-    const row = this.childTasks.get(childKey)
-    if (!row || row.stateRevision !== expectedRevision) return false
-    if (!canTransitionChildState(row.state, next)) return false
-    if (!isActiveChildState(row.state) && isActiveChildState(next) && next !== 'cancelling') {
-      if (!admission) return false
-      const rows = [...this.childTasks.values()]
-      const fan = admitFanOut(
-        rows.filter((task) => task.parentKey === row.parentKey && isActiveChildState(task.state)).length,
-        rows.filter((task) => task.rootTaskId === row.rootTaskId && isActiveChildState(task.state)).length,
-        admission.maxFanOut,
-      )
-      if (!fan.ok) throw new CoreError('E_CHILD_LIMIT', fan.message)
-    }
-    row.state = next
-    row.stateRevision += 1
-    return true
+    return transitionMemoryChild(this.childTasks, childKey, expectedRevision, next, admission)
   }
 
   async nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number> {
