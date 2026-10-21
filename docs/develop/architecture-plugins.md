@@ -110,7 +110,7 @@ Disabling a package that supplies a session composition’s selected Loop drains
 
 Interactive profile reads and Bundle presentation use cooperative installed-tree verification. A
 configuration service retains a bounded byte-keyed static-inspection cache, but every request still
-hashes current files and rechecks trust. Overlapping runtime-source reads share only unfinished work
+verifies current files and rechecks trust. Overlapping runtime-source reads share only unfinished work
 at the same policy/lock/runtime boundary. Bundle metadata reads do not occupy the session mutation
 queue; executable session admission remains serialized and independently verified.
 
@@ -126,14 +126,52 @@ and 4 MiB of schema keys each, keyed by the complete inspected JSON snapshot. Ev
 inspects author input, validates current values and checks authority independently. Compilers keep
 isolated reference namespaces; changed schemas, invalid defaults, async or remote schemas never
 inherit an earlier verdict. These caches are populated by normal use, not startup prewarming.
-Resource archives share successful tree digests only within that admission's verification operation;
-the next operation and mutation gates discard those observations. Canonical rows and target encodings
+Resource archives use the executable-owned byte verifier described below; without that owner,
+successful digest reuse lasts only for the current verification operation. Mutation gates discard it. Canonical rows and target encodings
 may reuse only deeply immutable objects issued by their own builders, with weak ownership tracking.
 Foreign objects (including shallow-frozen ones) and all wire artifacts retain complete validation;
 decoding still returns fresh values and canonical bytes/digests do not change.
 Runtime-state readers reread disk and may reuse pure metadata decoding for the same complete JSON
 content (at most four cached states and 4 MiB of keys), returning independent working copies. File-tree
 verification and current trust/activation decisions remain outside this metadata cache.
+
+### Verification of plugin bytes
+
+The daemon and its own workers keep private, bounded byte observations for installed trees and
+immutable runtime/generation copies. Each observation binds the physical root, expected tree and
+capability digests, version, and current profile control-file identity/content. A hit enumerates and
+rechecks every regular file and directory, root realpath and containment before returning. Any
+change during the walk forces full content verification before use. Filesystem identity includes
+size, nanosecond mtime/ctime, inode/device, mode, link count and the complete relative path set.
+A tree changed within the last second stays full-only until a later full check proves it quiet.
+Only supported local APFS/ext4/XFS volumes with usable identities can hit; Windows, unknown volumes,
+coarse metadata, hardlinks and unavailable identity fall back to full. New physical copies never
+inherit an observation merely because their expected content digest matches. An invalidated pending
+result cannot refill a new epoch. With the exact same live binding, the read may obtain a new proof
+with at most two retries; repeated resets are busy, while a changed binding or seal refuses use.
+A spawn check invalidated before handoff supplies no admitted trees, so the worker verifies fully.
+
+Install, trust, update, enable, rollback, copy/publication, recovery, fresh inventory, doctor and
+public full-hash APIs continue to read actual bytes. Live resources retain their existing full
+verification. The daemon checks known package inputs before spawning a worker and supplies an
+instance/profile-bound startup admission over the existing private fork IPC. This admission is
+valid only for initial assembly and is then discarded; it is neither a stored positive record nor
+an authorization lease. Standalone/SEA paths without an owner retain full verification.
+
+Each owner schedules independent full rehashes after 15 minutes, one tree at a time with bounded
+file IO and 16 MiB/s payload pacing. A new disk read after 30 minutes requires full verification.
+Clock discontinuity or suspected suspend discards observations before the next use. Expiry does
+not gate already-loaded in-memory callbacks. A background mismatch stops affected worker execution
+and removes the existing package grant and executable recovery targets; durable session pins and
+forensic bytes remain. Failure handling runs outside profile/publication read locks and does not
+wait for worker acknowledgement while holding a profile lock. A late fault cannot revoke a new
+trust cycle. No positive sidecar, new quarantine format or per-dispatch expiry lock is introduced.
+
+Identity is weaker evidence than freshly hashing all bytes. Tampering that preserves every identity
+field can run until a full rehash finds it; transient tampering restored before that check can escape
+detection. The final check-to-import window also remains. These checks do not isolate arbitrary
+trusted Node plugins from the user's OS privileges. Current grants, roles and application consent
+are always checked independently; a byte observation never restores revoked authority.
 
 ### Publication and recovery
 

@@ -10,6 +10,19 @@ import {
 import type { Owner } from './owner-record.js'
 
 type Generation = Pick<Owner, 'pid' | 'processStartId' | 'generation'>
+export function installWindowsStopRequest(
+  dataDir: string,
+  owner: Generation,
+  close: () => Promise<void>,
+): () => void {
+  if (process.platform !== 'win32') return () => {} // guards-allow-platform: private Windows stop transport adapter.
+  return watchWindowsStopRequest(dataDir, owner, () => {
+    void close().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    )
+  })
+}
 const requestPath = (dataDir: string) => join(dataDir, 'daemon', 'stop-request.json')
 const record = (owner: Generation) => ({
   version: 1,

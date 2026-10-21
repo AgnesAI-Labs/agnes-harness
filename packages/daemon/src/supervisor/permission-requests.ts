@@ -1,7 +1,19 @@
 import { join } from 'node:path'
 import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
 import type { PermissionContext } from '@agnes/protocol'
+import type { SessionPrincipalOwnershipIndex } from '../storage/session-ownership.js'
 import { journalAuthorization } from './authorization-journal.js'
+import type { WorkerLink } from './worker-link.js'
+
+export function workerPermissionReader(
+  ownership: Pick<SessionPrincipalOwnershipIndex, 'resolve'>,
+  worker: () => WorkerLink | undefined,
+): (key: string) => Promise<PermissionContext | undefined> {
+  return async (key) => {
+    if (!ownership.resolve(key)?.active) return undefined
+    return (await worker()?.commandForSession(key, 'permissionContext', {})) as PermissionContext | undefined
+  }
+}
 
 export class PermissionRequestFailure extends Error {
   constructor(

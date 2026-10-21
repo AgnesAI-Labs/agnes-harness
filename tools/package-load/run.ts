@@ -23,6 +23,9 @@ export type Results = Partial<Record<Stage, Sample>>
 
 /** Cold means new manager/loader + empty jiti disk cache, not a flushed OS filesystem cache. */
 export async function runPackageLoad(f: Awaited<ReturnType<typeof createFixture>>, run: number) {
+  return f.verification.run(() => runPackageLoadOwned(f, run))
+}
+async function runPackageLoadOwned(f: Awaited<ReturnType<typeof createFixture>>, run: number) {
   const results: Results = {}
   const inventoryReader = f.reader()
   const cold = await measure(() => inventoryReader.inventory(f.profileDir))
