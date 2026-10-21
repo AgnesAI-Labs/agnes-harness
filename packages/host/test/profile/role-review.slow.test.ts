@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
@@ -11,12 +11,14 @@ import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { type ApplicationPreview, type InferenceEvent, jcs, type RequestBody } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { expect, it } from 'vitest'
+import { roleToolBindingIdentity } from '../../src/runtime/profile/role-tool-bindings.js'
 import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 import {
   packageDirs,
   pluginHost,
   pluginRow,
   pluginSourceWith,
+  scratch,
   targetOf,
 } from '../assemble/plugin-extension-fixture.js'
 
@@ -32,6 +34,9 @@ async function setup(
   resource?: 'mcp' | 'skill',
   recheck: {
     commonResources?: boolean
+    skillFiles?: boolean
+    readVia?: 'ptc' | 'deferred'
+    emptyTools?: 'parent' | 'role'
     deferred?: boolean
     disclose?: boolean
     liveMcp?: boolean
@@ -47,6 +52,14 @@ async function setup(
         exportName: 'plugin',
         rowId: 'ext:fixture/review-role',
         body: `
+${
+  recheck.readVia
+    ? `ctx.tools.register({...tool('file_bridge'), meta: {...tool('file_bridge').meta, deferLoading: ${recheck.readVia === 'deferred'}}, execute: async (_args, ctx) => {
+ const path = "__ROLE_SKILL_FILE__"
+ ${recheck.readVia === 'ptc' ? `const reply = await createBridge(ctx)({jsonrpc: '2.0', id: 'role-file', method: 'bridge.tools.invoke', params: {name: 'read', args: {path}}}); return {content: [{type: 'text', text: JSON.stringify(reply)}], isError: 'error' in reply}` : `return ctx.tools.invoke('read', {path})`}
+}})`
+    : ''
+}
 ctx.tools.register(tool('common_read'))
 ctx.tools.register(tool('role_only'))
 ctx.tools.register({ ...tool('bridge'), execute: async (_args, ctx) => ctx.tools.invoke('role_only', {}) })
@@ -94,6 +107,14 @@ ${
     ],
     { vendor },
   )
+  const privateSkillDirectory = join(raw.snapshot.directory, 'skill-files')
+  if (recheck.skillFiles) {
+    mkdirSync(privateSkillDirectory)
+    writeFileSync(join(privateSkillDirectory, 'secret.txt'), 'ROLE_PRIVATE_SKILL_ATTACHMENT')
+    requestCall = recheck.readVia
+      ? { name: 'file_bridge', args: {} }
+      : { name: 'read', args: { path: join(privateSkillDirectory, 'secret.txt') } }
+  }
   const manifestFile = join(raw.snapshot.directory, 'package.json')
   const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
   const bundle = (tools: string[], limit = 4) => ({
@@ -137,6 +158,15 @@ ${
       ]
     }
   }
+  if (recheck.skillFiles) {
+    manifest.agnes.bundles.reader.profile.skills = []
+    for (const name of ['assistant', 'reader'])
+      manifest.agnes.bundles[name].profile.tools.push('read', ...(recheck.readVia ? ['file_bridge'] : []))
+  }
+  if (recheck.emptyTools) {
+    const name = recheck.emptyTools === 'parent' ? 'assistant' : 'reader'
+    manifest.agnes.bundles[name].profile.toolPolicy.allow = []
+  }
   if (recheck.config) {
     for (const name of ['assistant', 'reader']) {
       const profile = manifest.agnes.bundles[name].profile
@@ -168,6 +198,7 @@ ${
     entry,
     `import { Type } from ${JSON.stringify(import.meta.resolve('@sinclair/typebox'))}\nimport { createBridge } from ${JSON.stringify(import.meta.resolve('@agnes/code'))}\n` +
       readFileSync(entry, 'utf8')
+        .replace('"__ROLE_SKILL_FILE__"', JSON.stringify(join(privateSkillDirectory, 'secret.txt')))
         .replace(
           "parameters: { type: 'object', properties: {}, additionalProperties: false }",
           'parameters: Type.Object({}, { additionalProperties: false })',
@@ -200,6 +231,7 @@ ${
         sourceIdentity: { scope: 'user' as const, rootKey: 'user-agnes' as const, sourceId },
         priority: 400,
         body: scope === 'role' ? 'ROLE_PRIVATE_SKILL' : 'PARENT_PUBLIC_SKILL',
+        ...(recheck.skillFiles && scope === 'role' ? { directory: privateSkillDirectory } : {}),
       }
     })
     skills.replaceRoot('user-agnes', candidates)
@@ -215,6 +247,7 @@ ${
     await skills.activate('recheck-fixture', async () => {})
   }
   const hostOptions: Partial<TestHostOptions> = {
+    ...(recheck.skillFiles ? { dataDir: join(scratch(), 'data') } : {}),
     disableSessionTitle: true,
     treeBudgetCredits: 100,
     ...(resource === 'skill'
@@ -245,6 +278,7 @@ ${
       }),
   }
   const fixture = await pluginHost(source, hostOptions)
+  if (recheck.skillFiles) fixture.dataDir = hostOptions.dataDir!
   const row = pluginRow('ext:fixture/review-role', 'plugin', false, { vendor })
   await fixture.host.applyRuntimeTarget(
     targetOf([
@@ -491,11 +525,18 @@ it('review-role: a same-name tool with a different composition configuration can
     expect(JSON.stringify(await f.parent.scan({ type: 'tool/result', limit: 100 }))).toContain(
       'PARENT_PUBLIC_DATA',
     )
-    const handle = await f.create()
-    await handle.run('Inspect')
-    const rows = await f.parent.d.log.storage.scan(handle.key, { type: 'tool/result', limit: 100 })
-    expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_DATA')
-    await handle.cancel?.()
+    await expect(f.create()).rejects.toThrow('no tools after authority intersection')
+    expect(await f.parent.d.children.list?.()).toEqual([])
+    expect((await f.parent.scan({ type: 'x/host/role-tool-intersection', limit: 100 })).at(-1)).toMatchObject(
+      {
+        data: {
+          tools: [],
+          excluded: expect.arrayContaining([
+            { tool: 'configured_read', reason: 'execution-binding-mismatch' },
+          ]),
+        },
+      },
+    )
   } finally {
     await f.fixture.host.close()
   }
@@ -621,16 +662,19 @@ it.each(['same', 'canonical', 'absent-empty'] as const)(
     const f = await setup({ name: 'configured_read', args: {} }, false, undefined, { config })
     try {
       await f.save()
+      if (config === 'absent-empty') {
+        await expect(f.create()).rejects.toThrow('no tools after authority intersection')
+        expect(await f.parent.d.children.list?.()).toEqual([])
+        return
+      }
       const handle = await f.create()
       const child = f.fixture.host.kernel.get(handle.key)!
-      const allowed = config !== 'absent-empty'
-      expect(child.d.roleDelegation?.tools.includes('configured_read')).toBe(allowed)
-      expect(!!child.currentTools().resolve('configured_read')).toBe(allowed)
+      expect(child.d.roleDelegation?.tools.includes('configured_read')).toBe(true)
+      expect(!!child.currentTools().resolve('configured_read')).toBe(true)
       await handle.run('Inspect')
       const rows = await f.parent.d.log.storage.scan(handle.key, { type: 'tool/result', limit: 100 })
-      expect(JSON.stringify(rows).includes('PARENT_PUBLIC_DATA')).toBe(allowed)
+      expect(JSON.stringify(rows).includes('PARENT_PUBLIC_DATA')).toBe(true)
       expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_DATA')
-      if (!allowed) expect(rows.some(refused)).toBe(true)
       await handle.cancel?.()
     } finally {
       await f.fixture.host.close()
@@ -837,3 +881,115 @@ it.each(['ptc', 'deferred'] as const)(
   },
   90_000,
 )
+
+it.each([
+  { reopen: false },
+  { reopen: true },
+  { reopen: false, via: 'ptc' as const },
+  { reopen: false, via: 'deferred' as const },
+])(
+  'role: ordinary read cannot escape captured Skill and filesystem scopes through readRoots %j',
+  async ({ reopen, via }) => {
+    const f = await setup(undefined, false, 'skill', {
+      stableSkills: true,
+      skillFiles: true,
+      ...(via ? { readVia: via } : {}),
+      ...(via === 'deferred' ? { disclose: true } : {}),
+    })
+    try {
+      await f.save()
+      await f.parent.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Inspect file' }],
+        actor: f.parent.d.actor,
+      })
+      await f.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      const parentRows = await f.parent.scan({ type: 'tool/result', limit: 100 })
+      expect(JSON.stringify(parentRows)).not.toContain('ROLE_PRIVATE_SKILL_ATTACHMENT')
+      const control = await f.fixture.host.createSession({
+        key: 'reader-control',
+        cwd: f.fixture.dataDir,
+        agent: ref('reader'),
+      })
+      await control.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Inspect file' }],
+        actor: control.d.actor,
+      })
+      await control.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      expect(JSON.stringify(await control.scan({ type: 'tool/result', limit: 100 }))).toContain(
+        'ROLE_PRIVATE_SKILL_ATTACHMENT',
+      )
+      await control.close()
+      const handle = await f.create()
+      const child = f.fixture.host.kernel.get(handle.key)!
+      expect(child.currentTools().resolve('read')).toBeDefined()
+      if (via) expect(child.currentTools().resolve('file_bridge')).toBeDefined()
+      expect(child.roleAuthority!.resources.skills.ids).toEqual([
+        `skill/user/user-agnes/${digest('review-parent-skill')}`,
+      ])
+      if (reopen) await f.restart()
+      const active = reopen
+        ? await f.fixture.host.createSession({ key: handle.key, cwd: f.fixture.dataDir })
+        : child
+      expect(active.currentTools().resolve('read')).toBeDefined()
+      if (reopen) {
+        await active.setYolo(true, active.d.actor)
+        expect(active.yolo).toBe(false)
+        await active.enqueue('next-turn', {
+          content: [{ type: 'text', text: 'Inspect file after reopen' }],
+          actor: active.d.actor,
+        })
+        await active.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      } else await handle.run('Inspect')
+      const rows = await active.scan({ type: 'tool/result', limit: 100 })
+      expect(JSON.stringify(rows)).not.toContain('ROLE_PRIVATE_SKILL_ATTACHMENT')
+      expect(rows.some(refused)).toBe(true)
+      if (reopen) await active.close()
+      else await handle.cancel?.()
+    } finally {
+      await f.fixture.host.close()
+    }
+  },
+  90_000,
+)
+
+it.each(['parent', 'role'] as const)(
+  'role: a literal empty %s tool ceiling refuses spawn instead of becoming default selection',
+  async (side) => {
+    const f = await setup({ name: 'common_read', args: {} }, false, undefined, { emptyTools: side })
+    try {
+      await f.save()
+      await expect(f.create()).rejects.toThrow('no tools after authority intersection')
+      expect(await f.parent.d.children.list?.()).toEqual([])
+      expect(
+        (await f.parent.scan({ type: 'x/host/role-tool-intersection', limit: 100 })).at(-1),
+      ).toMatchObject({ origin: 'system', trust: 'trusted', data: { tools: [] } })
+    } finally {
+      await f.fixture.host.close()
+    }
+  },
+  90_000,
+)
+
+it('role: same-name registrations cannot alias a different package, version or execution binding', async () => {
+  const f = await setup({ name: 'common_read', args: {} })
+  try {
+    const tool = f.parent.currentTools().resolve('common_read')!
+    const identity = roleToolBindingIdentity(f.fixture.host, tool)
+    expect(identity).toBeTruthy()
+    for (const other of [
+      { ...tool, packageIdentity: '@fixture/another-package' },
+      { ...tool, packageVersion: '999.0.0' },
+      { ...tool, executionBinding: { ...tool.executionBinding!, exportName: 'anotherExport' } },
+      { ...tool, executionBinding: { ...tool.executionBinding!, snapshotId: 'different-snapshot' } },
+      { ...tool, executionBinding: { ...tool.executionBinding!, rowId: 'ext:unknown' } },
+      { ...tool, executionBinding: { ...tool.executionBinding!, configDigest: '0'.repeat(64) } },
+      { ...tool, executionBinding: undefined },
+    ])
+      expect(roleToolBindingIdentity(f.fixture.host, other)).not.toBe(identity)
+    expect(
+      roleToolBindingIdentity(f.fixture.host, { ...tool, executionBinding: { ...tool.executionBinding! } }),
+    ).toBe(identity)
+  } finally {
+    await f.fixture.host.close()
+  }
+}, 90_000)
