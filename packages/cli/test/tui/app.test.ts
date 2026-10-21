@@ -839,7 +839,7 @@ it('fills the welcome after the first frame, omits what fails, and shows the ful
       profile: 'local-dev',
       preset: 'standard',
       model: 'm1',
-      welcome: { version: '0.9.3', boot: { ms: 1500, cold: true } },
+      welcome: { version: '0.9.3' },
     })
     await app.start()
     return { app, client, term }
@@ -848,7 +848,6 @@ it('fills the welcome after the first frame, omits what fails, and shows the ful
   await vi.waitFor(async () => {
     const text = (await screenOf(first.term, 100, 30)).join('\n')
     expect(text).toContain('v0.9.3')
-    expect(text).toContain('daemon cold 1.50s')
     expect(text).toContain('◉ 2 plugins   ◉ 3 skills   ◉ 0 MCP servers')
     expect(text).toMatch(/2h {2}Earlier work/)
   })

@@ -8,7 +8,6 @@ const BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
 const NOW = new Date(2026, 9, 21, 20, 0, 0).getTime()
 const FACTS: WelcomeFacts = {
   version: '0.9.3',
-  boot: { ms: 420, cold: false },
   workspace: { root: '~/agnes-harness', branch: 'feat/x', ahead: 2 },
   session: { id: 'aaaa822ce1de', generation: 1 },
   modelDetail: 'reasoning high',
@@ -63,7 +62,8 @@ describe('welcome layouts', () => {
     )
     expect(plain[2]).toContain('Agnes AI  v0.9.3')
     expect(plain[3]).toContain('local agent workbench')
-    expect(plain[5]).toContain('·ᴗ·  ready · daemon warm 0.42s')
+    expect(plain[5]).toContain('·ᴗ·')
+    expect(plain[5]).not.toContain('ready')
     expect(plain.slice(0, 8).join('')).toMatch(/[⠁-⣿]/)
     expect(plain[9]).toMatch(/^ ✦ Tip {2}Press ctrl\+o to see the plugins\. {2}NEW +$/)
     expect(plain[11]).toMatch(/^ ╭─ local-dev · default ─+ #822ce1de · g1 ─╮ $/)

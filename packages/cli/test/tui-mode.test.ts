@@ -58,12 +58,12 @@ describe('runTui model selection', () => {
       rendered += String(chunk)
     })
 
-    const launch = { ...(await booted(endpoint)), bootMs: 420, daemonCold: false }
-    await expect(runTui(launch, parseArgs([]), { ...io, agnesVersion: '1.2.3' })).resolves.toBe(143)
+    await expect(
+      runTui(await booted(endpoint), parseArgs([]), { ...io, agnesVersion: '1.2.3' }),
+    ).resolves.toBe(143)
     expect(rendered).toContain('Acme Workbench')
-    // The version and the measured daemon boot ride along from the launcher into the welcome.
+    // The version rides along from the launcher into the welcome.
     expect(rendered).toContain('v1.2.3')
-    expect(rendered).toContain('daemon warm 0.42s')
     expect(rendered).toContain('local-dev · (default)')
     expect(rendered).toContain('acme ·ᴗ·  local-dev · (default)')
     expect(rendered).not.toContain('Agnes AI')

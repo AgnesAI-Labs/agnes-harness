@@ -19,7 +19,7 @@ export type Scene = {
   files?: string[]
   /** What the composer rail's git probe answers; the bare gallery cwd otherwise. */
   workspace?: WorkspaceInfo
-  /** Gives the app a version and a daemon boot time. */
+  /** Gives the app a version. */
   welcome?: Record<string, never>
 }
 
@@ -211,7 +211,7 @@ function welcomeScenes(): Scene[] {
       cols: 70,
       rows: 24,
       ...base,
-      ready: ['Start here', 'daemon warm'],
+      ready: ['Start here', 'v0.9.3'],
     },
     {
       id: 'welcome-50x20',

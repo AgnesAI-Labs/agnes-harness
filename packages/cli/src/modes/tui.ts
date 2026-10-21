@@ -92,8 +92,6 @@ export async function runTui(
       welcome: {
         motion: io.stdout.isTTY === true,
         ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
-        // Only a launch that went through the local daemon has a boot time worth showing.
-        ...(booted.daemonCold !== undefined ? { boot: { ms: booted.bootMs, cold: booted.daemonCold } } : {}),
       },
       controlClient: booted.client,
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),

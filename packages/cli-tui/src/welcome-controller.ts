@@ -8,8 +8,6 @@ import { tildePath, type WorkspaceInfo } from './workspace-info.js'
 /** The welcome's own options on the app: what the launcher knows, and what tests and the gallery pin. */
 export type WelcomeOptions = {
   version?: string
-  /** How long the daemon took to be ready, and whether this launch started it. */
-  boot?: { ms: number; cold: boolean }
   /** The output is a TTY, so the welcome may animate (it still needs colour and a non-mono theme). */
   motion?: boolean
   /** Wall clock (ms) and randomness for the greeting, tip and blink. */
@@ -66,7 +64,6 @@ export class WelcomeController {
       session: { id: app.session.id, generation: 1 },
       workspace: { root: tildePath(app.cwd ?? process.cwd()) },
       ...(o.version ? { version: o.version } : {}),
-      ...(o.boot ? { boot: o.boot } : {}),
       ...(tips.length > 0 ? { tip: tips[Math.floor((o.random ?? Math.random)() * tips.length)] } : {}),
     })
   }

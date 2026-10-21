@@ -83,8 +83,6 @@ export function welcomeTips(locale: string): { text: string; fresh: boolean }[] 
 /** What the banner knows beyond its constructor options; every field may be missing at any time. */
 export type WelcomeFacts = {
   version?: string
-  /** Daemon boot: milliseconds taken and whether this launch started the daemon. */
-  boot?: { ms: number; cold: boolean }
   workspace?: { root: string; branch?: string; ahead?: number }
   session?: { id: string; generation: number }
   /** Free-form detail after the model, e.g. `reasoning high · 128K context`. */
@@ -315,12 +313,7 @@ export class WelcomeBanner implements Component {
   }
 
   private status(): string {
-    const { ansi } = this.o
-    const boot = this.facts.boot
-    const took = boot
-      ? `${ansi.fg('faint', ` · ${tt(boot.cold ? 'welcome.daemonCold' : 'welcome.daemonWarm', this.locale)} `)}${ansi.fg('success', `${(boot.ms / 1000).toFixed(2)}s`)}`
-      : ''
-    return `${this.face()}${ansi.fg('faint', `  ${tt('welcome.ready', this.locale)}`)}${took}`
+    return this.face()
   }
 
   private identityName(): string {

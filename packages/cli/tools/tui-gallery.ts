@@ -159,7 +159,7 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     welcome: {
       now: () => new Date(2026, 9, 21, 20, 30).getTime() + 3_600_000,
       random: () => 0.1,
-      ...(scene.welcome ? { version: '0.9.3', boot: { ms: 420, cold: false } } : {}),
+      ...(scene.welcome ? { version: '0.9.3' } : {}),
     },
     profile: 'local-dev',
     preset: 'standard',

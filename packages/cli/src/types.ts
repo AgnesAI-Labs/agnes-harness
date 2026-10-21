@@ -118,8 +118,6 @@ export type Booted = {
   profileName: string
   resolvedProfileHash: string | null
   bootMs: number
-  /** Whether the daemon was started by this launch; only known for the local daemon form. */
-  daemonCold?: boolean
   form: 'local' | 'connect'
   close(): Promise<void>
 }
