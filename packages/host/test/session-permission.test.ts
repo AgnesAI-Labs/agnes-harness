@@ -219,12 +219,8 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
       const before = session.permissionContext
       const seq = session.lastSeq
       for (const target of ['workspace-write', permission === 'read-only' ? 'full-access' : 'read-only']) {
-        expect(() => host.validatePresetSwitch(target, key)).toThrow(
-          'Retired permission-as-preset alias',
-        )
-        await expect(host.setSessionPreset(key, target)).rejects.toThrow(
-          'Retired permission-as-preset alias',
-        )
+        expect(() => host.validatePresetSwitch(target, key)).toThrow('Retired permission-as-preset alias')
+        await expect(host.setSessionPreset(key, target)).rejects.toThrow('Retired permission-as-preset alias')
         expect(session.permissionContext).toEqual(before)
         expect(session.preset).toMatchObject({ name: 'standard', permission })
         expect(session.lastSeq).toBe(seq)
