@@ -38,11 +38,16 @@ export class ToolRegistryView extends ToolRegistry {
     const allowed = this.allowed()
     // Eager names affect disclosure only after the authoritative visibility filter.
     const defs = Object.freeze(
-      original.defs.filter((tool) => allowed.has(tool.name)).map((tool) =>
-        this.eager.has(tool.name) && tool.meta.deferLoading === true
-          ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
-          : tool,
-      ),
+      original.defs.flatMap(({ name }) => {
+        // Keep the registered execution identity and binding in the lookup projection.
+        const tool = original.byName.get(name)
+        if (!tool || !allowed.has(name)) return []
+        return [
+          this.eager.has(name) && tool.meta.deferLoading === true
+            ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
+            : tool,
+        ]
+      }),
     )
     if (defs.length === original.defs.length && defs.every((tool, i) => tool === original.defs[i]))
       return original

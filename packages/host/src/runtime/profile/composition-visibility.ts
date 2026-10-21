@@ -31,10 +31,13 @@ export function compositionTools(
       scope,
       installed: { tools: capabilityToolCatalog(tools) },
     })
-  return new ToolRegistryView(tools, () =>
-    capabilities()
-      .tools.filter((tool) => tool.enabled)
-      .map((tool) => tool.id),
+  return new ToolRegistryView(
+    tools,
+    () =>
+      capabilities()
+        .tools.filter((tool) => tool.enabled)
+        .map((tool) => tool.id),
+    selection.tools ?? [],
   )
 }
 

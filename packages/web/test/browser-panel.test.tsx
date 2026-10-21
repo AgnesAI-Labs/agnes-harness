@@ -65,7 +65,8 @@ it('shows one-click legacy lock guidance with the full path and copies it withou
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } })
   try {
     if (!Panel) throw new Error('missing browser panel')
-    flushSync(() => root.render(createElement(Panel)))
+    const BrowserPanel = Panel
+    flushSync(() => root.render(createElement(BrowserPanel)))
     expect(host.textContent).toContain(state.error)
     const help = [...host.querySelectorAll('button')].find(
       (button) => button.textContent === '查看安装锁恢复步骤',

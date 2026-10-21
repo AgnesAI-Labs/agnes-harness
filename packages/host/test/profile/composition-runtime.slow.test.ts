@@ -835,7 +835,7 @@ it('filters registered MCP identities without confusing slug collisions or long 
             replay: 'safe',
             requiresApproval: 'never',
             costHint: {},
-            deferLoading: false,
+            deferLoading: true,
           },
           execute: async () => ({ content: [] }),
         }),
@@ -850,6 +850,11 @@ it('filters registered MCP identities without confusing slug collisions or long 
     expect(tools.resolve(name)).toBeDefined()
     expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([...names].sort())
     expect(tools.resolve(mcpPublicToolName(ids.find((other) => other !== id)!, 'read'))).toBeUndefined()
+    expect(tools.snapshot(0).byName.get(name)?.meta.deferLoading).toBe(true)
+    const explicit = compositionTools(registry, { tools: [name] }).snapshot(0)
+    expect(explicit.defs.map((tool) => tool.name)).toEqual(names)
+    expect(explicit.byName.get(name)?.meta.deferLoading).toBe(false)
+    expect(registry.snapshot(0).byName.get(name)?.meta.deferLoading).toBe(true)
   }
   const tree = {
     profile: 'local-dev',

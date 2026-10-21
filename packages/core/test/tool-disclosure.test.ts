@@ -547,6 +547,9 @@ it('offers explicit session names without adding discovery authority or changing
   const view = new ToolRegistryView(registry, ['explicit'], ['explicit'])
   expect(view.snapshot(1).defs.map((d) => [d.name, d.meta.deferLoading])).toEqual([['explicit', false]])
   expect(view.snapshot(1).byName.get('outside')).toBeUndefined()
+  expect(view.snapshot(1).byName.get('explicit')?.definitionFingerprint).toBe(
+    registry.resolve('explicit')?.definitionFingerprint,
+  )
   expect(view.resolve('tool_describe')).toBeUndefined()
   expect(registry.resolve('explicit')?.meta.deferLoading).toBe(true)
   const asks: string[] = []
@@ -565,12 +568,12 @@ it('offers explicit session names without adding discovery authority or changing
     }),
   })
   try {
-    await session.enqueue('explicit', { actor, content: [{ type: 'text', text: 'act' }] })
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'act' }] })
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(asks).toEqual(['explicit'])
-    expect(JSON.stringify(await storage.scan(session.key, { type: 'tool/result' }))).toContain(
-      'TOOL_NOT_FOUND',
-    )
+    expect(
+      JSON.stringify(await storage.scan(session.key, { type: 'tool/result', toSeq: session.lastSeq })),
+    ).toContain('TOOL_NOT_FOUND')
   } finally {
     await session.close()
   }

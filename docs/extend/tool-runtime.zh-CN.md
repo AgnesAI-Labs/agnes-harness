@@ -48,6 +48,8 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 
 自动延迟还要求目录中存在模型可见、直接披露的 `tool_search` 与 `tool_describe`；仅支持图像输入或自身延迟披露的发现工具不满足条件。缺少这对发现工具时，所有 auto 工具保持可见，包括第三方 auto 工具；显式 `true`、`false` 声明不变。官方后台任务/PTY、子代理、计划任务、工作流和目标工具采用 auto 模式，交付物工具 `present`、日常工具与发现工具保持直接披露。
 
+智能体非空的 `profile.tools` 选择或会话显式的 `tools.allow`，是直接提供 schema 的工作集：即使工具全局声明 `true` 或 `auto` 延迟加载，名单内工具也从首次请求提供。不隐式加入发现工具，名单外工具仍不可访问。未设置选择时继续使用普通延迟规则。空 `profile.tools` 保留既有的默认选择语义；会话显式的空 `tools.allow` 仍不暴露任何工具。模型可见性、图像能力、自定义 Loop 选择、参数验证与审批独立生效。角色子智能体只取得角色与父工具快照的交集，此规则不扩大权限。
+
 设置 `meta.discoveryGroup` 为一行标签（最多 120 个字符），同属一组的延迟工具在列表中合为一行并显示数量，例如 `"Earlier sessions (search, read and trace past sessions)"`。`tool_search` 也会匹配这个标签。不设置时每个延迟工具单独一行。
 
 可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
@@ -63,5 +65,3 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 策略结果可以携带协议拥有的 `ToolReviewFact`：模型、提示词哈希、参数/范围哈希、`allow/deny/escalate` 决定、风险、理由、延迟、成本、成本来源，以及 `model/human-override/fallback` 来源。决定必须与 effect 一致（`escalate` 对应 `ask`）。Core 在副作用之前保存并复用绑定事实。可选 `scopePreview` 包含有长度限制的 `args`、`cwd` 和 `mode` 展示文本。工具节点与轨迹跨度使用相同的 `ToolReviewFact` 契约；预览文本不授予权限。公开 `_agnes/v1/autoReview.get` 与 `.save` 使用 `AutoReviewConfig`；Node SDK 提供 `client.autoReview.get()` 和 `.save(config)`，浏览器通过同源管理接口操作。
 
 输出一致性、工具范围、自动放行风险和显式未来规则由策略插件拥有；Core 仅提供模型执行、预算预留与事实持久化，不内置审查算法。硬拒绝与私有状态限制不可由模型推翻。默认值和操作流程见[安全与信任](../guide/security.zh-CN.md#审批)。
-
-智能体显式的 `tools` 清单（解析后会话的非空 `tools.allow`）是直接提供 schema 的工作集：即使工具全局声明 `true` 或 `auto` 延迟加载，名单内工具也从首次请求提供。不隐式加入发现工具，名单外工具仍不可访问。未设置允许清单时继续使用普通延迟规则；显式空清单仍不暴露任何工具。模型可见性、图像能力、自定义 Loop 选择、参数验证与审批独立生效。角色子智能体只取得角色与父工具快照的交集，此规则不扩大权限。

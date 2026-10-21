@@ -452,11 +452,15 @@ describe('sandbox providers', () => {
         detail: { reason: 'workspace-sandbox-change' },
       })
       await full.setYolo(false, full.d.actor)
+      expect(
+        (await full.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 }))[0]?.data,
+      ).toMatchObject({ to: false })
       const key = full.key
       await full.close()
       const reopened = await testHost.host.createSession({ key, cwd: dataDir })
       expect(reopened.preset.name).toBe('full-access')
-      expect(reopened.yolo).toBe(false)
+      // Turning off a live override returns to this preset's full-access baseline.
+      expect(reopened.yolo).toBe(true)
       await reopened.close()
       const configuration = createConfigurationService({
         home: dataDir,
