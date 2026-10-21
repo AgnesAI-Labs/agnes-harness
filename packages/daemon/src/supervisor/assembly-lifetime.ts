@@ -71,7 +71,15 @@ export class AssemblyLifetime {
   force(): void {
     if (this.#forced || this.#disposing) return
     this.#forced = true
-    for (const resource of [...this.#resources].reverse()) resource.force?.()
+    const errors: unknown[] = []
+    for (const resource of [...this.#resources].reverse()) {
+      try {
+        resource.force?.()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, 'daemon resource termination failed')
   }
 
   dispose(): Promise<void> {

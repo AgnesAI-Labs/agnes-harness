@@ -44,11 +44,19 @@ it('continues cleanup after a resource fails and forces a drain that exceeds its
       throw new Error('release failed')
     },
   })
+  scope.own({
+    force: () => {
+      throw new Error('termination failed')
+    },
+    dispose: () => {
+      effects.push('sibling')
+    },
+  })
   try {
     const closing = lifetime.close(10)
     await vi.advanceTimersByTimeAsync(11)
     await closing
-    expect(effects).toEqual(['stop', 'kill', 'worker', 'lock'])
+    expect(effects).toEqual(['stop', 'kill', 'sibling', 'worker', 'lock'])
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     log.mockRestore()
