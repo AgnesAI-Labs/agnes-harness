@@ -1,6 +1,5 @@
 import type { RefineProposal } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import { packageStorage } from '../../../src/package-metadata.js'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
 import { RefineQueue } from '../src/queue.js'
 import { createRefineHarness } from '../src/seam.js'
@@ -22,12 +21,7 @@ const p = (id: string, kind = 'memory'): RefineProposal =>
 
 const harnessFor = (init: ReturnType<typeof fakeSeamInit>) =>
   createRefineHarness(
-    new RefineQueue(
-      packageStorage(init.adapters.storage, 'refine_queue', {
-        select: 'SELECT * FROM refine_queue',
-        key: (r) => String(r.proposal_id),
-      }),
-    ),
+    new RefineQueue(init.adapters.storage.namespace('refine_queue')),
     (init.profile.preset.harness as { queue_max: number }).queue_max,
   )
 
@@ -39,7 +33,7 @@ describe('refine harness', () => {
     expect(await h.propose(p('b', 'bogus'))).toBe('rejected')
     expect(await h.propose(p('c'))).toBe('queued')
     expect(await h.propose(p('d'))).toBe('rejected')
-    const q = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const q = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     expect(q.next()?.proposalId).toBe('a')
     q.mark('a', 'applied')
     expect(q.next()?.proposalId).toBe('c')

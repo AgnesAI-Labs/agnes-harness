@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { isProxy } from 'node:util/types'
-import type { HostPersistence } from '@agnes/host-infrastructure/adapters/storage-provider'
-import type { TableHandle, TableStore } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 
 const OWNER = '@agnes/host/locked-package-operation-receipts'
 const STORE_VERSION = 1
@@ -22,22 +20,6 @@ const RECEIPT_FIELDS = [
   'schemaVersion',
   'storeBindingSha256',
 ] as const
-
-const META_DDL =
-  'CREATE TABLE locked_package_receipt_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
-const RECEIPTS_DDL =
-  'CREATE TABLE locked_package_receipts (' +
-  'operation_id TEXT PRIMARY KEY CHECK (length(operation_id) BETWEEN 1 AND 128), ' +
-  "kind TEXT NOT NULL CHECK (kind IN ('activate','confirm-lkg','rollback')), " +
-  "phase TEXT NOT NULL CHECK (phase IN ('prepared','committed')), " +
-  'fencing TEXT NOT NULL CHECK (length(fencing) BETWEEN 1 AND 128), ' +
-  'store_binding_sha256 TEXT NOT NULL CHECK (length(store_binding_sha256) = 64), ' +
-  'request_sha256 TEXT CHECK (request_sha256 IS NULL OR length(request_sha256) = 64), ' +
-  'before_state_sha256 TEXT NOT NULL CHECK (length(before_state_sha256) = 64), ' +
-  'after_state_sha256 TEXT NOT NULL CHECK (length(after_state_sha256) = 64), ' +
-  'result_json TEXT NOT NULL CHECK (length(result_json) BETWEEN 2 AND 32768))'
-const FENCING_INDEX_DDL =
-  'CREATE UNIQUE INDEX locked_package_receipts_fencing ON locked_package_receipts (fencing)'
 
 export type HostLockedPackageMutationKind = 'activate' | 'confirm-lkg' | 'rollback'
 
@@ -87,8 +69,6 @@ type ReceiptRow = {
   result_json: unknown
 }
 
-type SchemaRow = { type: unknown; name: unknown; tbl_name: unknown; sql: unknown }
-type ReceiptSql = Pick<TableHandle, 'all' | 'exec' | 'get' | 'run' | 'transaction'>
 const receiptStoreErrors = new WeakSet<object>()
 
 class ReceiptStoreError extends Error {
@@ -110,35 +90,6 @@ function sanitized<T>(operation: string, fn: () => T): T {
     if (typeof error === 'object' && error !== null && receiptStoreErrors.has(error)) throw error
     throw new ReceiptStoreError(`${operation}_FAILED`)
   }
-}
-
-function ownMethod<T extends object, K extends keyof T>(value: T, name: K): T[K] {
-  if (!value || typeof value !== 'object' || isProxy(value)) fail('CAPABILITY')
-  const descriptor = Object.getOwnPropertyDescriptor(value, name)
-  if (
-    !descriptor ||
-    descriptor.get !== undefined ||
-    descriptor.set !== undefined ||
-    !('value' in descriptor) ||
-    typeof descriptor.value !== 'function' ||
-    isProxy(descriptor.value)
-  )
-    fail('CAPABILITY')
-  return Reflect.apply(Function.prototype.bind, descriptor.value, [value]) as T[K]
-}
-
-function captureSql(storage: Pick<HostPersistence, 'tables'>): ReceiptSql {
-  const tables = Reflect.apply(ownMethod(storage, 'tables'), storage, [OWNER]) as TableStore
-  const table = Reflect.apply(ownMethod(tables, 'table'), tables, [
-    'locked_package_operation_receipts',
-  ]) as TableHandle
-  return Object.freeze({
-    exec: ownMethod(table, 'exec'),
-    run: ownMethod(table, 'run'),
-    all: ownMethod(table, 'all'),
-    get: ownMethod(table, 'get'),
-    transaction: ownMethod(table, 'transaction'),
-  })
 }
 
 function plain(value: unknown, fields: readonly string[]): Record<string, unknown> {
@@ -291,55 +242,6 @@ function operation(value: unknown): { operationId: string; fencing: string } {
   return Object.freeze({ operationId: token(input.operationId), fencing: token(input.fencing) })
 }
 
-function normalizedDdl(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([(),=])\s*/g, '$1')
-}
-
-function attest(table: ReceiptSql): void {
-  const allowed = new Map<string, Readonly<{ type: 'table' | 'index'; table: string; ddl: string | null }>>([
-    ['locked_package_receipt_meta', { type: 'table', table: 'locked_package_receipt_meta', ddl: META_DDL }],
-    ['locked_package_receipts', { type: 'table', table: 'locked_package_receipts', ddl: RECEIPTS_DDL }],
-    [
-      'locked_package_receipts_fencing',
-      { type: 'index', table: 'locked_package_receipts', ddl: FENCING_INDEX_DDL },
-    ],
-    [
-      'sqlite_autoindex_locked_package_receipts_1',
-      { type: 'index', table: 'locked_package_receipts', ddl: null },
-    ],
-  ])
-  const rows = table.all<SchemaRow>('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
-  if (rows.length !== allowed.size) fail('SCHEMA')
-  for (const row of rows) {
-    if (typeof row.name !== 'string') fail('SCHEMA')
-    const expected = allowed.get(row.name)
-    if (
-      !expected ||
-      row.type !== expected.type ||
-      row.tbl_name !== expected.table ||
-      (expected.ddl === null
-        ? row.sql !== null
-        : typeof row.sql !== 'string' || normalizedDdl(row.sql) !== normalizedDdl(expected.ddl))
-    )
-      fail('SCHEMA')
-  }
-  if (
-    table.all<SchemaRow>('SELECT type, name, tbl_name, sql FROM sqlite_temp_master ORDER BY type, name')
-      .length !== 0
-  )
-    fail('SCHEMA')
-  const versions = table.all<{ id: unknown; version: unknown }>(
-    'SELECT id, version FROM locked_package_receipt_meta ORDER BY id',
-  )
-  if (versions.length !== 1 || versions[0]?.id !== 1 || versions[0].version !== STORE_VERSION) fail('SCHEMA')
-  const count = table.get<{ count: unknown }>('SELECT count(*) AS count FROM locked_package_receipts')?.count
-  if (!Number.isSafeInteger(count) || (count as number) < 0 || (count as number) > MAX_RECEIPTS)
-    fail('CORRUPT')
-}
-
 function parseRow(row: ReceiptRow | undefined): HostLockedPackageOperationReceipt | null {
   if (!row) return null
   if (
@@ -390,14 +292,6 @@ function parseRow(row: ReceiptRow | undefined): HostLockedPackageOperationReceip
   })
 }
 
-const SELECT_RECEIPT =
-  'SELECT operation_id, kind, phase, fencing, store_binding_sha256, request_sha256, ' +
-  'before_state_sha256, after_state_sha256, result_json FROM locked_package_receipts WHERE operation_id = ?'
-
-function readRow(table: ReceiptSql, operationId: string): HostLockedPackageOperationReceipt | null {
-  return parseRow(table.get<ReceiptRow>(SELECT_RECEIPT, [operationId]))
-}
-
 function sameProposal(left: HostLockedPackageOperationReceipt, right: Proposal): boolean {
   return (
     left.operationId === right.operationId &&
@@ -431,121 +325,12 @@ function sameReceipt(
   )
 }
 
-function initialize(table: ReceiptSql): void {
-  table.transaction(() => {
-    if (
-      table.all<SchemaRow>('SELECT type, name, tbl_name, sql FROM sqlite_temp_master ORDER BY type, name')
-        .length !== 0
-    )
-      fail('SCHEMA')
-    const objects = table.all<{ name: unknown }>(
-      "SELECT name FROM sqlite_master WHERE type IN ('table','index','view','trigger') ORDER BY type, name",
-    )
-    if (objects.length === 0) {
-      table.exec(META_DDL)
-      table.exec(RECEIPTS_DDL)
-      table.exec(FENCING_INDEX_DDL)
-      table.run('INSERT INTO locked_package_receipt_meta (id, version) VALUES (1, ?)', [STORE_VERSION])
-    }
-    attest(table)
-    for (const row of table.all<ReceiptRow>(
-      'SELECT operation_id, kind, phase, fencing, store_binding_sha256, request_sha256, ' +
-        'before_state_sha256, after_state_sha256, result_json FROM locked_package_receipts ORDER BY operation_id',
-    ))
-      parseRow(row)
-  })
-}
-
 /**
- * Opens the Host-owned durable receipt state machine used by locked-package mutations. The owner is
- * fixed here rather than supplied by an installer, so callers cannot alias receipts with another
- * package's tables. This port changes no driver-admission state and does not install packages.
+ * Opens the Host-owned durable receipt state machine used by locked-package mutations, on any
+ * persistence provider's metadata port. The owner is fixed here rather than supplied by an
+ * installer, so callers cannot alias receipts with another package's state. This port changes no
+ * driver-admission state and does not install packages.
  */
-export function createSqliteLockedPackageOperationReceiptPort(
-  storage: Pick<HostPersistence, 'tables'>,
-): HostLockedPackageOperationReceiptPort {
-  const table = sanitized('OPEN', () => captureSql(storage))
-  sanitized('INITIALIZE', () => initialize(table))
-  return Object.freeze({
-    async read(rawOperationId) {
-      const operationId = token(rawOperationId)
-      return sanitized('READ', () =>
-        table.transaction(() => {
-          attest(table)
-          return readRow(table, operationId)
-        }),
-      )
-    },
-    async prepare(rawReceipt) {
-      const receipt = proposal(rawReceipt)
-      return sanitized('PREPARE', () =>
-        table.transaction(() => {
-          attest(table)
-          const existing = readRow(table, receipt.operationId)
-          if (existing) {
-            if (existing.phase !== 'prepared' || !sameProposal(existing, receipt)) fail('CONFLICT')
-            return existing
-          }
-          const count = table.get<{ count: unknown }>(
-            'SELECT count(*) AS count FROM locked_package_receipts',
-          )?.count
-          if (count === MAX_RECEIPTS) fail('LIMIT')
-          if (!Number.isSafeInteger(count) || (count as number) < 0 || (count as number) > MAX_RECEIPTS)
-            fail('CORRUPT')
-          const fencing = randomUUID()
-          const resultJson = JSON.stringify(receipt.result)
-          const changed = table.run(
-            'INSERT INTO locked_package_receipts (' +
-              'operation_id, kind, phase, fencing, store_binding_sha256, request_sha256, ' +
-              'before_state_sha256, after_state_sha256, result_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-              receipt.operationId,
-              receipt.kind,
-              'prepared',
-              fencing,
-              receipt.storeBindingSha256,
-              receipt.requestSha256,
-              receipt.beforeStateSha256,
-              receipt.afterStateSha256,
-              resultJson,
-            ],
-          ).changes
-          if (changed !== 1) fail('WRITE')
-          const prepared = readRow(table, receipt.operationId)
-          if (
-            prepared?.phase !== 'prepared' ||
-            prepared.fencing !== fencing ||
-            !sameProposal(prepared, receipt)
-          )
-            fail('WRITE')
-          return prepared
-        }),
-      )
-    },
-    async commit(rawInput) {
-      const input = operation(rawInput)
-      return sanitized('COMMIT', () =>
-        table.transaction(() => {
-          attest(table)
-          const existing = readRow(table, input.operationId)
-          if (!existing || existing.fencing !== input.fencing) fail('FENCE')
-          if (existing.phase === 'committed') return existing
-          const changed = table.run(
-            "UPDATE locked_package_receipts SET phase = 'committed' " +
-              "WHERE operation_id = ? AND fencing = ? AND phase = 'prepared'",
-            [input.operationId, input.fencing],
-          ).changes
-          if (changed !== 1) fail('FENCE')
-          const committed = readRow(table, input.operationId)
-          if (!committed || !sameReceipt(existing, committed, 'committed')) fail('WRITE')
-          return committed
-        }),
-      )
-    },
-  })
-}
-
-/** Provider-independent receipt port with the same validation and fencing as the SQL port. */
 export function createMetadataLockedPackageOperationReceiptPort(
   metadata: import('@agnes/extension-api').PersistenceMetadataPort,
 ): HostLockedPackageOperationReceiptPort {
@@ -622,25 +407,5 @@ export function createMetadataLockedPackageOperationReceiptPort(
         }),
       )
     },
-  })
-}
-
-/** Validate the legacy store before copying receipts; a failed copy never marks migration complete. */
-export function migrateLockedPackageReceipts(
-  storage: Pick<HostPersistence, 'tables'>,
-  metadata: import('@agnes/extension-api').PersistenceMetadataPort,
-): void {
-  const ns = metadata.namespace(OWNER, 'receipts')
-  if (ns.get('version') !== undefined) return
-  const table = sanitized('OPEN', () => captureSql(storage))
-  sanitized('INITIALIZE', () => initialize(table))
-  ns.transaction(() => {
-    if (ns.get('version') !== undefined) return
-    for (const row of table.all<ReceiptRow>('SELECT * FROM locked_package_receipts')) {
-      const receipt = parseRow(row)
-      if (!receipt) fail('CORRUPT')
-      ns.set(`receipt:${receipt.operationId}`, row)
-    }
-    ns.set('version', STORE_VERSION)
   })
 }

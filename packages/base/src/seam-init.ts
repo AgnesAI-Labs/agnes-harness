@@ -112,9 +112,8 @@ export type SeamAdaptersView = {
   platform: PlatformSeam
   storage: {
     table(name: string): TableHandle
-    /** Owner-scoped metadata. Optional only for legacy seam embedders. */
-    namespace?(name: string): PersistenceMetadataNamespace
-    sql?: { table(name: string): TableHandle }
+    /** Owner-scoped metadata. */
+    namespace(name: string): PersistenceMetadataNamespace
   }
   prompter?: Prompter
 }

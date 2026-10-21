@@ -255,8 +255,7 @@ export type SeamAdaptersView = {
   platform: SeamPlatformView
   storage: {
     table(name: string): SeamTableHandle
-    namespace?(name: string): PersistenceMetadataNamespace
-    sql?: { table(name: string): SeamTableHandle }
+    namespace(name: string): PersistenceMetadataNamespace
   }
   prompter?: SeamPrompter
 }

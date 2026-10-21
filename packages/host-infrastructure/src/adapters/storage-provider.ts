@@ -193,9 +193,6 @@ function bridge(
     ...(childControl.updateWorkspace
       ? { updateWorkspace: childControl.updateWorkspace.bind(childControl) }
       : {}),
-    ...(childControl.lookupWorkspaceByPath
-      ? { lookupWorkspaceByPath: childControl.lookupWorkspaceByPath.bind(childControl) }
-      : {}),
     ...(childControl.bumpWriterGeneration
       ? { bumpWriterGeneration: childControl.bumpWriterGeneration.bind(childControl) }
       : {}),

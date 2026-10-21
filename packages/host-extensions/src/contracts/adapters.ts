@@ -25,7 +25,6 @@ export type SeamAdapters = {
   platform: PlatformBackend
   storage: TableStore & {
     namespace(name: string): PersistenceMetadataNamespace
-    readonly sql?: TableStore
   }
   prompter?: Prompter
 }

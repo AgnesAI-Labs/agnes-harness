@@ -563,7 +563,6 @@ export function toSeamAdapters(b: AdapterBundle, opts: { owner: string; prompter
     storage: {
       ...lazyPackageTables(b.storage, opts.owner),
       namespace: (name) => b.storage.metadata.namespace(opts.owner, name),
-      ...(b.storage.sqlite ? { sql: lazyPackageTables(b.storage, opts.owner) } : {}),
     },
     ...(opts.prompter ? { prompter: opts.prompter } : {}),
   }

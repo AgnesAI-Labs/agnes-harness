@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { createRefineHarness, packageStorage, RefineQueue } from '@agnes/base'
+import { createRefineHarness, RefineQueue } from '@agnes/base'
 import {
   CoreError,
   defaultIds,
@@ -105,18 +105,6 @@ describe('persistence provider', () => {
 
   it('keeps the default adapter bundle on sqlite', async () => {
     const dir = tempDir()
-    const legacy = await sqlitePersistenceProvider.open({ dataDir: dir })
-    if (!legacy.sqlite) throw new Error('SQLite port missing')
-    const table = legacy.sqlite.tables('owner').table('persistence_kv')
-    table.exec(
-      'CREATE TABLE persistence_kv (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))',
-    )
-    table.run('INSERT INTO persistence_kv VALUES (?, ?, ?)', [
-      'config',
-      'legacy',
-      JSON.stringify({ enabled: true }),
-    ])
-    await legacy.close()
     const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const bundle = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
     try {
@@ -168,18 +156,40 @@ describe('persistence provider', () => {
       await bundle.storage.deleteVerifiedHead?.('checkpoint')
       expect(await bundle.storage.readVerifiedHead?.('checkpoint')).toBeUndefined()
       const metadata = bundle.storage.metadata.namespace('owner', 'config')
-      expect(metadata.get('legacy')).toEqual({ enabled: true })
-      metadata.delete('legacy')
-      expect(bundle.storage.metadata.namespace('owner', 'config').get('legacy')).toBeUndefined()
+      metadata.set('kept', { enabled: true })
+      expect(bundle.storage.metadata.namespace('owner', 'config').get('kept')).toEqual({ enabled: true })
+      metadata.delete('kept')
+      expect(bundle.storage.metadata.namespace('owner', 'config').get('kept')).toBeUndefined()
     } finally {
       await bundle.close()
     }
     await expect(bundle.storage.readVerifiedHead?.('checkpoint')).rejects.toMatchObject({ code: 'E_CLOSED' })
     const reopened = await openAdapters(profile, { dataDir: dir, workspaceRoot: dir })
     try {
-      expect(reopened.storage.metadata.namespace('owner', 'config').get('legacy')).toBeUndefined()
+      expect(reopened.storage.metadata.namespace('owner', 'config').get('kept')).toBeUndefined()
     } finally {
       await reopened.close()
+    }
+  })
+
+  it('opens package metadata without an owner SQL file, a migration table or lookupWorkspaceByPath', async () => {
+    const dir = tempDir()
+    const store = await sqlitePersistenceProvider.open({ dataDir: dir })
+    try {
+      if (!store.metadata || !store.sqlite || !store.childControl)
+        throw new Error('sqlite provider ports missing')
+      store.metadata.namespace('owner', 'config').set('k', { v: 1 })
+      expect(store.metadata.namespace('owner', 'config').get('k')).toEqual({ v: 1 })
+      expect(existsSync(join(dir, 'tables', 'owner.db'))).toBe(false)
+      expect(
+        store.sqlite
+          .tables('metadata:owner')
+          .table('persistence_kv')
+          .all("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"),
+      ).toEqual([{ name: 'persistence_kv' }])
+      expect('lookupWorkspaceByPath' in store.childControl).toBe(false)
+    } finally {
+      await store.close()
     }
   })
 
@@ -439,6 +449,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   })
   try {
     expect(bundle.storage.sqlite).toBeUndefined()
+    expect('lookupWorkspaceByPath' in bundle.storage).toBe(false)
     await expect(
       bundle.storage.cancelCreatingChild({
         childKey: 'missing',
@@ -480,15 +491,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
       credits: 5,
       creditSource: 'estimated',
     })
-    const harness = createRefineHarness(
-      new RefineQueue(
-        packageStorage(init.adapters.storage, 'refine_queue', {
-          select: 'SELECT * FROM refine_queue',
-          key: (r) => String(r.proposal_id),
-        }),
-      ),
-      20,
-    )
+    const harness = createRefineHarness(new RefineQueue(init.adapters.storage.namespace('refine_queue')), 20)
     expect(
       await harness.propose({
         proposalId: 'proposal',

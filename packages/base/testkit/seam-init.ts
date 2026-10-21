@@ -1,4 +1,5 @@
 import type { ApprovalAnswer, ApprovalRequest, PlatformSeam, Verdict } from '@agnes/core'
+import type { PersistenceMetadataNamespace } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type {
   HostExecResult,
@@ -33,6 +34,8 @@ type MemTables = ConstructorParameters<typeof MemTable>[1]
 export type FakeSeamInit = SeamInitContext & {
   /** One entry per name asked of `storage.table`, all sharing one registry. */
   tables: Map<string, MemTable>
+  /** One entry per name asked of `storage.namespace`; the same name returns the same namespace. */
+  namespaces: Map<string, MemNamespace>
   /** Every argv passed to `adapters.exec`, in order. */
   execCalls: string[][]
   /** The opts each exec call carried, parallel to execCalls. */
@@ -158,6 +161,7 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
 
   const registry: MemTables = new Map()
   const tables = new Map<string, MemTable>()
+  const namespaces = new Map<string, MemNamespace>()
   const execCalls: string[][] = []
   const execOpts: Array<Record<string, unknown>> = []
   const platform: PlatformSeam = {
@@ -193,6 +197,14 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
           }
           return t
         },
+        namespace(name: string): MemNamespace {
+          let ns = namespaces.get(name)
+          if (!ns) {
+            ns = new MemNamespace()
+            namespaces.set(name, ns)
+          }
+          return ns
+        },
       },
       ...(prompter ? { prompter } : {}),
     },
@@ -208,9 +220,54 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
     log: { debug() {}, info() {}, warn() {}, error() {} },
     signal: new AbortController().signal,
     tables,
+    namespaces,
     execCalls,
     execOpts,
     mem,
     data,
+  }
+}
+
+/**
+ * Owner-scoped metadata in memory. It keeps the host's JSON round trip, so a value that would not
+ * survive the SQLite metadata store does not survive here either, and reads are detached copies.
+ */
+export class MemNamespace implements PersistenceMetadataNamespace {
+  /** JSON text by key. */
+  readonly data = new Map<string, string>()
+
+  get(key: string): unknown | undefined {
+    const json = this.data.get(key)
+    return json === undefined ? undefined : JSON.parse(json)
+  }
+
+  set(key: string, value: unknown): void {
+    const json = JSON.stringify(value)
+    if (json === undefined) throw new TypeError('metadata value must be JSON serializable')
+    this.data.set(key, json)
+  }
+
+  delete(key: string): void {
+    this.data.delete(key)
+  }
+
+  entries(): readonly Readonly<{ key: string; value: unknown }>[] {
+    return [...this.data.keys()]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((key) => ({ key, value: this.get(key) }))
+  }
+
+  transaction<T>(fn: () => T): T {
+    const snapshot = new Map(this.data)
+    try {
+      const result = fn()
+      if (result && typeof (result as { then?: unknown }).then === 'function')
+        throw new TypeError('metadata transaction callback must be synchronous')
+      return result
+    } catch (error) {
+      this.data.clear()
+      for (const [key, value] of snapshot) this.data.set(key, value)
+      throw error
+    }
   }
 }

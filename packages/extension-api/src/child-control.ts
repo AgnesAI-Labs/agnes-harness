@@ -245,7 +245,6 @@ export interface ChildControlStore {
     workspaceId: string,
     patch: Partial<Pick<PlannedWorkspace, 'phase' | 'path' | 'root' | 'branch'>>,
   ): Promise<void>
-  lookupWorkspaceByPath?(path: string): Promise<PlannedWorkspace | null>
   bumpWriterGeneration?(key: SessionKey): Promise<number>
   takeoverReservation?(permitId: string, expectedWriterGeneration: number): Promise<ReservationRecord>
   writerGeneration?(key: SessionKey): Promise<number>

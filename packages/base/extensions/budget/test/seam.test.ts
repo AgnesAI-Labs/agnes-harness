@@ -1,6 +1,6 @@
 import type { BillingRow } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import { fakeSeamInit } from '../../../testkit/seam-init.js'
+import { fakeSeamInit, type MemNamespace } from '../../../testkit/seam-init.js'
 import { budgetBilling } from '../src/seam.js'
 
 const row = (over: Partial<BillingRow> = {}): BillingRow => ({
@@ -23,7 +23,7 @@ describe('budget ledger', () => {
     const seam = await budgetBilling(init)
     await seam.record(row())
     await seam.record(row())
-    expect(init.tables.get('usage_ledger')?.rows).toHaveLength(1)
+    expect(init.namespaces.get('usage_ledger')?.entries()).toHaveLength(1)
   })
 
   it('projects from gateway rows of the same model, estimated when no history', async () => {
@@ -41,12 +41,11 @@ describe('budget ledger', () => {
     })
   })
 
-  it('throws when the table write fails', async () => {
+  it('throws when the metadata write fails', async () => {
     const init = fakeSeamInit()
     const seam = await budgetBilling(init)
-    const table = init.tables.get('usage_ledger')
-    if (!table) throw new Error('usage_ledger table was not opened by budgetBilling')
-    table.run = () => {
+    const ns = init.adapters.storage.namespace('usage_ledger') as MemNamespace
+    ns.set = () => {
       throw new Error('disk full')
     }
     await expect(seam.record(row())).rejects.toThrow(/disk full/)
