@@ -100,6 +100,8 @@ Each `AGH_HOME` has one authenticated daemon endpoint. The [App Server v1 contra
 
 AGH's App Server provides shared task execution: the daemon manages sessions and the control plane, workers execute tasks, and the SDK provides communication entry points. Choose an integration path from the repository's [API contracts](../reference/api.md) when building a client.
 
+Daemon assembly proceeds through the home owner lock, stores and snapshots, worker pool, private worker listener, runtime adapters, client-module rebuild, boot-verification end, client listeners and discovery. Each resource owner registers one lifecycle record in [AssemblyLifetime](../../packages/daemon/src/supervisor/assembly-lifetime.ts). Startup abort and normal shutdown use the same reverse list: stop intake and timers, drain within the worker grace period, force overdue workers, then dispose resources and release ownership after exit recovery. Bootstrap-only request/reference ports refuse calls before initialization and after close.
+
 <a id="可复用场景的范围"></a>
 
 ## Scope of reusable applications

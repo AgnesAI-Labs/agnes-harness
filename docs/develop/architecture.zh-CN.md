@@ -87,6 +87,8 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
 
+daemon 依次取得 home owner lock、建立 stores 与快照、worker pool、私有 worker 监听、runtime adapters、重建客户端模块、结束 boot verification，再开放客户端监听并发布 discovery。各资源 owner 在 [AssemblyLifetime](../../packages/daemon/src/supervisor/assembly-lifetime.ts) 中只登记一份生命周期记录；启动中止与正常停止共用同一逆序列表：停止入口和计时器，在 worker grace 内排空，强制终止超时 worker，再释放资源，并等待退出恢复后释放所有权。仅用于启动的请求与引用端口，在初始化前和关闭后均拒绝调用。
+
 ## 可复用场景的范围
 
 FDE 是交付方式。FDE 交付可通过 AGH 已有扩展入口构建企业软件。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
