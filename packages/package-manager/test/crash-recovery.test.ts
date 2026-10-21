@@ -19,9 +19,12 @@ import {
   emptyLock,
   hashDirectory,
   type LockEntry,
+  PackageByteVerification,
   packageDir,
   parseSource,
   readLock,
+  verifiedDirectoryDigestAsync,
+  withPackageVerification,
   writeLock,
 } from '../src/index.js'
 import { previousSnapshot } from '../src/lifecycle.js'
@@ -32,6 +35,7 @@ import {
   previousPackageDir,
   recoverPackageStore,
 } from '../src/store.js'
+import * as trees from '../src/tree-identity.js'
 
 // Fault injection only: lets a test stop a recursive delete part-way, as a killed process would.
 vi.mock('node:fs', async (importOriginal) => {
@@ -104,6 +108,50 @@ function candidate(version = '1.1.0', current: LockEntry = old) {
     } as LockEntry
   return { stage, next }
 }
+it('review: recovery rejects a changed staged tree even inside warm identity and W3 scopes', async () => {
+  const { stage, next } = candidate()
+  expect(() =>
+    commitPackage(
+      {
+        ...store,
+        checkpoint: (point) => {
+          if (point === 'prepared') throw new Error('review crash')
+        },
+      },
+      load(),
+      'acme/pkg-a',
+      next,
+      'update',
+      stage,
+    ),
+  ).toThrow('review crash')
+  const expected = {
+    version: next.version,
+    integrity: next.integrity,
+    treeIntegrity: next.treeIntegrity!,
+    capabilityHash: '',
+  }
+  const owner = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
+  try {
+    await owner.run(() =>
+      withPackageVerification(async () => {
+        await owner.read(stage, expected)
+        await verifiedDirectoryDigestAsync(stage, expected)
+        const frozen = await trees.treeIdentity(stage)
+        vi.spyOn(trees, 'treeIdentity').mockResolvedValue(frozen)
+        vi.spyOn(trees, 'treeIdentitySync').mockReturnValue(frozen)
+        writeFileSync(join(stage, 'review-damage'), 'changed staged content')
+        expect(() => recoverPackageStore(store)).toThrow('requires recovery')
+        expect(existsSync(join(profile, '.agnes-package-transaction.json'))).toBe(true)
+        expect(readFileSync(join(stage, 'review-damage'), 'utf8')).toBe('changed staged content')
+        expect(load().packages['acme/pkg-a']?.version).toBe(old.version)
+      }),
+    )
+  } finally {
+    vi.restoreAllMocks()
+    await owner.close()
+  }
+})
 it.each(points)(
   'update recovers at %s from lock and digest, with one audit and the correct previous tree',
   (point) => {

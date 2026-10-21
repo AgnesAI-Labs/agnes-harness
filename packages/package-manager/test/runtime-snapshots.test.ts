@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { packageByteBinding, packageLockByteBinding } from '../src/byte-verification.js'
 import {
@@ -24,9 +25,12 @@ import {
   PackageByteVerification,
   packageDir,
   parseSource,
+  RuntimeGenerationSnapshotStore,
   readLock,
   revokePackageByteFailure,
+  verifiedDirectoryDigestAsync,
   withLock,
+  withPackageVerification,
   writeLock,
 } from '../src/index.js'
 import * as sourceModule from '../src/sources.js'
@@ -168,31 +172,38 @@ it.each(['trust', 'enable', 'update', 'rollback'] as const)(
   async (operation) => {
     const m = await installTrusted(),
       row = (await m.inventory(profile)).packages[0]!
-    const verification = new PackageByteVerification({ profileDir: profile, roots: [root] })
+    writeVersion('2.0.0', 'v2')
+    const preview = await m.inspect(profile, source)
+    const verification = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
     try {
-      const frozen = await treeModule.treeIdentity(row.directory!)
-      await verification.run(() => m.inventory(profile))
-      const actual = treeModule.treeIdentity
-      const spy = vi
-        .spyOn(treeModule, 'treeIdentity')
-        .mockImplementation((dir) => (dir === row.directory ? Promise.resolve(frozen) : actual(dir)))
-      writeVersion('2.0.0', 'v2')
-      const preview = await m.inspect(profile, source)
-      writeFileSync(join(row.directory!, 'nested.mjs'), 'BAD')
-      const invoke = () =>
-        operation === 'trust'
-          ? m.trust(profile, id, { integrity: row.entry.integrity, capabilityHash: row.capabilityHash })
-          : operation === 'enable'
-            ? m.enable(profile, id, true)
-            : operation === 'rollback'
-              ? m.rollback(profile, id)
-              : m.update(profile, id, source, { expectedIntegrity: preview.integrity })
-      await expect(verification.run(invoke)).rejects.toThrow()
-      expect(readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id]?.integrity).toBe(
-        row.entry.integrity,
+      await verification.run(() =>
+        withPackageVerification(async () => {
+          const expected = { ...row.entry, capabilityHash: row.capabilityHash }
+          const frozen = await treeModule.treeIdentity(row.directory!)
+          await m.inventory(profile)
+          expect(await verification.read(row.directory!, expected)).toBe(row.entry.treeIntegrity)
+          expect(await verifiedDirectoryDigestAsync(row.directory!, expected)).toBe(row.entry.treeIntegrity)
+          const actual = treeModule.treeIdentity
+          vi.spyOn(treeModule, 'treeIdentity').mockImplementation((dir) =>
+            dir === row.directory ? Promise.resolve(frozen) : actual(dir),
+          )
+          writeFileSync(join(row.directory!, 'nested.mjs'), 'BAD')
+          const invoke = () =>
+            operation === 'trust'
+              ? m.trust(profile, id, { integrity: row.entry.integrity, capabilityHash: row.capabilityHash })
+              : operation === 'enable'
+                ? m.enable(profile, id, true)
+                : operation === 'rollback'
+                  ? m.rollback(profile, id)
+                  : m.update(profile, id, source, { expectedIntegrity: preview.integrity })
+          await expect(verification.run(invoke)).rejects.toThrow()
+          expect(
+            readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id]?.integrity,
+          ).toBe(row.entry.integrity)
+        }),
       )
-      spy.mockRestore()
     } finally {
+      vi.restoreAllMocks()
       await verification.close()
     }
   },
@@ -729,4 +740,153 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
     expectedSnapshotId: turn.snapshot.snapshotId,
   })
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
+})
+
+it('review: install rejects changed source bytes despite a warm byte record and W3 memo', async () => {
+  const m = manager(),
+    preview = await m.inspect(profile, source)
+  const digest = sourceModule.hashDirectory(sourceDir, { exclude: [] })
+  const expected = { version: '1.0.0', integrity: digest, treeIntegrity: digest, capabilityHash: '' }
+  const verification = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
+  try {
+    await verification.run(() =>
+      withPackageVerification(async () => {
+        expect(await verification.read(sourceDir, expected)).toBe(digest)
+        expect(await verifiedDirectoryDigestAsync(sourceDir, expected)).toBe(digest)
+        const frozen = await treeModule.treeIdentity(sourceDir)
+        vi.spyOn(treeModule, 'treeIdentity').mockResolvedValue(frozen)
+        writeFileSync(join(sourceDir, 'nested.mjs'), 'changed source bytes')
+        await expect(m.install(profile, source, { expectedIntegrity: preview.integrity })).rejects.toThrow()
+        expect(
+          readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id],
+        ).toBeUndefined()
+      }),
+    )
+  } finally {
+    vi.restoreAllMocks()
+    await verification.close()
+  }
+})
+
+it('review: generation publication fully checks a new destination despite frozen source observations', async () => {
+  const m = await installTrusted(),
+    row = (await m.inventory(profile)).packages[0]!
+  const expected = {
+    version: row.entry.version,
+    integrity: row.entry.integrity,
+    treeIntegrity: row.entry.treeIntegrity!,
+    capabilityHash: row.capabilityHash,
+    packageId: id,
+  }
+  const verification = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
+  const target = buildRuntimeTarget({
+    rows: [],
+    resources: { mcp: [], skills: {} },
+    resourceRevision: 'a'.repeat(64),
+    compositeRevision: 'b'.repeat(64),
+  })
+  const store = new RuntimeGenerationSnapshotStore(profile)
+  try {
+    await verification.run(() =>
+      withPackageVerification(async () => {
+        await verification.read(row.directory!, expected)
+        await verifiedDirectoryDigestAsync(row.directory!, expected)
+        const frozen = await treeModule.treeIdentity(row.directory!)
+        vi.spyOn(treeModule, 'treeIdentity').mockResolvedValue(frozen)
+        vi.spyOn(treeModule, 'treeIdentitySync').mockReturnValue(frozen)
+        writeFileSync(join(row.directory!, 'nested.mjs'), 'changed before copy publication')
+        expect(() =>
+          store.create(
+            target,
+            [
+              {
+                trusted: true,
+                generation: 1,
+                snapshot: {
+                  ...expected,
+                  snapshotId: expected.integrity,
+                  profile: 'local-dev',
+                  directory: row.directory!,
+                  contributions: row.contributions,
+                },
+              },
+            ],
+            'compat',
+          ),
+        ).toThrow('E_GENERATION_INTEGRITY')
+        expect(readdirSync(store.root)).toEqual([])
+      }),
+    )
+  } finally {
+    vi.restoreAllMocks()
+    await verification.close()
+  }
+})
+
+it('review: a warm owner still reads revocation live for current sources and retained pins', async () => {
+  const m = await installTrusted(),
+    row = (await m.inventory(profile)).packages[0]!
+  await m.enable(profile, id, true)
+  const pin = await m.pinRuntimeSnapshot(profile, {
+    pinId: activeRuntimePinId({ packageId: id, integrity: row.entry.integrity }),
+    operationId: 'review-revocation',
+    packageId: id,
+    purpose: 'active',
+    selector: {
+      kind: 'installed',
+      expectedIntegrity: row.entry.integrity,
+      expectedTreeIntegrity: row.entry.treeIntegrity!,
+    },
+  })
+  const verification = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
+  const reader = manager({ byteVerification: verification })
+  try {
+    expect((await reader.runtimePluginSnapshots(profile)).some((s) => s.snapshot.packageId === id)).toBe(true)
+    const lock = readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
+    lock.packages[id]!.state.trusted = null
+    delete lock.packages[id]!.trustDecision
+    writeLock(profile, lock)
+    expect((await reader.runtimePluginSnapshots(profile)).some((s) => s.snapshot.packageId === id)).toBe(
+      false,
+    )
+    expect((await reader.inventory(profile)).packages.find((p) => p.id === id)?.trusted).toBe(false)
+    await expect(reader.resolveRuntimePin(profile, { pinId: pin.pinId })).rejects.toMatchObject({
+      code: 'E_PACKAGE_STATE',
+    })
+  } finally {
+    await verification.close()
+  }
+})
+
+it('review: rollback checks the real retained previous bytes despite warm W3 and identity records', async () => {
+  const m = await installTrusted()
+  writeVersion('2.0.0', 'v2')
+  const next = await m.inspect(profile, source)
+  await m.update(profile, id, source, { expectedIntegrity: next.integrity })
+  const row = (await m.inventory(profile)).packages[0]!,
+    previous = row.verifiedRollbackTarget!
+  expect(previous.version).toBe('1.0.0')
+  const verification = new PackageByteVerification({ profileDir: profile, roots: [root], quietMs: 0 })
+  try {
+    await verification.run(() =>
+      withPackageVerification(async () => {
+        expect(await verification.read(previous.directory!, previous)).toBe(previous.treeIntegrity)
+        expect(await verifiedDirectoryDigestAsync(previous.directory!, previous)).toBe(previous.treeIntegrity)
+        const frozen = await treeModule.treeIdentity(previous.directory!)
+        vi.spyOn(treeModule, 'treeIdentity').mockResolvedValue(frozen)
+        vi.spyOn(treeModule, 'treeIdentitySync').mockReturnValue(frozen)
+        writeFileSync(join(previous.directory!, 'nested.mjs'), 'changed retained previous bytes')
+        await expect(m.rollback(profile, id)).rejects.toThrow()
+        expect(
+          readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id]?.integrity,
+        ).toBe(next.integrity)
+        expect(readFileSync(join(previous.directory!, 'nested.mjs'), 'utf8')).toBe(
+          'changed retained previous bytes',
+        )
+      }),
+    )
+  } finally {
+    vi.restoreAllMocks()
+    await verification.close()
+  }
 })

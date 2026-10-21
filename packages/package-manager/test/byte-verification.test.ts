@@ -1,3 +1,4 @@
+import * as syncFs from 'node:fs'
 import {
   cpSync,
   linkSync,
@@ -27,6 +28,8 @@ import { verifiedDirectoryDigestAsync, withoutPackageVerification } from '../src
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
 }))
+vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()) }))
+const actualVolumeSupport = trees.supportsTreeIdentity
 
 let root: string, directory: string, file: string
 let now: number, wall: number
@@ -526,4 +529,179 @@ it('bounds repeated observation resets as busy without permanently quarantining 
   expect(imported).not.toHaveBeenCalled()
   await setImmediate()
   expect(fault).not.toHaveBeenCalled()
+})
+
+it.each(['foreground', 'background'] as const)(
+  'review: a real metadata EIO during %s verification is unavailable evidence, not a mismatch',
+  async (phase) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault, softMs: 0 })
+    await read(authority, expected)
+    const original = fs.lstat
+    const unavailable = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      if (String(args[0]).startsWith(realpathSync(directory)))
+        throw Object.assign(new Error('synthetic filesystem I/O outage'), { code: 'EIO' })
+      return original(...args)
+    })
+    if (phase === 'foreground') await expect(read(authority, expected)).rejects.toThrow()
+    else await authority.recheck()
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+    unavailable.mockRestore()
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+  },
+)
+
+it('review: unsupported-volume EACCES from the actual full verifier never revokes trust', async () => {
+  const fault = vi.fn(),
+    expected = identity(),
+    authority = owner({ onMismatch: fault })
+  vi.mocked(trees.supportsTreeIdentity).mockReturnValue(false)
+  const original = fs.lstat
+  const unavailable = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+    if (String(args[0]).startsWith(realpathSync(directory)))
+      throw Object.assign(new Error('synthetic permission outage'), { code: 'EACCES' })
+    return original(...args)
+  })
+  await expect(read(authority, expected)).rejects.toThrow()
+  await setImmediate()
+  expect(fault).not.toHaveBeenCalled()
+  unavailable.mockRestore()
+  expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+})
+
+it.each(['sync', 'async'] as const)(
+  'review: a proven symlink violation at the %s gate notifies and seals until a control change',
+  async (mode) => {
+    const fault = vi.fn(),
+      expected = identity(),
+      authority = owner({ onMismatch: fault })
+    await read(authority, expected)
+    rmSync(file)
+    symlinkSync(join(directory, 'z.mjs'), file)
+    if (mode === 'sync')
+      expect(() => authority.run(() => collectRead(directoryDigestSteps(directory, expected)))).toThrow()
+    else await expect(read(authority, expected)).rejects.toThrow()
+    await setImmediate()
+    // Merely replacing the file is not a new control/trust decision.
+    rmSync(file)
+    writeFileSync(file, 'GOOD')
+    const repaired = await read(authority, expected).then(
+      () => 'accepted',
+      () => 'refused',
+    )
+    expect({ notified: fault.mock.calls.length > 0, repaired }).toEqual({
+      notified: true,
+      repaired: 'refused',
+    })
+  },
+)
+
+it.each(['same-owner', 'another-owner', 'constructed-object'] as const)(
+  'review: an admission cannot be replayed after assembly through %s',
+  async (mode) => {
+    const expected = identity(),
+      parent = owner(),
+      child = owner()
+    await read(parent, expected)
+    const issued = await parent.admission()
+    await child.boot(issued, () => read(child, expected))
+    writeFileSync(file, 'EVIL')
+    const replay =
+      mode === 'constructed-object'
+        ? {
+            binding: packageByteBinding(root),
+            trees: [{ directory: realpathSync(directory), identity: expected }],
+          }
+        : issued
+    const target = mode === 'same-owner' ? child : owner()
+    const imported = vi.fn(async () => ({ main: { apply() {} } }))
+    const result = await target
+      .boot(replay, () =>
+        target.run(() =>
+          loadPackagePlugins({
+            snapshot: {
+              ...expected,
+              snapshotId: expected.integrity,
+              profile: 'p',
+              packageId: 'acme/test',
+              directory,
+              contributions: [],
+            },
+            generation: 1,
+            importModule: imported,
+          }),
+        ),
+      )
+      .then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+    // Owning a separate verifier is not authority over the executable's original verifier.
+    // Keep this boundary assertion alongside the public boot() single-use contract probe.
+    await expect(read(parent, expected)).resolves.not.toBe(expected.treeIntegrity)
+    expect({ refused: 'error' in result, imported: imported.mock.calls.length > 0 }).toEqual({
+      refused: true,
+      imported: false,
+    })
+  },
+)
+
+it('review: a changed source-policy binding cannot turn a delayed old full success into a new hit', async () => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  const original = sources.hashDirectoryAsync
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(async (...args) => {
+    const actual = await original(...args)
+    entered()
+    await gate
+    return actual
+  })
+  const pending = read(authority, expected).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  )
+  try {
+    await reached
+    writeFileSync(join(root, 'package-sources.json'), JSON.stringify({ version: 1, changed: true }))
+    release()
+    expect(await pending).toHaveProperty('error')
+    hash.mockRestore()
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+  } finally {
+    release()
+    await pending
+  }
+})
+
+it.each([
+  ['darwin', 0x1an, true],
+  ['darwin', 0xef53n, false],
+  ['linux', 0xef53n, true],
+  ['linux', 0x58465342n, true],
+  ['linux', 0x1an, false],
+  ['linux', 0n, false],
+  ['win32', 0x1an, false],
+  ['win32', 0x58465342n, false],
+] as const)('review: volume allowlist on %s with type %s is %s', (platform, type, expected) => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+  const actual = syncFs.statfsSync(directory, { bigint: true })
+  vi.spyOn(syncFs, 'statfsSync').mockReturnValue({ ...actual, type })
+  try {
+    Object.defineProperty(process, 'platform', { value: platform })
+    expect(actualVolumeSupport(directory)).toBe(expected)
+  } finally {
+    Object.defineProperty(process, 'platform', descriptor)
+  }
 })
