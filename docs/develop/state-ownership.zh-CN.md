@@ -123,7 +123,7 @@
 
 ### 持久发布与损坏处理
 
-意图记录、代次 pin、头部、代次快照与已接受的实时配置都用同一个原语发布：`publishFileDurablySync`（`packages/system-node`）——在目标旁写私有临时文件并刷盘，再用 link（先写者胜）或 rename（替换）放到位，最后刷新父目录。删除（`removeFileDurablySync`，pin 释放）同样刷新父目录。目录逐层持久化（`mkdirDurablySync`：每个新目录的目录项在其父目录刷盘，锚点目录必须已存在，所以被删除的代次会报错而不是被重建），复制出的树在摘要或 pin 指向它之前逐文件刷盘（`syncTreeSync`）：意图与代次目录、`sessions`、`heads`、`adopters`、`session-resources` 与资源树都适用。这些调用以及基于硬链接的包锁产生的文件系统错误按原样报告，绝不报为“锁忙”。
+意图记录、代次 pin、头部、代次快照与已接受的实时配置都用同一个原语发布：`publishFileDurablySync`（`packages/system-node`）——在目标旁写私有临时文件并刷盘，再用 link（先写者胜）或 rename（替换）放到位，最后刷新父目录。删除（`removeFileDurablySync`，pin 释放）同样刷新父目录。目录逐层持久化（`mkdirDurablySync`：每个新目录的目录项在其父目录刷盘，锚点目录必须已存在，所以被删除的代次会报错而不是被重建），复制出的树在摘要或 pin 指向它之前持久化（`syncTreeBatchedSync`）：逐个文件和目录刷盘，子项先于父目录；macOS 上每项只做普通 `fsync`，最后对树根做一次整盘刷写（`F_FULLFSYNC`），它会让此前交给磁盘的全部数据落盘，而不是每项各做一次整盘刷写。适用于意图与代次目录、`sessions`、`heads`、`adopters`、`session-resources` 与资源树。这些调用以及基于硬链接的包锁产生的文件系统错误按原样报告，绝不报为“锁忙”。
 
 保证。**进程崩溃**后可见的是旧文件或完整的新文件，不会是撕裂的文件；`*.tmp` 残留无害。**掉电**后已返回的调用是持久的；由于每条记录先于下一条记录持久化，依赖关系中的后一条记录不会在没有前一条的情况下存在。未返回的调用可能整体丢失。
 

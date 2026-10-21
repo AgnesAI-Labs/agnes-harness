@@ -241,6 +241,31 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
   return result;
 }
 
+/* Node's fsync on macOS is F_FULLFSYNC: every call also drains the whole drive cache. A tree is
+ * published by handing each entry to the drive with fsync(2) and draining the cache once. */
+static napi_value sync_descriptor(napi_env env, napi_callback_info info) {
+  napi_value args[2];
+  size_t count = 2;
+  int32_t fd;
+  bool full;
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 2 ||
+      napi_get_value_int32(env, args[0], &fd) != napi_ok || fd < 0 ||
+      napi_get_value_bool(env, args[1], &full) != napi_ok) {
+    napi_throw_type_error(env, "EINVAL", "Expected a descriptor and a full flush flag");
+    return NULL;
+  }
+  int result;
+  do result = full ? fcntl(fd, F_FULLFSYNC) : fsync(fd);
+  while (result != 0 && errno == EINTR);
+  /* A volume without a full flush (some network filesystems) gets what Node's fsync falls back to. */
+  if (result != 0 && full && (errno == ENOTSUP || errno == EINVAL || errno == ENOTTY)) {
+    do result = fsync(fd);
+    while (result != 0 && errno == EINTR);
+  }
+  if (result != 0) return fail(env, full ? "flush drive cache" : "fsync", errno);
+  return NULL;
+}
+
 #include "rename-directory.h"
 #include "skill-delete-posix.h"
 
@@ -269,6 +294,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_create_function(env, "renameDirectoryNoReplace", NAPI_AUTO_LENGTH,
                        rename_directory_no_replace, NULL, &function);
   napi_set_named_property(env, exports, "renameDirectoryNoReplace", function);
+  napi_create_function(env, "syncDescriptor", NAPI_AUTO_LENGTH, sync_descriptor, NULL, &function);
+  napi_set_named_property(env, exports, "syncDescriptor", function);
   return exports;
 }
 

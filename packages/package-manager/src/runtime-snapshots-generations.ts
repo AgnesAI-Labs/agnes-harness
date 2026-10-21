@@ -22,7 +22,7 @@ import {
   publishFileDurablySync,
   removeFileDurablySync,
   syncDirectorySync,
-  syncTreeSync,
+  syncTreeBatchedSync,
 } from '@agnes/system-node'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -253,9 +253,10 @@ export class RuntimeGenerationSnapshotStore {
           copyPackageTreeSync(source.snapshot.directory, destination)
           if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
             throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
-          syncTreeSync(destination)
           return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
         })
+        // One drive flush for every copied tree, before anything names them.
+        syncTreeBatchedSync(directory)
         const resourcesDigest = resources
           ? writeGenerationResources(join(directory, 'resources'), resources)
           : undefined
