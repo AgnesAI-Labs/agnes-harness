@@ -30,6 +30,18 @@ export interface AttachmentStore {
     signal: AbortSignal,
   ): Promise<AttachmentImageVersion>
 
+  /** Optional bounded-memory intake. Consume with backpressure, verify the exact artifact before
+   * publication, and clean partial bytes on abort/failure. Chunks are at most FILE_UPLOAD_CHUNK_BYTES;
+   * sources may reuse a chunk after yield.
+   * The scoped pending receipt and GC protection have the same semantics as `store`.
+   */
+  storeStream?(
+    scope: AttachmentScope,
+    source: AsyncIterable<Uint8Array>,
+    artifact: ArtifactRef,
+    signal: AbortSignal,
+  ): Promise<AttachmentReceipt>
+
   store(
     scope: AttachmentScope,
     bytes: Uint8Array,

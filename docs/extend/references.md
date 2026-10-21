@@ -57,6 +57,13 @@ discards its own receipts; another upload of identical bytes remains independent
 include inboxes, fork prefixes, originals, thumbnails, request media, derivations and pending
 receipts; an incomplete root snapshot must block deletion.
 
+Providers may implement optional `AttachmentStore.storeStream(scope, source, artifact, signal)`
+to consume chunks with backpressure and verify the exact SHA-256 and size before publishing.
+Chunks may be reused after consumption; do not retain them. The default private local store
+uses this path, and session intake spools to a private temporary file that is removed on finish,
+cancel, expiry or close. Providers exposing only `store` keep the legacy byte-buffer fallback.
+Scoped receipts, quotas and GC roots apply equally to both paths.
+
 `ToolContext.fs.create` is optional exclusive creation: it rejects existing entries and
 symlink ancestors, applies the normal workspace write authorization and returns the actual
 written `size` and `sha256`. It must never fall back to overwriting `write`. This is the

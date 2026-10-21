@@ -26,6 +26,11 @@ const validRef = (ref: ArtifactRef) =>
 export function createAttachmentStore(
   metadata: PersistenceMetadataNamespace,
   bytes: { put(bytes: Uint8Array, meta: { mime: string }): Promise<ArtifactRef> },
+  putStream?: (
+    artifact: ArtifactRef,
+    source: AsyncIterable<Uint8Array>,
+    signal: AbortSignal,
+  ) => Promise<void>,
 ): AttachmentStore {
   const entries = (): Receipt[] =>
     metadata.entries().map(({ key, value }) => {
@@ -48,7 +53,49 @@ export function createAttachmentStore(
       if (row.scope !== scopeKey(scope)) throw new AttachmentError('ATTACHMENT_NOT_AUTHORIZED')
       metadata.delete(id)
     })
+  const reserve = (scope: AttachmentScope, id: string, artifact: ArtifactRef) => {
+    metadata.transaction(() => {
+      const rows = entries()
+      for (const row of rows) if (row.expires <= Date.now()) metadata.delete(row.id)
+      const pending = rows.filter((row) => row.expires > Date.now())
+      if (
+        pending.length >= MAX_PENDING ||
+        pending
+          .filter((row) => row.scope === scopeKey(scope))
+          .reduce((n, row) => n + row.artifact.size, artifact.size) > MAX_PENDING_BYTES
+      )
+        throw new AttachmentError('ATTACHMENT_QUOTA')
+      metadata.set(id, { id, artifact, scope: scopeKey(scope), expires: Date.now() + TTL })
+    })
+  }
   return {
+    ...(putStream
+      ? {
+          async storeStream(
+            scope: AttachmentScope,
+            source: AsyncIterable<Uint8Array>,
+            artifact: ArtifactRef,
+            signal: AbortSignal,
+          ) {
+            signal.throwIfAborted()
+            if (!scope.sessionKey || !scope.lane || !validRef(artifact))
+              throw new AttachmentError('ATTACHMENT_DATA')
+            if (artifact.size > 100 * 1024 * 1024) throw new AttachmentError('ATTACHMENT_BYTES')
+            const snapshot = { ...artifact }
+            const id = randomUUID()
+            reserve(scope, id, snapshot)
+            try {
+              await putStream(snapshot, source, signal)
+              signal.throwIfAborted()
+              return { id, artifact: snapshot }
+            } catch (error) {
+              remove(scope, id)
+              if (signal.aborted) throw new AttachmentError('ATTACHMENT_CANCELLED')
+              throw error instanceof AttachmentError ? error : new AttachmentError('ATTACHMENT_UNAVAILABLE')
+            }
+          },
+        }
+      : {}),
     async store(scope, data, mime, signal) {
       signal.throwIfAborted()
       if (!scope.sessionKey || !scope.lane || !MIME.test(mime) || mime.length > 128)
@@ -64,19 +111,7 @@ export function createAttachmentStore(
         size: snapshot.length,
         mime,
       }
-      metadata.transaction(() => {
-        const rows = entries()
-        for (const row of rows) if (row.expires <= Date.now()) metadata.delete(row.id)
-        const pending = rows.filter((row) => row.expires > Date.now())
-        if (
-          pending.length >= MAX_PENDING ||
-          pending
-            .filter((row) => row.scope === scopeKey(scope))
-            .reduce((n, row) => n + row.artifact.size, snapshot.length) > MAX_PENDING_BYTES
-        )
-          throw new AttachmentError('ATTACHMENT_QUOTA')
-        metadata.set(id, { id, artifact, scope: scopeKey(scope), expires: Date.now() + TTL })
-      })
+      reserve(scope, id, artifact)
       try {
         signal.throwIfAborted()
         const stored = await bytes.put(snapshot, { mime })

@@ -83,6 +83,12 @@ export type SeamInitContext = {
   /** Exact bundled artifacts seam only; Host constructs the path from the digest. */
   privateArtifactStore?: Readonly<{
     put(sha256: string, bytes: Uint8Array): Promise<void>
+    putStream?(
+      sha256: string,
+      size: number,
+      source: AsyncIterable<Uint8Array>,
+      signal: AbortSignal,
+    ): Promise<void>
     putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void>
   }>
   /** Host startup bound for a package seam factory. */

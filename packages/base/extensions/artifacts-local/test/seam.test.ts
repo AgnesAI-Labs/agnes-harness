@@ -327,6 +327,36 @@ it('discards cancelled publication without consuming another receipt or retainin
     store.store({ sessionKey: 's', lane: 'main' }, new Uint8Array([1]), 'text/plain', abort.signal),
   ).rejects.toMatchObject({ code: 'ATTACHMENT_CANCELLED' })
   expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
+  const { createHash } = await import('node:crypto')
+  const data = new Uint8Array([1, 2, 3])
+  const artifact = { sha256: createHash('sha256').update(data).digest('hex'), size: 3, mime: 'text/plain' }
+  const streamed = createAttachmentStore(metadata, seam, async (ref, source, signal) => {
+    expect((await streamed.pendingRoots()).roots).toContainEqual(ref)
+    for await (const chunk of source) {
+      expect(chunk).toEqual(data)
+      signal.throwIfAborted()
+    }
+  })
+  async function* source() {
+    yield data
+  }
+  const storeStream = streamed.storeStream
+  if (!storeStream) throw new Error('Missing streaming capability')
+  const scope = { sessionKey: 's', lane: 'main' }
+  const signal = new AbortController().signal
+  const receipt = await storeStream(scope, source(), artifact, signal)
+  expect(await streamed.authorize(scope, receipt, signal)).toBe(true)
+  const cancel = new AbortController()
+  async function* cancelled() {
+    yield data
+    cancel.abort()
+  }
+  await expect(storeStream(scope, cancelled(), artifact, cancel.signal)).rejects.toMatchObject({
+    code: 'ATTACHMENT_CANCELLED',
+  })
+  expect(await streamed.pendingRoots()).toEqual({ complete: true, roots: [artifact] })
+  await streamed.discard(scope, receipt.id)
+  expect(await streamed.pendingRoots()).toEqual({ complete: true, roots: [] })
 })
 
 it('caches model-specific renditions and thumbnails under independent receipt roots without modifying originals', async () => {

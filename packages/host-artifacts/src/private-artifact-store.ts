@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   chmodSync,
   closeSync,
@@ -10,11 +10,13 @@ import {
   openSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import { AttachmentError, FILE_UPLOAD_CHUNK_BYTES } from '@agnes/protocol'
 import {
   createPrivateFileSync,
   hasPrivateDaclSync,
@@ -36,6 +38,12 @@ export const MUTATION_LOCK_TIMEOUT_MS = 30_000
 
 export type PrivateArtifactStore = Readonly<{
   put(sha256: string, bytes: Uint8Array): Promise<void>
+  putStream(
+    sha256: string,
+    size: number,
+    source: AsyncIterable<Uint8Array>,
+    signal: AbortSignal,
+  ): Promise<void>
   putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void>
 }>
 
@@ -254,6 +262,66 @@ export function createPrivateArtifactStore(dataDir: string, platform: PrivatePla
         await writePrivate(dataDir, platform, target, bytes)
         if (pathEntryExists(metadata))
           await writePrivate(dataDir, platform, metadata, computerUseMetadata(sha256, bytes.byteLength))
+      })
+    },
+    async putStream(sha256, size, source, signal) {
+      if (!SHA256.test(sha256) || !Number.isSafeInteger(size) || size < 0)
+        throw new Error('Invalid streamed artifact identity')
+      await withComputerUseArtifactMutation(dataDir, async () => {
+        signal.throwIfAborted()
+        const target = join(root, sha256.slice(0, 2), sha256)
+        const shard = dirname(target)
+        if (platform === 'win32') windowsEnsurePrivateDirectorySync(shard)
+        else {
+          ensurePosixPrivateDirectory(join(dataDir, 'artifacts'))
+          ensurePosixPrivateDirectory(root)
+          ensurePosixPrivateDirectory(shard)
+        }
+        const temporary = join(shard, `.${randomUUID()}.tmp`)
+        const handle = createPrivateFileSync(temporary)
+        let committed = false
+        try {
+          try {
+            const hash = createHash('sha256')
+            let length = 0
+            for await (const chunk of source) {
+              signal.throwIfAborted()
+              if (chunk.byteLength > FILE_UPLOAD_CHUNK_BYTES || length + chunk.byteLength > size)
+                throw new AttachmentError('ATTACHMENT_HASH_MISMATCH')
+              // No await between hashing and writing: producer mutation cannot change admitted bytes.
+              hash.update(chunk)
+              let at = 0
+              while (at < chunk.byteLength) {
+                const written = writeSync(handle, chunk, at, chunk.byteLength - at)
+                if (!written) throw new Error('Streamed artifact write failed')
+                at += written
+              }
+              length += chunk.byteLength
+            }
+            signal.throwIfAborted()
+            if (length !== size || hash.digest('hex') !== sha256)
+              throw new AttachmentError('ATTACHMENT_HASH_MISMATCH')
+            fsyncSync(handle)
+          } finally {
+            closeSync(handle)
+          }
+          const objectRoot = join(dataDir, 'artifacts', 'object-meta', sha256.slice(0, 2))
+          if (platform === 'win32') windowsEnsurePrivateDirectorySync(objectRoot)
+          await writePrivate(
+            dataDir,
+            platform,
+            join(objectRoot, `${sha256}.json`),
+            computerUseMetadata(sha256, size),
+          )
+          signal.throwIfAborted()
+          renameWriteThroughSync(temporary, target)
+          committed = true
+          const metadata = computerUseMarkerPath(dataDir, sha256)
+          if (pathEntryExists(metadata))
+            await writePrivate(dataDir, platform, metadata, computerUseMetadata(sha256, size))
+        } finally {
+          if (!committed) rmSync(temporary, { force: true })
+        }
       })
     },
     async putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void> {

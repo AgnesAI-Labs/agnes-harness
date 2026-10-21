@@ -166,6 +166,12 @@ export type SeamInitContext = {
   /** Exact bundled artifacts seam only: creates immutable CU bytes with native private permissions. */
   privateArtifactStore?: Readonly<{
     put(sha256: string, bytes: Uint8Array): Promise<void>
+    putStream?(
+      sha256: string,
+      size: number,
+      source: AsyncIterable<Uint8Array>,
+      signal: AbortSignal,
+    ): Promise<void>
     putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void>
   }>
   /** Host startup bound for a package seam factory. */

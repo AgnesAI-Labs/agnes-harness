@@ -27,6 +27,11 @@ PNG/JPEG `ArtifactRef`。`receiptId` 标识一次待确认上传，只在原 ses
 丢弃自己创建的回执，不影响相同字节的其他上传。GC 必须计入 inbox、fork 前缀、原件、
 缩略图、request media、派生结果及待确认回执；根快照不完整时禁止删除。
 
+Provider 可实现可选的 `AttachmentStore.storeStream(scope, source, artifact, signal)`，
+按背压消费分块，并在发布前核对完整 SHA-256 与大小。消费后分块可能被复用，不得保留其引用。
+默认私有本地存储使用此路径；会话接收端写入私有临时文件，在完成、取消、过期或关闭时清理。
+仅实现 `store` 的 provider 保留旧字节缓冲回退路径。两条路径均适用同样的回执作用域、配额和 GC 根规则。
+
 `ToolContext.fs.create` 是可选的独占创建能力：拒绝已有条目和符号链接祖先，执行正常的
 workspace 写授权，并返回实际写入的 `size` 与 `sha256`。禁止降级为覆盖式 `write`。
 `read.save_to` 使用此能力复制会话原件。

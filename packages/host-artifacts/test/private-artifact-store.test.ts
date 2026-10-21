@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -75,6 +75,48 @@ describe.skipIf(!privateArtifactDeleteAvailable())('private artifact store', () 
       ),
     ).toBe(bytes.byteLength)
     expect(existsSync(target)).toBe(false)
+  })
+
+  it('streams verified CAS bytes privately and removes failed or cancelled partial publications', async () => {
+    const dataDir = resolve(await mkdtemp(join(tmpdir(), 'agnes-streamed-cas-')))
+    temporary.push(dataDir)
+    const store = createPrivateArtifactStore(dataDir, platform)
+    const bytes = new Uint8Array(64 * 1024).fill(42)
+    const sha256 = createHash('sha256').update(bytes).update(bytes).digest('hex')
+    const signal = new AbortController().signal
+    async function* source() {
+      yield bytes
+      yield bytes
+    }
+    await store.putStream(sha256, bytes.length * 2, source(), signal)
+    const target = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2), sha256)
+    expect(readFileSync(target)).toEqual(Buffer.concat([bytes, bytes]))
+    if (process.platform !== 'win32') expect((await stat(target)).mode & 0o777).toBe(0o600)
+    const abort = new AbortController()
+    async function* cancelled() {
+      yield bytes
+      abort.abort()
+      yield bytes
+    }
+    for (const [size, input, control] of [
+      [bytes.length * 2, cancelled(), abort.signal],
+      [bytes.length, source(), signal],
+      [bytes.length * 3, source(), signal],
+    ] as const) {
+      await expect(store.putStream(sha256, size, input, control)).rejects.toThrow()
+      expect(readFileSync(target)).toEqual(Buffer.concat([bytes, bytes]))
+      expect(await readdir(join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2)))).toEqual([sha256])
+    }
+    const wrong = 'b'.repeat(64)
+    await expect(store.putStream(wrong, bytes.length * 2, source(), signal)).rejects.toMatchObject({
+      code: 'ATTACHMENT_HASH_MISMATCH',
+    })
+    expect(existsSync(join(dataDir, 'artifacts', 'sha256', wrong.slice(0, 2), wrong))).toBe(false)
+    expect(await readdir(join(dataDir, 'artifacts', 'sha256', wrong.slice(0, 2)))).toEqual([])
+    const empty = createHash('sha256').digest('hex')
+    async function* noBytes() {}
+    await store.putStream(empty, 0, noBytes(), signal)
+    expect(readFileSync(join(dataDir, 'artifacts', 'sha256', empty.slice(0, 2), empty))).toHaveLength(0)
   })
 
   it('rejects an invalid digest before constructing a path', async () => {
