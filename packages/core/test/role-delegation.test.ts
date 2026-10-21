@@ -1,10 +1,17 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
 import { expect, expectTypeOf, it, vi } from 'vitest'
 import type { DefaultSelection, LiteralCeiling } from '../src/child/role-authority.js'
 import { readRoleDelegation } from '../src/child/role-snapshot.js'
-import { intersectRoleToolPolicy, ROLE_DELEGATION, type RoleDelegation } from '../src/child/roles.js'
+import {
+  intersectRoleToolPolicy,
+  ROLE_DELEGATION,
+  type RoleDelegation,
+  roleToolSnapshot,
+} from '../src/child/roles.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -61,6 +68,49 @@ const make = (storage = new MemoryStorage(), provider = fakeProvider([textTurn('
 it('keeps default selections and literal ceilings distinct at the type boundary', () => {
   expectTypeOf<DefaultSelection>().not.toMatchTypeOf<LiteralCeiling>()
   expectTypeOf<LiteralCeiling>().not.toMatchTypeOf<DefaultSelection>()
+})
+
+it('bounds role catalogue text while retaining normal references and the original tool', async () => {
+  const kernel = make()
+  const tool: ToolDef = {
+    name: 'subagent_spawn',
+    description: 'Delegate a task; do not approve business actions.',
+    parameters: Type.Object({}),
+    meta: {
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: false,
+      replay: 'safe',
+      costHint: undefined,
+      deferLoading: undefined,
+      requiresApproval: 'never',
+    },
+    execute: async () => ({ content: [] }),
+  }
+  kernel.tools.add(tool, { source: 'fixture', trust: 'trusted' })
+  try {
+    const original = kernel.tools.snapshot(0)
+    const base = original.byName.get('subagent_spawn')!.description
+    for (const count of [12, 64]) {
+      const roles = Array.from({ length: count }, (_, index) => ({
+        ref:
+          count === 12
+            ? `@fixture/roles#role-${index}`
+            : `@${'p'.repeat(140)}/${'q'.repeat(140)}#${'r'.repeat(60)}-${index}`,
+        title: { en: 'Role title '.repeat(100), 'zh-CN': '角色标题'.repeat(100) },
+        description: { en: 'Long description '.repeat(200) },
+      }))
+      const described = roleToolSnapshot(original, roles).byName.get('subagent_spawn')!.description
+      expect(described.startsWith(base)).toBe(true)
+      expect(described.length).toBeLessThanOrEqual(3800)
+      expect(original.byName.get('subagent_spawn')!.description).toBe(base)
+      if (count === 12) for (const role of roles) expect(described).toContain(role.ref)
+      else expect(described).toContain('Additional roles')
+    }
+  } finally {
+    await kernel.close()
+  }
 })
 
 it.each(['untrusted-core', 'ext-register', 'tombstone'] as const)(

@@ -107,6 +107,10 @@ conservatively treated as tainted; the existing taint rules still decide whether
 Nested roles retain the effective parent table and each ancestor policy floor separately. A nearer
 allow rule cannot discard an ancestor deny or human requirement, including after reopen.
 See [applications](applications.md) for adoption and attribution.
+Applications may declare up to 64 delegable agents, all of which must belong to `agents`.
+The model-facing role directory is bounded: titles and descriptions are shortened, and an unusually
+long directory may show only some refs with an explicit notice. The full adopted roster remains
+delegable by exact ref; the display budget does not narrow backend authority.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 
