@@ -218,7 +218,9 @@ describe('participant RPC', () => {
             response: { option: 'allowed-once', value: null },
           },
         })
-        expect(rejected).toMatchObject({ error: { code: -32009, data: { code: 'APPROVAL_REJECTED' } } })
+        expect(rejected).toMatchObject({
+          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } } },
+        })
         expect(rejected).not.toHaveProperty('error.data.reason')
         expect(JSON.stringify(rejected)).not.toContain('approval already resolved')
         expect(resolver).toHaveBeenCalledWith(endpoint.conn.credential, 'approval', created.result.sessionId)
@@ -258,7 +260,9 @@ describe('participant RPC', () => {
             response: { option, value: null },
           },
         })
-        expect(rejected).toMatchObject({ error: { code: -32009, data: { code: 'APPROVAL_REJECTED' } } })
+        expect(rejected).toMatchObject({
+          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } } },
+        })
         expect(rejected).not.toHaveProperty('error.data.reason')
         expect(JSON.stringify(rejected)).not.toContain('DECISION_NOT_FOUND')
         expect(session.lastSeq).toBe(before)

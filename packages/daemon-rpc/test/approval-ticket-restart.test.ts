@@ -217,15 +217,24 @@ it('recovers verifier failures without creating manual approval decisions or acc
     await client.initialize()
     const session = await client.session.new({ cwd: root })
     expect(await session.prompt('review')).toMatchObject({ reason: 'completed' })
-    expect((await session.projectUI()).nodes.filter((node) => node.kind === 'approval')).toEqual([])
+    expect(checks).toBe(2)
+    const projection = await session.projectUI()
+    expect(projection.nodes.filter((node) => node.kind === 'approval')).toEqual([])
+    expect(JSON.stringify(projection.nodes)).toContain('reviewed')
+    expect((await client.approval.list(session.id)).decisions).toEqual([])
     const backend = host.kernel.get(session.id)!
     expect(backend.state.registers.decisionStates.size).toBe(0)
-    expect(await backend.d.log.scan({ type: 'verifier/signal', toSeq: backend.lastSeq })).toEqual(
+    const signals = await backend.scan({ type: 'verifier/signal', toSeq: backend.lastSeq })
+    expect(signals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ data: expect.objectContaining({ verdict: 'needs_revision' }) }),
         expect.objectContaining({ data: expect.objectContaining({ scope: 'turn', verdict: 'pass' }) }),
       ]),
     )
+    expect(signals.map((row) => (row.data as { verdict: string }).verdict)).toEqual([
+      'needs_revision',
+      'pass',
+    ])
     const before = backend.lastSeq
     await expect(
       client.approval.decide({
