@@ -28,7 +28,6 @@ export class WelcomeController {
     private readonly app: {
       profile?: string | undefined
       header?: string | undefined
-      preset?: string | undefined
       model?: string | undefined
       session: Session
       cwd?: string | undefined
@@ -52,7 +51,6 @@ export class WelcomeController {
       theme: hooks.theme,
       ...(hooks.locale ? { locale: hooks.locale } : {}),
       profile: app.profile ?? app.header ?? '',
-      preset: app.preset ?? '',
       ...(app.model ? { model: app.model } : {}),
       viewport: hooks.viewport,
       motion: o.motion === true,
@@ -61,7 +59,6 @@ export class WelcomeController {
     })
     const tips = welcomeTips(this.locale)
     this.banner.update({
-      session: { id: app.session.id, generation: 1 },
       workspace: { root: tildePath(app.cwd ?? process.cwd()) },
       ...(o.version ? { version: o.version } : {}),
       ...(tips.length > 0 ? { tip: tips[Math.floor((o.random ?? Math.random)() * tips.length)] } : {}),
@@ -101,8 +98,8 @@ export class WelcomeController {
     this.kick()
   }
 
-  /** The projection's view of the session: model, its reasoning and context, generation. */
-  projected(usage: UsageView | undefined, generation: number): void {
+  /** The projection's view of the session: model, its reasoning and context. */
+  projected(usage: UsageView | undefined): void {
     const window = usage?.context.window ?? 0
     const parts = usage
       ? [
@@ -117,7 +114,6 @@ export class WelcomeController {
       : []
     if (usage) this.banner.setModel(usage.model.id)
     this.banner.update({
-      session: { id: this.app.session.id, generation },
       ...(usage ? { modelDetail: parts.length > 0 ? parts.join(' · ') : undefined } : {}),
     })
     this.kick()

@@ -743,7 +743,7 @@ export class TuiApp {
     // value older or newer than what the rest of this repaint reflects), so this reads `value.
     // budget` directly rather than polling `session.budget()` on `turn/end`.
     if (value.budget) this.statusBar.setBudget(value.budget.creditsUsed, value.budget.creditsCap ?? undefined)
-    this.welcome.projected(value.usage, value.generation)
+    this.welcome.projected(value.usage)
     // Projection callbacks arrive after the renderer's input frame.  Updating the component tree
     // alone leaves that old frame on screen (for example a completed tool still reads "running"),
     // which in turn makes a healthy idle session look as if subsequent input is queued forever.

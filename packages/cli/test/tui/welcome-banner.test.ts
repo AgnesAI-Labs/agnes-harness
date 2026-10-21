@@ -9,7 +9,6 @@ const NOW = new Date(2026, 9, 21, 20, 0, 0).getTime()
 const FACTS: WelcomeFacts = {
   version: '0.9.3',
   workspace: { root: '~/agnes-harness', branch: 'feat/x', ahead: 2 },
-  session: { id: 'aaaa822ce1de', generation: 1 },
   modelDetail: 'reasoning high',
   resources: { plugins: 12, skills: 8, mcp: 2 },
   recent: [
@@ -36,7 +35,6 @@ function make(
   const theme = new TuiTheme(o.theme ?? 'dark')
   const banner = new WelcomeBanner({
     profile: 'local-dev',
-    preset: 'default',
     model: o.model ?? 'deepseek-flash',
     branding: o.branding ?? BRANDING,
     ansi: theme.ansi(createAnsi(o.tier ?? '256')),
@@ -66,7 +64,7 @@ describe('welcome layouts', () => {
     expect(plain[5]).not.toContain('ready')
     expect(plain.slice(0, 8).join('')).toMatch(/[⠁-⣿]/)
     expect(plain[9]).toMatch(/^ ✦ Tip {2}Press ctrl\+o to see the plugins\. {2}NEW +$/)
-    expect(plain[11]).toMatch(/^ ╭─ local-dev · default ─+ #822ce1de · g1 ─╮ $/)
+    expect(plain[11]).toMatch(/^ ╭─+╮ $/)
     const card = plain.slice(11).join('\n')
     expect(card).toContain('Good evening. What shall we build?')
     expect(card).toContain('● deepseek-flash   reasoning high')
@@ -84,7 +82,7 @@ describe('welcome layouts', () => {
     const ansi = theme.ansi(createAnsi('256'))
     expect(lines[1]).toContain(ansi.fg('selection', '██'))
     expect(lines[0]).toContain(ansi.fg(theme.rampAt(0) as `#${string}`, '██'))
-    expect(lines[11]).toContain(ansi.fg('border', '╭─'))
+    expect(lines[11]).toContain(ansi.fg('border', `╭${'─'.repeat(128)}╮`))
   })
 
   it.each([
@@ -247,7 +245,6 @@ describe('welcome motion', () => {
     const theme = new TuiTheme(over.theme ?? 'dark')
     const banner = new WelcomeBanner({
       profile: 'local-dev',
-      preset: 'default',
       model: 'deepseek-flash',
       branding: BRANDING,
       ansi: theme.ansi(createAnsi(over.tier ?? '256')),

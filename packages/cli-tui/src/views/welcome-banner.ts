@@ -84,7 +84,6 @@ export function welcomeTips(locale: string): { text: string; fresh: boolean }[] 
 export type WelcomeFacts = {
   version?: string
   workspace?: { root: string; branch?: string; ahead?: number }
-  session?: { id: string; generation: number }
   /** Free-form detail after the model, e.g. `reasoning high · 128K context`. */
   modelDetail?: string | undefined
   resources?: { plugins?: number; skills?: number; mcp?: number }
@@ -127,7 +126,6 @@ export class WelcomeBanner implements Component {
   constructor(
     private readonly o: {
       profile: string
-      preset?: string
       model?: string
       branding: Branding
       ansi: ThemedAnsi
@@ -506,16 +504,7 @@ export class WelcomeBanner implements Component {
       )
       if (!v.tight) body.push(`${edge('│')} ${spaces(lw)} ${edge('│')} ${spaces(rw)} ${edge('│')}`)
     }
-    // The profile and preset sit in the top border, the session in its right corner.
-    const preset = this.o.preset ? `${ansi.fg('faint', ' · ')}${ansi.fg('muted', clean(this.o.preset))}` : ''
-    let l = ` ${ansi.bold(ansi.fg('accent', clean(this.o.profile)))}${preset} `
-    const s = this.facts.session
-    let r = s ? ` ${ansi.fg('faint', `#${clean(s.id.slice(-8))} · g${s.generation}`)} ` : ''
-    const avail = cardW - 2
-    if (displayWidth(l) + displayWidth(r) + 2 > avail) r = ''
-    if (displayWidth(l) + 2 > avail) l = ''
-    const fill = Math.max(0, avail - 2 - displayWidth(l) - displayWidth(r))
-    const top = `${edge('╭─')}${l}${edge('─'.repeat(fill))}${r}${edge('─╮')}`
+    const top = edge(`╭${'─'.repeat(cardW - 2)}╮`)
     return [top, ...body, edge(`╰${'─'.repeat(cardW - 2)}╯`)].map((line) => fitLine(` ${line}`, width))
   }
 }
