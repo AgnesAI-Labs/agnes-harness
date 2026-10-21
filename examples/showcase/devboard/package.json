@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -896,9 +896,12 @@
         "@agnes-showcase/devboard#developer",
         "@agnes-showcase/devboard#reviewer",
         "@agnes-showcase/devboard#tester",
+        "@agnes-showcase/devboard#mechanical",
+        "@agnes-showcase/devboard#electrical",
         "@agnes-showcase/devboard#diagnostics",
         "@agnes-showcase/devboard#rams",
-        "@agnes-showcase/devboard#quality"
+        "@agnes-showcase/devboard#quality",
+        "@agnes-showcase/devboard#config"
       ]
     },
     "metadata": {

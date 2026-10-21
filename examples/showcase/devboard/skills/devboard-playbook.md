@@ -90,7 +90,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 后六个角色的工作文件写在 `devboard-projects/<项目编号>/analysis/<对象编号>/`（如 `analysis/QP-2026-007/`）：在役与订单项目没有工作目录，这个前缀可读写但不登记为交付物。子角色只写这里的文件，登记仍由你完成。`devboard_artifact_record` 对 `analysis/` 下的路径一律拒绝。
 
-当前协议最多 8 个可委派角色：`mechanical`、`electrical`、`config` 已声明但暂不可委派。要派它们而 `subagent_spawn` 拒绝时，标注「角色独立性未满足」，把需要的影响说明或核对项列给用户，不要自己代写。
+十一个角色都可委派。`subagent_spawn` 拒绝某个角色时，标注「角色独立性未满足」，把需要的影响说明或核对项列给用户，不要自己代写。
 
 ## 交付物编号与新类别
 

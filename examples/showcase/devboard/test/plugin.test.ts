@@ -457,7 +457,7 @@ describe('DevBoard plugin contract', () => {
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)
-    expect(pkg.version).toBe('3.1.0')
+    expect(pkg.version).toBe('3.2.0')
     expect(names).toContain('devboard_approval_submit')
     // the page may call only the services its client descriptor lists
     const client = JSON.parse(readFileSync(new URL('../client/agnes.client.json', import.meta.url), 'utf8'))
@@ -509,7 +509,7 @@ describe('DevBoard plugin contract', () => {
         references: async () => [],
       })
       const preview = await manager.inspect(profile, parseSource('file:./devboard'))
-      expect(preview).toMatchObject({ id: '@agnes-showcase/devboard', version: '3.1.0' })
+      expect(preview).toMatchObject({ id: '@agnes-showcase/devboard', version: '3.2.0' })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -558,15 +558,11 @@ describe('DevBoard plugin contract', () => {
       quality: '质量工程师',
       config: '配置管理员',
     }
-    // The protocol caps delegableAgents at 8: all 11 roles are declared, these 8 are launchable today.
-    const LAUNCHABLE = Object.keys(titles).filter(
-      (id) => !['mechanical', 'electrical', 'config'].includes(id),
-    )
     expect(Object.keys(bundles).filter((id) => id !== 'coordinator')).toEqual(Object.keys(titles))
     expect(application.agents).toEqual(
       ['coordinator', ...Object.keys(titles)].map((role) => `${pkg.name}#${role}`),
     )
-    expect(application.delegableAgents).toEqual(LAUNCHABLE.map((role) => `${pkg.name}#${role}`))
+    expect(application.delegableAgents).toEqual(Object.keys(titles).map((role) => `${pkg.name}#${role}`))
     for (const ref of application.agents) {
       expect(contracts[ref]?.document.launch?.preset).toBe('devboard')
       const role = bundles[ref.split('#')[1]]
