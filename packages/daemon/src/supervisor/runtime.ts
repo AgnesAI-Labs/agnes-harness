@@ -108,7 +108,7 @@ export async function startSupervisor(
       socketPath: o.config.socketPath,
       processIdentity: o.processIdentity ?? defaultProcessIdentity,
     }))
-  const lifetime = new AssemblyLifetime()
+  const lifetime = new AssemblyLifetime(o.config.limits.shutdownGraceMs)
   if (!ownership) lifetime.own({ dispose: () => lock.release() })
   const base = {
     o,

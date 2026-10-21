@@ -93,3 +93,34 @@ it('waits for already-started runtime recovery before releasing the owner and re
   await Promise.all([running, closing])
   expect(events).toEqual(['recovery', 'lock'])
 })
+
+it('returns a complete phase disposer that can run before the parent without releasing twice', async () => {
+  vi.useFakeTimers()
+  try {
+    const lifetime = new AssemblyLifetime(10)
+    const events: string[] = []
+    const { ready, dispose } = await lifetime.assemble((owner) => {
+      const timer = setInterval(() => undefined, 100)
+      owner.own({
+        stop: () => {
+          clearInterval(timer)
+          events.push('stop')
+        },
+        drain: async () => {
+          events.push('drain')
+        },
+        dispose: () => {
+          events.push('dispose')
+        },
+      })
+      return 'ready'
+    })
+    expect(ready).toBe('ready')
+    await dispose()
+    await lifetime.close(10)
+    expect(events).toEqual(['stop', 'drain', 'dispose'])
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})

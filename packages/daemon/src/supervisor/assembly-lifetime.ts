@@ -12,6 +12,11 @@ export class AssemblyLifetime {
   readonly #resources: Resource[] = []
   #closing: Promise<void> | undefined
   #disposing: Promise<void> | undefined
+  #stopping: Promise<void> | undefined
+  #draining: Promise<void> | undefined
+  #forced = false
+
+  constructor(private readonly graceMs = 30_000) {}
 
   own(resource: Resource): void {
     if (this.#closing || this.#disposing) throw new Error('E_PACKAGE_STATE: daemon assembly is closed')
@@ -33,7 +38,7 @@ export class AssemblyLifetime {
 
   /** A phase owns its partial construction even if its initializer never returns. */
   phase(): AssemblyLifetime {
-    const phase = new AssemblyLifetime()
+    const phase = new AssemblyLifetime(this.graceMs)
     this.own({
       stop: () => phase.stop(),
       drain: (graceMs, signal) => phase.drain(graceMs, signal),
@@ -48,20 +53,24 @@ export class AssemblyLifetime {
   ): Promise<{ ready: T; dispose(): Promise<void> }> {
     const owner = this.phase()
     const ready = await construct(owner)
-    return { ready, dispose: () => owner.dispose() }
+    return { ready, dispose: () => owner.close(this.graceMs) }
   }
 
   stop(): Promise<void> {
-    return this.#each((resource) => resource.stop?.())
+    this.#stopping ??= this.#each((resource) => resource.stop?.())
+    return this.#stopping
   }
 
   drain(graceMs: number, signal: AbortSignal): Promise<void> {
-    return this.#each((resource) => {
+    this.#draining ??= this.#each((resource) => {
       if (!signal.aborted) return resource.drain?.(graceMs, signal)
     })
+    return this.#draining
   }
 
   force(): void {
+    if (this.#forced || this.#disposing) return
+    this.#forced = true
     for (const resource of [...this.#resources].reverse()) resource.force?.()
   }
 
