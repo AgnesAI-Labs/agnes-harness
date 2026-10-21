@@ -1,3 +1,4 @@
+import * as syncFs from 'node:fs'
 import { realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,6 +11,7 @@ import { createWorkerByteFixture } from './plugin-byte-fixture.js'
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
 }))
+vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()) }))
 
 it('stops execution before a pending profile write and drains durable revocation outside the reader', async () => {
   const fixture = await createWorkerByteFixture()
@@ -214,6 +216,78 @@ it('recheck: confirmed symlink followed by EIO still persists the negative decis
       return stat
     })
     restore = () => fault.mockRestore()
+    await expect(owner.verification.read(row.directory!, expected)).rejects.toThrow()
+    restore()
+    await owner.close()
+    const current = readLock(fixture.profileDir, { profile: 'local-dev', agnesVersion: '0.0.0' }).packages[
+      row.id
+    ]!
+    expect({
+      confirmed,
+      outage,
+      stopped: stopped.mock.calls.length > 0,
+      revoked: revoked.mock.calls.length > 0,
+      trusted: current.state.trusted !== null,
+      enabled: current.state.enabled,
+    }).toEqual({
+      confirmed: true,
+      outage: true,
+      stopped: true,
+      revoked: true,
+      trusted: false,
+      enabled: false,
+    })
+  } finally {
+    restore()
+    await owner.close()
+    await fixture.close()
+    vi.restoreAllMocks()
+  }
+})
+
+it('recheck2: control refresh outage cannot erase a confirmed fault for an actual trusted package', async () => {
+  const fixture = await createWorkerByteFixture()
+  const owner = new DaemonPluginByteVerification(fixture.profileDir, fixture.home, 'local-dev')
+  const stopped = vi.fn(),
+    revoked = vi.fn()
+  owner.bind(stopped, revoked, () => {})
+  const manager = createPackageManager({
+    dataDir: fixture.home,
+    cwd: fixture.home,
+    agnesVersion: '0.0.0',
+    references: async () => [],
+    byteVerification: owner.verification,
+  })
+  let restore = () => {}
+  try {
+    const row = (await manager.inventory(fixture.profileDir)).packages[0]!
+    const expected = { ...row.entry, capabilityHash: row.capabilityHash, packageId: row.id }
+    owner.verification.invalidate()
+    const file = join(realpathSync(row.directory!), 'index.mjs')
+    rmSync(file)
+    symlinkSync(join(realpathSync(row.directory!), 'package.json'), file)
+    const originalStat = fs.lstat,
+      originalControl = syncFs.readFileSync
+    let confirmed = false,
+      outage = false
+    const stat = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      const result = await originalStat(...args)
+      if (String(args[0]) === file && result.isSymbolicLink()) confirmed = true
+      return result
+    })
+    const control = vi.spyOn(syncFs, 'readFileSync').mockImplementation((...args) => {
+      if (confirmed && !outage && String(args[0]) === join(fixture.profileDir, 'agnes-lock.json')) {
+        outage = true
+        throw Object.assign(new Error('control refresh unavailable after confirmed structure fault'), {
+          code: 'EIO',
+        })
+      }
+      return originalControl(...args)
+    })
+    restore = () => {
+      stat.mockRestore()
+      control.mockRestore()
+    }
     await expect(owner.verification.read(row.directory!, expected)).rejects.toThrow()
     restore()
     await owner.close()

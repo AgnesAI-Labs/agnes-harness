@@ -33,6 +33,7 @@ export type PackageBootAdmission = Readonly<{
   binding: string
   trees: readonly Readonly<{ directory: string; identity: ByteIdentity }>[]
 }>
+type Scan = Readonly<{ epoch: number; binding: string; lockBinding: string }>
 type Observation = ByteFailure & { tree: TreeIdentity; verifiedAt: number; cost: number }
 const owners = new AsyncLocalStorage<PackageByteVerification | undefined>()
 const fullOnly = new AsyncLocalStorage<boolean>()
@@ -186,8 +187,9 @@ export class PackageByteVerification {
     }
     this.#wall = wall
     this.#mono = mono
-    this.#lockBinding = packageLockByteBinding(this.options.profileDir)
-    const binding = packageByteBinding(this.options.profileDir)
+    const lockBinding = packageLockByteBinding(this.options.profileDir),
+      binding = packageByteBinding(this.options.profileDir)
+    this.#lockBinding = lockBinding
     if (binding !== this.#binding) {
       this.invalidate()
       this.#sealed.clear()
@@ -195,13 +197,18 @@ export class PackageByteVerification {
     }
     return binding
   }
-  #cacheKey(directory: string, identity: ByteIdentity): string {
-    return canonical({ directory, identity: identityBinding(identity), binding: this.#binding })
+  #scan(): Scan {
+    return { epoch: this.#epoch, binding: this.#binding, lockBinding: this.#lockBinding }
+  }
+  #cacheKey(directory: string, identity: ByteIdentity, binding = this.#binding): string {
+    return canonical({ directory, identity: identityBinding(identity), binding })
   }
   #key(directory: string, identity: ByteIdentity): string | undefined {
-    if (this.#closed || !identity.treeIntegrity) return undefined
+    if (!identity.treeIntegrity) return undefined
+    let scan = this.#scan()
     try {
       this.#state()
+      scan = this.#scan()
       if (this.#sealed.has(this.#cacheKey(resolve(directory), identity))) fail()
       const lexical = resolve(directory)
       const physicalRoots = this.options.roots.flatMap((root) => {
@@ -227,7 +234,7 @@ export class PackageByteVerification {
       if (this.#sealed.has(key)) fail()
       return key
     } catch (error) {
-      this.#failed(error, directory, identity)
+      this.#failed(error, directory, identity, undefined, scan)
       throw error
     }
   }
@@ -235,45 +242,60 @@ export class PackageByteVerification {
     error: unknown,
     directory: string,
     identity: ByteIdentity,
-    key?: string,
-    epoch = this.#epoch,
+    key: string | undefined,
+    scan: Scan,
   ): void {
-    if (this.#closed || epoch !== this.#epoch) return
-    if (treeVerificationFailure(error) === 'integrity') {
-      // Commit confirmed structure evidence before further scans can fail, under live controls.
-      this.#state()
-      if (epoch === this.#epoch) this.#fault(key, directory, identity)
-    } else if (key) this.#drop(key)
-    else this.invalidate()
+    // A negative is not a stale positive: preserve it before any refresh or epoch test.
+    if (treeVerificationFailure(error) === 'integrity') this.#fault(key, directory, identity, scan)
+    else if (!this.#closed && scan.epoch === this.#epoch) {
+      if (key) this.#drop(key)
+      else this.invalidate()
+    }
   }
-  #fault(key: string | undefined, directory: string, identity: ByteIdentity): void {
+  #fault(key: string | undefined, directory: string, identity: ByteIdentity, scan: Scan): void {
     // Retain both logical and physical refusal keys: resolving an illegal root itself may fail.
     // Different physical copies still have independent byte evidence.
-    const logical = this.#cacheKey(resolve(directory), identity)
+    const logical = this.#cacheKey(resolve(directory), identity, scan.binding)
     if (this.#sealed.has(logical) || (key && this.#sealed.has(key))) return
     this.#sealed.add(logical)
     if (key) this.#sealed.add(key)
     try {
       this.#sealed.add(
-        this.#cacheKey(join(nativeRealpathSync(dirname(directory)), basename(directory)), identity),
+        this.#cacheKey(
+          join(nativeRealpathSync(dirname(directory)), basename(directory)),
+          identity,
+          scan.binding,
+        ),
       )
     } catch {
       /* The logical key and any prior observation still fence an unavailable parent. */
     }
     for (const [observedKey, record] of this.#records)
-      if (resolve(record.directory) === resolve(directory)) this.#sealed.add(observedKey)
+      if (record.binding === scan.binding && resolve(record.directory) === resolve(directory))
+        this.#sealed.add(observedKey)
     this.invalidate()
+    try {
+      this.#state()
+    } catch {
+      /* A refresh failure cannot erase a confirmed negative or prevent its notification. */
+    }
     // Notification cannot hold up the byte read, profile lock, or a publication read ticket.
     const failure = {
       directory,
       identity: storedIdentity(identity),
-      binding: this.#binding,
-      lockBinding: this.#lockBinding,
+      binding: scan.binding,
+      lockBinding: scan.lockBinding,
     }
     const notified = new Promise<void>((resolve) =>
       globalThis.setImmediate(() => {
         try {
-          this.options.onMismatch?.(failure)
+          let binding: string | undefined
+          try {
+            binding = packageByteBinding(this.options.profileDir)
+          } catch {
+            /* Keep the negative; the existing revocation CAS decides an unavailable grant. */
+          }
+          if (binding === undefined || binding === failure.binding) this.options.onMismatch?.(failure)
         } finally {
           resolve()
         }
@@ -323,23 +345,29 @@ export class PackageByteVerification {
   }
   readSync(directory: string, identity: ByteIdentity): string {
     const key = this.#key(directory, identity),
-      epoch = this.#epoch
+      scan = this.#scan()
     try {
       return key === undefined
         ? hashDirectory(directory, { exclude: [] })
-        : this.#readSync(directory, identity, key, epoch)
+        : this.#readSync(directory, identity, key, scan)
     } catch (error) {
-      if (key !== undefined) this.#failed(error, directory, identity, key, epoch)
+      if (key !== undefined) this.#failed(error, directory, identity, key, scan)
       throw error
     }
   }
-  #readSync(directory: string, identity: ByteIdentity, key: string, epoch: number): string {
+  #readSync(directory: string, identity: ByteIdentity, key: string, scan: Scan): string {
+    const { epoch } = scan
     let violation: unknown
     if (this.#admitted(directory, identity)) return identity.treeIntegrity!
-    if (!supportsTreeIdentity(directory)) {
+    if (this.#closed || !supportsTreeIdentity(directory)) {
       const actual = hashDirectory(directory, { exclude: [] })
+      if (actual !== identity.treeIntegrity) {
+        this.#fault(key, directory, identity, scan)
+        if (scan.binding !== this.#binding || this.#cacheKey(nativeRealpathSync(directory), identity) !== key)
+          fail()
+        return actual
+      }
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) fail()
-      if (actual !== identity.treeIntegrity) this.#fault(key, directory, identity)
       return actual
     }
     const prior = this.#records.get(key)
@@ -354,7 +382,7 @@ export class PackageByteVerification {
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
         if (treeVerificationFailure(error) === 'integrity') {
-          this.#failed(error, directory, identity, key, epoch)
+          this.#failed(error, directory, identity, key, scan)
           violation = error
         }
       }
@@ -367,17 +395,19 @@ export class PackageByteVerification {
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
         if (treeVerificationFailure(error) === 'integrity') {
-          this.#failed(error, directory, identity, key, epoch)
+          this.#failed(error, directory, identity, key, scan)
           violation = error
         }
       }
       const actual = hashDirectory(directory, { exclude: [] })
-      if (this.#key(directory, identity) !== key || epoch !== this.#epoch) fail()
-      if (violation) throw violation
       if (actual !== identity.treeIntegrity) {
-        this.#fault(key, directory, identity)
+        this.#fault(key, directory, identity, scan)
+        if (scan.binding !== this.#binding || this.#cacheKey(nativeRealpathSync(directory), identity) !== key)
+          fail()
         return actual
       }
+      if (this.#key(directory, identity) !== key || epoch !== this.#epoch) fail()
+      if (violation) throw violation
       const after = treeIdentitySync(directory)
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) fail()
       if (before && sameTreeIdentity(before, after)) {
@@ -399,11 +429,11 @@ export class PackageByteVerification {
     const attempt = (remaining: number): Promise<string> => {
       const key = this.#key(directory, identity)
       if (key === undefined) return hashDirectoryAsync(directory, { exclude: [] })
-      if (this.#admitted(directory, identity)) return Promise.resolve(identity.treeIntegrity!)
       const prior = this.#pending.get(key)
       if (prior) return prior
-      const epoch = this.#epoch
-      const result = this.#read(directory, identity, key, epoch)
+      const scan = this.#scan(),
+        { epoch } = scan
+      const result = this.#read(directory, identity, key, scan)
         .catch((error) => {
           // A full-only scope can invalidate an unrelated pending read before taking the profile
           // lock. Discard that success; only the same live binding may obtain a new proof. Joining
@@ -425,7 +455,7 @@ export class PackageByteVerification {
               },
             )
           }
-          this.#failed(error, directory, identity, key, epoch)
+          this.#failed(error, directory, identity, key, scan)
           throw error
         })
         .finally(() => {
@@ -438,11 +468,21 @@ export class PackageByteVerification {
     }
     return attempt(2)
   }
-  async #read(directory: string, identity: ByteIdentity, key: string, epoch: number): Promise<string> {
-    if (!supportsTreeIdentity(directory)) {
-      const actual = await hashDirectoryAsync(directory, { exclude: [], signal: this.#abort.signal })
+  async #read(directory: string, identity: ByteIdentity, key: string, scan: Scan): Promise<string> {
+    const { epoch } = scan
+    if (this.#admitted(directory, identity)) return identity.treeIntegrity!
+    if (this.#closed || !supportsTreeIdentity(directory)) {
+      const actual = await hashDirectoryAsync(directory, {
+        exclude: [],
+        ...(this.#closed ? {} : { signal: this.#abort.signal }),
+      })
+      if (actual !== identity.treeIntegrity) {
+        this.#fault(key, directory, identity, scan)
+        if (scan.binding !== this.#binding || this.#cacheKey(nativeRealpathSync(directory), identity) !== key)
+          fail()
+        return actual
+      }
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) return fail()
-      if (actual !== identity.treeIntegrity) this.#fault(key, directory, identity)
       return actual
     }
     let violation: unknown
@@ -458,7 +498,7 @@ export class PackageByteVerification {
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
         if (treeVerificationFailure(error) === 'integrity') {
-          this.#failed(error, directory, identity, key, epoch)
+          this.#failed(error, directory, identity, key, scan)
           violation = error
         }
       }
@@ -471,17 +511,19 @@ export class PackageByteVerification {
       } catch (error) {
         if (treeVerificationFailure(error) === 'unavailable') throw error
         if (treeVerificationFailure(error) === 'integrity') {
-          this.#failed(error, directory, identity, key, epoch)
+          this.#failed(error, directory, identity, key, scan)
           violation = error
         }
       }
       const actual = await hashDirectoryAsync(directory, { exclude: [], signal: this.#abort.signal })
-      if (this.#key(directory, identity) !== key || epoch !== this.#epoch) return fail()
-      if (violation) throw violation
       if (actual !== identity.treeIntegrity) {
-        this.#fault(key, directory, identity)
+        this.#fault(key, directory, identity, scan)
+        if (scan.binding !== this.#binding || this.#cacheKey(nativeRealpathSync(directory), identity) !== key)
+          fail()
         return actual
       }
+      if (this.#key(directory, identity) !== key || epoch !== this.#epoch) return fail()
+      if (violation) throw violation
       const after = await treeIdentity(directory)
       if (this.#key(directory, identity) !== key || epoch !== this.#epoch) return fail()
       if (before && sameTreeIdentity(before, after)) {
@@ -557,7 +599,8 @@ export class PackageByteVerification {
       this.invalidate()
       throw error
     }
-    const epoch = this.#epoch
+    const scan = this.#scan(),
+      { epoch } = scan
     let nextRead = this.#now() - 62.5
     const onChunk = async (bytes: number) => {
       nextRead = Math.max(nextRead, this.#now() - 62.5) + (bytes / (16 * 1024 * 1024)) * 1000
@@ -575,11 +618,11 @@ export class PackageByteVerification {
           signal: this.#abort.signal,
           onChunk,
         })
-        if (this.#key(record.directory, record.identity) !== key || epoch !== this.#epoch) return
         if (actual !== record.identity.treeIntegrity) {
-          this.#fault(key, record.directory, record.identity)
+          this.#fault(key, record.directory, record.identity, scan)
           return
         }
+        if (this.#key(record.directory, record.identity) !== key || epoch !== this.#epoch) return
         const after = await treeIdentity(record.directory)
         if (
           epoch === this.#epoch &&
@@ -590,7 +633,7 @@ export class PackageByteVerification {
           this.#save(key, { ...record, tree: after, verifiedAt: this.#now() })
         else this.#drop(key)
       } catch (error) {
-        this.#failed(error, record.directory, record.identity, key, epoch)
+        this.#failed(error, record.directory, record.identity, key, scan)
       }
     }
   }
@@ -600,7 +643,8 @@ export class PackageByteVerification {
     this.#abort.abort()
     this.invalidate()
     await this.#background?.catch(() => undefined)
-    await Promise.allSettled([...this.#active, ...this.#notifications])
+    await Promise.allSettled([...this.#active])
+    await Promise.allSettled([...this.#notifications])
   }
 }
 

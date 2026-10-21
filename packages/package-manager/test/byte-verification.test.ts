@@ -20,6 +20,7 @@ import { setImmediate } from 'node:timers/promises'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PackageByteVerification, packageByteBinding } from '../src/byte-verification.js'
 import { collectRead, collectReadAsync, directoryDigestSteps } from '../src/cooperative-read.js'
+import { PackageError } from '../src/errors.js'
 import { loadPackagePlugins, preflightPackagePluginsAsync } from '../src/package-plugin-loader.js'
 import * as sources from '../src/sources.js'
 import * as trees from '../src/tree-identity.js'
@@ -416,6 +417,8 @@ it.each(['reset', 'grant-aba'])(
       await expect(read(authority, expected)).rejects.toThrow()
       await authority.close()
       writeFileSync(file, 'GOOD')
+      await expect(read(authority, expected)).rejects.toThrow()
+      writeFileSync(join(root, 'agnes-lock.json'), 'new control decision after close')
       expect(await read(authority, expected)).toBe(expected.treeIntegrity)
     } finally {
       releases[0]!()
@@ -1118,3 +1121,144 @@ it.each(['success', 'reject', 'wrong-binding', 'throwing-binding'] as const)(
     expect(Object.isFrozen(admission.trees)).toBe(true)
   },
 )
+
+it.each(
+  (['sync', 'async'] as const).flatMap((mode) =>
+    (
+      ['control-EIO', 'control-ESTALE', 'wall-back', 'mono-back', 'positive-reset', 'new-binding'] as const
+    ).map((transition) => [mode, transition] as const),
+  ),
+)(
+  'recheck2: confirmed %s structure evidence survives %s at the new control refresh',
+  async (mode, transition) => {
+    const control = join(root, 'agnes-lock.json')
+    writeFileSync(control, 'grant A')
+    const expected = identity(),
+      fault = vi.fn(),
+      authority = owner({ onMismatch: fault })
+    await read(authority, expected)
+    rmSync(file)
+    symlinkSync(join(directory, 'z.mjs'), file)
+    const leaf = join(realpathSync(directory), 'a.mjs')
+    const originalSync = syncFs.lstatSync,
+      originalAsync = fs.lstat,
+      originalControl = syncFs.readFileSync
+    let confirmed = false,
+      transitioned = false
+    const observe = () => {
+      confirmed = true
+      if (transitioned || transition.startsWith('control-')) return
+      transitioned = true
+      if (transition === 'wall-back') wall -= 1
+      if (transition === 'mono-back') now -= 1
+      if (transition === 'positive-reset') authority.invalidate()
+      if (transition === 'new-binding') writeFileSync(control, 'grant B')
+    }
+    const sync = vi.spyOn(syncFs, 'lstatSync').mockImplementation((...args) => {
+      const stat = originalSync(...args)
+      if (mode === 'sync' && String(args[0]) === leaf && stat?.isSymbolicLink()) observe()
+      return stat
+    })
+    const async = vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+      const stat = await originalAsync(...args)
+      if (mode === 'async' && String(args[0]) === leaf && stat.isSymbolicLink()) observe()
+      return stat
+    })
+    const controls = vi.spyOn(syncFs, 'readFileSync').mockImplementation((...args) => {
+      if (confirmed && !transitioned && transition.startsWith('control-') && String(args[0]) === control) {
+        transitioned = true
+        throw Object.assign(new Error('live controls unavailable after structure evidence'), {
+          code: transition === 'control-EIO' ? 'EIO' : 'ESTALE',
+        })
+      }
+      return originalControl(...args)
+    })
+    const use = () =>
+      mode === 'sync'
+        ? Promise.resolve().then(() => authority.readSync(directory, expected))
+        : read(authority, expected)
+    await expect(use()).rejects.toThrow()
+    sync.mockRestore()
+    async.mockRestore()
+    controls.mockRestore()
+    await setImmediate()
+    rmSync(file)
+    writeFileSync(file, 'GOOD')
+    const repaired = await use().then(
+      () => 'accepted',
+      () => 'refused',
+    )
+    expect({ confirmed, transitioned, notified: fault.mock.calls.length > 0, repaired }).toEqual({
+      confirmed: true,
+      transitioned: true,
+      notified: transition !== 'new-binding',
+      repaired: transition === 'new-binding' ? 'accepted' : 'refused',
+    })
+  },
+)
+
+it.each(['raw', 'wrapped'] as const)(
+  'recheck2: %s ESTALE does not enter the bounded retry even after epoch invalidation',
+  async (mode) => {
+    const expected = identity(),
+      fault = vi.fn(),
+      authority = owner({ onMismatch: fault })
+    const stale = Object.assign(new Error('raw stale handle'), { code: 'ESTALE' })
+    const error =
+      mode === 'raw'
+        ? stale
+        : new PackageError('E_DEP_MISSING', 'wrapped failure', {
+            detail: { reason: 'tree-changed' },
+            cause: stale,
+          })
+    const hash = vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(async () => {
+      authority.invalidate()
+      throw error
+    })
+    await expect(read(authority, expected)).rejects.toBe(error)
+    expect(hash).toHaveBeenCalledTimes(1)
+    await setImmediate()
+    expect(fault).not.toHaveBeenCalled()
+    expect(await read(authority, expected)).toBe(expected.treeIntegrity)
+    expect(hash).toHaveBeenCalledTimes(2)
+  },
+)
+
+it('recheck2: an immediate structural seal fences an older pending full success', async () => {
+  const expected = identity(),
+    fault = vi.fn(),
+    authority = owner({ onMismatch: fault })
+  const original = sources.hashDirectoryAsync
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(async (...args) => {
+    const actual = await original(...args)
+    entered()
+    await gate
+    return actual
+  })
+  const pending = read(authority, expected).then(
+    () => 'accepted',
+    () => 'refused',
+  )
+  try {
+    await ready
+    rmSync(file)
+    symlinkSync(join(directory, 'z.mjs'), file)
+    expect(() => authority.readSync(directory, expected)).toThrow()
+    release()
+    expect(await pending).toBe('refused')
+    await setImmediate()
+    expect(fault).toHaveBeenCalledOnce()
+    rmSync(file)
+    writeFileSync(file, 'GOOD')
+    await expect(read(authority, expected)).rejects.toThrow()
+  } finally {
+    release()
+  }
+})
