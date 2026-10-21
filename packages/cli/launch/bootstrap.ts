@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+import { lstatSync } from 'node:fs'
+import { constants, enableCompileCache } from 'node:module'
+import { homedir } from 'node:os'
+import { isAbsolute, join, parse, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
+
+/** build-local sets this to the large bundle each tiny local entry loads. */
+declare const AGNES_BOOTSTRAP_MAIN: string | undefined
+/** build-local sets this to the protocol's AGH_DIR, so this entry never loads the protocol package. */
+declare const AGNES_BOOTSTRAP_HOME_DIR: string
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value !== undefined && value.trim() !== '' ? value : undefined
+}
+
+/**
+ * The home `agnesHome` selects, or undefined where it would refuse. Kept local because the shared
+ * resolver imports the protocol package, whose load time is what this entry exists to cache; the
+ * equality is pinned by test. It never warns: the real entry reports a deprecated or invalid home.
+ */
+export function compileCacheHome(
+  env: Readonly<Record<string, string | undefined>>,
+  homeDir?: string,
+): string | undefined {
+  const explicit = nonEmpty(env.AGH_HOME) ?? nonEmpty(env.AGNES_HOME)
+  const selected = explicit ?? nonEmpty(env.HOME) ?? homedir()
+  if (sep === '\\' && (!isAbsolute(selected) || parse(selected).root.length <= 1)) return undefined
+  if (explicit !== undefined && !isAbsolute(explicit)) return undefined
+  return explicit ?? join(selected, homeDir ?? AGNES_BOOTSTRAP_HOME_DIR)
+}
+
+/**
+ * Use `<home>/cache/compile` only when it is a private directory of this user, so nobody else can
+ * plant compiled code. `<home>/cache` is never created here: an uninitialized home must stay empty,
+ * and the first initialized start enables the cache. Every failure just starts without the cache.
+ */
+export function enableLocalCompileCache(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  enable: (directory: string) => { status: number } = enableCompileCache,
+): string | undefined {
+  try {
+    const home = compileCacheHome(env)
+    if (home === undefined) return undefined
+    const directory = join(home, 'cache', 'compile')
+    try {
+      createPrivateDirectorySync(directory)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return undefined
+    }
+    if (!lstatSync(directory).isDirectory() || !hasPrivateDaclSync(directory)) return undefined
+    const { status } = enable(directory)
+    return status === constants.compileCacheStatus.ENABLED ||
+      status === constants.compileCacheStatus.ALREADY_ENABLED
+      ? directory
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+if (typeof AGNES_BOOTSTRAP_MAIN === 'string') {
+  enableLocalCompileCache()
+  const main = fileURLToPath(new URL(AGNES_BOOTSTRAP_MAIN, import.meta.url))
+  // The bundles keep their own main-module guards, which compare argv[1] with their own file.
+  process.argv[1] = main
+  await import(pathToFileURL(main).href)
+}

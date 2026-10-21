@@ -10,6 +10,7 @@ import {
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '@agnes/package-manager'
+import { AGH_DIR } from '@agnes/protocol'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { buildPresentations, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
@@ -407,14 +408,23 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
 
   // This is the normal package executable. SEA keeps its own build path and embedded-manifest
   // defines; sharing the source entry here keeps command routing and trusted loader behavior equal.
-  const backendBuilds = [await bundle(join(cliRoot, 'src', 'bin.ts'), join(out, 'agnes.mjs'), defines)]
+  const backendBuilds = [await bundle(join(cliRoot, 'src', 'bin.ts'), join(out, 'agnes-main.mjs'), defines)]
   backendBuilds.push(
-    await bundle(join(cliRoot, 'launch', 'daemon-entry.ts'), join(out, 'daemon.mjs'), defines),
+    await bundle(join(cliRoot, 'launch', 'daemon-entry.ts'), join(out, 'daemon-main.mjs'), defines),
   )
   const workerSource = existsSync(join(cliRoot, 'launch', 'worker-entry.ts'))
     ? join(cliRoot, 'launch', 'worker-entry.ts')
     : join(repoPackages, 'daemon', 'src', 'worker', 'main.ts')
-  backendBuilds.push(await bundle(workerSource, join(out, 'worker.mjs'), defines))
+  backendBuilds.push(await bundle(workerSource, join(out, 'worker-main.mjs'), defines))
+  // The public entry names are tiny bootstraps: a module cannot use a compile cache enabled while
+  // it is already loading, so each enables it before importing its large bundle.
+  for (const name of ['agnes', 'daemon', 'worker'])
+    backendBuilds.push(
+      await bundle(join(cliRoot, 'launch', 'bootstrap.ts'), join(out, `${name}.mjs`), {
+        AGNES_BOOTSTRAP_MAIN: JSON.stringify(`./${name}-main.mjs`),
+        AGNES_BOOTSTRAP_HOME_DIR: JSON.stringify(AGH_DIR),
+      }),
+    )
   await collectThirdPartyNotices(cliRoot, out, backendBuilds)
   await copyComputerUseNotice(out)
   await copyJevLoopNotice(out)
