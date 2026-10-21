@@ -1,11 +1,30 @@
 @import "../layers.css";
 
 @layer ui {
-  [data-agnes-conversation-messages] .delegated-role-attribution {
-    margin: var(--s4) 0 0 var(--s24);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
+  [data-agnes-conversation-messages] .delegation-card,
+  [data-agnes-conversation-messages] .delegation-notice {
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-card);
+    font-size: var(--font-size-sm);
+  }
+  [data-agnes-conversation-messages] .delegation-card-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+  }
+  :where([data-agnes-conversation-messages] .delegation-card) p {
+    margin: var(--s8) 0;
     overflow-wrap: anywhere;
+  }
+  [data-agnes-conversation-messages] .delegation-card pre,
+  .delegation-subtask pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 20rem;
+    overflow: auto;
   }
 
   [data-agnes-conversation-messages] .approval-pending-link {

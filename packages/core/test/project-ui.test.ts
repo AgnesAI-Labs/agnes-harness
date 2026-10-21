@@ -1503,11 +1503,23 @@ it('reconstructs role attribution from persisted delegation results', async () =
       toolUseId: 'spawn',
       isError: false,
       content: [{ type: 'text', text: 'started' }],
-      structured: { childKey: 'child', role: delegatedRole },
+      structured: { childKey: 'child', role: delegatedRole, task: 'Read the evidence', status: 'running' },
     }),
   ]
   const projected = await projectUI(JSON.parse(JSON.stringify(events)), { sessionKey: 'roles' })
   expect(kind(projected.nodes, 'tool')[0]?.delegatedRole).toEqual(delegatedRole)
+  expect(kind(projected.nodes, 'tool')[0]?.delegatedTask).toEqual({
+    childKey: 'child',
+    task: 'Read the evidence',
+    status: 'running',
+  })
+  const legacy = structuredClone(events)
+  const legacyResult = legacy[1]
+  if (!legacyResult) throw new Error('Missing fixture result')
+  ;(legacyResult.data as { structured: unknown }).structured = { childKey: 'child', role: delegatedRole }
+  expect(
+    kind((await projectUI(legacy, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedTask,
+  ).toMatchObject({ childKey: 'child', status: 'running' })
   const failed = structuredClone(events)
   ;(failed[1]!.data as { isError: boolean }).isError = true
   expect(

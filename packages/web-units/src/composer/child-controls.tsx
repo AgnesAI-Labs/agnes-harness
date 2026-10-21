@@ -26,7 +26,7 @@ export function ChildControlTree({
     )
   }
   return (
-    <Disclosure data-testid="child-control-tree" summary={t('composer.child.title')}>
+    <Disclosure variant="plain" data-testid="child-control-tree" summary={t('composer.child.title')}>
       <ul>{nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child))}</ul>
     </Disclosure>
   )
