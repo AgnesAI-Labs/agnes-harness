@@ -84,16 +84,14 @@ test('v3 archive filter restores the same session and its conversation', async (
   await expect
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(true)
-  await page.locator('#session-filter').click()
-  await page.getByTestId('session-filter-archived').click()
+  await page.getByTestId('sidebar-view-row').click()
   const row = page.getByTestId('archived-sessions').locator(`[data-session="${id}"]`)
   await expect(row).toBeVisible()
   await row.getByTestId('archived-restore').click()
   await expect
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(false)
-  await page.locator('#session-filter').click()
-  await page.getByTestId('session-filter-unarchived').click()
+  await page.getByTestId('sidebar-view-row').click()
   await page.locator(`.session[data-session="${id}"]`).click()
   await expect(page.getByTestId('conversation-turn')).toContainText('REG5_ARCHIVE_CONTENT')
 })

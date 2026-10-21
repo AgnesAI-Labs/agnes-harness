@@ -590,7 +590,7 @@ describe('rendered sidebar region', () => {
     expect(sidebar.inert).toBe(true)
   })
 
-  it('switches the list to archived sessions and restores one from there', async () => {
+  it('switches the list to archived sessions from the shared row and restores one', async () => {
     const archived = { ...session('old', '/workspace'), archived: true }
     const restore = vi.fn().mockResolvedValue(undefined)
     archivedSessions.bind({
@@ -613,17 +613,119 @@ describe('rendered sidebar region', () => {
       const sidebar = document.querySelector('aside.sidebar')
       expect(sidebar?.querySelector('[data-session="old"]')).toBeNull()
       expect(sidebar?.querySelector('#session-search')).not.toBeNull()
-      flushSync(() => archivedSessions.show('archived'))
+      // 旧的筛选图标菜单已经删除，进入归档只剩列表顶部这一行。
+      expect(sidebar?.querySelector('#session-filter')).toBeNull()
+      const viewRow = sidebar?.querySelector<HTMLButtonElement>('[data-testid="sidebar-view-row"]')
+      expect(viewRow?.getAttribute('aria-label')).toBe('View archived sessions')
+      expect(viewRow?.textContent).toBe('Archived')
+      // 切换行是列表容器的第一个子项；切换模式时同一个节点留在原位。
+      expect(document.querySelector('#sessions')?.firstElementChild).toBe(viewRow)
+
+      viewRow?.click()
+      await vi.waitFor(() => expect(viewRow?.getAttribute('aria-label')).toBe('Back to workspaces'))
+      expect(viewRow?.textContent).toBe('Workspaces')
+      expect(document.querySelector('#sessions')?.firstElementChild).toBe(viewRow)
       await vi.waitFor(() =>
-        expect(sidebar?.querySelector('.archived-session[data-session="old"]')).not.toBeNull(),
+        expect(sidebar?.querySelector('.sidebar-archive-row[data-session="old"]')).not.toBeNull(),
       )
       expect(sidebar?.querySelector('.workspace-group')).toBeNull()
-      expect(sidebar?.querySelector('#session-filter')?.getAttribute('data-filter')).toBe('archived')
       sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
-      await vi.waitFor(() => expect(sidebar?.querySelector('.archived-session')).toBeNull())
+      await vi.waitFor(() => expect(sidebar?.querySelector('.sidebar-archive-row')).toBeNull())
       expect(restore).toHaveBeenCalledWith('old')
-      flushSync(() => archivedSessions.show('unarchived'))
-      expect(sidebar?.querySelector('.workspace-group')).not.toBeNull()
+
+      viewRow?.click()
+      await vi.waitFor(() => expect(sidebar?.querySelector('.workspace-group')).not.toBeNull())
+      expect(viewRow?.getAttribute('aria-label')).toBe('View archived sessions')
+    } finally {
+      archivedSessions.show('unarchived')
+    }
+  })
+
+  it('opens an archived session from its row and marks it current without leaving the filter', async () => {
+    const archived = { ...session('old', '/workspace'), archived: true }
+    const openSession = vi.fn()
+    let finish!: (page: { items: PageSessionMeta['items'] }) => void
+    archivedSessions.bind({
+      list: () =>
+        new Promise<{ items: PageSessionMeta['items'] }>((resolve) => {
+          finish = resolve
+        }),
+      restore: vi.fn(),
+      changed: async () => undefined,
+    })
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [archived],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            currentId: 'old',
+            sessionPending: false,
+            newDisabled: false,
+          },
+          actions: { openSession },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      sidebar?.querySelector<HTMLButtonElement>('[data-testid="sidebar-view-row"]')?.click()
+      // 首次读取尚未返回时用一行状态文案占位，避免列表空白。
+      await vi.waitFor(() =>
+        expect(sidebar?.querySelector('.sidebar-archive-loading')?.textContent).toBe(
+          'Reading archived sessions…',
+        ),
+      )
+      finish({ items: [archived] })
+      const row = await vi.waitFor(() => {
+        const found = sidebar?.querySelector<HTMLElement>('.sidebar-archive-row[data-session="old"]')
+        if (!found) throw new Error('the archived row has not rendered yet')
+        return found
+      })
+      expect(row.getAttribute('data-active')).toBe('true')
+      const open = row.querySelector<HTMLButtonElement>('.sidebar-archive-open')
+      expect(open?.getAttribute('aria-current')).toBe('page')
+      open?.click()
+      expect(openSession).toHaveBeenCalledWith('old')
+      // 打开会话不退出归档筛选：返回工作区的入口仍在这个位置。
+      expect(sidebar?.querySelector('[data-testid="sidebar-view-row"]')?.getAttribute('aria-label')).toBe(
+        'Back to workspaces',
+      )
+    } finally {
+      archivedSessions.show('unarchived')
+    }
+  })
+
+  it('keeps the row and writes no inline error when restoring fails', async () => {
+    const archived = { ...session('old', '/workspace'), archived: true }
+    const error = vi.fn()
+    archivedSessions.bind({
+      list: async () => ({ items: [archived] }),
+      restore: vi.fn().mockRejectedValue(new Error('daemon offline')),
+      changed: async () => undefined,
+      error,
+    })
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [archived],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            sessionPending: false,
+            newDisabled: false,
+          },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      sidebar?.querySelector<HTMLButtonElement>('[data-testid="sidebar-view-row"]')?.click()
+      await vi.waitFor(() =>
+        expect(sidebar?.querySelector('.sidebar-archive-row[data-session="old"]')).not.toBeNull(),
+      )
+      sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
+      await vi.waitFor(() => expect(error).toHaveBeenCalled())
+      // 恢复失败只走应用通知：行保留，列表里不出现内联红字与重试。
+      expect(sidebar?.querySelector('.sidebar-archive-row[data-session="old"]')).not.toBeNull()
+      expect(sidebar?.querySelector('.sidebar-archive [role="alert"]')).toBeNull()
     } finally {
       archivedSessions.show('unarchived')
     }

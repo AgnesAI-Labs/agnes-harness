@@ -270,9 +270,9 @@ export async function section(page: Page, id: string) {
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
       await sidebar(page)
-      await page.locator('#session-filter').click()
-      await page.getByTestId('session-filter-archived').click()
-      await expect(page.locator('#session-filter')).toHaveAttribute('data-filter', 'archived')
+      if (!(await page.getByTestId('archived-sessions').isVisible()))
+        await page.getByTestId('sidebar-view-row').click()
+      await expect(page.getByTestId('archived-sessions')).toBeVisible()
     }
     return
   }
@@ -377,9 +377,9 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
     if (id) {
-      if ((await page.locator('#session-filter').getAttribute('data-filter')) === 'archived') {
-        await page.locator('#session-filter').click()
-        await page.getByTestId('session-filter-unarchived').click()
+      if (await page.getByTestId('archived-sessions').isVisible()) {
+        await page.getByTestId('sidebar-view-row').click()
+        await expect(page.getByTestId('archived-sessions')).toBeHidden()
       }
       await page.locator(`.session[data-session="${id}"]`).click()
     } else await page.locator('#new').click()

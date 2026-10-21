@@ -190,7 +190,6 @@
   .settings-shell .config-workspace,
   #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body,
   .settings-shell .settings-content .agnes-settings-subpage-body,
-  .settings-shell .archived-pane-body,
   .settings-shell #plugin-list,
   .settings-shell #resource-list {
     flex: 1 1 auto;
@@ -217,7 +216,6 @@
   .settings-shell .config-workspace > *,
   #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body > *,
   .settings-shell .settings-content .agnes-settings-subpage-body > *,
-  .settings-shell .archived-pane-body > *,
   .settings-shell #plugin-list > *,
   .settings-shell #resource-list > * {
     box-sizing: border-box;

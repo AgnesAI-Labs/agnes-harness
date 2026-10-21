@@ -39,9 +39,12 @@ it('restores a session, drops its row and refreshes the unarchived list', async 
   expect(sessions.getSnapshot().error).toBeUndefined()
 })
 
-it('keeps the row and says why when restoring or reading fails', async () => {
+it('keeps a restore failure out of the list state and reports it to the app notice', async () => {
   const sessions = createArchivedSessions()
-  const list = vi.fn().mockResolvedValueOnce({ items: [row('a', true)] })
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [row('a', true)] })
+    .mockRejectedValueOnce(new Error('list failed'))
   const error = vi.fn()
   sessions.bind({
     list,
@@ -49,17 +52,22 @@ it('keeps the row and says why when restoring or reading fails', async () => {
     changed: vi.fn(),
     error,
   })
-  await sessions.reload()
+  sessions.show('archived')
+  await vi.waitFor(() => expect(sessions.getSnapshot().status).toBe('idle'))
   await sessions.restore('a')
-  expect(sessions.getSnapshot()).toMatchObject({
-    rows: [{ sessionId: 'a' }],
-    restoring: [],
-    error: 'daemon offline',
-  })
+  // 恢复失败的反馈走应用通知；行保留，列表状态里不写内联错误。
+  expect(sessions.getSnapshot()).toMatchObject({ rows: [{ sessionId: 'a' }], restoring: [] })
+  expect(sessions.getSnapshot().error).toBeUndefined()
   expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'daemon offline' }))
-  list.mockRejectedValueOnce(new Error('list failed'))
+
+  // 只有读取失败才写 error 与 status。
   await sessions.reload()
   expect(sessions.getSnapshot()).toMatchObject({ status: 'error', error: 'list failed' })
+
+  // 离开归档视图时错误随之清掉，回到工作区列表不会残留一行红字。
+  sessions.show('unarchived')
+  expect(sessions.getSnapshot()).toMatchObject({ filter: 'unarchived', status: 'idle' })
+  expect(sessions.getSnapshot().error).toBeUndefined()
 })
 
 it('does not resurrect a restored session from an older in-flight archive listing', async () => {

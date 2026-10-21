@@ -6,7 +6,7 @@ export type ArchivedSessionsView = Readonly<{
   filter: SessionFilter
   rows: readonly Row[]
   status: 'idle' | 'loading' | 'error'
-  /** What went wrong reading or restoring, in the server's own words. */
+  /** What went wrong reading the list, in the server's own words. */
   error?: string
   restoring: readonly string[]
 }>
@@ -73,6 +73,9 @@ export function createArchivedSessions() {
       if (filter === 'archived') void reload()
       else {
         epoch += 1
+        // Leaving the view drops a read error with it: the list it belongs to is no longer shown.
+        const { error: _cleared, ...rest } = view
+        view = rest
         set({ status: 'idle' })
       }
     },
@@ -80,17 +83,17 @@ export function createArchivedSessions() {
     async restore(sessionId: string): Promise<void> {
       if (!api || view.restoring.includes(sessionId)) return
       const source = api
-      const { error: _cleared, ...rest } = view
-      view = rest
       set({ restoring: [...view.restoring, sessionId] })
       try {
         await source.restore(sessionId)
         // A list begun before the mutation may still contain the restored session.
         epoch += 1
+        const { error: _cleared, ...rest } = view
+        view = rest
         set({ rows: view.rows.filter((row) => row.sessionId !== sessionId), status: 'idle' })
         await source.changed()
       } catch (failure) {
-        set({ error: message(failure) })
+        // The failure belongs to the row's own action: the row stays and the app notice says why.
         source.error?.(failure)
       } finally {
         set({ restoring: view.restoring.filter((id) => id !== sessionId) })
@@ -99,5 +102,5 @@ export function createArchivedSessions() {
   }
 }
 
-/** One per page: the sidebar heading, its filter menu and the session list read the same view. */
+/** One per page: the sidebar heading, its archived row and the archived list read the same view. */
 export const archivedSessions = createArchivedSessions()

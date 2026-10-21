@@ -1,15 +1,6 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import {
-  Button,
-  EmptyState,
-  Icon,
-  IconButton,
-  PushCrumbs,
-  renderRegion,
-  SettingsInput,
-  shortenHome,
-} from '@agnes/web-ui'
+import { Button, EmptyState, Icon, IconButton, renderRegion, SettingsInput, shortenHome } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import {
   type SidebarNavigationOptions,
@@ -258,7 +249,32 @@ export function shownSessions<T extends { sessionId: string }>(
   return { shown, hidden: sorted.length - shown.length }
 }
 
-/** Archived sessions in one flat list: find one, put it back among the unarchived sessions. */
+/**
+ * The row both list modes share: 「已归档 ›」 opens the archived filter, `‹ 工作区` leaves it.
+ * Entering and leaving use the same spot, so the list never moves under the pointer.
+ */
+function ArchiveViewRow({ archived, t }: { archived: boolean; t: Translate }) {
+  return (
+    <button
+      type="button"
+      className="sidebar-view-row"
+      data-testid="sidebar-view-row"
+      aria-label={t(archived ? 'home.filter.backToWorkspaces' : 'home.filter.openArchived')}
+      onClick={() => archivedSessions.show(archived ? 'unarchived' : 'archived')}
+    >
+      <Icon
+        name={archived ? 'chevron-left' : 'archive'}
+        className={archived ? 'sidebar-view-row-icon sidebar-view-row-back' : 'sidebar-view-row-icon'}
+      />
+      <span className="sidebar-view-row-label">
+        {t(archived ? 'sidebar.sectionHeading' : 'home.filter.archived')}
+      </span>
+      {!archived && <Icon name="chevron-right" className="sidebar-view-row-icon sidebar-view-row-end" />}
+    </button>
+  )
+}
+
+/** Archived sessions in one flat list: open one in place, or put it back among the live sessions. */
 function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
   const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
   const [query, setQuery] = useState('')
@@ -271,20 +287,15 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
   const rows = sortSessionsByRecency(
     view.rows.filter((row) => `${row.title ?? ''} ${row.cwd ?? ''}`.toLocaleLowerCase().includes(needle)),
   )
+  // The first read has nothing to show yet: one line stands in for the list until rows arrive.
+  const firstRead = view.status === 'loading' && view.rows.length === 0
   return (
     <section
-      className="archived-sessions"
+      className="sidebar-archive"
       data-testid="archived-sessions"
       aria-busy={view.status === 'loading'}
     >
-      {/* The archived list is a view of the sessions list; the breadcrumb leads back to it. */}
-      <PushCrumbs
-        title={t('home.filter.archived')}
-        crumbs={[t('sidebar.sectionHeading')]}
-        backTestId="archived-back"
-        onBack={() => archivedSessions.show('unarchived')}
-      />
-      <div className="archived-search">
+      <div className="sidebar-archive-search">
         <Icon name="search" />
         <SettingsInput
           type="search"
@@ -296,17 +307,20 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
-      {view.error && (
-        <p className="archived-sessions-error" role="alert">
-          {view.error}{' '}
-          {view.status === 'error' && (
-            <Button size="small" onClick={() => void archivedSessions.reload()}>
-              {t('home.archived.retry')}
-            </Button>
-          )}
+      {firstRead && (
+        <p className="sidebar-archive-loading" role="status">
+          {t('home.archived.loading')}
         </p>
       )}
-      <ul className="archived-session-list">
+      {view.error && (
+        <p className="sidebar-archive-error" role="alert">
+          {view.error}{' '}
+          <Button size="small" onClick={() => void archivedSessions.reload()}>
+            {t('home.archived.retry')}
+          </Button>
+        </p>
+      )}
+      <ul className="sidebar-archive-list">
         {rows.map((row) => {
           const title =
             row.title ||
@@ -317,19 +331,33 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
               document.documentElement.lang || 'en',
             )
           const restoring = view.restoring.includes(row.sessionId)
+          const active = row.sessionId === options.currentId
           return (
-            <li key={row.sessionId} className="archived-session" data-session={row.sessionId}>
-              <span className="archived-session-copy">
-                <span className="session-title" title={title}>
-                  {title}
-                </span>
-                {row.cwd && <span className="archived-session-workspace">{name(row.cwd)}</span>}
-              </span>
+            <li
+              key={row.sessionId}
+              className="sidebar-archive-row"
+              data-session={row.sessionId}
+              data-active={String(active)}
+            >
+              {/* Opening an archived session keeps the filter: the row marks the current session. */}
+              <button
+                type="button"
+                className="sidebar-archive-open"
+                aria-current={active ? 'page' : undefined}
+                title={title}
+                onClick={() => options.open(row.sessionId)}
+              >
+                <span className="sidebar-archive-title">{title}</span>
+                {row.cwd && <span className="sidebar-archive-workspace">{name(row.cwd)}</span>}
+              </button>
               <IconButton
                 name="history"
-                className="archived-session-restore"
+                className="sidebar-archive-restore"
                 data-testid="archived-restore"
-                label={t('session.archived.restoreAria', { title })}
+                label={
+                  restoring ? t('session.archived.restoring') : t('session.archived.restoreAria', { title })
+                }
+                loading={restoring}
                 disabled={restoring}
                 aria-busy={restoring}
                 onClick={() => void archivedSessions.restore(row.sessionId)}
@@ -338,17 +366,12 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
           )
         })}
       </ul>
-      {view.status !== 'loading' && rows.length === 0 && view.status !== 'error' && (
+      {view.status !== 'loading' && view.status !== 'error' && rows.length === 0 && (
         <EmptyState
           className="session-list-empty"
           icon={<Icon name="history" />}
           title={t(view.rows.length ? 'session.archived.empty.noMatch' : 'session.archived.empty.fallback')}
           description={view.rows.length ? undefined : t('home.archived.emptyHelp')}
-          actions={
-            <Button size="small" onClick={() => archivedSessions.show('unarchived')}>
-              {t('home.archived.back')}
-            </Button>
-          }
         />
       )}
     </section>
@@ -358,7 +381,12 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
 /** The sidebar list: unarchived sessions by workspace, or the archived ones when that filter is on. */
 export function SessionNavigation(props: { options: SidebarNavigationOptions; t: Translate }) {
   const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
-  return view.filter === 'archived' ? <ArchivedSessions {...props} /> : <WorkspaceSessions {...props} />
+  return (
+    <>
+      <ArchiveViewRow archived={view.filter === 'archived'} t={props.t} />
+      {view.filter === 'archived' ? <ArchivedSessions {...props} /> : <WorkspaceSessions {...props} />}
+    </>
+  )
 }
 
 /**

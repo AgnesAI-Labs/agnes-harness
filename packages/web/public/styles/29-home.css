@@ -271,26 +271,61 @@
     }
   }
 
-  /* Session list tools sit in the heading row; the filter shows when it hides the active list. */
+  /* Session list tools sit in the heading row; the list itself keeps its own view rows below. */
   .sidebar-section-heading .section-label {
     flex: 1;
     min-width: 0;
   }
-  .sidebar-section-heading .session-filter-on {
-    color: var(--agnes-brand-primary);
-    background: color-mix(in srgb, var(--agnes-brand-primary) 12%, transparent);
+  /* The one row both list modes share: 「已归档 ›」 enters, `‹ 工作区` leaves. It stays pinned to
+     the top of the scrolling list, so switching never moves the list under the pointer. */
+  .sidebar-view-row {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    min-height: 0;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s8);
+    padding: var(--s2) var(--s8);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-app-sidebar);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: 1.25rem;
+    text-align: start;
+    transition: none;
   }
-  .session-filter-unset {
+  .sidebar-view-row:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .sidebar-view-row:focus-visible {
+    outline-offset: -2px;
+  }
+  .sidebar-view-row-icon {
     width: 1rem;
-    display: inline-block;
+    height: 1rem;
+    flex: none;
   }
-  .archived-sessions {
+  .sidebar-view-row-end,
+  .sidebar-view-row-back {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .sidebar-view-row-end {
+    margin-inline-start: auto;
+  }
+  .sidebar-archive {
     min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s4);
   }
-  .archived-search {
+  .sidebar-archive-search {
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -302,10 +337,10 @@
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-surface);
   }
-  .archived-search:focus-within {
+  .sidebar-archive-search:focus-within {
     border-color: var(--agnes-brand-primary);
   }
-  .archived-search input,
+  .sidebar-archive-search input,
   .session-search-field input,
   .session-search-filters input {
     min-width: 0;
@@ -316,16 +351,16 @@
     background: transparent;
     font: inherit;
   }
-  .archived-search input:focus,
+  .sidebar-archive-search input:focus,
   .session-search-field input:focus,
   .session-search-filters input:focus {
     outline: 0;
     box-shadow: none;
   }
-  .archived-search input {
+  .sidebar-archive-search input {
     font-size: var(--font-size-sm);
   }
-  .archived-sessions .session-list-empty {
+  .sidebar-archive .session-list-empty {
     border: 0;
     background: transparent;
   }
@@ -335,31 +370,71 @@
     color: inherit;
     background: color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
   }
-  .archived-session-list {
+  .sidebar-archive-loading {
+    margin: 0 var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .sidebar-archive-error {
+    margin: 0 var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .sidebar-archive-list {
     margin: 0;
     padding: 0;
     display: grid;
     gap: var(--s2);
     list-style: none;
   }
-  .archived-session {
+  .sidebar-archive-row {
     min-width: 0;
-    min-height: 2rem;
-    display: flex;
+    min-height: 2.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--s4);
-    padding: var(--s2) var(--s2) var(--s2) var(--s8);
+    padding: var(--s2) var(--s4) var(--s2) var(--s8);
     border-radius: var(--radius-control);
+    transition: none;
   }
-  .archived-session:hover {
+  .sidebar-archive-row:hover {
     background: var(--agnes-bg-hover);
   }
-  .archived-session-copy {
-    min-width: 0;
-    flex: 1;
-    display: grid;
+  /* The current session reads as a raised surface with a hairline, like an unarchived row. */
+  .sidebar-archive-row[data-active="true"] {
+    background: var(--agnes-bg-surface);
+    box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
   }
-  .archived-session-copy .session-title {
+  /* The row paints the background; the open button only carries the text and the click. */
+  .sidebar-archive-open {
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font-weight: 400;
+    text-align: start;
+    transition: none;
+  }
+  .sidebar-archive-open:hover:not(:disabled) {
+    border-color: transparent;
+    background: transparent;
+  }
+  .sidebar-archive-open:focus-visible {
+    outline-offset: -2px;
+  }
+  .sidebar-archive-title {
+    max-width: 100%;
     overflow: hidden;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
@@ -367,7 +442,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .archived-session-workspace {
+  .sidebar-archive-workspace {
+    max-width: 100%;
     overflow: hidden;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
@@ -375,11 +451,31 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .archived-sessions-error {
-    margin: 0 var(--s8);
-    color: var(--agnes-status-danger-text);
-    font-size: var(--font-size-xs);
-    overflow-wrap: anywhere;
+  /* The restore action stays out of the way until the row is pointed at, focused, or restoring. */
+  .sidebar-archive-restore {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sidebar-archive-row:hover .sidebar-archive-restore,
+  .sidebar-archive-row:focus-within .sidebar-archive-restore,
+  .sidebar-archive-restore[aria-busy="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Touch has no durable hover target: expose the restore action and keep a tappable row height. */
+  @media (max-width: 720px) {
+    .sidebar-archive-row {
+      min-height: var(--control-height-touch);
+    }
+    .sidebar-archive-restore {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 
   /* Session search: a palette. One field, results below it, keys along the bottom. */
@@ -411,7 +507,7 @@
     font-size: var(--font-size-md);
   }
   .session-search-field input::-webkit-search-cancel-button,
-  .archived-search input::-webkit-search-cancel-button {
+  .sidebar-archive-search input::-webkit-search-cancel-button {
     appearance: none;
   }
   .session-search-filters {
