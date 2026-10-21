@@ -161,6 +161,7 @@ import {
   RequestTraceStore,
   type ResolvedProfile,
   readFactChainBinding,
+  readStoredSessionView,
   resolveComposition,
   resolveFileSecretsDirectory,
   type ScanRead,
@@ -244,7 +245,7 @@ import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
-import { recencyCursor } from './session-reads.js'
+import { recencyCursor, type SessionViewRead } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -589,6 +590,8 @@ export type StartSupervisorOptions = {
   profileDir: string
   /** Existing ledger adapter's read port; reads never acquire a worker or writer claim. */
   sessionFactRead?: (sessionId: string) => ScanRead<import('@agnes/protocol').EventEnvelope>
+  /** Recorded session views from the same ledger; without it `session.view` waits for a worker. */
+  sessionViewRead?: SessionViewRead
   profileFile: string
   /** One daemon scope owns one canonical workspace skill root. Session cwd may vary, but profile
    * resource control never silently scans the daemon process cwd. */
@@ -2189,7 +2192,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         effectivePackageAdmin?.service,
       )
       sessionPrefs.registerSessionPreferences(ep, lister, preferences)
-      registerSessionMethods(ep, pool, cx)
+      registerSessionMethods(ep, pool, cx, o.sessionViewRead)
       registerWorkspaces(ep, workspaceCatalog, {
         running: (id) => Boolean(registry.get(id)?.inflight || registry.get(id)?.session.running),
         archive: (id) => {
@@ -2715,6 +2718,13 @@ export async function startProductionSupervisor(
       ),
       reclaim: storage.crashReclaim,
       sessionFactRead: o.sessionFactRead ?? ((key) => (query) => storage.scan(key, query)),
+      // The daemon's ledger is the Host's only when the Host keeps the default SQLite persistence.
+      ...(o.sessionViewRead || o.profile.persistence === undefined
+        ? {
+            sessionViewRead:
+              o.sessionViewRead ?? ((key, options) => readStoredSessionView(storage, key, options)),
+          }
+        : {}),
     })
   } catch (error) {
     stopDiagnostics()
