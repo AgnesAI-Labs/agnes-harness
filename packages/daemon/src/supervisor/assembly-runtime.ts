@@ -1,4 +1,3 @@
-import { releaseChildEngineOwner } from '@agnes/package-manager'
 import { join } from 'node:path'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
 import { activateDefaultHelpers, refreshDefaultHelpers } from '@agnes/daemon-admin/packages/default-helpers'
@@ -20,7 +19,7 @@ import {
   createSecretsFile,
   overlayChildEngineTarget,
 } from '@agnes/host'
-import { activeRuntimePinId, isRuntimePackageEligible } from '@agnes/package-manager'
+import { activeRuntimePinId, isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { HARNESS_VERSION } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'

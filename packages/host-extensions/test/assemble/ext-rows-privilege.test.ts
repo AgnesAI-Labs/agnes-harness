@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
@@ -64,6 +64,13 @@ describe('verified ext: row privilege grants', () => {
     expect(h.authority.extension('@acme/package', ids[0], { id: '@acme/package' })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], { id: h.pkg.id })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], undefined)).toEqual({})
+    symlinkSync(h.directory, join(h.directory, 'data-link'))
+    const linked = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]))
+    linked.bind(h.modules)
+    expect(linked.extension(h.pkg.id, ids[0], h.module)).toEqual({})
+    const image = { id: h.pkg.id }
+    linked.bind(new Map([[h.pkg.id, image]]))
+    expect(linked.extension(h.pkg.id, ids[0], image)).toMatchObject({ searchProvider: true })
     const alternate = fixture({ id: '@acme/release' })
     const declaration = HOST_CAPABILITY_GRANTS[0]
     if (!declaration) throw new Error('missing release declaration')

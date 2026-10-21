@@ -1525,13 +1525,10 @@ export function createConfigurationService(
           })
         }),
       )
+      const routes = routeGroups.flat()
       return {
         adapters: { secrets },
-        provider: {
-          package: RELEASE_DEFAULTS.modelAdapterPackage,
-          routes: routeGroups.flat(),
-          catalog: { include: [] },
-        },
+        provider: { package: RELEASE_DEFAULTS.modelAdapterPackage, routes, catalog: { include: [] } },
       }
     },
   }

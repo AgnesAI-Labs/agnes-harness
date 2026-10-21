@@ -32,8 +32,14 @@ export function pinHostCapabilities(
       !directory
     )
       return []
-    const stat = existsSync(directory) ? lstatSync(directory) : undefined
-    const digest = stat ? hashDirectory(directory) : undefined
+    let stat: ReturnType<typeof lstatSync> | undefined
+    let digest: string | undefined
+    try {
+      stat = existsSync(directory) ? lstatSync(directory) : undefined
+      digest = stat ? hashDirectory(directory) : undefined
+    } catch {
+      // A Host code image may use a mutable data directory. File-backed code still needs a digest.
+    }
     const revisions = retained.filter(
       (row) =>
         row.mountRevision === EXT_ROW_MOUNT_REVISION &&
